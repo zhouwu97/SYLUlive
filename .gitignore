@@ -18,3 +18,5 @@ web/favicon.png
 .env
 *.db
 server/uploads/*
+*.apk
+*.aab

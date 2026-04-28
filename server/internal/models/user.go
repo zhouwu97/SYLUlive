@@ -1,0 +1,39 @@
+package models
+
+import (
+	"time"
+)
+
+// Role 用户角色
+type Role string
+
+const (
+	RoleUser       Role = "user"       // 普通用户
+	RoleAdmin      Role = "admin"      // 管理员
+	RoleSuperAdmin Role = "super_admin" // 超级管理员
+)
+
+// User 用户模型
+type User struct {
+	ID           uint      `gorm:"primaryKey" json:"id"`
+	StudentID    string    `gorm:"uniqueIndex;size:50;not null" json:"student_id"`       // 学号/邮箱
+	PasswordHash string    `gorm:"size:255;not null" json:"-"`                          // 密码哈希
+	Nickname     string    `gorm:"size:100" json:"nickname"`                            // 昵称
+	Avatar       string    `gorm:"size:500" json:"avatar"`                              // 头像URL
+	Background   string    `gorm:"size:500" json:"background"`                          // 背景图URL
+	CreditScore  int       `gorm:"default:100;index" json:"credit_score"`               // 诚信度 0-100
+	Role         Role      `gorm:"size:20;default:user;index" json:"role"`              // 角色
+	AdminExp     int       `gorm:"default:0" json:"admin_exp"`                          // 管理员经验
+	ReportCount  int       `gorm:"default:0;index" json:"report_count"`                 // 90天内举报数
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+
+	// 教务系统绑定信息（整合学长项目）
+	EduStudentID  string `gorm:"size:20" json:"edu_student_id"`   // 教务学号
+	EduPassword   string `gorm:"size:255" json:"-"`               // 教务密码（加密存储）
+	EduCookie     string `gorm:"size:1000" json:"edu_cookie"`    // 登录Cookie
+	EduBound      bool   `gorm:"default:false" json:"edu_bound"`  // 是否已绑定教务
+	EduGrade      string `gorm:"size:20" json:"edu_grade"`        // 年级
+	EduCollege    string `gorm:"size:100" json:"edu_college"`     // 学院
+	EduMajor      string `gorm:"size:100" json:"edu_major"`      // 专业
+}

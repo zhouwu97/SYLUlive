@@ -1,0 +1,84 @@
+version: '3.8'
+
+services:
+  # Nginx反向代理 - 统一入口，以后可分离
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/docker.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro  # 以后添加SSL证书
+    depends_on:
+      - server
+      - client
+    restart: unless-stopped
+    networks:
+      - xiaoyuan_network
+
+  # Go后端服务
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    expose:
+      - "8080"
+    environment:
+      - JWT_SECRET=${JWT_SECRET:-xiaoyuan-default-secret-change-in-production}
+      - DSN=${DSN:-/app/xiaoyuan.db}
+      - UPLOAD_DIR=${UPLOAD_DIR:-/app/uploads}
+      - SUPER_ADMIN_DEFAULT_PASSWORD=${SUPER_ADMIN_DEFAULT_PASSWORD:-super123456}
+    volumes:
+      - server_data:/app
+      # 以后分离存储时，注释掉上面这行，使用云存储
+      # - object_storage:/app/uploads  # 挂载云存储
+    restart: unless-stopped
+    networks:
+      - xiaoyuan_network
+
+  # 前端静态文件服务
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    expose:
+      - "80"
+    restart: unless-stopped
+    networks:
+      - xiaoyuan_network
+
+  # 可选：数据库服务（以后切换到PostgreSQL）
+  # db:
+  #   image: postgres:15-alpine
+  #   environment:
+  #     - POSTGRES_DB=xiaoyuan
+  #     - POSTGRES_USER=${DB_USER:-xiaoyuan}
+  #     - POSTGRES_PASSWORD=${DB_PASSWORD:-xiaoyuan_secret}
+  #   volumes:
+  #     - db_data:/var/lib/postgresql/data
+  #   restart: unless-stopped
+  #   networks:
+  #     - xiaoyuan_network
+
+  # 可选：对象存储服务（以后使用云存储如OSS/S3）
+  # minio:
+  #   image: minio/minio
+  #   environment:
+  #     - MINIO_ROOT_USER=${MINIO_USER:-minioadmin}
+  #     - MINIO_ROOT_PASSWORD=${MINIO_PASSWORD:-minioadmin123}
+  #   command: server /data --console-address ":9001"
+  #   volumes:
+  #     - minio_data:/data
+  #   restart: unless-stopped
+  #   networks:
+  #     - xiaoyuan_network
+
+volumes:
+  server_data:
+  # db_data:      # 以后启用
+  # minio_data:   # 以后启用
+
+networks:
+  xiaoyuan_network:
+    driver: bridge

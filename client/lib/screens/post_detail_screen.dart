@@ -5,7 +5,6 @@ import '../models/post.dart';
 import '../models/reply.dart';
 import '../models/user.dart';
 import 'image_viewer_screen.dart';
-import 'messages_screen.dart';
 
 class PostDetailScreen extends StatefulWidget {
   final int postId;
@@ -73,14 +72,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             IconButton(
               icon: const Icon(Icons.message),
               onPressed: () {
-                if (_post!.author != null) {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => ChatScreen(targetUserId: _post!.author!.id),
-                    ),
-                  );
-                }
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('私信功能暂时关闭')),
+                );
               },
               tooltip: '联系TA',
             ),

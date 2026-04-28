@@ -59,8 +59,8 @@ class MyApp extends StatelessWidget {
             theme: AppTheme.lightTheme,
             darkTheme: AppTheme.darkTheme,
             themeMode: themeProvider.isDarkMode ? ThemeMode.dark : ThemeMode.light,
-            home: const GlobalBackgroundWrapper(
-              child: AuthWrapper(),
+            home: GlobalBackgroundWrapper(
+              child: const AuthWrapper(),
             ),
           );
         },
@@ -69,13 +69,30 @@ class MyApp extends StatelessWidget {
   }
 }
 
-class GlobalBackgroundWrapper extends StatelessWidget {
+final GlobalKey<_BackgroundWrapperState> backgroundWrapperKey = GlobalKey<_BackgroundWrapperState>();
+
+class GlobalBackgroundWrapper extends StatefulWidget {
   final Widget child;
 
   const GlobalBackgroundWrapper({
     super.key,
     required this.child,
   });
+
+  @override
+  State<GlobalBackgroundWrapper> createState() => _BackgroundWrapperState();
+}
+
+class _BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
+  String _currentScreen = 'shuitie';
+
+  void updateScreen(String screen) {
+    if (_currentScreen != screen) {
+      setState(() {
+        _currentScreen = screen;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -85,13 +102,13 @@ class GlobalBackgroundWrapper extends StatelessWidget {
     return Stack(
       children: [
         _buildBackground(themeProvider, isDark),
-        child,
+        widget.child,
       ],
     );
   }
 
   Widget _buildBackground(ThemeProvider themeProvider, bool isDark) {
-    if (!themeProvider.hasBackground) {
+    if (!themeProvider.isBackgroundVisible(_currentScreen)) {
       return _buildDefaultBackground(isDark);
     }
 
@@ -176,11 +193,7 @@ class AuthWrapper extends StatelessWidget {
           );
         }
 
-        if (authProvider.isLoggedIn) {
-          return const HomeScreen();
-        }
-
-        return const LoginScreen();
+        return const HomeScreen();
       },
     );
   }

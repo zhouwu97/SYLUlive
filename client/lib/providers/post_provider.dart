@@ -46,7 +46,7 @@ class PostProvider extends ChangeNotifier {
           _posts.addAll(newPosts);
         }
 
-        _hasMore = newPosts.length >= 20;
+        _hasMore = newPosts.length >= 20 && newPosts.isNotEmpty;
         _currentPage++;
       }
     } on DioException catch (e) {

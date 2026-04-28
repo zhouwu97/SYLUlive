@@ -114,6 +114,9 @@ func (h *EduHandler) BindEdu(c *gin.Context) {
 	// 构建cookie字符串
 	cookieStr := buildCookieString(cookies)
 
+	// 获取学生基本信息（年级、学院、专业）
+	grade, college, major, _ := getStudentInfo(client, cookieStr, input.StudentID)
+
 	// 加密存储教务密码
 	hashedPassword, _ := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
 
@@ -123,11 +126,17 @@ func (h *EduHandler) BindEdu(c *gin.Context) {
 		"edu_password":   string(hashedPassword),
 		"edu_cookie":     cookieStr,
 		"edu_bound":      true,
+		"edu_grade":      grade,
+		"edu_college":    college,
+		"edu_major":      major,
 	})
 
 	c.JSON(http.StatusOK, gin.H{
-		"message":     "绑定成功",
+		"message":       "绑定成功",
 		"edu_student_id": input.StudentID,
+		"edu_grade":     grade,
+		"edu_college":   college,
+		"edu_major":     major,
 	})
 }
 
@@ -196,7 +205,18 @@ func (h *EduHandler) GetCourses(c *gin.Context) {
 	}
 
 	client := resty.New()
-	courses, err := getCourseByInfo(client, user.EduCookie, input.Year, input.Semester)
+	cookie := user.EduCookie
+	courses, err := getCourseByInfo(client, cookie, input.Year, input.Semester)
+
+	// 如果Cookie失效，尝试刷新
+	if errors.Is(err, ErrorLapse) {
+		newCookie, refreshErr := h.refreshCookie(user.ID)
+		if refreshErr == nil {
+			cookie = newCookie
+			courses, err = getCourseByInfo(client, cookie, input.Year, input.Semester)
+		}
+	}
+
 	if err != nil {
 		if errors.Is(err, ErrorLapse) {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "教务Cookie已失效，请重新绑定"})
@@ -241,7 +261,18 @@ func (h *EduHandler) GetGrades(c *gin.Context) {
 	}
 
 	client := resty.New()
-	grades, err := getGradesByInfo(client, user.EduCookie, input.Year, input.Semester)
+	cookie := user.EduCookie
+	grades, err := getGradesByInfo(client, cookie, input.Year, input.Semester)
+
+	// 如果Cookie失效，尝试刷新
+	if errors.Is(err, ErrorLapse) {
+		newCookie, refreshErr := h.refreshCookie(user.ID)
+		if refreshErr == nil {
+			cookie = newCookie
+			grades, err = getGradesByInfo(client, cookie, input.Year, input.Semester)
+		}
+	}
+
 	if err != nil {
 		if errors.Is(err, ErrorLapse) {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "教务Cookie已失效，请重新绑定"})
@@ -350,18 +381,18 @@ func buildCookieString(cookies []*http.Cookie) string {
 	return strings.Join(parts, "; ")
 }
 
-// 课程相关结构
+// scheduleResponse 课表响应结构（匹配教务系统JSON字段）
 type scheduleResponse struct {
 	RqazcList []struct {
 		Rq string `json:"rq"`
 	} `json:"rqazcList"`
 	KbList []struct {
-		Name     string `json:"NAME"`
-		Teacher  string `json:"JSMC"`
-		Location string `json:"XQSM"`
-		Time     string `json:"SJBJ"`
-		WeekDay  string `json:"XQ"`
-		WeekS    string `json:"ZCD"`
+		Name     string `json:"kcmc"`    // 课程名称
+		Teacher  string `json:"xm"`      // 教师姓名
+		Location string `json:"cdmc"`    // 场地名称
+		Time     string `json:"jc"`      // 节次
+		WeekDay  string `json:"xqj"`     // 星期几
+		WeekS    string `json:"zcd"`     // 周段
 	} `json:"kbList"`
 }
 
@@ -429,7 +460,7 @@ func getCourseByInfo(client *resty.Client, cookie, year string, semester int) (*
 	return result, nil
 }
 
-// 成绩相关结构
+// 成绩相关结构（匹配教务系统JSON字段）
 type gradesResponse struct {
 	Items []struct {
 		Kcmc   string `json:"KCMC"` // 课程名称
@@ -558,4 +589,95 @@ func timeToInt(time string) int {
 		return 7
 	}
 	return 0
+}
+
+// getStudentInfo 从教务系统获取学生基本信息
+func getStudentInfo(client *resty.Client, cookie, studentID string) (grade, college, major string, err error) {
+	client.SetHostURL("https://jxw.sylu.edu.cn/xtgl")
+	defer client.GetClient().CloseIdleConnections()
+
+	// 访问个人中心页面获取学生信息
+	resp, err := client.R().
+		SetHeader("Cookie", cookie).
+		SetHeaders(baseHttpHeaders()).
+		Get("/grxx_cxGrxx.html?gnmkdm=N100501&layout=default")
+
+	if err != nil {
+		return "", "", "", err
+	}
+
+	body := string(resp.Body())
+
+	// 解析年级、学院、专业
+	// 使用正则匹配
+	gradeRe := regexp.MustCompile(`年级[：:]\s*(\d{4})`)
+	gradeMatch := gradeRe.FindStringSubmatch(body)
+	if len(gradeMatch) > 1 {
+		grade = gradeMatch[1]
+	}
+
+	collegeRe := regexp.MustCompile(`学院[：:]\s*([^\s<]+)`)
+	collegeMatch := collegeRe.FindStringSubmatch(body)
+	if len(collegeMatch) > 1 {
+		college = collegeMatch[1]
+	}
+
+	majorRe := regexp.MustCompile(`专业[：:]\s*([^\s<]+)`)
+	majorMatch := majorRe.FindStringSubmatch(body)
+	if len(majorMatch) > 1 {
+		major = majorMatch[1]
+	}
+
+	// 如果解析不到，尝试从URL参数或页面其他地方获取
+	if grade == "" {
+		gradeRe2 := regexp.MustCompile(`(\d{4})-(\d{4})`)
+		gradeMatch2 := gradeRe2.FindStringSubmatch(body)
+		if len(gradeMatch2) > 0 {
+			grade = gradeMatch2[1]
+		}
+	}
+
+	return grade, college, major, nil
+}
+
+// refreshCookie 自动刷新过期的Cookie
+func (h *EduHandler) refreshCookie(userID uint) (string, error) {
+	var user models.User
+	if err := h.db.First(&user, userID).Error; err != nil {
+		return "", err
+	}
+
+	if !user.EduBound || user.EduStudentID == "" || user.EduPassword == "" {
+		return "", errors.New("未绑定教务账号")
+	}
+
+	client := resty.New()
+
+	csrfToken, err := getIndexCookieAndCsrfToken(client)
+	if err != nil {
+		return "", err
+	}
+
+	publicKey, err := getPublicKey(client)
+	if err != nil {
+		return "", err
+	}
+
+	encryptedPassword, err := rsaByPublicKey(user.EduPassword, publicKey)
+	if err != nil {
+		return "", err
+	}
+
+	cookies, err := syluLogin(client, user.EduStudentID, encryptedPassword, csrfToken)
+	if err != nil {
+		return "", err
+	}
+
+	cookieStr := buildCookieString(cookies)
+
+	h.db.Model(&user).Updates(map[string]interface{}{
+		"edu_cookie": cookieStr,
+	})
+
+	return cookieStr, nil
 }

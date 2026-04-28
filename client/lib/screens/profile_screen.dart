@@ -1,4 +1,8 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:path/path.dart' as path;
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
@@ -525,45 +529,64 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
           children: [
             const Text('选择背景', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
             const SizedBox(height: 16),
-            SizedBox(
-              height: 120,
-              child: ListView.builder(
-                scrollDirection: Axis.horizontal,
-                itemCount: backgrounds.length,
-                itemBuilder: (context, index) {
-                  final isAsset = !backgrounds[index].startsWith('http');
-                  final imagePath = isAsset ? 'assets/images/${backgrounds[index]}' : backgrounds[index];
-                  return GestureDetector(
-                    onTap: () {
-                      themeProvider.setBackgroundImage(backgrounds[index]);
-                      Navigator.pop(context);
-                    },
-                    child: Container(
-                      width: 160,
-                      margin: const EdgeInsets.only(right: 12),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(12),
-                        image: DecorationImage(
-                          image: isAsset
-                              ? AssetImage(imagePath) as ImageProvider
-                              : NetworkImage(backgrounds[index]) as ImageProvider,
-                          fit: BoxFit.cover,
-                        ),
-                      ),
+            Row(
+              children: [
+                Expanded(
+                  child: SizedBox(
+                    height: 120,
+                    child: ListView.builder(
+                      scrollDirection: Axis.horizontal,
+                      itemCount: backgrounds.length,
+                      itemBuilder: (context, index) {
+                        final isAsset = !backgrounds[index].startsWith('http');
+                        final imagePath = isAsset ? 'assets/images/${backgrounds[index]}' : backgrounds[index];
+                        return GestureDetector(
+                          onTap: () {
+                            themeProvider.setBackgroundImage(backgrounds[index]);
+                            Navigator.pop(context);
+                          },
+                          child: Container(
+                            width: 160,
+                            margin: const EdgeInsets.only(right: 12),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(12),
+                              image: DecorationImage(
+                                image: isAsset
+                                    ? AssetImage(imagePath) as ImageProvider
+                                    : NetworkImage(backgrounds[index]) as ImageProvider,
+                                fit: BoxFit.cover,
+                              ),
+                            ),
+                          ),
+                        );
+                      },
                     ),
-                  );
-                },
-              ),
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 12),
-            TextField(
-              decoration: const InputDecoration(hintText: '或输入图片URL', prefixIcon: Icon(Icons.link)),
-              onSubmitted: (url) {
-                if (url.isNotEmpty) {
-                  themeProvider.setBackgroundImage(url);
-                  Navigator.pop(context);
-                }
-              },
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () async {
+                  final picker = ImagePicker();
+                  final image = await picker.pickImage(source: ImageSource.gallery);
+                  if (image != null) {
+                    final appDir = await getApplicationDocumentsDirectory();
+                    final fileName = 'background_${DateTime.now().millisecondsSinceEpoch}${path.extension(image.path)}';
+                    final savedPath = path.join(appDir.path, fileName);
+                    await File(image.path).copy(savedPath);
+                    themeProvider.setBackgroundImage(savedPath);
+                    if (context.mounted) Navigator.pop(context);
+                  }
+                },
+                icon: const Icon(Icons.photo_library),
+                label: const Text('从相册选择'),
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+              ),
             ),
             const SizedBox(height: 20),
           ],

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../main.dart';
 import '../providers/auth_provider.dart';
 import '../widgets/bottom_nav.dart';
 import 'shuitie_screen.dart';
@@ -45,6 +46,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     setState(() {
       _currentIndex = index;
     });
+    final screenNames = ['shuitie', 'market', 'edu', 'profile'];
+    backgroundWrapperKey.currentState?.updateScreen(screenNames[index]);
   }
 
   @override

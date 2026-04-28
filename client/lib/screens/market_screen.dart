@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../providers/auth_provider.dart';
 import '../providers/post_provider.dart';
 import '../models/post.dart';
 import '../widgets/post_card.dart';
@@ -7,6 +8,7 @@ import '../widgets/glass_container.dart';
 import '../providers/theme_provider.dart';
 import 'post_detail_screen.dart';
 import 'create_post_screen.dart';
+import 'login_screen.dart';
 
 class MarketScreen extends StatefulWidget {
   const MarketScreen({super.key});
@@ -87,6 +89,17 @@ class _MarketScreenState extends State<MarketScreen> with SingleTickerProviderSt
         padding: const EdgeInsets.only(bottom: 80),
         child: FloatingActionButton(
           onPressed: () async {
+            final authProvider = context.read<AuthProvider>();
+            if (!authProvider.isLoggedIn) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('请先登录')),
+              );
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const LoginScreen()),
+              );
+              return;
+            }
             await Navigator.push(
               context,
               MaterialPageRoute(

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:provider/provider.dart';
+import '../providers/auth_provider.dart';
 import '../models/post.dart';
 import '../models/reply.dart';
 import '../models/user.dart';
@@ -16,7 +18,7 @@ class PostDetailScreen extends StatefulWidget {
 }
 
 class _PostDetailScreenState extends State<PostDetailScreen> {
-  final Dio _dio = Dio(BaseOptions(baseUrl: 'http://localhost:8080/api'));
+  late Dio _dio;
   Post? _post;
   List<Reply> _replies = [];
   bool _isLoading = true;
@@ -25,6 +27,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   @override
   void initState() {
     super.initState();
+    _dio = context.read<AuthProvider>().dio;
     _loadPost();
   }
 

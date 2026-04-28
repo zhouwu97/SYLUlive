@@ -56,9 +56,7 @@ func (h *PostHandler) GetList(c *gin.Context) {
 	case "price":
 		query = query.Order("price ASC")
 	case "score":
-		// 综合排序：score = (诚信度/100)*60 + (1 - 价格/最大价格)*40
-		// 由于SQL不支持动态计算，这里简化为按诚信度排序
-		query = query.Order("author_id DESC") // 需要关联查询
+		query = query.Order("created_at DESC")
 	default:
 		query = query.Order("created_at DESC")
 	}

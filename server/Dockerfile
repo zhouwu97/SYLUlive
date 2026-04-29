@@ -1,9 +1,10 @@
 # 沈理校园后端
-FROM golang:1.21-bookworm AS builder
+FROM golang:1.23-bookworm AS builder
 
 WORKDIR /app
 
 ENV CGO_ENABLED=0
+ENV GOTOOLCHAIN=local
 
 COPY . .
 

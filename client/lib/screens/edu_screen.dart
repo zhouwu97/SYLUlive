@@ -21,12 +21,15 @@ class _EduScreenState extends State<EduScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Scaffold(
       backgroundColor: Colors.transparent,
       appBar: AppBar(
         title: const Text('教务系统'),
         backgroundColor: Colors.transparent,
         elevation: 0,
+        leading: const BackButton(),
       ),
       body: Consumer<EduProvider>(
         builder: (context, eduProvider, child) {
@@ -36,9 +39,9 @@ class _EduScreenState extends State<EduScreen> {
 
           return ListView(
             children: [
-              // 绑定状态卡片
               Card(
                 margin: const EdgeInsets.all(16),
+                color: isDark ? Colors.grey[850] : Colors.white,
                 child: Padding(
                   padding: const EdgeInsets.all(16),
                   child: Column(
@@ -118,8 +121,6 @@ class _EduScreenState extends State<EduScreen> {
                   ),
                 ),
               ),
-
-              // 功能说明
               const ListTile(
                 leading: Icon(Icons.info_outline),
                 title: Text('功能说明'),
@@ -205,11 +206,14 @@ class _EduScreenState extends State<EduScreen> {
           ),
           ElevatedButton(
             onPressed: () async {
-              final success = await eduProvider.unbind();
+              Navigator.pop(context);
+              final result = await eduProvider.unbind();
               if (context.mounted) {
-                Navigator.pop(context);
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text(success ? '解绑成功' : '解绑失败')),
+                  SnackBar(
+                    content: Text(result.success ? '解绑成功' : (result.errorMessage ?? '解绑失败')),
+                    backgroundColor: result.success ? Colors.green : Colors.red,
+                  ),
                 );
               }
             },
@@ -268,9 +272,18 @@ class _EduScreenState extends State<EduScreen> {
           ElevatedButton(
             onPressed: () async {
               Navigator.pop(context);
-              final courses = await eduProvider.getCourses(selectedYear, selectedSemester);
-              if (context.mounted && courses != null) {
-                _showCoursesResult(context, courses, selectedYear, selectedSemester);
+              final result = await eduProvider.getCourses(selectedYear, selectedSemester);
+              if (context.mounted) {
+                if (result != null && result.success && result.data != null) {
+                  _showCoursesResult(context, result.data!, selectedYear, selectedSemester);
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(result?.errorMessage ?? '获取课表失败'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
               }
             },
             child: const Text('查询'),
@@ -374,9 +387,18 @@ class _EduScreenState extends State<EduScreen> {
           ElevatedButton(
             onPressed: () async {
               Navigator.pop(context);
-              final grades = await eduProvider.getGrades(selectedYear, selectedSemester);
-              if (context.mounted && grades != null) {
-                _showGradesResult(context, grades, selectedYear, selectedSemester);
+              final result = await eduProvider.getGrades(selectedYear, selectedSemester);
+              if (context.mounted) {
+                if (result != null && result.success && result.data != null) {
+                  _showGradesResult(context, result.data!, selectedYear, selectedSemester);
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(result?.errorMessage ?? '获取成绩失败'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
               }
             },
             child: const Text('查询'),

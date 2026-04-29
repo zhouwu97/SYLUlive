@@ -1,14 +1,14 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
-import '../providers/edu_provider.dart';
 import '../widgets/glass_container.dart';
-import 'edu_screen.dart';
 import 'login_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -179,17 +179,18 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
 
           const SizedBox(height: 8),
 
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.2),
-              borderRadius: BorderRadius.circular(20),
+          if (user?.eduCollege != null || user?.eduMajor != null)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                '${user?.eduCollege ?? ""} ${user?.eduMajor ?? ""}'.trim(),
+                style: const TextStyle(color: Colors.white70, fontSize: 14),
+              ),
             ),
-            child: Text(
-              '学号: ${user?.studentId ?? "-"}',
-              style: const TextStyle(color: Colors.white70, fontSize: 14),
-            ),
-          ),
 
           const SizedBox(height: 20),
 
@@ -303,26 +304,6 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // 教务系统
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: _buildSettingsCard(
-            isDark,
-            children: [
-              _buildSettingsTile(
-                icon: Icons.school,
-                iconColor: Colors.blue,
-                title: '教务系统',
-                subtitle: context.watch<EduProvider>().isBound ? '已绑定' : '未绑定',
-                isDark: isDark,
-                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const EduScreen())),
-              ),
-            ],
-          ),
-        ),
-
-        const SizedBox(height: 12),
-
         // 背景设置
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -381,7 +362,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                 title: '液态玻璃效果',
                 trailing: Switch(
                   value: themeProvider.liquidGlass,
-                  onChanged: (v) => themeProvider.setLiquidGlass(v),
+                  onChanged: (v) => _showLiquidGlassWarningDialog(context, themeProvider, v),
                   activeColor: Theme.of(context).primaryColor,
                 ),
                 isDark: isDark,
@@ -458,6 +439,13 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
               gradientColors: [Colors.red[400]!, Colors.red[600]!],
               onPressed: () async {
                 await authProvider.logout();
+                if (context.mounted) {
+                  Navigator.pushAndRemoveUntil(
+                    context,
+                    MaterialPageRoute(builder: (_) => const LoginScreen()),
+                    (route) => false,
+                  );
+                }
               },
             ),
           ),
@@ -660,6 +648,95 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     );
   }
 
+  void _showLiquidGlassWarningDialog(BuildContext context, ThemeProvider themeProvider, bool enable) {
+    if (!enable) {
+      // Turning off - no warning needed
+      themeProvider.setLiquidGlass(false);
+      return;
+    }
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Colors.orange.shade400, size: 28),
+            const SizedBox(width: 12),
+            const Text('性能警告'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              '液态玻璃效果基于模糊算法实现，在部分设备上可能会造成卡顿。',
+              style: TextStyle(height: 1.5),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.orange.shade50,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.orange.shade200),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.phone_android, size: 18, color: Colors.orange.shade700),
+                      const SizedBox(width: 8),
+                      Text(
+                        '推荐配置',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.orange.shade800,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '• 内存 8GB 以上\n• 处理器骁龙 8 Gen2 及以上\n• 或同等性能的其他平台处理器',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Colors.orange.shade900,
+                      height: 1.4,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(
+              '了解，但继续开启',
+              style: TextStyle(color: Colors.grey.shade600),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              themeProvider.setLiquidGlass(true);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Theme.of(context).primaryColor,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: const Text('开启'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _showEditProfileDialog(BuildContext context, AuthProvider authProvider) {
     final controller = TextEditingController(text: authProvider.user?.nickname);
     showDialog(
@@ -671,8 +748,16 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
           ElevatedButton(
             onPressed: () async {
-              await authProvider.updateProfile(controller.text);
-              if (context.mounted) Navigator.pop(context);
+              final result = await authProvider.updateProfile(controller.text);
+              if (context.mounted) {
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(result.success ? '更新成功' : (result.errorMessage ?? '更新失败')),
+                    backgroundColor: result.success ? Colors.green : Colors.red,
+                  ),
+                );
+              }
             },
             child: const Text('保存'),
           ),
@@ -700,10 +785,15 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
           ElevatedButton(
             onPressed: () async {
-              final ok = await authProvider.changePassword(oldController.text, newController.text);
+              final result = await authProvider.changePassword(oldController.text, newController.text);
               if (context.mounted) {
                 Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(ok ? '修改成功' : '修改失败')));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(result.success ? '修改成功' : (result.errorMessage ?? '修改失败')),
+                    backgroundColor: result.success ? Colors.green : Colors.red,
+                  ),
+                );
               }
             },
             child: const Text('确认'),
@@ -738,7 +828,15 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                   final fileName = 'avatar_${DateTime.now().millisecondsSinceEpoch}${path.extension(image.path)}';
                   final savedPath = path.join(appDir.path, fileName);
                   await File(image.path).copy(savedPath);
-                  await authProvider.updateAvatar(savedPath);
+                  final result = await authProvider.updateAvatar(savedPath);
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(result.success ? '头像更新成功' : (result.errorMessage ?? '头像更新失败')),
+                        backgroundColor: result.success ? Colors.green : Colors.red,
+                      ),
+                    );
+                  }
                 }
               },
             ),
@@ -754,7 +852,15 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                   final fileName = 'avatar_${DateTime.now().millisecondsSinceEpoch}${path.extension(image.path)}';
                   final savedPath = path.join(appDir.path, fileName);
                   await File(image.path).copy(savedPath);
-                  await authProvider.updateAvatar(savedPath);
+                  final result = await authProvider.updateAvatar(savedPath);
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(result.success ? '头像更新成功' : (result.errorMessage ?? '头像更新失败')),
+                        backgroundColor: result.success ? Colors.green : Colors.red,
+                      ),
+                    );
+                  }
                 }
               },
             ),
@@ -792,30 +898,206 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
   }
 
   void _showAboutDialog(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('关于 沈理校园'),
-        content: const Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('一款面向高校学生的互助社交应用'),
-            SizedBox(height: 16),
-            Text('作者：周武'),
-            Text('QQ：3170305904'),
-            SizedBox(height: 16),
-            Text('Bug提交：'),
-            Text('https://github.com/zhouwu97/SYLUlive', style: TextStyle(color: Colors.blue)),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('关闭'),
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // App icon
+              Container(
+                width: 80,
+                height: 80,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      Theme.of(context).primaryColor,
+                      Theme.of(context).primaryColor.withOpacity(0.6),
+                    ],
+                  ),
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Theme.of(context).primaryColor.withOpacity(0.3),
+                      blurRadius: 20,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
+                ),
+                child: const Icon(
+                  Icons.school,
+                  color: Colors.white,
+                  size: 40,
+                ),
+              ),
+              const SizedBox(height: 20),
+
+              // App name
+              Text(
+                '沈理校园',
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '校园互助社交应用',
+                style: TextStyle(color: Colors.grey.shade600),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '版本 1.0.0',
+                style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
+              ),
+              const SizedBox(height: 24),
+
+              // Author
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                decoration: BoxDecoration(
+                  color: isDark ? Colors.white.withOpacity(0.05) : Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.person_outline, size: 18, color: Colors.grey.shade600),
+                    const SizedBox(width: 8),
+                    Text(
+                      '作者：纯合子',
+                      style: TextStyle(color: isDark ? Colors.white70 : Colors.grey.shade700),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 24),
+
+              // Contact buttons
+              Text(
+                'Bug反馈 / 联系作者',
+                style: TextStyle(
+                  color: Colors.grey.shade600,
+                  fontSize: 13,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  // GitHub
+                  _buildContactButton(
+                    context,
+                    icon: Icons.code,
+                    label: 'GitHub',
+                    color: Colors.grey.shade800,
+                    onTap: () => _launchUrl('https://github.com/zhouwu97/SYLUlive'),
+                  ),
+                  const SizedBox(width: 12),
+                  // Email
+                  _buildContactButton(
+                    context,
+                    icon: Icons.email_outlined,
+                    label: '邮箱',
+                    color: Colors.red.shade400,
+                    onTap: () => _copyToClipboard(context, '3170305904@qq.com', '邮箱地址已复制'),
+                  ),
+                  const SizedBox(width: 12),
+                  // QQ
+                  _buildContactButton(
+                    context,
+                    icon: Icons.chat_outlined,
+                    label: 'QQ',
+                    color: Colors.blue.shade400,
+                    onTap: () => _launchUrl('mqqapi://card/show_pslcard?src_type=internal&version=1&uin=3170305904&card_type=person'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 24),
+
+              // Close button
+              SizedBox(
+                width: double.infinity,
+                child: TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: Text(
+                    '关闭',
+                    style: TextStyle(color: Colors.grey.shade600),
+                  ),
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
+  }
+
+  Widget _buildContactButton(
+    BuildContext context, {
+    required IconData icon,
+    required String label,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: color.withOpacity(0.2)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: color, size: 24),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: TextStyle(
+                color: color,
+                fontSize: 11,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _copyToClipboard(BuildContext context, String text, String successMessage) {
+    Clipboard.setData(ClipboardData(text: text));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(successMessage),
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.all(16),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  Future<void> _launchUrl(String url) async {
+    final uri = Uri.parse(url);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } else {
+      debugPrint('Could not launch URL: $url');
+    }
   }
 }

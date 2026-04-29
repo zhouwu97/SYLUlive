@@ -18,5 +18,9 @@ web/favicon.png
 .env
 *.db
 server/uploads/*
+!server/uploads/.gitkeep
+shenliyuan
+shenliyuan.exe
+shenliyuan.exe~
 *.apk
 *.aab

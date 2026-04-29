@@ -10,6 +10,7 @@ class CourtScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('公众法庭'),
+        leading: const BackButton(),
       ),
       body: Center(
         child: Column(

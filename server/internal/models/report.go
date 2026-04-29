@@ -8,9 +8,9 @@ import (
 type ReportStatus string
 
 const (
-	ReportStatusPending  ReportStatus = "pending"  // 待处理
-	ReportStatusHandled  ReportStatus = "handled" // 已处理
-	ReportStatusIgnored  ReportStatus = "ignored" // 已忽略
+	ReportStatusPending ReportStatus = "pending" // 待处理
+	ReportStatusHandled ReportStatus = "handled" // 已处理
+	ReportStatusIgnored ReportStatus = "ignored" // 已忽略
 )
 
 // Report 举报
@@ -22,7 +22,7 @@ type Report struct {
 	Reason       string       `gorm:"type:text;not null" json:"reason"`
 	Status       ReportStatus `gorm:"default:pending;index" json:"status"`
 	HandlerID    *uint        `json:"handler_id"`
-	Result       string       `gorm:"size:500" json:"result"`       // 处理结果说明
+	Result       string       `gorm:"size:500" json:"result"`        // 处理结果说明
 	DeleteReason string       `gorm:"size:500" json:"delete_reason"` // 删除理由
 	CreatedAt    time.Time    `json:"created_at"`
 	HandledAt    *time.Time   `json:"handled_at"`
@@ -36,23 +36,23 @@ type AppealStatus string
 const (
 	AppealStatusPending AppealStatus = "pending" // 待投票
 	AppealStatusPass    AppealStatus = "pass"    // 申诉成功
-	AppealStatusReject  AppealStatus = "reject"   // 申诉失败
+	AppealStatusReject  AppealStatus = "reject"  // 申诉失败
 )
 
 // Appeal 申诉
 type Appeal struct {
-	ID           uint         `gorm:"primaryKey" json:"id"`
-	PostID       uint         `gorm:"not null" json:"post_id"`
-	AppellantID  uint         `gorm:"not null" json:"appellant_id"`
-	AdminID      uint         `gorm:"not null" json:"admin_id"`      // 处理此举报的管理员
-	AdminReason  string       `gorm:"size:500" json:"admin_reason"` // 管理员删除理由
-	Status       AppealStatus `gorm:"default:pending" json:"status"`
-	Result       string       `gorm:"size:500" json:"result"`      // 最终结果
-	CreatedAt    time.Time    `json:"created_at"`
-	ClosedAt     *time.Time   `json:"closed_at"`
-	Appellant     User        `gorm:"foreignKey:AppellantID" json:"appellant"`
-	Admin         User        `gorm:"foreignKey:AdminID" json:"admin"`
-	Post          Post        `gorm:"foreignKey:PostID" json:"post"`
+	ID          uint         `gorm:"primaryKey" json:"id"`
+	PostID      uint         `gorm:"not null" json:"post_id"`
+	AppellantID uint         `gorm:"not null" json:"appellant_id"`
+	AdminID     uint         `gorm:"not null" json:"admin_id"`     // 处理此举报的管理员
+	AdminReason string       `gorm:"size:500" json:"admin_reason"` // 管理员删除理由
+	Status      AppealStatus `gorm:"default:pending" json:"status"`
+	Result      string       `gorm:"size:500" json:"result"` // 最终结果
+	CreatedAt   time.Time    `json:"created_at"`
+	ClosedAt    *time.Time   `json:"closed_at"`
+	Appellant   User         `gorm:"foreignKey:AppellantID" json:"appellant"`
+	Admin       User         `gorm:"foreignKey:AdminID" json:"admin"`
+	Post        Post         `gorm:"foreignKey:PostID" json:"post"`
 }
 
 // AppealVote 申诉投票

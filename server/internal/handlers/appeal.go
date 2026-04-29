@@ -165,8 +165,8 @@ func (h *AppealHandler) GetOne(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"appeal":     appeal,
-		"votes":      votes,
+		"appeal":    appeal,
+		"votes":     votes,
 		"has_voted": hasVoted,
 	})
 }
@@ -187,7 +187,7 @@ func (h *AppealHandler) Vote(c *gin.Context) {
 		return
 	}
 
-// 获取投票类型(support/oppose) - 从URL路径获取
+	// 获取投票类型(support/oppose) - 从URL路径获取
 	voteType := c.Param("vote")
 	if voteType != "support" && voteType != "oppose" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的投票选项"})

@@ -47,6 +47,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('用户管理'),
+        leading: const BackButton(),
       ),
       body: Column(
         children: [

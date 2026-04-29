@@ -76,6 +76,13 @@ func (h *SuperAdminHandler) UpdateUserRole(c *gin.Context) {
 		return
 	}
 
+	// 防止权限提升：不能把自己提升为超级管理员
+	currentUserID := c.GetUint("user_id")
+	if currentUserID == uint(userID) && input.Role == string(models.RoleSuperAdmin) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "不能提升自己的权限"})
+		return
+	}
+
 	h.db.Model(&user).Update("role", input.Role)
 	c.JSON(http.StatusOK, gin.H{"message": "角色更新成功"})
 }

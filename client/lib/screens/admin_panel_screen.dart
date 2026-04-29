@@ -50,6 +50,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('管理员面板'),
+        leading: const BackButton(),
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())

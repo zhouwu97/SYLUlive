@@ -50,7 +50,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		PasswordHash: string(hashedPassword),
 		Nickname:     input.StudentID,
 		Role:         models.RoleUser,
-		CreditScore: 100,
+		CreditScore:  100,
 	}
 
 	if err := h.db.Create(&user).Error; err != nil {

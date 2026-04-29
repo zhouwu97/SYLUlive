@@ -6,6 +6,18 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user.dart';
 
+/// 认证结果，包含成功状态和错误信息
+class AuthResult {
+  final bool success;
+  final String? errorMessage;
+
+  const AuthResult({required this.success, this.errorMessage});
+
+  factory AuthResult.success() => const AuthResult(success: true);
+
+  factory AuthResult.failure(String message) => AuthResult(success: false, errorMessage: message);
+}
+
 class AuthProvider extends ChangeNotifier {
   static const String _tokenKey = 'auth_token';
   static const String _userKey = 'auth_user';
@@ -78,7 +90,49 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  Future<bool> register(String studentId, String password) async {
+  /// 解析Dio异常并返回友好的错误信息
+  String _parseDioError(DioException e) {
+    if (e.response != null) {
+      final data = e.response!.data;
+      // 尝试从响应体中获取error字段
+      if (data is Map) {
+        if (data.containsKey('error')) {
+          return data['error'].toString();
+        }
+        if (data.containsKey('message')) {
+          return data['message'].toString();
+        }
+      }
+      // 根据状态码返回通用信息
+      switch (e.response!.statusCode) {
+        case 400:
+          return '请求参数错误';
+        case 401:
+          return '学号/邮箱或密码错误';
+        case 403:
+          return '登录已过期，请重新登录';
+        case 404:
+          return '学号不存在，请先注册';
+        case 409:
+          return '学号/邮箱已存在';
+        case 500:
+          return '服务器错误，请稍后再试';
+        default:
+          return '服务器返回错误 (${e.response!.statusCode})';
+      }
+    }
+    // 网络错误
+    if (e.type == DioExceptionType.connectionTimeout ||
+        e.type == DioExceptionType.receiveTimeout) {
+      return '连接超时，请检查网络';
+    }
+    if (e.type == DioExceptionType.connectionError) {
+      return '网络连接失败，请检查网络';
+    }
+    return '网络错误: ${e.message}';
+  }
+
+  Future<AuthResult> register(String studentId, String password) async {
     _isLoading = true;
     notifyListeners();
 
@@ -88,25 +142,32 @@ class AuthProvider extends ChangeNotifier {
         'password': password,
       });
 
+      _isLoading = false;
       if (response.statusCode == 201) {
         _token = response.data['token'];
         _user = User.fromJson(response.data['user']);
         _dio.options.headers['Authorization'] = 'Bearer $_token';
         await _saveAuth();
-        _isLoading = false;
         notifyListeners();
-        return true;
+        return AuthResult.success();
       }
+      // 未知状态码
+      return AuthResult.failure('注册失败，服务器返回异常');
+    } on DioException catch (e) {
+      _isLoading = false;
+      notifyListeners();
+      final errorMsg = _parseDioError(e);
+      debugPrint('注册失败: $errorMsg');
+      return AuthResult.failure(errorMsg);
     } catch (e) {
+      _isLoading = false;
+      notifyListeners();
       debugPrint('注册失败: $e');
+      return AuthResult.failure('注册失败: $e');
     }
-
-    _isLoading = false;
-    notifyListeners();
-    return false;
   }
 
-  Future<bool> login(String studentId, String password) async {
+  Future<AuthResult> login(String studentId, String password) async {
     _isLoading = true;
     notifyListeners();
 
@@ -116,22 +177,28 @@ class AuthProvider extends ChangeNotifier {
         'password': password,
       });
 
+      _isLoading = false;
       if (response.statusCode == 200) {
         _token = response.data['token'];
         _user = User.fromJson(response.data['user']);
         _dio.options.headers['Authorization'] = 'Bearer $_token';
         await _saveAuth();
-        _isLoading = false;
         notifyListeners();
-        return true;
+        return AuthResult.success();
       }
+      return AuthResult.failure('登录失败，服务器返回异常');
+    } on DioException catch (e) {
+      _isLoading = false;
+      notifyListeners();
+      final errorMsg = _parseDioError(e);
+      debugPrint('登录失败: $errorMsg');
+      return AuthResult.failure(errorMsg);
     } catch (e) {
+      _isLoading = false;
+      notifyListeners();
       debugPrint('登录失败: $e');
+      return AuthResult.failure('登录失败: $e');
     }
-
-    _isLoading = false;
-    notifyListeners();
-    return false;
   }
 
   Future<void> logout() async {
@@ -150,22 +217,24 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<bool> updateProfile(String nickname) async {
+  Future<AuthResult> updateProfile(String nickname) async {
     try {
       final response = await _dio.put('/user/profile', data: {'nickname': nickname});
       if (response.statusCode == 200) {
         _user = User.fromJson(response.data);
         await _saveAuth();
         notifyListeners();
-        return true;
+        return AuthResult.success();
       }
-    } catch (e) {
-      debugPrint('更新资料失败: $e');
+      return AuthResult.failure('更新资料失败');
+    } on DioException catch (e) {
+      final errorMsg = _parseDioError(e);
+      debugPrint('更新资料失败: $errorMsg');
+      return AuthResult.failure(errorMsg);
     }
-    return false;
   }
 
-  Future<bool> updateAvatar(String avatarPath) async {
+  Future<AuthResult> updateAvatar(String avatarPath) async {
     try {
       final formData = FormData.fromMap({
         'avatar': await MultipartFile.fromFile(avatarPath),
@@ -175,24 +244,30 @@ class AuthProvider extends ChangeNotifier {
         _user = User.fromJson(response.data);
         await _saveAuth();
         notifyListeners();
-        return true;
+        return AuthResult.success();
       }
-    } catch (e) {
-      debugPrint('更新头像失败: $e');
+      return AuthResult.failure('更新头像失败');
+    } on DioException catch (e) {
+      final errorMsg = _parseDioError(e);
+      debugPrint('更新头像失败: $errorMsg');
+      return AuthResult.failure(errorMsg);
     }
-    return false;
   }
 
-  Future<bool> changePassword(String oldPassword, String newPassword) async {
+  Future<AuthResult> changePassword(String oldPassword, String newPassword) async {
     try {
       final response = await _dio.post('/change_password', data: {
         'old_password': oldPassword,
         'new_password': newPassword,
       });
-      return response.statusCode == 200;
-    } catch (e) {
-      debugPrint('修改密码失败: $e');
-      return false;
+      if (response.statusCode == 200) {
+        return AuthResult.success();
+      }
+      return AuthResult.failure('修改密码失败');
+    } on DioException catch (e) {
+      final errorMsg = _parseDioError(e);
+      debugPrint('修改密码失败: $errorMsg');
+      return AuthResult.failure(errorMsg);
     }
   }
 }

@@ -66,6 +66,7 @@ class _AnnouncementScreenState extends State<AnnouncementScreen> with SingleTick
           '公告',
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
+        leading: const BackButton(),
       ),
       body: FadeTransition(
         opacity: CurvedAnimation(

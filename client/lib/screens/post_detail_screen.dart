@@ -70,6 +70,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(_post?.title ?? '帖子详情'),
+        leading: const BackButton(),
         actions: [
           if (_post != null)
             IconButton(

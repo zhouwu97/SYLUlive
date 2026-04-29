@@ -105,14 +105,14 @@ func (h *EduHandler) BindEdu(c *gin.Context) {
 	}
 
 	// 尝试登录
-	loginSuccess, errMsg := syluLogin(client, input.StudentID, encryptedPassword, csrfToken)
-	if !loginSuccess {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": errMsg})
+	_, err = syluLogin(client, input.StudentID, encryptedPassword, csrfToken)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 		return
 	}
 
-	// 构建cookie字符串
-	cookieStr := buildCookieString(client.Cookies)
+	// 构建cookie字符串（和学长项目一样，取 client.Cookies[1]）
+	cookieStr := buildCookieString(client.Cookies[1:2])
 
 	// 获取学生基本信息（年级、学院、专业）
 	grade, college, major, _ := getStudentInfo(client, cookieStr, input.StudentID)
@@ -354,8 +354,8 @@ func rsaByPublicKey(password string, publicKey *PublicKey) (string, error) {
 	return base64.StdEncoding.EncodeToString(encryptedBytes), nil
 }
 
-func syluLogin(client *resty.Client, studentID, encryptedPassword, csrfToken string) (bool, string) {
-	_, err := client.SetRedirectPolicy(resty.NoRedirectPolicy()).R().
+func syluLogin(client *resty.Client, studentID, encryptedPassword, csrfToken string) ([]*http.Cookie, error) {
+	loginResp, err := client.SetRedirectPolicy(resty.NoRedirectPolicy()).R().
 		SetFormData(map[string]string{
 			"csrftoken": csrfToken,
 			"language":  "zh_CN",
@@ -366,19 +366,12 @@ func syluLogin(client *resty.Client, studentID, encryptedPassword, csrfToken str
 		SetHeaders(baseHttpHeaders()).
 		Post(indexUrl + "/login_slogin.html")
 
-	if err != nil {
-		if err.Error() == Error302.Error() {
-			// 登录成功，检查客户端cookies
-			if len(client.Cookies) > 0 {
-				return true, ""
-			}
-			return false, "学号或密码错误，请检查学号和密码是否正确"
-		}
-		return false, "无法连接教务系统服务器: " + err.Error()
+	if err != nil && err.Error() == Error302.Error() {
+		return loginResp.Cookies(), nil
+	} else if err != nil {
+		return nil, errors.New("服务器连接失败:" + err.Error())
 	}
-
-	// 如果没有返回302，说明有其他问题
-	return false, "登录失败，学号或密码错误"
+	return nil, errors.New("账号或密码错误")
 }
 
 func buildCookieString(cookies []*http.Cookie) string {
@@ -676,12 +669,12 @@ func (h *EduHandler) refreshCookie(userID uint) (string, error) {
 		return "", err
 	}
 
-	loginSuccess, errMsg := syluLogin(client, user.EduStudentID, encryptedPassword, csrfToken)
-	if !loginSuccess {
-		return "", errors.New(errMsg)
+	_, err = syluLogin(client, user.EduStudentID, encryptedPassword, csrfToken)
+	if err != nil {
+		return "", err
 	}
 
-	cookieStr := buildCookieString(client.Cookies)
+	cookieStr := buildCookieString(client.Cookies[1:2])
 
 	h.db.Model(&user).Updates(map[string]interface{}{
 		"edu_cookie": cookieStr,

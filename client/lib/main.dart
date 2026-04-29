@@ -8,7 +8,6 @@ import 'providers/theme_provider.dart';
 import 'providers/post_provider.dart';
 import 'providers/message_provider.dart';
 import 'providers/edu_provider.dart';
-import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
 import 'theme/AppTheme.dart';
 
@@ -16,13 +15,13 @@ void main() {
   runApp(const MyApp());
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+Dio? _sharedDio;
 
-  @override
-  Widget build(BuildContext context) {
+Dio getSharedDio() {
+  if (_sharedDio == null) {
     final dio = Dio(BaseOptions(
-      baseUrl: 'https://nominalistically-subpeduncled-alexandria.ngrok-free.dev/api',
+      baseUrl: 'http://156.233.229.232:8080/api',
       connectTimeout: const Duration(seconds: 30),
       receiveTimeout: const Duration(seconds: 30),
     ));
@@ -43,6 +42,18 @@ class MyApp extends StatelessWidget {
       },
     ));
 
+    _sharedDio = dio;
+  }
+  return _sharedDio!;
+}
+
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final dio = getSharedDio();
+
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
@@ -59,6 +70,7 @@ class MyApp extends StatelessWidget {
             theme: AppTheme.lightTheme,
             darkTheme: AppTheme.darkTheme,
             themeMode: themeProvider.isDarkMode ? ThemeMode.dark : ThemeMode.light,
+            navigatorKey: navigatorKey,
             home: GlobalBackgroundWrapper(
               child: const AuthWrapper(),
             ),
@@ -100,18 +112,27 @@ class _BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Stack(
+      fit: StackFit.expand,
       children: [
-        _buildBackground(themeProvider, isDark),
+        // Always render background in consistent structure
+        _buildBackgroundLayer(themeProvider, isDark),
+        // Child content
         widget.child,
       ],
     );
   }
 
-  Widget _buildBackground(ThemeProvider themeProvider, bool isDark) {
-    if (!themeProvider.isBackgroundVisible(_currentScreen)) {
+  Widget _buildBackgroundLayer(ThemeProvider themeProvider, bool isDark) {
+    final bool showBackground = themeProvider.isBackgroundVisible(_currentScreen) && themeProvider.hasBackground;
+
+    if (showBackground) {
+      return _buildBackgroundImageLayer(themeProvider, isDark);
+    } else {
       return _buildDefaultBackground(isDark);
     }
+  }
 
+  Widget _buildBackgroundImageLayer(ThemeProvider themeProvider, bool isDark) {
     final transparency = themeProvider.backgroundTransparency;
     final bgPath = themeProvider.backgroundImage!;
     final isAsset = !bgPath.startsWith('http') && !bgPath.startsWith('/');
@@ -120,6 +141,7 @@ class _BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
     return Stack(
       fit: StackFit.expand,
       children: [
+        // Background image
         isAsset
             ? Image.asset(
                 resolvedPath,
@@ -136,13 +158,19 @@ class _BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
                     bgPath,
                     fit: BoxFit.cover,
                     errorBuilder: (_, __, ___) => _buildDefaultBackground(isDark),
-                    loadingBuilder: (_, __, ___) => _buildDefaultBackground(isDark),
+                    loadingBuilder: (_, child, loadingProgress) {
+                      if (loadingProgress == null) return child;
+                      return _buildDefaultBackground(isDark);
+                    },
                   ),
+        // Color overlay
+        // Inverted: higher transparency = more visible background = lower overlay alpha
         Container(
           color: isDark
-              ? Colors.black.withValues(alpha: transparency)
-              : Colors.white.withValues(alpha: transparency),
+              ? Colors.black.withValues(alpha: (1 - transparency) * 0.5)
+              : Colors.white.withValues(alpha: (1 - transparency) * 0.5),
         ),
+        // Blur overlay
         if (themeProvider.backgroundBlur > 0 && themeProvider.liquidGlass)
           BackdropFilter(
             filter: ImageFilter.blur(
@@ -156,24 +184,45 @@ class _BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
   }
 
   Widget _buildDefaultBackground(bool isDark) {
-    return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: isDark
-              ? [
-                  const Color(0xFF1A1A2E),
-                  const Color(0xFF16213E),
-                  const Color(0xFF0F3460),
-                ]
-              : [
-                  const Color(0xFF667EEA),
-                  const Color(0xFF764BA2),
-                  const Color(0xFFF093FB),
-                ],
+    // Always return Stack for consistent widget tree structure
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: isDark
+                  ? [
+                      const Color(0xFF1A1A2E),
+                      const Color(0xFF16213E),
+                      const Color(0xFF0F3460),
+                    ]
+                  : [
+                      const Color(0xFF667EEA),
+                      const Color(0xFF764BA2),
+                      const Color(0xFFF093FB),
+                    ],
+            ),
+          ),
         ),
-      ),
+        // Blur overlay for default background too
+        Consumer<ThemeProvider>(
+          builder: (context, themeProvider, child) {
+            if (themeProvider.backgroundBlur > 0 && themeProvider.liquidGlass) {
+              return BackdropFilter(
+                filter: ImageFilter.blur(
+                  sigmaX: themeProvider.backgroundBlur,
+                  sigmaY: themeProvider.backgroundBlur,
+                ),
+                child: Container(color: Colors.transparent),
+              );
+            }
+            return const SizedBox.shrink();
+          },
+        ),
+      ],
     );
   }
 }
@@ -193,6 +242,8 @@ class AuthWrapper extends StatelessWidget {
           );
         }
 
+        // 未登录用户也直接进入首页（游客模式）
+        // 登录状态由各需要认证的页面自行检查
         return const HomeScreen();
       },
     );

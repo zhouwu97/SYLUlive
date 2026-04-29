@@ -28,10 +28,10 @@ android {
 
     signingConfigs {
         create("release") {
-            storeFile = file("shenliyuan.jks")
-            storePassword = "shenliyuan123456"
-            keyAlias = "shenliyuan"
-            keyPassword = "shenliyuan123456"
+            storeFile = file("xiaoyuan.jks")
+            storePassword = "xiaoyuan123456"
+            keyAlias = "xiaoyuan"
+            keyPassword = "xiaoyuan123456"
         }
     }
 

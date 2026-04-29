@@ -1,0 +1,15 @@
+[Unit]
+Description=Shenliyuan Backend Service
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/shenliyuan
+EnvironmentFile=/opt/shenliyuan/.env
+ExecStart=/opt/shenliyuan/shenliyuan
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

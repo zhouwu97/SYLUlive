@@ -44,7 +44,11 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	}
 
 	// 哈希密码
-	hashedPassword, _ := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "密码加密失败"})
+		return
+	}
 	user := models.User{
 		StudentID:    input.StudentID,
 		PasswordHash: string(hashedPassword),
@@ -123,7 +127,11 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 		return
 	}
 
-	hashedPassword, _ := bcrypt.GenerateFromPassword([]byte(input.NewPassword), bcrypt.DefaultCost)
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(input.NewPassword), bcrypt.DefaultCost)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "密码加密失败"})
+		return
+	}
 	h.db.Model(&user).Update("password_hash", string(hashedPassword))
 	c.JSON(http.StatusOK, gin.H{"message": "密码修改成功"})
 }

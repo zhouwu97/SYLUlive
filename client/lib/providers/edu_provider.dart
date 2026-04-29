@@ -10,6 +10,7 @@ class EduProvider extends ChangeNotifier {
   String _college = '';
   String _major = '';
   bool _isLoading = false;
+  String? _errorMessage;
 
   bool get isBound => _isBound;
   String get studentId => _studentId;
@@ -17,6 +18,7 @@ class EduProvider extends ChangeNotifier {
   String get college => _college;
   String get major => _major;
   bool get isLoading => _isLoading;
+  String? get errorMessage => _errorMessage;
 
   EduProvider(this._dio);
 
@@ -31,16 +33,24 @@ class EduProvider extends ChangeNotifier {
         _grade = data['edu_grade'] ?? '';
         _college = data['edu_college'] ?? '';
         _major = data['edu_major'] ?? '';
+        _errorMessage = null;
         notifyListeners();
       }
-    } catch (e) {
-      debugPrint('获取教务状态失败: $e');
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 401) {
+        _errorMessage = '请先登录';
+      } else {
+        _errorMessage = '网络错误';
+      }
+      debugPrint('获取教务状态失败: $_errorMessage');
+      notifyListeners();
     }
   }
 
   // 绑定教务账号
   Future<bool> bind(String studentId, String password) async {
     _isLoading = true;
+    _errorMessage = null;
     notifyListeners();
 
     try {
@@ -60,10 +70,17 @@ class EduProvider extends ChangeNotifier {
         notifyListeners();
         return true;
       }
-    } catch (e) {
-      debugPrint('绑定教务失败: $e');
+    } on DioException catch (e) {
+      _isLoading = false;
+      if (e.response?.statusCode == 401) {
+        _errorMessage = e.response?.data['error'] ?? '教务账号或密码错误';
+      } else {
+        _errorMessage = '绑定失败，请检查网络';
+      }
+      debugPrint('绑定教务失败: $_errorMessage');
+      notifyListeners();
+      return false;
     }
-
     _isLoading = false;
     notifyListeners();
     return false;

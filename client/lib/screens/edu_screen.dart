@@ -174,9 +174,15 @@ class _EduScreenState extends State<EduScreen> {
               );
               if (context.mounted) {
                 Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text(success ? '绑定成功' : '绑定失败')),
-                );
+                if (success) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('绑定成功')),
+                  );
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(eduProvider.errorMessage ?? '绑定失败')),
+                  );
+                }
               }
             },
             child: const Text('绑定'),

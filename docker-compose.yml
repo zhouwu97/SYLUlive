@@ -1,50 +1,46 @@
 services:
-  # Nginx反向代理 - 统一入口
-  nginx:
-    image: nginx:alpine
-    ports:
-      - "80:80"
-      - "443:443"
+  # PostgreSQL数据库
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_PASSWORD=postgres123
+      - POSTGRES_DB=shenliyuan
     volumes:
-      - ./nginx/docker.conf:/etc/nginx/conf.d/default.conf:ro
-    depends_on:
-      - server
+      - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
     networks:
       - shenliyuan_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   # Go后端服务
   server:
     build:
       context: ./server
       dockerfile: Dockerfile
-    expose:
-      - "8080"
+    ports:
+      - "8080:8080"
     environment:
-      - JWT_SECRET=${JWT_SECRET}
-      - DSN=${DSN:-/app/shenliyuan.db}
+      - JWT_SECRET=${JWT_SECRET:-your-super-secret-jwt-key-change-this}
+      - DSN=${DSN:-host=postgres port=5432 user=postgres password=postgres123 dbname=shenliyuan sslmode=disable}
       - UPLOAD_DIR=${UPLOAD_DIR:-/app/uploads}
-      - SUPER_ADMIN_DEFAULT_PASSWORD=${SUPER_ADMIN_DEFAULT_PASSWORD}
+      - SUPER_ADMIN_DEFAULT_PASSWORD=${SUPER_ADMIN_DEFAULT_PASSWORD:-super_admin_password_change_this}
       - GIN_MODE=release
+    depends_on:
+      postgres:
+        condition: service_healthy
     volumes:
       - server_data:/app
     restart: unless-stopped
     networks:
       - shenliyuan_network
 
-  # 前端静态文件服务
-  client:
-    build:
-      context: ./client
-      dockerfile: Dockerfile
-    expose:
-      - "80"
-    restart: unless-stopped
-    networks:
-      - shenliyuan_network
-
 volumes:
   server_data:
+  postgres_data:
 
 networks:
   shenliyuan_network:

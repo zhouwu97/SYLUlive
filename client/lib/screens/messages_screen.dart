@@ -17,15 +17,16 @@ class _MessagesScreenState extends State<MessagesScreen> {
 
     return Scaffold(
       backgroundColor: Colors.transparent,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        title: const Text('私信'),
+        leading: const BackButton(),
+      ),
       body: Stack(
         children: [
           if (!themeProvider.isBackgroundVisible('messages'))
             _buildDefaultBackground(isDark),
-          AppBar(
-            backgroundColor: Colors.transparent,
-            elevation: 0,
-            title: const Text('私信'),
-          ),
           Center(
             child: Padding(
               padding: const EdgeInsets.all(32),

@@ -1,5 +1,5 @@
 # 沈理校园前端
-FROM cimg/flutter:3.16.0 AS builder
+FROM ghcr.io/cirrusci/flutter:3.16.0 AS builder
 
 WORKDIR /app
 

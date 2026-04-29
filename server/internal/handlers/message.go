@@ -82,7 +82,7 @@ func (h *MessageHandler) GetMessages(c *gin.Context) {
 // SendMessageInput 发送消息输入
 type SendMessageInput struct {
 	Content string `json:"content"`
-	FileID  *uint   `json:"file_id"`
+	FileID  *uint  `json:"file_id"`
 }
 
 // Send 发送消息

@@ -6,11 +6,11 @@ import (
 
 // Like 点赞模型
 type Like struct {
-	ID        uint      `gorm:"primaryKey" json:"id"`
-	UserID    uint      `gorm:"not null;index" json:"user_id"`
-	TargetType string   `gorm:"size:20;not null" json:"target_type"` // post/reply
-	TargetID  uint      `gorm:"not null" json:"target_id"`
-	CreatedAt time.Time `json:"created_at"`
+	ID         uint      `gorm:"primaryKey" json:"id"`
+	UserID     uint      `gorm:"not null;index" json:"user_id"`
+	TargetType string    `gorm:"size:20;not null" json:"target_type"` // post/reply
+	TargetID   uint      `gorm:"not null" json:"target_id"`
+	CreatedAt  time.Time `json:"created_at"`
 }
 
 // UniqueLikes 联合唯一索引，防止重复点赞

@@ -132,11 +132,11 @@ func (h *EduHandler) BindEdu(c *gin.Context) {
 	})
 
 	c.JSON(http.StatusOK, gin.H{
-		"message":       "绑定成功",
+		"message":        "绑定成功",
 		"edu_student_id": input.StudentID,
-		"edu_grade":     grade,
-		"edu_college":   college,
-		"edu_major":     major,
+		"edu_grade":      grade,
+		"edu_college":    college,
+		"edu_major":      major,
 	})
 }
 
@@ -168,11 +168,11 @@ func (h *EduHandler) GetEduStatus(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"edu_bound":     user.EduBound,
+		"edu_bound":      user.EduBound,
 		"edu_student_id": user.EduStudentID,
-		"edu_grade":     user.EduGrade,
-		"edu_college":   user.EduCollege,
-		"edu_major":     user.EduMajor,
+		"edu_grade":      user.EduGrade,
+		"edu_college":    user.EduCollege,
+		"edu_major":      user.EduMajor,
 	})
 }
 
@@ -294,7 +294,7 @@ func (h *EduHandler) GetGrades(c *gin.Context) {
 func getIndexCookieAndCsrfToken(client *resty.Client) (string, error) {
 	client.SetTimeout(3 * time.Second)
 
-initResp, err := client.R().SetHeaders(baseHttpHeaders()).Get(indexUrl + "/login_slogin.html")
+	initResp, err := client.R().SetHeaders(baseHttpHeaders()).Get(indexUrl + "/login_slogin.html")
 	if err != nil {
 		if urlErr, ok := err.(*url.Error); ok && urlErr.Timeout() {
 			return getIndexCookieAndCsrfToken(client)
@@ -388,12 +388,12 @@ type scheduleResponse struct {
 		Rq string `json:"rq"`
 	} `json:"rqazcList"`
 	KbList []struct {
-		Name     string `json:"kcmc"`    // 课程名称
-		Teacher  string `json:"xm"`      // 教师姓名
-		Location string `json:"cdmc"`    // 场地名称
-		Time     string `json:"jc"`      // 节次
-		WeekDay  string `json:"xqj"`     // 星期几
-		WeekS    string `json:"zcd"`     // 周段
+		Name     string `json:"kcmc"` // 课程名称
+		Teacher  string `json:"xm"`   // 教师姓名
+		Location string `json:"cdmc"` // 场地名称
+		Time     string `json:"jc"`   // 节次
+		WeekDay  string `json:"xqj"`  // 星期几
+		WeekS    string `json:"zcd"`  // 周段
 	} `json:"kbList"`
 }
 
@@ -464,28 +464,28 @@ func getCourseByInfo(client *resty.Client, cookie, year string, semester int) (*
 // 成绩相关结构（匹配教务系统JSON字段）
 type gradesResponse struct {
 	Items []struct {
-		Kcmc   string `json:"KCMC"` // 课程名称
-		JxbID  string `json:"JXBID"` // 教学班ID
-		Jsxm   string `json:"JSXM"` // 教师姓名
+		Kcmc   string `json:"KCMC"`   // 课程名称
+		JxbID  string `json:"JXBID"`  // 教学班ID
+		Jsxm   string `json:"JSXM"`   // 教师姓名
 		Sfxwkc string `json:"SFXWKC"` // 是否学位课
-		Xf     string `json:"XF"` // 学分
-		Jd     string `json:"JD"` // 绩点
-		Xfjd   string `json:"XFJD"` // 学分绩点
-		Bfzcj  string `json:"BFZCJ"` // 百分成绩
-		Cj     string `json:"CJ"` // 成绩
+		Xf     string `json:"XF"`     // 学分
+		Jd     string `json:"JD"`     // 绩点
+		Xfjd   string `json:"XFJD"`   // 学分绩点
+		Bfzcj  string `json:"BFZCJ"`  // 百分成绩
+		Cj     string `json:"CJ"`     // 成绩
 	} `json:"items"`
 }
 
 type gradeInfo struct {
-	Name       string  `json:"name"`
-	ClassID    string  `json:"class_id"`
-	Teacher    string  `json:"teacher"`
-	IsDegree   bool    `json:"is_degree"`
-	Credits    float64 `json:"credits"`
-	GPA        float64 `json:"gpa"`
+	Name        string  `json:"name"`
+	ClassID     string  `json:"class_id"`
+	Teacher     string  `json:"teacher"`
+	IsDegree    bool    `json:"is_degree"`
+	Credits     float64 `json:"credits"`
+	GPA         float64 `json:"gpa"`
 	GradePoints float64 `json:"grade_points"`
-	Fraction   float64 `json:"fraction"`
-	Grade      string  `json:"grade"`
+	Fraction    float64 `json:"fraction"`
+	Grade       string  `json:"grade"`
 }
 
 func getGradesByInfo(client *resty.Client, cookie, year string, semester int) ([]gradeInfo, error) {

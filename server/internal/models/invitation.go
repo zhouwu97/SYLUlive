@@ -16,11 +16,11 @@ const (
 // Invitation 管理员邀请
 type Invitation struct {
 	ID         uint             `gorm:"primaryKey" json:"id"`
-	UserID     uint             `gorm:"not null" json:"user_id"`     // 被邀请的用户
-	InviterID  uint             `gorm:"not null" json:"inviter_id"`  // 邀请人
+	UserID     uint             `gorm:"not null" json:"user_id"`    // 被邀请的用户
+	InviterID  uint             `gorm:"not null" json:"inviter_id"` // 邀请人
 	Status     InvitationStatus `gorm:"default:pending" json:"status"`
-	CreatedAt  time.Time       `json:"created_at"`
-	AcceptedAt *time.Time      `json:"accepted_at"`
+	CreatedAt  time.Time        `json:"created_at"`
+	AcceptedAt *time.Time       `json:"accepted_at"`
 	User       User             `gorm:"foreignKey:UserID" json:"user"`
 	Inviter    User             `gorm:"foreignKey:InviterID" json:"inviter"`
 }

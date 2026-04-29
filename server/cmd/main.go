@@ -6,7 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
-	"gorm.io/driver/sqlite"
+	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"shenliyuan/internal/config"
 	"shenliyuan/internal/handlers"
@@ -20,7 +20,7 @@ func main() {
 	// 确保上传目录存在
 	os.MkdirAll(cfg.UploadDir, 0755)
 
-	db, err := gorm.Open(sqlite.Open(cfg.DSN), &gorm.Config{})
+	db, err := gorm.Open(postgres.Open(cfg.DSN), &gorm.Config{})
 	if err != nil {
 		log.Fatal("数据库连接失败:", err)
 	}

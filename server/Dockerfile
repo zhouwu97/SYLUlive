@@ -1,42 +1,32 @@
 # 沈理校园后端
-
-FROM golang:1.21-alpine AS builder
+FROM golang:1.21-bookworm AS builder
 
 WORKDIR /app
 
-# 安装构建依赖
-RUN apk add --no-cache git ca-certificates
+ENV CGO_ENABLED=0
 
-# 复制源码（go.mod 在根目录）
 COPY . .
 
-# 下载依赖
 RUN go mod download
 
-# 构建（禁用 CGO，静态编译）
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o server ./cmd
+RUN go build -ldflags="-w -s" -o server ./cmd
 
-# 运行镜像
-FROM alpine:latest
+FROM debian:bookworm-slim
 
 WORKDIR /app
 
-# 安装运行时依赖
-RUN apk add --no-cache ca-certificates sqlite-libs
+RUN apt-get update && apt-get install -y ca-certificates
 
-# 复制二进制文件
 COPY --from=builder /app/server .
 
-# 上传文件目录
 RUN mkdir -p /app/uploads
 
-# 暴露端口
 EXPOSE 8080
 
-# 设置环境变量默认值（开发模式）
-ENV DSN=/app/shenliyuan.db
+ENV DSN=host=postgres port=5432 user=postgres password=postgres123 dbname=shenliyuan sslmode=disable
 ENV UPLOAD_DIR=/app/uploads
 ENV GIN_MODE=release
+ENV JWT_SECRET=your-super-secret-jwt-key-change-this
+ENV SUPER_ADMIN_DEFAULT_PASSWORD=super_admin_password_change_this
 
-# 启动命令
 CMD ["./server"]

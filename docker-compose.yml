@@ -13,6 +13,23 @@ services:
     networks:
       - shenliyuan_network
 
+  # PostgreSQL数据库
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_PASSWORD=postgres123
+      - POSTGRES_DB=shenliyuan
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - shenliyuan_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   # Go后端服务
   server:
     build:
@@ -21,11 +38,14 @@ services:
     expose:
       - "8080"
     environment:
-      - JWT_SECRET=${JWT_SECRET}
-      - DSN=${DSN:-/app/shenliyuan.db}
+      - JWT_SECRET=${JWT_SECRET:-your-super-secret-jwt-key-change-this}
+      - DSN=${DSN:-host=postgres port=5432 user=postgres password=postgres123 dbname=shenliyuan sslmode=disable}
       - UPLOAD_DIR=${UPLOAD_DIR:-/app/uploads}
-      - SUPER_ADMIN_DEFAULT_PASSWORD=${SUPER_ADMIN_DEFAULT_PASSWORD}
+      - SUPER_ADMIN_DEFAULT_PASSWORD=${SUPER_ADMIN_DEFAULT_PASSWORD:-super_admin_password_change_this}
       - GIN_MODE=release
+    depends_on:
+      postgres:
+        condition: service_healthy
     volumes:
       - server_data:/app
     restart: unless-stopped
@@ -45,6 +65,7 @@ services:
 
 volumes:
   server_data:
+  postgres_data:
 
 networks:
   shenliyuan_network:

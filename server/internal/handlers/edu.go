@@ -76,7 +76,7 @@ func (h *EduHandler) BindEdu(c *gin.Context) {
 
 	var input BindEduInput
 	if err := c.ShouldBindJSON(&input); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误: " + err.Error()})
 		return
 	}
 
@@ -86,14 +86,14 @@ func (h *EduHandler) BindEdu(c *gin.Context) {
 	// 获取csrf token
 	csrfToken, err := getIndexCookieAndCsrfToken(client)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取登录令牌失败"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "无法连接教务系统，请检查网络"})
 		return
 	}
 
 	// 获取公钥
 	publicKey, err := getPublicKey(client)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取公钥失败"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取加密密钥失败，教务系统可能正在维护"})
 		return
 	}
 
@@ -105,14 +105,14 @@ func (h *EduHandler) BindEdu(c *gin.Context) {
 	}
 
 	// 尝试登录
-	cookies, err := syluLogin(client, input.StudentID, encryptedPassword, csrfToken)
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "教务账号或密码错误"})
+	loginSuccess, errMsg := syluLogin(client, input.StudentID, encryptedPassword, csrfToken)
+	if !loginSuccess {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": errMsg})
 		return
 	}
 
 	// 构建cookie字符串
-	cookieStr := buildCookieString(cookies)
+	cookieStr := buildCookieString(client.Cookies)
 
 	// 获取学生基本信息（年级、学院、专业）
 	grade, college, major, _ := getStudentInfo(client, cookieStr, input.StudentID)
@@ -354,7 +354,7 @@ func rsaByPublicKey(password string, publicKey *PublicKey) (string, error) {
 	return base64.StdEncoding.EncodeToString(encryptedBytes), nil
 }
 
-func syluLogin(client *resty.Client, studentID, encryptedPassword, csrfToken string) ([]*http.Cookie, error) {
+func syluLogin(client *resty.Client, studentID, encryptedPassword, csrfToken string) (bool, string) {
 	resp, err := client.SetRedirectPolicy(resty.NoRedirectPolicy()).R().
 		SetFormData(map[string]string{
 			"csrftoken": csrfToken,
@@ -366,11 +366,19 @@ func syluLogin(client *resty.Client, studentID, encryptedPassword, csrfToken str
 		SetHeaders(baseHttpHeaders()).
 		Post(indexUrl + "/login_slogin.html")
 
-	if err != nil && err.Error() != Error302.Error() {
-		return nil, errors.New("服务器连接失败:" + err.Error())
+	if err != nil {
+		if err.Error() == Error302.Error() {
+			// 检查cookies是否有效（登录成功）
+			if len(resp.Cookies()) > 0 {
+				return true, ""
+			}
+			return false, "学号或密码错误，请检查学号和密码是否正确"
+		}
+		return false, "无法连接教务系统服务器: " + err.Error()
 	}
 
-	return resp.Cookies(), nil
+	// 如果没有返回302，说明有其他问题
+	return false, "登录失败，学号或密码错误"
 }
 
 func buildCookieString(cookies []*http.Cookie) string {
@@ -668,12 +676,12 @@ func (h *EduHandler) refreshCookie(userID uint) (string, error) {
 		return "", err
 	}
 
-	cookies, err := syluLogin(client, user.EduStudentID, encryptedPassword, csrfToken)
-	if err != nil {
-		return "", err
+	loginSuccess, errMsg := syluLogin(client, user.EduStudentID, encryptedPassword, csrfToken)
+	if !loginSuccess {
+		return "", errors.New(errMsg)
 	}
 
-	cookieStr := buildCookieString(cookies)
+	cookieStr := buildCookieString(client.Cookies)
 
 	h.db.Model(&user).Updates(map[string]interface{}{
 		"edu_cookie": cookieStr,

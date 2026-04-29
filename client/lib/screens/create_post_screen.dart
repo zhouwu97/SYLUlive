@@ -97,6 +97,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
               ? (_postType == 'exposure' ? '曝光骗子' : '发布商品')
               : '发布水贴',
         ),
+        leading: const BackButton(),
         actions: [
           TextButton(
             onPressed: _isLoading ? null : _submit,

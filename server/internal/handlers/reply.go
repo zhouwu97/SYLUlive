@@ -39,7 +39,7 @@ func (h *ReplyHandler) GetList(c *gin.Context) {
 
 // CreateReplyInput 创建回复输入
 type CreateReplyInput struct {
-	Content      string `form:"content" binding:"required"`
+	Content       string `form:"content" binding:"required"`
 	ParentReplyID *uint  `form:"parent_reply_id"`
 }
 
@@ -78,11 +78,11 @@ func (h *ReplyHandler) Create(c *gin.Context) {
 	}
 
 	reply := models.Reply{
-		PostID:       uint(postID),
+		PostID:        uint(postID),
 		ParentReplyID: input.ParentReplyID,
-		AuthorID:     userID.(uint),
-		Content:      input.Content,
-		Status:       models.ReplyStatusNormal,
+		AuthorID:      userID.(uint),
+		Content:       input.Content,
+		Status:        models.ReplyStatusNormal,
 	}
 
 	if err := h.db.Create(&reply).Error; err != nil {

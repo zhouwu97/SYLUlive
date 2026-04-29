@@ -16,7 +16,7 @@ import (
 
 // UploadHandler 上传处理器
 type UploadHandler struct {
-	db       *gorm.DB
+	db        *gorm.DB
 	uploadDir string
 	maxSize   int64
 }

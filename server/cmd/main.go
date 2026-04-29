@@ -234,9 +234,9 @@ func createDefaultUsers(db *gorm.DB, superAdminPwd string) {
 	superAdmin := models.User{
 		StudentID:    "super_admin",
 		PasswordHash: string(hashedPassword),
-		Nickname:    "超级管理员",
-		Role:        models.RoleSuperAdmin,
-		CreditScore: 100,
+		Nickname:     "超级管理员",
+		Role:         models.RoleSuperAdmin,
+		CreditScore:  100,
 	}
 	db.Create(&superAdmin)
 
@@ -245,9 +245,9 @@ func createDefaultUsers(db *gorm.DB, superAdminPwd string) {
 	admin := models.User{
 		StudentID:    "admin",
 		PasswordHash: string(adminPassword),
-		Nickname:    "管理员",
-		Role:        models.RoleAdmin,
-		CreditScore: 100,
+		Nickname:     "管理员",
+		Role:         models.RoleAdmin,
+		CreditScore:  100,
 	}
 	db.Create(&admin)
 
@@ -256,9 +256,9 @@ func createDefaultUsers(db *gorm.DB, superAdminPwd string) {
 	testUser := models.User{
 		StudentID:    "2024001",
 		PasswordHash: string(testPassword),
-		Nickname:    "测试用户",
-		Role:        models.RoleUser,
-		CreditScore: 100,
+		Nickname:     "测试用户",
+		Role:         models.RoleUser,
+		CreditScore:  100,
 	}
 	db.Create(&testUser)
 

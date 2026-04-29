@@ -32,7 +32,7 @@ class ThemeProvider extends ChangeNotifier {
   bool isBackgroundVisible(String screen) {
     if (!hasBackground) return false;
     if (_backgroundScope == BackgroundScope.global) return true;
-    return screen == 'profile' || screen == 'messages';
+    return screen == 'profile' || screen == 'messages' || screen == 'edu';
   }
 
   ThemeProvider() {

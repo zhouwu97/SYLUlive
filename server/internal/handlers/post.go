@@ -158,10 +158,10 @@ func (h *PostHandler) GetOne(c *gin.Context) {
 
 // UpdatePostInput 更新帖子输入
 type UpdatePostInput struct {
-	Title   string `form:"title"`
-	Content string `form:"content"`
+	Title   string  `form:"title"`
+	Content string  `form:"content"`
 	Price   float64 `form:"price"`
-	Contact string `form:"contact"`
+	Contact string  `form:"contact"`
 }
 
 // Update 更新帖子

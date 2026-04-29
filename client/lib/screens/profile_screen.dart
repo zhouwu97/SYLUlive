@@ -9,6 +9,7 @@ import '../providers/theme_provider.dart';
 import '../providers/edu_provider.dart';
 import '../widgets/glass_container.dart';
 import 'edu_screen.dart';
+import 'login_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -118,41 +119,50 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
       child: Column(
         children: [
           // 头像
-          GlassContainer(
-            padding: const EdgeInsets.all(6),
-            borderRadius: 100,
-            blur: 20,
-            opacity: 0.2,
-            child: Container(
-              width: 120,
-              height: 120,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    Theme.of(context).primaryColor,
-                    Theme.of(context).primaryColor.withOpacity(0.6),
+          GestureDetector(
+            onTap: () {
+              if (authProvider.isLoggedIn) {
+                _showAvatarOptions(context, authProvider);
+              } else {
+                Navigator.push(context, MaterialPageRoute(builder: (_) => const LoginScreen()));
+              }
+            },
+            child: GlassContainer(
+              padding: const EdgeInsets.all(6),
+              borderRadius: 100,
+              blur: 20,
+              opacity: 0.2,
+              child: Container(
+                width: 120,
+                height: 120,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      Theme.of(context).primaryColor,
+                      Theme.of(context).primaryColor.withOpacity(0.6),
+                    ],
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Theme.of(context).primaryColor.withOpacity(0.3),
+                      blurRadius: 30,
+                      spreadRadius: 5,
+                    ),
                   ],
                 ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Theme.of(context).primaryColor.withOpacity(0.3),
-                    blurRadius: 30,
-                    spreadRadius: 5,
-                  ),
-                ],
+                child: user?.avatar.isNotEmpty == true
+                    ? ClipOval(
+                        child: Image.network(
+                          user!.avatar,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => _buildAvatarPlaceholder(user),
+                        ),
+                      )
+                    : _buildAvatarPlaceholder(user),
               ),
-              child: user?.avatar.isNotEmpty == true
-                  ? ClipOval(
-                      child: Image.network(
-                        user!.avatar,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => _buildAvatarPlaceholder(user),
-                      ),
-                    )
-                  : _buildAvatarPlaceholder(user),
             ),
           ),
 
@@ -427,21 +437,30 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                 isDark: isDark,
                 onTap: () => _showChangePasswordDialog(context, authProvider),
               ),
+              Divider(height: 1, indent: 68, color: isDark ? Colors.white10 : Colors.grey[200]),
+              _buildSettingsTile(
+                icon: Icons.info,
+                iconColor: Colors.blue,
+                title: '关于',
+                isDark: isDark,
+                onTap: () => _showAboutDialog(context),
+              ),
             ],
           ),
         ),
 
         // 退出登录
-        Padding(
-          padding: const EdgeInsets.all(16),
-          child: GradientButton(
-            text: '退出登录',
-            gradientColors: [Colors.red[400]!, Colors.red[600]!],
-            onPressed: () async {
-              await authProvider.logout();
-            },
+        if (authProvider.isLoggedIn)
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: GradientButton(
+              text: '退出登录',
+              gradientColors: [Colors.red[400]!, Colors.red[600]!],
+              onPressed: () async {
+                await authProvider.logout();
+              },
+            ),
           ),
-        ),
       ],
     );
   }
@@ -688,6 +707,112 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
               }
             },
             child: const Text('确认'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showAvatarOptions(BuildContext context, AuthProvider authProvider) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Theme.of(context).scaffoldBackgroundColor,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo),
+              title: const Text('从相册选择'),
+              onTap: () async {
+                Navigator.pop(context);
+                final picker = ImagePicker();
+                final image = await picker.pickImage(source: ImageSource.gallery);
+                if (image != null) {
+                  final appDir = await getApplicationDocumentsDirectory();
+                  final fileName = 'avatar_${DateTime.now().millisecondsSinceEpoch}${path.extension(image.path)}';
+                  final savedPath = path.join(appDir.path, fileName);
+                  await File(image.path).copy(savedPath);
+                  await authProvider.updateAvatar(savedPath);
+                }
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.camera_alt),
+              title: const Text('拍照'),
+              onTap: () async {
+                Navigator.pop(context);
+                final picker = ImagePicker();
+                final image = await picker.pickImage(source: ImageSource.camera);
+                if (image != null) {
+                  final appDir = await getApplicationDocumentsDirectory();
+                  final fileName = 'avatar_${DateTime.now().millisecondsSinceEpoch}${path.extension(image.path)}';
+                  final savedPath = path.join(appDir.path, fileName);
+                  await File(image.path).copy(savedPath);
+                  await authProvider.updateAvatar(savedPath);
+                }
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.visibility),
+              title: const Text('查看大图'),
+              onTap: () {
+                Navigator.pop(context);
+                if (authProvider.user?.avatar.isNotEmpty == true) {
+                  _showAvatarViewer(context, authProvider.user!.avatar);
+                }
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showAvatarViewer(BuildContext context, String avatarUrl) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => Scaffold(
+          backgroundColor: Colors.black,
+          appBar: AppBar(backgroundColor: Colors.transparent),
+          body: Center(
+            child: InteractiveViewer(
+              child: Image.network(avatarUrl),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showAboutDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('关于 沈理校园'),
+        content: const Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('一款面向高校学生的互助社交应用'),
+            SizedBox(height: 16),
+            Text('作者：周武'),
+            Text('QQ：3170305904'),
+            SizedBox(height: 16),
+            Text('Bug提交：'),
+            Text('https://github.com/zhouwu97/SYLUlive', style: TextStyle(color: Colors.blue)),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('关闭'),
           ),
         ],
       ),

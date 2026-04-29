@@ -355,7 +355,7 @@ func rsaByPublicKey(password string, publicKey *PublicKey) (string, error) {
 }
 
 func syluLogin(client *resty.Client, studentID, encryptedPassword, csrfToken string) (bool, string) {
-	resp, err := client.SetRedirectPolicy(resty.NoRedirectPolicy()).R().
+	_, err := client.SetRedirectPolicy(resty.NoRedirectPolicy()).R().
 		SetFormData(map[string]string{
 			"csrftoken": csrfToken,
 			"language":  "zh_CN",
@@ -368,8 +368,8 @@ func syluLogin(client *resty.Client, studentID, encryptedPassword, csrfToken str
 
 	if err != nil {
 		if err.Error() == Error302.Error() {
-			// 检查cookies是否有效（登录成功）
-			if len(resp.Cookies()) > 0 {
+			// 登录成功，检查客户端cookies
+			if len(client.Cookies) > 0 {
 				return true, ""
 			}
 			return false, "学号或密码错误，请检查学号和密码是否正确"

@@ -165,6 +165,24 @@ class AuthProvider extends ChangeNotifier {
     return false;
   }
 
+  Future<bool> updateAvatar(String avatarPath) async {
+    try {
+      final formData = FormData.fromMap({
+        'avatar': await MultipartFile.fromFile(avatarPath),
+      });
+      final response = await _dio.post('/user/avatar', data: formData);
+      if (response.statusCode == 200) {
+        _user = User.fromJson(response.data);
+        await _saveAuth();
+        notifyListeners();
+        return true;
+      }
+    } catch (e) {
+      debugPrint('更新头像失败: $e');
+    }
+    return false;
+  }
+
   Future<bool> changePassword(String oldPassword, String newPassword) async {
     try {
       final response = await _dio.post('/change_password', data: {

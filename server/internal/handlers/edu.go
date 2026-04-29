@@ -16,7 +16,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-resty/resty/v2"
-	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 	"shenliyuan/internal/models"
 )
@@ -117,13 +116,13 @@ func (h *EduHandler) BindEdu(c *gin.Context) {
 	// 获取学生基本信息（年级、学院、专业）
 	grade, college, major, _ := getStudentInfo(client, cookieStr, input.StudentID)
 
-	// 加密存储教务密码
-	hashedPassword, _ := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
+	// 存储原始密码（需要明文密码用于后续Cookie刷新时的RSA加密）
+	// 注意：EduPassword字段的json标签为"-"，不会暴露给API响应
 
 	// 更新用户教务信息
 	h.db.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]interface{}{
 		"edu_student_id": input.StudentID,
-		"edu_password":   string(hashedPassword),
+		"edu_password":   input.Password, // 存储明文密码用于refreshCookie
 		"edu_cookie":     cookieStr,
 		"edu_bound":      true,
 		"edu_grade":      grade,
@@ -417,7 +416,7 @@ func getCourseByInfo(client *resty.Client, cookie, year string, semester int) (*
 	formData := map[string]string{
 		"xnm":    year,
 		"zs":     "1",
-		"doType": " app",
+		"doType": "app",
 		"xqm":    strconv.Itoa(semester),
 		"kblx":   "1",
 	}

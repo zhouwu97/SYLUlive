@@ -45,12 +45,7 @@ func (h *UserHandler) UpdateProfile(c *gin.Context) {
 	}
 
 	if input.Nickname == "" {
-		var user models.User
-		if err := h.db.First(&user, userID).Error; err != nil {
-			c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
-			return
-		}
-		c.JSON(http.StatusOK, user)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "昵称不能为空"})
 		return
 	}
 

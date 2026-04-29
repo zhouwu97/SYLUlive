@@ -6,7 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
-	"xiaoyuan/internal/models"
+	"shenliyuan/internal/models"
 )
 
 // LikeHandler 点赞处理器

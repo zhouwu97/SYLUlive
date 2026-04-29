@@ -7,7 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
-	"xiaoyuan/internal/models"
+	"shenliyuan/internal/models"
 )
 
 // SuperAdminHandler 超级管理员处理器

@@ -18,7 +18,7 @@ import (
 	"github.com/go-resty/resty/v2"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
-	"xiaoyuan/internal/models"
+	"shenliyuan/internal/models"
 )
 
 const (

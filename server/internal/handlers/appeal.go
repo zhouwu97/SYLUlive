@@ -9,7 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
-	"xiaoyuan/internal/models"
+	"shenliyuan/internal/models"
 )
 
 // AppealHandler 申诉处理器

@@ -8,7 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
-	"xiaoyuan/internal/models"
+	"shenliyuan/internal/models"
 )
 
 // PostHandler 帖子处理器

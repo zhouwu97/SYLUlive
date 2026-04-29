@@ -15,7 +15,7 @@ services:
       - client
     restart: unless-stopped
     networks:
-      - xiaoyuan_network
+      - shenliyuan_network
 
   # Go后端服务
   server:
@@ -25,8 +25,8 @@ services:
     expose:
       - "8080"
     environment:
-      - JWT_SECRET=${JWT_SECRET:-xiaoyuan-default-secret-change-in-production}
-      - DSN=${DSN:-/app/xiaoyuan.db}
+      - JWT_SECRET=${JWT_SECRET:-shenliyuan-default-secret-change-in-production}
+      - DSN=${DSN:-/app/shenliyuan.db}
       - UPLOAD_DIR=${UPLOAD_DIR:-/app/uploads}
       - SUPER_ADMIN_DEFAULT_PASSWORD=${SUPER_ADMIN_DEFAULT_PASSWORD:-super123456}
     volumes:
@@ -35,7 +35,7 @@ services:
       # - object_storage:/app/uploads  # 挂载云存储
     restart: unless-stopped
     networks:
-      - xiaoyuan_network
+      - shenliyuan_network
 
   # 前端静态文件服务
   client:
@@ -46,20 +46,20 @@ services:
       - "80"
     restart: unless-stopped
     networks:
-      - xiaoyuan_network
+      - shenliyuan_network
 
   # 可选：数据库服务（以后切换到PostgreSQL）
   # db:
   #   image: postgres:15-alpine
   #   environment:
-  #     - POSTGRES_DB=xiaoyuan
-  #     - POSTGRES_USER=${DB_USER:-xiaoyuan}
-  #     - POSTGRES_PASSWORD=${DB_PASSWORD:-xiaoyuan_secret}
+#     - POSTGRES_DB=shenliyuan
+#     - POSTGRES_USER=${DB_USER:-shenliyuan}
+#     - POSTGRES_PASSWORD=${DB_PASSWORD:-shenliyuan_secret}
   #   volumes:
   #     - db_data:/var/lib/postgresql/data
   #   restart: unless-stopped
   #   networks:
-  #     - xiaoyuan_network
+  #     - shenliyuan_network
 
   # 可选：对象存储服务（以后使用云存储如OSS/S3）
   # minio:
@@ -72,7 +72,7 @@ services:
   #     - minio_data:/data
   #   restart: unless-stopped
   #   networks:
-  #     - xiaoyuan_network
+  #     - shenliyuan_network
 
 volumes:
   server_data:
@@ -80,5 +80,5 @@ volumes:
   # minio_data:   # 以后启用
 
 networks:
-  xiaoyuan_network:
+  shenliyuan_network:
     driver: bridge

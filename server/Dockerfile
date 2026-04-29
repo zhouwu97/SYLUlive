@@ -1,4 +1,4 @@
-# 小元校园后端
+# 沈理校园后端
 
 FROM golang:1.21-alpine AS builder
 
@@ -34,8 +34,8 @@ RUN mkdir -p /app/uploads
 EXPOSE 8080
 
 # 设置环境变量默认值
-ENV JWT_SECRET=xiaoyuan-default-secret-change-in-production
-ENV DSN=/app/xiaoyuan.db
+ENV JWT_SECRET=shenliyuan-default-secret-change-in-production
+ENV DSN=/app/shenliyuan.db
 ENV UPLOAD_DIR=/app/uploads
 ENV SUPER_ADMIN_DEFAULT_PASSWORD=super123456
 

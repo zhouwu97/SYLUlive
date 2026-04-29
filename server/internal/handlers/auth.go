@@ -6,8 +6,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
-	"xiaoyuan/internal/middleware"
-	"xiaoyuan/internal/models"
+	"shenliyuan/internal/middleware"
+	"shenliyuan/internal/models"
 )
 
 // AuthHandler 认证处理器

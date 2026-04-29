@@ -8,10 +8,10 @@ import (
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
-	"xiaoyuan/internal/config"
-	"xiaoyuan/internal/handlers"
-	"xiaoyuan/internal/middleware"
-	"xiaoyuan/internal/models"
+	"shenliyuan/internal/config"
+	"shenliyuan/internal/handlers"
+	"shenliyuan/internal/middleware"
+	"shenliyuan/internal/models"
 )
 
 func main() {

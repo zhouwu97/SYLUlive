@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.xiaoyuan"
+    namespace = "com.example.shenliyuan"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -19,7 +19,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.xiaoyuan"
+        applicationId = "com.example.shenliyuan"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
@@ -28,10 +28,10 @@ android {
 
     signingConfigs {
         create("release") {
-            storeFile = file("xiaoyuan.jks")
-            storePassword = "xiaoyuan123456"
-            keyAlias = "xiaoyuan"
-            keyPassword = "xiaoyuan123456"
+            storeFile = file("shenliyuan.jks")
+            storePassword = "shenliyuan123456"
+            keyAlias = "shenliyuan"
+            keyPassword = "shenliyuan123456"
         }
     }
 

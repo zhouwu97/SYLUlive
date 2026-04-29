@@ -1,8 +1,8 @@
-# 小元校园 - 校园互助社交应用
+# 沈理校园 - 校园互助社交应用
 
 ## 项目简介
 
-小元校园是一款面向高校学生的互助社交应用，提供水贴交流、校园集市、举报申诉等功能。
+沈理校园是一款面向高校学生的互助社交应用，提供水贴交流、校园集市、举报申诉等功能。
 
 ## 技术栈
 
@@ -25,7 +25,7 @@
 ## 项目结构
 
 ```
-xiaoyuan/
+shenliyuan/
 ├── server/                # Go 后端
 │   ├── cmd/              # 入口
 │   ├── internal/         # 内部包
@@ -67,8 +67,8 @@ xiaoyuan/
 
 | 变量名 | 说明 | 默认值 |
 |--------|------|--------|
-| JWT_SECRET | JWT密钥 | xiaoyuan-default-secret-change-in-production |
-| DSN | 数据库连接字符串 | ./xiaoyuan.db |
+| JWT_SECRET | JWT密钥 | shenliyuan-default-secret-change-in-production |
+| DSN | 数据库连接字符串 | ./shenliyuan.db |
 | SUPER_ADMIN_DEFAULT_PASSWORD | 超级管理员默认密码 | super123456 |
 | UPLOAD_DIR | 文件上传目录 | ./uploads |
 
@@ -212,7 +212,7 @@ docker-compose down
 ```bash
 # 停止服务并删除数据
 docker-compose down -v
-rm -f server/xiaoyuan.db
+rm -f server/shenliyuan.db
 ```
 
 ## 开发说明

@@ -1,4 +1,4 @@
-package com.example.xiaoyuan
+package com.example.shenliyuan
 
 import io.flutter.embedding.android.FlutterActivity
 

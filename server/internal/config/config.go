@@ -17,12 +17,12 @@ type Config struct {
 func Load() *Config {
 	jwtSecret := os.Getenv("JWT_SECRET")
 	if jwtSecret == "" {
-		jwtSecret = "xiaoyuan-default-secret-change-in-production"
+		jwtSecret = "shenliyuan-default-secret-change-in-production"
 	}
 
 	dsn := os.Getenv("DSN")
 	if dsn == "" {
-		dsn = "./xiaoyuan.db"
+		dsn = "./shenliyuan.db"
 	}
 
 	superAdminPwd := os.Getenv("SUPER_ADMIN_DEFAULT_PASSWORD")

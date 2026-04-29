@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 )
 
@@ -17,7 +18,7 @@ type Config struct {
 func Load() *Config {
 	jwtSecret := os.Getenv("JWT_SECRET")
 	if jwtSecret == "" {
-		jwtSecret = "shenliyuan-default-secret-change-in-production"
+		jwtSecret = "dev-only-secret-do-not-use-in-production"
 	}
 
 	dsn := os.Getenv("DSN")
@@ -27,12 +28,22 @@ func Load() *Config {
 
 	superAdminPwd := os.Getenv("SUPER_ADMIN_DEFAULT_PASSWORD")
 	if superAdminPwd == "" {
-		superAdminPwd = "super123456"
+		superAdminPwd = "dev-only-password-do-not-use-in-production"
 	}
 
 	uploadDir := os.Getenv("UPLOAD_DIR")
 	if uploadDir == "" {
 		uploadDir = "./uploads"
+	}
+
+	// 生产环境检查
+	if os.Getenv("GIN_MODE") == "release" {
+		if jwtSecret == "dev-only-secret-do-not-use-in-production" {
+			panic(fmt.Errorf("生产环境必须设置 JWT_SECRET 环境变量"))
+		}
+		if superAdminPwd == "dev-only-password-do-not-use-in-production" {
+			panic(fmt.Errorf("生产环境必须设置 SUPER_ADMIN_DEFAULT_PASSWORD 环境变量"))
+		}
 	}
 
 	return &Config{

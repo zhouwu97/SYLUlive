@@ -32,18 +32,18 @@ shenliyuan/
 │   │   ├── config/       # 配置
 │   │   ├── handlers/     # 处理器
 │   │   ├── middleware/   # 中间件
-│   │   ├── models/      # 数据模型
-│   │   └── services/    # 服务
+│   │   ├── models/       # 数据模型
+│   │   └── services/     # 服务
 │   ├── uploads/          # 上传文件
 │   ├── go.mod
 │   └── Dockerfile
 ├── client/               # Flutter 前端
 │   ├── lib/
-│   │   ├── models/      # 数据模型
-│   │   ├── providers/   # 状态管理
-│   │   ├── screens/     # 页面
-│   │   ├── widgets/     # 组件
-│   │   └── theme/       # 主题
+│   │   ├── models/       # 数据模型
+│   │   ├── providers/    # 状态管理
+│   │   ├── screens/      # 页面
+│   │   ├── widgets/      # 组件
+│   │   └── theme/        # 主题
 │   ├── pubspec.yaml
 │   └── Dockerfile
 ├── docker-compose.yml
@@ -55,7 +55,6 @@ shenliyuan/
 ### 开发环境
 - Go 1.21+
 - Flutter 3.x+
-- Docker & Docker Compose (用于部署)
 
 ### 生产环境
 - Docker >= 20.10
@@ -63,26 +62,44 @@ shenliyuan/
 
 ## 配置说明
 
-### 后端环境变量
+### 环境变量
 
-| 变量名 | 说明 | 默认值 |
-|--------|------|--------|
-| JWT_SECRET | JWT密钥 | shenliyuan-default-secret-change-in-production |
-| DSN | 数据库连接字符串 | ./shenliyuan.db |
-| SUPER_ADMIN_DEFAULT_PASSWORD | 超级管理员默认密码 | super123456 |
-| UPLOAD_DIR | 文件上传目录 | ./uploads |
+| 变量名 | 说明 | 必填 |
+|--------|------|------|
+| JWT_SECRET | JWT密钥（至少32位随机字符串） | 是 |
+| DSN | 数据库连接字符串 | 否（默认SQLite） |
+| SUPER_ADMIN_DEFAULT_PASSWORD | 超级管理员初始密码 | 是 |
+| UPLOAD_DIR | 文件上传目录 | 否（默认./uploads） |
 
-### 运行前配置
+### 生产环境部署
 
-1. 复制环境变量示例文件（可选）：
+**重要：生产环境必须设置以下环境变量！**
+
+1. 创建 `.env` 文件（不要提交到版本控制）：
 ```bash
 cd server
 cp .env.example .env
 ```
 
-2. 修改 `.env` 中的敏感配置（生产环境必须修改）：
-- `JWT_SECRET`: 设置为随机字符串
-- `SUPER_ADMIN_DEFAULT_PASSWORD`: 修改默认密码
+2. 修改 `.env` 中的敏感配置：
+```bash
+# 生成随机密钥
+openssl rand -base64 32
+
+# 编辑 .env 文件
+JWT_SECRET=你的随机密钥
+SUPER_ADMIN_DEFAULT_PASSWORD=你的强密码
+```
+
+3. 使用 Docker Compose 启动：
+```bash
+# 设置环境变量
+export JWT_SECRET=你的随机密钥
+export SUPER_ADMIN_DEFAULT_PASSWORD=你的强密码
+
+# 启动服务
+docker-compose up -d --build
+```
 
 ## 本地运行
 
@@ -107,7 +124,7 @@ flutter run
 ### Docker 部署
 
 ```bash
-# 启动所有服务
+# 启动所有服务（需先设置环境变量）
 docker-compose up -d --build
 
 # 查看服务状态
@@ -120,13 +137,16 @@ docker-compose logs -f server
 docker-compose down
 ```
 
-## 默认账号
+## 超级管理员
 
-| 角色 | 用户名 | 密码 |
-|------|--------|------|
-| 超级管理员 | super_admin | super123456 |
-| 管理员 | admin | admin123 |
-| 测试用户 | 2024001 | test123456 |
+首次启动后，使用以下命令获取超级管理员账号信息：
+
+```bash
+# 查看服务日志
+docker-compose logs server
+```
+
+超级管理员账号信息会在首次启动时输出。
 
 ## API 文档
 
@@ -194,15 +214,16 @@ docker-compose down
 - `POST /api/upload` - 上传单个文件（需认证）
 - `POST /api/upload_multiple` - 批量上传文件（需认证）
 
-## 安全警告
+## 安全建议
 
-**重要：生产环境部署前必须修改以下配置：**
+生产环境部署请注意：
 
-1. **JWT密钥**：修改 `JWT_SECRET` 为随机字符串（至少32字符）
-2. **超级管理员密码**：修改 `SUPER_ADMIN_DEFAULT_PASSWORD`
-3. **数据库**：如使用MySQL，确保设置强密码
-4. **端口映射**：如不需要外部访问，移除 docker-compose.yml 中的端口映射
-5. **定期更新**：保持 Docker 镜像和依赖的更新
+1. **JWT密钥**：使用随机字符串（至少32位）
+2. **超级管理员密码**：设置强密码
+3. **数据库**：如使用MySQL/PostgreSQL，设置强密码
+4. **HTTPS**：生产环境务必使用HTTPS
+5. **环境变量**：不要将敏感信息提交到版本控制
+6. **定期更新**：保持依赖和Docker镜像更新
 
 ## 数据库
 
@@ -210,7 +231,6 @@ docker-compose down
 
 如需重置数据库：
 ```bash
-# 停止服务并删除数据
 docker-compose down -v
 rm -f server/shenliyuan.db
 ```

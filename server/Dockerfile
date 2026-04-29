@@ -33,11 +33,10 @@ RUN mkdir -p /app/uploads
 # 暴露端口
 EXPOSE 8080
 
-# 设置环境变量默认值
-ENV JWT_SECRET=shenliyuan-default-secret-change-in-production
+# 设置环境变量默认值（开发模式）
 ENV DSN=/app/shenliyuan.db
 ENV UPLOAD_DIR=/app/uploads
-ENV SUPER_ADMIN_DEFAULT_PASSWORD=super123456
+ENV GIN_MODE=release
 
 # 启动命令
 CMD ["./server"]

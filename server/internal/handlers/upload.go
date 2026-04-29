@@ -140,33 +140,91 @@ func (h *UploadHandler) UploadMultiple(c *gin.Context) {
 	}
 
 	results := make([]gin.H, 0, len(files))
+	createdFiles := make([]models.File, 0, len(files))
+
 	for _, file := range files {
 		// 检查文件大小
 		if file.Size > h.maxSize {
+			results = append(results, gin.H{
+				"error": "文件大小超过限制: " + file.Filename,
+			})
 			continue
 		}
 
 		// 检查文件类型
 		ext := strings.ToLower(filepath.Ext(file.Filename))
 		if ext != ".jpg" && ext != ".jpeg" && ext != ".png" && ext != ".gif" {
+			results = append(results, gin.H{
+				"error": "不支持的格式: " + file.Filename,
+			})
 			continue
 		}
 
 		// 计算哈希
-		src, _ := file.Open()
+		src, err := file.Open()
+		if err != nil {
+			results = append(results, gin.H{"error": "读取文件失败: " + file.Filename})
+			continue
+		}
 		hash := sha256.New()
 		io.Copy(hash, src)
 		src.Close()
 		hashStr := hex.EncodeToString(hash.Sum(nil))
 
+		// 检查是否已存在
+		var existingFile models.File
+		result := h.db.Where("hash = ?", hashStr).First(&existingFile)
+		if result.Error == nil {
+			h.db.Model(&existingFile).Update("ref_count", gorm.Expr("ref_count + 1"))
+			results = append(results, gin.H{
+				"file_id": existingFile.ID,
+				"url":     existingFile.Path,
+				"hash":    hashStr,
+			})
+			continue
+		}
+
+		// 创建上传目录
+		dir1 := filepath.Join(h.uploadDir, hashStr[:2])
+		if err := os.MkdirAll(dir1, 0755); err != nil {
+			results = append(results, gin.H{"error": "创建目录失败"})
+			continue
+		}
+
+		// 保存文件
+		dstPath := filepath.Join(dir1, hashStr+ext)
+		src2, _ := file.Open()
+		dst, err := os.Create(dstPath)
+		if err != nil {
+			results = append(results, gin.H{"error": "保存文件失败"})
+			continue
+		}
+		io.Copy(dst, src2)
+		src2.Close()
+		dst.Close()
+
+		// 创建文件记录
+		fileRecord := models.File{
+			Hash:     hashStr,
+			Path:     "/uploads/" + hashStr[:2] + "/" + hashStr + ext,
+			Size:     file.Size,
+			MimeType: getMimeType(ext),
+			RefCount: 1,
+		}
+		h.db.Create(&fileRecord)
+		createdFiles = append(createdFiles, fileRecord)
+
 		results = append(results, gin.H{
-			"file_id": 0,
-			"url":     "/uploads/" + hashStr[:2] + "/" + hashStr + ext,
+			"file_id": fileRecord.ID,
+			"url":     fileRecord.Path,
 			"hash":    hashStr,
 		})
 	}
 
-	c.JSON(http.StatusOK, results)
+	c.JSON(http.StatusOK, gin.H{
+		"results": results,
+		"total":   len(createdFiles),
+	})
 }
 
 // getMimeType 根据扩展名获取MIME类型

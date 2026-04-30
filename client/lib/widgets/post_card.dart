@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import '../config/api_constants.dart';
 import '../models/post.dart';
 import 'glass_container.dart';
 
@@ -144,6 +145,12 @@ class PostCard extends StatelessWidget {
                 ),
               ),
 
+              // 图片网格
+              if (post.images.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                _buildImageGrid(context, post.images),
+              ],
+
               // 价格/曝光标签
               if (showPrice && post.price > 0 || showWarning) ...[
                 const SizedBox(height: 12),
@@ -263,6 +270,65 @@ class PostCard extends StatelessWidget {
             style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w500),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildImageGrid(BuildContext context, List<PostImage> images) {
+    final count = images.length;
+    if (count == 0) return const SizedBox.shrink();
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: SizedBox(
+        height: 200,
+        child: count == 1
+            ? CachedNetworkImage(
+                imageUrl: ApiConstants.fullUrl(images[0].url),
+                width: double.infinity,
+                fit: BoxFit.cover,
+                placeholder: (_, __) => Container(color: Colors.grey[300]),
+                errorWidget: (_, __, ___) => Container(color: Colors.grey[300], child: const Icon(Icons.image)),
+              )
+            : GridView.builder(
+                physics: const NeverScrollableScrollPhysics(),
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: count == 2 ? 2 : 3,
+                  mainAxisSpacing: 4,
+                  crossAxisSpacing: 4,
+                  childAspectRatio: 1,
+                ),
+                itemCount: count > 4 ? 4 : count,
+                itemBuilder: (context, index) {
+                  if (index == 3 && count > 4) {
+                    return Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        CachedNetworkImage(
+                          imageUrl: ApiConstants.fullUrl(images[index].url),
+                          fit: BoxFit.cover,
+                          placeholder: (_, __) => Container(color: Colors.grey[300]),
+                          errorWidget: (_, __, ___) => Container(color: Colors.grey[300]),
+                        ),
+                        Container(
+                          color: Colors.black54,
+                          alignment: Alignment.center,
+                          child: Text(
+                            '+${count - 3}',
+                            style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ],
+                    );
+                  }
+                  return CachedNetworkImage(
+                    imageUrl: ApiConstants.fullUrl(images[index].url),
+                    fit: BoxFit.cover,
+                    placeholder: (_, __) => Container(color: Colors.grey[300]),
+                    errorWidget: (_, __, ___) => Container(color: Colors.grey[300], child: const Icon(Icons.image)),
+                  );
+                },
+              ),
       ),
     );
   }

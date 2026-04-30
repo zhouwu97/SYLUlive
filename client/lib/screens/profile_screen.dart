@@ -330,8 +330,10 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                 title: '组件透明度',
                 trailing: SizedBox(
                   width: 150,
-                  child: Slider(
+                    child: Slider(
                     value: themeProvider.componentOpacity,
+                    min: 0.0,
+                    max: 1.0,
                     onChanged: (v) => themeProvider.setComponentOpacity(v),
                     activeColor: Theme.of(context).primaryColor,
                   ),

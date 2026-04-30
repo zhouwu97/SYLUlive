@@ -9,6 +9,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
 import '../widgets/glass_container.dart';
+import '../config/api_constants.dart';
 import 'login_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -159,7 +160,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                 child: user?.avatar.isNotEmpty == true
                     ? ClipOval(
                         child: Image.network(
-                          user!.avatar,
+                          ApiConstants.fullUrl(user!.avatar),
                           fit: BoxFit.cover,
                           errorBuilder: (_, __, ___) => _buildAvatarPlaceholder(user),
                         ),

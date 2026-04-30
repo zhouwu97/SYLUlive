@@ -153,7 +153,7 @@ class _MarketScreenState extends State<MarketScreen> with SingleTickerProviderSt
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (_) => PostDetailScreen(postId: post.id),
+                      builder: (_) => PostDetailScreen(postId: post.id, isMarket: true),
                     ),
                   );
                 },
@@ -196,7 +196,7 @@ class _MarketScreenState extends State<MarketScreen> with SingleTickerProviderSt
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (_) => PostDetailScreen(postId: post.id),
+                      builder: (_) => PostDetailScreen(postId: post.id, isMarket: true),
                     ),
                   );
                 },

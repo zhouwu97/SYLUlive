@@ -9,6 +9,7 @@ class _BoardState {
   String? error;
   int currentPage = 1;
   bool hasMore = true;
+  bool hasLoaded = false;
 }
 
 /// 创建帖子的返回结果
@@ -35,12 +36,14 @@ class PostProvider extends ChangeNotifier {
   bool get isLoading => _board.isLoading;
   String? get error => _board.error;
   bool get hasMore => _board.hasMore;
+  bool get hasLoaded => _board.hasLoaded;
 
   _BoardState get _board => _boards[_activeBoardId]!;
 
   /// 获取指定板块的帖子列表
   List<Post> postsFor(int boardId) => _boards[boardId]?.posts ?? [];
   bool isLoadingFor(int boardId) => _boards[boardId]?.isLoading ?? false;
+  bool hasLoadedFor(int boardId) => _boards[boardId]?.hasLoaded ?? false;
 
   Future<void> loadPosts({int boardId = 1, String? type, String sort = 'time'}) async {
     final board = _boards[boardId]!;
@@ -83,6 +86,7 @@ class PostProvider extends ChangeNotifier {
     }
 
     board.isLoading = false;
+    board.hasLoaded = true;
 
     // 同时更新活跃板块引用
     if (boardId == _activeBoardId) {

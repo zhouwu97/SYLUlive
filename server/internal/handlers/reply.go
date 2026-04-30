@@ -22,7 +22,7 @@ func NewReplyHandler(db *gorm.DB) *ReplyHandler {
 
 // GetList 获取回复列表
 func (h *ReplyHandler) GetList(c *gin.Context) {
-	postIDStr := c.Param("post_id")
+	postIDStr := c.Param("id")
 	postID, err := strconv.ParseUint(postIDStr, 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的帖子ID"})
@@ -46,7 +46,7 @@ type CreateReplyInput struct {
 // Create 创建回复
 func (h *ReplyHandler) Create(c *gin.Context) {
 	userID, _ := c.Get("user_id")
-	postIDStr := c.Param("post_id")
+	postIDStr := c.Param("id")
 	postID, err := strconv.ParseUint(postIDStr, 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的帖子ID"})

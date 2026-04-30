@@ -1,42 +1,34 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-enum BackgroundScope { global, meOnly }
-
 class ThemeProvider extends ChangeNotifier {
   static const String _nightModeKey = 'night_mode';
   static const String _backgroundImageKey = 'background_image';
   static const String _backgroundBlurKey = 'background_blur';
-  static const String _backgroundTransparencyKey = 'background_transparency';
-  static const String _backgroundScopeKey = 'background_scope';
+  static const String _componentOpacityKey = 'background_transparency'; // 保持 key 兼容
   static const String _liquidGlassKey = 'liquid_glass';
   static const String _floatingNavBarKey = 'floating_nav_bar';
 
   bool _isDarkMode = false;
   String? _backgroundImage;
   double _backgroundBlur = 10;
-  double _backgroundTransparency = 0.5;
-  BackgroundScope _backgroundScope = BackgroundScope.global;
+  double _componentOpacity = 0.7;  // 组件不透明度：越大越实，越小越透
   bool _liquidGlass = true;
   bool _floatingNavBar = false;
 
   bool get isDarkMode => _isDarkMode;
   String? get backgroundImage => _backgroundImage;
   double get backgroundBlur => _backgroundBlur;
-  double get backgroundTransparency => _backgroundTransparency;
-  BackgroundScope get backgroundScope => _backgroundScope;
+  double get componentOpacity => _componentOpacity;
   bool get liquidGlass => _liquidGlass;
   bool get floatingNavBar => _floatingNavBar;
   bool get hasBackground => _backgroundImage != null && _backgroundImage!.isNotEmpty;
 
-  bool isBackgroundVisible(String screen) {
-    if (!hasBackground) return false;
-    if (_backgroundScope == BackgroundScope.global) return true;
-    return screen == 'profile' || screen == 'messages' || screen == 'edu';
-  }
+  /// 是否有自定义背景（全局生效）
+  bool get isBackgroundVisible => hasBackground;
 
   ThemeProvider() {
-    _loadTheme();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadTheme());
   }
 
   Future<void> _loadTheme() async {
@@ -44,13 +36,9 @@ class ThemeProvider extends ChangeNotifier {
     _isDarkMode = prefs.getBool(_nightModeKey) ?? false;
     _backgroundImage = prefs.getString(_backgroundImageKey);
     _backgroundBlur = prefs.getDouble(_backgroundBlurKey) ?? 10;
-    _backgroundTransparency = prefs.getDouble(_backgroundTransparencyKey) ?? 0.5;
+    _componentOpacity = prefs.getDouble(_componentOpacityKey) ?? 0.7;
     _liquidGlass = prefs.getBool(_liquidGlassKey) ?? true;
     _floatingNavBar = prefs.getBool(_floatingNavBarKey) ?? false;
-
-    final scopeIndex = prefs.getInt(_backgroundScopeKey) ?? 0;
-    _backgroundScope = BackgroundScope.values[scopeIndex.clamp(0, BackgroundScope.values.length - 1)];
-
     notifyListeners();
   }
 
@@ -86,17 +74,10 @@ class ThemeProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> setBackgroundTransparency(double value) async {
-    _backgroundTransparency = value.clamp(0, 1);
+  Future<void> setComponentOpacity(double value) async {
+    _componentOpacity = value.clamp(0.15, 1.0);
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setDouble(_backgroundTransparencyKey, _backgroundTransparency);
-    notifyListeners();
-  }
-
-  Future<void> setBackgroundScope(BackgroundScope scope) async {
-    _backgroundScope = scope;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt(_backgroundScopeKey, scope.index);
+    await prefs.setDouble(_componentOpacityKey, _componentOpacity);
     notifyListeners();
   }
 

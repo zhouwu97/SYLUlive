@@ -125,11 +125,12 @@ class _MarketScreenState extends State<MarketScreen> with SingleTickerProviderSt
   Widget _buildMarketList(bool isDark) {
     return Consumer<PostProvider>(
       builder: (context, postProvider, child) {
-        if (postProvider.isLoading && postProvider.posts.isEmpty) {
+        final allPosts = postProvider.postsFor(2);
+        if (postProvider.isLoadingFor(2) && allPosts.isEmpty) {
           return const Center(child: CircularProgressIndicator());
         }
 
-        final marketPosts = postProvider.posts
+        final marketPosts = allPosts
             .where((p) => p.postType == 'sell' || p.postType == 'buy' || p.postType == 'proxy')
             .toList();
 
@@ -167,11 +168,12 @@ class _MarketScreenState extends State<MarketScreen> with SingleTickerProviderSt
   Widget _buildExposureList(bool isDark) {
     return Consumer<PostProvider>(
       builder: (context, postProvider, child) {
-        if (postProvider.isLoading && postProvider.posts.isEmpty) {
+        final allPosts = postProvider.postsFor(2);
+        if (postProvider.isLoadingFor(2) && allPosts.isEmpty) {
           return const Center(child: CircularProgressIndicator());
         }
 
-        final exposurePosts = postProvider.posts
+        final exposurePosts = allPosts
             .where((p) => p.postType == 'exposure')
             .toList();
 

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/edu_provider.dart';
+import '../main.dart' show navigatorKey;
 
 class EduScreen extends StatefulWidget {
   const EduScreen({super.key});
@@ -15,7 +16,11 @@ class _EduScreenState extends State<EduScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<EduProvider>().loadStatus();
+      final authProvider = context.read<AuthProvider>();
+      final eduProvider = context.read<EduProvider>();
+      if (authProvider.user != null) {
+        eduProvider.setUserId(authProvider.user!.id.toString());
+      }
     });
   }
 
@@ -136,59 +141,88 @@ class _EduScreenState extends State<EduScreen> {
   void _showBindDialog(BuildContext context, EduProvider eduProvider) {
     final studentIdController = TextEditingController();
     final passwordController = TextEditingController();
+    bool isBinding = false; // 本地加载状态
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('绑定教务账号'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: studentIdController,
-              decoration: const InputDecoration(
-                labelText: '教务学号',
-                hintText: '请输入10位学号',
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('绑定教务账号'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: studentIdController,
+                decoration: const InputDecoration(
+                  labelText: '教务学号',
+                  hintText: '请输入10位学号',
+                ),
+                maxLength: 10,
+                enabled: !isBinding,
               ),
-              maxLength: 10,
+              const SizedBox(height: 16),
+              TextField(
+                controller: passwordController,
+                decoration: const InputDecoration(
+                  labelText: '教务密码',
+                ),
+                obscureText: true,
+                enabled: !isBinding,
+              ),
+              if (isBinding) ...[
+                const SizedBox(height: 20),
+                const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                    SizedBox(width: 12),
+                    Text('正在连接教务系统...', style: TextStyle(color: Colors.grey)),
+                  ],
+                ),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: isBinding ? null : () => Navigator.pop(context),
+              child: const Text('取消'),
             ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: passwordController,
-              decoration: const InputDecoration(
-                labelText: '教务密码',
-              ),
-              obscureText: true,
+            ElevatedButton(
+              onPressed: isBinding
+                  ? null
+                  : () async {
+                      setDialogState(() => isBinding = true);
+                      final success = await eduProvider.bind(
+                        studentIdController.text,
+                        passwordController.text,
+                      );
+                      if (context.mounted) {
+                        Navigator.pop(context);
+                        if (success) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('绑定成功')),
+                          );
+                        } else {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text(eduProvider.errorMessage ?? '绑定失败')),
+                          );
+                        }
+                      }
+                    },
+              child: isBinding
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    )
+                  : const Text('绑定'),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('取消'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              final success = await eduProvider.bind(
-                studentIdController.text,
-                passwordController.text,
-              );
-              if (context.mounted) {
-                Navigator.pop(context);
-                if (success) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('绑定成功')),
-                  );
-                } else {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(eduProvider.errorMessage ?? '绑定失败')),
-                  );
-                }
-              }
-            },
-            child: const Text('绑定'),
-          ),
-        ],
       ),
     );
   }
@@ -271,19 +305,18 @@ class _EduScreenState extends State<EduScreen> {
           ),
           ElevatedButton(
             onPressed: () async {
-              Navigator.pop(context);
+              final scaffoldMessenger = ScaffoldMessenger.of(context);
+              Navigator.pop(context); // 先关闭对话框
               final result = await eduProvider.getCourses(selectedYear, selectedSemester);
-              if (context.mounted) {
-                if (result != null && result.success && result.data != null) {
-                  _showCoursesResult(context, result.data!, selectedYear, selectedSemester);
-                } else {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(result?.errorMessage ?? '获取课表失败'),
-                      backgroundColor: Colors.red,
-                    ),
-                  );
-                }
+              if (result != null && result.success && result.data != null) {
+                _showCoursesResult(context, result.data!, selectedYear, selectedSemester);
+              } else {
+                scaffoldMessenger.showSnackBar(
+                  SnackBar(
+                    content: Text(result?.errorMessage ?? '获取课表失败'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
               }
             },
             child: const Text('查询'),
@@ -295,7 +328,7 @@ class _EduScreenState extends State<EduScreen> {
 
   void _showCoursesResult(BuildContext context, List<Map<String, dynamic>> courses, String year, int semester) {
     showModalBottomSheet(
-      context: context,
+      context: navigatorKey.currentContext!,
       isScrollControlled: true,
       builder: (context) => DraggableScrollableSheet(
         initialChildSize: 0.7,
@@ -386,19 +419,18 @@ class _EduScreenState extends State<EduScreen> {
           ),
           ElevatedButton(
             onPressed: () async {
-              Navigator.pop(context);
+              final scaffoldMessenger = ScaffoldMessenger.of(context);
+              Navigator.pop(context); // 先关闭对话框
               final result = await eduProvider.getGrades(selectedYear, selectedSemester);
-              if (context.mounted) {
-                if (result != null && result.success && result.data != null) {
-                  _showGradesResult(context, result.data!, selectedYear, selectedSemester);
-                } else {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(result?.errorMessage ?? '获取成绩失败'),
-                      backgroundColor: Colors.red,
-                    ),
-                  );
-                }
+              if (result != null && result.success && result.data != null) {
+                _showGradesResult(context, result.data!, selectedYear, selectedSemester);
+              } else {
+                scaffoldMessenger.showSnackBar(
+                  SnackBar(
+                    content: Text(result?.errorMessage ?? '获取成绩失败'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
               }
             },
             child: const Text('查询'),
@@ -410,7 +442,7 @@ class _EduScreenState extends State<EduScreen> {
 
   void _showGradesResult(BuildContext context, List<Map<String, dynamic>> grades, String year, int semester) {
     showModalBottomSheet(
-      context: context,
+      context: navigatorKey.currentContext!,
       isScrollControlled: true,
       builder: (context) => DraggableScrollableSheet(
         initialChildSize: 0.7,

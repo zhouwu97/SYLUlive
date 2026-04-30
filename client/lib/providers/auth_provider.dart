@@ -90,11 +90,12 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  /// 解析Dio异常并返回友好的错误信息
+  /// 解析Dio异常并返回友好的错误信息（附带技术细节方便排查）
   String _parseDioError(DioException e) {
+    final url = e.requestOptions.uri.toString();
+
     if (e.response != null) {
       final data = e.response!.data;
-      // 尝试从响应体中获取error字段
       if (data is Map) {
         if (data.containsKey('error')) {
           return data['error'].toString();
@@ -103,7 +104,6 @@ class AuthProvider extends ChangeNotifier {
           return data['message'].toString();
         }
       }
-      // 根据状态码返回通用信息
       switch (e.response!.statusCode) {
         case 400:
           return '请求参数错误';
@@ -121,15 +121,28 @@ class AuthProvider extends ChangeNotifier {
           return '服务器返回错误 (${e.response!.statusCode})';
       }
     }
-    // 网络错误
-    if (e.type == DioExceptionType.connectionTimeout ||
-        e.type == DioExceptionType.receiveTimeout) {
-      return '连接超时，请检查网络';
+
+    // 网络错误 — 附带底层异常详情
+    final errType = e.type.toString();
+    final cause = e.error?.toString() ?? '(无详情)';
+
+    if (e.type == DioExceptionType.connectionTimeout) {
+      return '连接超时 → $url\n$cause';
+    }
+    if (e.type == DioExceptionType.receiveTimeout) {
+      return '接收超时 → $url\n$cause';
+    }
+    if (e.type == DioExceptionType.sendTimeout) {
+      return '发送超时 → $url\n$cause';
     }
     if (e.type == DioExceptionType.connectionError) {
-      return '网络连接失败，请检查网络';
+      // SocketException: No route to host / Connection refused / Network is unreachable 等
+      return '无法连接到服务器 → $url\n$cause';
     }
-    return '网络错误: ${e.message}';
+    if (e.type == DioExceptionType.badCertificate) {
+      return 'SSL证书错误 → $url\n$cause';
+    }
+    return '网络异常[$errType] → $url\n$cause';
   }
 
   Future<AuthResult> register(String studentId, String password) async {

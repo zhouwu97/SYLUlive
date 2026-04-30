@@ -35,8 +35,10 @@ class EduProvider extends ChangeNotifier {
 
   EduProvider(this._dio);
 
-  /// 解析Dio异常并返回友好的错误信息
+  /// 解析Dio异常并返回友好的错误信息（附带技术细节方便排查）
   String _parseDioError(DioException e) {
+    final url = e.requestOptions.uri.toString();
+
     if (e.response != null) {
       final data = e.response!.data;
       if (data is Map) {
@@ -64,14 +66,27 @@ class EduProvider extends ChangeNotifier {
           return '服务器返回错误 (${e.response!.statusCode})';
       }
     }
-    if (e.type == DioExceptionType.connectionTimeout ||
-        e.type == DioExceptionType.receiveTimeout) {
-      return '连接超时，请检查网络';
+
+    // 网络错误 — 附带底层异常详情
+    final errType = e.type.toString();
+    final cause = e.error?.toString() ?? '(无详情)';
+
+    if (e.type == DioExceptionType.connectionTimeout) {
+      return '连接超时 → $url\n$cause';
+    }
+    if (e.type == DioExceptionType.receiveTimeout) {
+      return '接收超时 → $url\n$cause';
+    }
+    if (e.type == DioExceptionType.sendTimeout) {
+      return '发送超时 → $url\n$cause';
     }
     if (e.type == DioExceptionType.connectionError) {
-      return '网络连接失败，请检查网络';
+      return '无法连接到服务器 → $url\n$cause';
     }
-    return '网络错误: ${e.message}';
+    if (e.type == DioExceptionType.badCertificate) {
+      return 'SSL证书错误 → $url\n$cause';
+    }
+    return '网络异常[$errType] → $url\n$cause';
   }
 
   // 获取绑定状态

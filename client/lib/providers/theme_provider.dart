@@ -75,7 +75,7 @@ class ThemeProvider extends ChangeNotifier {
   }
 
   Future<void> setComponentOpacity(double value) async {
-    _componentOpacity = value.clamp(0.15, 1.0);
+    _componentOpacity = value.clamp(0.0, 1.0);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setDouble(_componentOpacityKey, _componentOpacity);
     notifyListeners();

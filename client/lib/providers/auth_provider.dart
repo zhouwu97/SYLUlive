@@ -37,7 +37,7 @@ class AuthProvider extends ChangeNotifier {
   Dio get dio => _dio;
 
   AuthProvider(this._dio) {
-    _loadStoredAuth();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadStoredAuth());
   }
 
   Future<void> _loadStoredAuth() async {

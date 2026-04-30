@@ -6,6 +6,7 @@ import '../widgets/bottom_nav.dart';
 import 'shuitie_screen.dart';
 import 'market_screen.dart';
 import 'edu_screen.dart';
+import 'blog_screen.dart';
 import 'profile_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -15,17 +16,14 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
-  late PageController _pageController;
+class _HomeScreenState extends State<HomeScreen> {
   int _currentIndex = 0;
+  late PageController _pageController;
 
   @override
   void initState() {
     super.initState();
-    _pageController = PageController(
-      initialPage: 0,
-      viewportFraction: 1.0,
-    );
+    _pageController = PageController(initialPage: 0);
   }
 
   @override
@@ -35,18 +33,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   void _onTabTapped(int index) {
-    _pageController.animateToPage(
-      index,
-      duration: const Duration(milliseconds: 400),
-      curve: Curves.easeOutCubic,
-    );
+    _pageController.animateToPage(index, duration: const Duration(milliseconds: 350), curve: Curves.easeOutCubic);
   }
 
   void _onPageChanged(int index) {
-    setState(() {
-      _currentIndex = index;
-    });
-    final screenNames = ['shuitie', 'market', 'edu', 'profile'];
+    setState(() => _currentIndex = index);
+    final screenNames = ['shuitie', 'market', 'edu', 'blog', 'profile'];
     backgroundWrapperKey.currentState?.updateScreen(screenNames[index]);
   }
 
@@ -65,6 +57,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           ShuitieScreen(),
           MarketScreen(),
           EduScreen(),
+          BlogScreen(),
           ProfileScreen(),
         ],
       ),

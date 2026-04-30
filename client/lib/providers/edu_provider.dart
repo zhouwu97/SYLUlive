@@ -1,5 +1,6 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
+import '../config/api_constants.dart';
 
 /// 操作结果，包含成功状态和错误信息
 class OperationResult<T> {
@@ -15,10 +16,13 @@ class OperationResult<T> {
 }
 
 class EduProvider extends ChangeNotifier {
-  final Dio _dio;
+  late final Dio _eduDio; // Python 教务服务专用
+  late final Dio _authDio; // Go 服务器（获取当前用户信息）
 
+  String? _userId;
   bool _isBound = false;
   String _studentId = '';
+  String _name = '';
   String _grade = '';
   String _college = '';
   String _major = '';
@@ -27,88 +31,91 @@ class EduProvider extends ChangeNotifier {
 
   bool get isBound => _isBound;
   String get studentId => _studentId;
+  String get name => _name;
   String get grade => _grade;
   String get college => _college;
   String get major => _major;
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
 
-  EduProvider(this._dio);
+  EduProvider(Dio authDio) {
+    _authDio = authDio;
+    _eduDio = Dio(BaseOptions(
+      baseUrl: ApiConstants.eduServiceUrl,
+      connectTimeout: const Duration(seconds: 30),
+      receiveTimeout: const Duration(seconds: 60),
+    ));
+  }
 
-  /// 解析Dio异常并返回友好的错误信息（附带技术细节方便排查）
+  void setUserId(String userId) {
+    _userId = userId;
+    loadStatus();
+  }
+
+  String? get userId => _userId;
+
+  /// 解析Dio异常并返回友好的错误信息
   String _parseDioError(DioException e) {
-    final url = e.requestOptions.uri.toString();
-
     if (e.response != null) {
       final data = e.response!.data;
+      // FastAPI 错误格式
       if (data is Map) {
+        if (data.containsKey('detail')) {
+          return data['detail'].toString();
+        }
         if (data.containsKey('error')) {
           return data['error'].toString();
         }
-        if (data.containsKey('message')) {
-          return data['message'].toString();
-        }
       }
       switch (e.response!.statusCode) {
-        case 400:
-          return '请求参数错误';
         case 401:
-          return '登录已过期，请重新登录';
-        case 403:
-          return '无权访问教务系统';
-        case 404:
-          return '教务账号不存在';
-        case 422:
           return '账号或密码错误';
-        case 500:
-          return '服务器错误，请稍后再试';
+        case 503:
+          return '教务系统不可用，请稍后重试';
         default:
-          return '服务器返回错误 (${e.response!.statusCode})';
+          return '服务器错误 (${e.response!.statusCode})';
       }
     }
 
-    // 网络错误 — 附带底层异常详情
     final errType = e.type.toString();
     final cause = e.error?.toString() ?? '(无详情)';
 
-    if (e.type == DioExceptionType.connectionTimeout) {
-      return '连接超时 → $url\n$cause';
-    }
-    if (e.type == DioExceptionType.receiveTimeout) {
-      return '接收超时 → $url\n$cause';
-    }
-    if (e.type == DioExceptionType.sendTimeout) {
-      return '发送超时 → $url\n$cause';
+    if (e.type == DioExceptionType.connectionTimeout ||
+        e.type == DioExceptionType.receiveTimeout) {
+      return '连接超时，请检查网络';
     }
     if (e.type == DioExceptionType.connectionError) {
-      return '无法连接到服务器 → $url\n$cause';
+      return '无法连接到教务服务，请确保Python服务已启动';
     }
     if (e.type == DioExceptionType.badCertificate) {
-      return 'SSL证书错误 → $url\n$cause';
+      return 'SSL证书错误';
     }
-    return '网络异常[$errType] → $url\n$cause';
+    return '网络异常[$errType]: $cause';
   }
 
   // 获取绑定状态
   Future<void> loadStatus() async {
+    if (_userId == null) return;
+
     try {
-      final response = await _dio.get('/edu/status');
+      final response = await _eduDio.get(
+        '/api/edu/status',
+        queryParameters: {'user_id': _userId},
+      );
+
       if (response.statusCode == 200) {
         final data = response.data;
-        _isBound = data['edu_bound'] ?? false;
-        _studentId = data['edu_student_id'] ?? '';
-        _grade = data['edu_grade'] ?? '';
-        _college = data['edu_college'] ?? '';
-        _major = data['edu_major'] ?? '';
+        _isBound = data['bound'] ?? false;
+        _studentId = data['student_id'] ?? '';
+        _name = data['name'] ?? '';
+        _grade = data['grade'] ?? '';
+        _college = data['college'] ?? '';
+        _major = data['major'] ?? '';
         _errorMessage = null;
         notifyListeners();
       }
     } on DioException catch (e) {
-      if (e.response?.statusCode == 401) {
-        _errorMessage = '请先登录';
-      } else {
-        _errorMessage = _parseDioError(e);
-      }
+      _errorMessage = _parseDioError(e);
       debugPrint('获取教务状态失败: $_errorMessage');
       notifyListeners();
     }
@@ -116,24 +123,35 @@ class EduProvider extends ChangeNotifier {
 
   // 绑定教务账号
   Future<bool> bind(String studentId, String password) async {
+    if (_userId == null) {
+      _errorMessage = '用户未登录';
+      notifyListeners();
+      return false;
+    }
+
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
 
     try {
-      final response = await _dio.post('/edu/bind', data: {
-        'student_id': studentId,
-        'password': password,
-      });
+      final response = await _eduDio.post(
+        '/api/edu/bind',
+        data: {
+          'user_id': _userId,
+          'student_id': studentId,
+          'password': password,
+        },
+      );
 
       _isLoading = false;
       if (response.statusCode == 200) {
-        _isBound = true;
-        _studentId = studentId;
         final data = response.data;
-        _grade = data['edu_grade'] ?? '';
-        _college = data['edu_college'] ?? '';
-        _major = data['edu_major'] ?? '';
+        _isBound = true;
+        _studentId = data['student_id'] ?? studentId;
+        _name = data['name'] ?? '';
+        _grade = data['grade'] ?? '';
+        _college = data['college'] ?? '';
+        _major = data['major'] ?? '';
         _errorMessage = null;
         notifyListeners();
         return true;
@@ -153,11 +171,20 @@ class EduProvider extends ChangeNotifier {
 
   // 解绑教务账号
   Future<OperationResult<void>> unbind() async {
+    if (_userId == null) {
+      return OperationResult.fail('用户未登录');
+    }
+
     try {
-      final response = await _dio.delete('/edu/bind');
+      final response = await _eduDio.delete(
+        '/api/edu/bind',
+        queryParameters: {'user_id': _userId},
+      );
+
       if (response.statusCode == 200) {
         _isBound = false;
         _studentId = '';
+        _name = '';
         _grade = '';
         _college = '';
         _major = '';
@@ -174,11 +201,19 @@ class EduProvider extends ChangeNotifier {
 
   // 获取课表
   Future<OperationResult<List<Map<String, dynamic>>>?> getCourses(String year, int semester) async {
+    if (_userId == null) {
+      return OperationResult.fail('用户未登录');
+    }
+
     try {
-      final response = await _dio.post('/edu/courses', data: {
-        'year': year,
-        'semester': semester,
-      });
+      final response = await _eduDio.post(
+        '/api/edu/courses/fetch',
+        data: {
+          'user_id': _userId,
+          'year': year,
+          'semester': semester,
+        },
+      );
 
       if (response.statusCode == 200) {
         final data = response.data;
@@ -196,11 +231,19 @@ class EduProvider extends ChangeNotifier {
 
   // 获取成绩
   Future<OperationResult<List<Map<String, dynamic>>>?> getGrades(String year, int semester) async {
+    if (_userId == null) {
+      return OperationResult.fail('用户未登录');
+    }
+
     try {
-      final response = await _dio.post('/edu/grades', data: {
-        'year': year,
-        'semester': semester,
-      });
+      final response = await _eduDio.post(
+        '/api/edu/grades/',
+        data: {
+          'user_id': _userId,
+          'year': year,
+          'semester': semester,
+        },
+      );
 
       if (response.statusCode == 200) {
         final data = response.data;

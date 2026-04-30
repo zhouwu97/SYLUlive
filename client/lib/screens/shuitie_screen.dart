@@ -4,7 +4,11 @@ import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/post_provider.dart';
 import '../models/announcement.dart' as model;
+import '../models/post.dart';
 import '../widgets/glass_container.dart';
+import '../widgets/post_card.dart';
+import 'create_post_screen.dart';
+import 'login_screen.dart';
 
 class ShuitieScreen extends StatefulWidget {
   const ShuitieScreen({super.key});
@@ -88,7 +92,7 @@ class _ShuitieScreenState extends State<ShuitieScreen> with SingleTickerProvider
                 child: _buildAnnouncementBanner(isDark),
               ),
 
-            // 发布按钮（已禁用）
+            // 发布按钮
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
@@ -98,9 +102,7 @@ class _ShuitieScreenState extends State<ShuitieScreen> with SingleTickerProvider
                   blur: themeProvider.liquidGlass ? 10 : 0,
                   opacity: themeProvider.liquidGlass ? 0.2 : 0,
                   onTap: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('论坛功能暂时关闭')),
-                    );
+                    _navigateToCreatePost(context);
                   },
                   child: Row(
                     children: [
@@ -127,49 +129,43 @@ class _ShuitieScreenState extends State<ShuitieScreen> with SingleTickerProvider
               ),
             ),
 
-            // 帖子列表（暂时关闭）
-            SliverFillRemaining(
-              child: Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(32),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.forum_outlined,
-                        size: 80,
-                        color: isDark ? Colors.white24 : Colors.grey[300],
-                      ),
-                      const SizedBox(height: 24),
-                      Text(
-                        '由于不可抗力原因',
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          color: isDark ? Colors.white70 : Colors.grey[600],
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        '论坛功能暂时关闭',
-                        style: TextStyle(
-                          fontSize: 18,
-                          color: isDark ? Colors.white60 : Colors.grey[500],
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        '请别期待喵~',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontStyle: FontStyle.italic,
-                          color: isDark ? Colors.white38 : Colors.grey[400],
-                        ),
-                      ),
-                    ],
+            // 帖子列表
+            Consumer<PostProvider>(
+              builder: (context, postProvider, child) {
+                final posts = postProvider.posts;
+                if (postProvider.isLoading && posts.isEmpty) {
+                  return const SliverFillRemaining(
+                    child: Center(child: CircularProgressIndicator()),
+                  );
+                }
+                if (posts.isEmpty) {
+                  return SliverFillRemaining(
+                    child: _buildEmptyState(isDark),
+                  );
+                }
+                return SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) {
+                      final post = posts[index];
+                      return PostCard(
+                        post: post,
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => Scaffold(
+                                appBar: AppBar(title: Text(post.title.isNotEmpty ? post.title : '帖子详情')),
+                                body: _buildPostDetail(context, post),
+                              ),
+                            ),
+                          );
+                        },
+                      );
+                    },
+                    childCount: posts.length,
                   ),
-                ),
-              ),
+                );
+              },
             ),
 
             // 底部留白
@@ -179,6 +175,47 @@ class _ShuitieScreenState extends State<ShuitieScreen> with SingleTickerProvider
           ],
         ),
       ),
+    );
+  }
+
+  Future<void> _refresh() async {
+    await context.read<PostProvider>().refresh(boardId: 1);
+  }
+
+  void _navigateToCreatePost(BuildContext context) {
+    final authProvider = context.read<AuthProvider>();
+    if (!authProvider.isLoggedIn) {
+      Navigator.push(
+        context,
+        PageRouteBuilder(
+          opaque: false,
+          pageBuilder: (_, __, ___) => const LoginScreen(),
+        ),
+      );
+      return;
+    }
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const CreatePostScreen(boardId: 1),
+      ),
+    ).then((_) {
+      _refresh();
+    });
+  }
+
+  Widget _buildPostDetail(BuildContext context, Post post) {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        if (post.title.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Text(post.title,
+                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+          ),
+        Text(post.content, style: const TextStyle(fontSize: 16, height: 1.5)),
+      ],
     );
   }
 

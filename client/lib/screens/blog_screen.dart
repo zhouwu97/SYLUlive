@@ -9,6 +9,19 @@ import '../widgets/glass_container.dart';
 
 // ---- 瑞士极客风博客页面 ----
 
+void _showDevSnackBar(BuildContext context) {
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: const Text('还在开发中喵~', style: TextStyle(fontFamily: 'monospace')),
+      duration: const Duration(seconds: 1),
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      backgroundColor: const Color(0xFF334155),
+      margin: const EdgeInsets.symmetric(horizontal: 100, vertical: 400),
+    ),
+  );
+}
+
 class BlogScreen extends StatefulWidget {
   const BlogScreen({super.key});
 
@@ -66,7 +79,6 @@ class _BlogScreenState extends State<BlogScreen> {
               ),
               // 订阅卡片
               const SizedBox(height: 24),
-              _buildSubscribeCard(),
             ],
           ),
         ],
@@ -100,7 +112,7 @@ class _BlogScreenState extends State<BlogScreen> {
       actions: [
         IconButton(
           icon: const Icon(Icons.search, color: Color(0xFF64748B), size: 20),
-          onPressed: () {},
+          onPressed: () => _showDevToast(context),
         ),
       ],
     );
@@ -273,44 +285,8 @@ class _BlogScreenState extends State<BlogScreen> {
     );
   }
 
-  // ---- 订阅卡片 ----
-
-  Widget _buildSubscribeCard() {
-    return Container(
-      padding: const EdgeInsets.all(22),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFF1A2E1A), Color(0xFF0F172A)],
-        ),
-        border: Border.all(color: const Color(0xFF22C55E).withValues(alpha: 0.15)),
-      ),
-      child: Column(
-        children: [
-          const Icon(Icons.rss_feed, color: Color(0xFF22C55E), size: 28),
-          const SizedBox(height: 10),
-          const Text('订阅更新', style: TextStyle(color: Color(0xFFE2E8F0), fontSize: 15, fontWeight: FontWeight.w600, fontFamily: 'monospace')),
-          const SizedBox(height: 4),
-          const Text('获取最新技术文章推送', style: TextStyle(color: Color(0xFF64748B), fontSize: 12, fontFamily: 'monospace')),
-          const SizedBox(height: 14),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: () {},
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF22C55E),
-                foregroundColor: const Color(0xFF0F172A),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                padding: const EdgeInsets.symmetric(vertical: 12),
-              ),
-              child: const Text('订阅', style: TextStyle(fontWeight: FontWeight.w700, fontFamily: 'monospace')),
-            ),
-          ),
-        ],
-      ),
-    );
+  void _showDevToast(BuildContext context) {
+    _showDevSnackBar(context);
   }
 
   // ---- 文章详情 ----
@@ -401,7 +377,7 @@ class _ArticleReaderState extends State<_ArticleReader> {
         actions: [
           IconButton(
             icon: const Icon(Icons.share, color: Color(0xFF64748B), size: 20),
-            onPressed: () {},
+            onPressed: () => _showDevSnackBar(context),
           ),
         ],
       ),

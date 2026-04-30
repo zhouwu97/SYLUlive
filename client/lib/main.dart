@@ -28,11 +28,13 @@ Dio getSharedDio() {
       receiveTimeout: ApiConstants.receiveTimeout,
     ));
 
-    dio.interceptors.add(LogInterceptor(
-      requestBody: true,
-      responseBody: true,
-      logPrint: (o) => debugPrint(o.toString()),
-    ));
+    if (kDebugMode) {
+      dio.interceptors.add(LogInterceptor(
+        requestBody: true,
+        responseBody: true,
+        logPrint: (o) => debugPrint(o.toString()),
+      ));
+    }
 
     dio.interceptors.add(InterceptorsWrapper(
       onError: (error, handler) {
@@ -125,7 +127,7 @@ class _BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
   }
 
   Widget _buildBackgroundLayer(ThemeProvider themeProvider, bool isDark) {
-    final bool showBackground = themeProvider.isBackgroundVisible(_currentScreen) && themeProvider.hasBackground;
+    final bool showBackground = themeProvider.isBackgroundVisible;
 
     if (showBackground) {
       return _buildBackgroundImageLayer(themeProvider, isDark);
@@ -135,7 +137,7 @@ class _BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
   }
 
   Widget _buildBackgroundImageLayer(ThemeProvider themeProvider, bool isDark) {
-    final transparency = themeProvider.backgroundTransparency;
+    final transparency = themeProvider.componentOpacity;
     final bgPath = themeProvider.backgroundImage!;
     final isAsset = !bgPath.startsWith('http') && !bgPath.startsWith('/');
     final resolvedPath = isAsset ? 'assets/images/$bgPath' : bgPath;
@@ -169,8 +171,8 @@ class _BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
         // Inverted: higher transparency = more visible background = lower overlay alpha
         Container(
           color: isDark
-              ? Colors.black.withValues(alpha: (1 - transparency) * 0.5)
-              : Colors.white.withValues(alpha: (1 - transparency) * 0.5),
+              ? Colors.black.withValues(alpha: (1 - transparency) * 0.45)
+              : Colors.white.withValues(alpha: (1 - transparency) * 0.35),
         ),
         // Blur overlay
         if (themeProvider.backgroundBlur > 0 && themeProvider.liquidGlass)
@@ -186,43 +188,30 @@ class _BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
   }
 
   Widget _buildDefaultBackground(bool isDark) {
-    // Always return Stack for consistent widget tree structure
     return Stack(
       fit: StackFit.expand,
       children: [
-        Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: isDark
-                  ? [
-                      const Color(0xFF1A1A2E),
-                      const Color(0xFF16213E),
-                      const Color(0xFF0F3460),
-                    ]
-                  : [
-                      const Color(0xFF667EEA),
-                      const Color(0xFF764BA2),
-                      const Color(0xFFF093FB),
-                    ],
+        Image(
+          image: ResizeImage(
+            const AssetImage('assets/images/morenbeijing.jpeg'),
+            width: 1080,
+          ),
+          fit: BoxFit.cover,
+          gaplessPlayback: true,
+          errorBuilder: (_, __, ___) => Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: isDark
+                    ? [const Color(0xFF1A1A2E), const Color(0xFF16213E), const Color(0xFF0F3460)]
+                    : [const Color(0xFF667EEA), const Color(0xFF764BA2), const Color(0xFFF093FB)],
+              ),
             ),
           ),
         ),
-        // Blur overlay for default background too
-        Consumer<ThemeProvider>(
-          builder: (context, themeProvider, child) {
-            if (themeProvider.backgroundBlur > 0 && themeProvider.liquidGlass) {
-              return BackdropFilter(
-                filter: ImageFilter.blur(
-                  sigmaX: themeProvider.backgroundBlur,
-                  sigmaY: themeProvider.backgroundBlur,
-                ),
-                child: Container(color: Colors.transparent),
-              );
-            }
-            return const SizedBox.shrink();
-          },
+        Container(
+          color: isDark ? Colors.black.withValues(alpha: 0.35) : Colors.white.withValues(alpha: 0.25),
         ),
       ],
     );

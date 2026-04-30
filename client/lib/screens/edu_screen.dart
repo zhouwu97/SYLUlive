@@ -29,7 +29,7 @@ class _EduScreenState extends State<EduScreen> {
         title: const Text('教务系统'),
         backgroundColor: Colors.transparent,
         elevation: 0,
-        leading: const BackButton(),
+        automaticallyImplyLeading: false,
       ),
       body: Consumer<EduProvider>(
         builder: (context, eduProvider, child) {

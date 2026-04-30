@@ -1,5 +1,8 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../providers/post_provider.dart';
 import '../widgets/glass_container.dart';
 
@@ -22,8 +25,10 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   final _contentController = TextEditingController();
   final _priceController = TextEditingController();
   final _contactController = TextEditingController();
+  final _imagePicker = ImagePicker();
   String _postType = '';
   bool _isLoading = false;
+  final List<XFile> _selectedImages = [];
 
   @override
   void initState() {
@@ -40,6 +45,64 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     _priceController.dispose();
     _contactController.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickImage(ImageSource source) async {
+    try {
+      final XFile? image = await _imagePicker.pickImage(
+        source: source,
+        maxWidth: 1920,
+        maxHeight: 1920,
+        imageQuality: 85,
+      );
+      if (image != null && _selectedImages.length < 9) {
+        setState(() {
+          _selectedImages.add(image);
+        });
+      } else if (_selectedImages.length >= 9 && image != null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('最多只能添加9张图片')),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('选择图片失败: $e');
+    }
+  }
+
+  void _removeImage(int index) {
+    setState(() {
+      _selectedImages.removeAt(index);
+    });
+  }
+
+  void _showImageSourceDialog() {
+    showModalBottomSheet(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Wrap(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_library),
+              title: const Text('从相册选择'),
+              onTap: () {
+                Navigator.pop(context);
+                _pickImage(ImageSource.gallery);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.camera_alt),
+              title: const Text('拍照'),
+              onTap: () {
+                Navigator.pop(context);
+                _pickImage(ImageSource.camera);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _submit() async {
@@ -62,24 +125,27 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     });
 
     final postProvider = context.read<PostProvider>();
-    final success = await postProvider.createPost(
+    final result = await postProvider.createPost(
       boardId: widget.boardId,
       content: _contentController.text,
-      title: _titleController.text,
-      postType: _postType,
+      title: _titleController.text.isNotEmpty ? _titleController.text : null,
+      postType: _postType.isNotEmpty ? _postType : null,
       price: double.tryParse(_priceController.text),
-      contact: _contactController.text,
+      contact: _contactController.text.isNotEmpty ? _contactController.text : null,
     );
 
     setState(() {
       _isLoading = false;
     });
 
-    if (success && mounted) {
+    if (result.success && mounted) {
       Navigator.pop(context);
     } else if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('发布失败')),
+        SnackBar(
+          content: Text(result.errorMessage ?? '发布失败'),
+          backgroundColor: Colors.red,
+        ),
       );
     }
   }
@@ -227,15 +293,79 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
             ),
             const SizedBox(height: 16),
 
-            // 图片上传占位
+            // 图片上传
+            if (_selectedImages.isNotEmpty) ...[
+              SizedBox(
+                height: 100,
+                child: ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: _selectedImages.length + (_selectedImages.length < 9 ? 1 : 0),
+                  itemBuilder: (context, index) {
+                    if (index == _selectedImages.length) {
+                      // Add more button
+                      return GestureDetector(
+                        onTap: _showImageSourceDialog,
+                        child: Container(
+                          width: 100,
+                          height: 100,
+                          margin: const EdgeInsets.only(right: 8),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.grey[400]!),
+                            color: Colors.grey[100],
+                          ),
+                          child: Icon(Icons.add, color: Colors.grey[600], size: 32),
+                        ),
+                      );
+                    }
+                    final image = _selectedImages[index];
+                    return Stack(
+                      children: [
+                        Container(
+                          width: 100,
+                          height: 100,
+                          margin: const EdgeInsets.only(right: 8),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: Image.file(
+                              File(image.path),
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => Container(
+                                color: Colors.grey[300],
+                                child: const Icon(Icons.broken_image),
+                              ),
+                            ),
+                          ),
+                        ),
+                        Positioned(
+                          top: 4,
+                          right: 12,
+                          child: GestureDetector(
+                            onTap: () => _removeImage(index),
+                            child: Container(
+                              padding: const EdgeInsets.all(4),
+                              decoration: const BoxDecoration(
+                                color: Colors.black54,
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(Icons.close, color: Colors.white, size: 14),
+                            ),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
             OutlinedButton.icon(
-              onPressed: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('图片上传功能开发中')),
-                );
-              },
-              icon: const Icon(Icons.image),
-              label: const Text('添加图片（最多9张）'),
+              onPressed: _showImageSourceDialog,
+              icon: const Icon(Icons.add_photo_alternate),
+              label: Text(_selectedImages.isEmpty ? '添加图片（最多9张）' : '继续添加'),
             ),
           ],
         ),

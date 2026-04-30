@@ -3,6 +3,7 @@ import 'package:dio/dio.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
+import '../config/api_constants.dart';
 import '../models/post.dart';
 import '../models/reply.dart';
 import '../models/user.dart';
@@ -22,6 +23,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   Post? _post;
   List<Reply> _replies = [];
   bool _isLoading = true;
+  String? _errorMessage;
   final _replyController = TextEditingController();
 
   @override
@@ -32,6 +34,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   Future<void> _loadPost() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
     try {
       final response = await _dio.get('/posts/${widget.postId}');
       final repliesResponse = await _dio.get('/posts/${widget.postId}/replies');
@@ -42,11 +49,28 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             .map((e) => Reply.fromJson(e))
             .toList();
         _isLoading = false;
+        _errorMessage = null;
       });
-    } catch (e) {
-      debugPrint('加载帖子失败: $e');
+    } on DioException catch (e) {
+      String msg;
+      if (e.response != null) {
+        final data = e.response!.data;
+        if (data is Map && data.containsKey('error')) {
+          msg = data['error'].toString();
+        } else {
+          msg = '服务器返回错误 (${e.response!.statusCode})';
+        }
+      } else {
+        msg = '网络连接失败: ${e.message}';
+      }
       setState(() {
         _isLoading = false;
+        _errorMessage = msg;
+      });
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+        _errorMessage = '加载失败: $e';
       });
     }
   }
@@ -86,9 +110,33 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : _post == null
-              ? const Center(child: Text('帖子不存在'))
-              : Column(
+          : _errorMessage != null
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(32),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.error_outline, size: 48, color: Colors.red[300]),
+                        const SizedBox(height: 12),
+                        Text(
+                          _errorMessage!,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: Colors.red[400], fontSize: 15),
+                        ),
+                        const SizedBox(height: 16),
+                        OutlinedButton.icon(
+                          onPressed: _loadPost,
+                          icon: const Icon(Icons.refresh),
+                          label: const Text('重试'),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              : _post == null
+                  ? const Center(child: Text('帖子不存在'))
+                  : Column(
                   children: [
                     Expanded(
                       child: ListView(
@@ -118,7 +166,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             children: [
               CircleAvatar(
                 backgroundImage: _post!.author?.avatar.isNotEmpty == true
-                    ? NetworkImage(_post!.author!.avatar)
+                    ? NetworkImage(ApiConstants.fullUrl(_post!.author!.avatar))
                     : null,
                 child: _post!.author?.avatar.isEmpty == true
                     ? Text(_post!.author?.nickname.substring(0, 1) ?? '?')
@@ -242,7 +290,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 CircleAvatar(
                   radius: 16,
                   backgroundImage: reply.author?.avatar.isNotEmpty == true
-                      ? NetworkImage(reply.author!.avatar)
+                      ? NetworkImage(ApiConstants.fullUrl(reply.author!.avatar))
                       : null,
                   child: reply.author?.avatar.isEmpty == true
                       ? Text(reply.author?.nickname.substring(0, 1) ?? '?')

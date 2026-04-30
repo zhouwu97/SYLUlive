@@ -137,7 +137,6 @@ class _BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
   }
 
   Widget _buildBackgroundImageLayer(ThemeProvider themeProvider, bool isDark) {
-    final transparency = themeProvider.componentOpacity;
     final bgPath = themeProvider.backgroundImage!;
     final isAsset = !bgPath.startsWith('http') && !bgPath.startsWith('/');
     final resolvedPath = isAsset ? 'assets/images/$bgPath' : bgPath;
@@ -167,12 +166,11 @@ class _BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
                       return _buildDefaultBackground(isDark);
                     },
                   ),
-        // Color overlay
-        // Inverted: higher transparency = more visible background = lower overlay alpha
+        // Color overlay (fixed — componentOpacity controls GlassContainer, not background)
         Container(
           color: isDark
-              ? Colors.black.withValues(alpha: (1 - transparency) * 0.45)
-              : Colors.white.withValues(alpha: (1 - transparency) * 0.35),
+              ? Colors.black.withValues(alpha: 0.35)
+              : Colors.white.withValues(alpha: 0.25),
         ),
         // Blur overlay
         if (themeProvider.backgroundBlur > 0 && themeProvider.liquidGlass)

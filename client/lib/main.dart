@@ -1,6 +1,7 @@
 import 'dart:ui';
 import 'dart:io' show File;
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'providers/auth_provider.dart';
@@ -10,6 +11,7 @@ import 'providers/message_provider.dart';
 import 'providers/edu_provider.dart';
 import 'screens/home_screen.dart';
 import 'theme/AppTheme.dart';
+import 'config/api_constants.dart';
 
 void main() {
   runApp(const MyApp());
@@ -21,9 +23,9 @@ Dio? _sharedDio;
 Dio getSharedDio() {
   if (_sharedDio == null) {
     final dio = Dio(BaseOptions(
-      baseUrl: 'http://156.233.229.232:8080/api',
-      connectTimeout: const Duration(seconds: 30),
-      receiveTimeout: const Duration(seconds: 30),
+      baseUrl: kDebugMode ? ApiConstants.baseUrl : 'http://156.233.229.232:8080/api',
+      connectTimeout: ApiConstants.connectTimeout,
+      receiveTimeout: ApiConstants.receiveTimeout,
     ));
 
     dio.interceptors.add(LogInterceptor(

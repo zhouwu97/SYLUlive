@@ -96,7 +96,10 @@ class _MarketScreenState extends State<MarketScreen> with SingleTickerProviderSt
               );
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => const LoginScreen()),
+                PageRouteBuilder(
+                  opaque: false,
+                  pageBuilder: (_, __, ___) => const LoginScreen(),
+                ),
               );
               return;
             }

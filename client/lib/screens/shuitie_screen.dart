@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
@@ -9,6 +10,7 @@ import '../widgets/glass_container.dart';
 import '../widgets/post_card.dart';
 import 'create_post_screen.dart';
 import 'login_screen.dart';
+import 'post_detail_screen.dart';
 
 class ShuitieScreen extends StatefulWidget {
   const ShuitieScreen({super.key});
@@ -17,13 +19,19 @@ class ShuitieScreen extends StatefulWidget {
   State<ShuitieScreen> createState() => _ShuitieScreenState();
 }
 
-class _ShuitieScreenState extends State<ShuitieScreen> with SingleTickerProviderStateMixin {
+class _ShuitieScreenState extends State<ShuitieScreen> with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late AnimationController _animationController;
   List<model.Announcement> _announcements = [];
+  Timer? _autoRefreshTimer;
+  bool _wasLoggedIn = false;
+
+  static const _autoRefreshInterval = Duration(seconds: 30);
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+
     _animationController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 800),
@@ -32,11 +40,40 @@ class _ShuitieScreenState extends State<ShuitieScreen> with SingleTickerProvider
       context.read<PostProvider>().loadPosts(boardId: 1);
       _loadAnnouncements();
       _animationController.forward();
+      _startAutoRefresh();
     });
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _refresh();
+      _loadAnnouncements();
+      _startAutoRefresh();
+    } else if (state == AppLifecycleState.paused) {
+      _stopAutoRefresh();
+    }
+  }
+
+  void _startAutoRefresh() {
+    _stopAutoRefresh();
+    _autoRefreshTimer = Timer.periodic(_autoRefreshInterval, (_) {
+      if (mounted) {
+        _refresh();
+        _loadAnnouncements();
+      }
+    });
+  }
+
+  void _stopAutoRefresh() {
+    _autoRefreshTimer?.cancel();
+    _autoRefreshTimer = null;
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _stopAutoRefresh();
     _animationController.dispose();
     super.dispose();
   }
@@ -61,17 +98,31 @@ class _ShuitieScreenState extends State<ShuitieScreen> with SingleTickerProvider
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final themeProvider = context.watch<ThemeProvider>();
+    final authProvider = context.watch<AuthProvider>();
+
+    // 检测登录状态切换 → 自动刷新
+    if (authProvider.isLoggedIn != _wasLoggedIn) {
+      _wasLoggedIn = authProvider.isLoggedIn;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _refresh());
+    }
 
     return Scaffold(
       backgroundColor: Colors.transparent,
-      body: FadeTransition(
-        opacity: CurvedAnimation(
-          parent: _animationController,
-          curve: Curves.easeOut,
-        ),
-        child: CustomScrollView(
-          physics: const BouncingScrollPhysics(),
-          slivers: [
+      body: RefreshIndicator(
+        onRefresh: () async {
+          await _refresh();
+          await _loadAnnouncements();
+        },
+        child: FadeTransition(
+          opacity: CurvedAnimation(
+            parent: _animationController,
+            curve: Curves.easeOut,
+          ),
+          child: CustomScrollView(
+            physics: const AlwaysScrollableScrollPhysics(
+              parent: BouncingScrollPhysics(),
+            ),
+            slivers: [
             // 顶部应用栏
             SliverAppBar(
               backgroundColor: Colors.transparent,
@@ -153,10 +204,7 @@ class _ShuitieScreenState extends State<ShuitieScreen> with SingleTickerProvider
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (_) => Scaffold(
-                                appBar: AppBar(title: Text(post.title.isNotEmpty ? post.title : '帖子详情')),
-                                body: _buildPostDetail(context, post),
-                              ),
+                              builder: (_) => PostDetailScreen(postId: post.id),
                             ),
                           );
                         },
@@ -174,6 +222,7 @@ class _ShuitieScreenState extends State<ShuitieScreen> with SingleTickerProvider
             ),
           ],
         ),
+      ),
       ),
     );
   }
@@ -202,21 +251,6 @@ class _ShuitieScreenState extends State<ShuitieScreen> with SingleTickerProvider
     ).then((_) {
       _refresh();
     });
-  }
-
-  Widget _buildPostDetail(BuildContext context, Post post) {
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        if (post.title.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 12),
-            child: Text(post.title,
-                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-          ),
-        Text(post.content, style: const TextStyle(fontSize: 16, height: 1.5)),
-      ],
-    );
   }
 
   Widget _buildAnnouncementBanner(bool isDark) {

@@ -1,5 +1,8 @@
 class ApiConstants {
+  // Go 服务器（帖子、用户、消息等）
   static const String baseUrl = 'http://156.233.229.232:8080/api';
+  // Python 教务服务（绑定、课表、成绩）
+  static const String eduServiceUrl = 'https://nominalistically-subpeduncled-alexandria.ngrok-free.dev';
 
   /// 将服务端返回的相对路径转为完整 URL
   /// 如 /uploads/ab/cd.jpg → http://156.233.229.232:8080/uploads/ab/cd.jpg

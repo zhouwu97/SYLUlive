@@ -2,27 +2,52 @@ import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import '../models/post.dart';
 
+/// 每个板块的帖子状态
+class _BoardState {
+  List<Post> posts = [];
+  bool isLoading = false;
+  String? error;
+  int currentPage = 1;
+  bool hasMore = true;
+}
+
+/// 创建帖子的返回结果
+class CreatePostResult {
+  final bool success;
+  final String? errorMessage;
+  const CreatePostResult({required this.success, this.errorMessage});
+}
+
 class PostProvider extends ChangeNotifier {
   final Dio _dio;
 
-  List<Post> _posts = [];
-  bool _isLoading = false;
-  String? _error;
-  int _currentPage = 1;
-  bool _hasMore = true;
+  final Map<int, _BoardState> _boards = {};
+  int _activeBoardId = 1;
 
-  List<Post> get posts => _posts;
-  bool get isLoading => _isLoading;
-  String? get error => _error;
-  bool get hasMore => _hasMore;
+  PostProvider(this._dio) {
+    _boards[1] = _BoardState();
+    _boards[2] = _BoardState();
+  }
 
-  PostProvider(this._dio);
+  // ---- 当前活跃板块 (兼容旧 getter，水帖 / 首页用) ----
+
+  List<Post> get posts => _board.posts;
+  bool get isLoading => _board.isLoading;
+  String? get error => _board.error;
+  bool get hasMore => _board.hasMore;
+
+  _BoardState get _board => _boards[_activeBoardId]!;
+
+  /// 获取指定板块的帖子列表
+  List<Post> postsFor(int boardId) => _boards[boardId]?.posts ?? [];
+  bool isLoadingFor(int boardId) => _boards[boardId]?.isLoading ?? false;
 
   Future<void> loadPosts({int boardId = 1, String? type, String sort = 'time'}) async {
-    if (_isLoading) return;
+    final board = _boards[boardId]!;
+    if (board.isLoading) return;
 
-    _isLoading = true;
-    _error = null;
+    board.isLoading = true;
+    board.error = null;
     notifyListeners();
 
     try {
@@ -30,7 +55,7 @@ class PostProvider extends ChangeNotifier {
         'board': boardId,
         'type': type,
         'sort': sort,
-        'page': _currentPage,
+        'page': board.currentPage,
         'limit': 20,
       });
 
@@ -40,34 +65,41 @@ class PostProvider extends ChangeNotifier {
             .map((e) => Post.fromJson(e))
             .toList();
 
-        if (_currentPage == 1) {
-          _posts = newPosts;
+        if (board.currentPage == 1) {
+          board.posts = newPosts;
         } else {
-          _posts.addAll(newPosts);
+          board.posts.addAll(newPosts);
         }
 
-        _hasMore = newPosts.length >= 20 && newPosts.isNotEmpty;
-        _currentPage++;
+        board.hasMore = newPosts.length >= 20 && newPosts.isNotEmpty;
+        board.currentPage++;
       }
     } on DioException catch (e) {
-      _error = e.message ?? '网络错误';
-      debugPrint('加载帖子失败: $_error');
+      board.error = e.message ?? '网络错误';
+      debugPrint('加载帖子失败: ${board.error}');
     } catch (e) {
-      _error = e.toString();
-      debugPrint('加载帖子失败: $_error');
+      board.error = e.toString();
+      debugPrint('加载帖子失败: ${board.error}');
     }
 
-    _isLoading = false;
+    board.isLoading = false;
+
+    // 同时更新活跃板块引用
+    if (boardId == _activeBoardId) {
+      _boards[_activeBoardId] = board;
+    }
+
     notifyListeners();
   }
 
   Future<void> refresh({int boardId = 1, String? type, String sort = 'time'}) async {
-    _currentPage = 1;
-    _hasMore = true;
+    final board = _boards[boardId]!;
+    board.currentPage = 1;
+    board.hasMore = true;
     await loadPosts(boardId: boardId, type: type, sort: sort);
   }
 
-  Future<bool> createPost({
+  Future<CreatePostResult> createPost({
     required int boardId,
     required String content,
     String? title,
@@ -80,17 +112,34 @@ class PostProvider extends ChangeNotifier {
       final formData = FormData.fromMap({
         'board_id': boardId,
         'content': content,
-        if (title != null) 'title': title,
+        if (title != null && title.isNotEmpty) 'title': title,
         if (postType != null) 'post_type': postType,
         if (price != null) 'price': price,
-        if (contact != null) 'contact': contact,
+        if (contact != null && contact.isNotEmpty) 'contact': contact,
       });
 
       final response = await _dio.post('/posts', data: formData);
-      return response.statusCode == 201;
+      if (response.statusCode == 201) {
+        return const CreatePostResult(success: true);
+      }
+      return CreatePostResult(success: false, errorMessage: '发布失败 (${response.statusCode})');
+    } on DioException catch (e) {
+      String msg = '网络错误';
+      if (e.response != null) {
+        final data = e.response!.data;
+        if (data is Map && data.containsKey('error')) {
+          msg = data['error'].toString();
+        } else {
+          msg = '服务器返回错误 (${e.response!.statusCode})';
+        }
+      } else {
+        msg = '网络连接失败: ${e.message}';
+      }
+      debugPrint('创建帖子失败: $msg');
+      return CreatePostResult(success: false, errorMessage: msg);
     } catch (e) {
       debugPrint('创建帖子失败: $e');
-      return false;
+      return CreatePostResult(success: false, errorMessage: '创建帖子失败: $e');
     }
   }
 
@@ -98,7 +147,9 @@ class PostProvider extends ChangeNotifier {
     try {
       final response = await _dio.delete('/posts/$postId');
       if (response.statusCode == 200) {
-        _posts.removeWhere((p) => p.id == postId);
+        for (final board in _boards.values) {
+          board.posts.removeWhere((p) => p.id == postId);
+        }
         notifyListeners();
         return true;
       }

@@ -62,6 +62,11 @@ class BottomNavWrapper extends StatelessWidget {
             label: '教务',
           ),
           NavigationDestination(
+            icon: Icon(Icons.terminal),
+            selectedIcon: Icon(Icons.terminal),
+            label: '博客',
+          ),
+          NavigationDestination(
             icon: Icon(Icons.person_outlined),
             selectedIcon: Icon(Icons.person),
             label: '我',
@@ -79,7 +84,7 @@ class BottomNavWrapper extends StatelessWidget {
         if (details.primaryVelocity == null) return;
         if (currentIndex > 0 && details.primaryVelocity! > 200) {
           onTap(currentIndex - 1);
-        } else if (currentIndex < 3 && details.primaryVelocity! < -200) {
+        } else if (currentIndex < 4 && details.primaryVelocity! < -200) {
           onTap(currentIndex + 1);
         }
       },
@@ -106,7 +111,8 @@ class BottomNavWrapper extends StatelessWidget {
                   _buildFloatingItem(0, Icons.home, Icons.home_outlined, '首页', context, primaryColor),
                   _buildFloatingItem(1, Icons.store, Icons.store_outlined, '集市', context, primaryColor),
                   _buildFloatingItem(2, Icons.school, Icons.school_outlined, '教务', context, primaryColor),
-                  _buildFloatingItem(3, Icons.person, Icons.person_outlined, '我', context, primaryColor),
+                  _buildFloatingItem(3, Icons.terminal, Icons.terminal, '博客', context, primaryColor),
+                  _buildFloatingItem(4, Icons.person, Icons.person_outlined, '我', context, primaryColor),
                 ],
               ),
             ),

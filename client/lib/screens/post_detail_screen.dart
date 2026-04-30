@@ -147,8 +147,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     if (hasBg && themeProvider.backgroundImage != null) {
       final bgPath = themeProvider.backgroundImage!;
       final isAsset = !bgPath.startsWith('http') && !bgPath.startsWith('/');
-      final transparency = themeProvider.componentOpacity;
-
       return Stack(fit: StackFit.expand, children: [
         isAsset
             ? Image.asset('assets/images/$bgPath', fit: BoxFit.cover,
@@ -159,8 +157,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 : Image.network(bgPath, fit: BoxFit.cover,
                     errorBuilder: (_, __, ___) => _buildGradientBg(isDark)),
         Container(color: isDark
-            ? Colors.black.withValues(alpha: (1 - transparency) * 0.55)
-            : Colors.white.withValues(alpha: (1 - transparency) * 0.45)),
+            ? Colors.black.withValues(alpha: 0.4)
+            : Colors.white.withValues(alpha: 0.3)),
         if (themeProvider.backgroundBlur > 0 && themeProvider.liquidGlass)
           BackdropFilter(filter: ImageFilter.blur(sigmaX: themeProvider.backgroundBlur, sigmaY: themeProvider.backgroundBlur),
               child: Container(color: Colors.transparent)),

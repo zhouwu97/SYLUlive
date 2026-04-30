@@ -9,6 +9,7 @@ import '../models/post.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/post_card.dart';
 import 'create_post_screen.dart';
+import 'post_detail_screen.dart';
 import 'login_screen.dart';
 import 'post_detail_screen.dart';
 
@@ -24,8 +25,9 @@ class _ShuitieScreenState extends State<ShuitieScreen> with SingleTickerProvider
   List<model.Announcement> _announcements = [];
   Timer? _autoRefreshTimer;
   bool _wasLoggedIn = false;
+  List<Post> _cachedPosts = [];  // 本地缓存，防止切换 tab 闪烁
 
-  static const _autoRefreshInterval = Duration(seconds: 30);
+  static const _autoRefreshInterval = Duration(seconds: 60);
 
   @override
   void initState() {
@@ -183,15 +185,21 @@ class _ShuitieScreenState extends State<ShuitieScreen> with SingleTickerProvider
             // 帖子列表
             Consumer<PostProvider>(
               builder: (context, postProvider, child) {
-                final posts = postProvider.posts;
-                if (postProvider.isLoading && posts.isEmpty) {
+                var posts = postProvider.posts;
+                // 如果当前为空但缓存有数据，用缓存避免闪烁
+                if (posts.isEmpty && _cachedPosts.isNotEmpty) {
+                  posts = _cachedPosts;
+                } else if (posts.isNotEmpty) {
+                  _cachedPosts = List.from(posts);
+                }
+                if (postProvider.isLoading && _cachedPosts.isEmpty) {
                   return const SliverFillRemaining(
                     child: Center(child: CircularProgressIndicator()),
                   );
                 }
                 if (posts.isEmpty) {
                   return SliverFillRemaining(
-                    child: _buildEmptyState(isDark),
+                    child: _buildEmptyState(isDark, onRetry: _refresh),
                   );
                 }
                 return SliverList(
@@ -204,7 +212,7 @@ class _ShuitieScreenState extends State<ShuitieScreen> with SingleTickerProvider
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (_) => PostDetailScreen(postId: post.id),
+                              builder: (_) => PostDetailScreen(postId: post.id, isMarket: false),
                             ),
                           );
                         },
@@ -328,7 +336,7 @@ class _ShuitieScreenState extends State<ShuitieScreen> with SingleTickerProvider
     );
   }
 
-  Widget _buildEmptyState(bool isDark) {
+  Widget _buildEmptyState(bool isDark, {VoidCallback? onRetry}) {
     return Center(
       child: GlassContainer(
         padding: const EdgeInsets.all(24),
@@ -359,6 +367,17 @@ class _ShuitieScreenState extends State<ShuitieScreen> with SingleTickerProvider
                 color: isDark ? Colors.white.withValues(alpha: 0.4) : Colors.grey[400],
               ),
             ),
+            if (onRetry != null) ...[
+              const SizedBox(height: 16),
+              OutlinedButton.icon(
+                onPressed: onRetry,
+                icon: const Icon(Icons.refresh, size: 18),
+                label: const Text('刷新试试'),
+                style: OutlinedButton.styleFrom(
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+            ],
           ],
         ),
       ),

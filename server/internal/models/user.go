@@ -21,6 +21,7 @@ type User struct {
 	Nickname     string    `gorm:"size:100" json:"nickname"`                       // 昵称
 	Avatar       string    `gorm:"size:500" json:"avatar"`                         // 头像URL
 	Background   string    `gorm:"size:500" json:"background"`                     // 背景图URL
+	NightMode    bool      `gorm:"default:false" json:"night_mode"`                // 夜间模式
 	CreditScore  int       `gorm:"default:100;index" json:"credit_score"`          // 诚信度 0-100
 	Role         Role      `gorm:"size:20;default:user;index" json:"role"`         // 角色
 	AdminExp     int       `gorm:"default:0" json:"admin_exp"`                     // 管理员经验

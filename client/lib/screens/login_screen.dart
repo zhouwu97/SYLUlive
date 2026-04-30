@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
-import 'home_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -42,10 +41,7 @@ class _LoginScreenState extends State<LoginScreen> {
     }
 
     if (result.success && mounted) {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => const HomeScreen()),
-      );
+      Navigator.pop(context);
     } else if (mounted && result.errorMessage != null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -73,12 +69,7 @@ class _LoginScreenState extends State<LoginScreen> {
             right: 16,
             child: TextButton(
               onPressed: () {
-                // 返回到首页，清空导航栈
-                Navigator.pushNamedAndRemoveUntil(
-                  context,
-                  '/',
-                  (route) => false,
-                );
+                Navigator.pop(context);
               },
               child: Text(
                 '跳过',

@@ -91,8 +91,8 @@ func (h *AppealHandler) Create(c *gin.Context) {
 // selectJury 随机选择陪审员
 func (h *AppealHandler) selectJury(appealID uint, excludeUserID uint) {
 	var candidates []models.User
-	// 近90天举报数为0且诚信度>90%的用户
-	h.db.Where("id != ? AND report_count = 0 AND credit_score > 90", excludeUserID).
+	// 近90天举报数为0且诚信度>90%的普通用户（排除管理员和超管）
+	h.db.Where("id != ? AND report_count = 0 AND credit_score > 90 AND role = ?", excludeUserID, models.RoleUser).
 		Find(&candidates)
 
 	if len(candidates) < 10 {
@@ -101,8 +101,8 @@ func (h *AppealHandler) selectJury(appealID uint, excludeUserID uint) {
 	}
 
 	// 随机选择最多10人
-	rand.Seed(time.Now().UnixNano())
-	rand.Shuffle(len(candidates), func(i, j int) { candidates[i], candidates[j] = candidates[j], candidates[i] })
+	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+	rng.Shuffle(len(candidates), func(i, j int) { candidates[i], candidates[j] = candidates[j], candidates[i] })
 
 	count := 10
 	if len(candidates) < count {
@@ -187,16 +187,15 @@ func (h *AppealHandler) Vote(c *gin.Context) {
 		return
 	}
 
-	// 获取投票类型(support/oppose) - 从URL路径获取
-	voteType := c.Param("vote")
-	if voteType != "support" && voteType != "oppose" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的投票选项"})
-		return
-	}
-
 	var input VoteInput
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// 验证投票选项
+	if input.Vote != "support" && input.Vote != "oppose" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的投票选项，请选择 support 或 oppose"})
 		return
 	}
 
@@ -213,7 +212,7 @@ func (h *AppealHandler) Vote(c *gin.Context) {
 	}
 
 	h.db.Model(&vote).Updates(map[string]interface{}{
-		"vote":    voteType,
+		"vote":    input.Vote,
 		"comment": input.Comment,
 	})
 
@@ -223,55 +222,64 @@ func (h *AppealHandler) Vote(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "投票成功"})
 }
 
-// checkAndCloseAppeal 检查并关闭申诉
+// checkAndCloseAppeal 检查并关闭申诉（事务保护防止并发裁决）
 func (h *AppealHandler) checkAndCloseAppeal(appealID uint) {
-	var votes []models.AppealVote
-	h.db.Where("appeal_id = ?", appealID).Find(&votes)
+	h.db.Transaction(func(tx *gorm.DB) error {
+		var votes []models.AppealVote
+		tx.Where("appeal_id = ?", appealID).Find(&votes)
 
-	allVoted := true
-	for _, v := range votes {
-		if v.Vote == "" {
-			allVoted = false
-			break
+		allVoted := true
+		for _, v := range votes {
+			if v.Vote == "" {
+				allVoted = false
+				break
+			}
 		}
-	}
 
-	if !allVoted {
-		return
-	}
-
-	// 统计票数
-	supportCount := 0
-	opposeCount := 0
-	for _, v := range votes {
-		if v.Vote == "support" {
-			supportCount++
-		} else if v.Vote == "oppose" {
-			opposeCount++
+		if !allVoted {
+			return nil
 		}
-	}
 
-	var appeal models.Appeal
-	h.db.First(&appeal, appealID)
-	now := time.Now()
+		// 二次确认申诉仍为pending状态，防止重复裁决
+		var appeal models.Appeal
+		if err := tx.First(&appeal, appealID).Error; err != nil {
+			return err
+		}
+		if appeal.Status != models.AppealStatusPending {
+			return nil // 已经被其他请求处理
+		}
 
-	if supportCount > opposeCount {
-		// 申诉成功，恢复帖子
-		appeal.Status = models.AppealStatusPass
-		appeal.Result = fmt.Sprintf("支持票: %d, 反对票: %d, 申诉成功", supportCount, opposeCount)
-		h.db.Model(&models.Post{}).Where("id = ?", appeal.PostID).Update("status", models.PostStatusNormal)
+		// 统计票数
+		supportCount := 0
+		opposeCount := 0
+		for _, v := range votes {
+			if v.Vote == "support" {
+				supportCount++
+			} else if v.Vote == "oppose" {
+				opposeCount++
+			}
+		}
 
-		// 管理员经验-3
-		h.db.Model(&models.User{}).Where("id = ?", appeal.AdminID).Update("admin_exp", gorm.Expr("admin_exp - 3"))
-	} else {
-		// 申诉失败
-		appeal.Status = models.AppealStatusReject
-		appeal.Result = fmt.Sprintf("支持票: %d, 反对票: %d, 申诉失败", supportCount, opposeCount)
+		now := time.Now()
 
-		// 管理员经验+5
-		h.db.Model(&models.User{}).Where("id = ?", appeal.AdminID).Update("admin_exp", gorm.Expr("admin_exp + 5"))
-	}
+		if supportCount > opposeCount {
+			// 申诉成功，恢复帖子
+			appeal.Status = models.AppealStatusPass
+			appeal.Result = fmt.Sprintf("支持票: %d, 反对票: %d, 申诉成功", supportCount, opposeCount)
+			tx.Model(&models.Post{}).Where("id = ?", appeal.PostID).Update("status", models.PostStatusNormal)
 
-	appeal.ClosedAt = &now
-	h.db.Save(&appeal)
+			// 管理员经验-3（不低于0）
+			tx.Model(&models.User{}).Where("id = ? AND admin_exp >= 3", appeal.AdminID).Update("admin_exp", gorm.Expr("admin_exp - 3"))
+		} else {
+			// 申诉失败
+			appeal.Status = models.AppealStatusReject
+			appeal.Result = fmt.Sprintf("支持票: %d, 反对票: %d, 申诉失败", supportCount, opposeCount)
+
+			// 管理员经验+5
+			tx.Model(&models.User{}).Where("id = ?", appeal.AdminID).Update("admin_exp", gorm.Expr("admin_exp + 5"))
+		}
+
+		appeal.ClosedAt = &now
+		return tx.Save(&appeal).Error
+	})
 }

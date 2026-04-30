@@ -236,15 +236,29 @@ class AuthProvider extends ChangeNotifier {
 
   Future<AuthResult> updateAvatar(String avatarPath) async {
     try {
-      final formData = FormData.fromMap({
-        'avatar': await MultipartFile.fromFile(avatarPath),
+      // 步骤1: 上传图片文件到服务器
+      final uploadFormData = FormData.fromMap({
+        'file': await MultipartFile.fromFile(avatarPath),
       });
-      final response = await _dio.post('/user/avatar', data: formData);
+      final uploadResponse = await _dio.post('/upload', data: uploadFormData);
+
+      if (uploadResponse.statusCode != 200 || uploadResponse.data['url'] == null) {
+        return AuthResult.failure('头像上传失败');
+      }
+
+      final avatarUrl = uploadResponse.data['url'] as String;
+
+      // 步骤2: 更新用户头像URL
+      final response = await _dio.put('/user/avatar', data: {'avatar': avatarUrl});
       if (response.statusCode == 200) {
-        _user = User.fromJson(response.data);
-        await _saveAuth();
-        notifyListeners();
-        return AuthResult.success();
+        // 刷新用户信息以获取最新的avatar
+        final profileResponse = await _dio.get('/user/profile');
+        if (profileResponse.statusCode == 200) {
+          _user = User.fromJson(profileResponse.data);
+          await _saveAuth();
+          notifyListeners();
+          return AuthResult.success();
+        }
       }
       return AuthResult.failure('更新头像失败');
     } on DioException catch (e) {

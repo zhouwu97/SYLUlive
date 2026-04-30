@@ -124,7 +124,10 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
               if (authProvider.isLoggedIn) {
                 _showAvatarOptions(context, authProvider);
               } else {
-                Navigator.push(context, MaterialPageRoute(builder: (_) => const LoginScreen()));
+                Navigator.push(context, PageRouteBuilder(
+                  opaque: false,
+                  pageBuilder: (_, __, ___) => const LoginScreen(),
+                ));
               }
             },
             child: GlassContainer(
@@ -440,11 +443,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
               onPressed: () async {
                 await authProvider.logout();
                 if (context.mounted) {
-                  Navigator.pushAndRemoveUntil(
-                    context,
-                    MaterialPageRoute(builder: (_) => const LoginScreen()),
-                    (route) => false,
-                  );
+                  Navigator.of(context).popUntil((route) => route.isFirst);
                 }
               },
             ),

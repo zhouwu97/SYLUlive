@@ -25,7 +25,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
       ),
       body: Stack(
         children: [
-          if (!themeProvider.isBackgroundVisible('messages'))
+          if (!themeProvider.isBackgroundVisible)
             _buildDefaultBackground(isDark),
           Center(
             child: Padding(

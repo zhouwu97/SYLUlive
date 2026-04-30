@@ -1,18 +1,23 @@
+import 'dart:io' show File;
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
+import '../providers/theme_provider.dart';
 import '../config/api_constants.dart';
 import '../models/post.dart';
 import '../models/reply.dart';
-import '../models/user.dart';
+import '../widgets/glass_container.dart';
+import '../widgets/report_sheet.dart';
 import 'image_viewer_screen.dart';
 
 class PostDetailScreen extends StatefulWidget {
   final int postId;
+  final bool isMarket;
 
-  const PostDetailScreen({super.key, required this.postId});
+  const PostDetailScreen({super.key, required this.postId, this.isMarket = false});
 
   @override
   State<PostDetailScreen> createState() => _PostDetailScreenState();
@@ -24,7 +29,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   List<Reply> _replies = [];
   bool _isLoading = true;
   String? _errorMessage;
+  bool _liked = false;
+  int _likeCount = 0;
   final _replyController = TextEditingController();
+  final _replyFocus = FocusNode();
 
   @override
   void initState() {
@@ -33,334 +41,531 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     _loadPost();
   }
 
-  Future<void> _loadPost() async {
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
+  @override
+  void dispose() {
+    _replyController.dispose();
+    _replyFocus.dispose();
+    super.dispose();
+  }
 
+  Future<void> _loadPost() async {
+    setState(() { _isLoading = true; _errorMessage = null; });
     try {
       final response = await _dio.get('/posts/${widget.postId}');
       final repliesResponse = await _dio.get('/posts/${widget.postId}/replies');
-
       setState(() {
         _post = Post.fromJson(response.data);
-        _replies = (repliesResponse.data as List)
-            .map((e) => Reply.fromJson(e))
-            .toList();
+        _replies = (repliesResponse.data as List).map((e) => Reply.fromJson(e)).toList();
         _isLoading = false;
-        _errorMessage = null;
       });
     } on DioException catch (e) {
-      String msg;
+      String msg = '网络错误';
       if (e.response != null) {
         final data = e.response!.data;
-        if (data is Map && data.containsKey('error')) {
-          msg = data['error'].toString();
-        } else {
-          msg = '服务器返回错误 (${e.response!.statusCode})';
-        }
+        msg = (data is Map && data.containsKey('error')) ? data['error'].toString() : '服务器错误 (${e.response!.statusCode})';
       } else {
-        msg = '网络连接失败: ${e.message}';
+        msg = '无法连接: ${e.message}';
       }
-      setState(() {
-        _isLoading = false;
-        _errorMessage = msg;
-      });
+      setState(() { _isLoading = false; _errorMessage = msg; });
     } catch (e) {
-      setState(() {
-        _isLoading = false;
-        _errorMessage = '加载失败: $e';
-      });
+      setState(() { _isLoading = false; _errorMessage = '加载失败: $e'; });
+    }
+  }
+
+  Future<void> _toggleLike() async {
+    if (!context.read<AuthProvider>().isLoggedIn) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('请先登录')));
+      return;
+    }
+    setState(() { _liked = !_liked; _likeCount += _liked ? 1 : -1; });
+    try {
+      await _dio.post('/posts/${widget.postId}/like');
+    } catch (_) {
+      setState(() { _liked = !_liked; _likeCount += _liked ? 1 : -1; });
     }
   }
 
   Future<void> _sendReply() async {
     if (_replyController.text.isEmpty) return;
-
     try {
-      await _dio.post('/posts/${widget.postId}/replies', data: {
-        'content': _replyController.text,
-      });
+      await _dio.post('/posts/${widget.postId}/replies', data: {'content': _replyController.text});
       _replyController.clear();
       _loadPost();
-    } catch (e) {
-      debugPrint('发送回复失败: $e');
+    } on DioException catch (e) {
+      String msg = '发送失败';
+      if (e.response?.data is Map) msg = (e.response!.data as Map)['error']?.toString() ?? msg;
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), backgroundColor: Colors.red));
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final themeProvider = context.watch<ThemeProvider>();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Scaffold(
+      backgroundColor: Colors.transparent,
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: Text(_post?.title ?? '帖子详情'),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
         leading: const BackButton(),
         actions: [
-          if (_post != null)
-            IconButton(
-              icon: const Icon(Icons.message),
-              onPressed: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('私信功能暂时关闭')),
-                );
-              },
-              tooltip: '联系TA',
-            ),
+          IconButton(
+            icon: Icon(Icons.report_outlined, color: Colors.red[300]),
+            tooltip: '举报',
+            onPressed: () => showReportSheet(context, postId: widget.postId),
+          ),
         ],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _errorMessage != null
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(32),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.error_outline, size: 48, color: Colors.red[300]),
-                        const SizedBox(height: 12),
-                        Text(
-                          _errorMessage!,
-                          textAlign: TextAlign.center,
-                          style: TextStyle(color: Colors.red[400], fontSize: 15),
-                        ),
-                        const SizedBox(height: 16),
-                        OutlinedButton.icon(
-                          onPressed: _loadPost,
-                          icon: const Icon(Icons.refresh),
-                          label: const Text('重试'),
-                        ),
-                      ],
-                    ),
-                  ),
-                )
-              : _post == null
-                  ? const Center(child: Text('帖子不存在'))
-                  : Column(
-                  children: [
-                    Expanded(
-                      child: ListView(
-                        children: [
-                          _buildPostContent(),
-                          const Divider(),
-                          _buildReplies(),
-                        ],
-                      ),
-                    ),
-                    _buildReplyInput(),
-                  ],
-                ),
-    );
-  }
-
-  Widget _buildPostContent() {
-    if (_post == null) return const SizedBox();
-
-    return Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      body: Stack(
         children: [
-          // 作者信息
-          Row(
-            children: [
-              CircleAvatar(
-                backgroundImage: _post!.author?.avatar.isNotEmpty == true
-                    ? NetworkImage(ApiConstants.fullUrl(_post!.author!.avatar))
-                    : null,
-                child: _post!.author?.avatar.isEmpty == true
-                    ? Text(_post!.author?.nickname.substring(0, 1) ?? '?')
-                    : null,
-              ),
-              const SizedBox(width: 8),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    _post!.author?.nickname ?? '匿名',
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  Text(
-                    '诚信度: ${_post!.author?.creditScore ?? 100}%',
-                    style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                  ),
-                ],
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-
-          // 标题
-          if (_post!.title.isNotEmpty) ...[
-            Text(
-              _post!.title,
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            const SizedBox(height: 8),
-          ],
-
+          // 背景 —— 复用全局背景风格
+          _buildBackground(themeProvider, isDark),
           // 内容
-          Text(_post!.content),
-
-          // 价格信息
-          if (_post!.price > 0) ...[
-            const SizedBox(height: 8),
-            Text(
-              '价格: ¥${_post!.price.toStringAsFixed(2)}',
-              style: TextStyle(
-                color: Theme.of(context).primaryColor,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ],
-
-          // 图片
-          if (_post!.images.isNotEmpty) ...[
-            const SizedBox(height: 16),
-            SizedBox(
-              height: 200,
-              child: ListView.builder(
-                scrollDirection: Axis.horizontal,
-                itemCount: _post!.images.length,
-                itemBuilder: (context, index) {
-                  final image = _post!.images[index];
-                  return GestureDetector(
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => ImageViewerScreen(
-                            imageUrls: _post!.images.map((e) => e.url).toList(),
-                            initialIndex: index,
-                          ),
-                        ),
-                      );
-                    },
-                    onLongPress: () {
-                      // 保存图片功能预留
-                    },
-                    child: Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: CachedNetworkImage(
-                        imageUrl: image.url,
-                        width: 200,
-                        fit: BoxFit.cover,
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildReplies() {
-    return Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            '回复 (${_replies.length})',
-            style: Theme.of(context).textTheme.titleMedium,
+          SafeArea(
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : _errorMessage != null
+                    ? _buildErrorView(isDark)
+                    : _post == null
+                        ? _buildEmptyView(isDark)
+                        : widget.isMarket
+                            ? _buildMarketDetail(isDark)
+                            : _buildWaterDetail(isDark),
           ),
-          const SizedBox(height: 8),
-          if (_replies.isEmpty)
-            const Text('暂无回复')
-          else
-            ..._replies.map((reply) => _buildReplyItem(reply)),
         ],
       ),
     );
   }
 
-  Widget _buildReplyItem(Reply reply) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                CircleAvatar(
-                  radius: 16,
-                  backgroundImage: reply.author?.avatar.isNotEmpty == true
-                      ? NetworkImage(ApiConstants.fullUrl(reply.author!.avatar))
-                      : null,
-                  child: reply.author?.avatar.isEmpty == true
-                      ? Text(reply.author?.nickname.substring(0, 1) ?? '?')
-                      : null,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  reply.author?.nickname ?? '匿名',
-                  style: const TextStyle(fontWeight: FontWeight.bold),
-                ),
-                const Spacer(),
-                Text(
-                  _formatTime(reply.createdAt),
-                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                ),
-              ],
+  // ---- 背景 ----
+
+  Widget _buildBackground(ThemeProvider themeProvider, bool isDark) {
+    final hasBg = themeProvider.hasBackground;
+
+    if (hasBg && themeProvider.backgroundImage != null) {
+      final bgPath = themeProvider.backgroundImage!;
+      final isAsset = !bgPath.startsWith('http') && !bgPath.startsWith('/');
+      final transparency = themeProvider.componentOpacity;
+
+      return Stack(fit: StackFit.expand, children: [
+        isAsset
+            ? Image.asset('assets/images/$bgPath', fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => _buildGradientBg(isDark))
+            : bgPath.startsWith('/')
+                ? Image.file(File(bgPath), fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => _buildGradientBg(isDark))
+                : Image.network(bgPath, fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => _buildGradientBg(isDark)),
+        Container(color: isDark
+            ? Colors.black.withValues(alpha: (1 - transparency) * 0.55)
+            : Colors.white.withValues(alpha: (1 - transparency) * 0.45)),
+        if (themeProvider.backgroundBlur > 0 && themeProvider.liquidGlass)
+          BackdropFilter(filter: ImageFilter.blur(sigmaX: themeProvider.backgroundBlur, sigmaY: themeProvider.backgroundBlur),
+              child: Container(color: Colors.transparent)),
+      ]);
+    }
+    return _buildGradientBg(isDark);
+  }
+
+  Widget _buildGradientBg(bool isDark) {
+    return Stack(fit: StackFit.expand, children: [
+      Image(
+        image: ResizeImage(
+          const AssetImage('assets/images/morenbeijing.jpeg'),
+          width: 1080,
+        ),
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: isDark
+                  ? [const Color(0xFF1A1A2E), const Color(0xFF16213E), const Color(0xFF0F3460)]
+                  : [const Color(0xFF667EEA), const Color(0xFF764BA2), const Color(0xFFF093FB)],
             ),
-            const SizedBox(height: 8),
-            Text(reply.content),
-          ],
+          ),
+        ),
+      ),
+      Container(color: isDark ? Colors.black.withValues(alpha: 0.35) : Colors.white.withValues(alpha: 0.25)),
+    ]);
+  }
+
+  // ---- 错误 / 空 ----
+
+  Widget _buildErrorView(bool isDark) {
+    return Center(child: Padding(
+      padding: const EdgeInsets.all(40),
+      child: GlassContainer(
+        padding: const EdgeInsets.all(28), borderRadius: 20, blur: 12, opacity: 0.12,
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Icon(Icons.cloud_off, size: 48, color: isDark ? Colors.white30 : Colors.grey[400]),
+          const SizedBox(height: 14),
+          Text(_errorMessage!, textAlign: TextAlign.center,
+            style: TextStyle(color: isDark ? Colors.white60 : Colors.grey[600], fontSize: 15)),
+          const SizedBox(height: 18),
+          OutlinedButton.icon(onPressed: _loadPost, icon: const Icon(Icons.refresh, size: 18),
+            label: const Text('重试'),
+            style: OutlinedButton.styleFrom(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+          ),
+        ]),
+      ),
+    ));
+  }
+
+  Widget _buildEmptyView(bool isDark) {
+    return Center(child: Text('帖子不存在', style: TextStyle(color: isDark ? Colors.white54 : Colors.grey[500], fontSize: 15)));
+  }
+
+  // ---- 集市布局 ----
+
+  Widget _buildMarketDetail(bool isDark) {
+    final p = _post!;
+    return Column(children: [
+      Expanded(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 80),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            _buildAuthorCard(p, isDark),
+            const SizedBox(height: 16),
+            if (p.images.isNotEmpty) ...[
+              _buildHeroImage(p, isDark),
+              const SizedBox(height: 16),
+            ],
+            if (p.title.isNotEmpty) ...[
+              Text(p.title, style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: isDark ? Colors.white : Colors.black87)),
+              const SizedBox(height: 10),
+            ],
+            if (p.price > 0) ...[
+              Text('¥ ${p.price.toStringAsFixed(p.price.truncateToDouble() == p.price ? 0 : 2)}',
+                style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: const Color(0xFFFF6B6B))),
+              const SizedBox(height: 12),
+            ],
+            Text(p.content, style: TextStyle(fontSize: 15, height: 1.7, color: isDark ? Colors.white70 : Colors.black87)),
+            if (p.contact.isNotEmpty) ...[
+              const SizedBox(height: 18),
+              _buildContactChip(p.contact, isDark),
+            ],
+            const SizedBox(height: 28),
+            _buildActionBar(isDark),
+            const SizedBox(height: 24),
+            _buildCommentsHeader(isDark),
+            const SizedBox(height: 10),
+            _buildCompactReplies(isDark),
+          ]),
+        ),
+      ),
+      _buildReplyBar(isDark),
+    ]);
+  }
+
+  // ---- 水帖布局 ----
+
+  Widget _buildWaterDetail(bool isDark) {
+    final p = _post!;
+    return Column(children: [
+      Expanded(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 80),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            _buildAuthorCard(p, isDark),
+            const SizedBox(height: 18),
+            if (p.title.isNotEmpty) ...[
+              Text(p.title, style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: isDark ? Colors.white : Colors.black87)),
+              const SizedBox(height: 12),
+            ],
+            Text(p.content, style: TextStyle(fontSize: 16, height: 1.75, color: isDark ? Colors.white.withValues(alpha: 0.80) : Colors.black87)),
+            if (p.images.isNotEmpty) ...[
+              const SizedBox(height: 18),
+              _buildImageGrid(p, isDark),
+            ],
+            const SizedBox(height: 28),
+            _buildActionBar(isDark),
+            const SizedBox(height: 24),
+            _buildCommentsHeader(isDark),
+            const SizedBox(height: 10),
+            _buildFullReplies(isDark),
+          ]),
+        ),
+      ),
+      _buildReplyBar(isDark),
+    ]);
+  }
+
+  // ---- 作者卡片 ----
+
+  Widget _buildAuthorCard(Post p, bool isDark) {
+    return GlassContainer(
+      padding: const EdgeInsets.all(14),
+      borderRadius: 18,
+      blur: 14,
+      opacity: 0.1,
+      child: Row(children: [
+        CircleAvatar(
+          radius: 24,
+          backgroundColor: isDark ? Colors.white12 : Colors.grey[200],
+          backgroundImage: p.author?.avatar.isNotEmpty == true
+              ? NetworkImage(ApiConstants.fullUrl(p.author!.avatar)) : null,
+          child: p.author?.avatar.isEmpty != false
+              ? Text(p.author?.nickname.isNotEmpty == true ? p.author!.nickname[0].toUpperCase() : '?',
+                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16, color: isDark ? Colors.white70 : Colors.grey[700]))
+              : null,
+        ),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(p.author?.nickname ?? '匿名', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16, color: isDark ? Colors.white : Colors.black87)),
+            const SizedBox(height: 4),
+            Row(children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                decoration: BoxDecoration(
+                  color: _creditColor(p.author?.creditScore ?? 100).withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text('诚信 ${p.author?.creditScore ?? 100}%',
+                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: _creditColor(p.author?.creditScore ?? 100))),
+              ),
+            ]),
+          ]),
+        ),
+        Text(_formatTime(p.createdAt), style: TextStyle(fontSize: 12, color: isDark ? Colors.white30 : Colors.grey[400])),
+      ]),
+    );
+  }
+
+  // ---- 图片 ----
+
+  Widget _buildHeroImage(Post p, bool isDark) {
+    return GestureDetector(
+      onTap: () => Navigator.push(context, MaterialPageRoute(
+        builder: (_) => ImageViewerScreen(
+          imageUrls: p.images.map((e) => ApiConstants.fullUrl(e.url)).toList(), initialIndex: 0))),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(18),
+        child: CachedNetworkImage(
+          imageUrl: ApiConstants.fullUrl(p.images.first.url),
+          width: double.infinity,
+          fit: BoxFit.cover,
+          placeholder: (_, __) => Container(height: 300, color: isDark ? Colors.white10 : Colors.grey[200]),
+          errorWidget: (_, __, ___) => Container(height: 300, color: isDark ? Colors.white10 : Colors.grey[200],
+            child: const Icon(Icons.broken_image, size: 40, color: Colors.grey)),
         ),
       ),
     );
   }
 
-  Widget _buildReplyInput() {
-    return Container(
-      padding: const EdgeInsets.all(8),
-      decoration: BoxDecoration(
-        color: Theme.of(context).cardColor,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 4,
-            offset: const Offset(0, -2),
+  Widget _buildImageGrid(Post p, bool isDark) {
+    final images = p.images;
+    if (images.length == 1) return _buildHeroImage(p, isDark);
+    final crossCount = images.length == 2 ? 2 : 3;
+    final displayImages = images.length > 4 ? images.sublist(0, 4) : images;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(16),
+      child: GridView.builder(
+        shrinkWrap: true, physics: const NeverScrollableScrollPhysics(),
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: crossCount, mainAxisSpacing: 3, crossAxisSpacing: 3, childAspectRatio: 1),
+        itemCount: displayImages.length,
+        itemBuilder: (context, index) => GestureDetector(
+          onTap: () => Navigator.push(context, MaterialPageRoute(
+            builder: (_) => ImageViewerScreen(
+              imageUrls: images.map((e) => ApiConstants.fullUrl(e.url)).toList(), initialIndex: index))),
+          child: Stack(fit: StackFit.expand, children: [
+            CachedNetworkImage(imageUrl: ApiConstants.fullUrl(displayImages[index].url), fit: BoxFit.cover,
+              placeholder: (_, __) => Container(color: Colors.grey[300]),
+              errorWidget: (_, __, ___) => Container(color: Colors.grey[300], child: const Icon(Icons.broken_image))),
+            if (index == 3 && images.length > 4)
+              Container(color: Colors.black54, alignment: Alignment.center,
+                child: Text('+${images.length - 3}', style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold))),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  // ---- 操作栏 ----
+
+  Widget _buildActionBar(bool isDark) {
+    return Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
+      _buildActionButton(
+        icon: _liked ? Icons.favorite : Icons.favorite_border,
+        color: _liked ? const Color(0xFFFF6B6B) : (isDark ? Colors.white38 : Colors.grey.shade500),
+        label: '$_likeCount',
+        onTap: _toggleLike,
+      ),
+      _buildActionButton(
+        icon: Icons.chat_bubble_outline,
+        color: isDark ? Colors.white38 : Colors.grey.shade500,
+        label: '${_replies.length}',
+        onTap: () => _replyFocus.requestFocus(),
+      ),
+      IconButton(
+        icon: Icon(Icons.report_outlined, color: isDark ? Colors.white30 : Colors.grey[400], size: 20),
+        onPressed: () => showReportSheet(context, postId: widget.postId),
+        tooltip: '举报',
+      ),
+    ]);
+  }
+
+  Widget _buildActionButton({required IconData icon, required Color color, required String label, required VoidCallback onTap}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(icon, color: color, size: 20),
+        const SizedBox(width: 6),
+        Text(label, style: TextStyle(color: color, fontSize: 13, fontWeight: FontWeight.w500)),
+      ]),
+    );
+  }
+
+  // ---- 联系方式 ----
+
+  Widget _buildContactChip(String contact, bool isDark) {
+    return GlassContainer(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      borderRadius: 14, blur: 8, opacity: 0.08,
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(Icons.contact_phone_outlined, size: 16, color: isDark ? Colors.white54 : Colors.grey[600]),
+        const SizedBox(width: 8),
+        Text(contact, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: isDark ? Colors.white70 : Colors.grey[700])),
+      ]),
+    );
+  }
+
+  // ---- 评论区 ----
+
+  Widget _buildCommentsHeader(bool isDark) {
+    return Row(children: [
+      Icon(Icons.forum_outlined, size: 18, color: isDark ? Colors.white30 : Colors.grey[500]),
+      const SizedBox(width: 8),
+      Text('全部评论 ${_replies.length}', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600,
+        color: isDark ? Colors.white38 : Colors.grey[500])),
+    ]);
+  }
+
+  Widget _buildCompactReplies(bool isDark) {
+    if (_replies.isEmpty) return _buildNoComments(isDark);
+    return Column(
+      children: _replies.take(4).map((r) => _buildReplyBubble(r, isDark)).toList(),
+    );
+  }
+
+  Widget _buildFullReplies(bool isDark) {
+    if (_replies.isEmpty) return _buildNoComments(isDark);
+    return Column(
+      children: _replies.map((r) => _buildReplyBubble(r, isDark)).toList(),
+    );
+  }
+
+  Widget _buildNoComments(bool isDark) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 24),
+      child: Center(child: Column(children: [
+        Icon(Icons.chat_bubble_outline, size: 32, color: isDark ? Colors.white30 : Colors.grey.shade300),
+        const SizedBox(height: 8),
+        Text('还没有评论', style: TextStyle(fontSize: 13, color: isDark ? Colors.white30 : Colors.grey[400])),
+      ])),
+    );
+  }
+
+  Widget _buildReplyBubble(Reply r, bool isDark) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        CircleAvatar(
+          radius: 16,
+          backgroundColor: isDark ? Colors.white12 : Colors.grey[200],
+          backgroundImage: r.author?.avatar.isNotEmpty == true
+              ? NetworkImage(ApiConstants.fullUrl(r.author!.avatar)) : null,
+          child: r.author?.avatar.isEmpty != false
+              ? Text(r.author?.nickname.isNotEmpty == true ? r.author!.nickname[0].toUpperCase() : '?',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: isDark ? Colors.white60 : Colors.grey[600]))
+              : null,
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: GlassContainer(
+            padding: const EdgeInsets.all(12),
+            borderRadius: 14, blur: 6, opacity: 0.06,
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                Text(r.author?.nickname ?? '匿名', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600,
+                  color: isDark ? Colors.white.withValues(alpha: 0.80) : Colors.black87)),
+                const Spacer(),
+                Text(_formatTime(r.createdAt), style: TextStyle(fontSize: 10, color: isDark ? Colors.white30 : Colors.grey[400])),
+              ]),
+              const SizedBox(height: 6),
+              Text(r.content, style: TextStyle(fontSize: 14, height: 1.5, color: isDark ? Colors.white60 : Colors.grey[700])),
+            ]),
           ),
-        ],
+        ),
+      ]),
+    );
+  }
+
+  // ---- 回复输入 ----
+
+  Widget _buildReplyBar(bool isDark) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E1E32).withValues(alpha: 0.92) : Colors.white.withValues(alpha: 0.92),
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 12, offset: const Offset(0, -3))],
       ),
       child: SafeArea(
-        child: Row(
-          children: [
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 8, 8, 8),
+          child: Row(children: [
             Expanded(
               child: TextField(
                 controller: _replyController,
-                decoration: const InputDecoration(
-                  hintText: '写下你的回复...',
-                  border: OutlineInputBorder(),
+                focusNode: _replyFocus,
+                decoration: InputDecoration(
+                  hintText: '写下你的想法...',
+                  hintStyle: TextStyle(color: isDark ? Colors.white30 : Colors.grey[400], fontSize: 14),
+                  border: InputBorder.none,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                 ),
+                style: TextStyle(fontSize: 14, color: isDark ? Colors.white : Colors.black87),
               ),
             ),
-            const SizedBox(width: 8),
-            IconButton(
-              icon: const Icon(Icons.send),
-              onPressed: _sendReply,
+            const SizedBox(width: 6),
+            GestureDetector(
+              onTap: _sendReply,
+              child: Container(
+                width: 42, height: 42,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(colors: [Color(0xFF667EEA), Color(0xFF764BA2)]),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Icon(Icons.send_rounded, color: Colors.white, size: 20),
+              ),
             ),
-          ],
+          ]),
         ),
       ),
     );
   }
 
-  String _formatTime(DateTime dateTime) {
+  // ---- 工具 ----
+
+  Color _creditColor(int score) {
+    if (score >= 90) return const Color(0xFF4CAF50);
+    if (score >= 70) return const Color(0xFFFF9800);
+    return const Color(0xFFF44336);
+  }
+
+  String _formatTime(DateTime dt) {
     final now = DateTime.now();
-    final diff = now.difference(dateTime);
+    final diff = now.difference(dt);
     if (diff.inMinutes < 1) return '刚刚';
     if (diff.inMinutes < 60) return '${diff.inMinutes}分钟前';
     if (diff.inHours < 24) return '${diff.inHours}小时前';
     if (diff.inDays < 7) return '${diff.inDays}天前';
-    return '${dateTime.month}/${dateTime.day}';
+    return '${dt.month}/${dt.day}';
   }
 }
-
-class MessageScreen {}

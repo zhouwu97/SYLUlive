@@ -54,7 +54,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
       body: Stack(
         children: [
           // 背景
-          if (!themeProvider.isBackgroundVisible('profile'))
+          if (!themeProvider.isBackgroundVisible)
             _buildDefaultBackground(isDark),
 
           // 内容
@@ -93,24 +93,26 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
   }
 
   Widget _buildDefaultBackground(bool isDark) {
-    return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: isDark
-              ? [
-                  const Color(0xFF1A1A2E),
-                  const Color(0xFF16213E),
-                  const Color(0xFF0F3460),
-                ]
-              : [
-                  const Color(0xFF667EEA),
-                  const Color(0xFF764BA2),
-                  const Color(0xFFF093FB),
-                ],
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        Image(
+          image: ResizeImage(const AssetImage('assets/images/morenbeijing.jpeg'), width: 1080),
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: isDark
+                    ? [const Color(0xFF1A1A2E), const Color(0xFF16213E), const Color(0xFF0F3460)]
+                    : [const Color(0xFF667EEA), const Color(0xFF764BA2), const Color(0xFFF093FB)],
+              ),
+            ),
+          ),
         ),
-      ),
+        Container(color: isDark ? Colors.black.withValues(alpha: 0.35) : Colors.white.withValues(alpha: 0.25)),
+      ],
     );
   }
 
@@ -323,14 +325,14 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
               ),
               Divider(height: 1, indent: 68, color: isDark ? Colors.white10 : Colors.grey[200]),
               _buildSettingsTile(
-                icon: Icons.visibility,
+                icon: Icons.opacity,
                 iconColor: Colors.teal,
-                title: '背景透明度',
+                title: '组件透明度',
                 trailing: SizedBox(
                   width: 150,
                   child: Slider(
-                    value: themeProvider.backgroundTransparency,
-                    onChanged: (v) => themeProvider.setBackgroundTransparency(v),
+                    value: themeProvider.componentOpacity,
+                    onChanged: (v) => themeProvider.setComponentOpacity(v),
                     activeColor: Theme.of(context).primaryColor,
                   ),
                 ),
@@ -338,15 +340,12 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
               ),
               Divider(height: 1, indent: 68, color: isDark ? Colors.white10 : Colors.grey[200]),
               _buildSettingsTile(
-                icon: Icons.public,
-                iconColor: Colors.green,
-                title: '背景应用范围',
-                trailing: Text(
-                  themeProvider.backgroundScope == BackgroundScope.global ? '全局' : '仅"我"',
-                  style: TextStyle(color: isDark ? Colors.white60 : Colors.grey[600]),
-                ),
+                icon: Icons.restore,
+                iconColor: Colors.orange,
+                title: '默认壁纸',
+                subtitle: '恢复为系统默认背景',
                 isDark: isDark,
-                onTap: () => _showScopePicker(context, themeProvider),
+                onTap: () => _showRestoreDefaultDialog(context, themeProvider),
               ),
             ],
           ),
@@ -602,134 +601,50 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     );
   }
 
-  void _showScopePicker(BuildContext context, ThemeProvider themeProvider) {
-    showModalBottomSheet(
+  void _showRestoreDefaultDialog(BuildContext context, ThemeProvider themeProvider) {
+    showDialog(
       context: context,
-      backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: Theme.of(context).scaffoldBackgroundColor,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('背景应用范围', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 16),
-            ListTile(
-              leading: const Icon(Icons.public),
-              title: const Text('全局'),
-              subtitle: const Text('所有页面显示背景'),
-              trailing: themeProvider.backgroundScope == BackgroundScope.global
-                  ? const Icon(Icons.check, color: Colors.green)
-                  : null,
-              onTap: () {
-                themeProvider.setBackgroundScope(BackgroundScope.global);
-                Navigator.pop(context);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.person),
-              title: const Text('仅"我"'),
-              subtitle: const Text('仅在个人中心和私信页面显示'),
-              trailing: themeProvider.backgroundScope == BackgroundScope.meOnly
-                  ? const Icon(Icons.check, color: Colors.green)
-                  : null,
-              onTap: () {
-                themeProvider.setBackgroundScope(BackgroundScope.meOnly);
-                Navigator.pop(context);
-              },
-            ),
-          ],
-        ),
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('恢复默认壁纸'),
+        content: const Text('将清除当前自定义背景，所有页面恢复为系统默认壁纸。'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+          TextButton(
+            onPressed: () {
+              themeProvider.clearBackground();
+              Navigator.pop(ctx);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('已恢复默认壁纸'), backgroundColor: Colors.green),
+              );
+            },
+            child: const Text('确认恢复', style: TextStyle(color: Colors.red)),
+          ),
+        ],
       ),
     );
   }
 
   void _showLiquidGlassWarningDialog(BuildContext context, ThemeProvider themeProvider, bool enable) {
     if (!enable) {
-      // Turning off - no warning needed
       themeProvider.setLiquidGlass(false);
       return;
     }
-
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Row(
-          children: [
-            Icon(Icons.warning_amber_rounded, color: Colors.orange.shade400, size: 28),
-            const SizedBox(width: 12),
-            const Text('性能警告'),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              '液态玻璃效果基于模糊算法实现，在部分设备上可能会造成卡顿。',
-              style: TextStyle(height: 1.5),
-            ),
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.orange.shade50,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.orange.shade200),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(Icons.phone_android, size: 18, color: Colors.orange.shade700),
-                      const SizedBox(width: 8),
-                      Text(
-                        '推荐配置',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: Colors.orange.shade800,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    '• 内存 8GB 以上\n• 处理器骁龙 8 Gen2 及以上\n• 或同等性能的其他平台处理器',
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: Colors.orange.shade900,
-                      height: 1.4,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
+        title: Row(children: [
+          Icon(Icons.warning_amber_rounded, color: Colors.orange.shade400, size: 28),
+          const SizedBox(width: 12),
+          const Text('性能警告'),
+        ]),
+        content: const Text('液态玻璃效果基于模糊算法实现，在部分设备上可能会造成卡顿。', style: TextStyle(height: 1.5)),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text(
-              '了解，但继续开启',
-              style: TextStyle(color: Colors.grey.shade600),
-            ),
-          ),
+          TextButton(onPressed: () { Navigator.pop(ctx); }, child: const Text('了解，但继续开启')),
           ElevatedButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              themeProvider.setLiquidGlass(true);
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Theme.of(context).primaryColor,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            ),
+            onPressed: () { Navigator.pop(ctx); themeProvider.setLiquidGlass(true); },
+            style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).primaryColor, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
             child: const Text('开启'),
           ),
         ],
@@ -751,12 +666,10 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
               final result = await authProvider.updateProfile(controller.text);
               if (context.mounted) {
                 Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(result.success ? '更新成功' : (result.errorMessage ?? '更新失败')),
-                    backgroundColor: result.success ? Colors.green : Colors.red,
-                  ),
-                );
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                  content: Text(result.success ? '更新成功' : (result.errorMessage ?? '更新失败')),
+                  backgroundColor: result.success ? Colors.green : Colors.red,
+                ));
               }
             },
             child: const Text('保存'),
@@ -773,14 +686,11 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('修改密码'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(controller: oldController, decoration: const InputDecoration(labelText: '旧密码'), obscureText: true),
-            const SizedBox(height: 16),
-            TextField(controller: newController, decoration: const InputDecoration(labelText: '新密码'), obscureText: true),
-          ],
-        ),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          TextField(controller: oldController, decoration: const InputDecoration(labelText: '旧密码'), obscureText: true),
+          const SizedBox(height: 16),
+          TextField(controller: newController, decoration: const InputDecoration(labelText: '新密码'), obscureText: true),
+        ]),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
           ElevatedButton(
@@ -788,12 +698,10 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
               final result = await authProvider.changePassword(oldController.text, newController.text);
               if (context.mounted) {
                 Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(result.success ? '修改成功' : (result.errorMessage ?? '修改失败')),
-                    backgroundColor: result.success ? Colors.green : Colors.red,
-                  ),
-                );
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                  content: Text(result.success ? '修改成功' : (result.errorMessage ?? '修改失败')),
+                  backgroundColor: result.success ? Colors.green : Colors.red,
+                ));
               }
             },
             child: const Text('确认'),
@@ -813,88 +721,74 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
           color: Theme.of(context).scaffoldBackgroundColor,
           borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.photo),
-              title: const Text('从相册选择'),
-              onTap: () async {
-                Navigator.pop(context);
-                final picker = ImagePicker();
-                final image = await picker.pickImage(source: ImageSource.gallery);
-                if (image != null) {
-                  final appDir = await getApplicationDocumentsDirectory();
-                  final fileName = 'avatar_${DateTime.now().millisecondsSinceEpoch}${path.extension(image.path)}';
-                  final savedPath = path.join(appDir.path, fileName);
-                  await File(image.path).copy(savedPath);
-                  final result = await authProvider.updateAvatar(savedPath);
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(result.success ? '头像更新成功' : (result.errorMessage ?? '头像更新失败')),
-                        backgroundColor: result.success ? Colors.green : Colors.red,
-                      ),
-                    );
-                  }
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          ListTile(
+            leading: const Icon(Icons.photo),
+            title: const Text('从相册选择'),
+            onTap: () async {
+              Navigator.pop(context);
+              final picker = ImagePicker();
+              final image = await picker.pickImage(source: ImageSource.gallery);
+              if (image != null) {
+                final appDir = await getApplicationDocumentsDirectory();
+                final fileName = 'avatar_${DateTime.now().millisecondsSinceEpoch}${path.extension(image.path)}';
+                final savedPath = path.join(appDir.path, fileName);
+                await File(image.path).copy(savedPath);
+                final result = await authProvider.updateAvatar(savedPath);
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                    content: Text(result.success ? '头像更新成功' : (result.errorMessage ?? '头像更新失败')),
+                    backgroundColor: result.success ? Colors.green : Colors.red,
+                  ));
                 }
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.camera_alt),
-              title: const Text('拍照'),
-              onTap: () async {
-                Navigator.pop(context);
-                final picker = ImagePicker();
-                final image = await picker.pickImage(source: ImageSource.camera);
-                if (image != null) {
-                  final appDir = await getApplicationDocumentsDirectory();
-                  final fileName = 'avatar_${DateTime.now().millisecondsSinceEpoch}${path.extension(image.path)}';
-                  final savedPath = path.join(appDir.path, fileName);
-                  await File(image.path).copy(savedPath);
-                  final result = await authProvider.updateAvatar(savedPath);
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(result.success ? '头像更新成功' : (result.errorMessage ?? '头像更新失败')),
-                        backgroundColor: result.success ? Colors.green : Colors.red,
-                      ),
-                    );
-                  }
+              }
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.camera_alt),
+            title: const Text('拍照'),
+            onTap: () async {
+              Navigator.pop(context);
+              final picker = ImagePicker();
+              final image = await picker.pickImage(source: ImageSource.camera);
+              if (image != null) {
+                final appDir = await getApplicationDocumentsDirectory();
+                final fileName = 'avatar_${DateTime.now().millisecondsSinceEpoch}${path.extension(image.path)}';
+                final savedPath = path.join(appDir.path, fileName);
+                await File(image.path).copy(savedPath);
+                final result = await authProvider.updateAvatar(savedPath);
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                    content: Text(result.success ? '头像更新成功' : (result.errorMessage ?? '头像更新失败')),
+                    backgroundColor: result.success ? Colors.green : Colors.red,
+                  ));
                 }
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.visibility),
-              title: const Text('查看大图'),
-              onTap: () {
-                Navigator.pop(context);
-                if (authProvider.user?.avatar.isNotEmpty == true) {
-                  _showAvatarViewer(context, authProvider.user!.avatar);
-                }
-              },
-            ),
-          ],
-        ),
+              }
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.visibility),
+            title: const Text('查看大图'),
+            onTap: () {
+              Navigator.pop(context);
+              if (authProvider.user?.avatar.isNotEmpty == true) {
+                _showAvatarViewer(context, authProvider.user!.avatar);
+              }
+            },
+          ),
+        ]),
       ),
     );
   }
 
   void _showAvatarViewer(BuildContext context, String avatarUrl) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => Scaffold(
-          backgroundColor: Colors.black,
-          appBar: AppBar(backgroundColor: Colors.transparent),
-          body: Center(
-            child: InteractiveViewer(
-              child: Image.network(avatarUrl),
-            ),
-          ),
-        ),
+    Navigator.push(context, MaterialPageRoute(
+      builder: (_) => Scaffold(
+        backgroundColor: Colors.black,
+        appBar: AppBar(backgroundColor: Colors.transparent),
+        body: Center(child: InteractiveViewer(child: Image.network(avatarUrl))),
       ),
-    );
+    ));
   }
 
   void _showAboutDialog(BuildContext context) {

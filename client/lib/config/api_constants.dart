@@ -1,5 +1,15 @@
 class ApiConstants {
   static const String baseUrl = 'http://156.233.229.232:8080/api';
+
+  /// 将服务端返回的相对路径转为完整 URL
+  /// 如 /uploads/ab/cd.jpg → http://156.233.229.232:8080/uploads/ab/cd.jpg
+  static String fullUrl(String path) {
+    if (path.isEmpty) return '';
+    if (path.startsWith('http://') || path.startsWith('https://')) return path;
+    final root = baseUrl.replaceAll('/api', '');
+    return '$root$path';
+  }
+
   static const Duration connectTimeout = Duration(seconds: 30);
   static const Duration receiveTimeout = Duration(seconds: 30);
   static const int maxRetries = 3;

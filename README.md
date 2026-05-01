@@ -131,6 +131,47 @@ winget install GoLang.Go
 - Docker >= 20.10 和 Docker Compose >= 2.0（Docker 部署）
 - 或 Linux + PostgreSQL（直接部署）
 
+## 快速开始
+
+### 本地运行（零配置，推荐开发使用）
+
+无需安装数据库，一条命令启动：
+
+```bash
+cd server
+go run cmd/main.go
+```
+
+启动后访问 http://localhost:8080，数据库自动创建为 `server/shenliyuan.db`。
+
+默认账号：
+
+| 角色 | 用户名 | 密码 |
+|------|--------|------|
+| 超级管理员 | `super_admin` | `dev-only-password-do-not-use-in-production` |
+| 管理员 | `admin` | `admin123` |
+| 普通用户 | `2024001` | `test123456` |
+
+> **Windows** 同样操作，进入 `server` 目录执行 `go run cmd/main.go`。
+
+### Docker 部署（生产环境，PostgreSQL）
+
+```bash
+# 设置环境变量
+export JWT_SECRET=$(openssl rand -base64 32)
+export SUPER_ADMIN_DEFAULT_PASSWORD="your-strong-password"
+
+# 启动
+docker-compose up -d --build
+```
+
+### Linux 直接部署
+
+```bash
+sudo bash deploy.sh
+# 部署后可用 xiaoyuan start/stop/restart/status/logs 管理
+```
+
 ## 配置说明
 
 ### 环境变量

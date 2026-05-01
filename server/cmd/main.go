@@ -3,7 +3,9 @@ package main
 import (
 	"log"
 	"os"
+	"strings"
 
+	"github.com/glebarez/sqlite"
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/driver/postgres"
@@ -20,7 +22,15 @@ func main() {
 	// 确保上传目录存在
 	os.MkdirAll(cfg.UploadDir, 0755)
 
-	db, err := gorm.Open(postgres.Open(cfg.DSN), &gorm.Config{})
+	var db *gorm.DB
+	var err error
+	if strings.Contains(cfg.DSN, "host=") || strings.Contains(cfg.DSN, "port=") {
+		db, err = gorm.Open(postgres.Open(cfg.DSN), &gorm.Config{})
+		log.Println("使用 PostgreSQL 数据库")
+	} else {
+		db, err = gorm.Open(sqlite.Open(cfg.DSN), &gorm.Config{})
+		log.Println("使用 SQLite 数据库")
+	}
 	if err != nil {
 		log.Fatal("数据库连接失败:", err)
 	}

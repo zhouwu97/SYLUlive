@@ -85,6 +85,7 @@ func main() {
 	uploadHandler := handlers.NewUploadHandler(cfg.UploadDir, cfg.MaxFileSize, db)
 	superAdminHandler := handlers.NewSuperAdminHandler(db)
 	eduHandler := handlers.NewEduHandler(db)
+	examHandler := handlers.NewExamHandler()
 
 	// 静态文件服务
 	r.Static("/uploads", cfg.UploadDir)
@@ -226,6 +227,9 @@ func main() {
 		superAdmin.GET("/stats", superAdminHandler.GetStatistics)
 		superAdmin.GET("/admin_logs", superAdminHandler.GetAdminLogs)
 	}
+
+	// 题库提取路由
+	r.POST("/api/exam/extract", middleware.AuthMiddleware(cfg.JWTSecret), examHandler.Extract)
 
 	log.Println("服务器启动在 :8080")
 	r.Run(":8080")

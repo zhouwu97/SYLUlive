@@ -8,9 +8,11 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
+import '../providers/edu_provider.dart';
 import '../widgets/glass_container.dart';
 import '../config/api_constants.dart';
 import 'login_screen.dart';
+import 'exam_extract_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -75,6 +77,11 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                   SliverToBoxAdapter(
                     child: _buildAdminSection(context, isDark),
                   ),
+
+                // 教务版块（绑定状态 + 题库入口）
+                SliverToBoxAdapter(
+                  child: _buildEduSection(context, isDark),
+                ),
 
                 // 设置区域
                 SliverToBoxAdapter(
@@ -302,6 +309,79 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
             const Icon(Icons.chevron_right),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildEduSection(BuildContext context, bool isDark) {
+    final eduProvider = context.watch<EduProvider>();
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 标题
+          Padding(
+            padding: const EdgeInsets.only(left: 4, bottom: 8),
+            child: Text(
+              '教务',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: isDark ? Colors.white54 : Colors.grey[600],
+              ),
+            ),
+          ),
+          _buildSettingsCard(
+            isDark,
+            children: [
+              // 绑定状态
+              _buildSettingsTile(
+                icon: Icons.school,
+                iconColor: eduProvider.isBound ? Colors.green : Colors.grey,
+                title: eduProvider.isBound ? '教务已绑定' : '教务未绑定',
+                subtitle: eduProvider.isBound
+                    ? '${eduProvider.studentId} | ${eduProvider.college}'
+                    : '绑定后可查询课表、成绩',
+                isDark: isDark,
+                trailing: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: eduProvider.isBound
+                        ? Colors.green.withValues(alpha: 0.15)
+                        : Colors.orange.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    eduProvider.isBound ? '已绑定' : '未绑定',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: eduProvider.isBound ? Colors.green : Colors.orange,
+                    ),
+                  ),
+                ),
+              ),
+              Divider(height: 1, indent: 68, color: isDark ? Colors.white10 : Colors.grey[200]),
+              // 题库入口
+              _buildSettingsTile(
+                icon: Icons.auto_stories,
+                iconColor: const Color(0xFF667EEA),
+                title: '导入融智云考题库',
+                subtitle: '提取练习题，导出 Markdown',
+                isDark: isDark,
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const ExamExtractScreen()),
+                  );
+                },
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+        ],
       ),
     );
   }

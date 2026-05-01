@@ -58,7 +58,7 @@
 - Go 1.21+
 - Gin (Web框架)
 - GORM (ORM)
-- SQLite (默认数据库)
+- SQLite (本地开发) / PostgreSQL (生产环境)
 - JWT (认证)
 - bcrypt (密码加密)
 
@@ -104,9 +104,72 @@ shenliyuan/
 - Go 1.21+
 - Flutter 3.x+
 
+### 安装 Go
+
+**Linux:**
+```bash
+wget https://go.dev/dl/go1.23.4.linux-amd64.tar.gz
+sudo tar -C /usr/local -xzf go1.23.4.linux-amd64.tar.gz
+echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.bashrc
+source ~/.bashrc
+```
+
+**macOS:**
+```bash
+brew install go
+```
+
+**Windows:**
+下载安装包: https://go.dev/dl/
+或使用包管理器:
+```powershell
+winget install GoLang.Go
+```
+
 ### 生产环境
-- Docker >= 20.10
-- Docker Compose >= 2.0
+- Docker >= 20.10 和 Docker Compose >= 2.0（Docker 部署）
+- 或 Linux + PostgreSQL（直接部署）
+
+## 快速开始
+
+### 本地运行（零配置，推荐开发使用）
+
+无需安装数据库，一条命令启动：
+
+```bash
+cd server
+go run cmd/main.go
+```
+
+启动后访问 http://localhost:8080，数据库自动创建为 `server/shenliyuan.db`。
+
+默认账号：
+
+| 角色 | 用户名 | 密码 |
+|------|--------|------|
+| 超级管理员 | `super_admin` | `dev-only-password-do-not-use-in-production` |
+| 管理员 | `admin` | `admin123` |
+| 普通用户 | `2024001` | `test123456` |
+
+> **Windows** 同样操作，进入 `server` 目录执行 `go run cmd/main.go`。
+
+### Docker 部署（生产环境，PostgreSQL）
+
+```bash
+# 设置环境变量
+export JWT_SECRET=$(openssl rand -base64 32)
+export SUPER_ADMIN_DEFAULT_PASSWORD="your-strong-password"
+
+# 启动
+docker-compose up -d --build
+```
+
+### Linux 直接部署
+
+```bash
+sudo bash deploy.sh
+# 部署后可用 xiaoyuan start/stop/restart/status/logs 管理
+```
 
 ## 配置说明
 
@@ -115,75 +178,9 @@ shenliyuan/
 | 变量名 | 说明 | 必填 |
 |--------|------|------|
 | JWT_SECRET | JWT密钥（至少32位随机字符串） | 是 |
-| DSN | 数据库连接字符串 | 否（默认SQLite） |
+| DSN | 数据库连接字符串。不设置默认 `./shenliyuan.db` (SQLite)，Docker/生产环境设为 PostgreSQL 格式 | 否 |
 | SUPER_ADMIN_DEFAULT_PASSWORD | 超级管理员初始密码 | 是 |
 | UPLOAD_DIR | 文件上传目录 | 否（默认./uploads） |
-
-### 生产环境部署
-
-**重要：生产环境必须设置以下环境变量！**
-
-1. 创建 `.env` 文件（不要提交到版本控制）：
-```bash
-cd server
-cp .env.example .env
-```
-
-2. 修改 `.env` 中的敏感配置：
-```bash
-# 生成随机密钥
-openssl rand -base64 32
-
-# 编辑 .env 文件
-JWT_SECRET=你的随机密钥
-SUPER_ADMIN_DEFAULT_PASSWORD=你的强密码
-```
-
-3. 使用 Docker Compose 启动：
-```bash
-# 设置环境变量
-export JWT_SECRET=你的随机密钥
-export SUPER_ADMIN_DEFAULT_PASSWORD=你的强密码
-
-# 启动服务
-docker-compose up -d --build
-```
-
-## 本地运行
-
-### 后端
-
-```bash
-cd server
-go mod tidy
-go run cmd/main.go
-```
-
-服务器将在 http://localhost:8080 启动。
-
-### 前端
-
-```bash
-cd client
-flutter pub get
-flutter run
-```
-
-### Docker 部署
-
-```bash
-# 启动所有服务（需先设置环境变量）
-docker-compose up -d --build
-
-# 查看服务状态
-docker-compose ps
-
-# 查看日志
-docker-compose logs -f server
-
-# 停止服务
-docker-compose down
-```
 
 ## 超级管理员
 
@@ -282,11 +279,21 @@ docker-compose logs server
 
 ## 数据库
 
-应用启动时会自动创建SQLite数据库并执行迁移。
+项目根据 DSN 环境变量自动选择数据库驱动：
 
-如需重置数据库：
+| DSN 格式 | 数据库 | 适用场景 |
+|----------|--------|---------|
+| 不设置 / `./xxx.db` | SQLite | 本地开发、Windows |
+| `host=... port=... user=...` | PostgreSQL | Docker、生产环境 |
+
+应用启动时会自动执行数据库迁移，无需手动建表。
+
+**重置数据库：**
 ```bash
+# Docker
 docker-compose down -v
+
+# 本地 SQLite
 rm -f server/shenliyuan.db
 ```
 

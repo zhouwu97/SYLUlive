@@ -53,6 +53,11 @@ async def fetch_courses(
                 input.semester
             )
 
+            # DEBUG: 打印教务系统返回的全部原始课程
+            print(f"  [RAW] 教务返回 {len(raw_courses)} 门课:")
+            for raw in raw_courses:
+                print(f"    name={raw.name!r} teacher={raw.teacher!r} location={raw.location!r} time={raw.time!r} weekday={raw.week_day!r} weeks={raw.week_str!r}")
+
             # 转换为CourseInfo列表
             courses = []
             for raw in raw_courses:
@@ -153,6 +158,7 @@ async def sync_courses(
 
             weekday = int(weekday_str) if weekday_str.isdigit() else 1
             start_section = time_to_section(time_str)
+            print(f"  [SYNC] jc={time_str!r} → section={start_section}, name={name}")
 
             # 解析周数
             weeks = parse_weeks(week_str)
@@ -350,3 +356,38 @@ async def customize_course(
     await db.refresh(course)
 
     return {"success": True, "message": "保存成功", "course_id": course.id}
+
+
+@router.post("/manual")
+async def add_manual_course(
+    input: CourseCustomInput,
+    db: AsyncSession = Depends(get_db)
+):
+    """手动添加课程（不从教务抓取，直接写入本地）"""
+    # 生成唯一 course_code
+    import hashlib
+    raw = f"manual_{input.user_id}_{input.course_code}_{input.weekday}_{input.start_section}"
+    course_code = hashlib.md5(raw.encode()).hexdigest()[:12]
+
+    course = CourseCustom(
+        user_id=input.user_id,
+        course_code=course_code,
+        raw_id=None,  # 无原始数据关联
+        custom_name=input.custom_name,
+        color=input.color,
+        location_custom=input.location_custom,
+        note=input.note,
+        class_duration=input.class_duration,
+        break_duration=input.break_duration,
+        weekday=input.weekday,
+        start_section=input.start_section,
+        end_section=input.end_section,
+        weeks=json.dumps(input.weeks),
+        original_name=input.custom_name,
+        original_location=input.location_custom,
+        teacher=None
+    )
+    db.add(course)
+    await db.commit()
+    await db.refresh(course)
+    return {"success": True, "message": "添加成功", "course_id": course.id}

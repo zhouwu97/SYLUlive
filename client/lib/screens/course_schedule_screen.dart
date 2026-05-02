@@ -463,148 +463,121 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   // ====== 课程网格（指定某一周） ======
   Widget _buildCourseGridForWeek(CourseScheduleProvider sc, DateTime weekStart) {
     final wn = sc.getAcademicWeek(weekStart);
-
-    return SingleChildScrollView(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // 左侧时间轴
-          SizedBox(
-            width: timeColumnWidth,
-            child: Column(
-              children: List.generate(12, (i) {
-                return Container(
-                  height: slotHeight,
-                  alignment: Alignment.center,
-                  child: Text(
-                    '${i + 1}\n${_starts[i]}\n${_ends[i]}',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(fontSize: 11, color: Color(0xFF888888), height: 1.3),
-                  ),
-                );
-              }),
-            ),
-          ),
-
-          // 右侧7天课程列
-          Expanded(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: List.generate(7, (dayIndex) {
-                final weekday = dayIndex + 1;
-                return Expanded(
-                  child: _buildDayColumnForWeek(sc, weekday, wn),
-                );
-              }),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ====== 单日课程列（指定周） ======
-  Widget _buildDayColumnForWeek(CourseScheduleProvider sc, int weekday, int? wn) {
     final totalH = 12 * slotHeight;
+    final screenW = MediaQuery.of(context).size.width;
+    final exactW = (screenW - timeColumnWidth) / 7;
 
-    final active = <CourseBlock>[];
-    final inactive = <CourseBlock>[];
-
+    final allActive = <CourseBlock>[];
+    final allInactive = <CourseBlock>[];
     for (final c in sc.courses) {
-      if (c.weekday != weekday) continue;
       if (wn == null || c.weeks.isEmpty || c.weeks.contains(wn)) {
-        active.add(c);
+        allActive.add(c);
       } else {
-        inactive.add(c);
+        allInactive.add(c);
       }
     }
 
-    return Container(
-      height: totalH,
-      decoration: BoxDecoration(
-        border: Border(
-          left: BorderSide(color: Colors.black.withOpacity(0.08), width: 0.5),
-        ),
-      ),
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          // 网格线
-          for (int i = 0; i < 12; i++)
+    return SingleChildScrollView(
+      child: SizedBox(
+        height: totalH,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            // 左侧时间轴
             Positioned(
-              top: i * slotHeight,
-              left: 0,
-              right: 0,
-              child: Container(
-                height: slotHeight,
-                decoration: BoxDecoration(
-                  border: Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.2), width: 0.5)),
-                ),
+              left: 0, top: 0, bottom: 0,
+              width: timeColumnWidth,
+              child: Column(
+                children: List.generate(12, (i) => Container(
+                  height: slotHeight,
+                  alignment: Alignment.center,
+                  child: Text('${i + 1}\n${_starts[i]}\n${_ends[i]}',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 11, color: Color(0xFF888888), height: 1.3)),
+                )),
               ),
             ),
-
-          // 非本周课程（灰色）
-          for (final c in inactive) _buildCard(c, false),
-
-          // 本周课程（彩色）
-          for (final c in active) _buildCard(c, true),
-        ],
+            // 网格线（7 天 × 12 节）
+            for (int d = 0; d < 7; d++)
+              Positioned(
+                left: timeColumnWidth + d * exactW,
+                top: 0, bottom: 0,
+                width: exactW,
+                child: Column(
+                  children: List.generate(12, (i) => Container(
+                    height: slotHeight,
+                    decoration: BoxDecoration(
+                      border: Border(
+                        left: BorderSide(color: Colors.black.withOpacity(0.08), width: 0.5),
+                        bottom: BorderSide(color: Colors.white.withValues(alpha: 0.2), width: 0.5),
+                      ),
+                    ),
+                  )),
+                ),
+              ),
+            // 课程卡片
+            for (final c in allInactive) _buildCard(c, false, exactW),
+            for (final c in allActive) _buildCard(c, true, exactW),
+          ],
+        ),
       ),
     );
   }
 
   // ====== 课程卡片 ======
-  Widget _buildCard(CourseBlock c, bool isActive) {
+  Widget _buildCard(CourseBlock c, bool isActive, double exactW) {
     final top = (c.startSection - 1) * slotHeight;
     final h = c.span * slotHeight - 4;
     final base = getCourseColor(c.name, isActive: isActive, courseCode: c.courseCode, location: c.location)
         .withValues(alpha: isActive ? _cardOpacity : 0.3);
 
     return Positioned(
+      left: timeColumnWidth + (c.weekday - 1) * exactW + 1,
+      width: exactW - 2,
       top: top,
-      left: 1.5,
-      right: 1.5,
       height: h,
       child: GestureDetector(
         onTap: () => _showDetail(c),
-          child: Container(
-            padding: const EdgeInsets.all(3.0),
-            margin: const EdgeInsets.all(1.5),
-            decoration: BoxDecoration(
-              color: base,
-              borderRadius: BorderRadius.circular(12.0),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.5), width: 0.8),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-              child: Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  if (!isActive)
-                    const Text('[非本周]', style: TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: Colors.white70)),
-                  Text(
-                    c.name.isNotEmpty ? c.name : '未知课名',
-                    style: const TextStyle(color: Colors.white, fontSize: 12.5, fontWeight: FontWeight.bold, height: 1.2),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.center,
-                  ),
-                  if (c.location != null && c.location!.isNotEmpty) ...[
-                    const SizedBox(height: 3),
-                    Text('@${c.location}', style: const TextStyle(color: Colors.white70, fontSize: 10, height: 1.2), textAlign: TextAlign.center),
-                  ],
-                  if (c.teacher != null && c.teacher!.isNotEmpty) ...[
-                    const SizedBox(height: 2),
-                    Text(c.teacher!, style: const TextStyle(color: Colors.white54, fontSize: 10, height: 1.2), maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center),
-                  ],
-                ],
-              ),
-            ),
-            ),
+        child: Container(
+          alignment: Alignment.topLeft,
+          padding: const EdgeInsets.all(4.0),
+          decoration: BoxDecoration(
+            color: base,
+            borderRadius: BorderRadius.circular(12.0),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.5), width: 0.8),
           ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (!isActive)
+                const Text('[非本周]', style: TextStyle(fontSize: 8, fontWeight: FontWeight.w700, color: Colors.white54)),
+              Text(
+                c.name.isNotEmpty ? c.name : '未知课名',
+                style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold, height: 1.15),
+                textAlign: TextAlign.left,
+                maxLines: 4,
+                overflow: TextOverflow.ellipsis,
+              ),
+              if (c.location != null && c.location!.isNotEmpty) ...[
+                const SizedBox(height: 2),
+                Text(
+                  '@${c.location}',
+                  style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600, height: 1.15),
+                  textAlign: TextAlign.left,
+                ),
+              ],
+              if (c.teacher != null && c.teacher!.isNotEmpty) ...[
+                const SizedBox(height: 2),
+                Text(
+                  c.teacher!,
+                  style: const TextStyle(color: Colors.white60, fontSize: 10),
+                  textAlign: TextAlign.left,
+                ),
+              ],
+            ],
+          ),
+        ),
       ),
     );
   }

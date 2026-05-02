@@ -167,8 +167,8 @@ class _LoginScreenState extends State<LoginScreen> {
                   // 昵称
                   TextFormField(
                     controller: _nicknameController, maxLength: 12,
-                    decoration: InputDecoration(labelText: '昵称（选填）', prefixIcon: const Icon(Icons.badge_outlined), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)), contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14)),
-                    validator: (_) => null,
+                    decoration: InputDecoration(labelText: '昵称', prefixIcon: const Icon(Icons.badge_outlined), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)), contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14)),
+                    validator: (v) => (v == null || v.trim().isEmpty) ? '请输入昵称' : null,
                   ),
                 ],
 

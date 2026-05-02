@@ -142,40 +142,23 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
               builder: (context, edu, sc, _) {
                 _autoLoad(edu, sc);
 
-            if (_initializing) return const Center(child: CircularProgressIndicator());
+                if (_initializing) return const Center(child: CircularProgressIndicator());
 
-            // 未登录 → 引导登录
-            if (!auth.isLoggedIn) {
-              return _buildLoginPrompt(context, isDark);
-            }
+                if (!edu.isBound) return _buildBindView(context, edu, sc, isDark);
 
-            // 已登录但未绑定教务
-            if (!edu.isBound) {
-              return _buildBindView(context, edu, sc, isDark);
-            }
+                if (sc.isLoading && sc.courses.isEmpty) return const Center(child: CircularProgressIndicator());
 
-            // 加载中且无数据
-            if (sc.isLoading && sc.courses.isEmpty) {
-              return const Center(child: CircularProgressIndicator());
-            }
-
-            // 主界面：表头 + PageView 横向滑动切周
-            return Column(
-              children: [
-                _buildDateHeader(sc),
-                Expanded(
-                  child: sc.courses.isEmpty
+                return Column(children: [
+                  _buildDateHeader(sc),
+                  Expanded(child: sc.courses.isEmpty
                       ? _buildEmptyView(context, isDark)
-                      : SingleChildScrollView(
-                          child: _buildCourseGridForWeek(sc, _weekStart),
-                        ),
-                ),
-              ],
+                      : SingleChildScrollView(child: _buildCourseGridForWeek(sc, _weekStart))),
+                ]);
+              },
             );
           },
         ),
       ),
-    ),
     );
   }
 

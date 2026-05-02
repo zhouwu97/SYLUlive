@@ -53,6 +53,7 @@ func main() {
 		&models.Invitation{},
 		&models.AdminActionLog{},
 		&models.Tutorial{},
+		&models.VerifyCode{},
 	)
 
 	// 创建种子数据
@@ -88,6 +89,7 @@ func main() {
 	eduHandler := handlers.NewEduHandler(db)
 	examHandler := handlers.NewExamHandler()
 	tutorialHandler := handlers.NewTutorialHandler(db)
+	verifyHandler := handlers.NewVerifyHandler(db, "smtp.163.com", "465", "13514252317@163.com", "JJk5VeMEe3RJYZc8")
 
 	// 静态文件服务
 	r.Static("/uploads", cfg.UploadDir)
@@ -97,6 +99,8 @@ func main() {
 	{
 		auth.POST("/register", authHandler.Register)
 		auth.POST("/login", authHandler.Login)
+		auth.POST("/send_code", verifyHandler.SendCode)
+		auth.POST("/verify_code", verifyHandler.VerifyCode)
 		auth.POST("/change_password", middleware.AuthMiddleware(cfg.JWTSecret), authHandler.ChangePassword)
 	}
 

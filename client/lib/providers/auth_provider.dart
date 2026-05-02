@@ -145,15 +145,22 @@ class AuthProvider extends ChangeNotifier {
     return '网络异常[$errType] → $url\n$cause';
   }
 
-  Future<AuthResult> register(String studentId, String password) async {
+  Future<AuthResult> register(String studentId, String password, {String? nickname, String? qq}) async {
     _isLoading = true;
     notifyListeners();
 
     try {
-      final response = await _dio.post('/register', data: {
+      final data = <String, dynamic>{
         'student_id': studentId,
         'password': password,
-      });
+      };
+      if (nickname != null && nickname.isNotEmpty) {
+        data['nickname'] = nickname;
+      }
+      if (qq != null && qq.isNotEmpty) {
+        data['qq'] = qq;
+      }
+      final response = await _dio.post('/register', data: data);
 
       _isLoading = false;
       if (response.statusCode == 201) {
@@ -295,6 +302,32 @@ class AuthProvider extends ChangeNotifier {
       final errorMsg = _parseDioError(e);
       debugPrint('修改密码失败: $errorMsg');
       return AuthResult.failure(errorMsg);
+    }
+  }
+
+  /// 发送验证码到 QQ 邮箱
+  Future<AuthResult> sendVerifyCode(String qq) async {
+    try {
+      final response = await _dio.post('/send_code', data: {'qq': qq});
+      if (response.statusCode == 200 && response.data['success'] == true) {
+        return AuthResult.success();
+      }
+      return AuthResult.failure(response.data['error'] ?? '发送失败');
+    } on DioException catch (e) {
+      return AuthResult.failure(_parseDioError(e));
+    }
+  }
+
+  /// 校验验证码
+  Future<AuthResult> verifyCode(String qq, String code) async {
+    try {
+      final response = await _dio.post('/verify_code', data: {'qq': qq, 'code': code});
+      if (response.statusCode == 200 && response.data['success'] == true) {
+        return AuthResult.success();
+      }
+      return AuthResult.failure(response.data['error'] ?? '验证失败');
+    } on DioException catch (e) {
+      return AuthResult.failure(_parseDioError(e));
     }
   }
 }

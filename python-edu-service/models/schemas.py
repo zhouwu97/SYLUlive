@@ -83,6 +83,19 @@ class CourseCustomInput(BaseModel):
     weeks: List[int] = Field(..., description="上课周数列表")
 
 
+class ManualCourseInput(BaseModel):
+    """手动添加课程输入"""
+    user_id: str = Field(..., description="用户ID")
+    custom_name: str = Field(..., description="课程名称")
+    teacher: Optional[str] = None
+    location: Optional[str] = None
+    color: str = "#4A90D9"
+    weekday: int = Field(..., ge=1, le=7)
+    start_section: int = Field(..., ge=1, le=14)
+    end_section: int = Field(..., ge=1, le=14)
+    weeks: List[int] = Field(..., description="上课周数列表")
+
+
 class CourseCustomResponse(BaseModel):
     """自定义课程响应"""
     id: int

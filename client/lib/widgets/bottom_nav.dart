@@ -57,9 +57,9 @@ class BottomNavWrapper extends StatelessWidget {
             label: '集市',
           ),
           NavigationDestination(
-            icon: Icon(Icons.school_outlined),
-            selectedIcon: Icon(Icons.school),
-            label: '教务',
+            icon: Icon(Icons.calendar_today_outlined),
+            selectedIcon: Icon(Icons.calendar_today),
+            label: '课表',
           ),
           NavigationDestination(
             icon: Icon(Icons.terminal),
@@ -110,7 +110,7 @@ class BottomNavWrapper extends StatelessWidget {
                 children: [
                   _buildFloatingItem(0, Icons.home, Icons.home_outlined, '首页', context, primaryColor),
                   _buildFloatingItem(1, Icons.store, Icons.store_outlined, '集市', context, primaryColor),
-                  _buildFloatingItem(2, Icons.school, Icons.school_outlined, '教务', context, primaryColor),
+                  _buildFloatingItem(2, Icons.calendar_today, Icons.calendar_today_outlined, '课表', context, primaryColor),
                   _buildFloatingItem(3, Icons.terminal, Icons.terminal, '博客', context, primaryColor),
                   _buildFloatingItem(4, Icons.person, Icons.person_outlined, '我', context, primaryColor),
                 ],

@@ -45,7 +45,7 @@ class CourseBlock {
     return CourseBlock(
       id: json['id'] ?? 0,
       courseCode: json['course_code'] ?? '',
-      name: (json['custom_name'] ?? json['original_name'] ?? '') as String,
+      name: (json['custom_name'] ?? json['original_name'] ?? json['name'] ?? '') as String,
       teacher: json['teacher'] as String?,
       location: json['location'] as String?,
       color: json['color'] ?? '#6366F1',

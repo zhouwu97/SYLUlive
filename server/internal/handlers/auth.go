@@ -41,7 +41,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	var count int64
 	h.db.Model(&models.User{}).Where("student_id = ?", input.StudentID).Count(&count)
 	if count > 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "该手机号已注册"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "该学号已注册"})
 		return
 	}
 
@@ -92,12 +92,12 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
 	var user models.User
 	if err := h.db.Where("student_id = ?", input.StudentID).First(&user).Error; err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "手机号或密码错误"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "学号或密码错误"})
 		return
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(input.Password)); err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "手机号或密码错误"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "学号或密码错误"})
 		return
 	}
 

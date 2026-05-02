@@ -7,6 +7,7 @@ import '../providers/course_schedule_provider.dart';
 import '../widgets/glass_container.dart';
 import '../main.dart' show navigatorKey;
 import 'edu_screen.dart';
+import 'login_screen.dart';
 
 /// 每节课槽的高度
 const double slotHeight = 85.0;
@@ -132,16 +133,23 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: SafeArea(
-        child: Consumer2<EduProvider, CourseScheduleProvider>(
-          builder: (context, edu, sc, _) {
-            _autoLoad(edu, sc);
+        child: Consumer<AuthProvider>(
+          builder: (context, auth, _) {
+            if (!auth.isLoggedIn) {
+              return _buildLoginPrompt(context, isDark);
+            }
+            return Consumer2<EduProvider, CourseScheduleProvider>(
+              builder: (context, edu, sc, _) {
+                _autoLoad(edu, sc);
 
-            // 启动中 — 等待状态加载，避免闪现绑定页
-            if (_initializing) {
-              return const Center(child: CircularProgressIndicator());
+            if (_initializing) return const Center(child: CircularProgressIndicator());
+
+            // 未登录 → 引导登录
+            if (!auth.isLoggedIn) {
+              return _buildLoginPrompt(context, isDark);
             }
 
-            // 未绑定教务账号
+            // 已登录但未绑定教务
             if (!edu.isBound) {
               return _buildBindView(context, edu, sc, isDark);
             }
@@ -167,6 +175,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
           },
         ),
       ),
+    ),
     );
   }
 
@@ -238,6 +247,25 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
         ],
       ),
     );
+  }
+
+  // ====== 未登录引导 ======
+  Widget _buildLoginPrompt(BuildContext context, bool isDark) {
+    return Center(child: Padding(padding: const EdgeInsets.all(24), child: GlassContainer(
+      padding: const EdgeInsets.all(32), borderRadius: 20,
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Icon(Icons.account_circle, size: 72, color: Theme.of(context).primaryColor.withValues(alpha: 0.7)),
+        const SizedBox(height: 20),
+        const Text('请先登录', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 12),
+        Text('登录后可绑定教务系统，导入课表', style: TextStyle(fontSize: 15, color: isDark ? Colors.grey[400] : Colors.grey[600]), textAlign: TextAlign.center),
+        const SizedBox(height: 28),
+        SizedBox(width: double.infinity, child: ElevatedButton.icon(
+          onPressed: () => Navigator.push(context, PageRouteBuilder(opaque: false, pageBuilder: (_, __, ___) => LoginScreen())),
+          icon: const Icon(Icons.login), label: const Text('去登录', style: TextStyle(fontSize: 16)),
+          style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+        )),
+      ]))));
   }
 
   // ====== 绑定视图 ======

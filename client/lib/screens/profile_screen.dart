@@ -342,28 +342,12 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
               _buildSettingsTile(
                 icon: Icons.school,
                 iconColor: eduProvider.isBound ? Colors.green : Colors.grey,
-                title: eduProvider.isBound ? '教务已绑定' : '教务未绑定',
+                title: '教务',
                 subtitle: eduProvider.isBound
                     ? '${eduProvider.studentId} | ${eduProvider.college}'
                     : '绑定后可查询课表、成绩',
                 isDark: isDark,
-                trailing: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: eduProvider.isBound
-                        ? Colors.green.withValues(alpha: 0.15)
-                        : Colors.orange.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    eduProvider.isBound ? '已绑定' : '未绑定',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: eduProvider.isBound ? Colors.green : Colors.orange,
-                    ),
-                  ),
-                ),
+                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const EduScreen())),
               ),
               Divider(height: 1, indent: 68, color: isDark ? Colors.white10 : Colors.grey[200]),
               // 题库入口
@@ -507,28 +491,6 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
               ),
               Divider(height: 1, indent: 68, color: isDark ? Colors.white10 : Colors.grey[200]),
               _buildSettingsTile(
-                icon: Icons.school,
-                iconColor: Colors.indigo,
-                title: '教务管理',
-                subtitle: '绑定教务、查看成绩、导入课表',
-                isDark: isDark,
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const EduScreen()),
-                ),
-              ),
-              Divider(height: 1, indent: 68, color: isDark ? Colors.white10 : Colors.grey[200]),
-              _buildSettingsTile(
-                icon: Icons.quiz,
-                iconColor: Colors.teal,
-                title: '题库提取',
-                subtitle: '从练习平台提取题目导出',
-                isDark: isDark,
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const ExamExtractScreen()),
-                ),
-              ),
-              Divider(height: 1, indent: 68, color: isDark ? Colors.white10 : Colors.grey[200]),
-              _buildSettingsTile(
                 icon: Icons.info,
                 iconColor: Colors.blue,
                 title: '关于',
@@ -605,7 +567,9 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                 ),
               ),
               if (subtitle != null)
-                Text(subtitle, style: TextStyle(color: isDark ? Colors.white60 : Colors.grey[600])),
+                Text(subtitle,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: isDark ? Colors.white60 : Colors.grey[600], fontSize: 13)),
               if (trailing != null) trailing,
               if (trailing == null && onTap != null)
                 Icon(Icons.chevron_right, color: isDark ? Colors.white30 : Colors.grey[400]),

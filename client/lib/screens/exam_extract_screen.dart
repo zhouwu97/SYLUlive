@@ -1,252 +1,241 @@
+import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:provider/provider.dart';
 import '../main.dart' show getSharedDio;
 import '../models/exam_question.dart';
 import '../providers/auth_provider.dart';
 import 'exam_preview_screen.dart';
 
-/// 题库提取页面 - 填写学号密码，调用服务器 Rod API
 class ExamExtractScreen extends StatefulWidget {
   const ExamExtractScreen({super.key});
-
   @override
   State<ExamExtractScreen> createState() => _ExamExtractScreenState();
 }
 
 class _ExamExtractScreenState extends State<ExamExtractScreen> {
-  final _urlController = TextEditingController(text: 'https://www.cctrcloud.net/practice/rzykIndex.html');
-  final _usernameController = TextEditingController();
-  final _passwordController = TextEditingController();
-  bool _loading = false;
-  String? _status;
-
-  static const _schoolCode = 'U101441';
+  String _scriptContent = '';
+  String? _tutorialTitle;
+  String? _tutorialContent;
+  bool _loading = true;
 
   @override
   void initState() {
     super.initState();
-    final auth = context.read<AuthProvider>();
-    _usernameController.text = auth.user?.studentId ?? '';
+    _loadScript();
+    _loadTutorial();
   }
 
-  @override
-  void dispose() {
-    _urlController.dispose();
-    _usernameController.dispose();
-    _passwordController.dispose();
-    super.dispose();
+  Future<void> _loadScript() async {
+    try {
+      _scriptContent = await rootBundle.loadString('assets/scripts/tampermonkey_script.js');
+      setState(() {});
+    } catch (_) {}
   }
 
-  Future<void> _startExtract() async {
-    final username = _usernameController.text.trim();
-    final password = _passwordController.text.trim();
-    if (username.isEmpty || password.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请填写学号和密码')),
-      );
-      return;
-    }
-
-    setState(() {
-      _loading = true;
-      _status = '正在连接服务器...';
-    });
-
+  Future<void> _loadTutorial() async {
     try {
       final dio = getSharedDio();
-      final response = await dio.post(
-        '/exam/extract',
-        data: {
-          'url': _urlController.text.trim(),
-          'username': username,
-          'password': password,
-        },
-      );
-
-      if (!mounted) return;
-
-      if (response.statusCode == 200 && response.data['success'] == true) {
-        final list = response.data['questions'] as List<dynamic>;
-        final questions = list
-            .map((e) => ExamQuestion.fromJson(e as Map<String, dynamic>))
-            .toList();
-
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (_) => ExamPreviewScreen(questions: questions),
-          ),
-        );
-      } else {
-        final error = response.data['error'] ?? '未知错误';
+      final resp = await dio.get('/tutorial/exam_extract');
+      if (resp.statusCode == 200) {
         setState(() {
-          _status = '提取失败: $error';
+          _tutorialTitle = resp.data['title'];
+          _tutorialContent = resp.data['content'];
           _loading = false;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('提取失败: $error'), backgroundColor: Colors.red),
-        );
+        return;
       }
+    } catch (_) {}
+    setState(() => _loading = false);
+  }
+
+  Future<void> _copyScript() async {
+    await Clipboard.setData(ClipboardData(text: _scriptContent));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('脚本已复制')));
+  }
+
+  Future<void> _importJson() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: ['json']);
+      if (result == null || result.files.isEmpty) return;
+      final file = File(result.files.single.path!);
+      final content = await file.readAsString();
+      final list = json.decode(content) as List<dynamic>;
+      final questions = list.map((e) => ExamQuestion.fromJson(e as Map<String, dynamic>)).toList();
+      if (!mounted) return;
+      Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => ExamPreviewScreen(questions: questions)));
     } catch (e) {
       if (!mounted) return;
-      final msg = e.toString().length > 80 ? e.toString().substring(0, 80) + '...' : e.toString();
-      setState(() {
-        _status = '请求失败: $msg';
-        _loading = false;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('请求失败: $msg'), backgroundColor: Colors.red),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('导入失败: $e'), backgroundColor: Colors.red));
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isAdmin = context.watch<AuthProvider>().user?.isAdmin == true;
+
+    if (_loading) {
+      return Scaffold(appBar: AppBar(title: const Text('题库提取')), body: const Center(child: CircularProgressIndicator()));
+    }
 
     return Scaffold(
-      backgroundColor: isDark ? const Color(0xFF1A1A2E) : Colors.grey[100],
+      backgroundColor: isDark ? const Color(0xFF1A1A2E) : Colors.grey[50],
       appBar: AppBar(
-        title: const Text('题库提取'),
+        title: Text(_tutorialTitle ?? '题库提取'),
         backgroundColor: Colors.transparent,
         elevation: 0,
+        actions: [
+          if (isAdmin)
+            IconButton(
+              icon: const Icon(Icons.edit),
+              tooltip: '编辑',
+              onPressed: () async {
+                await Navigator.push(context, MaterialPageRoute(builder: (_) => const _TutorialEditor()));
+                _loadTutorial();
+              },
+            ),
+        ],
       ),
-      body: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // 图标
-              Container(
-                width: 80,
-                height: 80,
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF667EEA), Color(0xFF764BA2)],
-                  ),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: const Icon(Icons.auto_stories, color: Colors.white, size: 40),
-              ),
-              const SizedBox(height: 24),
-              Text(
-                '融智云考题库提取',
-                style: TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                  color: isDark ? Colors.white : Colors.black87,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                '填写练习页面地址和账号密码，服务器自动提取',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: isDark ? Colors.white60 : Colors.grey[600],
-                ),
-              ),
-              const SizedBox(height: 32),
-
-              // URL 输入
-              _buildField(
-                controller: _urlController,
-                label: '练习页面地址',
-                icon: Icons.link,
-                isDark: isDark,
-              ),
-              const SizedBox(height: 16),
-
-              // 学号输入
-              _buildField(
-                controller: _usernameController,
-                label: '学号',
-                icon: Icons.person,
-                isDark: isDark,
-              ),
-              const SizedBox(height: 16),
-
-              // 密码输入
-              _buildField(
-                controller: _passwordController,
-                label: '密码',
-                icon: Icons.lock,
-                isDark: isDark,
-                obscure: true,
-              ),
-              const SizedBox(height: 24),
-
-              // 提取按钮
-              SizedBox(
-                width: double.infinity,
-                height: 50,
-                child: ElevatedButton(
-                  onPressed: _loading ? null : _startExtract,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF667EEA),
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    elevation: 0,
-                  ),
-                  child: _loading
-                      ? Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(
-                                color: Colors.white,
-                                strokeWidth: 2,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Text(_status ?? '处理中...', style: const TextStyle(fontSize: 14)),
-                          ],
-                        )
-                      : const Text('开始提取', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-                ),
-              ),
-
-              if (_status != null && !_loading)
-                Padding(
-                  padding: const EdgeInsets.only(top: 16),
-                  child: Text(
-                    _status!,
-                    style: TextStyle(color: isDark ? Colors.white60 : Colors.grey[600], fontSize: 13),
-                    textAlign: TextAlign.center,
+      body: _tutorialContent != null
+          ? Column(children: [
+              Expanded(
+                child: Markdown(
+                  data: _tutorialContent!,
+                  selectable: true,
+                  styleSheet: MarkdownStyleSheet(
+                    h1: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: isDark ? Colors.white : Colors.black87),
+                    h2: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: isDark ? Colors.white : Colors.black87),
+                    p: TextStyle(fontSize: 15, height: 1.7, color: isDark ? Colors.white70 : Colors.grey[800]),
                   ),
                 ),
-            ],
-          ),
-        ),
-      ),
+              ),
+              SafeArea(child: _bottomBar()),
+            ])
+          : SingleChildScrollView(padding: const EdgeInsets.all(16), child: _defaultTutorial(isDark)),
     );
   }
 
-  Widget _buildField({
-    required TextEditingController controller,
-    required String label,
-    required IconData icon,
-    required bool isDark,
-    bool obscure = false,
-  }) {
-    return TextField(
-      controller: controller,
-      obscureText: obscure,
-      style: TextStyle(fontSize: 15, color: isDark ? Colors.white : Colors.black87),
-      decoration: InputDecoration(
-        labelText: label,
-        prefixIcon: Icon(icon, size: 20),
-        filled: true,
-        fillColor: isDark ? Colors.white10 : Colors.white,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide.none,
-        ),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+  Widget _bottomBar() {
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Row(children: [Expanded(child: _btn('复制脚本', Icons.copy, _copyScript))]),
+        const SizedBox(height: 8),
+        Row(children: [Expanded(child: _btn('选择 JSON 文件', Icons.folder_open, _importJson))]),
+      ]),
+    );
+  }
+
+  Widget _btn(String label, IconData icon, VoidCallback onTap) => ElevatedButton.icon(
+      onPressed: onTap, icon: Icon(icon, size: 18), label: Text(label),
+      style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF667EEA), foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(vertical: 12), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))));
+
+  Widget _defaultTutorial(bool d) {
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text('题库提取教程', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: d ? Colors.white : Colors.black87)),
+      const SizedBox(height: 20),
+      _step('1', '安装油猴插件', d, '电脑 Edge/Chrome/Firefox 浏览器安装 Tampermonkey 扩展'),
+      _step('2', '导入脚本', d, '复制脚本 → 油猴管理面板 → 新建 → 粘贴 → 保存'),
+      _step('3', '提取题目', d, '浏览器打开 cctrcloud.net → 登录 → 选科目 → 点提取'),
+      _step('4', '导入 App', d, 'json 文件传到手机 → 点下面按钮导入'),
+      const SizedBox(height: 16),
+      _btn('复制脚本', Icons.copy, _copyScript),
+      const SizedBox(height: 8),
+      _btn('选择 JSON 文件', Icons.folder_open, _importJson),
+      const SizedBox(height: 40),
+    ]);
+  }
+
+  Widget _step(String n, String t, bool d, String b) => Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Container(width: 28, height: 28, margin: const EdgeInsets.only(right: 12, top: 2),
+            decoration: BoxDecoration(color: d ? Colors.white24 : Colors.grey[300], borderRadius: BorderRadius.circular(8)),
+            child: Center(child: Text(n, style: TextStyle(color: d ? Colors.white : Colors.black54, fontWeight: FontWeight.bold)))),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(t, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: d ? Colors.white : Colors.black87)),
+          const SizedBox(height: 2),
+          Text(b, style: TextStyle(fontSize: 14, color: d ? Colors.white60 : Colors.grey[600])),
+        ])),
+      ]));
+}
+
+/// 管理员编辑教程
+class _TutorialEditor extends StatefulWidget {
+  const _TutorialEditor();
+  @override
+  State<_TutorialEditor> createState() => _TutorialEditorState();
+}
+
+class _TutorialEditorState extends State<_TutorialEditor> {
+  final _title = TextEditingController();
+  final _content = TextEditingController();
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final resp = await getSharedDio().get('/tutorial/exam_extract');
+      _title.text = resp.data['title'] ?? '';
+      _content.text = resp.data['content'] ?? '';
+      setState(() {});
+    } catch (_) {}
+  }
+
+  Future<void> _save() async {
+    setState(() => _saving = true);
+    try {
+      await getSharedDio().put('/tutorial/exam_extract', data: {'title': _title.text, 'content': _content.text});
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('保存成功'), backgroundColor: Colors.green));
+      Navigator.pop(context);
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('保存失败: $e'), backgroundColor: Colors.red));
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  void dispose() {
+    _title.dispose();
+    _content.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('编辑教程'),
+        actions: [
+          IconButton(
+            icon: _saving ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.save),
+            onPressed: _saving ? null : _save,
+          ),
+        ],
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(children: [
+          TextField(controller: _title, decoration: const InputDecoration(labelText: '标题', border: OutlineInputBorder())),
+          const SizedBox(height: 16),
+          Expanded(
+            child: TextField(controller: _content, maxLines: null, expands: true, textAlignVertical: TextAlignVertical.top,
+                decoration: const InputDecoration(labelText: '内容（Markdown）', border: OutlineInputBorder(), alignLabelWithHint: true)),
+          ),
+        ]),
       ),
     );
   }

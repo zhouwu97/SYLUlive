@@ -8,8 +8,8 @@ import '../widgets/glass_container.dart';
 import '../main.dart' show navigatorKey;
 import 'edu_screen.dart';
 
-/// 每节课槽的高度
-const double slotHeight = 85.0;
+/// 每节课槽的高度（默认值，实际由 LayoutBuilder 动态计算）
+double slotHeight = 85.0;
 
 /// 左侧时间轴宽度（必须与表头左侧留空一致）
 const double timeColumnWidth = 35.0;
@@ -68,7 +68,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   late DateTime _weekStart;
   bool _didLoad = false;
   bool _initializing = true;
-  double _cardOpacity = 0.55;
+  double _cardOpacity = 0.4;
 
   // 左右滑动切周
   late PageController _weekPageController;
@@ -155,23 +155,18 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
             return Column(
               children: [
                 _buildDateHeader(sc),
-                Expanded(
-                  child: sc.courses.isEmpty
-                      ? _buildEmptyView(context, isDark)
-                      : PageView.builder(
-                          controller: _weekPageController,
-                          onPageChanged: _onWeekPageChanged,
-                          itemBuilder: (context, index) {
-                            // 以当前周为基准，向前向后推算
-                            final now = DateTime.now();
-                            final currentMonday = _mondayOf(now);
-                            final targetMonday = currentMonday.add(Duration(days: (index - 500) * 7));
-                            return _buildCourseGridForWeek(sc, targetMonday);
-                          },
-                        ),
-                ),
-              ],
-            );
+                  Expanded(
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        slotHeight = (constraints.maxHeight / 12).clamp(48.0, 85.0);
+                        return sc.courses.isEmpty
+                            ? _buildEmptyView(context, isDark)
+                            : _buildCourseGridForWeek(sc, _weekStart);
+                      },
+                    ),
+                  ),
+                ],
+              );
           },
         ),
       ),
@@ -185,34 +180,45 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     final academicWeek = sc.getAcademicWeek(_weekStart);
 
     return Container(
-      color: Colors.black.withOpacity(0.35),
+      color: Colors.transparent,
       child: Column(
         children: [
-          // 第一行：功能控制栏
+          // 标题栏：大字号周次 + 日期 + 右侧图标
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            padding: const EdgeInsets.fromLTRB(24, 12, 16, 4),
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                GestureDetector(
-                  onTap: () => _pickSemesterStart(context),
-                  child: Text(
-                    academicWeek != null ? '第 $academicWeek 周' : '点击设置学期起始日期',
-                    style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      GestureDetector(
+                        onTap: () => _pickSemesterStart(context),
+                        child: Text(
+                          academicWeek != null ? '第 $academicWeek 周' : '设置学期',
+                          style: const TextStyle(color: Colors.white, fontSize: 30, fontWeight: FontWeight.w900, height: 1.1),
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '${_weekStart.year}/${_weekStart.month}/${_weekStart.day} ${_wd[_weekStart.weekday - 1]}',
+                        style: const TextStyle(color: Colors.white70, fontSize: 15),
+                      ),
+                    ],
                   ),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.opacity, size: 20),
-                  color: Colors.white70,
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                  onPressed: () => _showOpacitySheet(context),
-                  tooltip: '卡片透明度',
+                Row(
+                  children: [
+                    IconButton(icon: const Icon(Icons.file_download_outlined, size: 22), color: Colors.white, onPressed: () {}, tooltip: '导出'),
+                    IconButton(icon: const Icon(Icons.opacity, size: 22), color: Colors.white, onPressed: () => _showOpacitySheet(context), tooltip: '透明度'),
+                  ],
                 ),
               ],
             ),
           ),
-          // 第二行：星期表头
+          const SizedBox(height: 20),
+          // 星期表头
           Row(
             children: [
               SizedBox(width: timeColumnWidth),
@@ -220,15 +226,12 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                 final d = _weekStart.add(Duration(days: i));
                 final isToday = d == todayDate;
                 return Expanded(
-                  child: Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(_wd[i], style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold)),
-                        const SizedBox(height: 2),
-                        Text(_md(d), style: TextStyle(color: Colors.white70, fontSize: 11, fontWeight: isToday ? FontWeight.w600 : FontWeight.w400)),
-                      ],
-                    ),
+                  child: Column(
+                    children: [
+                      Text(_wd[i], style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 2),
+                      Text(_md(d), style: TextStyle(color: Colors.white70, fontSize: 13, fontWeight: isToday ? FontWeight.w600 : FontWeight.w400)),
+                    ],
                   ),
                 );
               }),
@@ -537,9 +540,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
               child: Container(
                 height: slotHeight,
                 decoration: BoxDecoration(
-                  border: Border(
-                    bottom: BorderSide(color: Colors.black.withOpacity(0.06), width: 0.5),
-                  ),
+                  border: Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.2), width: 0.5)),
                 ),
               ),
             ),
@@ -568,51 +569,41 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       height: h,
       child: GestureDetector(
         onTap: () => _showDetail(c),
-        child: Container(
-          alignment: Alignment.topLeft,
-          padding: const EdgeInsets.all(4.0),
-          margin: const EdgeInsets.all(1.5),
-          decoration: BoxDecoration(
-            color: base,
-            borderRadius: BorderRadius.circular(6.0),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.start,
-            children: [
-              // 非本周标记
-              if (!isActive)
-                const Text(
-                  '[非本周]',
-                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Colors.white),
-                ),
-
-              // 课程名
-              Text(
-                c.name,
-                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.white, height: 1.2),
+          child: Container(
+            padding: const EdgeInsets.all(3.0),
+            margin: const EdgeInsets.all(1.5),
+            decoration: BoxDecoration(
+              color: base,
+              borderRadius: BorderRadius.circular(12.0),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.5), width: 1.0),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.max,
+                children: [
+                  if (!isActive)
+                    const Text('[非本周]', style: TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: Colors.white70, height: 1.2)),
+                  Text(
+                    c.name.isNotEmpty ? c.name : '未知课名',
+                    style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold, height: 1.2),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  if (c.location != null && c.location!.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Text('@${c.location}', style: const TextStyle(color: Colors.white, fontSize: 10, height: 1.2), maxLines: 1, overflow: TextOverflow.ellipsis),
+                  ],
+                  if (c.teacher != null && c.teacher!.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(c.teacher!, style: const TextStyle(color: Colors.white70, fontSize: 10, height: 1.2), maxLines: 1, overflow: TextOverflow.ellipsis),
+                  ],
+                ],
               ),
-
-              // 上课地点
-              if (c.location != null && c.location!.isNotEmpty) ...[
-                const SizedBox(height: 2),
-                Text(
-                  '@${c.location}',
-                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.white, height: 1.2),
-                ),
-              ],
-
-              // 教师
-              if (c.teacher != null && c.teacher!.isNotEmpty) ...[
-                const SizedBox(height: 2),
-                Text(
-                  c.teacher!,
-                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.white, height: 1.2),
-                ),
-              ],
-            ],
+            ),
           ),
-        ),
       ),
     );
   }
@@ -658,11 +649,11 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     );
   }
 
-  Widget _detailRow(IconData i, String l, String v) => Padding(
+  Widget _detailRow(IconData icon, String l, String v) => Padding(
         padding: const EdgeInsets.symmetric(vertical: 8),
         child: Row(
           children: [
-            Icon(i, size: 20, color: Colors.grey[600]),
+            Icon(icon, size: 20, color: Colors.grey[600]),
             const SizedBox(width: 12),
             Text('$l：', style: TextStyle(fontSize: 14, color: Colors.grey[600])),
             Expanded(child: Text(v, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500))),

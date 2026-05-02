@@ -12,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/go-rod/rod"
 	"github.com/go-rod/rod/lib/launcher"
+	"github.com/go-rod/rod/lib/proto"
 )
 
 // ExamExtractRequest 题库提取请求
@@ -103,7 +104,7 @@ func (h *ExamHandler) Extract(c *gin.Context) {
 		NoSandbox(true).
 		Set("disable-gpu").
 		Set("disable-dev-shm-usage").
-		Set("window-size=1920,1080")
+		Set("window-size", "1920,1080")
 
 	if h.browserPath != "" {
 		l.Bin(h.browserPath)
@@ -116,13 +117,23 @@ func (h *ExamHandler) Extract(c *gin.Context) {
 		return
 	}
 
-	browser := rod.New().ControlURL(launcherURL).MustConnect()
+	browser := rod.New().ControlURL(launcherURL)
+	if err := browser.Connect(); err != nil {
+		log.Printf("[题库提取] 连接浏览器失败: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "连接浏览器失败: " + err.Error()})
+		return
+	}
 	defer func() {
 		time.Sleep(100 * time.Millisecond)
-		browser.MustClose()
+		browser.Close()
 	}()
 
-	page := browser.MustPage()
+	page, err := browser.Page(proto.TargetCreateTarget{URL: "about:blank"})
+	if err != nil {
+		log.Printf("[题库提取] 创建页面失败: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建页面失败: " + err.Error()})
+		return
+	}
 
 	// 第一步：导航到登录页面（从练习URL推导登录URL）
 	loginURL := deriveLoginURL(req.URL)

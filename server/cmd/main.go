@@ -52,6 +52,7 @@ func main() {
 		&models.AppealVote{},
 		&models.Invitation{},
 		&models.AdminActionLog{},
+		&models.Tutorial{},
 	)
 
 	// 创建种子数据
@@ -86,6 +87,7 @@ func main() {
 	superAdminHandler := handlers.NewSuperAdminHandler(db)
 	eduHandler := handlers.NewEduHandler(db)
 	examHandler := handlers.NewExamHandler()
+	tutorialHandler := handlers.NewTutorialHandler(db)
 
 	// 静态文件服务
 	r.Static("/uploads", cfg.UploadDir)
@@ -230,6 +232,10 @@ func main() {
 
 	// 题库提取路由
 	r.POST("/api/exam/extract", middleware.AuthMiddleware(cfg.JWTSecret), examHandler.Extract)
+
+	// 教程页面路由（公开读，管理员写）
+	r.GET("/api/tutorial/:key", tutorialHandler.Get)
+	r.PUT("/api/tutorial/:key", middleware.AuthMiddleware(cfg.JWTSecret), middleware.AdminMiddleware(), tutorialHandler.Update)
 
 	log.Println("服务器启动在 :8080")
 	r.Run(":8080")

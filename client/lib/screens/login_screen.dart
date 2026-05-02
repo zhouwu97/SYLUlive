@@ -110,11 +110,12 @@ class _LoginScreenState extends State<LoginScreen> {
                 Text('校园互助社交平台', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey), textAlign: TextAlign.center),
                 const SizedBox(height: 28),
 
-                // 手机号
+                // 学号
                 TextFormField(
-                  controller: _studentIdController, keyboardType: TextInputType.phone, maxLength: 11,
-                  decoration: InputDecoration(labelText: '手机号', prefixIcon: const Icon(Icons.phone_android_outlined), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)), contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14)),
-                  validator: (v) => (v == null || v.isEmpty) ? '请输入手机号' : (v.length != 11 || !RegExp(r'^1[3-9]\d{9}$').hasMatch(v) ? '请输入正确的11位手机号' : null),
+                  controller: _studentIdController,
+                  maxLength: 10,
+                  decoration: InputDecoration(labelText: '学号', prefixIcon: const Icon(Icons.person_outline), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)), contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14)),
+                  validator: (v) => (v == null || v.isEmpty) ? '请输入学号' : (v.length != 10 ? '请输入10位学号' : null),
                 ),
                 const SizedBox(height: 16),
 

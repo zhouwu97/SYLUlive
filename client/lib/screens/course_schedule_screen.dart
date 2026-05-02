@@ -8,8 +8,8 @@ import '../widgets/glass_container.dart';
 import '../main.dart' show navigatorKey;
 import 'edu_screen.dart';
 
-/// 每节课槽的高度（默认值，实际由 LayoutBuilder 动态计算）
-double slotHeight = 85.0;
+/// 每节课槽的高度
+const double slotHeight = 85.0;
 
 /// 左侧时间轴宽度（必须与表头左侧留空一致）
 const double timeColumnWidth = 35.0;
@@ -155,18 +155,15 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
             return Column(
               children: [
                 _buildDateHeader(sc),
-                  Expanded(
-                    child: LayoutBuilder(
-                      builder: (context, constraints) {
-                        slotHeight = (constraints.maxHeight / 12).clamp(48.0, 85.0);
-                        return sc.courses.isEmpty
-                            ? _buildEmptyView(context, isDark)
-                            : _buildCourseGridForWeek(sc, _weekStart);
-                      },
-                    ),
-                  ),
-                ],
-              );
+                Expanded(
+                  child: sc.courses.isEmpty
+                      ? _buildEmptyView(context, isDark)
+                      : SingleChildScrollView(
+                          child: _buildCourseGridForWeek(sc, _weekStart),
+                        ),
+                ),
+              ],
+            );
           },
         ),
       ),
@@ -197,13 +194,13 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                         onTap: () => _pickSemesterStart(context),
                         child: Text(
                           academicWeek != null ? '第 $academicWeek 周' : '设置学期',
-                          style: const TextStyle(color: Colors.white, fontSize: 30, fontWeight: FontWeight.w900, height: 1.1),
+                          style: const TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.w900, height: 1.1),
                         ),
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        '${_weekStart.year}/${_weekStart.month}/${_weekStart.day} ${_wd[_weekStart.weekday - 1]}',
-                        style: const TextStyle(color: Colors.white70, fontSize: 15),
+                        '${_weekStart.year}/${_weekStart.month}/${_weekStart.day} 周${_wd[_weekStart.weekday - 1]}',
+                        style: const TextStyle(color: Colors.white70, fontSize: 18),
                       ),
                     ],
                   ),
@@ -211,13 +208,14 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                 Row(
                   children: [
                     IconButton(icon: const Icon(Icons.file_download_outlined, size: 22), color: Colors.white, onPressed: () {}, tooltip: '导出'),
-                    IconButton(icon: const Icon(Icons.opacity, size: 22), color: Colors.white, onPressed: () => _showOpacitySheet(context), tooltip: '透明度'),
+                    IconButton(icon: const Icon(Icons.share_outlined, size: 22), color: Colors.white, onPressed: () {}, tooltip: '分享'),
+                    IconButton(icon: const Icon(Icons.settings_outlined, size: 22), color: Colors.white, onPressed: () => _showOpacitySheet(context), tooltip: '设置'),
                   ],
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 16),
           // 星期表头
           Row(
             children: [
@@ -575,33 +573,36 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
             decoration: BoxDecoration(
               color: base,
               borderRadius: BorderRadius.circular(12.0),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.5), width: 1.0),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.5), width: 0.8),
             ),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+              child: Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.max,
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   if (!isActive)
-                    const Text('[非本周]', style: TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: Colors.white70, height: 1.2)),
+                    const Text('[非本周]', style: TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: Colors.white70)),
                   Text(
                     c.name.isNotEmpty ? c.name : '未知课名',
-                    style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold, height: 1.2),
+                    style: const TextStyle(color: Colors.white, fontSize: 12.5, fontWeight: FontWeight.bold, height: 1.2),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
                   ),
                   if (c.location != null && c.location!.isNotEmpty) ...[
-                    const SizedBox(height: 6),
-                    Text('@${c.location}', style: const TextStyle(color: Colors.white, fontSize: 10, height: 1.2), maxLines: 1, overflow: TextOverflow.ellipsis),
+                    const SizedBox(height: 3),
+                    Text('@${c.location}', style: const TextStyle(color: Colors.white70, fontSize: 10, height: 1.2), textAlign: TextAlign.center),
                   ],
                   if (c.teacher != null && c.teacher!.isNotEmpty) ...[
                     const SizedBox(height: 2),
-                    Text(c.teacher!, style: const TextStyle(color: Colors.white70, fontSize: 10, height: 1.2), maxLines: 1, overflow: TextOverflow.ellipsis),
+                    Text(c.teacher!, style: const TextStyle(color: Colors.white54, fontSize: 10, height: 1.2), maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center),
                   ],
                 ],
               ),
+            ),
             ),
           ),
       ),

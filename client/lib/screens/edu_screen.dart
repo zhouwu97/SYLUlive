@@ -29,12 +29,11 @@ class _EduScreenState extends State<EduScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         title: const Text('教务系统'),
         backgroundColor: Colors.transparent,
         elevation: 0,
-        automaticallyImplyLeading: false,
       ),
       body: Consumer<EduProvider>(
         builder: (context, eduProvider, child) {
@@ -309,7 +308,7 @@ class _EduScreenState extends State<EduScreen> {
               Navigator.pop(context); // 先关闭对话框
               final result = await eduProvider.getCourses(selectedYear, selectedSemester);
               if (result != null && result.success && result.data != null) {
-                _showCoursesResult(context, result.data!, selectedYear, selectedSemester);
+                _showCoursesResult(context, result.data!, selectedYear, selectedSemester, eduProvider);
               } else {
                 scaffoldMessenger.showSnackBar(
                   SnackBar(
@@ -326,16 +325,16 @@ class _EduScreenState extends State<EduScreen> {
     );
   }
 
-  void _showCoursesResult(BuildContext context, List<Map<String, dynamic>> courses, String year, int semester) {
+  void _showCoursesResult(BuildContext context, List<Map<String, dynamic>> courses, String year, int semester, EduProvider eduProvider) {
     showModalBottomSheet(
       context: navigatorKey.currentContext!,
       isScrollControlled: true,
-      builder: (context) => DraggableScrollableSheet(
+      builder: (ctx) => DraggableScrollableSheet(
         initialChildSize: 0.7,
         minChildSize: 0.5,
         maxChildSize: 0.95,
         expand: false,
-        builder: (context, scrollController) => Column(
+        builder: (ctx, scrollController) => Column(
           children: [
             Padding(
               padding: const EdgeInsets.all(16),
@@ -350,7 +349,7 @@ class _EduScreenState extends State<EduScreen> {
                   : ListView.builder(
                       controller: scrollController,
                       itemCount: courses.length,
-                      itemBuilder: (context, index) {
+                      itemBuilder: (ctx, index) {
                         final course = courses[index];
                         return Card(
                           margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -366,6 +365,45 @@ class _EduScreenState extends State<EduScreen> {
                         );
                       },
                     ),
+            ),
+            // 导入到课表按钮
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () async {
+                    // 先拿到全局 ScaffoldMessenger（此时 context 还活着）
+                    final navContext = navigatorKey.currentContext;
+                    if (navContext == null) return;
+                    final messenger = ScaffoldMessenger.of(navContext);
+                    Navigator.pop(ctx); // 关闭底部弹窗
+                    try {
+                      final success = await eduProvider.syncCourses(year, semester, courses);
+                      messenger.showSnackBar(
+                        SnackBar(
+                          content: Text(success ? '导入课表成功喵~' : '导入失败，请重试'),
+                          backgroundColor: success ? Colors.green : Colors.red,
+                          duration: const Duration(seconds: 2),
+                        ),
+                      );
+                    } catch (e) {
+                      messenger.showSnackBar(
+                        SnackBar(
+                          content: Text('导入出错: $e'),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                    }
+                  },
+                  icon: const Icon(Icons.download),
+                  label: const Text('导入到课表', style: TextStyle(fontSize: 16)),
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+              ),
             ),
           ],
         ),

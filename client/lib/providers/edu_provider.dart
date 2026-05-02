@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
+import 'dart:convert';
 import '../config/api_constants.dart';
 
 /// 操作结果，包含成功状态和错误信息
@@ -256,6 +257,43 @@ class EduProvider extends ChangeNotifier {
       final errorMsg = _parseDioError(e);
       debugPrint('获取成绩失败: $errorMsg');
       return OperationResult.fail(errorMsg);
+    }
+  }
+
+  /// 将课表同步到本地数据库（供课表页展示）
+  /// [courses] 为 fetch 返回的原始课程列表
+  Future<bool> syncCourses(String year, int semester, List<Map<String, dynamic>> courses) async {
+    if (_userId == null) return false;
+
+    final kbList = courses.map((c) {
+      final time = c['time'] as int? ?? 1;
+      return {
+        'kcmc': c['name'] ?? '',
+        'xm': c['teacher'] ?? '',
+        'cdmc': c['location'] ?? '',
+        'jc': '${time.toString().padLeft(2, '0')}${(time + 1).toString().padLeft(2, '0')}',
+        'xqj': (c['week_day'] as int? ?? 1).toString(),
+        'zcd': (c['weeks'] as List?)?.join(',') ?? '',
+      };
+    }).toList();
+
+    final rawJson = jsonEncode({'kbList': kbList});
+
+    try {
+      final response = await _eduDio.post(
+        '/api/edu/courses/sync',
+        data: {
+          'user_id': _userId,
+          'year': year,
+          'semester': semester,
+          'raw_json': rawJson,
+          'customizations': [],
+        },
+      );
+      return response.statusCode == 200;
+    } on DioException catch (e) {
+      debugPrint('同步课程失败: ${_parseDioError(e)}');
+      return false;
     }
   }
 }

@@ -5,7 +5,7 @@ import '../providers/auth_provider.dart';
 import '../widgets/bottom_nav.dart';
 import 'shuitie_screen.dart';
 import 'market_screen.dart';
-import 'edu_screen.dart';
+import 'course_schedule_screen.dart';
 import 'blog_screen.dart';
 import 'profile_screen.dart';
 
@@ -38,7 +38,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _onPageChanged(int index) {
     setState(() => _currentIndex = index);
-    final screenNames = ['shuitie', 'market', 'edu', 'blog', 'profile'];
+    final screenNames = ['shuitie', 'market', 'schedule', 'blog', 'profile'];
     backgroundWrapperKey.currentState?.updateScreen(screenNames[index]);
   }
 
@@ -52,11 +52,11 @@ class _HomeScreenState extends State<HomeScreen> {
       body: PageView(
         controller: _pageController,
         onPageChanged: _onPageChanged,
-        physics: const BouncingScrollPhysics(),
+        physics: const NeverScrollableScrollPhysics(),
         children: const [
           ShuitieScreen(),
           MarketScreen(),
-          EduScreen(),
+          CourseScheduleScreen(),
           BlogScreen(),
           ProfileScreen(),
         ],

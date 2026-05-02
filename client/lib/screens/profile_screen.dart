@@ -11,6 +11,8 @@ import '../providers/theme_provider.dart';
 import '../providers/edu_provider.dart';
 import '../widgets/glass_container.dart';
 import '../config/api_constants.dart';
+import 'edu_screen.dart';
+import 'exam_extract_screen.dart';
 import 'login_screen.dart';
 import 'exam_extract_screen.dart';
 
@@ -136,7 +138,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
               } else {
                 Navigator.push(context, PageRouteBuilder(
                   opaque: false,
-                  pageBuilder: (_, __, ___) => const LoginScreen(),
+                  pageBuilder: (_, __, ___) => LoginScreen(),
                 ));
               }
             },
@@ -502,6 +504,28 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                 title: '修改密码',
                 isDark: isDark,
                 onTap: () => _showChangePasswordDialog(context, authProvider),
+              ),
+              Divider(height: 1, indent: 68, color: isDark ? Colors.white10 : Colors.grey[200]),
+              _buildSettingsTile(
+                icon: Icons.school,
+                iconColor: Colors.indigo,
+                title: '教务管理',
+                subtitle: '绑定教务、查看成绩、导入课表',
+                isDark: isDark,
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const EduScreen()),
+                ),
+              ),
+              Divider(height: 1, indent: 68, color: isDark ? Colors.white10 : Colors.grey[200]),
+              _buildSettingsTile(
+                icon: Icons.quiz,
+                iconColor: Colors.teal,
+                title: '题库提取',
+                subtitle: '从练习平台提取题目导出',
+                isDark: isDark,
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const ExamExtractScreen()),
+                ),
               ),
               Divider(height: 1, indent: 68, color: isDark ? Colors.white10 : Colors.grey[200]),
               _buildSettingsTile(

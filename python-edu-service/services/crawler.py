@@ -324,58 +324,86 @@ class EduCrawler:
     # ============== 课表相关 ==============
 
     async def fetch_courses(self, cookie: str, year: str, semester: int) -> List[CourseRawData]:
-        """获取课表原始数据"""
+        """获取课表 — 优先桌面端JSON（全量），回退移动端JSON"""
         if not self.client:
             raise NetworkError("Client not initialized")
 
-        headers = {"Cookie": cookie}
-        form_data = {
-            "xnm": year,
-            "zs": "1",
-            "doType": "app",
-            "xqm": str(semester),
-            "kblx": "1",
+        base_headers = {
+            "Cookie": cookie,
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
         }
 
-        resp = await self.client.post(
-            f"{COURSE_URL}/xskbcxMobile_cxXsKb.html",
-            params={"gnmkdm": "N2154"},
-            data=form_data,
-            headers=headers
-        )
+        all_courses: List[CourseRawData] = []
+        seen = set()
 
-        if resp.status_code != 200:
-            raise CookieLapseError("获取课表失败，Cookie可能已失效")
+        def _add_from_kblist(kb_list, source=""):
+            for item in kb_list:
+                course = CourseRawData(
+                    name=item.get("kcmc", ""),
+                    teacher=item.get("xm", ""),
+                    location=item.get("cdmc", ""),
+                    time=item.get("jc", ""),
+                    week_day=str(item.get("xqj", "1")),
+                    week_str=item.get("zcd", "")
+                )
+                key = (course.name, course.week_day, course.time)
+                if key not in seen:
+                    seen.add(key)
+                    all_courses.append(course)
+            print(f"  [{source}] 新增 {len(all_courses)} 门课（去重后）")
 
-        body = resp.text
-
-        # 空响应表示Cookie失效
-        if body == "null" or not body.strip():
-            raise CookieLapseError("Cookie已失效")
+        # ==========================================
+        # Step 1: 桌面端 JSON（首选：全量课表）
+        # ==========================================
+        desktop_headers = dict(base_headers)
+        desktop_headers.update({
+            "X-Requested-With": "XMLHttpRequest",
+            "Accept": "application/json, text/javascript, */*; q=0.01",
+            "Content-Type": "application/x-www-form-urlencoded;charset=utf-8",
+            "Referer": f"{COURSE_URL}/xskbcx_cxXsKb.html?gnmkdm=N2154",
+            "Origin": COURSE_URL,
+        })
 
         try:
-            data = json.loads(body)
-        except json.JSONDecodeError:
-            raise CookieLapseError("课表数据解析失败")
+            resp = await self.client.post(
+                f"{COURSE_URL}/xskbcx_cxXsKb.html",
+                params={"gnmkdm": "N2154"},
+                data={"xnm": str(year), "xqm": str(semester), "kblx": "1"},
+                headers=desktop_headers,
+                timeout=10.0
+            )
+            print(f"  [DESK] status={resp.status_code}, len={len(resp.text)}")
+            if resp.status_code == 200 and resp.text.strip() not in ("null", ""):
+                data = resp.json()
+                kb_list = data.get("kbList", [])
+                _add_from_kblist(kb_list, "DESK")
+        except Exception as e:
+            print(f"  [DESK] 失败: {e}")
 
-        # 检查是否有课表数据
-        kb_list = data.get("kbList", [])
-        if not kb_list:
+        # ==========================================
+        # Step 2: 移动端 JSON（备用回退）
+        # ==========================================
+        if not all_courses:
+            print("  [MOBILE] 桌面端无数据，回退移动端...")
+            try:
+                resp = await self.client.post(
+                    f"{COURSE_URL}/xskbcxMobile_cxXsKb.html",
+                    params={"gnmkdm": "N2154"},
+                    data={"xnm": str(year), "zs": "1", "doType": "app", "xqm": str(semester), "kblx": "1"},
+                    headers=base_headers,
+                    timeout=10.0
+                )
+                if resp.status_code == 200 and resp.text.strip() not in ("null", ""):
+                    data = resp.json()
+                    kb_list = data.get("kbList", [])
+                    _add_from_kblist(kb_list, "MOBILE")
+            except Exception as e:
+                print(f"  [MOBILE] 失败: {e}")
+
+        if not all_courses:
             raise CourseNotOpenError("当前学期课表暂未开放")
 
-        courses = []
-        for item in kb_list:
-            course = CourseRawData(
-                name=item.get("kcmc", ""),
-                teacher=item.get("xm", ""),
-                location=item.get("cdmc", ""),
-                time=item.get("jc", ""),
-                week_day=item.get("xqj", "1"),
-                week_str=item.get("zcd", "")
-            )
-            courses.append(course)
-
-        return courses
+        return all_courses
 
     # ============== 成绩相关 ==============
 
@@ -452,16 +480,23 @@ def parse_weeks(week_str: str) -> List[int]:
 
 
 def time_to_section(time_str: str) -> int:
-    """将节次字符串转换为节次数字"""
-    time_map = {
-        "1-2节": 1,
-        "3-4节": 2,
-        "5-6节": 3,
-        "7-8节": 4,
-        "9-10节": 5,
-        "11-12节": 6,
-        "13-14节": 7,
-        "15-16节": 8,
-        "17-18节": 9,
-    }
-    return time_map.get(time_str, 1)
+    """将节次字符串转换为实际起始节次数字
+
+    支持格式：
+      - "1-2节" / "3-4节" → 1 / 3
+      - "0102" / "0304" → 1 / 3（4位数字，前2位是起始节）
+    """
+    if not time_str:
+        return 1
+    # 格式1: "3-4节" 或 "3-4"
+    match = re.match(r'(\d+)[-~](\d+)', time_str)
+    if match:
+        return int(match.group(1))
+    # 格式2: "0304"（4位数字，取前2位）
+    if time_str.isdigit() and len(time_str) >= 4:
+        return int(time_str[:2])
+    # 格式3: 纯数字
+    nums = re.findall(r'\d+', time_str)
+    if nums:
+        return int(nums[0])
+    return 1

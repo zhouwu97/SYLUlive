@@ -28,11 +28,14 @@ func NewVerifyHandler(db *gorm.DB, host, port, user, pass string) *VerifyHandler
 
 // SendCode 发送验证码到 QQ 邮箱
 func (h *VerifyHandler) SendCode(c *gin.Context) {
-	qq := c.PostForm("qq")
-	if qq == "" {
+	var input struct {
+		QQ string `json:"qq" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "请输入QQ号"})
 		return
 	}
+	qq := input.QQ
 	if len(qq) < 5 || len(qq) > 15 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "QQ号格式不正确"})
 		return
@@ -67,12 +70,16 @@ func (h *VerifyHandler) SendCode(c *gin.Context) {
 
 // VerifyCode 校验验证码
 func (h *VerifyHandler) VerifyCode(c *gin.Context) {
-	qq := c.PostForm("qq")
-	inputCode := c.PostForm("code")
-	if qq == "" || inputCode == "" {
+	var input struct {
+		QQ   string `json:"qq" binding:"required"`
+		Code string `json:"code" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "参数不完整"})
 		return
 	}
+	qq := input.QQ
+	code := input.Code
 
 	var vc models.VerifyCode
 	if err := h.db.Where("qq = ?", qq).First(&vc).Error; err != nil {
@@ -85,7 +92,7 @@ func (h *VerifyHandler) VerifyCode(c *gin.Context) {
 		return
 	}
 
-	if vc.Code != inputCode {
+	if vc.Code != code {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "验证码错误"})
 		return
 	}

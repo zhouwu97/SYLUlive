@@ -23,8 +23,10 @@ func NewAuthHandler(db *gorm.DB, jwtSecret string) *AuthHandler {
 
 // RegisterInput 注册输入
 type RegisterInput struct {
-	StudentID string `json:"student_id" binding:"required,min=3,max=50"` // 学号/邮箱
+	StudentID string `json:"student_id" binding:"required,min=3,max=50"`
 	Password  string `json:"password" binding:"required,min=8,max=32"`
+	Nickname  string `json:"nickname"`
+	QQ        string `json:"qq"`
 }
 
 // Register 注册
@@ -39,7 +41,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	var count int64
 	h.db.Model(&models.User{}).Where("student_id = ?", input.StudentID).Count(&count)
 	if count > 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "学号/邮箱已存在"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "该学号已注册"})
 		return
 	}
 
@@ -49,10 +51,15 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "密码加密失败"})
 		return
 	}
+	nickname := input.Nickname
+	if nickname == "" {
+		nickname = input.StudentID
+	}
 	user := models.User{
 		StudentID:    input.StudentID,
 		PasswordHash: string(hashedPassword),
-		Nickname:     input.StudentID,
+		Nickname:     nickname,
+		QQ:           input.QQ,
 		Role:         models.RoleUser,
 		CreditScore:  100,
 	}
@@ -85,12 +92,12 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
 	var user models.User
 	if err := h.db.Where("student_id = ?", input.StudentID).First(&user).Error; err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "学号/邮箱或密码错误"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "学号或密码错误"})
 		return
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(input.Password)); err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "学号/邮箱或密码错误"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "学号或密码错误"})
 		return
 	}
 

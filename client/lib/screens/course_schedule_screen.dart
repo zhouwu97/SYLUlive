@@ -7,6 +7,7 @@ import '../providers/course_schedule_provider.dart';
 import '../widgets/glass_container.dart';
 import '../main.dart' show navigatorKey;
 import 'edu_screen.dart';
+import 'login_screen.dart';
 
 /// 每节课槽的高度
 const double slotHeight = 85.0;
@@ -132,37 +133,28 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: SafeArea(
-        child: Consumer2<EduProvider, CourseScheduleProvider>(
-          builder: (context, edu, sc, _) {
-            _autoLoad(edu, sc);
-
-            // 启动中 — 等待状态加载，避免闪现绑定页
-            if (_initializing) {
-              return const Center(child: CircularProgressIndicator());
+        child: Consumer<AuthProvider>(
+          builder: (context, auth, _) {
+            if (!auth.isLoggedIn) {
+              return _buildLoginPrompt(context, isDark);
             }
+            return Consumer2<EduProvider, CourseScheduleProvider>(
+              builder: (context, edu, sc, _) {
+                _autoLoad(edu, sc);
 
-            // 未绑定教务账号
-            if (!edu.isBound) {
-              return _buildBindView(context, edu, sc, isDark);
-            }
+                if (_initializing) return const Center(child: CircularProgressIndicator());
 
-            // 加载中且无数据
-            if (sc.isLoading && sc.courses.isEmpty) {
-              return const Center(child: CircularProgressIndicator());
-            }
+                if (!edu.isBound) return _buildBindView(context, edu, sc, isDark);
 
-            // 主界面：表头 + PageView 横向滑动切周
-            return Column(
-              children: [
-                _buildDateHeader(sc),
-                Expanded(
-                  child: sc.courses.isEmpty
+                if (sc.isLoading && sc.courses.isEmpty) return const Center(child: CircularProgressIndicator());
+
+                return Column(children: [
+                  _buildDateHeader(sc),
+                  Expanded(child: sc.courses.isEmpty
                       ? _buildEmptyView(context, isDark)
-                      : SingleChildScrollView(
-                          child: _buildCourseGridForWeek(sc, _weekStart),
-                        ),
-                ),
-              ],
+                      : SingleChildScrollView(child: _buildCourseGridForWeek(sc, _weekStart))),
+                ]);
+              },
             );
           },
         ),
@@ -238,6 +230,25 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
         ],
       ),
     );
+  }
+
+  // ====== 未登录引导 ======
+  Widget _buildLoginPrompt(BuildContext context, bool isDark) {
+    return Center(child: Padding(padding: const EdgeInsets.all(24), child: GlassContainer(
+      padding: const EdgeInsets.all(32), borderRadius: 20,
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Icon(Icons.account_circle, size: 72, color: Theme.of(context).primaryColor.withValues(alpha: 0.7)),
+        const SizedBox(height: 20),
+        const Text('请先登录', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 12),
+        Text('登录后可绑定教务系统，导入课表', style: TextStyle(fontSize: 15, color: isDark ? Colors.grey[400] : Colors.grey[600]), textAlign: TextAlign.center),
+        const SizedBox(height: 28),
+        SizedBox(width: double.infinity, child: ElevatedButton.icon(
+          onPressed: () => Navigator.push(context, PageRouteBuilder(opaque: false, pageBuilder: (_, __, ___) => LoginScreen())),
+          icon: const Icon(Icons.login), label: const Text('去登录', style: TextStyle(fontSize: 16)),
+          style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+        )),
+      ]))));
   }
 
   // ====== 绑定视图 ======

@@ -23,8 +23,10 @@ func NewAuthHandler(db *gorm.DB, jwtSecret string) *AuthHandler {
 
 // RegisterInput 注册输入
 type RegisterInput struct {
-	StudentID string `json:"student_id" binding:"required,min=3,max=50"` // 学号/邮箱
+	StudentID string `json:"student_id" binding:"required,min=3,max=50"`
 	Password  string `json:"password" binding:"required,min=8,max=32"`
+	Nickname  string `json:"nickname"`
+	QQ        string `json:"qq"`
 }
 
 // Register 注册
@@ -49,10 +51,15 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "密码加密失败"})
 		return
 	}
+	nickname := input.Nickname
+	if nickname == "" {
+		nickname = input.StudentID
+	}
 	user := models.User{
 		StudentID:    input.StudentID,
 		PasswordHash: string(hashedPassword),
-		Nickname:     input.StudentID,
+		Nickname:     nickname,
+		QQ:           input.QQ,
 		Role:         models.RoleUser,
 		CreditScore:  100,
 	}

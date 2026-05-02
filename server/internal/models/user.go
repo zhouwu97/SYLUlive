@@ -26,6 +26,7 @@ type User struct {
 	Role         Role      `gorm:"size:20;default:user;index" json:"role"`         // 角色
 	AdminExp     int       `gorm:"default:0" json:"admin_exp"`                     // 管理员经验
 	ReportCount  int       `gorm:"default:0;index" json:"report_count"`            // 90天内举报数
+	QQ           string    `gorm:"size:20" json:"qq"`                              // QQ号
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
 

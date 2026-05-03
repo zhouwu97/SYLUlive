@@ -175,6 +175,62 @@ func (h *EduHandler) GetEduStatus(c *gin.Context) {
 	})
 }
 
+// PreVerifyInput 注册前验证教务输入
+type PreVerifyInput struct {
+	StudentID string `json:"student_id" binding:"required,len=10"`
+	Password  string `json:"password" binding:"required"`
+}
+
+// PreVerify 注册前验证教务账号（不依赖用户登录状态）
+func (h *EduHandler) PreVerify(c *gin.Context) {
+	var input PreVerifyInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误"})
+		return
+	}
+
+	// 检查学号是否已被注册
+	var count int64
+	h.db.Model(&models.User{}).Where("student_id = ?", input.StudentID).Count(&count)
+	if count > 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "该学号已注册，请直接登录", "success": false})
+		return
+	}
+
+	// 尝试验证教务密码
+	client := resty.New()
+	csrfToken, err := getIndexCookieAndCsrfToken(client)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "无法连接教务系统", "success": false})
+		return
+	}
+
+	publicKey, err := getPublicKey(client)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取加密密钥失败", "success": false})
+		return
+	}
+
+	encryptedPassword, err := rsaByPublicKey(input.Password, publicKey)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "密码加密失败", "success": false})
+		return
+	}
+
+	_, err = syluLogin(client, input.StudentID, encryptedPassword, csrfToken)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "教务密码错误", "success": false})
+		return
+	}
+
+	// 验证成功
+	c.JSON(http.StatusOK, gin.H{
+		"success":       true,
+		"message":       "验证通过",
+		"edu_student_id": input.StudentID,
+	})
+}
+
 // CourseInput 课表查询输入
 type CourseInput struct {
 	Year     string `json:"year" binding:"required"`

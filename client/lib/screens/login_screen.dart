@@ -11,79 +11,104 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final _studentIdController = TextEditingController();
-  final _passwordController = TextEditingController();
-  final _qqController = TextEditingController();
-  final _codeController = TextEditingController();
+  final _eduPasswordController = TextEditingController(); // 教务密码
+  final _passwordController = TextEditingController();     // APP密码
+  final _confirmPasswordController = TextEditingController();
   final _nicknameController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
+
   bool _isRegister = false;
-  bool _codeSent = false;
-  bool _codeVerified = false;
-  bool _sending = false;
+  bool _isEduVerified = false;  // 教务是否验证通过
+  bool _isEduVerifying = false; // 验证中
+  bool _isSubmitting = false;
 
   @override
   void dispose() {
     _studentIdController.dispose();
+    _eduPasswordController.dispose();
     _passwordController.dispose();
-    _qqController.dispose();
-    _codeController.dispose();
+    _confirmPasswordController.dispose();
     _nicknameController.dispose();
     super.dispose();
   }
 
-  Future<void> _sendCode() async {
-    final qq = _qqController.text.trim();
-    if (qq.length < 5) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('请输入正确的QQ号')));
+  Future<void> _verifyEdu() async {
+    if (!_formKey.currentState!.validate()) return;
+    
+    final studentId = _studentIdController.text.trim();
+    final eduPassword = _eduPasswordController.text;
+
+    // 先验证学号格式
+    if (studentId.length != 10) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('请输入10位学号'), backgroundColor: Colors.red));
       return;
     }
-    setState(() => _sending = true);
-    final result = await context.read<AuthProvider>().sendVerifyCode(qq);
-    setState(() {
-      _sending = false;
-      _codeSent = result.success;
-    });
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result.success ? '验证码已发送到 $qq@qq.com' : (result.errorMessage ?? '发送失败'))));
-    }
-  }
 
-  Future<void> _verifyCode() async {
-    final qq = _qqController.text.trim();
-    final code = _codeController.text.trim();
-    if (qq.isEmpty || code.isEmpty) return;
-    final result = await context.read<AuthProvider>().verifyCode(qq, code);
-    setState(() => _codeVerified = result.success);
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result.success ? '验证通过' : (result.errorMessage ?? '验证码错误'))));
+    setState(() => _isEduVerifying = true);
+
+    try {
+      // 调用教务验证接口
+      final result = await context.read<AuthProvider>().verifyEdu(studentId, eduPassword);
+      
+      setState(() => _isEduVerifying = false);
+
+      if (result.success) {
+        setState(() => _isEduVerified = true);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('教务验证通过，请设置昵称和APP密码'), backgroundColor: Colors.green));
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(result.errorMessage ?? '教务验证失败'), backgroundColor: Colors.red));
+        }
+      }
+    } catch (e) {
+      setState(() => _isEduVerifying = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('验证失败: $e'), backgroundColor: Colors.red));
+      }
     }
   }
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
-    if (_isRegister && !_codeVerified) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('请先验证QQ号')));
+
+    // 注册模式需要先验证教务
+    if (_isRegister && !_isEduVerified) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('请先验证教务账号'), backgroundColor: Colors.red));
       return;
     }
 
     final authProvider = context.read<AuthProvider>();
     AuthResult result;
 
+    setState(() => _isSubmitting = true);
+
     if (_isRegister) {
-      result = await authProvider.register(
+      // 教务验证后注册
+      result = await authProvider.registerWithEdu(
         _studentIdController.text,
         _passwordController.text,
         nickname: _nicknameController.text,
-        qq: _qqController.text,
+        eduPassword: _eduPasswordController.text,
       );
     } else {
+      // 普通登录
       result = await authProvider.login(_studentIdController.text, _passwordController.text);
     }
+
+    setState(() => _isSubmitting = false);
 
     if (result.success && mounted) {
       Navigator.pop(context);
     } else if (mounted && result.errorMessage != null) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result.errorMessage!), backgroundColor: Colors.red.shade600));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(result.errorMessage!), backgroundColor: Colors.red.shade600));
     }
   }
 
@@ -114,60 +139,101 @@ class _LoginScreenState extends State<LoginScreen> {
                 TextFormField(
                   controller: _studentIdController,
                   maxLength: 10,
-                  decoration: InputDecoration(labelText: '学号', prefixIcon: const Icon(Icons.person_outline), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)), contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14)),
+                  enabled: !_isEduVerified,  // 验证通过后不可修改
+                  decoration: InputDecoration(
+                    labelText: '学号',
+                    prefixIcon: const Icon(Icons.person_outline),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    helperText: _isRegister ? '注册后学号不可更改' : null,
+                    helperStyle: TextStyle(color: Colors.orange),
+                  ),
                   validator: (v) => (v == null || v.isEmpty) ? '请输入学号' : (v.length != 10 ? '请输入10位学号' : null),
                 ),
+
+                if (_isRegister) ...[
+                  const SizedBox(height: 16),
+
+                  // 教务密码（注册时必须验证）
+                  Row(children: [
+                    Expanded(
+                      child: TextFormField(
+                        controller: _eduPasswordController,
+                        enabled: !_isEduVerified,
+                        obscureText: true,
+                        decoration: InputDecoration(
+                          labelText: '教务密码',
+                          prefixIcon: const Icon(Icons.lock_outline),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                          helperText: _isEduVerified ? '已验证' : '用于验证学号真实性',
+                          helperStyle: TextStyle(color: _isEduVerified ? Colors.green : Colors.orange),
+                        ),
+                        validator: (v) => (v == null || v.isEmpty) ? '请输入教务密码' : null,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    ElevatedButton(
+                      onPressed: (_isEduVerifying || _isEduVerified) ? null : _verifyEdu,
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                        backgroundColor: _isEduVerified ? Colors.green : null,
+                      ),
+                      child: _isEduVerifying 
+                          ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                          : Text(_isEduVerified ? '已验证' : '验证', style: const TextStyle(fontSize: 13)),
+                    ),
+                  ]),
+                ],
+
                 const SizedBox(height: 16),
 
-                // 密码
+                // APP密码
                 TextFormField(
-                  controller: _passwordController, obscureText: true,
-                  decoration: InputDecoration(labelText: '密码', prefixIcon: const Icon(Icons.lock_outline), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)), contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14)),
+                  controller: _passwordController,
+                  obscureText: true,
+                  decoration: InputDecoration(
+                    labelText: _isRegister ? 'APP密码' : '密码',
+                    prefixIcon: const Icon(Icons.lock_outline),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    helperText: _isRegister ? '此密码用于APP登录，与教务密码不同' : null,
+                    helperStyle: TextStyle(color: Colors.orange),
+                  ),
                   validator: (v) => (v == null || v.isEmpty) ? '请输入密码' : (_isRegister && v.length < 8 ? '密码至少8个字符' : null),
                 ),
-                const SizedBox(height: 16),
 
-                // 注册时显示 QQ 验证 + 昵称
-                if (_isRegister) ...[
-                  // QQ 号
-                  Row(children: [
-                    Expanded(
-                      child: TextFormField(
-                        controller: _qqController, keyboardType: TextInputType.number, maxLength: 15,
-                        decoration: InputDecoration(labelText: 'QQ号', prefixIcon: const Icon(Icons.email_outlined), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)), contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14), counterText: ''),
-                        validator: (v) => (v == null || v.length < 5) ? '请输入正确的QQ号' : null,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    ElevatedButton(
-                      onPressed: _sending ? null : _sendCode,
-                      style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14)),
-                      child: Text(_sending ? '发送中' : _codeSent ? '重发' : '发送验证码', style: const TextStyle(fontSize: 13)),
-                    ),
-                  ]),
-                  const SizedBox(height: 12),
+                // 注册时显示昵称和确认密码
+                if (_isRegister && _isEduVerified) ...[
+                  const SizedBox(height: 16),
 
-                  // 验证码
-                  Row(children: [
-                    Expanded(
-                      child: TextFormField(
-                        controller: _codeController, keyboardType: TextInputType.number, maxLength: 6,
-                        decoration: InputDecoration(labelText: '验证码', prefixIcon: const Icon(Icons.pin_outlined), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)), contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14), counterText: ''),
-                      ),
+                  // 确认密码
+                  TextFormField(
+                    controller: _confirmPasswordController,
+                    obscureText: true,
+                    decoration: InputDecoration(
+                      labelText: '确认密码',
+                      prefixIcon: const Icon(Icons.lock_outline),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                     ),
-                    const SizedBox(width: 8),
-                    ElevatedButton(
-                      onPressed: _codeVerified ? null : _verifyCode,
-                      style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14), backgroundColor: _codeVerified ? Colors.green : null),
-                      child: Text(_codeVerified ? '已验证' : '验证', style: const TextStyle(fontSize: 13)),
-                    ),
-                  ]),
-                  const SizedBox(height: 12),
+                    validator: (v) => (v == null || v.isEmpty) 
+                        ? '请输入确认密码' 
+                        : (v != _passwordController.text ? '两次密码不一致' : null),
+                  ),
+
+                  const SizedBox(height: 16),
 
                   // 昵称
                   TextFormField(
-                    controller: _nicknameController, maxLength: 12,
-                    decoration: InputDecoration(labelText: '昵称', prefixIcon: const Icon(Icons.badge_outlined), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)), contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14)),
+                    controller: _nicknameController,
+                    maxLength: 12,
+                    decoration: InputDecoration(
+                      labelText: '昵称',
+                      prefixIcon: const Icon(Icons.badge_outlined),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    ),
                     validator: (v) => (v == null || v.trim().isEmpty) ? '请输入昵称' : null,
                   ),
                 ],
@@ -179,9 +245,9 @@ class _LoginScreenState extends State<LoginScreen> {
                   builder: (context, auth, child) => SizedBox(
                     height: 48,
                     child: ElevatedButton(
-                      onPressed: auth.isLoading ? null : _submit,
+                      onPressed: (_isSubmitting || (_isRegister && !_isEduVerified)) ? null : _submit,
                       style: ElevatedButton.styleFrom(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-                      child: auth.isLoading
+                      child: _isSubmitting
                           ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                           : Text(_isRegister ? '注册' : '登录', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
                     ),
@@ -191,7 +257,17 @@ class _LoginScreenState extends State<LoginScreen> {
 
                 // 切换登录/注册
                 TextButton(
-                  onPressed: () => setState(() { _isRegister = !_isRegister; _codeSent = false; _codeVerified = false; }),
+                  onPressed: () {
+                    setState(() {
+                      _isRegister = !_isRegister;
+                      _isEduVerified = false;
+                      _isEduVerifying = false;
+                      _eduPasswordController.clear();
+                      _passwordController.clear();
+                      _confirmPasswordController.clear();
+                      _nicknameController.clear();
+                    });
+                  },
                   child: Text(_isRegister ? '已有账号？去登录' : '没有账号？去注册', style: TextStyle(color: Theme.of(context).primaryColor)),
                 ),
               ]),

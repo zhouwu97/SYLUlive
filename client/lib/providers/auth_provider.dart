@@ -330,4 +330,63 @@ class AuthProvider extends ChangeNotifier {
       return AuthResult.failure(_parseDioError(e));
     }
   }
+
+  /// 验证教务账号（注册前验证学号是否属于自己）
+  Future<AuthResult> verifyEdu(String studentId, String eduPassword) async {
+    try {
+      // 先尝试登录教务系统
+      final response = await _dio.post('/edu/pre_verify', data: {
+        'student_id': studentId,
+        'password': eduPassword,
+      });
+      if (response.statusCode == 200 && response.data['success'] == true) {
+        return AuthResult.success();
+      }
+      return AuthResult.failure(response.data['error'] ?? '教务验证失败');
+    } on DioException catch (e) {
+      return AuthResult.failure(_parseDioError(e));
+    }
+  }
+
+  /// 教务验证后注册
+  Future<AuthResult> registerWithEdu(
+    String studentId,
+    String appPassword, {
+    String? nickname,
+    required String eduPassword,
+  }) async {
+    _isLoading = true;
+    notifyListeners();
+
+    try {
+      final response = await _dio.post('/register_with_edu', data: {
+        'student_id': studentId,
+        'password': appPassword,
+        'edu_password': eduPassword,
+        if (nickname != null && nickname.isNotEmpty) 'nickname': nickname,
+      });
+
+      _isLoading = false;
+      if (response.statusCode == 201) {
+        _token = response.data['token'];
+        _user = User.fromJson(response.data['user']);
+        _dio.options.headers['Authorization'] = 'Bearer $_token';
+        await _saveAuth();
+        notifyListeners();
+        return AuthResult.success();
+      }
+      return AuthResult.failure('注册失败，服务器返回异常');
+    } on DioException catch (e) {
+      _isLoading = false;
+      notifyListeners();
+      final errorMsg = _parseDioError(e);
+      debugPrint('注册失败: $errorMsg');
+      return AuthResult.failure(errorMsg);
+    } catch (e) {
+      _isLoading = false;
+      notifyListeners();
+      debugPrint('注册失败: $e');
+      return AuthResult.failure('注册失败: $e');
+    }
+  }
 }

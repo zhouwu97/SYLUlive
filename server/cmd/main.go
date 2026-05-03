@@ -101,6 +101,7 @@ func main() {
 		auth.POST("/login", authHandler.Login)
 		auth.POST("/send_code", verifyHandler.SendCode)
 		auth.POST("/verify_code", verifyHandler.VerifyCode)
+		auth.POST("/register_with_edu", authHandler.RegisterWithEdu)
 		auth.POST("/change_password", middleware.AuthMiddleware(cfg.JWTSecret), authHandler.ChangePassword)
 	}
 
@@ -212,13 +213,13 @@ func main() {
 
 	// 教务系统路由
 	edu := r.Group("/api/edu")
-	edu.Use(middleware.AuthMiddleware(cfg.JWTSecret))
 	{
-		edu.POST("/bind", eduHandler.BindEdu)
-		edu.DELETE("/bind", eduHandler.UnbindEdu)
-		edu.GET("/status", eduHandler.GetEduStatus)
-		edu.POST("/courses", eduHandler.GetCourses)
-		edu.POST("/grades", eduHandler.GetGrades)
+		edu.GET("/status", middleware.AuthMiddleware(cfg.JWTSecret), eduHandler.GetEduStatus)
+		edu.POST("/bind", middleware.AuthMiddleware(cfg.JWTSecret), eduHandler.BindEdu)
+		edu.DELETE("/bind", middleware.AuthMiddleware(cfg.JWTSecret), eduHandler.UnbindEdu)
+		edu.POST("/courses", middleware.AuthMiddleware(cfg.JWTSecret), eduHandler.GetCourses)
+		edu.POST("/grades", middleware.AuthMiddleware(cfg.JWTSecret), eduHandler.GetGrades)
+		edu.POST("/pre_verify", eduHandler.PreVerify) // 注册前验证教务账号
 	}
 
 	// 超级管理员路由

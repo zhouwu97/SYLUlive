@@ -249,14 +249,12 @@ func (h *PostHandler) Delete(c *gin.Context) {
 
 	// 记录管理员操作
 	if role == "admin" || role == "super_admin" {
-		log := models.AdminActionLog{
-			AdminID:    userID.(uint),
-			Action:     "delete_post",
-			TargetType: "post",
-			TargetID:   uint(id),
-			Detail:     fmt.Sprintf("删除帖子: %s", post.Title),
-		}
-		h.db.Create(&log)
+		var u models.User
+		h.db.Select("nickname").First(&u, userID)
+		h.db.Create(&models.AdminLog{
+			AdminID: userID.(uint), AdminName: u.Nickname,
+			Action: "删除帖子", Target: post.Title,
+		})
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})

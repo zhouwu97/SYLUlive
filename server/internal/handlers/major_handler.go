@@ -9,6 +9,18 @@ import (
 	"shenliyuan/internal/models"
 )
 
+var majorLogDB *gorm.DB
+
+func SetMajorLogDB(db *gorm.DB) { majorLogDB = db }
+
+func logMajorAdmin(c *gin.Context, action, target string) {
+	if majorLogDB == nil { return }
+	uid, _ := c.Get("user_id")
+	var u models.User
+	majorLogDB.Select("nickname").First(&u, uid)
+	majorLogDB.Create(&models.AdminLog{AdminID: uid.(uint), AdminName: u.Nickname, Action: action, Target: target})
+}
+
 type MajorHandler struct {
 	db *gorm.DB
 }
@@ -130,12 +142,16 @@ func (h *MajorHandler) Rate(c *gin.Context) {
 func (h *MajorHandler) Verify(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	h.db.Model(&models.Major{}).Where("id = ?", id).Update("verified", true)
+	var m models.Major; h.db.First(&m, id)
+	logMajorAdmin(c, "审核通过专业", m.Name)
 	c.JSON(http.StatusOK, gin.H{"message": "已审核通过"})
 }
 
 func (h *MajorHandler) Reject(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
+	var m models.Major; h.db.First(&m, id)
 	h.db.Delete(&models.Major{}, id)
+	logMajorAdmin(c, "拒绝专业", m.Name)
 	c.JSON(http.StatusOK, gin.H{"message": "已拒绝"})
 }
 

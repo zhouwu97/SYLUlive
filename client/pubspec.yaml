@@ -24,7 +24,6 @@ dependencies:
   file_picker: ^8.1.7
   flutter_markdown: ^0.7.6
   webview_flutter: ^4.10.0
-  image_cropper: ^3.0.3
 
 dev_dependencies:
   flutter_test:

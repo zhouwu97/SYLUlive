@@ -3,6 +3,7 @@ package handlers
 import (
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -143,4 +144,23 @@ func (h *AnnouncementHandler) Delete(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})
+}
+
+// GetUnread 获取当前用户未读公告
+func (h *AnnouncementHandler) GetUnread(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	var announcements []models.Announcement
+	h.db.Where("id NOT IN (SELECT announcement_id FROM announcement_reads WHERE user_id = ?)", userID).
+		Order("created_at DESC").Find(&announcements)
+	c.JSON(http.StatusOK, announcements)
+}
+
+// MarkRead 标记公告已读
+func (h *AnnouncementHandler) MarkRead(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	idStr := c.Param("id")
+	id, _ := strconv.ParseUint(idStr, 10, 64)
+	h.db.Where("user_id = ? AND announcement_id = ?", userID, id).
+		FirstOrCreate(&models.AnnouncementRead{UserID: userID.(uint), AnnouncementID: uint(id), ReadAt: time.Now()})
+	c.JSON(http.StatusOK, gin.H{"message": "ok"})
 }

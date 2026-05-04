@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from models.database import EduUser, get_db
-from models.schemas import BindInput, BindResponse, UnbindResponse, EduStatusResponse, ErrorResponse, PreVerifyResponse, PreVerifyInput
+from models.schemas import BindInput, BindResponse, UnbindResponse, EduStatusResponse, ErrorResponse, PreVerifyResponse, PreVerifyInput, LoginEduInput, LoginEduResponse
 from services.crawler import EduCrawler, CookieLapseError, LoginFailedError, NetworkError
 
 router = APIRouter(prefix="/api/edu", tags=["认证"])
@@ -190,3 +190,36 @@ async def refresh_cookie(
             return {"success": True, "message": "Cookie刷新成功"}
         except (LoginFailedError, CookieLapseError, NetworkError) as e:
             raise HTTPException(status_code=401, detail=str(e))
+
+
+@router.post("/login_edu", response_model=LoginEduResponse)
+async def login_edu_account(
+    input: LoginEduInput,
+):
+    """统一登录（验证教务+获取信息，返回给Go服务器）"""
+    async with EduCrawler() as crawler:
+        try:
+            # 1. 登录教务系统
+            cookie = await crawler.login(input.student_id, input.edu_password)
+
+            # 2. 获取学生信息
+            student_info = await crawler.get_student_info(cookie, input.student_id)
+
+            return LoginEduResponse(
+                success=True,
+                message="验证成功",
+                student_id=input.student_id,
+                name=student_info.name,
+                grade=student_info.grade,
+                college=student_info.college,
+                major=student_info.major
+            )
+
+        except LoginFailedError as e:
+            return LoginEduResponse(success=False, message="教务密码错误")
+        except CookieLapseError as e:
+            return LoginEduResponse(success=False, message=str(e))
+        except NetworkError as e:
+            return LoginEduResponse(success=False, message=f"网络错误: {str(e)}")
+        except Exception as e:
+            return LoginEduResponse(success=False, message=f"验证失败: {str(e)}")

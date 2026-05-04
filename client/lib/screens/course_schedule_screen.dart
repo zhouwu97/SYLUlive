@@ -103,34 +103,45 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
   void _autoLoad(EduProvider edu, CourseScheduleProvider sc) async {
     if (_didLoad) return;
-    // 未绑定，直接显示引导页，不转圈
     if (!edu.isBound) {
       _didLoad = true;
       _initializing = false;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        setState(() {});
-      });
+      WidgetsBinding.instance.addPostFrameCallback((_) => setState(() {}));
       return;
     }
     if (sc.isLoading) return;
     _didLoad = true;
     _initializing = false;
 
-    // 检查是否有缓存
+    // 优先读手机本地缓存
     _hasCache = await sc.hasCachedCourses();
 
-    if (!_hasCache) {
-      // 无缓存，不自动拉取，显示引导
+    if (_hasCache) {
+      // 有缓存 → 立即展示，同时静默后台拉取最新数据
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        setState(() {});
+        sc.loadCourses();
       });
+      // 静默同步最新课表到缓存
+      _silentSync(sc);
       return;
     }
 
-    // 有缓存，正常加载
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      sc.loadCourses();
-    });
+    // 无缓存 → 显示加载中，自动拉取课表
+    setState(() => _initializing = true);
+    await sc.loadCourses(forceRefresh: true);
+    if (mounted) {
+      setState(() {
+        _hasCache = sc.courses.isNotEmpty;
+        _initializing = false;
+      });
+    }
+  }
+
+  void _silentSync(CourseScheduleProvider sc) async {
+    try {
+      await sc.loadCourses(forceRefresh: true);
+      // 新数据自动覆盖旧缓存
+    } catch (_) {}
   }
 
   // PageView 滑动切换周

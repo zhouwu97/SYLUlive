@@ -99,10 +99,8 @@ class EduProvider extends ChangeNotifier {
     if (_userId == null) return;
 
     try {
-      final response = await _eduDio.get(
-        '/api/edu/status',
-        queryParameters: {'user_id': _userId},
-      );
+      // 调用 Go 服务器（_authDio），JWT 自动带上，user_id 从 token 中提取
+      final response = await _authDio.get('/edu/status');
 
       if (response.statusCode == 200) {
         final data = response.data;

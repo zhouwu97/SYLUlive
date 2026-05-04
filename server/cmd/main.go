@@ -61,6 +61,7 @@ func main() {
 		&models.AnnouncementRead{},
 		&models.Major{},
 		&models.MajorRating{},
+		&models.AdminVote{},
 	)
 
 	// 创建种子数据
@@ -276,6 +277,8 @@ func main() {
 		teacherAuth.POST("/:id/rate", teacherHandler.Rate)
 		teacherAuth.DELETE("/rating/:id", teacherHandler.DeleteRating)
 		teacherAuth.POST("/rating/:id/report", teacherHandler.ReportRating)
+		teacherAuth.POST("/admin/:id/vote-remove", teacherHandler.VoteRemoveAdmin)
+		teacherAuth.GET("/admin/:id/votes", teacherHandler.GetAdminVotes)
 	}
 	teacherAdmin := teacher.Group("")
 	teacherAdmin.Use(middleware.AuthMiddleware(cfg.JWTSecret), middleware.AdminMiddleware())

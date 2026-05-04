@@ -63,19 +63,23 @@ func (h *AuthHandler) RegisterWithEdu(c *gin.Context) {
 		return
 	}
 
-	// 先创建用户
+// 先创建用户（昵称用临时值）
 	user := models.User{
 		StudentID:    input.StudentID,
-		Nickname:     input.StudentID,
+		Nickname:     "新用户",
 		PasswordHash: string(hashedPassword),
-		Role:        models.RoleUser,
-		CreditScore: 100,
+		Role:         models.RoleUser,
+		CreditScore:  100,
 	}
 
 	if err := h.db.Create(&user).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建用户失败"})
 		return
 	}
+
+	// 设置默认昵称
+	h.db.Model(&user).Update("nickname", "校园用户"+strconv.FormatUint(uint64(user.ID), 10))
+	user.Nickname = "校园用户" + strconv.FormatUint(uint64(user.ID), 10)
 
 	// 静默绑定：调用Python的bind接口获取cookie
 	client := resty.New()
@@ -101,6 +105,8 @@ func (h *AuthHandler) RegisterWithEdu(c *gin.Context) {
 	} else {
 		var bindResult struct {
 			Success   bool   `json:"success"`
+			Message   string `json:"message"`
+			Name      string `json:"name"`
 			Cookie    string `json:"cookie"`
 			Grade     string `json:"grade"`
 			College   string `json:"college"`
@@ -108,15 +114,21 @@ func (h *AuthHandler) RegisterWithEdu(c *gin.Context) {
 		}
 		json.Unmarshal(resp.Body(), &bindResult)
 		if bindResult.Success {
-			h.db.Model(&user).Updates(map[string]interface{}{
+			updates := map[string]interface{}{
 				"edu_student_id": input.StudentID,
 				"edu_password":   input.EduPassword,
 				"edu_cookie":     bindResult.Cookie,
 				"edu_bound":      true,
 				"edu_grade":      bindResult.Grade,
 				"edu_college":    bindResult.College,
-				"edu_major":     bindResult.Major,
-			})
+				"edu_major":      bindResult.Major,
+			}
+			// 如果拿到真实姓名，更新昵称
+			if bindResult.Name != "" {
+				updates["nickname"] = bindResult.Name
+				user.Nickname = bindResult.Name
+			}
+			h.db.Model(&user).Updates(updates)
 			user.EduBound = true
 			user.EduCookie = bindResult.Cookie
 			user.EduGrade = bindResult.Grade

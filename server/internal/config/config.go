@@ -49,7 +49,7 @@ func Load() *Config {
 
 	eduServiceURL := os.Getenv("EDU_SERVICE_URL")
 	if eduServiceURL == "" {
-		eduServiceURL = "https://nominalistically-subpeduncled-alexandria.ngrok-free.dev"
+		eduServiceURL = "http://101.42.27.44:8000"
 	}
 
 	return &Config{

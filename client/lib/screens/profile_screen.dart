@@ -190,12 +190,22 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
 
           const SizedBox(height: 20),
 
-          Text(
-            user?.nickname ?? '未登录',
-            style: const TextStyle(
-              fontSize: 28,
-              fontWeight: FontWeight.bold,
-              color: Colors.white,
+          GestureDetector(
+            onTap: () {
+              if (authProvider.isLoggedIn) _showEditProfileDialog(context, authProvider);
+            },
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  user?.nickname ?? '未登录',
+                  style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.white),
+                ),
+                if (authProvider.isLoggedIn) ...[
+                  const SizedBox(width: 6),
+                  const Icon(Icons.edit, size: 16, color: Colors.white54),
+                ],
+              ],
             ),
           ),
 

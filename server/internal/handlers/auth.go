@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-resty/resty/v2"
@@ -33,9 +34,9 @@ func NewAuthHandler(db *gorm.DB, jwtSecret string) *AuthHandler {
 // EduRegisterInput 教务验证后注册输入
 type EduRegisterInput struct {
 	StudentID    string `json:"student_id" binding:"required,len=10"`
-	EduPassword   string `json:"edu_password" binding:"required"`
-	Password      string `json:"password" binding:"required,min=8,max=32"`
-	Nickname      string `json:"nickname"`
+	EduPassword  string `json:"edu_password" binding:"required"`
+	Password     string `json:"password" binding:"required,min=8,max=32"`
+	Nickname     string `json:"nickname"`
 }
 
 // RegisterWithEdu 教务验证后注册（学号必须先通过教务验证）
@@ -54,54 +55,6 @@ func (h *AuthHandler) RegisterWithEdu(c *gin.Context) {
 		return
 	}
 
-	// 通过Python服务验证教务
-	client := resty.New()
-	client.SetTimeout(10 * 1000 * 1000000)
-
-	resp, err := client.R().
-		SetHeader("Content-Type", "application/json").
-		SetBody(map[string]string{
-			"student_id":   input.StudentID,
-			"edu_password": input.EduPassword,
-		}).
-		Post(EduServiceConfig.BaseURL + "/api/edu/pre_verify")
-
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "无法连接教务服务，请检查网络"})
-		return
-	}
-
-	var result struct {
-		Success   bool   `json:"success"`
-		Message   string `json:"message"`
-		StudentID string `json:"student_id"`
-		Name      string `json:"name"`
-	}
-
-	if err := json.Unmarshal(resp.Body(), &result); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "解析响应失败"})
-		return
-	}
-
-	if !result.Success {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": result.Message})
-		return
-	}
-
-	// 验证成功，创建用户
-	var user models.User
-	user.StudentID = input.StudentID
-	user.Nickname = result.Name
-	if user.Nickname == "" {
-		user.Nickname = input.StudentID
-	}
-	user.Role = models.RoleUser
-	user.CreditScore = 100
-	user.EduStudentID = input.StudentID
-	user.EduPassword = input.EduPassword
-	user.EduBound = true
-	// 年级、学院、专业从Python服务获取（暂无）
-
 	// 哈希App密码
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
 	if err != nil {
@@ -109,12 +62,71 @@ func (h *AuthHandler) RegisterWithEdu(c *gin.Context) {
 		return
 	}
 
-	// 创建用户
-	user.PasswordHash = string(hashedPassword)
+	// 先创建用户
+	user := models.User{
+		StudentID:    input.StudentID,
+		Nickname:     input.StudentID,
+		PasswordHash: string(hashedPassword),
+		Role:        models.RoleUser,
+		CreditScore: 100,
+	}
 
 	if err := h.db.Create(&user).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建用户失败"})
 		return
+	}
+
+	// 静默绑定：直接登录教务系统获取cookie
+	grade, college, major := "", "", ""
+	cookieStr := ""
+
+	client := resty.New()
+	client.SetTimeout(10 * time.Second)
+
+	// 获取csrf token
+	csrfToken, err := getIndexCookieAndCsrfToken(client)
+	if err == nil {
+		// 获取公钥
+		publicKey, err := getPublicKey(client)
+		if err == nil {
+			// RSA加密密码
+			encryptedPassword, err := rsaByPublicKey(input.EduPassword, publicKey)
+			if err == nil {
+				// 尝试登录
+				_, err = syluLogin(client, input.StudentID, encryptedPassword, csrfToken)
+				if err == nil {
+					cookieStr = buildCookieString(client.Cookies[1:2])
+					// 获取学生信息
+					grade, college, major, _ = getStudentInfo(client, cookieStr, input.StudentID)
+				}
+			}
+		}
+	}
+
+	// 更新用户教务绑定信息
+	if cookieStr != "" {
+		h.db.Model(&user).Updates(map[string]interface{}{
+			"edu_student_id": input.StudentID,
+			"edu_password":   input.EduPassword,
+			"edu_cookie":     cookieStr,
+			"edu_bound":      true,
+			"edu_grade":      grade,
+			"edu_college":    college,
+			"edu_major":     major,
+		})
+		user.EduBound = true
+		user.EduCookie = cookieStr
+		user.EduGrade = grade
+		user.EduCollege = college
+		user.EduMajor = major
+	} else {
+		// 无法获取cookie，只标记已绑定（后续可手动刷新）
+		h.db.Model(&user).Updates(map[string]interface{}{
+			"edu_student_id": input.StudentID,
+			"edu_password":   input.EduPassword,
+			"edu_bound":      true,
+		})
+		user.EduBound = true
 	}
 
 	token, _ := middleware.GenerateToken(user.ID, string(user.Role), h.jwtSecret)
@@ -153,7 +165,7 @@ func (h *AuthHandler) LoginEdu(c *gin.Context) {
 	if isNewUser {
 		// 新用户：通过Python服务验证教务
 		client := resty.New()
-		client.SetTimeout(10 * 1000 * 1000000) // 10秒
+		client.SetTimeout(10 * time.Second)
 
 		resp, err := client.R().
 			SetHeader("Content-Type", "application/json").

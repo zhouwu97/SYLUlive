@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/post_provider.dart';
@@ -83,17 +84,39 @@ class _ShuitieScreenState extends State<ShuitieScreen> with SingleTickerProvider
   Future<void> _loadAnnouncements() async {
     final authProvider = context.read<AuthProvider>();
     try {
-      final response = await authProvider.dio.get('/announcements');
+      final response = await authProvider.dio.get('/announcements/active');
       if (response.statusCode == 200) {
+        final all = (response.data as List)
+            .map((e) => model.Announcement.fromJson(e))
+            .toList();
+        // 过滤掉已取消置顶的
+        final dismissed = await _loadDismissedIds();
         setState(() {
-          _announcements = (response.data as List)
-              .map((e) => model.Announcement.fromJson(e))
-              .toList();
+          _announcements = all.where((a) => !dismissed.contains(a.id)).toList();
         });
       }
     } catch (e) {
       debugPrint('加载公告失败: $e');
     }
+  }
+
+  Future<void> _dismissAnnouncement(int id) async {
+    final prefs = await SharedPreferences.getInstance();
+    final key = 'dismissed_announcements';
+    final list = prefs.getStringList(key) ?? [];
+    if (!list.contains(id.toString())) {
+      list.add(id.toString());
+      await prefs.setStringList(key, list);
+    }
+    setState(() {
+      _announcements.removeWhere((a) => a.id == id);
+    });
+  }
+
+  Future<Set<int>> _loadDismissedIds() async {
+    final prefs = await SharedPreferences.getInstance();
+    final list = prefs.getStringList('dismissed_announcements') ?? [];
+    return list.map((s) => int.tryParse(s) ?? 0).where((i) => i > 0).toSet();
   }
 
   @override
@@ -313,6 +336,11 @@ class _ShuitieScreenState extends State<ShuitieScreen> with SingleTickerProvider
                             style: TextStyle(color: Colors.red, fontSize: 10),
                           ),
                         ),
+                      const SizedBox(width: 4),
+                      GestureDetector(
+                        onTap: () => _dismissAnnouncement(announcement.id),
+                        child: Icon(Icons.close, size: 16, color: isDark ? Colors.white30 : Colors.grey[500]),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 8),

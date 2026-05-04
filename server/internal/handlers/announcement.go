@@ -26,6 +26,13 @@ func (h *AnnouncementHandler) GetList(c *gin.Context) {
 	c.JSON(http.StatusOK, announcements)
 }
 
+// GetActive 获取置顶公告（用于首页展示）
+func (h *AnnouncementHandler) GetActive(c *gin.Context) {
+	var announcements []models.Announcement
+	h.db.Where("is_pinned = ?", true).Preload("Creator").Order("created_at DESC").Find(&announcements)
+	c.JSON(http.StatusOK, announcements)
+}
+
 // GetOne 获取公告详情
 func (h *AnnouncementHandler) GetOne(c *gin.Context) {
 	idStr := c.Param("id")

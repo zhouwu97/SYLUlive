@@ -8,9 +8,10 @@ import (
 type InvitationStatus string
 
 const (
-	InvitationStatusPending  InvitationStatus = "pending"  // 待接受
-	InvitationStatusAccepted InvitationStatus = "accepted" // 已接受
-	InvitationStatusRejected InvitationStatus = "rejected" // 已拒绝
+	InvitationStatusPending  InvitationStatus = "pending"   // 待接受
+	InvitationStatusAccepted InvitationStatus = "accepted"  // 已接受，待超管批准
+	InvitationStatusApproved InvitationStatus = "approved"  // 超管已批准
+	InvitationStatusRejected InvitationStatus = "rejected"  // 已拒绝
 )
 
 // Invitation 管理员邀请

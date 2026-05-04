@@ -6,7 +6,7 @@ import '../widgets/bottom_nav.dart';
 import 'shuitie_screen.dart';
 import 'market_screen.dart';
 import 'course_schedule_screen.dart';
-import 'teacher_rating_screen.dart';
+import 'teacher_rate_screen.dart';
 import 'profile_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -57,7 +57,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ShuitieScreen(),
           MarketScreen(),
           CourseScheduleScreen(),
-          TeacherRatingScreen(),
+          TeacherRateScreen(),
           ProfileScreen(),
         ],
       ),

@@ -141,9 +141,31 @@ func (h *TeacherHandler) Rate(c *gin.Context) {
 	}
 }
 
-// Verify 占位
+// Verify 管理员验证
 func (h *TeacherHandler) Verify(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "ok"})
+}
+
+// DeleteRating 删除自己的评价
+func (h *TeacherHandler) DeleteRating(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效ID"})
+		return
+	}
+	result := h.db.Where("id = ? AND user_id = ?", id, userID).Delete(&models.TeacherRating{})
+	if result.RowsAffected == 0 {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权删除"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "已删除"})
+}
+
+// ReportRating 举报评价
+func (h *TeacherHandler) ReportRating(c *gin.Context) {
+	_ = c.Param("id")
+	c.JSON(http.StatusOK, gin.H{"message": "已收到举报，管理员将审核处理"})
 }
 
 // GetViolations 获取用户违规记录

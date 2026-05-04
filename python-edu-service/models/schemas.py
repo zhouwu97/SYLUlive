@@ -40,6 +40,20 @@ class EduStatusResponse(BaseModel):
     major: Optional[str] = None
 
 
+class PreVerifyInput(BaseModel):
+    """预验证教务账号输入"""
+    student_id: str = Field(..., min_length=10, max_length=10, description="学号")
+    password: str = Field(..., description="教务密码")
+
+
+class PreVerifyResponse(BaseModel):
+    """预验证响应"""
+    success: bool
+    message: str
+    student_id: Optional[str] = None
+    name: Optional[str] = None
+
+
 # ============== 课程相关 ==============
 
 class CourseInfo(BaseModel):

@@ -22,6 +22,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> with SingleTickerPr
   List<dynamic> _candidates = [];
   List<dynamic> _pendingTeachers = [];
   List<dynamic> _logs = [];
+  List<dynamic> _pendingMajors = [];
   bool _isLoading = true;
   String? _errorMessage;
   final _searchController = TextEditingController();
@@ -52,6 +53,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> with SingleTickerPr
       });
       // 新路由，失败了不影响
       try { final r = await dio.get('/teachers/pending'); _pendingTeachers = (r.data as List?) ?? []; } catch (_) {}
+      try { final r = await dio.get('/majors/pending'); _pendingMajors = (r.data as List?) ?? []; } catch (_) {}
       try { final r = await dio.get('/teachers/logs'); _logs = (r.data as List?) ?? []; } catch (_) {}
       setState(() { _isLoading = false; });
     } on DioException catch (e) {
@@ -258,7 +260,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> with SingleTickerPr
                     tabs: [
                       Tab(text: '举报${pendingCount > 0 ? ' ($pendingCount)' : ''}'),
                       const Tab(text: '候选人'),
-                      const Tab(text: '审核教师'),
+                      const Tab(text: '审核项目'),
                       const Tab(text: '操作日志'),
                       const Tab(text: '公告'),
                     ],
@@ -647,31 +649,43 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> with SingleTickerPr
     return Colors.grey;
   }
 
-  // ---- 审核教师 Tab ----
+  // ---- 审核项目 Tab ----
   Widget _buildTeachersTab(bool isDark) {
-    if (_pendingTeachers.isEmpty) {
-      return Center(child: Text('暂无待审核教师', style: TextStyle(color: isDark ? Colors.white54 : Colors.grey[600])));
+    final items = <Widget>[];
+    for (final t in _pendingTeachers) {
+      items.add(Card(color: isDark ? Colors.grey[850] : Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        child: ListTile(
+          leading: CircleAvatar(backgroundColor: const Color(0xFF6366F1), child: Text((t['name'] as String? ?? '?')[0])),
+          title: Text(t['name'] ?? ''), subtitle: Text('教师 - ${t['course'] ?? ''}'),
+          trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+            IconButton(icon: const Icon(Icons.check_circle, color: Colors.green), onPressed: () => _verifyTeacher(t['id'], true)),
+            IconButton(icon: const Icon(Icons.cancel, color: Colors.red), onPressed: () => _verifyTeacher(t['id'], false)),
+          ]),
+        ),
+      ));
     }
-    return ListView.builder(
-      padding: const EdgeInsets.all(12),
-      itemCount: _pendingTeachers.length,
-      itemBuilder: (_, i) {
-        final t = _pendingTeachers[i];
-        return Card(
-          color: isDark ? Colors.grey[850] : Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          child: ListTile(
-            leading: CircleAvatar(backgroundColor: const Color(0xFF6366F1), child: Text((t['name'] as String? ?? '?')[0])),
-            title: Text(t['name'] ?? ''),
-            subtitle: Text(t['course'] ?? ''),
-            trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-              IconButton(icon: const Icon(Icons.check_circle, color: Colors.green), onPressed: () => _verifyTeacher(t['id'], true)),
-              IconButton(icon: const Icon(Icons.cancel, color: Colors.red), onPressed: () => _verifyTeacher(t['id'], false)),
-            ]),
-          ),
-        );
-      },
-    );
+    for (final m in _pendingMajors) {
+      items.add(Card(color: isDark ? Colors.grey[850] : Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        child: ListTile(
+          leading: CircleAvatar(backgroundColor: const Color(0xFFEC4899), child: Text((m['name'] as String? ?? '?')[0])),
+          title: Text(m['name'] ?? ''), subtitle: Text('专业 - ${m['level'] ?? ''}'),
+          trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+            IconButton(icon: const Icon(Icons.check_circle, color: Colors.green), onPressed: () => _verifyMajor(m['id'], true)),
+            IconButton(icon: const Icon(Icons.cancel, color: Colors.red), onPressed: () => _verifyMajor(m['id'], false)),
+          ]),
+        ),
+      ));
+    }
+    if (items.isEmpty) return Center(child: Text('暂无待审核项目', style: TextStyle(color: isDark ? Colors.white54 : Colors.grey[600])));
+    return ListView(padding: const EdgeInsets.all(12), children: items);
+  }
+
+  Future<void> _verifyMajor(int id, bool approve) async {
+    try {
+      final dio = context.read<AuthProvider>().dio;
+      if (approve) await dio.put('/majors/$id/verify'); else await dio.delete('/majors/$id/reject');
+      if (mounted) { ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(approve ? '已审核通过' : '已拒绝'), backgroundColor: Colors.green)); _loadData(); }
+    } catch (_) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('操作失败'), backgroundColor: Colors.red)); }
   }
 
   Future<void> _verifyTeacher(int id, bool approve) async {

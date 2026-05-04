@@ -104,6 +104,7 @@ async def bind_edu_account(
                 success=True,
                 message="绑定成功",
                 student_id=input.student_id,
+                cookie=cookie,
                 name=student_info.name,
                 grade=student_info.grade,
                 college=student_info.college,

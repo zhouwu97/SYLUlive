@@ -41,6 +41,9 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
       CurvedAnimation(parent: _animationController, curve: Curves.easeOut),
     );
     _animationController.forward();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<AuthProvider>().refreshUser();
+    });
   }
 
   @override

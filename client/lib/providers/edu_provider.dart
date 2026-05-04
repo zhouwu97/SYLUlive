@@ -205,10 +205,10 @@ class EduProvider extends ChangeNotifier {
     }
 
     try {
-      final response = await _eduDio.post(
-        '/api/edu/courses/fetch',
+      // 调用 Go 服务器，由 Go 使用存储的 cookie 访问教务系统
+      final response = await _authDio.post(
+        '/edu/courses',
         data: {
-          'user_id': _userId,
           'year': year,
           'semester': semester,
         },
@@ -216,8 +216,12 @@ class EduProvider extends ChangeNotifier {
 
       if (response.statusCode == 200) {
         final data = response.data;
+        // Go 返回的是课程列表
         if (data['courses'] != null) {
           return OperationResult.ok(List<Map<String, dynamic>>.from(data['courses']));
+        }
+        if (data['error'] != null) {
+          return OperationResult.fail(data['error'].toString());
         }
       }
       return OperationResult.fail('获取课表失败');
@@ -235,10 +239,10 @@ class EduProvider extends ChangeNotifier {
     }
 
     try {
-      final response = await _eduDio.post(
-        '/api/edu/grades/',
+      // 调用 Go 服务器，由 Go 使用存储的 cookie 访问教务系统
+      final response = await _authDio.post(
+        '/edu/grades',
         data: {
-          'user_id': _userId,
           'year': year,
           'semester': semester,
         },
@@ -248,6 +252,9 @@ class EduProvider extends ChangeNotifier {
         final data = response.data;
         if (data['grades'] != null) {
           return OperationResult.ok(List<Map<String, dynamic>>.from(data['grades']));
+        }
+        if (data['error'] != null) {
+          return OperationResult.fail(data['error'].toString());
         }
       }
       return OperationResult.fail('获取成绩失败');

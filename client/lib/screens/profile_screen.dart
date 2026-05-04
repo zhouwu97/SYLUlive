@@ -2,6 +2,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:image_picker/image_picker.dart';
+import 'package:image_cropper/image_cropper.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
 import 'package:provider/provider.dart';
@@ -177,10 +179,15 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                 ),
                 child: user?.avatar.isNotEmpty == true
                     ? ClipOval(
-                        child: Image.network(
-                          ApiConstants.fullUrl(user!.avatar),
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => _buildAvatarPlaceholder(user),
+                        child: GestureDetector(
+                          onLongPress: () => _showAvatarPreview(context, ApiConstants.fullUrl(user!.avatar)),
+                          child: CachedNetworkImage(
+                            imageUrl: ApiConstants.fullUrl(user!.avatar),
+                            fit: BoxFit.cover,
+                            placeholder: (_, __) => _buildAvatarPlaceholder(user),
+                            errorWidget: (_, __, ___) => _buildAvatarPlaceholder(user),
+                            memCacheWidth: 256,
+                          ),
                         ),
                       )
                     : _buildAvatarPlaceholder(user),
@@ -840,6 +847,19 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     );
   }
 
+  void _showAvatarPreview(BuildContext context, String url) {
+    showDialog(
+      context: context,
+      builder: (_) => Dialog(
+        backgroundColor: Colors.transparent,
+        child: GestureDetector(
+          onTap: () => Navigator.pop(context),
+          child: InteractiveViewer(child: CachedNetworkImage(imageUrl: url, fit: BoxFit.contain)),
+        ),
+      ),
+    );
+  }
+
   void _showEditProfileDialog(BuildContext context, AuthProvider authProvider) {
     final controller = TextEditingController(text: authProvider.user?.nickname);
     showDialog(
@@ -900,6 +920,36 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
   }
 
   void _showAvatarOptions(BuildContext context, AuthProvider authProvider) {
+    Future<void> pickAndCrop(ImageSource source) async {
+      Navigator.pop(context);
+      final picker = ImagePicker();
+      final image = await picker.pickImage(source: source);
+      if (image == null) return;
+
+      // 裁剪
+      final cropped = await ImageCropper().cropImage(
+        sourcePath: image.path,
+        aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
+        uiSettings: [
+          AndroidUiSettings(toolbarTitle: '裁剪头像', toolbarColor: const Color(0xFF6366F1), toolbarWidgetColor: Colors.white, lockAspectRatio: true),
+          IOSUiSettings(title: '裁剪头像'),
+        ],
+      );
+      final finalPath = cropped?.path ?? image.path;
+
+      final appDir = await getApplicationDocumentsDirectory();
+      final fileName = 'avatar_${DateTime.now().millisecondsSinceEpoch}${path.extension(finalPath)}';
+      final savedPath = path.join(appDir.path, fileName);
+      await File(finalPath).copy(savedPath);
+      final result = await authProvider.updateAvatar(savedPath);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(result.success ? '头像更新成功' : (result.errorMessage ?? '头像更新失败')),
+          backgroundColor: result.success ? Colors.green : Colors.red,
+        ));
+      }
+    }
+
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -913,45 +963,13 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
           ListTile(
             leading: const Icon(Icons.photo),
             title: const Text('从相册选择'),
-            onTap: () async {
-              Navigator.pop(context);
-              final picker = ImagePicker();
-              final image = await picker.pickImage(source: ImageSource.gallery);
-              if (image != null) {
-                final appDir = await getApplicationDocumentsDirectory();
-                final fileName = 'avatar_${DateTime.now().millisecondsSinceEpoch}${path.extension(image.path)}';
-                final savedPath = path.join(appDir.path, fileName);
-                await File(image.path).copy(savedPath);
-                final result = await authProvider.updateAvatar(savedPath);
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                    content: Text(result.success ? '头像更新成功' : (result.errorMessage ?? '头像更新失败')),
-                    backgroundColor: result.success ? Colors.green : Colors.red,
-                  ));
-                }
-              }
-            },
+            onTap: () => pickAndCrop(ImageSource.gallery),
           ),
           ListTile(
             leading: const Icon(Icons.camera_alt),
             title: const Text('拍照'),
-            onTap: () async {
-              Navigator.pop(context);
-              final picker = ImagePicker();
-              final image = await picker.pickImage(source: ImageSource.camera);
-              if (image != null) {
-                final appDir = await getApplicationDocumentsDirectory();
-                final fileName = 'avatar_${DateTime.now().millisecondsSinceEpoch}${path.extension(image.path)}';
-                final savedPath = path.join(appDir.path, fileName);
-                await File(image.path).copy(savedPath);
-                final result = await authProvider.updateAvatar(savedPath);
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                    content: Text(result.success ? '头像更新成功' : (result.errorMessage ?? '头像更新失败')),
-                    backgroundColor: result.success ? Colors.green : Colors.red,
-                  ));
-                }
-              }
+            onTap: () => pickAndCrop(ImageSource.camera),
+          ),
             },
           ),
           ListTile(

@@ -28,16 +28,16 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _checkUnreadAnnouncements() async {
+    final auth = context.read<AuthProvider>();
+    if (!auth.isLoggedIn) { _checkedAnnouncements = false; return; }
     if (_checkedAnnouncements) return;
     _checkedAnnouncements = true;
-    final auth = context.read<AuthProvider>();
-    if (!auth.isLoggedIn) return;
     try {
       final resp = await auth.dio.get('/announcements/unread');
       final list = resp.data as List? ?? [];
       if (list.isEmpty || !mounted) return;
       _showAnnouncementDialog(list);
-    } catch (_) {}
+    } catch (_) { _checkedAnnouncements = false; }
   }
 
   void _showAnnouncementDialog(List unread) {

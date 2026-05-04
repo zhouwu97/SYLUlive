@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -83,7 +84,7 @@ func (h *AuthHandler) RegisterWithEdu(c *gin.Context) {
 	resp, err := client.R().
 		SetHeader("Content-Type", "application/json").
 		SetBody(map[string]interface{}{
-			"user_id":    user.ID,
+			"user_id":    strconv.FormatUint(uint64(user.ID), 10),
 			"student_id": input.StudentID,
 			"password":   input.EduPassword,
 		}).

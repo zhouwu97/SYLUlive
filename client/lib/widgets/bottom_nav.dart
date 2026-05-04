@@ -62,9 +62,9 @@ class BottomNavWrapper extends StatelessWidget {
             label: '课表',
           ),
           NavigationDestination(
-            icon: Icon(Icons.terminal),
-            selectedIcon: Icon(Icons.terminal),
-            label: '博客',
+            icon: Icon(Icons.warning_amber_outlined),
+            selectedIcon: Icon(Icons.warning_amber),
+            label: '避雷',
           ),
           NavigationDestination(
             icon: Icon(Icons.person_outlined),
@@ -111,7 +111,7 @@ class BottomNavWrapper extends StatelessWidget {
                   _buildFloatingItem(0, Icons.home, Icons.home_outlined, '首页', context, primaryColor),
                   _buildFloatingItem(1, Icons.store, Icons.store_outlined, '集市', context, primaryColor),
                   _buildFloatingItem(2, Icons.calendar_today, Icons.calendar_today_outlined, '课表', context, primaryColor),
-                  _buildFloatingItem(3, Icons.terminal, Icons.terminal, '博客', context, primaryColor),
+                  _buildFloatingItem(3, Icons.warning_amber, Icons.warning_amber_outlined, '避雷', context, primaryColor),
                   _buildFloatingItem(4, Icons.person, Icons.person_outlined, '我', context, primaryColor),
                 ],
               ),

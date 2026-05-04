@@ -54,6 +54,9 @@ func main() {
 		&models.AdminActionLog{},
 		&models.Tutorial{},
 		&models.VerifyCode{},
+		&models.Teacher{},
+		&models.TeacherRating{},
+		&models.UserViolation{},
 	)
 
 	// 创建种子数据
@@ -91,6 +94,7 @@ func main() {
 	examHandler := handlers.NewExamHandler()
 	tutorialHandler := handlers.NewTutorialHandler(db)
 	verifyHandler := handlers.NewVerifyHandler(db, "smtp.163.com", "465", "13514252317@163.com", "JJk5VeMEe3RJYZc8")
+	teacherHandler := handlers.NewTeacherHandler(db)
 
 	// 初始化教务服务配置
 	handlers.EduServiceConfig.BaseURL = cfg.EduServiceURL
@@ -249,6 +253,37 @@ func main() {
 	// 教程页面路由（公开读，管理员写）
 	r.GET("/api/tutorial/:key", tutorialHandler.Get)
 	r.PUT("/api/tutorial/:key", middleware.AuthMiddleware(cfg.JWTSecret), middleware.AdminMiddleware(), tutorialHandler.Update)
+
+	// 避雷版块 - 教师路由
+	teacher := r.Group("/api/teachers")
+	{
+		teacher.GET("", teacherHandler.GetList)
+	}
+	teacherAuth := teacher.Group("")
+	teacherAuth.Use(middleware.AuthMiddleware(cfg.JWTSecret))
+	{
+		teacherAuth.POST("", teacherHandler.Create)
+		teacherAuth.POST("/:id/rate", teacherHandler.Rate)
+	}
+	teacherAdmin := teacher.Group("")
+	teacherAdmin.Use(middleware.AuthMiddleware(cfg.JWTSecret), middleware.AdminMiddleware())
+	{
+		teacherAdmin.PUT("/:id/verify", teacherHandler.Verify)
+	}
+
+	// 违规管理
+	violation := r.Group("/api/violations")
+	violation.Use(middleware.AuthMiddleware(cfg.JWTSecret))
+	{
+		violation.GET("", teacherHandler.GetViolations)
+		violation.POST("/:id/appeal", teacherHandler.AppealViolation)
+	}
+	violationAdmin := violation.Group("")
+	violationAdmin.Use(middleware.AdminMiddleware())
+	{
+		violationAdmin.POST("", teacherHandler.AddViolation)
+		violationAdmin.PUT("/:id/appeal", teacherHandler.HandleAppeal)
+	}
 
 	log.Println("服务器启动在 :8080")
 	r.Run(":8080")

@@ -274,9 +274,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> with SingleTickerPr
               ],
             ),
           ),
-        ),
-      ),
-    );
+        );
   }
 
   // ---- 背景 ----

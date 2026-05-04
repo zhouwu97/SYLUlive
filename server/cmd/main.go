@@ -265,6 +265,8 @@ func main() {
 		teacherAuth.GET("/:id", teacherHandler.GetDetail)
 		teacherAuth.POST("", teacherHandler.Create)
 		teacherAuth.POST("/:id/rate", teacherHandler.Rate)
+		teacherAuth.DELETE("/rating/:id", teacherHandler.DeleteRating)
+		teacherAuth.POST("/rating/:id/report", teacherHandler.ReportRating)
 	}
 	teacherAdmin := teacher.Group("")
 	teacherAdmin.Use(middleware.AuthMiddleware(cfg.JWTSecret), middleware.AdminMiddleware())

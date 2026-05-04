@@ -6,7 +6,7 @@ import '../widgets/bottom_nav.dart';
 import 'shuitie_screen.dart';
 import 'market_screen.dart';
 import 'course_schedule_screen.dart';
-import 'blog_screen.dart';
+import 'teacher_rating_screen.dart';
 import 'profile_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -38,7 +38,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _onPageChanged(int index) {
     setState(() => _currentIndex = index);
-    final screenNames = ['shuitie', 'market', 'schedule', 'blog', 'profile'];
+    final screenNames = ['shuitie', 'market', 'schedule', 'teacher', 'profile'];
     backgroundWrapperKey.currentState?.updateScreen(screenNames[index]);
   }
 
@@ -57,7 +57,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ShuitieScreen(),
           MarketScreen(),
           CourseScheduleScreen(),
-          BlogScreen(),
+          TeacherRatingScreen(),
           ProfileScreen(),
         ],
       ),

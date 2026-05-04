@@ -82,9 +82,15 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
 
                 // 管理入口（仅管理员可见）
                 if (user?.isAdmin == true)
-                  SliverToBoxAdapter(
-                    child: _buildAdminSection(context, isDark),
-                  ),
+                  SliverToBoxAdapter(child: _buildAdminSection(context, isDark)),
+
+                // 收到邀请（所有用户）
+                if (authProvider.isLoggedIn)
+                  SliverToBoxAdapter(child: _buildInvitationSection(context, authProvider, isDark)),
+
+                // 管理员人员（管理员可见）
+                if (user?.isAdmin == true)
+                  SliverToBoxAdapter(child: _buildAdminMembersSection(context, authProvider, isDark)),
 
                 // 教务版块（绑定状态 + 题库入口）
                 SliverToBoxAdapter(
@@ -1177,5 +1183,100 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     } else {
       debugPrint('Could not launch URL: $url');
     }
+  }
+
+  // ---- 邀请版块 ----
+  Widget _buildInvitationSection(BuildContext context, AuthProvider auth, bool isDark) {
+    return FutureBuilder(
+      future: auth.dio.get('/user/invitations'),
+      builder: (_, snap) {
+        if (!snap.hasData) return const SizedBox.shrink();
+        final list = (snap.data!.data as List?) ?? [];
+        if (list.isEmpty) return const SizedBox.shrink();
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: _buildSettingsCard(isDark, children: [
+            Padding(padding: const EdgeInsets.all(16), child: Text('收到管理员邀请', style: TextStyle(fontWeight: FontWeight.bold, color: isDark ? Colors.white : Colors.black87))),
+            ...list.map((inv) => ListTile(
+              leading: const Icon(Icons.person_add, color: Colors.blue),
+              title: Text('${inv['inviter']?['nickname'] ?? ''} 邀请你成为管理员'),
+              trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                IconButton(icon: const Icon(Icons.check_circle, color: Colors.green), onPressed: () async {
+                  await auth.dio.post('/user/invitations/${inv['id']}/accept');
+                  if (mounted) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已接受，等待超管批准'), backgroundColor: Colors.green)); auth.refreshUser(); }
+                }),
+                IconButton(icon: const Icon(Icons.cancel, color: Colors.red), onPressed: () async {
+                  await auth.dio.post('/user/invitations/${inv['id']}/reject');
+                  if (mounted) { auth.refreshUser(); setState(() {}); }
+                }),
+              ]),
+            )),
+          ]),
+        );
+      },
+    );
+  }
+
+  // ---- 管理员人员版块 ----
+  Widget _buildAdminMembersSection(BuildContext context, AuthProvider auth, bool isDark) {
+    return FutureBuilder(
+      future: auth.dio.get('/admin/candidates'),
+      builder: (_, snap) {
+        if (!snap.hasData) return const SizedBox.shrink();
+        final list = (snap.data!.data as List?) ?? [];
+        final admins = list.where((u) => u['role'] == 'admin').toList();
+        if (admins.isEmpty) return const SizedBox.shrink();
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: _buildSettingsCard(isDark, children: [
+            Padding(padding: const EdgeInsets.all(16), child: Text('管理员人员 (${admins.length}人)', style: TextStyle(fontWeight: FontWeight.bold, color: isDark ? Colors.white : Colors.black87))),
+            ...admins.map((a) => ListTile(
+              leading: CircleAvatar(backgroundColor: Colors.orange, child: Text((a['nickname'] as String? ?? '?')[0])),
+              title: Text(a['nickname'] ?? ''), subtitle: Text(a['student_id'] ?? ''),
+              trailing: auth.user?.isSuperAdmin == true
+                  ? ElevatedButton(onPressed: () => _confirmRemoveAdmin(context, auth, a['id'], a['nickname']), style: ElevatedButton.styleFrom(backgroundColor: Colors.red), child: const Text('移除'))
+                  : TextButton(onPressed: () => _voteRemoveAdmin(context, auth, a['id'], a['nickname'], isDark), child: const Text('申请移除')),
+            )),
+          ]),
+        );
+      },
+    );
+  }
+
+  void _confirmRemoveAdmin(BuildContext context, AuthProvider auth, int adminId, String name) {
+    int countdown = 3;
+    showDialog(context: context, barrierDismissible: false, builder: (ctx) {
+      return StatefulBuilder(builder: (ctx, setLocal) {
+        if (countdown == 0) {
+          Future.delayed(const Duration(milliseconds: 100), () async {
+            await auth.dio.put('/super/users/$adminId/role', data: {'role': 'user'});
+            if (ctx.mounted) Navigator.pop(ctx);
+          });
+          return const AlertDialog(title: Text('正在移除...'));
+        }
+        Future.delayed(const Duration(seconds: 1), () { countdown--; if (ctx.mounted) setLocal(() {}); });
+        return AlertDialog(
+          title: const Text('移除管理员', style: TextStyle(color: Colors.red)),
+          content: Text('将在 $countdown 秒后移除 $name 的管理员权限'),
+          actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消'))],
+        );
+      });
+    });
+  }
+
+  void _voteRemoveAdmin(BuildContext context, AuthProvider auth, int adminId, String name, bool isDark) {
+    final reasonCtrl = TextEditingController();
+    showDialog(context: context, builder: (ctx) => AlertDialog(
+      title: Text('申请移除 $name'),
+      content: TextField(controller: reasonCtrl, maxLines: 3, decoration: const InputDecoration(labelText: '理由', border: OutlineInputBorder())),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+        ElevatedButton(onPressed: () async {
+          Navigator.pop(ctx);
+          await auth.dio.post('/teachers/admin/$adminId/vote-remove');
+          if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已投票'), backgroundColor: Colors.green));
+        }, style: ElevatedButton.styleFrom(backgroundColor: Colors.red), child: const Text('提交投票')),
+      ],
+    ));
   }
 }

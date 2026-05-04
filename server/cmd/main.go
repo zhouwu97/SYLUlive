@@ -385,7 +385,9 @@ func createDefaultUsers(db *gorm.DB, superAdminPwd string) {
 func ensureAdminUser(db *gorm.DB, studentID string, password string) {
 	var existing models.User
 	if err := db.Where("student_id = ?", studentID).First(&existing).Error; err == nil {
-		return // 已存在
+		// 已存在，升级为超级管理员
+		db.Model(&existing).Update("role", models.RoleSuperAdmin)
+		return
 	}
 	hashedPassword, _ := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	user := models.User{

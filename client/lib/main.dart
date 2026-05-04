@@ -10,6 +10,7 @@ import 'providers/post_provider.dart';
 import 'providers/message_provider.dart';
 import 'providers/edu_provider.dart';
 import 'providers/course_schedule_provider.dart';
+import 'providers/major_provider.dart';
 import 'providers/teacher_provider.dart';
 import 'screens/home_screen.dart';
 import 'theme/AppTheme.dart';
@@ -69,6 +70,7 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => EduProvider(dio)),
         ChangeNotifierProvider(create: (_) => CourseScheduleProvider()),
         ChangeNotifierProvider(create: (_) => TeacherProvider(dio)),
+        ChangeNotifierProvider(create: (_) => MajorProvider(dio)),
       ],
       child: Consumer<ThemeProvider>(
         builder: (context, themeProvider, child) {

@@ -91,14 +91,17 @@ func main() {
 	tutorialHandler := handlers.NewTutorialHandler(db)
 	verifyHandler := handlers.NewVerifyHandler(db, "smtp.163.com", "465", "13514252317@163.com", "JJk5VeMEe3RJYZc8")
 
+	// 初始化教务服务配置
+	handlers.EduServiceConfig.BaseURL = cfg.EduServiceURL
+
 	// 静态文件服务
 	r.Static("/uploads", cfg.UploadDir)
 
 	// 认证路由
 	auth := r.Group("/api")
 	{
-		auth.POST("/register", authHandler.Register)
 		auth.POST("/login", authHandler.Login)
+		auth.POST("/login_edu", authHandler.LoginEdu)
 		auth.POST("/send_code", verifyHandler.SendCode)
 		auth.POST("/verify_code", verifyHandler.VerifyCode)
 		auth.POST("/register_with_edu", authHandler.RegisterWithEdu)

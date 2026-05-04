@@ -172,6 +172,7 @@ func main() {
 	announcements := r.Group("/api/announcements")
 	{
 		announcements.GET("", announcementHandler.GetList)
+		announcements.GET("/active", announcementHandler.GetActive)
 		announcements.GET("/:id", announcementHandler.GetOne)
 	}
 	announcementsAdmin := announcements.Group("")
@@ -238,6 +239,8 @@ func main() {
 		superAdmin.DELETE("/users/:id", superAdminHandler.DeleteUser)
 		superAdmin.GET("/stats", superAdminHandler.GetStatistics)
 		superAdmin.GET("/admin_logs", superAdminHandler.GetAdminLogs)
+		superAdmin.GET("/invitations/pending", invitationHandler.GetApprovalList)
+		superAdmin.POST("/invitations/:id/approve", invitationHandler.Approve)
 	}
 
 	// 题库提取路由
@@ -305,8 +308,8 @@ func ensureAdminUser(db *gorm.DB, studentID string, password string) {
 	user := models.User{
 		StudentID:    studentID,
 		PasswordHash: string(hashedPassword),
-		Nickname:     "管理员",
-		Role:         models.RoleAdmin,
+		Nickname:     "超级管理员",
+		Role:         models.RoleSuperAdmin,
 		CreditScore:  100,
 	}
 	db.Create(&user)

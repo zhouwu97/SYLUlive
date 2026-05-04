@@ -556,11 +556,28 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
     final allActive = <CourseBlock>[];
     final allInactive = <CourseBlock>[];
+    // 用于去重：同一天同一时段只保留一个（优先级：当前周 > 未来周 > 过去周）
+    final seen = <String>{};
+
     for (final c in sc.courses) {
+      final key = '${c.weekday}_${c.startSection}';
       if (wn == null || c.weeks.isEmpty || c.weeks.contains(wn)) {
-        allActive.add(c);
-      } else {
+        if (!seen.contains(key)) {
+          allActive.add(c);
+          seen.add(key);
+        }
+      } else if (!seen.contains(key)) {
+        // 非本周课程分两类：未来的（优先）已结束的（次要）
+        final isFuture = c.weeks.isNotEmpty && c.weeks.first > wn!;
         allInactive.add(c);
+        allInactive.sort((a, b) {
+          final aFuture = a.weeks.isNotEmpty && a.weeks.first > wn!;
+          final bFuture = b.weeks.isNotEmpty && b.weeks.first > wn!;
+          if (aFuture && !bFuture) return -1;
+          if (!aFuture && bFuture) return 1;
+          return 0;
+        });
+        seen.add(key);
       }
     }
 
@@ -602,9 +619,9 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                   )),
                 ),
               ),
-            // 课程卡片
-            for (final c in allInactive) _buildCard(c, false, exactW),
-            for (final c in allActive) _buildCard(c, true, exactW),
+            // 课程卡片（非本周在前，当前周在上层）
+            for (final c in allInactive) _buildCard(c, false, exactW, wn),
+            for (final c in allActive) _buildCard(c, true, exactW, wn),
           ],
         ),
       ),
@@ -612,9 +629,13 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   }
 
   // ====== 课程卡片 ======
-  Widget _buildCard(CourseBlock c, bool isActive, double exactW) {
+  Widget _buildCard(CourseBlock c, bool isActive, double exactW, int? wn) {
     final top = (c.startSection - 1) * slotHeight;
     final h = c.span * slotHeight - 4;
+    String? inactiveLabel;
+    if (!isActive && wn != null && c.weeks.isNotEmpty) {
+      inactiveLabel = c.weeks.first > wn ? '后期' : '前期';
+    }
     final base = getCourseColor(c.name, isActive: isActive, courseCode: c.courseCode, location: c.location)
         .withValues(alpha: isActive ? _cardOpacity : 0.3);
 
@@ -637,8 +658,8 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
             mainAxisAlignment: MainAxisAlignment.start,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (!isActive)
-                const Text('[非本周]', style: TextStyle(fontSize: 8, fontWeight: FontWeight.w700, color: Colors.white54)),
+              if (inactiveLabel != null)
+                Text(inactiveLabel, style: const TextStyle(fontSize: 8, fontWeight: FontWeight.w700, color: Colors.white54)),
               Text(
                 c.name.isNotEmpty ? c.name : '未知课名',
                 style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold, height: 1.15),

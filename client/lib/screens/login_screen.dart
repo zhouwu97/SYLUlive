@@ -101,14 +101,14 @@ class _LoginScreenState extends State<LoginScreen> {
                 // 学号
                 TextFormField(
                   controller: _studentIdController,
-                  maxLength: 10,
+                  maxLength: 20,
                   decoration: InputDecoration(
                     labelText: '学号',
                     prefixIcon: const Icon(Icons.person_outline),
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                     contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                   ),
-                  validator: (v) => (v == null || v.isEmpty) ? '请输入学号' : (v.length != 10 ? '请输入10位学号' : null),
+                  validator: (v) => (v == null || v.isEmpty) ? '请输入学号' : null,
                 ),
 
                 if (_isRegister) ...[

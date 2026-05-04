@@ -443,10 +443,17 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
               ),
               const SizedBox(height: 24),
               ElevatedButton.icon(
-                onPressed: () {
-                  Navigator.of(context).push(
+                onPressed: () async {
+                  await Navigator.of(context).push(
                     MaterialPageRoute(builder: (_) => const EduScreen()),
                   );
+                  // 返回后刷新课表缓存
+                  if (mounted) {
+                    setState(() {
+                      _didLoad = false;
+                      _hasCache = false;
+                    });
+                  }
                 },
                 icon: const Icon(Icons.school),
                 label: const Text('去教务导入课表'),

@@ -282,7 +282,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(label, style: const TextStyle(fontSize: 10, color: Colors.white60)),
-              Text(value, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white)),
+              Text(value, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.black87)),
             ],
           ),
         ],

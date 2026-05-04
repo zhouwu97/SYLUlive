@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -18,10 +19,10 @@ func NewTeacherHandler(db *gorm.DB) *TeacherHandler {
 	return &TeacherHandler{db: db}
 }
 
-// GetList 教师列表（按添加时间倒序，支持搜索名字）
+// GetList 教师列表（只显示已审核的，按添加时间倒序）
 func (h *TeacherHandler) GetList(c *gin.Context) {
 	q := c.Query("q")
-	query := h.db.Order("created_at DESC")
+	query := h.db.Where("verified = ?", true).Order("created_at DESC")
 	if q != "" {
 		query = query.Where("name LIKE ?", "%"+q+"%")
 	}
@@ -83,8 +84,10 @@ func (h *TeacherHandler) GetDetail(c *gin.Context) {
 	})
 }
 
-// Create 添加教师
+// Create 添加教师（需管理员审核）
 func (h *TeacherHandler) Create(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	role, _ := c.Get("role")
 	var input struct {
 		Name   string `json:"name" binding:"required"`
 		Course string `json:"course" binding:"required"`
@@ -93,12 +96,22 @@ func (h *TeacherHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	teacher := models.Teacher{Name: input.Name, Course: input.Course}
+	// 管理员添加自动通过
+	verified := role == "admin" || role == "super_admin"
+	teacher := models.Teacher{
+		Name: input.Name, Course: input.Course,
+		Verified: verified, CreatedBy: userID.(uint),
+	}
 	if err := h.db.Create(&teacher).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "添加失败"})
 		return
 	}
-	c.JSON(http.StatusCreated, teacher)
+	h.logAdmin(c, "添加教师", teacher.Name, "")
+	if verified {
+		c.JSON(http.StatusCreated, teacher)
+	} else {
+		c.JSON(http.StatusCreated, gin.H{"message": "已提交，等待管理员审核", "teacher": teacher})
+	}
 }
 
 // Rate 评价教师（星级1-5，可修改）
@@ -141,9 +154,49 @@ func (h *TeacherHandler) Rate(c *gin.Context) {
 	}
 }
 
-// Verify 管理员验证
+// Verify 管理员审核教师
 func (h *TeacherHandler) Verify(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"message": "ok"})
+	id, _ := strconv.Atoi(c.Param("id"))
+	h.db.Model(&models.Teacher{}).Where("id = ?", id).Update("verified", true)
+	var t models.Teacher
+	h.db.First(&t, id)
+	h.logAdmin(c, "审核通过教师", t.Name, "")
+	c.JSON(http.StatusOK, gin.H{"message": "已审核通过"})
+}
+
+// RejectTeacher 管理员拒绝教师
+func (h *TeacherHandler) RejectTeacher(c *gin.Context) {
+	id, _ := strconv.Atoi(c.Param("id"))
+	var t models.Teacher
+	h.db.First(&t, id)
+	h.db.Delete(&t)
+	h.logAdmin(c, "拒绝教师", t.Name, "")
+	c.JSON(http.StatusOK, gin.H{"message": "已拒绝"})
+}
+
+// GetPending 获取待审核教师列表
+func (h *TeacherHandler) GetPending(c *gin.Context) {
+	var teachers []models.Teacher
+	h.db.Where("verified = ?", false).Order("created_at DESC").Find(&teachers)
+	c.JSON(http.StatusOK, teachers)
+}
+
+// GetLogs 获取管理员操作日志
+func (h *TeacherHandler) GetLogs(c *gin.Context) {
+	var logs []models.AdminLog
+	h.db.Preload("Admin").Order("created_at DESC").Limit(100).Find(&logs)
+	c.JSON(http.StatusOK, logs)
+}
+
+// logAdmin 记录管理员操作
+func (h *TeacherHandler) logAdmin(c *gin.Context, action, target, detail string) {
+	userID, _ := c.Get("user_id")
+	var user models.User
+	h.db.Select("nickname").First(&user, userID)
+	h.db.Create(&models.AdminLog{
+		AdminID: userID.(uint), AdminName: user.Nickname,
+		Action: action, Target: target, Detail: detail,
+	})
 }
 
 // DeleteRating 删除自己的评价
@@ -201,7 +254,6 @@ func (h *TeacherHandler) AddViolation(c *gin.Context) {
 	}
 	switch {
 	case violationCount >= 3:
-		v.Count = violationCount
 	case violationCount == 2:
 		t := time.Now().AddDate(0, 1, 0)
 		v.MutedUntil = &t
@@ -213,6 +265,7 @@ func (h *TeacherHandler) AddViolation(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "记录失败"})
 		return
 	}
+	h.logAdmin(c, "添加违规", fmt.Sprintf("用户%d %s", input.UserID, input.Reason), "")
 	c.JSON(http.StatusCreated, v)
 }
 
@@ -245,9 +298,11 @@ func (h *TeacherHandler) HandleAppeal(c *gin.Context) {
 	}
 	if input.Approved {
 		h.db.Delete(&v)
+		h.logAdmin(c, "申诉通过", fmt.Sprintf("违规%d", id), "")
 		c.JSON(http.StatusOK, gin.H{"message": "申诉成功，违规记录已删除"})
 	} else {
 		h.db.Model(&v).Update("appealed", false)
+		h.logAdmin(c, "申诉驳回", fmt.Sprintf("违规%d", id), "")
 		c.JSON(http.StatusOK, gin.H{"message": "申诉被驳回"})
 	}
 }

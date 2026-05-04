@@ -63,10 +63,14 @@ func (h *AuthHandler) RegisterWithEdu(c *gin.Context) {
 		return
 	}
 
-// 先创建用户（昵称用临时值）
+// 先创建用户
+	nickname := input.Nickname
+	if nickname == "" {
+		nickname = "新用户"
+	}
 	user := models.User{
 		StudentID:    input.StudentID,
-		Nickname:     "新用户",
+		Nickname:     nickname,
 		PasswordHash: string(hashedPassword),
 		Role:         models.RoleUser,
 		CreditScore:  100,
@@ -77,9 +81,11 @@ func (h *AuthHandler) RegisterWithEdu(c *gin.Context) {
 		return
 	}
 
-	// 设置默认昵称
-	h.db.Model(&user).Update("nickname", "校园用户"+strconv.FormatUint(uint64(user.ID), 10))
-	user.Nickname = "校园用户" + strconv.FormatUint(uint64(user.ID), 10)
+	// 用户没填昵称时才用默认值
+	if input.Nickname == "" {
+		h.db.Model(&user).Update("nickname", "校园用户"+strconv.FormatUint(uint64(user.ID), 10))
+		user.Nickname = "校园用户" + strconv.FormatUint(uint64(user.ID), 10)
+	}
 
 	// 静默绑定：调用Python的bind接口获取cookie
 	client := resty.New()

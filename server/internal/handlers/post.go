@@ -96,12 +96,7 @@ func (h *PostHandler) Create(c *gin.Context) {
 		return
 	}
 
-	// 骗子曝光板块暂不开放
-	if input.BoardID == int(models.BoardScam) {
-		c.JSON(http.StatusForbidden, gin.H{"error": "此功能即将开放"})
-		return
-	}
-
+	// 先创建帖子
 	post := models.Post{
 		Title:    input.Title,
 		Content:  input.Content,

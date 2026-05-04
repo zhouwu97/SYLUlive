@@ -37,6 +37,42 @@ func (h *InvitationHandler) GetCandidates(c *gin.Context) {
 	c.JSON(http.StatusOK, candidates)
 }
 
+// GetMembers 获取所有管理员列表
+func (h *InvitationHandler) GetMembers(c *gin.Context) {
+	var members []models.User
+	h.db.Where("role IN ?", []string{"admin", "super_admin"}).Select("id, nickname, student_id, role").Find(&members)
+	c.JSON(http.StatusOK, members)
+}
+
+// DirectPromote 超管直接提升为管理员
+func (h *InvitationHandler) DirectPromote(c *gin.Context) {
+	var input struct {
+		UserID uint `json:"user_id" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	var user models.User
+	if h.db.First(&user, input.UserID).Error != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
+		return
+	}
+	if user.Role != models.RoleUser {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "该用户已是管理员"})
+		return
+	}
+	h.db.Model(&user).Update("role", models.RoleAdmin)
+
+	// 记录日志
+	adminID, _ := c.Get("user_id")
+	var admin models.User
+	h.db.Select("nickname").First(&admin, adminID)
+	h.db.Create(&models.AdminLog{AdminID: adminID.(uint), AdminName: admin.Nickname, Action: "直接提升管理员", Target: user.Nickname, Detail: user.StudentID})
+
+	c.JSON(http.StatusOK, gin.H{"message": user.Nickname + " 已成为管理员"})
+}
+
 // CreateInvitation 创建邀请
 func (h *InvitationHandler) Create(c *gin.Context) {
 	userID, _ := c.Get("user_id")
@@ -81,6 +117,12 @@ func (h *InvitationHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建邀请失败"})
 		return
 	}
+
+	// 记录日志
+	adminID, _ := c.Get("user_id")
+	var admin models.User
+	h.db.Select("nickname").First(&admin, adminID)
+	h.db.Create(&models.AdminLog{AdminID: adminID.(uint), AdminName: admin.Nickname, Action: "邀请管理员", Target: user.Nickname, Detail: user.StudentID})
 
 	c.JSON(http.StatusCreated, invitation)
 }

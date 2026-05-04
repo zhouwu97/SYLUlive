@@ -54,7 +54,6 @@ func main() {
 		&models.Invitation{},
 		&models.AdminActionLog{},
 		&models.Tutorial{},
-		&models.VerifyCode{},
 		&models.Teacher{},
 		&models.TeacherRating{},
 		&models.UserViolation{},
@@ -95,7 +94,6 @@ func main() {
 	eduHandler := handlers.NewEduHandler(db)
 	examHandler := handlers.NewExamHandler()
 	tutorialHandler := handlers.NewTutorialHandler(db)
-	verifyHandler := handlers.NewVerifyHandler(db, "smtp.163.com", "465", "13514252317@163.com", "JJk5VeMEe3RJYZc8")
 	teacherHandler := handlers.NewTeacherHandler(db)
 
 	// 初始化教务服务配置
@@ -109,8 +107,6 @@ func main() {
 	{
 		auth.POST("/login", authHandler.Login)
 		auth.POST("/login_edu", authHandler.LoginEdu)
-		auth.POST("/send_code", verifyHandler.SendCode)
-		auth.POST("/verify_code", verifyHandler.VerifyCode)
 		auth.POST("/register_with_edu", authHandler.RegisterWithEdu)
 		auth.POST("/change_password", middleware.AuthMiddleware(cfg.JWTSecret), authHandler.ChangePassword)
 	}

@@ -22,9 +22,17 @@ func NewInvitationHandler(db *gorm.DB) *InvitationHandler {
 
 // GetCandidates 获取管理员候选人列表
 func (h *InvitationHandler) GetCandidates(c *gin.Context) {
+	studentID := c.Query("student_id")
+
+	query := h.db.Model(&models.User{}).
+		Where("report_count = 0 AND credit_score > 90 AND role = ?", models.RoleUser)
+
+	if studentID != "" {
+		query = query.Where("student_id LIKE ?", "%"+studentID+"%")
+	}
+
 	var candidates []models.User
-	// 近90天举报数为0且诚信度>90%
-	h.db.Where("report_count = 0 AND credit_score > 90 AND role = ?", models.RoleUser).Find(&candidates)
+	query.Order("credit_score DESC").Find(&candidates)
 	c.JSON(http.StatusOK, candidates)
 }
 

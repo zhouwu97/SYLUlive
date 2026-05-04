@@ -36,16 +36,9 @@ class _BlogScreenState extends State<BlogScreen> {
     final isDark = true; // 博客强制深色模式，护眼
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0B1121), // 极深蓝黑底
+      backgroundColor: Colors.transparent, // 使用全局默认背景
       appBar: _buildAppBar(),
-      body: Stack(
-        children: [
-          // 背景点阵纹理（极客感）
-          Positioned.fill(
-            child: CustomPaint(painter: _DotGridPainter()),
-          ),
-          // 内容
-          ListView(
+      body: ListView(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
             children: [
               _buildHeroCard(),

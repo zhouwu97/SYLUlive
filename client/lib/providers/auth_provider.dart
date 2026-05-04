@@ -378,6 +378,45 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  Future<AuthResult> loginEdu(
+    String studentId,
+    String eduPassword,
+    String appPassword,
+  ) async {
+    _isLoading = true;
+    notifyListeners();
+
+    try {
+      final response = await _dio.post('/login_edu', data: {
+        'student_id': studentId,
+        'edu_password': eduPassword,
+        'password': appPassword,
+      });
+
+      _isLoading = false;
+      if (response.statusCode == 200) {
+        _token = response.data['token'];
+        _user = User.fromJson(response.data['user']);
+        _dio.options.headers['Authorization'] = 'Bearer $_token';
+        await _saveAuth();
+        notifyListeners();
+        return AuthResult.success();
+      }
+      return AuthResult.failure('登录失败，服务器返回异常');
+    } on DioException catch (e) {
+      _isLoading = false;
+      notifyListeners();
+      final errorMsg = _parseDioError(e);
+      debugPrint('登录失败: $errorMsg');
+      return AuthResult.failure(errorMsg);
+    } catch (e) {
+      _isLoading = false;
+      notifyListeners();
+      debugPrint('登录失败: $e');
+      return AuthResult.failure('登录失败: $e');
+    }
+  }
+
   /// 教务验证后注册
   Future<AuthResult> registerWithEdu(
     String studentId,

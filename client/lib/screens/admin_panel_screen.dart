@@ -46,15 +46,14 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> with SingleTickerPr
       final dio = context.read<AuthProvider>().dio;
       final reportsRes = await dio.get('/reports');
       final candidatesRes = await dio.get('/admin/candidates');
-      final pendingRes = await dio.get('/teachers/pending');
-      final logsRes = await dio.get('/teachers/logs');
       setState(() {
         _reports = (reportsRes.data as List?) ?? [];
         _candidates = (candidatesRes.data as List?) ?? [];
-        _pendingTeachers = (pendingRes.data as List?) ?? [];
-        _logs = (logsRes.data as List?) ?? [];
-        _isLoading = false;
       });
+      // 新路由，失败了不影响
+      try { final r = await dio.get('/teachers/pending'); _pendingTeachers = (r.data as List?) ?? []; } catch (_) {}
+      try { final r = await dio.get('/teachers/logs'); _logs = (r.data as List?) ?? []; } catch (_) {}
+      setState(() { _isLoading = false; });
     } on DioException catch (e) {
       setState(() {
         _isLoading = false;

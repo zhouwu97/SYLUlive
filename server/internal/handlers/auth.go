@@ -76,57 +76,59 @@ func (h *AuthHandler) RegisterWithEdu(c *gin.Context) {
 		return
 	}
 
-	// 静默绑定：直接登录教务系统获取cookie
-	grade, college, major := "", "", ""
-	cookieStr := ""
-
+	// 静默绑定：调用Python的bind接口获取cookie
 	client := resty.New()
 	client.SetTimeout(10 * time.Second)
 
-	// 获取csrf token
-	csrfToken, err := getIndexCookieAndCsrfToken(client)
-	if err == nil {
-		// 获取公钥
-		publicKey, err := getPublicKey(client)
-		if err == nil {
-			// RSA加密密码
-			encryptedPassword, err := rsaByPublicKey(input.EduPassword, publicKey)
-			if err == nil {
-				// 尝试登录
-				_, err = syluLogin(client, input.StudentID, encryptedPassword, csrfToken)
-				if err == nil {
-					cookieStr = buildCookieString(client.Cookies[1:2])
-					// 获取学生信息
-					grade, college, major, _ = getStudentInfo(client, cookieStr, input.StudentID)
-				}
-			}
-		}
-	}
+	resp, err := client.R().
+		SetHeader("Content-Type", "application/json").
+		SetBody(map[string]interface{}{
+			"user_id":    user.ID,
+			"student_id": input.StudentID,
+			"password":   input.EduPassword,
+		}).
+		Post(EduServiceConfig.BaseURL + "/api/edu/bind")
 
-	// 更新用户教务绑定信息
-	if cookieStr != "" {
+	if err != nil {
+		// Python调用失败，只标记已绑定（后续可手动刷新cookie）
 		h.db.Model(&user).Updates(map[string]interface{}{
 			"edu_student_id": input.StudentID,
 			"edu_password":   input.EduPassword,
-			"edu_cookie":     cookieStr,
 			"edu_bound":      true,
-			"edu_grade":      grade,
-			"edu_college":    college,
-			"edu_major":     major,
 		})
 		user.EduBound = true
-		user.EduCookie = cookieStr
-		user.EduGrade = grade
-		user.EduCollege = college
-		user.EduMajor = major
 	} else {
-		// 无法获取cookie，只标记已绑定（后续可手动刷新）
-		h.db.Model(&user).Updates(map[string]interface{}{
-			"edu_student_id": input.StudentID,
-			"edu_password":   input.EduPassword,
-			"edu_bound":      true,
-		})
-		user.EduBound = true
+		var bindResult struct {
+			Success   bool   `json:"success"`
+			Cookie    string `json:"cookie"`
+			Grade     string `json:"grade"`
+			College   string `json:"college"`
+			Major     string `json:"major"`
+		}
+		json.Unmarshal(resp.Body(), &bindResult)
+		if bindResult.Success {
+			h.db.Model(&user).Updates(map[string]interface{}{
+				"edu_student_id": input.StudentID,
+				"edu_password":   input.EduPassword,
+				"edu_cookie":     bindResult.Cookie,
+				"edu_bound":      true,
+				"edu_grade":      bindResult.Grade,
+				"edu_college":    bindResult.College,
+				"edu_major":     bindResult.Major,
+			})
+			user.EduBound = true
+			user.EduCookie = bindResult.Cookie
+			user.EduGrade = bindResult.Grade
+			user.EduCollege = bindResult.College
+			user.EduMajor = bindResult.Major
+		} else {
+			h.db.Model(&user).Updates(map[string]interface{}{
+				"edu_student_id": input.StudentID,
+				"edu_password":   input.EduPassword,
+				"edu_bound":      true,
+			})
+			user.EduBound = true
+		}
 	}
 
 	token, _ := middleware.GenerateToken(user.ID, string(user.Role), h.jwtSecret)

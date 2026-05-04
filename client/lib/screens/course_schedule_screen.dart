@@ -103,11 +103,13 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
   void _autoLoad(EduProvider edu, CourseScheduleProvider sc) async {
     if (_didLoad) return;
-    // 状态还没加载完，继续等
-    if (_initializing && !edu.isBound) return;
-    // 已确认未绑定
+    // 未绑定，直接显示引导页，不转圈
     if (!edu.isBound) {
+      _didLoad = true;
       _initializing = false;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        setState(() {});
+      });
       return;
     }
     if (sc.isLoading) return;

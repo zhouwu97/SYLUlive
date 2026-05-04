@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import '../config/api_constants.dart';
 
@@ -99,7 +100,6 @@ class EduProvider extends ChangeNotifier {
     if (_userId == null) return;
 
     try {
-      // 调用 Go 服务器（_authDio），JWT 自动带上，user_id 从 token 中提取
       final response = await _authDio.get('/edu/status');
 
       if (response.statusCode == 200) {
@@ -111,13 +111,29 @@ class EduProvider extends ChangeNotifier {
         _college = data['edu_college'] ?? '';
         _major = data['edu_major'] ?? '';
         _errorMessage = null;
+        await _saveBoundStatus();
         notifyListeners();
       }
     } on DioException catch (e) {
+      // 网络错误时使用本地缓存
+      final cached = await _loadBoundStatus();
+      _isBound = cached;
       _errorMessage = _parseDioError(e);
-      debugPrint('获取教务状态失败: $_errorMessage');
+      debugPrint('获取教务状态失败: $_errorMessage，使用缓存: $cached');
       notifyListeners();
     }
+  }
+
+  Future<void> _saveBoundStatus() async {
+    if (_userId == null) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('edu_bound_$_userId', _isBound);
+  }
+
+  Future<bool> _loadBoundStatus() async {
+    if (_userId == null) return false;
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool('edu_bound_$_userId') ?? false;
   }
 
   // 绑定教务账号
@@ -152,6 +168,7 @@ class EduProvider extends ChangeNotifier {
         _college = data['college'] ?? '';
         _major = data['major'] ?? '';
         _errorMessage = null;
+        await _saveBoundStatus();
         notifyListeners();
         return true;
       }

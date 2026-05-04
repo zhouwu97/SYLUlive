@@ -22,6 +22,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> with SingleTickerPr
   List<dynamic> _candidates = [];
   bool _isLoading = true;
   String? _errorMessage;
+  final _searchController = TextEditingController();
 
   @override
   void initState() {
@@ -33,6 +34,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> with SingleTickerPr
   @override
   void dispose() {
     _tabController.dispose();
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -176,6 +178,19 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> with SingleTickerPr
         );
       }
     }
+  }
+
+  Future<void> _searchCandidates() async {
+    final keyword = _searchController.text.trim();
+    try {
+      final dio = context.read<AuthProvider>().dio;
+      final queryParams = <String, dynamic>{};
+      if (keyword.isNotEmpty) queryParams['student_id'] = keyword;
+      final res = await dio.get('/admin/candidates', queryParameters: queryParams.isNotEmpty ? queryParams : null);
+      if (mounted) {
+        setState(() => _candidates = (res.data as List?) ?? []);
+      }
+    } catch (_) {}
   }
 
   Future<void> _inviteAdmin(dynamic candidate) async {
@@ -498,63 +513,121 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> with SingleTickerPr
 
   // ---- 候选人 Tab ----
   Widget _buildCandidatesTab(bool isDark) {
-    if (_candidates.isEmpty) {
-      return _buildEmptyState('暂无候选人', '需要有诚信度≥90的用户', Icons.person_search, isDark);
-    }
+    final displayCandidates = _candidates;
 
-    return RefreshIndicator(
-      onRefresh: _loadData,
-      child: ListView.builder(
-        physics: const BouncingScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(12, 8, 12, 80),
-        itemCount: _candidates.length,
-        itemBuilder: (context, index) {
-          final c = _candidates[index];
-          return GlassContainer(
-            margin: const EdgeInsets.only(bottom: 10),
-            padding: const EdgeInsets.all(14),
-            borderRadius: 14,
-            blur: 8,
-            opacity: isDark ? 0.12 : 0.35,
-            child: Row(
-              children: [
-                CircleAvatar(
-                  radius: 20,
-                  backgroundColor: isDark ? Colors.white12 : Colors.grey[200],
-                  child: Text(
-                    (c['nickname'] ?? '?').substring(0, 1).toUpperCase(),
-                    style: TextStyle(fontWeight: FontWeight.w600, color: isDark ? Colors.white : Colors.black87),
-                  ),
+    return Column(children: [
+      // 搜索栏
+      Padding(
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+        child: Row(children: [
+          Expanded(
+            child: TextField(
+              controller: _searchController,
+              decoration: InputDecoration(
+                hintText: '按学号搜索候选人',
+                hintStyle: TextStyle(fontSize: 13, color: isDark ? Colors.white38 : Colors.grey[400]),
+                prefixIcon: Icon(Icons.search, size: 18, color: isDark ? Colors.white38 : Colors.grey[400]),
+                suffixIcon: _searchController.text.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear, size: 16),
+                        onPressed: () {
+                          _searchController.clear();
+                          _searchCandidates();
+                        },
+                      )
+                    : null,
+                contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: isDark ? Colors.white.withValues(alpha: 0.1) : Colors.grey[300]!),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(c['nickname'] ?? '未知', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
-                      const SizedBox(height: 2),
-                      Text('诚信度: ${c['credit_score'] ?? 0}%',
-                        style: TextStyle(fontSize: 12, color: isDark ? Colors.white38 : Colors.grey[500])),
-                    ],
-                  ),
-                ),
-                ElevatedButton(
-                  onPressed: () => _inviteAdmin(c),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Theme.of(context).primaryColor.withOpacity(0.8),
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                    elevation: 0,
-                  ),
-                  child: const Text('邀请', style: TextStyle(fontSize: 13)),
-                ),
-              ],
+                filled: true,
+                fillColor: isDark ? Colors.white.withValues(alpha: 0.06) : Colors.white.withValues(alpha: 0.5),
+              ),
+              style: TextStyle(fontSize: 14, color: isDark ? Colors.white : Colors.black87),
+              onSubmitted: (_) => _searchCandidates(),
             ),
-          );
-        },
+          ),
+        ]),
       ),
-    );
+
+      // 候选人列表
+      Expanded(
+        child: displayCandidates.isEmpty
+            ? _buildEmptyState('无匹配结果', '尝试其他学号搜索', Icons.person_search, isDark)
+            : RefreshIndicator(
+                onRefresh: _loadData,
+                child: ListView.builder(
+                  physics: const BouncingScrollPhysics(),
+                  padding: const EdgeInsets.fromLTRB(12, 4, 12, 80),
+                  itemCount: displayCandidates.length,
+                  itemBuilder: (context, index) {
+                    final c = displayCandidates[index];
+                    final creditScore = c['credit_score'] ?? 0;
+                    return GlassContainer(
+                      margin: const EdgeInsets.only(bottom: 10),
+                      padding: const EdgeInsets.all(14),
+                      borderRadius: 14,
+                      blur: 8,
+                      opacity: isDark ? 0.12 : 0.35,
+                      child: Row(
+                        children: [
+                          CircleAvatar(
+                            radius: 20,
+                            backgroundColor: isDark ? Colors.white12 : Colors.grey[200],
+                            child: Text(
+                              (c['nickname'] ?? '?').substring(0, 1).toUpperCase(),
+                              style: TextStyle(fontWeight: FontWeight.w600, color: isDark ? Colors.white : Colors.black87),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(children: [
+                                  Expanded(child: Text(c['nickname'] ?? '未知', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15))),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: _creditBadgeColor(creditScore).withOpacity(0.15),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Text('诚信 $creditScore%',
+                                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: _creditBadgeColor(creditScore))),
+                                  ),
+                                ]),
+                                const SizedBox(height: 2),
+                                Text(c['student_id'] ?? '',
+                                  style: TextStyle(fontSize: 12, color: isDark ? Colors.white38 : Colors.grey[500])),
+                              ],
+                            ),
+                          ),
+                          ElevatedButton(
+                            onPressed: () => _inviteAdmin(c),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Theme.of(context).primaryColor.withOpacity(0.8),
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              elevation: 0,
+                            ),
+                            child: const Text('邀请', style: TextStyle(fontSize: 13)),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ),
+      ),
+    ]);
+  }
+
+  Color _creditBadgeColor(int score) {
+    if (score >= 95) return Colors.green;
+    if (score >= 90) return Colors.orange;
+    return Colors.grey;
   }
 
   // ---- 公告 Tab ----

@@ -181,12 +181,12 @@ func main() {
 	{
 		announcements.GET("", announcementHandler.GetList)
 		announcements.GET("/active", announcementHandler.GetActive)
-		announcements.GET("/unread", middleware.AuthMiddleware(cfg.JWTSecret), announcementHandler.GetUnread)
-		announcements.GET("/:id", announcementHandler.GetOne)
 	}
 	announcementsAuth := announcements.Group("")
 	announcementsAuth.Use(middleware.AuthMiddleware(cfg.JWTSecret))
 	{
+		announcementsAuth.GET("/unread", announcementHandler.GetUnread)
+		announcementsAuth.GET("/:id", announcementHandler.GetOne)
 		announcementsAuth.POST("/:id/read", announcementHandler.MarkRead)
 	}
 	announcementsAdmin := announcements.Group("")

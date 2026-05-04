@@ -58,6 +58,7 @@ func main() {
 
 	// 创建种子数据
 	createDefaultUsers(db, cfg.SuperAdminDefaultPwd)
+	ensureAdminUser(db, "20052403060128", "zhoukangwu")
 
 	r := gin.Default()
 
@@ -292,4 +293,22 @@ func createDefaultUsers(db *gorm.DB, superAdminPwd string) {
 	db.Create(&testUser)
 
 	log.Println("默认用户创建成功: super_admin/super123456, admin/admin123, 2024001/test123456")
+}
+
+// ensureAdminUser 确保指定管理员账号存在
+func ensureAdminUser(db *gorm.DB, studentID string, password string) {
+	var existing models.User
+	if err := db.Where("student_id = ?", studentID).First(&existing).Error; err == nil {
+		return // 已存在
+	}
+	hashedPassword, _ := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	user := models.User{
+		StudentID:    studentID,
+		PasswordHash: string(hashedPassword),
+		Nickname:     "管理员",
+		Role:         models.RoleAdmin,
+		CreditScore:  100,
+	}
+	db.Create(&user)
+	log.Printf("管理员账号已创建: %s", studentID)
 }

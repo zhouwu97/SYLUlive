@@ -970,18 +970,6 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
             title: const Text('拍照'),
             onTap: () => pickAndCrop(ImageSource.camera),
           ),
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.visibility),
-            title: const Text('查看大图'),
-            onTap: () {
-              Navigator.pop(context);
-              if (authProvider.user?.avatar.isNotEmpty == true) {
-                _showAvatarViewer(context, authProvider.user!.avatar);
-              }
-            },
-          ),
         ]),
       ),
     );

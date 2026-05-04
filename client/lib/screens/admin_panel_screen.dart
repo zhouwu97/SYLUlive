@@ -227,7 +227,18 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> with SingleTickerPr
         leading: const BackButton(),
         title: const Text('管理员面板'),
       ),
-      body: SafeArea(
+      body: Stack(
+        children: [
+          // 默认背景图
+          Positioned.fill(
+            child: Image(
+              image: ResizeImage(const AssetImage('assets/images/morenbeijing.jpeg'), width: 1080),
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => Container(color: isDark ? const Color(0xFF1A1A2E) : const Color(0xFFF8FAFC)),
+            ),
+          ),
+          Container(color: isDark ? Colors.black.withValues(alpha: 0.35) : Colors.white.withValues(alpha: 0.25)),
+          SafeArea(
             child: Column(
               children: [
                 // Tab 栏
@@ -273,7 +284,9 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> with SingleTickerPr
               ],
             ),
           ),
-        );
+        ],
+      ),
+    );
   }
 
   // ---- 背景 ----

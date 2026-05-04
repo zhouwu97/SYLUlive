@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -139,4 +140,81 @@ func (h *ReplyHandler) Delete(c *gin.Context) {
 
 	h.db.Model(&reply).Update("status", models.ReplyStatusDeleted)
 	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})
+}
+
+// GetMeList 获取当前用户的所有评论（用于"我的评论"页面）
+func (h *ReplyHandler) GetMeList(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	limit := 20
+	if l := c.Query("limit"); l != "" {
+		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 && parsed <= 100 {
+			limit = parsed
+		}
+	}
+
+	cursor := c.Query("cursor")
+	var whereClause string
+	var args []interface{}
+	whereClause = "replies.author_id = ? AND replies.status = ?"
+	args = []interface{}{userID.(uint), models.ReplyStatusNormal}
+
+	if cursor != "" {
+		// cursor 格式: created_at|id
+		parts := strings.Split(cursor, "|")
+		if len(parts) == 2 {
+			createdAt, err1 := time.Parse(time.RFC3339, parts[0])
+			id, err2 := strconv.ParseUint(parts[1], 10, 64)
+			if err1 == nil && err2 == nil {
+				whereClause += " AND (replies.created_at < ? OR (replies.created_at = ? AND replies.id < ?))"
+				args = append(args, createdAt, createdAt, id)
+			}
+		}
+	}
+
+	var replies []models.Reply
+	err := h.db.Model(&models.Reply{}).
+		Select("replies.*, posts.title as post_title, posts.content as post_content").
+		Joins("LEFT JOIN posts ON posts.id = replies.post_id").
+		Where(whereClause, args...).
+		Order("replies.created_at DESC, replies.id DESC").
+		Limit(limit + 1).
+		Find(&replies).Error
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询失败"})
+		return
+	}
+
+	hasMore := len(replies) > limit
+	if hasMore {
+		replies = replies[:limit]
+	}
+
+	var nextCursor string
+	if hasMore && len(replies) > 0 {
+		last := replies[len(replies)-1]
+		nextCursor = last.CreatedAt.Format(time.RFC3339) + "|" + strconv.FormatUint(last.ID, 10)
+	}
+
+	// 构造返回数据，包含帖子上下文
+	type MyReplyItem struct {
+		models.Reply
+		PostTitle   string `json:"post_title"`
+		PostContent string `json:"post_content"`
+	}
+	result := make([]MyReplyItem, len(replies))
+	for i, r := range replies {
+		result[i] = MyReplyItem{
+			Reply:       r,
+			PostTitle:   "",
+			PostContent: "",
+		}
+		if r.PostID != 0 {
+			h.db.Model(&models.Post{}).Select("title", "content").First(&result[i], r.PostID)
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"replies":     result,
+		"next_cursor": nextCursor,
+	})
 }

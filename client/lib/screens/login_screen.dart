@@ -14,6 +14,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _studentIdController = TextEditingController();
   final _eduPasswordController = TextEditingController(); // 教务密码
   final _appPasswordController = TextEditingController();  // APP密码
+  final _nicknameController = TextEditingController();     // 昵称
   final _formKey = GlobalKey<FormState>();
 
   bool _isRegister = false;
@@ -24,6 +25,7 @@ class _LoginScreenState extends State<LoginScreen> {
     _studentIdController.dispose();
     _eduPasswordController.dispose();
     _appPasswordController.dispose();
+    _nicknameController.dispose();
     super.dispose();
   }
 
@@ -48,6 +50,9 @@ class _LoginScreenState extends State<LoginScreen> {
       result = await authProvider.registerWithEdu(
         _studentIdController.text.trim(),
         _appPasswordController.text,
+        nickname: _nicknameController.text.trim().isNotEmpty
+            ? _nicknameController.text.trim()
+            : null,
         eduPassword: _eduPasswordController.text,
       );
     } else {
@@ -109,6 +114,20 @@ class _LoginScreenState extends State<LoginScreen> {
                 if (_isRegister) ...[
                   const SizedBox(height: 16),
 
+                  // 昵称
+                  TextFormField(
+                    controller: _nicknameController,
+                    decoration: InputDecoration(
+                      labelText: '昵称（选填）',
+                      prefixIcon: const Icon(Icons.badge_outlined),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                      helperText: '将显示在帖子和评论中',
+                      helperStyle: TextStyle(color: Colors.orange),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
                   // 教务密码
                   TextFormField(
                     controller: _eduPasswordController,
@@ -165,6 +184,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     setState(() {
                       _isRegister = !_isRegister;
                       _eduPasswordController.clear();
+                      _nicknameController.clear();
                       _appPasswordController.clear();
                     });
                   },

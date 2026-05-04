@@ -125,6 +125,16 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     });
 
     final postProvider = context.read<PostProvider>();
+
+    // 先上传图片
+    List<int> fileIds = [];
+    for (final image in _selectedImages) {
+      final fileId = await postProvider.uploadImage(image.path);
+      if (fileId != null) {
+        fileIds.add(fileId);
+      }
+    }
+
     final result = await postProvider.createPost(
       boardId: widget.boardId,
       content: _contentController.text,
@@ -132,6 +142,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       postType: _postType.isNotEmpty ? _postType : null,
       price: double.tryParse(_priceController.text),
       contact: _contactController.text.isNotEmpty ? _contactController.text : null,
+      fileIds: fileIds.isNotEmpty ? fileIds : null,
     );
 
     setState(() {

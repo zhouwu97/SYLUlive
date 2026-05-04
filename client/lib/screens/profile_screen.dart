@@ -14,6 +14,8 @@ import '../config/api_constants.dart';
 import 'edu_screen.dart';
 import 'exam_extract_screen.dart';
 import 'login_screen.dart';
+import 'my_content_screen.dart';
+import 'admin_panel_screen.dart';
 import 'exam_extract_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -83,6 +85,11 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                 // 教务版块（绑定状态 + 题库入口）
                 SliverToBoxAdapter(
                   child: _buildEduSection(context, isDark),
+                ),
+
+                // 我的内容
+                SliverToBoxAdapter(
+                  child: _buildMyContentSection(context, isDark),
                 ),
 
                 // 设置区域
@@ -277,10 +284,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
         opacity: 0.15,
         gradientColors: isDark ? [Colors.red[800]!, Colors.red[900]!] : [Colors.red[50]!, Colors.red[100]!],
         onTap: () {
-          // TODO: 跳转到管理面板
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('管理面板开发中')),
-          );
+          Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminPanelScreen()));
         },
         child: Row(
           children: [
@@ -311,6 +315,48 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
             const Icon(Icons.chevron_right),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildMyContentSection(BuildContext context, bool isDark) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 标题
+          Padding(
+            padding: const EdgeInsets.only(left: 4, bottom: 8),
+            child: Text(
+              '我的内容',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: isDark ? Colors.white54 : Colors.grey[600],
+              ),
+            ),
+          ),
+          _buildSettingsCard(
+            isDark,
+            children: [
+              _buildSettingsTile(
+                icon: Icons.article_outlined,
+                iconColor: const Color(0xFF6366F1),
+                title: '我的内容',
+                subtitle: '管理发布的帖子与集市物品',
+                isDark: isDark,
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const MyContentScreen()),
+                  );
+                },
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+        ],
       ),
     );
   }

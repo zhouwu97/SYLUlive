@@ -176,17 +176,17 @@ func main() {
 		messages.DELETE("/conversations/:id", messageHandler.DeleteConversation)
 	}
 
-	// 公告路由
+// 公告路由
 	announcements := r.Group("/api/announcements")
 	{
 		announcements.GET("", announcementHandler.GetList)
 		announcements.GET("/active", announcementHandler.GetActive)
+		announcements.GET("/unread", middleware.AuthMiddleware(cfg.JWTSecret), announcementHandler.GetUnread)
 		announcements.GET("/:id", announcementHandler.GetOne)
 	}
 	announcementsAuth := announcements.Group("")
 	announcementsAuth.Use(middleware.AuthMiddleware(cfg.JWTSecret))
 	{
-		announcementsAuth.GET("/unread", announcementHandler.GetUnread)
 		announcementsAuth.POST("/:id/read", announcementHandler.MarkRead)
 	}
 	announcementsAdmin := announcements.Group("")
@@ -194,7 +194,7 @@ func main() {
 	{
 		announcementsAdmin.POST("", announcementHandler.Create)
 		announcementsAdmin.PUT("/:id", announcementHandler.Update)
-		announcementsAdmin.DELETE("/:id", announcementHandler.Delete)
+announcementsAdmin.DELETE("/:id", announcementHandler.Delete)
 	}
 
 	// 举报路由

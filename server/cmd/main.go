@@ -102,6 +102,7 @@ func main() {
 
 	// 初始化教务服务配置
 	handlers.EduServiceConfig.BaseURL = cfg.EduServiceURL
+	handlers.SetMajorLogDB(db)
 
 	// 静态文件服务
 	r.Static("/uploads", cfg.UploadDir)

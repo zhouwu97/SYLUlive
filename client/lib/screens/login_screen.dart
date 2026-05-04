@@ -15,6 +15,9 @@ class _LoginScreenState extends State<LoginScreen> {
   final _appPasswordController = TextEditingController();  // APP密码
   final _formKey = GlobalKey<FormState>();
 
+  bool _isRegister = false;
+  bool _isEduVerified = false;
+  bool _isEduVerifying = false;
   bool _isLoading = false;
 
   @override
@@ -25,6 +28,44 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
+  Future<void> _verifyEdu() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    final studentId = _studentIdController.text.trim();
+    if (studentId.length != 10) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('请输入10位学号'), backgroundColor: Colors.red));
+      return;
+    }
+
+    setState(() => _isEduVerifying = true);
+
+    try {
+      final result = await context.read<AuthProvider>().verifyEdu(studentId, _eduPasswordController.text);
+
+      setState(() => _isEduVerifying = false);
+
+      if (result.success) {
+        setState(() => _isEduVerified = true);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('教务验证通过，请设置APP密码'), backgroundColor: Colors.green));
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(result.errorMessage ?? '教务验证失败'), backgroundColor: Colors.red));
+        }
+      }
+    } catch (e) {
+      setState(() => _isEduVerifying = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('验证失败: $e'), backgroundColor: Colors.red));
+      }
+    }
+  }
+
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -33,12 +74,23 @@ class _LoginScreenState extends State<LoginScreen> {
 
     setState(() => _isLoading = true);
 
-    // 统一登录：学号 + 教务密码 + APP密码
-    result = await authProvider.loginEdu(
-      _studentIdController.text.trim(),
-      _eduPasswordController.text,
-      _appPasswordController.text,
-    );
+    if (_isRegister) {
+      // 注册：教务验证后自动注册
+      if (!_isEduVerified) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('请先验证教务账号'), backgroundColor: Colors.red));
+        setState(() => _isLoading = false);
+        return;
+      }
+      result = await authProvider.registerWithEdu(
+        _studentIdController.text.trim(),
+        _appPasswordController.text,
+        eduPassword: _eduPasswordController.text,
+      );
+    } else {
+      // 登录：学号 + APP密码
+      result = await authProvider.login(_studentIdController.text.trim(), _appPasswordController.text);
+    }
 
     setState(() => _isLoading = false);
 
@@ -77,6 +129,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 TextFormField(
                   controller: _studentIdController,
                   maxLength: 10,
+                  enabled: !_isEduVerified,
                   decoration: InputDecoration(
                     labelText: '学号',
                     prefixIcon: const Icon(Icons.person_outline),
@@ -86,22 +139,40 @@ class _LoginScreenState extends State<LoginScreen> {
                   validator: (v) => (v == null || v.isEmpty) ? '请输入学号' : (v.length != 10 ? '请输入10位学号' : null),
                 ),
 
-                const SizedBox(height: 16),
+                if (_isRegister) ...[
+                  const SizedBox(height: 16),
 
-                // 教务密码
-                TextFormField(
-                  controller: _eduPasswordController,
-                  obscureText: true,
-                  decoration: InputDecoration(
-                    labelText: '教务密码',
-                    prefixIcon: const Icon(Icons.lock_outline),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                    helperText: '用于验证学号真实性',
-                    helperStyle: TextStyle(color: Colors.orange),
-                  ),
-                  validator: (v) => (v == null || v.isEmpty) ? '请输入教务密码' : null,
-                ),
+                  // 教务密码
+                  Row(children: [
+                    Expanded(
+                      child: TextFormField(
+                        controller: _eduPasswordController,
+                        enabled: !_isEduVerified,
+                        obscureText: true,
+                        decoration: InputDecoration(
+                          labelText: '教务密码',
+                          prefixIcon: const Icon(Icons.lock_outline),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                          helperText: _isEduVerified ? '已验证' : '用于验证学号真实性',
+                          helperStyle: TextStyle(color: _isEduVerified ? Colors.green : Colors.orange),
+                        ),
+                        validator: (v) => (v == null || v.isEmpty) ? '请输入教务密码' : null,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    ElevatedButton(
+                      onPressed: (_isEduVerifying || _isEduVerified) ? null : _verifyEdu,
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                        backgroundColor: _isEduVerified ? Colors.green : null,
+                      ),
+                      child: _isEduVerifying
+                          ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                          : Text(_isEduVerified ? '已验证' : '验证', style: const TextStyle(fontSize: 13)),
+                    ),
+                  ]),
+                ],
 
                 const SizedBox(height: 16),
 
@@ -110,30 +181,45 @@ class _LoginScreenState extends State<LoginScreen> {
                   controller: _appPasswordController,
                   obscureText: true,
                   decoration: InputDecoration(
-                    labelText: 'APP密码',
+                    labelText: _isRegister ? 'APP密码' : '密码',
                     prefixIcon: const Icon(Icons.lock_outline),
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                     contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                    helperText: '此密码用于APP登录，与教务密码不同',
+                    helperText: _isRegister ? '此密码用于APP登录，与教务密码不同' : null,
                     helperStyle: TextStyle(color: Colors.orange),
                   ),
-                  validator: (v) => (v == null || v.isEmpty) ? '请输入APP密码' : (v.length < 8 ? '密码至少8个字符' : null),
+                  validator: (v) => (v == null || v.isEmpty) ? '请输入密码' : (_isRegister && v.length < 8 ? '密码至少8个字符' : null),
                 ),
 
                 const SizedBox(height: 24),
 
-                // 登录按钮
+                // 提交按钮
                 Consumer<AuthProvider>(
                   builder: (context, auth, child) => SizedBox(
                     height: 48,
                     child: ElevatedButton(
-                      onPressed: _isLoading ? null : _submit,
+                      onPressed: (_isLoading || (_isRegister && !_isEduVerified)) ? null : _submit,
                       style: ElevatedButton.styleFrom(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
                       child: _isLoading
                           ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                          : Text('登录', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                          : Text(_isRegister ? '注册' : '登录', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
                     ),
                   ),
+                ),
+                const SizedBox(height: 16),
+
+                // 切换登录/注册
+                TextButton(
+                  onPressed: () {
+                    setState(() {
+                      _isRegister = !_isRegister;
+                      _isEduVerified = false;
+                      _isEduVerifying = false;
+                      _eduPasswordController.clear();
+                      _appPasswordController.clear();
+                    });
+                  },
+                  child: Text(_isRegister ? '已有账号？去登录' : '没有账号？去注册', style: TextStyle(color: Theme.of(context).primaryColor)),
                 ),
               ]),
             )),

@@ -84,7 +84,7 @@ class _TeacherRateScreenState extends State<TeacherRateScreen> {
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              '本版块仅用于介绍给自己上过课的老师，不对其劳动成果进行评价，不对其人格进行贬低，只谈论老师与自己的性格差异或课堂习惯。严禁对老师进行侮辱，本人对此表达严正声明。',
+              '本版块仅用于介绍给自己上过课的老师，不对其劳动成果进行评价，不对其人格进行贬低，只谈论老师与自己的性格差异或课堂习惯。严禁对老师进行侮辱，本人对此表达严正声明。违规者一次禁言一周，第二次禁言一个月，第三次则永久不能在此版块发言。',
               style: TextStyle(fontSize: 12, color: isDark ? Colors.grey[300] : Colors.grey[700], height: 1.4),
             ),
           ),

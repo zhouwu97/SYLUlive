@@ -58,6 +58,7 @@ func main() {
 		&models.TeacherRating{},
 		&models.UserViolation{},
 		&models.AdminLog{},
+		&models.AnnouncementRead{},
 	)
 
 	// 创建种子数据
@@ -176,6 +177,12 @@ func main() {
 		announcements.GET("", announcementHandler.GetList)
 		announcements.GET("/active", announcementHandler.GetActive)
 		announcements.GET("/:id", announcementHandler.GetOne)
+	}
+	announcementsAuth := announcements.Group("")
+	announcementsAuth.Use(middleware.AuthMiddleware(cfg.JWTSecret))
+	{
+		announcementsAuth.GET("/unread", announcementHandler.GetUnread)
+		announcementsAuth.POST("/:id/read", announcementHandler.MarkRead)
 	}
 	announcementsAdmin := announcements.Group("")
 	announcementsAdmin.Use(middleware.AuthMiddleware(cfg.JWTSecret), middleware.AdminMiddleware())

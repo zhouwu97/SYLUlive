@@ -20,6 +20,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> with SingleTickerPr
   late TabController _tabController;
   List<dynamic> _reports = [];
   List<dynamic> _candidates = [];
+  List<dynamic> _pendingTeachers = [];
+  List<dynamic> _logs = [];
   bool _isLoading = true;
   String? _errorMessage;
   final _searchController = TextEditingController();
@@ -27,7 +29,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> with SingleTickerPr
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 5, vsync: this);
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadData());
   }
 
@@ -44,9 +46,13 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> with SingleTickerPr
       final dio = context.read<AuthProvider>().dio;
       final reportsRes = await dio.get('/reports');
       final candidatesRes = await dio.get('/admin/candidates');
+      final pendingRes = await dio.get('/teachers/pending');
+      final logsRes = await dio.get('/teachers/logs');
       setState(() {
         _reports = (reportsRes.data as List?) ?? [];
         _candidates = (candidatesRes.data as List?) ?? [];
+        _pendingTeachers = (pendingRes.data as List?) ?? [];
+        _logs = (logsRes.data as List?) ?? [];
         _isLoading = false;
       });
     } on DioException catch (e) {
@@ -222,10 +228,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> with SingleTickerPr
         leading: const BackButton(),
         title: const Text('管理员面板'),
       ),
-      body: Stack(
-        children: [
-          _buildBackground(themeProvider, isDark),
-          SafeArea(
+      body: SafeArea(
             child: Column(
               children: [
                 // Tab 栏
@@ -245,6 +248,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> with SingleTickerPr
                     tabs: [
                       Tab(text: '举报${pendingCount > 0 ? ' ($pendingCount)' : ''}'),
                       const Tab(text: '候选人'),
+                      const Tab(text: '审核教师'),
+                      const Tab(text: '操作日志'),
                       const Tab(text: '公告'),
                     ],
                   ),
@@ -260,6 +265,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> with SingleTickerPr
                               children: [
                                 _buildReportsTab(isDark),
                                 _buildCandidatesTab(isDark),
+                                _buildTeachersTab(isDark),
+                                _buildLogsTab(isDark),
                                 _buildAnnouncementTab(),
                               ],
                             ),
@@ -267,7 +274,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> with SingleTickerPr
               ],
             ),
           ),
-        ],
+        ),
       ),
     );
   }
@@ -628,6 +635,73 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> with SingleTickerPr
     if (score >= 95) return Colors.green;
     if (score >= 90) return Colors.orange;
     return Colors.grey;
+  }
+
+  // ---- 审核教师 Tab ----
+  Widget _buildTeachersTab(bool isDark) {
+    if (_pendingTeachers.isEmpty) {
+      return Center(child: Text('暂无待审核教师', style: TextStyle(color: isDark ? Colors.white54 : Colors.grey[600])));
+    }
+    return ListView.builder(
+      padding: const EdgeInsets.all(12),
+      itemCount: _pendingTeachers.length,
+      itemBuilder: (_, i) {
+        final t = _pendingTeachers[i];
+        return Card(
+          color: isDark ? Colors.grey[850] : Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          child: ListTile(
+            leading: CircleAvatar(backgroundColor: const Color(0xFF6366F1), child: Text((t['name'] as String? ?? '?')[0])),
+            title: Text(t['name'] ?? ''),
+            subtitle: Text(t['course'] ?? ''),
+            trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+              IconButton(icon: const Icon(Icons.check_circle, color: Colors.green), onPressed: () => _verifyTeacher(t['id'], true)),
+              IconButton(icon: const Icon(Icons.cancel, color: Colors.red), onPressed: () => _verifyTeacher(t['id'], false)),
+            ]),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _verifyTeacher(int id, bool approve) async {
+    try {
+      final dio = context.read<AuthProvider>().dio;
+      if (approve) {
+        await dio.put('/teachers/$id/verify');
+      } else {
+        await dio.delete('/teachers/$id/reject');
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(approve ? '已审核通过' : '已拒绝'), backgroundColor: Colors.green));
+        _loadData();
+      }
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('操作失败'), backgroundColor: Colors.red));
+    }
+  }
+
+  // ---- 操作日志 Tab ----
+  Widget _buildLogsTab(bool isDark) {
+    if (_logs.isEmpty) {
+      return Center(child: Text('暂无操作日志', style: TextStyle(color: isDark ? Colors.white54 : Colors.grey[600])));
+    }
+    return ListView.builder(
+      padding: const EdgeInsets.all(12),
+      itemCount: _logs.length,
+      itemBuilder: (_, i) {
+        final log = _logs[i];
+        return Card(
+          color: isDark ? Colors.grey[850] : Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          child: ListTile(
+            title: Text('${log['admin_name'] ?? '?'}: ${log['action'] ?? ''}', style: const TextStyle(fontSize: 14)),
+            subtitle: Text(log['target'] ?? '', style: TextStyle(fontSize: 12, color: Colors.grey)),
+            trailing: Text(log['created_at']?.toString().substring(0, 16) ?? '', style: const TextStyle(fontSize: 10, color: Colors.grey)),
+          ),
+        );
+      },
+    );
   }
 
   // ---- 公告 Tab ----

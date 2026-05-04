@@ -261,6 +261,21 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  /// 从服务器刷新当前用户信息（角色变更后调用）
+  Future<void> refreshUser() async {
+    if (_token == null) return;
+    try {
+      final response = await _dio.get('/user/profile');
+      if (response.statusCode == 200) {
+        _user = User.fromJson(response.data);
+        await _saveAuth();
+        notifyListeners();
+      }
+    } on DioException catch (e) {
+      debugPrint('刷新用户信息失败: ${e.message}');
+    }
+  }
+
   Future<AuthResult> updateAvatar(String avatarPath) async {
     try {
       // 步骤1: 上传图片文件到服务器

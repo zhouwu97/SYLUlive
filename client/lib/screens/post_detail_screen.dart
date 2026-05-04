@@ -114,7 +114,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           IconButton(
             icon: Icon(Icons.report_outlined, color: Colors.red[300]),
             tooltip: '举报',
-            onPressed: () => showReportSheet(context, postId: widget.postId),
+            onPressed: () => showReportSheet(context, targetId: widget.postId, targetType: 'post'),
           ),
         ],
       ),
@@ -402,7 +402,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       ),
       IconButton(
         icon: Icon(Icons.report_outlined, color: isDark ? Colors.white30 : Colors.grey[400], size: 20),
-        onPressed: () => showReportSheet(context, postId: widget.postId),
+        onPressed: () => showReportSheet(context, targetId: widget.postId, targetType: 'post'),
         tooltip: '举报',
       ),
     ]);
@@ -492,7 +492,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               Row(children: [
                 Text(r.author?.nickname ?? '匿名', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600,
                   color: isDark ? Colors.white.withValues(alpha: 0.80) : Colors.black87)),
-                const Spacer(),
+                  const Spacer(),
+                  GestureDetector(
+                    onTap: () => showReportSheet(context, targetId: r.id, targetType: 'reply'),
+                    child: Icon(Icons.report_outlined, size: 14, color: isDark ? Colors.white24 : Colors.grey[400]),
+                  ),
+                  const SizedBox(width: 8),
                 Text(_formatTime(r.createdAt), style: TextStyle(fontSize: 10, color: isDark ? Colors.white30 : Colors.grey[400])),
               ]),
               const SizedBox(height: 6),

@@ -16,6 +16,7 @@ class GlassContainer extends StatelessWidget {
   final double borderWidth;
   final Color? borderColor;
   final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
   final List<Color>? gradientColors;
   final bool showHighlight;
 
@@ -33,6 +34,7 @@ class GlassContainer extends StatelessWidget {
     this.borderWidth = 1,
     this.borderColor,
     this.onTap,
+    this.onLongPress,
     this.gradientColors,
     this.showHighlight = true,
   });
@@ -135,11 +137,12 @@ class GlassContainer extends StatelessWidget {
       ),
     );
 
-    if (onTap != null) {
+    if (onTap != null || onLongPress != null) {
       return Material(
         color: Colors.transparent,
         child: InkWell(
           onTap: onTap,
+          onLongPress: onLongPress,
           borderRadius: BorderRadius.circular(borderRadius),
           child: content,
         ),

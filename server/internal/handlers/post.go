@@ -119,19 +119,32 @@ func (h *PostHandler) Create(c *gin.Context) {
 		return
 	}
 
-	// 处理图片
+	// 处理图片 - 从 multipart form 读取 file_ids
 	fileIDs := c.PostForm("file_ids")
+	if fileIDs == "" {
+		// 降级：直接从 Request.MultipartForm 读取
+		if c.Request.MultipartForm != nil {
+			if vals, ok := c.Request.MultipartForm.Value["file_ids"]; ok && len(vals) > 0 {
+				fileIDs = vals[0]
+			}
+		}
+	}
+	log.Printf("创建帖子 file_ids=%q (post_id=%d)", fileIDs, post.ID)
 	if fileIDs != "" {
 		ids := strings.Split(fileIDs, ",")
 		for i, idStr := range ids {
 			fileID, err := strconv.ParseUint(idStr, 10, 64)
-			if err == nil {
-				postImage := models.PostImage{
-					PostID:    post.ID,
-					FileID:    uint(fileID),
-					SortOrder: i,
-				}
-				h.db.Create(&postImage)
+			if err != nil {
+				log.Printf("解析 file_id 失败: %q → %v", idStr, err)
+				continue
+			}
+			postImage := models.PostImage{
+				PostID:    post.ID,
+				FileID:    uint(fileID),
+				SortOrder: i,
+			}
+			if err := h.db.Create(&postImage).Error; err != nil {
+				log.Printf("创建 PostImage 失败: post_id=%d, file_id=%d, err=%v", post.ID, fileID, err)
 			}
 		}
 	}

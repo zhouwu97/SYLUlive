@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -126,10 +127,44 @@ func (h *InvitationHandler) Accept(c *gin.Context) {
 		"accepted_at": time.Now(),
 	})
 
-	// 更新用户角色为管理员
-	h.db.Model(&models.User{}).Where("id = ?", userID).Update("role", models.RoleAdmin)
+	// 不再立即升为管理员，等待超级管理员批准
+	c.JSON(http.StatusOK, gin.H{"message": "已接受邀请，等待超级管理员批准"})
+}
 
-	c.JSON(http.StatusOK, gin.H{"message": "已接受邀请成为管理员"})
+// Approve 超级管理员批准邀请
+func (h *InvitationHandler) Approve(c *gin.Context) {
+	invitationIDStr := c.Param("id")
+	invitationID, err := strconv.ParseUint(invitationIDStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的邀请ID"})
+		return
+	}
+
+	var invitation models.Invitation
+	if err := h.db.Preload("User").First(&invitation, invitationID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "邀请不存在"})
+		return
+	}
+
+	if invitation.Status != models.InvitationStatusAccepted {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "该邀请未被接受"})
+		return
+	}
+
+	h.db.Model(&invitation).Update("status", models.InvitationStatusApproved)
+
+	// 升级用户为管理员
+	h.db.Model(&models.User{}).Where("id = ?", invitation.UserID).Update("role", models.RoleAdmin)
+
+	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("已批准 %s 成为管理员", invitation.User.Nickname)})
+}
+
+// GetApprovalList 获取待批准的邀请（超管用）
+func (h *InvitationHandler) GetApprovalList(c *gin.Context) {
+	var invitations []models.Invitation
+	h.db.Where("status = ?", models.InvitationStatusAccepted).
+		Preload("User").Preload("Inviter").Order("accepted_at ASC").Find(&invitations)
+	c.JSON(http.StatusOK, invitations)
 }
 
 // Reject 拒绝邀请

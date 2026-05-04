@@ -171,7 +171,11 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                   _buildDateHeader(sc),
                   Expanded(child: sc.courses.isEmpty
                       ? _buildEmptyView(context, isDark)
-                      : SingleChildScrollView(child: _buildCourseGridForWeek(sc, _weekStart))),
+                      : PageView.builder(
+                          controller: _weekPageController,
+                          onPageChanged: _onWeekPageChanged,
+                          itemBuilder: (_, __) => SingleChildScrollView(child: _buildCourseGridForWeek(sc, _weekStart)),
+                        )),
                 ]);
               },
             );

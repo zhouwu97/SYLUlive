@@ -114,7 +114,7 @@ func (h *AuthHandler) RegisterWithEdu(c *gin.Context) {
 		}
 		json.Unmarshal(resp.Body(), &bindResult)
 		if bindResult.Success {
-			updates := map[string]interface{}{
+			h.db.Model(&user).Updates(map[string]interface{}{
 				"edu_student_id": input.StudentID,
 				"edu_password":   input.EduPassword,
 				"edu_cookie":     bindResult.Cookie,
@@ -122,13 +122,7 @@ func (h *AuthHandler) RegisterWithEdu(c *gin.Context) {
 				"edu_grade":      bindResult.Grade,
 				"edu_college":    bindResult.College,
 				"edu_major":      bindResult.Major,
-			}
-			// 如果拿到真实姓名，更新昵称
-			if bindResult.Name != "" {
-				updates["nickname"] = bindResult.Name
-				user.Nickname = bindResult.Name
-			}
-			h.db.Model(&user).Updates(updates)
+			})
 			user.EduBound = true
 			user.EduCookie = bindResult.Cookie
 			user.EduGrade = bindResult.Grade

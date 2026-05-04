@@ -5,13 +5,15 @@ import "time"
 // Teacher 被评价教师
 type Teacher struct {
 	ID        uint      `gorm:"primaryKey" json:"id"`
-	Name      string    `gorm:"size:50;not null;index" json:"name"`     // 教师姓名
-	Course    string    `gorm:"size:100;not null" json:"course"`         // 所教课程
+	Name      string    `gorm:"size:50;not null;index" json:"name"`
+	Course    string    `gorm:"size:100;not null" json:"course"`
+	Verified  bool      `gorm:"default:false" json:"verified"`
+	CreatedBy uint      `gorm:"index" json:"created_by"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 
-	RatingCount int     `gorm:"-" json:"rating_count"` // 评价人数（非数据库字段）
-	AverageStar float64 `gorm:"-" json:"average_star"` // 平均星级（非数据库字段）
+	RatingCount int     `gorm:"-" json:"rating_count"`
+	AverageStar float64 `gorm:"-" json:"average_star"`
 }
 
 // TeacherRating 教师评价

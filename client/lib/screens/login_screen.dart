@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
+import '../providers/edu_provider.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -57,6 +58,10 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _isLoading = false);
 
     if (result.success && mounted) {
+      // 刷新 EduProvider 绑定状态
+      if (authProvider.user != null) {
+        context.read<EduProvider>().setUserId(authProvider.user!.id.toString());
+      }
       Navigator.pop(context);
     } else if (mounted && result.errorMessage != null) {
       ScaffoldMessenger.of(context).showSnackBar(

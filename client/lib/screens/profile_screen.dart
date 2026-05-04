@@ -558,7 +558,24 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
         ),
 
         // 退出登录
-        if (authProvider.isLoggedIn)
+        if (authProvider.isLoggedIn) ...[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () => _checkUpdate(context),
+                icon: const Icon(Icons.system_update, size: 18),
+                label: const Text('检查更新'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: isDark ? Colors.white70 : Colors.grey[700],
+                  side: BorderSide(color: isDark ? Colors.white24 : Colors.grey[300]!),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                ),
+              ),
+            ),
+          ),
           Padding(
             padding: const EdgeInsets.all(16),
             child: GradientButton(
@@ -574,6 +591,50 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
           ),
       ],
     );
+  }
+
+  Future<void> _checkUpdate(BuildContext context) async {
+    try {
+      final dio = context.read<AuthProvider>().dio;
+      final resp = await dio.get('/version');
+      if (resp.statusCode == 200) {
+        final data = resp.data;
+        final version = data['version'] ?? '';
+        final forceUpdate = data['force_update'] ?? false;
+        final downloadUrl = data['download_url'] ?? 'https://gitee.com/chunhezi/SYLUlive/releases';
+        final updateMsg = data['update_msg'] ?? '新版本可用';
+
+        if (!context.mounted) return;
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: const Row(children: [
+              Icon(Icons.system_update, color: Colors.blue),
+              SizedBox(width: 8),
+              Text('版本检查'),
+            ]),
+            content: Text('当前服务器版本: $version\n$updateMsg', style: const TextStyle(height: 1.5)),
+            actions: [
+              if (!forceUpdate)
+                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('稍后')),
+              ElevatedButton.icon(
+                onPressed: () {
+                  launchUrl(Uri.parse(downloadUrl), mode: LaunchMode.externalApplication);
+                },
+                icon: const Icon(Icons.download, size: 18),
+                label: const Text('下载更新'),
+                style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).primaryColor, foregroundColor: Colors.white),
+              ),
+            ],
+          ),
+        );
+      }
+    } catch (_) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('检查失败，请检查网络'), backgroundColor: Colors.red));
+      }
+    }
   }
 
   Widget _buildSettingsCard(bool isDark, {required List<Widget> children}) {

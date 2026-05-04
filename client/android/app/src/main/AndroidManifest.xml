@@ -3,6 +3,7 @@
     <!-- 网络权限 — Release 包在部分设备上必须显式声明，否则 socket 连接被拒 (errno=1 EPERM) -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:label="沈理校园"

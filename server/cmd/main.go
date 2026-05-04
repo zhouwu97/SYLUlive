@@ -57,6 +57,7 @@ func main() {
 		&models.Teacher{},
 		&models.TeacherRating{},
 		&models.UserViolation{},
+		&models.AdminLog{},
 	)
 
 	// 创建种子数据
@@ -272,6 +273,9 @@ func main() {
 	teacherAdmin.Use(middleware.AuthMiddleware(cfg.JWTSecret), middleware.AdminMiddleware())
 	{
 		teacherAdmin.PUT("/:id/verify", teacherHandler.Verify)
+		teacherAdmin.DELETE("/:id/reject", teacherHandler.RejectTeacher)
+		teacherAdmin.GET("/pending", teacherHandler.GetPending)
+		teacherAdmin.GET("/logs", teacherHandler.GetLogs)
 	}
 
 	// 违规管理

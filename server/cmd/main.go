@@ -59,6 +59,8 @@ func main() {
 		&models.UserViolation{},
 		&models.AdminLog{},
 		&models.AnnouncementRead{},
+		&models.Major{},
+		&models.MajorRating{},
 	)
 
 	// 创建种子数据
@@ -96,6 +98,7 @@ func main() {
 	examHandler := handlers.NewExamHandler()
 	tutorialHandler := handlers.NewTutorialHandler(db)
 	teacherHandler := handlers.NewTeacherHandler(db)
+	majorHandler := handlers.NewMajorHandler(db)
 
 	// 初始化教务服务配置
 	handlers.EduServiceConfig.BaseURL = cfg.EduServiceURL
@@ -280,6 +283,26 @@ func main() {
 		teacherAdmin.DELETE("/:id/reject", teacherHandler.RejectTeacher)
 		teacherAdmin.GET("/pending", teacherHandler.GetPending)
 		teacherAdmin.GET("/logs", teacherHandler.GetLogs)
+	}
+
+	// 专业榜路由
+	major := r.Group("/api/majors")
+	{
+		major.GET("", majorHandler.GetList)
+	}
+	majorAuth := major.Group("")
+	majorAuth.Use(middleware.AuthMiddleware(cfg.JWTSecret))
+	{
+		majorAuth.GET("/:id", majorHandler.GetDetail)
+		majorAuth.POST("", majorHandler.Create)
+		majorAuth.POST("/:id/rate", majorHandler.Rate)
+	}
+	majorAdmin := major.Group("")
+	majorAdmin.Use(middleware.AuthMiddleware(cfg.JWTSecret), middleware.AdminMiddleware())
+	{
+		majorAdmin.PUT("/:id/verify", majorHandler.Verify)
+		majorAdmin.DELETE("/:id/reject", majorHandler.Reject)
+		majorAdmin.GET("/pending", majorHandler.GetPending)
 	}
 
 	// 违规管理

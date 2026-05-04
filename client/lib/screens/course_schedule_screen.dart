@@ -447,12 +447,14 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                   await Navigator.of(context).push(
                     MaterialPageRoute(builder: (_) => const EduScreen()),
                   );
-                  // 返回后刷新课表缓存
+                  // 返回后强制刷新课表
                   if (mounted) {
+                    final sc = context.read<CourseScheduleProvider>();
                     setState(() {
                       _didLoad = false;
                       _hasCache = false;
                     });
+                    await sc.loadCourses(forceRefresh: true);
                   }
                 },
                 icon: const Icon(Icons.school),

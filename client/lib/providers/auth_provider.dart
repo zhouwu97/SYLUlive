@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user.dart';
+import '../config/api_constants.dart';
 
 /// 认证结果，包含成功状态和错误信息
 class AuthResult {
@@ -23,6 +24,7 @@ class AuthProvider extends ChangeNotifier {
   static const String _userKey = 'auth_user';
 
   final Dio _dio;
+  late final Dio _eduDio; // Python 教务服务
 
   User? _user;
   String? _token;
@@ -37,6 +39,11 @@ class AuthProvider extends ChangeNotifier {
   Dio get dio => _dio;
 
   AuthProvider(this._dio) {
+    _eduDio = Dio(BaseOptions(
+      baseUrl: ApiConstants.eduServiceUrl,
+      connectTimeout: ApiConstants.connectTimeout,
+      receiveTimeout: ApiConstants.receiveTimeout,
+    ));
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadStoredAuth());
   }
 
@@ -334,17 +341,40 @@ class AuthProvider extends ChangeNotifier {
   /// 验证教务账号（注册前验证学号是否属于自己）
   Future<AuthResult> verifyEdu(String studentId, String eduPassword) async {
     try {
-      // 先尝试登录教务系统
-      final response = await _dio.post('/edu/pre_verify', data: {
+      // 教务服务使用专用的 eduDio，路由是 /api/edu/pre_verify
+      debugPrint('=== verifyEdu 开始 ===');
+      debugPrint('student_id: $studentId');
+      debugPrint('baseUrl: ${_eduDio.options.baseUrl}');
+      debugPrint('fullUrl: ${_eduDio.options.baseUrl}/api/edu/pre_verify');
+
+      final response = await _eduDio.post('/api/edu/pre_verify', data: {
         'student_id': studentId,
         'password': eduPassword,
       });
+
+      debugPrint('=== verifyEdu 响应 ===');
+      debugPrint('statusCode: ${response.statusCode}');
+      debugPrint('data: ${response.data}');
+      debugPrint('data type: ${response.data.runtimeType}');
+
       if (response.statusCode == 200 && response.data['success'] == true) {
         return AuthResult.success();
       }
       return AuthResult.failure(response.data['error'] ?? '教务验证失败');
     } on DioException catch (e) {
+      debugPrint('=== verifyEdu DioException ===');
+      debugPrint('type: ${e.type}');
+      debugPrint('message: ${e.message}');
+      debugPrint('response: ${e.response}');
+      debugPrint('response.statusCode: ${e.response?.statusCode}');
+      debugPrint('response.data: ${e.response?.data}');
+      debugPrint('requestOptions.uri: ${e.requestOptions.uri}');
       return AuthResult.failure(_parseDioError(e));
+    } catch (e, st) {
+      debugPrint('=== verifyEdu 未知异常 ===');
+      debugPrint('error: $e');
+      debugPrint('stackTrace: $st');
+      return AuthResult.failure('未知错误: $e');
     }
   }
 

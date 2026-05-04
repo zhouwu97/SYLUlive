@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -78,10 +79,16 @@ func (h *AuthHandler) RegisterWithEdu(c *gin.Context) {
 		Name      string `json:"name"`
 	}
 
+	// 调试：打印原始响应
+	fmt.Printf("Python响应: %s\n", string(resp.Body()))
+
 	if err := json.Unmarshal(resp.Body(), &result); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "解析响应失败"})
 		return
 	}
+
+	// 调试：打印解析结果
+	fmt.Printf("解析结果: Success=%v, Message=%s\n", result.Success, result.Message)
 
 	if !result.Success {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": result.Message})

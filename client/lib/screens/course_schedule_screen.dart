@@ -437,15 +437,19 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
               const Text('首次使用', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
               const SizedBox(height: 8),
               Text(
-                '检测到您还没有课表，请先获取课表',
+                '检测到您还没有课表，请前往教务导入课表',
                 style: TextStyle(fontSize: 14, color: isDark ? Colors.grey[400] : Colors.grey[600]),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 24),
               ElevatedButton.icon(
-                onPressed: () => _fetchCourses(context),
-                icon: const Icon(Icons.download),
-                label: const Text('获取课表'),
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const EduScreen()),
+                  );
+                },
+                icon: const Icon(Icons.school),
+                label: const Text('去教务导入课表'),
                 style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12)),
               ),
             ],
@@ -457,7 +461,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
   /// 获取课表（首次拉取）
   void _fetchCourses(BuildContext context) async {
-    setState(() => _hasCache = true); // 标记已有缓存，将自动拉取
+    setState(() => _hasCache = true);
     final sc = context.read<CourseScheduleProvider>();
     await sc.loadCourses(forceRefresh: true);
     if (mounted) {

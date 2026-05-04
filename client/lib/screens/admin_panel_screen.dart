@@ -716,8 +716,87 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> with SingleTickerPr
 
   // ---- 公告 Tab ----
   Widget _buildAnnouncementTab() {
-    // TODO: 公告管理界面
-    return const Center(child: Text('公告管理开发中'));
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return StatefulBuilder(builder: (context, setLocalState) {
+      return Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: ElevatedButton.icon(
+              onPressed: () => _showCreateAnnouncement(context).then((_) => setLocalState(() {})),
+              icon: const Icon(Icons.add, size: 18),
+              label: const Text('发布公告'),
+              style: ElevatedButton.styleFrom(
+                minimumSize: const Size(double.infinity, 44),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+          ),
+          Expanded(child: FutureBuilder(
+            future: context.read<AuthProvider>().dio.get('/announcements'),
+            builder: (_, snap) {
+              if (!snap.hasData) return const Center(child: CircularProgressIndicator());
+              final list = (snap.data!.data as List?) ?? [];
+              if (list.isEmpty) return Center(child: Text('暂无公告', style: TextStyle(color: isDark ? Colors.white54 : Colors.grey[600])));
+              return ListView.builder(
+                itemCount: list.length,
+                itemBuilder: (_, i) {
+                  final a = list[i];
+                  return Card(
+                    color: isDark ? Colors.grey[850] : Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    child: ListTile(
+                      title: Text(a['title'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis),
+                      subtitle: Text(a['content'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis),
+                      trailing: PopupMenuButton(
+                        itemBuilder: (_) => [
+                          const PopupMenuItem(value: 'delete', child: Text('删除', style: TextStyle(color: Colors.red))),
+                        ],
+                        onSelected: (v) async {
+                          if (v == 'delete') {
+                            await context.read<AuthProvider>().dio.delete('/announcements/${a['id']}');
+                            setLocalState(() {});
+                          }
+                        },
+                      ),
+                    ),
+                  );
+                },
+              );
+            },
+          )),
+        ],
+      );
+    });
+  }
+
+  Future<void> _showCreateAnnouncement(BuildContext context) async {
+    final titleCtrl = TextEditingController();
+    final contentCtrl = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('发布公告'),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          TextField(controller: titleCtrl, decoration: const InputDecoration(labelText: '标题', border: OutlineInputBorder())),
+          const SizedBox(height: 12),
+          TextField(controller: contentCtrl, maxLines: 4, decoration: const InputDecoration(labelText: '内容', border: OutlineInputBorder())),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+          ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('发布')),
+        ],
+      ),
+    );
+    if (ok == true && (titleCtrl.text.isNotEmpty || contentCtrl.text.isNotEmpty)) {
+      final dio = context.read<AuthProvider>().dio;
+      await dio.post('/announcements', data: {'title': titleCtrl.text, 'content': contentCtrl.text});
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('公告已发布'), backgroundColor: Colors.green));
+        _loadData();
+      }
+    }
   }
 
   Widget _buildEmptyState(String title, String subtitle, IconData icon, bool isDark) {

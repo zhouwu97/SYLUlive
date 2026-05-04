@@ -192,7 +192,7 @@ func (h *ReplyHandler) GetMeList(c *gin.Context) {
 	var nextCursor string
 	if hasMore && len(replies) > 0 {
 		last := replies[len(replies)-1]
-		nextCursor = last.CreatedAt.Format(time.RFC3339) + "|" + strconv.FormatUint(last.ID, 10)
+		nextCursor = last.CreatedAt.Format(time.RFC3339) + "|" + strconv.FormatUint(uint64(last.ID), 10)
 	}
 
 	// 构造返回数据，包含帖子上下文

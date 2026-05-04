@@ -59,7 +59,7 @@ class _LoginScreenState extends State<LoginScreen> {
       body: Stack(children: [
         Positioned(
           top: MediaQuery.of(context).padding.top + 8, right: 16,
-          child: TextButton(onPressed: () => Navigator.pop(context), child: Text('跳过', style: TextColor: isDark ? Colors.white70 : Colors.black54)))),
+          child: TextButton(onPressed: () => Navigator.pop(context), child: Text('跳过', style: TextStyle(color: isDark ? Colors.white70 : Colors.black54)))),
         Center(child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 24),
           child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 400), child: Card(

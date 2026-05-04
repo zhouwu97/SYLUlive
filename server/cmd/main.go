@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"net/http"
 	"os"
 	"strings"
 
@@ -291,6 +292,16 @@ func main() {
 		violationAdmin.POST("", teacherHandler.AddViolation)
 		violationAdmin.PUT("/:id/appeal", teacherHandler.HandleAppeal)
 	}
+
+	// 版本信息
+	r.GET("/api/version", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"version":       "1.0.0",
+			"force_update":  false,
+			"download_url":  "https://github.com/zhouwu97/SYLUlive/releases",
+			"update_msg":    "新版本可用",
+		})
+	})
 
 	log.Println("服务器启动在 :8080")
 	r.Run(":8080")

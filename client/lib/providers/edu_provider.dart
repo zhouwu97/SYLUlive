@@ -106,12 +106,12 @@ class EduProvider extends ChangeNotifier {
 
       if (response.statusCode == 200) {
         final data = response.data;
-        _isBound = data['bound'] ?? false;
-        _studentId = data['student_id'] ?? '';
+        _isBound = data['edu_bound'] ?? false;
+        _studentId = data['edu_student_id'] ?? '';
         _name = data['name'] ?? '';
-        _grade = data['grade'] ?? '';
-        _college = data['college'] ?? '';
-        _major = data['major'] ?? '';
+        _grade = data['edu_grade'] ?? '';
+        _college = data['edu_college'] ?? '';
+        _major = data['edu_major'] ?? '';
         _errorMessage = null;
         notifyListeners();
       }

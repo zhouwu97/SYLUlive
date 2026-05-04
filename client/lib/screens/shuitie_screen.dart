@@ -260,6 +260,11 @@ class _ShuitieScreenState extends State<ShuitieScreen> with SingleTickerProvider
 
   Future<void> _refresh() async {
     await context.read<PostProvider>().refresh(boardId: 1);
+    if (mounted) {
+      // 同步缓存，自动清除已被删除的帖子
+      final posts = context.read<PostProvider>().posts;
+      setState(() => _cachedPosts = List.from(posts));
+    }
   }
 
   void _navigateToCreatePost(BuildContext context) {

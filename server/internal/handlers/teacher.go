@@ -221,6 +221,62 @@ func (h *TeacherHandler) ReportRating(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "已收到举报，管理员将审核处理"})
 }
 
+// VoteRemoveAdmin 投票罢免管理员
+func (h *TeacherHandler) VoteRemoveAdmin(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	adminID, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+
+	// 只能投票罢免普通管理员
+	var admin models.User
+	if h.db.First(&admin, adminID).Error != nil || admin.Role != models.RoleAdmin {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "目标不是普通管理员"})
+		return
+	}
+
+	// 不能自己投自己
+	if uint64(userID.(uint)) == adminID {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "不能投自己"})
+		return
+	}
+
+	// 检查是否已投票
+	var exist models.AdminVote
+	if h.db.Where("admin_id = ? AND voter_id = ?", adminID, userID).First(&exist).Error == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "你已经投过票了"})
+		return
+	}
+
+	h.db.Create(&models.AdminVote{AdminID: uint(adminID), VoterID: userID.(uint)})
+
+	// 判断是否达到半数
+	var totalAdmins int64
+	h.db.Model(&models.User{}).Where("role IN ?", []string{"admin", "super_admin"}).Count(&totalAdmins)
+	var votes int64
+	h.db.Model(&models.AdminVote{}).Where("admin_id = ?", adminID).Count(&votes)
+
+	if votes > totalAdmins/2 {
+		h.db.Model(&models.User{}).Where("id = ?", adminID).Update("role", models.RoleUser)
+		h.db.Where("admin_id = ?", adminID).Delete(&models.AdminVote{})
+		h.logAdmin(c, "投票罢免管理员", admin.Nickname, "")
+		c.JSON(http.StatusOK, gin.H{"message": "投票过半，管理员已被罢免"})
+	} else {
+		c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("已投票，还需%d票达到半数", (totalAdmins/2+1)-votes)})
+	}
+}
+
+// GetAdminVotes 获取罢免投票数
+func (h *TeacherHandler) GetAdminVotes(c *gin.Context) {
+	adminID := c.Param("id")
+	var votes int64
+	h.db.Model(&models.AdminVote{}).Where("admin_id = ?", adminID).Count(&votes)
+	var total int64
+	h.db.Model(&models.User{}).Where("role IN ?", []string{"admin", "super_admin"}).Count(&total)
+	var myVote int64
+	uid, _ := c.Get("user_id")
+	h.db.Model(&models.AdminVote{}).Where("admin_id = ? AND voter_id = ?", adminID, uid).Count(&myVote)
+	c.JSON(http.StatusOK, gin.H{"votes": votes, "total": total, "my_vote": myVote > 0})
+}
+
 // GetViolations 获取用户违规记录
 func (h *TeacherHandler) GetViolations(c *gin.Context) {
 	userIDStr := c.Query("user_id")

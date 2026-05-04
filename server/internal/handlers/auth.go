@@ -54,46 +54,53 @@ func (h *AuthHandler) RegisterWithEdu(c *gin.Context) {
 		return
 	}
 
-	// 验证教务账号
+	// 通过Python服务验证教务
+	client := resty.New()
+	client.SetTimeout(10 * 1000 * 1000000)
+
+	resp, err := client.R().
+		SetHeader("Content-Type", "application/json").
+		SetBody(map[string]string{
+			"student_id":   input.StudentID,
+			"edu_password": input.EduPassword,
+		}).
+		Post(EduServiceConfig.BaseURL + "/api/edu/pre_verify")
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "无法连接教务服务，请检查网络"})
+		return
+	}
+
+	var result struct {
+		Success   bool   `json:"success"`
+		Message   string `json:"message"`
+		StudentID string `json:"student_id"`
+		Name      string `json:"name"`
+	}
+
+	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "解析响应失败"})
+		return
+	}
+
+	if !result.Success {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "学号或教务密码有误，请检查"})
+		return
+	}
+
+	// 验证成功，创建用户
 	var user models.User
 	user.StudentID = input.StudentID
-	user.Nickname = input.Nickname
+	user.Nickname = result.Name
 	if user.Nickname == "" {
 		user.Nickname = input.StudentID
 	}
 	user.Role = models.RoleUser
 	user.CreditScore = 100
-
-	// 尝试验证教务密码
-	client := resty.New()
-	csrfToken, err := getIndexCookieAndCsrfToken(client)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "无法连接教务系统，请检查网络"})
-		return
-	}
-
-	publicKey, err := getPublicKey(client)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取加密密钥失败，教务系统可能正在维护"})
-		return
-	}
-
-	encryptedPassword, err := rsaByPublicKey(input.EduPassword, publicKey)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "密码加密失败"})
-		return
-	}
-
-	cookies, err := syluLogin(client, input.StudentID, encryptedPassword, csrfToken)
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "教务密码错误"})
-		return
-	}
-
-	cookieStr := buildCookieString(cookies[1:2])
-
-	// 获取学生信息
-	grade, college, major, _ := getStudentInfo(client, cookieStr, input.StudentID)
+	user.EduStudentID = input.StudentID
+	user.EduPassword = input.EduPassword
+	user.EduBound = true
+	// 年级、学院、专业从Python服务获取（暂无）
 
 	// 哈希App密码
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
@@ -104,13 +111,6 @@ func (h *AuthHandler) RegisterWithEdu(c *gin.Context) {
 
 	// 创建用户
 	user.PasswordHash = string(hashedPassword)
-	user.EduStudentID = input.StudentID
-	user.EduPassword = input.EduPassword
-	user.EduCookie = cookieStr
-	user.EduBound = true
-	user.EduGrade = grade
-	user.EduCollege = college
-	user.EduMajor = major
 
 	if err := h.db.Create(&user).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建用户失败"})

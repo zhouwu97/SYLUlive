@@ -58,8 +58,9 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _isLoading = false);
 
     if (result.success && mounted) {
-      // 刷新 EduProvider 绑定状态
-      if (authProvider.user != null) {
+      // 先设置 Authorization header，再刷新 EduProvider
+      if (authProvider.token != null) {
+        authProvider.dio.options.headers['Authorization'] = 'Bearer ${authProvider.token}';
         context.read<EduProvider>().setUserId(authProvider.user!.id.toString());
       }
       Navigator.pop(context);

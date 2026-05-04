@@ -224,7 +224,9 @@ func main() {
 	admin.Use(middleware.AuthMiddleware(cfg.JWTSecret))
 	{
 		admin.GET("/candidates", invitationHandler.GetCandidates)
+		admin.GET("/members", invitationHandler.GetMembers)
 		admin.POST("/invite/:user_id", invitationHandler.Create)
+		admin.POST("/promote", invitationHandler.DirectPromote)
 	}
 
 	// 上传路由

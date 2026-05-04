@@ -1220,7 +1220,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
   // ---- 管理员人员版块 ----
   Widget _buildAdminMembersSection(BuildContext context, AuthProvider auth, bool isDark) {
     return FutureBuilder(
-      future: auth.dio.get('/admin/candidates'),
+      future: auth.dio.get('/admin/members'),
       builder: (_, snap) {
         if (!snap.hasData) return const SizedBox.shrink();
         final list = (snap.data!.data as List?) ?? [];

@@ -2,7 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
+import '../providers/theme_provider.dart';
+import '../widgets/glass_container.dart';
+import '../config/api_constants.dart';
+import 'super_admin_screen.dart';
+import 'dart:io' show File;
 
+/// 管理员面板：查看/处理举报、邀请管理员
 class AdminPanelScreen extends StatefulWidget {
   const AdminPanelScreen({super.key});
 
@@ -10,183 +16,570 @@ class AdminPanelScreen extends StatefulWidget {
   State<AdminPanelScreen> createState() => _AdminPanelScreenState();
 }
 
-class _AdminPanelScreenState extends State<AdminPanelScreen> {
-  final Dio _dio = Dio(BaseOptions(baseUrl: 'http://localhost:8080/api'));
+class _AdminPanelScreenState extends State<AdminPanelScreen> with SingleTickerProviderStateMixin {
+  late TabController _tabController;
   List<dynamic> _reports = [];
   List<dynamic> _candidates = [];
   bool _isLoading = true;
+  String? _errorMessage;
 
   @override
   void initState() {
     super.initState();
-    _loadData();
-  }
-
-  Future<void> _loadData() async {
-    final authProvider = context.read<AuthProvider>();
-    _dio.options.headers['Authorization'] = 'Bearer ${authProvider.token}';
-
-    try {
-      final reportsResponse = await _dio.get('/reports');
-      final candidatesResponse = await _dio.get('/admin/candidates');
-
-      setState(() {
-        _reports = reportsResponse.data;
-        _candidates = candidatesResponse.data;
-        _isLoading = false;
-      });
-    } catch (e) {
-      debugPrint('加载管理数据失败: $e');
-      setState(() {
-        _isLoading = false;
-      });
-    }
+    _tabController = TabController(length: 3, vsync: this);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadData());
   }
 
   @override
-  Widget build(BuildContext context) {
-    final authProvider = context.watch<AuthProvider>();
-
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('管理员面板'),
-        leading: const BackButton(),
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : ListView(
-              children: [
-                // 待处理举报
-                ExpansionTile(
-                  leading: const Icon(Icons.report),
-                  title: const Text('举报处理'),
-                  subtitle: Text('${_reports.where((r) => r['status'] == 'pending').length} 条待处理'),
-                  children: _reports
-                      .where((r) => r['status'] == 'pending')
-                      .map((report) => _buildReportItem(report))
-                      .toList(),
-                ),
-
-                // 管理员候选人
-                ExpansionTile(
-                  leading: const Icon(Icons.person_add),
-                  title: const Text('邀请管理员'),
-                  subtitle: Text('${_candidates.length} 位候选人'),
-                  children: _candidates
-                      .map((candidate) => _buildCandidateItem(candidate))
-                      .toList(),
-                ),
-
-                // 公告管理
-                ListTile(
-                  leading: const Icon(Icons.campaign),
-                  title: const Text('公告管理'),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () {
-                    // TODO: 跳转到公告管理页面
-                  },
-                ),
-
-                // 超级管理员额外功能
-                if (authProvider.user?.isSuperAdmin == true) ...[
-                  const Divider(),
-                  ListTile(
-                    leading: const Icon(Icons.people),
-                    title: const Text('用户管理'),
-                    trailing: const Icon(Icons.chevron_right),
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const SuperAdminScreen(),
-                        ),
-                      );
-                    },
-                  ),
-                  ListTile(
-                    leading: const Icon(Icons.analytics),
-                    title: const Text('系统统计'),
-                    trailing: const Icon(Icons.chevron_right),
-                    onTap: () {
-                      // TODO: 显示系统统计
-                    },
-                  ),
-                ],
-              ],
-            ),
-    );
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
   }
 
-  Widget _buildReportItem(dynamic report) {
-    return ListTile(
-      title: Text('举报: ${report['reason']}'),
-      subtitle: Text('目标: ${report['target_type']} #${report['target_id']}'),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          IconButton(
-            icon: const Icon(Icons.check, color: Colors.green),
-            onPressed: () => _handleReport(report['id'], 'handled'),
-          ),
-          IconButton(
-            icon: const Icon(Icons.close, color: Colors.red),
-            onPressed: () => _handleReport(report['id'], 'ignored'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCandidateItem(dynamic candidate) {
-    return ListTile(
-      leading: CircleAvatar(
-        child: Text(candidate['nickname']?.substring(0, 1) ?? '?'),
-      ),
-      title: Text(candidate['nickname'] ?? '未知'),
-      subtitle: Text('诚信度: ${candidate['credit_score']}%'),
-      trailing: ElevatedButton(
-        onPressed: () => _inviteAdmin(candidate['id']),
-        child: const Text('邀请'),
-      ),
-    );
-  }
-
-  Future<void> _handleReport(int reportId, String status) async {
+  Future<void> _loadData() async {
+    setState(() { _isLoading = true; _errorMessage = null; });
     try {
-      await _dio.put('/reports/$reportId/handle', data: {
-        'status': status,
+      final dio = context.read<AuthProvider>().dio;
+      final reportsRes = await dio.get('/reports');
+      final candidatesRes = await dio.get('/admin/candidates');
+      setState(() {
+        _reports = (reportsRes.data as List?) ?? [];
+        _candidates = (candidatesRes.data as List?) ?? [];
+        _isLoading = false;
       });
-      _loadData();
+    } on DioException catch (e) {
+      setState(() {
+        _isLoading = false;
+        _errorMessage = e.message ?? '加载失败';
+      });
     } catch (e) {
-      debugPrint('处理举报失败: $e');
+      setState(() {
+        _isLoading = false;
+        _errorMessage = e.toString();
+      });
     }
   }
 
-  Future<void> _inviteAdmin(int userId) async {
+  Future<void> _handleReport(dynamic report) async {
+    final deleteReasonController = TextEditingController();
+    final resultController = TextEditingController();
+
+    final action = await showDialog<String>(
+      context: context,
+      builder: (ctx) {
+        final isDark = Theme.of(context).brightness == Brightness.dark;
+        return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Row(
+            children: [
+              const Icon(Icons.gavel, color: Colors.orange, size: 24),
+              const SizedBox(width: 8),
+              const Text('处理举报'),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 举报信息摘要
+                GlassContainer(
+                  padding: const EdgeInsets.all(12),
+                  borderRadius: 12,
+                  blur: 0,
+                  opacity: isDark ? 0.1 : 0.05,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '目标: ${report['target_type'] == 'reply' ? '评论' : '帖子'} #${report['target_id']}',
+                        style: TextStyle(fontSize: 13, color: isDark ? Colors.white60 : Colors.grey[600]),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '原因: ${report['reason'] ?? '未知'}',
+                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: isDark ? Colors.white : Colors.black87),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                // 处理结果
+                TextField(
+                  controller: resultController,
+                  maxLines: 2,
+                  decoration: InputDecoration(
+                    labelText: '处理结果说明',
+                    hintText: '对举报的处理结论',
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                // 删除理由
+                TextField(
+                  controller: deleteReasonController,
+                  maxLines: 2,
+                  decoration: InputDecoration(
+                    labelText: '删除理由（选填，填了会软删除该内容）',
+                    hintText: '用户可在申诉中看到此理由',
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, 'ignored'),
+              child: const Text('忽略', style: TextStyle(color: Colors.grey)),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, 'handled'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.orange,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              child: const Text('确认处理'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (action == null) return;
+
     try {
-      await _dio.post('/admin/invite/$userId');
+      final dio = context.read<AuthProvider>().dio;
+      await dio.put('/reports/${report['id']}/handle', data: {
+        'status': action,
+        'result': resultController.text,
+        'delete_reason': deleteReasonController.text,
+      });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('邀请已发送')),
+          SnackBar(
+            content: Text(action == 'handled' ? '已处理并删除' : '已忽略'),
+            backgroundColor: action == 'handled' ? Colors.green : Colors.grey,
+          ),
+        );
+      }
+      _loadData();
+    } on DioException catch (e) {
+      String msg = '操作失败';
+      if (e.response?.data is Map) {
+        msg = (e.response!.data as Map)['error']?.toString() ?? msg;
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(msg), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  Future<void> _inviteAdmin(dynamic candidate) async {
+    try {
+      final dio = context.read<AuthProvider>().dio;
+      await dio.post('/admin/invite/${candidate['id']}');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('邀请已发送'), backgroundColor: Colors.green),
         );
       }
     } catch (e) {
       debugPrint('邀请失败: $e');
     }
   }
-}
-
-class SuperAdminScreen extends StatelessWidget {
-  const SuperAdminScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final themeProvider = context.watch<ThemeProvider>();
+    final pendingCount = _reports.where((r) => r['status'] == 'pending').length;
+
     return Scaffold(
+      backgroundColor: Colors.transparent,
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: const Text('超级管理员面板'),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: const BackButton(),
+        title: const Text('管理员面板'),
       ),
-      body: const Center(
-        child: Text('用户管理页面开发中'),
+      body: Stack(
+        children: [
+          _buildBackground(themeProvider, isDark),
+          SafeArea(
+            child: Column(
+              children: [
+                // Tab 栏
+                Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: isDark ? Colors.white.withValues(alpha: 0.08) : Colors.white.withValues(alpha: 0.5),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: TabBar(
+                    controller: _tabController,
+                    indicatorColor: Theme.of(context).primaryColor,
+                    indicatorWeight: 3,
+                    labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                    unselectedLabelStyle: const TextStyle(fontSize: 12),
+                    dividerColor: Colors.transparent,
+                    tabs: [
+                      Tab(text: '举报${pendingCount > 0 ? ' ($pendingCount)' : ''}'),
+                      const Tab(text: '候选人'),
+                      const Tab(text: '公告'),
+                    ],
+                  ),
+                ),
+
+                Expanded(
+                  child: _isLoading
+                      ? const Center(child: CircularProgressIndicator())
+                      : _errorMessage != null
+                          ? _buildErrorView(isDark)
+                          : TabBarView(
+                              controller: _tabController,
+                              children: [
+                                _buildReportsTab(isDark),
+                                _buildCandidatesTab(isDark),
+                                _buildAnnouncementTab(),
+                              ],
+                            ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ---- 背景 ----
+  Widget _buildBackground(ThemeProvider themeProvider, bool isDark) {
+    if (themeProvider.hasBackground && themeProvider.backgroundImage != null) {
+      final bgPath = themeProvider.backgroundImage!;
+      final isAsset = !bgPath.startsWith('http') && !bgPath.startsWith('/');
+      return Stack(fit: StackFit.expand, children: [
+        isAsset
+            ? Image.asset('assets/images/$bgPath', fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => _buildDefaultBg(isDark))
+            : bgPath.startsWith('/')
+                ? Image.file(File(bgPath), fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => _buildDefaultBg(isDark))
+                : Image.network(bgPath, fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => _buildDefaultBg(isDark)),
+        Container(color: isDark ? Colors.black.withValues(alpha: 0.4) : Colors.white.withValues(alpha: 0.3)),
+      ]);
+    }
+    return _buildDefaultBg(isDark);
+  }
+
+  Widget _buildDefaultBg(bool isDark) {
+    return Stack(fit: StackFit.expand, children: [
+      Image(
+        image: ResizeImage(const AssetImage('assets/images/morenbeijing.jpeg'), width: 1080),
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: isDark
+                  ? [const Color(0xFF1A1A2E), const Color(0xFF16213E), const Color(0xFF0F3460)]
+                  : [const Color(0xFF667EEA), const Color(0xFF764BA2), const Color(0xFFF093FB)],
+            ),
+          ),
+        ),
+      ),
+      Container(color: isDark ? Colors.black.withValues(alpha: 0.35) : Colors.white.withValues(alpha: 0.25)),
+    ]);
+  }
+
+  Widget _buildErrorView(bool isDark) {
+    return Center(
+      child: GlassContainer(
+        padding: const EdgeInsets.all(28), borderRadius: 20, blur: 12, opacity: 0.12,
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Icon(Icons.cloud_off, size: 48, color: isDark ? Colors.white30 : Colors.grey[400]),
+          const SizedBox(height: 14),
+          Text(_errorMessage!, textAlign: TextAlign.center,
+            style: TextStyle(color: isDark ? Colors.white60 : Colors.grey[600], fontSize: 15)),
+          const SizedBox(height: 18),
+          OutlinedButton.icon(onPressed: _loadData, icon: const Icon(Icons.refresh, size: 18),
+            label: const Text('重试'),
+            style: OutlinedButton.styleFrom(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+          ),
+        ]),
+      ),
+    );
+  }
+
+  // ---- 举报 Tab ----
+  Widget _buildReportsTab(bool isDark) {
+    final pending = _reports.where((r) => r['status'] == 'pending').toList();
+    final handled = _reports.where((r) => r['status'] != 'pending').toList();
+
+    return RefreshIndicator(
+      onRefresh: _loadData,
+      child: ListView(
+        physics: const BouncingScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 80),
+        children: [
+          if (pending.isNotEmpty) ...[
+            _buildSectionHeader('待处理 (${pending.length})', Icons.warning_amber, Colors.orange, isDark),
+            ...pending.map((r) => _buildReportCard(r, isDark)),
+          ],
+          if (pending.isEmpty)
+            _buildEmptyState('暂无待处理举报', '举报内容将在此显示', Icons.check_circle_outline, isDark),
+          if (handled.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            _buildSectionHeader('已处理 (${handled.length})', Icons.history, Colors.grey, isDark),
+            ...handled.map((r) => _buildHandledReportCard(r, isDark)),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSectionHeader(String title, IconData icon, Color color, bool isDark) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 12, 8, 8),
+      child: Row(
+        children: [
+          Icon(icon, size: 16, color: color),
+          const SizedBox(width: 6),
+          Text(title, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600,
+            color: isDark ? Colors.white54 : Colors.grey[600])),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildReportCard(dynamic report, bool isDark) {
+    final isReply = report['target_type'] == 'reply';
+    final reasonMap = {
+      'spam': '垃圾广告', 'porn': '色情低俗', 'violence': '暴力血腥',
+      'fake': '虚假信息', 'privacy': '侵犯隐私', 'harassment': '人身攻击',
+      'other': '其他',
+    };
+    final reasonLabel = reasonMap[report['reason']] ?? report['reason'] ?? '未知';
+
+    return GlassContainer(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      borderRadius: 14,
+      blur: 8,
+      opacity: isDark ? 0.12 : 0.35,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: isReply ? Colors.purple.withOpacity(0.15) : Colors.blue.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  isReply ? '评论 #${report['target_id']}' : '帖子 #${report['target_id']}',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: isReply ? Colors.purple : Colors.blue,
+                  ),
+                ),
+              ),
+              const Spacer(),
+              Text(
+                report['reporter']?['nickname'] ?? '匿名',
+                style: TextStyle(fontSize: 12, color: isDark ? Colors.white38 : Colors.grey[500]),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            reasonLabel,
+            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: isDark ? Colors.white : Colors.black87),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              TextButton.icon(
+                onPressed: () async {
+                  try {
+                    final dio = context.read<AuthProvider>().dio;
+                    await dio.put('/reports/${report['id']}/handle', data: {'status': 'ignored'});
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('已忽略'), backgroundColor: Colors.grey),
+                      );
+                    }
+                    _loadData();
+                  } catch (_) {}
+                },
+                icon: const Icon(Icons.close, size: 16, color: Colors.grey),
+                label: const Text('忽略', style: TextStyle(color: Colors.grey, fontSize: 13)),
+              ),
+              const SizedBox(width: 8),
+              ElevatedButton.icon(
+                onPressed: () => _handleReport(report),
+                icon: const Icon(Icons.delete_outline, size: 16, color: Colors.white),
+                label: const Text('处理', style: TextStyle(color: Colors.white, fontSize: 13)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red[400],
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  elevation: 0,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHandledReportCard(dynamic report, bool isDark) {
+    final isHandled = report['status'] == 'handled';
+    final reasonMap = {
+      'spam': '垃圾广告', 'porn': '色情低俗', 'violence': '暴力血腥',
+      'fake': '虚假信息', 'privacy': '侵犯隐私', 'harassment': '人身攻击',
+      'other': '其他',
+    };
+    final reasonLabel = reasonMap[report['reason']] ?? report['reason'] ?? '未知';
+
+    return GlassContainer(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      borderRadius: 12,
+      blur: 6,
+      opacity: isDark ? 0.08 : 0.2,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                isHandled ? Icons.check_circle : Icons.remove_circle,
+                size: 14,
+                color: isHandled ? Colors.green : Colors.grey,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                reasonLabel,
+                style: TextStyle(fontSize: 13, color: isDark ? Colors.white54 : Colors.grey[600]),
+              ),
+              const Spacer(),
+              Text(
+                isHandled ? '已删除' : '已忽略',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: isHandled ? Colors.green[300] : Colors.grey[500],
+                ),
+              ),
+            ],
+          ),
+          if (report['delete_reason'] != null && report['delete_reason'].toString().isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              '理由: ${report['delete_reason']}',
+              style: TextStyle(fontSize: 11, color: isDark ? Colors.white30 : Colors.grey[500]),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  // ---- 候选人 Tab ----
+  Widget _buildCandidatesTab(bool isDark) {
+    if (_candidates.isEmpty) {
+      return _buildEmptyState('暂无候选人', '需要有诚信度≥90的用户', Icons.person_search, isDark);
+    }
+
+    return RefreshIndicator(
+      onRefresh: _loadData,
+      child: ListView.builder(
+        physics: const BouncingScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 80),
+        itemCount: _candidates.length,
+        itemBuilder: (context, index) {
+          final c = _candidates[index];
+          return GlassContainer(
+            margin: const EdgeInsets.only(bottom: 10),
+            padding: const EdgeInsets.all(14),
+            borderRadius: 14,
+            blur: 8,
+            opacity: isDark ? 0.12 : 0.35,
+            child: Row(
+              children: [
+                CircleAvatar(
+                  radius: 20,
+                  backgroundColor: isDark ? Colors.white12 : Colors.grey[200],
+                  child: Text(
+                    (c['nickname'] ?? '?').substring(0, 1).toUpperCase(),
+                    style: TextStyle(fontWeight: FontWeight.w600, color: isDark ? Colors.white : Colors.black87),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(c['nickname'] ?? '未知', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
+                      const SizedBox(height: 2),
+                      Text('诚信度: ${c['credit_score'] ?? 0}%',
+                        style: TextStyle(fontSize: 12, color: isDark ? Colors.white38 : Colors.grey[500])),
+                    ],
+                  ),
+                ),
+                ElevatedButton(
+                  onPressed: () => _inviteAdmin(c),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Theme.of(context).primaryColor.withOpacity(0.8),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    elevation: 0,
+                  ),
+                  child: const Text('邀请', style: TextStyle(fontSize: 13)),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  // ---- 公告 Tab ----
+  Widget _buildAnnouncementTab() {
+    // TODO: 公告管理界面
+    return const Center(child: Text('公告管理开发中'));
+  }
+
+  Widget _buildEmptyState(String title, String subtitle, IconData icon, bool isDark) {
+    return Center(
+      child: GlassContainer(
+        padding: const EdgeInsets.all(32),
+        borderRadius: 20,
+        blur: 15,
+        opacity: 0.1,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 64, color: isDark ? Colors.white60 : Colors.grey[400]),
+            const SizedBox(height: 16),
+            Text(title, style: TextStyle(fontSize: 18, color: isDark ? Colors.white70 : Colors.grey[600])),
+            const SizedBox(height: 8),
+            Text(subtitle, style: TextStyle(fontSize: 14, color: isDark ? Colors.white.withOpacity(0.4) : Colors.grey[400])),
+          ],
+        ),
       ),
     );
   }

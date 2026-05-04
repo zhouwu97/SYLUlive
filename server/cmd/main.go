@@ -144,6 +144,7 @@ func main() {
 	replies.Use(middleware.AuthMiddleware(cfg.JWTSecret))
 	{
 		replies.DELETE("/:id", replyHandler.Delete)
+		replies.GET("/me", replyHandler.GetMeList)
 	}
 
 	// 点赞路由

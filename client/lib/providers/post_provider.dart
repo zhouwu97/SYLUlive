@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
+import 'dart:io';
 import '../models/post.dart';
 
 /// 每个板块的帖子状态
@@ -110,7 +111,7 @@ class PostProvider extends ChangeNotifier {
     String? postType,
     double? price,
     String? contact,
-    List<String>? imagePaths,
+    List<int>? fileIds,
   }) async {
     try {
       final formData = FormData.fromMap({
@@ -120,6 +121,8 @@ class PostProvider extends ChangeNotifier {
         if (postType != null) 'post_type': postType,
         if (price != null) 'price': price,
         if (contact != null && contact.isNotEmpty) 'contact': contact,
+        if (fileIds != null && fileIds.isNotEmpty)
+          'file_ids': fileIds.join(','),
       });
 
       final response = await _dio.post('/posts', data: formData);
@@ -147,6 +150,34 @@ class PostProvider extends ChangeNotifier {
     }
   }
 
+  /// 上传单张图片，返回 file_id，失败返回 null
+  Future<int?> uploadImage(String filePath) async {
+    try {
+      // 处理 Android content:// URI
+      String uploadPath = filePath;
+      if (filePath.startsWith('content://')) {
+        // 复制到临时文件
+        final tempDir = Directory.systemTemp;
+        final tempFile = File('${tempDir.path}/upload_${DateTime.now().millisecondsSinceEpoch}.jpg');
+        await File(filePath).copy(tempFile.path);
+        uploadPath = tempFile.path;
+      }
+      final formData = FormData.fromMap({
+        'file': await MultipartFile.fromFile(uploadPath),
+      });
+      final response = await _dio.post('/upload', data: formData);
+      debugPrint('上传响应: status=${response.statusCode}, data=${response.data}');
+      if (response.statusCode == 200 && response.data != null) {
+        final fileId = response.data['file_id'];
+        debugPrint('上传成功: file_id=$fileId');
+        return fileId as int?;
+      }
+    } catch (e) {
+      debugPrint('上传图片失败: $e');
+    }
+    return null;
+  }
+
   Future<bool> deletePost(int postId) async {
     try {
       final response = await _dio.delete('/posts/$postId');
@@ -159,6 +190,18 @@ class PostProvider extends ChangeNotifier {
       }
     } catch (e) {
       debugPrint('删除帖子失败: $e');
+    }
+    return false;
+  }
+
+  Future<bool> deleteReply(int replyId) async {
+    try {
+      final response = await _dio.delete('/replies/$replyId');
+      if (response.statusCode == 200) {
+        return true;
+      }
+    } catch (e) {
+      debugPrint('删除评论失败: $e');
     }
     return false;
   }

@@ -12,6 +12,7 @@ type Config struct {
 	SuperAdminDefaultPwd string // 超级管理员默认密码
 	UploadDir            string // 文件上传目录
 	MaxFileSize          int64  // 最大文件大小(字节)
+	EduServiceURL        string // Python教务服务地址
 }
 
 // Load 从环境变量加载配置
@@ -46,11 +47,17 @@ func Load() *Config {
 		}
 	}
 
+	eduServiceURL := os.Getenv("EDU_SERVICE_URL")
+	if eduServiceURL == "" {
+		eduServiceURL = "https://nominalistically-subpedpeduncled-alexandria.ngrok-free.dev"
+	}
+
 	return &Config{
 		JWTSecret:            jwtSecret,
 		DSN:                  dsn,
 		SuperAdminDefaultPwd: superAdminPwd,
 		UploadDir:            uploadDir,
 		MaxFileSize:          2 * 1024 * 1024, // 2MB
+		EduServiceURL:        eduServiceURL,
 	}
 }

@@ -1,18 +1,8 @@
 package handlers
 
 import (
-	"crypto/rand"
-	"crypto/rsa"
-	"encoding/base64"
 	"encoding/json"
-	"errors"
-	"math/big"
 	"net/http"
-	"net/url"
-	"regexp"
-	"strconv"
-	"strings"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-resty/resty/v2"
@@ -21,6 +11,13 @@ import (
 	"shenliyuan/internal/middleware"
 	"shenliyuan/internal/models"
 )
+
+// EduServiceConfig 教务服务配置
+var EduServiceConfig = struct {
+	BaseURL string
+}{
+	BaseURL: "", // 从config加载
+}
 
 // AuthHandler 认证处理器
 type AuthHandler struct {
@@ -57,10 +54,7 @@ func (h *AuthHandler) RegisterWithEdu(c *gin.Context) {
 		return
 	}
 
-	// 验证教务账号（通过 EduHandler 的逻辑）
-	eduHandler := NewEduHandler(h.db)
-	
-	// 临时创建用户记录用于绑定教务信息（后面会完善）
+	// 验证教务账号
 	var user models.User
 	user.StudentID = input.StudentID
 	user.Nickname = input.Nickname
@@ -136,6 +130,106 @@ type LoginInput struct {
 	Password  string `json:"password" binding:"required"`
 }
 
+// LoginEduInput 统一登录输入（学号+教务密码+APP密码）
+type LoginEduInput struct {
+	StudentID   string `json:"student_id" binding:"required,len=10"`
+	EduPassword string `json:"edu_password" binding:"required"`
+	Password    string `json:"password" binding:"required,min=8,max=32"`
+}
+
+// LoginEdu 统一登录（教务验证+自动注册）
+func (h *AuthHandler) LoginEdu(c *gin.Context) {
+	var input LoginEduInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// 检查用户是否已存在
+	var user models.User
+	err := h.db.Where("student_id = ?", input.StudentID).First(&user).Error
+	isNewUser := err == gorm.ErrRecordNotFound
+
+	if isNewUser {
+		// 新用户：通过Python服务验证教务
+		client := resty.New()
+		client.SetTimeout(10 * 1000 * 1000000) // 10秒
+
+		resp, err := client.R().
+			SetHeader("Content-Type", "application/json").
+			SetBody(map[string]string{
+				"student_id":   input.StudentID,
+				"edu_password": input.EduPassword,
+				"password":     input.Password,
+			}).
+			Post(EduServiceConfig.BaseURL + "/api/edu/login_edu")
+
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "无法连接教务服务"})
+			return
+		}
+
+		var result struct {
+			Success   bool   `json:"success"`
+			Message   string `json:"message"`
+			StudentID string `json:"student_id"`
+			Name      string `json:"name"`
+			Grade     string `json:"grade"`
+			College   string `json:"college"`
+			Major     string `json:"major"`
+		}
+
+		if err := json.Unmarshal(resp.Body(), &result); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "解析响应失败"})
+			return
+		}
+
+		if !result.Success {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": result.Message})
+			return
+		}
+
+		// 哈希APP密码
+		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "密码加密失败"})
+			return
+		}
+
+		// 创建用户
+		user = models.User{
+			StudentID:    input.StudentID,
+			Nickname:     input.StudentID,
+			PasswordHash: string(hashedPassword),
+			Role:         models.RoleUser,
+			CreditScore:  100,
+			EduStudentID: result.StudentID,
+			EduPassword:  input.EduPassword,
+			EduBound:     true,
+			EduGrade:     result.Grade,
+			EduCollege:   result.College,
+			EduMajor:     result.Major,
+		}
+
+		if err := h.db.Create(&user).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "创建用户失败"})
+			return
+		}
+	} else {
+		// 老用户：验证APP密码
+		if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(input.Password)); err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "APP密码错误"})
+			return
+		}
+	}
+
+	token, _ := middleware.GenerateToken(user.ID, string(user.Role), h.jwtSecret)
+	c.JSON(http.StatusOK, gin.H{
+		"token": token,
+		"user":  user,
+	})
+}
+
 // Login 登录
 func (h *AuthHandler) Login(c *gin.Context) {
 	var input LoginInput
@@ -195,161 +289,4 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 	}
 	h.db.Model(&user).Update("password_hash", string(hashedPassword))
 	c.JSON(http.StatusOK, gin.H{"message": "密码修改成功"})
-}
-
-// 以下是从 edu.go 复制的辅助函数（用于 RegisterWithEdu）
-
-func baseHttpHeaders() map[string]string {
-	return map[string]string{
-		"User-Agent":    "Mozilla/5.0 (Windows NT 6.1; WOW64; rv:29.0) Gecko/20100101 Firefox/29.0",
-		"Content-Type":  "application/x-www-form-urlencoded;charset=uft-8",
-		"Cache-Control": "no-cache",
-	}
-}
-
-func nowTime() string {
-	return strconv.FormatInt(time.Now().UnixMilli(), 10)
-}
-
-func getIndexCookieAndCsrfToken(client *resty.Client) (string, error) {
-	client.SetTimeout(3 * time.Second)
-	indexUrl := "https://jxw.sylu.edu.cn/xtgl"
-
-	initResp, err := client.R().SetHeaders(baseHttpHeaders()).Get(indexUrl + "/login_slogin.html")
-	if err != nil {
-		if urlErr, ok := err.(*url.Error); ok && urlErr.Timeout() {
-			return getIndexCookieAndCsrfToken(client)
-		}
-		return "", err
-	}
-
-	findCsrfToken := regexp.MustCompile(`id="csrftoken" name="csrftoken" value="([^"]+)"`)
-	matches := findCsrfToken.FindStringSubmatch(string(initResp.Body()))
-	if len(matches) < 2 {
-		return "", errors.New("无法获取csrf token")
-	}
-
-	client.Cookies = initResp.Cookies()
-	return matches[1], nil
-}
-
-func getPublicKey(client *resty.Client) (*PublicKey, error) {
-	indexUrl := "https://jxw.sylu.edu.cn/xtgl"
-	resp, err := client.R().SetHeaders(baseHttpHeaders()).
-		SetQueryParams(map[string]string{
-			"time": nowTime(),
-			"_":    nowTime(),
-		}).Get(indexUrl + "/login_getPublicKey.html")
-
-	if err != nil {
-		return nil, err
-	}
-
-	var publicKey PublicKey
-	if err := json.Unmarshal(resp.Body(), &publicKey); err != nil {
-		return nil, err
-	}
-	return &publicKey, nil
-}
-
-type PublicKey struct {
-	Modulus  string `json:"modulus"`
-	Exponent string `json:"exponent"`
-}
-
-func rsaByPublicKey(password string, publicKey *PublicKey) (string, error) {
-	modulusBytes, err := base64.StdEncoding.DecodeString(publicKey.Modulus)
-	if err != nil {
-		return "", err
-	}
-
-	exponentBytes, err := base64.StdEncoding.DecodeString(publicKey.Exponent)
-	if err != nil {
-		return "", err
-	}
-
-	pubKey := &rsa.PublicKey{
-		N: new(big.Int).SetBytes(modulusBytes),
-		E: int(new(big.Int).SetBytes(exponentBytes).Int64()),
-	}
-
-	encryptedBytes, err := rsa.EncryptPKCS1v15(rand.Reader, pubKey, []byte(password))
-	if err != nil {
-		return "", err
-	}
-
-	return base64.StdEncoding.EncodeToString(encryptedBytes), nil
-}
-
-func syluLogin(client *resty.Client, studentID, encryptedPassword, csrfToken string) ([]*http.Cookie, error) {
-	indexUrl := "https://jxw.sylu.edu.cn/xtgl"
-	loginResp, err := client.SetRedirectPolicy(resty.NoRedirectPolicy()).R().
-		SetFormData(map[string]string{
-			"csrftoken": csrfToken,
-			"language":  "zh_CN",
-			"yhm":       studentID,
-			"mm":        encryptedPassword,
-		}).
-		SetQueryParam("time", nowTime()).
-		SetHeaders(baseHttpHeaders()).
-		Post(indexUrl + "/login_slogin.html")
-
-	if err != nil && err.Error() == "post redirect disabled" {
-		return loginResp.Cookies(), nil
-	} else if err != nil {
-		return nil, errors.New("服务器连接失败:" + err.Error())
-	}
-	return nil, errors.New("账号或密码错误")
-}
-
-func buildCookieString(cookies []*http.Cookie) string {
-	var parts []string
-	for _, c := range cookies {
-		parts = append(parts, c.Name+"="+c.Value)
-	}
-	return strings.Join(parts, "; ")
-}
-
-func getStudentInfo(client *resty.Client, cookie, studentID string) (grade, college, major string, err error) {
-	client.SetHostURL("https://jxw.sylu.edu.cn/xtgl")
-	defer client.GetClient().CloseIdleConnections()
-
-	resp, err := client.R().
-		SetHeader("Cookie", cookie).
-		SetHeaders(baseHttpHeaders()).
-		Get("/grxx_cxGrxx.html?gnmkdm=N100501&layout=default")
-
-	if err != nil {
-		return "", "", "", err
-	}
-
-	body := string(resp.Body())
-
-	gradeRe := regexp.MustCompile(`年级[：:]\s*(\d{4})`)
-	gradeMatch := gradeRe.FindStringSubmatch(body)
-	if len(gradeMatch) > 1 {
-		grade = gradeMatch[1]
-	}
-
-	collegeRe := regexp.MustCompile(`学院[：:]\s*([^\s<]+)`)
-	collegeMatch := collegeRe.FindStringSubmatch(body)
-	if len(collegeMatch) > 1 {
-		college = collegeMatch[1]
-	}
-
-	majorRe := regexp.MustCompile(`专业[：:]\s*([^\s<]+)`)
-	majorMatch := majorRe.FindStringSubmatch(body)
-	if len(majorMatch) > 1 {
-		major = majorMatch[1]
-	}
-
-	if grade == "" {
-		gradeRe2 := regexp.MustCompile(`(\d{4})-(\d{4})`)
-		gradeMatch2 := gradeRe2.FindStringSubmatch(body)
-		if len(gradeMatch2) > 0 {
-			grade = gradeMatch2[1]
-		}
-	}
-
-	return grade, college, major, nil
 }

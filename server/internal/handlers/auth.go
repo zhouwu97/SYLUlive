@@ -84,7 +84,7 @@ func (h *AuthHandler) RegisterWithEdu(c *gin.Context) {
 	}
 
 	if !result.Success {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "学号或教务密码有误，请检查"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": result.Message})
 		return
 	}
 

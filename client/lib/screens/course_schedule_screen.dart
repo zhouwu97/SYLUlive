@@ -69,6 +69,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   late DateTime _weekStart;
   bool _didLoad = false;
   bool _initializing = true;
+  bool _hasCache = false;
   double _cardOpacity = 0.4;
 
   // 左右滑动切周
@@ -100,7 +101,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     super.dispose();
   }
 
-  void _autoLoad(EduProvider edu, CourseScheduleProvider sc) {
+  void _autoLoad(EduProvider edu, CourseScheduleProvider sc) async {
     if (_didLoad) return;
     // 状态还没加载完，继续等
     if (_initializing && !edu.isBound) return;
@@ -112,8 +113,21 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     if (sc.isLoading) return;
     _didLoad = true;
     _initializing = false;
+
+    // 检查是否有缓存
+    _hasCache = await sc.hasCachedCourses();
+
+    if (!_hasCache) {
+      // 无缓存，不自动拉取，显示引导
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        setState(() {});
+      });
+      return;
+    }
+
+    // 有缓存，正常加载
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (edu.isBound) sc.loadCourses();
+      sc.loadCourses();
     });
   }
 
@@ -147,6 +161,9 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                 if (!edu.isBound) return _buildBindView(context, edu, sc, isDark);
 
                 if (sc.isLoading && sc.courses.isEmpty) return const Center(child: CircularProgressIndicator());
+
+                // 无缓存时显示引导
+                if (!_hasCache && sc.courses.isEmpty) return _buildNoCacheView(context, isDark);
 
                 return Column(children: [
                   _buildDateHeader(sc),
@@ -399,6 +416,50 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const EduScreen()));
     if (mounted) {
       context.read<CourseScheduleProvider>().loadCourses(forceRefresh: true);
+    }
+  }
+
+  /// 无缓存时显示引导（用户刚注册或首次使用）
+  Widget _buildNoCacheView(BuildContext context, bool isDark) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: GlassContainer(
+          padding: const EdgeInsets.all(32),
+          borderRadius: 20,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.school_outlined, size: 64, color: isDark ? Colors.grey[600] : Colors.grey[400]),
+              const SizedBox(height: 16),
+              const Text('首次使用', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              Text(
+                '检测到您还没有课表，请先获取课表',
+                style: TextStyle(fontSize: 14, color: isDark ? Colors.grey[400] : Colors.grey[600]),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 24),
+              ElevatedButton.icon(
+                onPressed: () => _fetchCourses(context),
+                icon: const Icon(Icons.download),
+                label: const Text('获取课表'),
+                style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12)),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 获取课表（首次拉取）
+  void _fetchCourses(BuildContext context) async {
+    setState(() => _hasCache = true); // 标记已有缓存，将自动拉取
+    final sc = context.read<CourseScheduleProvider>();
+    await sc.loadCourses(forceRefresh: true);
+    if (mounted) {
+      setState(() {});
     }
   }
 

@@ -120,8 +120,17 @@ class CourseScheduleProvider extends ChangeNotifier {
     '#F59E0B', '#10B981', '#EF4444', '#3B82F6',
   ];
 
+  /// 检查是否有缓存的课程（不自动拉取）
+  Future<bool> hasCachedCourses() async {
+    if (_userId == null) return false;
+    final cacheKey = '$_cacheKeyPrefix$_userId';
+    final cached = await _loadFromCache(cacheKey);
+    return cached != null && cached.isNotEmpty;
+  }
+
   /// 加载课程。默认先从手机缓存读取，[forceRefresh]=true 时跳过缓存从服务器拉取
-  Future<void> loadCourses({bool forceRefresh = false}) async {
+  /// [onlyCache] 为 true 时，如果没有缓存则不自动拉取，直接返回
+  Future<void> loadCourses({bool forceRefresh = false, bool onlyCache = false}) async {
     if (_userId == null) return;
 
     final cacheKey = '$_cacheKeyPrefix$_userId';
@@ -140,6 +149,15 @@ class CourseScheduleProvider extends ChangeNotifier {
         notifyListeners();
         return; // 缓存命中，不请求网络
       }
+    }
+
+    // 缓存未命中且 onlyCache=true 时，不自动拉取
+    if (onlyCache) {
+      _courses = [];
+      _gridData = {};
+      _isLoading = false;
+      notifyListeners();
+      return;
     }
 
     // 缓存未命中或强制刷新 → 先清旧缓存，再请求网络

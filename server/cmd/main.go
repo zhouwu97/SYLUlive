@@ -262,6 +262,7 @@ func main() {
 	teacherAuth := teacher.Group("")
 	teacherAuth.Use(middleware.AuthMiddleware(cfg.JWTSecret))
 	{
+		teacherAuth.GET("/:id", teacherHandler.GetDetail)
 		teacherAuth.POST("", teacherHandler.Create)
 		teacherAuth.POST("/:id/rate", teacherHandler.Rate)
 	}

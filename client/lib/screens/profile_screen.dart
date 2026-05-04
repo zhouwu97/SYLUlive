@@ -2,7 +2,6 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:image_picker/image_picker.dart';
-import 'package:image_cropper/image_cropper.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
@@ -920,27 +919,15 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
   }
 
   void _showAvatarOptions(BuildContext context, AuthProvider authProvider) {
-    Future<void> pickAndCrop(ImageSource source) async {
+    Future<void> pickAndUpload(ImageSource source) async {
       Navigator.pop(context);
-      final picker = ImagePicker();
-      final image = await picker.pickImage(source: source);
+      final image = await ImagePicker().pickImage(source: source);
       if (image == null) return;
 
-      // 裁剪
-      final cropped = await ImageCropper().cropImage(
-        sourcePath: image.path,
-        aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
-        uiSettings: [
-          AndroidUiSettings(toolbarTitle: '裁剪头像', toolbarColor: const Color(0xFF6366F1), toolbarWidgetColor: Colors.white, lockAspectRatio: true),
-          IOSUiSettings(title: '裁剪头像'),
-        ],
-      );
-      final finalPath = cropped?.path ?? image.path;
-
       final appDir = await getApplicationDocumentsDirectory();
-      final fileName = 'avatar_${DateTime.now().millisecondsSinceEpoch}${path.extension(finalPath)}';
+      final fileName = 'avatar_${DateTime.now().millisecondsSinceEpoch}${path.extension(image.path)}';
       final savedPath = path.join(appDir.path, fileName);
-      await File(finalPath).copy(savedPath);
+      await File(image.path).copy(savedPath);
       final result = await authProvider.updateAvatar(savedPath);
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -963,12 +950,12 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
           ListTile(
             leading: const Icon(Icons.photo),
             title: const Text('从相册选择'),
-            onTap: () => pickAndCrop(ImageSource.gallery),
+            onTap: () => pickAndUpload(ImageSource.gallery),
           ),
           ListTile(
             leading: const Icon(Icons.camera_alt),
             title: const Text('拍照'),
-            onTap: () => pickAndCrop(ImageSource.camera),
+            onTap: () => pickAndUpload(ImageSource.camera),
           ),
         ]),
       ),

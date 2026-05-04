@@ -300,7 +300,10 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
         opacity: 0.15,
         gradientColors: isDark ? [Colors.red[800]!, Colors.red[900]!] : [Colors.red[50]!, Colors.red[100]!],
         onTap: () {
-          Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminPanelScreen()));
+          Navigator.push(context, PageRouteBuilder(
+          opaque: false,
+          pageBuilder: (_, __, ___) => const AdminPanelScreen(),
+        ));
         },
         child: Row(
           children: [

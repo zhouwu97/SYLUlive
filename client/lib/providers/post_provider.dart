@@ -32,7 +32,7 @@ class PostProvider extends ChangeNotifier {
   final Dio _dio;
 
   final Map<int, _BoardState> _boards = {};
-  int _activeBoardId = 1;
+  final int _activeBoardId = 1;
 
   PostProvider(this._dio) {
     _boards[1] = _BoardState();
@@ -111,6 +111,38 @@ class PostProvider extends ChangeNotifier {
     board.currentPage = 1;
     board.hasMore = true;
     await loadPosts(boardId: boardId, type: type, sort: sort);
+  }
+
+  Future<List<Post>> searchPosts({
+    int boardId = 1,
+    String? type,
+    String sort = 'time',
+    required String query,
+    int limit = 50,
+  }) async {
+    final trimmed = query.trim();
+    if (trimmed.isEmpty) return [];
+
+    try {
+      final response = await _dio.get('/posts', queryParameters: {
+        'board': boardId,
+        'type': type,
+        'sort': sort,
+        'page': 1,
+        'limit': limit,
+        'q': trimmed,
+      });
+
+      if (response.statusCode == 200) {
+        final data = response.data;
+        return (data['posts'] as List).map((e) => Post.fromJson(e)).toList();
+      }
+    } on DioException catch (e) {
+      debugPrint('搜索帖子失败: ${AppFeedback.dioErrorMessage(e)}');
+    } catch (e) {
+      debugPrint('搜索帖子失败: $e');
+    }
+    return [];
   }
 
   Future<CreatePostResult> createPost({

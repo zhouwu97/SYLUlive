@@ -1,14 +1,16 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
+import '../models/post.dart';
 import '../providers/auth_provider.dart';
 import '../providers/post_provider.dart';
-import '../models/post.dart';
 import '../widgets/post_card.dart';
-import '../widgets/glass_container.dart';
-import '../providers/theme_provider.dart';
-import 'post_detail_screen.dart';
 import 'create_post_screen.dart';
 import 'login_screen.dart';
+import 'market_exposure_screen.dart';
+import 'post_detail_screen.dart';
 
 class MarketScreen extends StatefulWidget {
   const MarketScreen({super.key});
@@ -17,15 +19,17 @@ class MarketScreen extends StatefulWidget {
   State<MarketScreen> createState() => _MarketScreenState();
 }
 
-class _MarketScreenState extends State<MarketScreen> with SingleTickerProviderStateMixin {
-  late TabController _tabController;
-  final List<String> _tabs = ['交易', '曝光'];
+class _MarketScreenState extends State<MarketScreen> {
+  final TextEditingController _searchController = TextEditingController();
+  Timer? _searchDebounce;
   String _sortType = 'time';
+  String _searchQuery = '';
+  bool _isSearching = false;
+  List<Post> _searchResults = [];
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<PostProvider>().loadPosts(boardId: 2, sort: _sortType);
     });
@@ -33,38 +37,91 @@ class _MarketScreenState extends State<MarketScreen> with SingleTickerProviderSt
 
   @override
   void dispose() {
-    _tabController.dispose();
+    _searchDebounce?.cancel();
+    _searchController.dispose();
     super.dispose();
+  }
+
+  Future<void> _runSearch(String raw) async {
+    final query = raw.trim();
+    if (!mounted) return;
+
+    if (query.isEmpty) {
+      setState(() {
+        _searchQuery = '';
+        _searchResults = [];
+        _isSearching = false;
+      });
+      return;
+    }
+
+    setState(() {
+      _searchQuery = query;
+      _isSearching = true;
+    });
+
+    final results = await context.read<PostProvider>().searchPosts(
+          boardId: 2,
+          sort: _sortType,
+          query: query,
+          limit: 100,
+        );
+
+    if (!mounted || _searchQuery != query) return;
+
+    setState(() {
+      _searchResults = results
+          .where((post) =>
+              post.postType == 'sell' ||
+              post.postType == 'buy' ||
+              post.postType == 'proxy')
+          .toList();
+      _isSearching = false;
+    });
+  }
+
+  void _onSearchChanged(String value) {
+    setState(() {});
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 260), () {
+      _runSearch(value);
+    });
+  }
+
+  Future<void> _refreshCurrent() async {
+    await context.read<PostProvider>().refresh(boardId: 2, sort: _sortType);
+    if (_searchQuery.isNotEmpty) {
+      await _runSearch(_searchQuery);
+    }
   }
 
   void _changeSort(String sort) {
     setState(() {
       _sortType = sort;
     });
-    context.read<PostProvider>().refresh(boardId: 2, sort: sort);
+    _refreshCurrent();
+  }
+
+  List<Post> _buildMarketPosts(List<Post> allPosts) {
+    return allPosts
+        .where((p) =>
+            p.postType == 'sell' ||
+            p.postType == 'buy' ||
+            p.postType == 'proxy')
+        .toList();
   }
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final themeProvider = context.watch<ThemeProvider>();
 
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor:
+          isDark ? const Color(0xFF0F131A) : const Color(0xFFF5F7FB),
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        title: TabBar(
-          controller: _tabController,
-          indicatorColor: Colors.white,
-          indicatorWeight: 3,
-          labelStyle: const TextStyle(
-            fontWeight: FontWeight.bold,
-            fontSize: 16,
-          ),
-          unselectedLabelStyle: const TextStyle(fontSize: 14),
-          tabs: _tabs.map((t) => Tab(text: t)).toList(),
-        ),
+        title: const Text('集市'),
         actions: [
           PopupMenuButton<String>(
             icon: const Icon(Icons.sort),
@@ -77,12 +134,51 @@ class _MarketScreenState extends State<MarketScreen> with SingleTickerProviderSt
           ),
         ],
       ),
-      body: TabBarView(
-        controller: _tabController,
-        children: [
-          _buildMarketList(isDark),
-          _buildExposureList(isDark),
-        ],
+      body: Consumer<PostProvider>(
+        builder: (context, postProvider, child) {
+          final allPosts = postProvider.postsFor(2);
+          final exposurePosts =
+              allPosts.where((post) => post.postType == 'exposure').toList();
+          final marketPosts = _searchQuery.isNotEmpty
+              ? _searchResults
+              : _buildMarketPosts(allPosts);
+
+          if (postProvider.isLoadingFor(2) && allPosts.isEmpty) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          return RefreshIndicator(
+            onRefresh: _refreshCurrent,
+            child: ListView(
+              physics: const AlwaysScrollableScrollPhysics(
+                  parent: BouncingScrollPhysics()),
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 100),
+              children: [
+                _buildSearchBar(isDark),
+                const SizedBox(height: 12),
+                _buildExposureEntry(isDark, exposurePosts),
+                const SizedBox(height: 16),
+                _buildSectionHeader(isDark, marketPosts.length),
+                const SizedBox(height: 12),
+                if (_isSearching)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 40),
+                    child: Center(child: CircularProgressIndicator()),
+                  )
+                else if (marketPosts.isEmpty)
+                  _buildEmptyState(
+                    isDark,
+                    _searchQuery.isNotEmpty ? '没有找到匹配的物品' : '暂无物品',
+                    _searchQuery.isNotEmpty ? '换个商品名称试试' : '发布你的第一条商品吧',
+                  )
+                else
+                  ...marketPosts.map(
+                    (post) => _buildMarketCard(post),
+                  ),
+              ],
+            ),
+          );
+        },
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       floatingActionButton: Padding(
@@ -106,14 +202,14 @@ class _MarketScreenState extends State<MarketScreen> with SingleTickerProviderSt
             await Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (_) => CreatePostScreen(
+                builder: (_) => const CreatePostScreen(
                   boardId: 2,
-                  defaultPostType: _tabController.index == 0 ? 'sell' : 'exposure',
+                  defaultPostType: 'sell',
                 ),
               ),
             );
             if (mounted) {
-              context.read<PostProvider>().refresh(boardId: 2, sort: _sortType);
+              await _refreshCurrent();
             }
           },
           child: const Icon(Icons.add),
@@ -122,125 +218,211 @@ class _MarketScreenState extends State<MarketScreen> with SingleTickerProviderSt
     );
   }
 
-  Widget _buildMarketList(bool isDark) {
-    return Consumer<PostProvider>(
-      builder: (context, postProvider, child) {
-        final allPosts = postProvider.postsFor(2);
-        if (postProvider.isLoadingFor(2) && allPosts.isEmpty) {
-          return const Center(child: CircularProgressIndicator());
-        }
-
-        final marketPosts = allPosts
-            .where((p) => p.postType == 'sell' || p.postType == 'buy' || p.postType == 'proxy')
-            .toList();
-
-        if (marketPosts.isEmpty) {
-          return _buildEmptyState('暂无商品', '发布你的第一条商品吧！', isDark);
-        }
-
-        return RefreshIndicator(
-          onRefresh: () => postProvider.refresh(boardId: 2, sort: _sortType),
-          child: ListView.builder(
-            physics: const BouncingScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 100),
-            itemCount: marketPosts.length,
-            itemBuilder: (context, index) {
-              final post = marketPosts[index];
-              return PostCard(
-                post: post,
-                showPrice: true,
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => PostDetailScreen(postId: post.id, isMarket: true),
-                    ),
-                  );
-                },
-              );
-            },
-          ),
-        );
-      },
+  Widget _buildSearchBar(bool isDark) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF171B24) : Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isDark
+              ? Colors.white.withValues(alpha: 0.05)
+              : const Color(0xFFE8ECF4),
+        ),
+      ),
+      child: TextField(
+        controller: _searchController,
+        onChanged: _onSearchChanged,
+        onSubmitted: _runSearch,
+        textInputAction: TextInputAction.search,
+        decoration: InputDecoration(
+          border: InputBorder.none,
+          hintText: '搜索商品名称，支持模糊匹配',
+          prefixIcon: const Icon(Icons.search, size: 20),
+          suffixIcon: _searchController.text.isEmpty
+              ? null
+              : IconButton(
+                  icon: const Icon(Icons.close, size: 18),
+                  onPressed: () {
+                    _searchController.clear();
+                    _runSearch('');
+                    setState(() {});
+                  },
+                ),
+        ),
+      ),
     );
   }
 
-  Widget _buildExposureList(bool isDark) {
-    return Consumer<PostProvider>(
-      builder: (context, postProvider, child) {
-        final allPosts = postProvider.postsFor(2);
-        if (postProvider.isLoadingFor(2) && allPosts.isEmpty) {
-          return const Center(child: CircularProgressIndicator());
-        }
-
-        final exposurePosts = allPosts
-            .where((p) => p.postType == 'exposure')
-            .toList();
-
-        if (exposurePosts.isEmpty) {
-          return _buildEmptyState('暂无曝光', '曝光骗子，维护校园诚信！', isDark);
-        }
-
-        return RefreshIndicator(
-          onRefresh: () => postProvider.refresh(boardId: 2, sort: _sortType),
-          child: ListView.builder(
-            physics: const BouncingScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 100),
-            itemCount: exposurePosts.length,
-            itemBuilder: (context, index) {
-              final post = exposurePosts[index];
-              return PostCard(
-                post: post,
-                showWarning: true,
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => PostDetailScreen(postId: post.id, isMarket: true),
-                    ),
-                  );
-                },
-              );
-            },
+  Widget _buildExposureEntry(bool isDark, List<Post> exposurePosts) {
+    final latest = exposurePosts.isNotEmpty ? exposurePosts.first : null;
+    return InkWell(
+      borderRadius: BorderRadius.circular(18),
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const MarketExposureScreen()),
+      ),
+      child: Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF1C1620) : const Color(0xFFFFF4F2),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: isDark ? const Color(0x66FF8A80) : const Color(0xFFFFD5D0),
           ),
-        );
-      },
-    );
-  }
-
-  Widget _buildEmptyState(String title, String subtitle, bool isDark) {
-    return Center(
-      child: GlassContainer(
-        padding: const EdgeInsets.all(32),
-        borderRadius: 20,
-        blur: 15,
-        opacity: 0.1,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+        ),
+        child: Row(
           children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: const Color(0xFFFF6B6B).withValues(alpha: 0.14),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: const Icon(Icons.gpp_maybe_outlined,
+                  color: Color(0xFFFF6B6B)),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Text(
+                        '曝光台',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                          color: isDark ? Colors.white : Colors.black87,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color:
+                              const Color(0xFFFF6B6B).withValues(alpha: 0.14),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          '${exposurePosts.length} 条',
+                          style: const TextStyle(
+                            color: Color(0xFFFF6B6B),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    latest == null
+                        ? '单独查看曝光内容，不打断正常逛集市'
+                        : (latest.title.isNotEmpty
+                            ? latest.title
+                            : latest.content),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: isDark ? Colors.white60 : Colors.grey[700],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
             Icon(
-              Icons.store_outlined,
-              size: 64,
-              color: isDark ? Colors.white60 : Colors.grey[400],
-            ),
-            const SizedBox(height: 16),
-            Text(
-              title,
-              style: TextStyle(
-                fontSize: 18,
-                color: isDark ? Colors.white70 : Colors.grey[600],
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              subtitle,
-              style: TextStyle(
-                fontSize: 14,
-                color: isDark ? Colors.white.withOpacity(0.4) : Colors.grey[400],
-              ),
+              Icons.chevron_right_rounded,
+              color: isDark ? Colors.white38 : Colors.grey[500],
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildSectionHeader(bool isDark, int count) {
+    return Row(
+      children: [
+        Text(
+          _searchQuery.isNotEmpty ? '搜索结果' : '商品列表',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+            color: isDark ? Colors.white : Colors.black87,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          '$count',
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: isDark ? Colors.white38 : Colors.grey[600],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMarketCard(Post post) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: PostCard(
+        post: post,
+        showPrice: true,
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => PostDetailScreen(postId: post.id, isMarket: true),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyState(bool isDark, String title, String subtitle) {
+    return Container(
+      padding: const EdgeInsets.all(28),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF171B24) : Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: isDark
+              ? Colors.white.withValues(alpha: 0.05)
+              : const Color(0xFFE8ECF4),
+        ),
+      ),
+      child: Column(
+        children: [
+          Icon(
+            Icons.inventory_2_outlined,
+            size: 42,
+            color: isDark ? Colors.white38 : Colors.grey[500],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: isDark ? Colors.white70 : Colors.black87,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            subtitle,
+            style: TextStyle(
+              fontSize: 13,
+              color: isDark ? Colors.white38 : Colors.grey[600],
+            ),
+          ),
+        ],
       ),
     );
   }

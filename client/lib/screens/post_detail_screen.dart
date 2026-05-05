@@ -1,17 +1,14 @@
-import 'dart:io' show File;
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
-import '../providers/theme_provider.dart';
 import '../config/api_constants.dart';
 import '../models/post.dart';
 import '../models/reply.dart';
 import '../providers/post_provider.dart';
 import '../utils/app_feedback.dart';
-import '../widgets/glass_container.dart';
+import '../utils/post_image_cache.dart';
 import '../widgets/report_sheet.dart';
 import 'image_viewer_screen.dart';
 
@@ -36,6 +33,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   int _likeCount = 0;
   final _replyController = TextEditingController();
   final _replyFocus = FocusNode();
+  bool _isReplyComposerOpen = false;
 
   @override
   void initState() {
@@ -101,11 +99,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   Future<void> _sendReply() async {
-    if (_replyController.text.isEmpty) return;
+    final content = _replyController.text.trim();
+    if (content.isEmpty) return;
     try {
-      await _dio.post('/posts/${widget.postId}/replies',
-          data: {'content': _replyController.text});
+      await _dio
+          .post('/posts/${widget.postId}/replies', data: {'content': content});
       _replyController.clear();
+      _replyFocus.unfocus();
+      setState(() => _isReplyComposerOpen = false);
       _loadPost();
     } on DioException catch (e) {
       final msg = AppFeedback.dioErrorMessage(e, fallback: '发送失败');
@@ -143,7 +144,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final themeProvider = context.watch<ThemeProvider>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final currentUser = context.watch<AuthProvider>().user;
     final canDelete = _post != null &&
@@ -175,7 +175,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       body: Stack(
         children: [
           // 背景 —— 复用全局背景风格
-          _buildBackground(themeProvider, isDark),
+          _buildBackground(isDark),
           // 内容
           SafeArea(
             child: _isLoading
@@ -195,72 +195,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   // ---- 背景 ----
 
-  Widget _buildBackground(ThemeProvider themeProvider, bool isDark) {
-    final hasBg = themeProvider.hasBackground;
-
-    if (hasBg && themeProvider.backgroundImage != null) {
-      final bgPath = themeProvider.backgroundImage!;
-      final isAsset = !bgPath.startsWith('http') && !bgPath.startsWith('/');
-      return Stack(fit: StackFit.expand, children: [
-        isAsset
-            ? Image.asset('assets/images/$bgPath',
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => _buildGradientBg(isDark))
-            : bgPath.startsWith('/')
-                ? Image.file(File(bgPath),
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => _buildGradientBg(isDark))
-                : Image.network(bgPath,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => _buildGradientBg(isDark)),
-        Container(
-            color: isDark
-                ? Colors.black.withValues(alpha: 0.4)
-                : Colors.white.withValues(alpha: 0.3)),
-        if (themeProvider.backgroundBlur > 0 && themeProvider.liquidGlass)
-          BackdropFilter(
-              filter: ImageFilter.blur(
-                  sigmaX: themeProvider.backgroundBlur,
-                  sigmaY: themeProvider.backgroundBlur),
-              child: Container(color: Colors.transparent)),
-      ]);
-    }
-    return _buildGradientBg(isDark);
-  }
-
-  Widget _buildGradientBg(bool isDark) {
-    return Stack(fit: StackFit.expand, children: [
-      Image(
-        image: ResizeImage(
-          const AssetImage('assets/images/morenbeijing.jpeg'),
-          width: 1080,
-        ),
-        fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) => Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: isDark
-                  ? [
-                      const Color(0xFF1A1A2E),
-                      const Color(0xFF16213E),
-                      const Color(0xFF0F3460)
-                    ]
-                  : [
-                      const Color(0xFF667EEA),
-                      const Color(0xFF764BA2),
-                      const Color(0xFFF093FB)
-                    ],
-            ),
-          ),
-        ),
-      ),
-      Container(
-          color: isDark
-              ? Colors.black.withValues(alpha: 0.35)
-              : Colors.white.withValues(alpha: 0.25)),
-    ]);
+  Widget _buildBackground(bool isDark) {
+    return Container(
+      color: isDark ? const Color(0xFF0F131A) : const Color(0xFFF5F7FB),
+    );
   }
 
   // ---- 错误 / 空 ----
@@ -269,11 +207,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     return Center(
         child: Padding(
       padding: const EdgeInsets.all(40),
-      child: GlassContainer(
+      child: Container(
         padding: const EdgeInsets.all(28),
-        borderRadius: 20,
-        blur: 12,
-        opacity: 0.12,
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF171B24) : Colors.white,
+          borderRadius: BorderRadius.circular(20),
+        ),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           Icon(Icons.cloud_off,
               size: 48, color: isDark ? Colors.white30 : Colors.grey[400]),
@@ -407,11 +346,17 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   // ---- 作者卡片 ----
 
   Widget _buildAuthorCard(Post p, bool isDark) {
-    return GlassContainer(
+    return Container(
       padding: const EdgeInsets.all(14),
-      borderRadius: 18,
-      blur: 14,
-      opacity: 0.1,
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF171B24) : Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: isDark
+              ? Colors.white.withValues(alpha: 0.05)
+              : const Color(0xFFE8ECF4),
+        ),
+      ),
       child: Row(children: [
         CircleAvatar(
           radius: 24,
@@ -468,18 +413,19 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   // ---- 图片 ----
 
   Widget _buildHeroImage(Post p, bool isDark) {
+    final urls = _resolvedImageUrls(p);
+    if (urls.isEmpty) return const SizedBox.shrink();
     return GestureDetector(
       onTap: () => Navigator.push(
           context,
           MaterialPageRoute(
-              builder: (_) => ImageViewerScreen(
-                  imageUrls:
-                      p.images.map((e) => ApiConstants.fullUrl(e.url)).toList(),
-                  initialIndex: 0))),
+              builder: (_) =>
+                  ImageViewerScreen(imageUrls: urls, initialIndex: 0))),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(18),
         child: CachedNetworkImage(
-          imageUrl: ApiConstants.fullUrl(p.images.first.url),
+          cacheManager: PostImageCache.manager,
+          imageUrl: urls.first,
           width: double.infinity,
           fit: BoxFit.cover,
           placeholder: (_, __) => Container(
@@ -495,7 +441,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   Widget _buildImageGrid(Post p, bool isDark) {
-    final images = p.images;
+    final images = _resolvedImageUrls(p);
+    if (images.isEmpty) return const SizedBox.shrink();
     if (images.length == 1) return _buildHeroImage(p, isDark);
     final crossCount = images.length == 2 ? 2 : 3;
     final displayImages = images.length > 4 ? images.sublist(0, 4) : images;
@@ -515,13 +462,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               context,
               MaterialPageRoute(
                   builder: (_) => ImageViewerScreen(
-                      imageUrls: images
-                          .map((e) => ApiConstants.fullUrl(e.url))
-                          .toList(),
-                      initialIndex: index))),
+                      imageUrls: images, initialIndex: index))),
           child: Stack(fit: StackFit.expand, children: [
             CachedNetworkImage(
-                imageUrl: ApiConstants.fullUrl(displayImages[index].url),
+                cacheManager: PostImageCache.manager,
+                imageUrl: displayImages[index],
                 fit: BoxFit.cover,
                 placeholder: (_, __) => Container(color: Colors.grey[300]),
                 errorWidget: (_, __, ___) => Container(
@@ -558,7 +503,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         icon: Icons.chat_bubble_outline,
         color: isDark ? Colors.white38 : Colors.grey.shade500,
         label: '${_replies.length}',
-        onTap: () => _replyFocus.requestFocus(),
+        onTap: _openReplyComposer,
       ),
       IconButton(
         icon: Icon(Icons.report_outlined,
@@ -590,11 +535,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   // ---- 联系方式 ----
 
   Widget _buildContactChip(String contact, bool isDark) {
-    return GlassContainer(
+    return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      borderRadius: 14,
-      blur: 8,
-      opacity: 0.08,
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF171B24) : Colors.white,
+        borderRadius: BorderRadius.circular(14),
+      ),
       child: Row(mainAxisSize: MainAxisSize.min, children: [
         Icon(Icons.contact_phone_outlined,
             size: 16, color: isDark ? Colors.white54 : Colors.grey[600]),
@@ -677,11 +623,17 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         ),
         const SizedBox(width: 10),
         Expanded(
-          child: GlassContainer(
+          child: Container(
             padding: const EdgeInsets.all(12),
-            borderRadius: 14,
-            blur: 6,
-            opacity: 0.06,
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF171B24) : Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: isDark
+                    ? Colors.white.withValues(alpha: 0.05)
+                    : const Color(0xFFE8ECF4),
+              ),
+            ),
             child:
                 Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Row(children: [
@@ -722,6 +674,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   // ---- 回复输入 ----
 
   Widget _buildReplyBar(bool isDark) {
+    if (!_isReplyComposerOpen) return const SizedBox.shrink();
     return Container(
       margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
       decoration: BoxDecoration(
@@ -740,6 +693,29 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         child: Padding(
           padding: const EdgeInsets.fromLTRB(14, 8, 8, 8),
           child: Row(children: [
+            GestureDetector(
+              onTap: () {
+                _replyFocus.unfocus();
+                setState(() => _isReplyComposerOpen = false);
+              },
+              child: Container(
+                width: 36,
+                height: 36,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: isDark
+                      ? Colors.white10
+                      : Colors.black.withValues(alpha: 0.05),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(
+                  Icons.close,
+                  size: 18,
+                  color: isDark ? Colors.white54 : Colors.grey[700],
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
             Expanded(
               child: TextField(
                 controller: _replyController,
@@ -795,5 +771,21 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     if (diff.inHours < 24) return '${diff.inHours}小时前';
     if (diff.inDays < 7) return '${diff.inDays}天前';
     return '${dt.month}/${dt.day}';
+  }
+
+  List<String> _resolvedImageUrls(Post post) {
+    return post.images
+        .map((image) => ApiConstants.fullUrl(image.url))
+        .where((url) => url.trim().isNotEmpty)
+        .toList();
+  }
+
+  void _openReplyComposer() {
+    setState(() => _isReplyComposerOpen = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _replyFocus.requestFocus();
+      }
+    });
   }
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/teacher.dart';
+import '../widgets/glass_container.dart';
 import 'teacher_detail_screen.dart';
 
 class SubjectRankingDetailScreen extends StatelessWidget {
@@ -41,8 +42,7 @@ class SubjectRankingDetailScreen extends StatelessWidget {
       });
 
     return Scaffold(
-      backgroundColor:
-          isDark ? const Color(0xFF0F131A) : const Color(0xFFF4F6FB),
+      backgroundColor: Colors.transparent,
       appBar: AppBar(
         title: Text(subjectName),
         backgroundColor: Colors.transparent,
@@ -51,18 +51,13 @@ class SubjectRankingDetailScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
         children: [
-          Container(
+          GlassContainer(
             padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(24),
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: isDark
-                    ? const [Color(0xFF1A2040), Color(0xFF13182A)]
-                    : const [Color(0xFFE8ECFF), Color(0xFFF8F4FF)],
-              ),
-            ),
+            borderRadius: 24,
+            blur: 14,
+            opacity: 0.18,
+            backgroundColor:
+                isDark ? const Color(0xA31A2040) : const Color(0xCCE8ECFF),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -139,82 +134,71 @@ class SubjectRankingDetailScreen extends StatelessWidget {
             final index = entry.key;
             final teacher = entry.value;
             final accent = _rankColor(index);
-            return Container(
+            return GlassContainer(
               margin: const EdgeInsets.only(bottom: 12),
-              decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF171B24) : Colors.white,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(
-                  color: isDark
-                      ? Colors.white.withValues(alpha: 0.05)
-                      : const Color(0xFFE8ECF4),
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: isDark ? 0.18 : 0.04),
-                    blurRadius: 24,
-                    offset: const Offset(0, 10),
+              borderRadius: 20,
+              blur: 12,
+              opacity: 0.18,
+              backgroundColor:
+                  isDark ? const Color(0x99171B24) : const Color(0xCCFFFFFF),
+              borderColor: isDark
+                  ? Colors.white.withValues(alpha: 0.08)
+                  : Colors.white.withValues(alpha: 0.72),
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => TeacherDetailScreen(
+                    teacherId: teacher.id,
+                    teacherName: teacher.name,
                   ),
-                ],
+                ),
               ),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(20),
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => TeacherDetailScreen(
-                      teacherId: teacher.id,
-                      teacherName: teacher.name,
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 42,
+                      height: 42,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: accent.withValues(alpha: 0.14),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Text(
+                        '#${index + 1}',
+                        style: TextStyle(
+                          color: accent,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
                     ),
-                  ),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 42,
-                        height: 42,
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          color: accent.withValues(alpha: 0.14),
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        child: Text(
-                          '#${index + 1}',
-                          style: TextStyle(
-                            color: accent,
-                            fontWeight: FontWeight.w800,
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            teacher.name,
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                              color: isDark ? Colors.white : Colors.black87,
+                            ),
                           ),
-                        ),
-                      ),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              teacher.name,
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w700,
-                                color: isDark ? Colors.white : Colors.black87,
-                              ),
+                          const SizedBox(height: 6),
+                          Text(
+                            '${teacher.averageStar.toStringAsFixed(1)} 分 · ${teacher.ratingCount} 条评价',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: isDark ? Colors.white60 : Colors.black54,
                             ),
-                            const SizedBox(height: 6),
-                            Text(
-                              '${teacher.averageStar.toStringAsFixed(1)} 分 · ${teacher.ratingCount} 条评价',
-                              style: TextStyle(
-                                fontSize: 13,
-                                color: isDark ? Colors.white60 : Colors.black54,
-                              ),
-                            ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
-                      const Icon(Icons.chevron_right_rounded),
-                    ],
-                  ),
+                    ),
+                    const Icon(Icons.chevron_right_rounded),
+                  ],
                 ),
               ),
             );
@@ -230,41 +214,43 @@ class SubjectRankingDetailScreen extends StatelessWidget {
     String value,
     IconData icon,
   ) {
-    return Container(
-      constraints: const BoxConstraints(minWidth: 96),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(
-        color: isDark
-            ? Colors.white.withValues(alpha: 0.05)
+    return SizedBox(
+      child: GlassContainer(
+        width: 120,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        borderRadius: 16,
+        blur: 8,
+        opacity: 0.14,
+        backgroundColor: isDark
+            ? Colors.white.withValues(alpha: 0.06)
             : Colors.white.withValues(alpha: 0.72),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 16, color: const Color(0xFF6D5EF9)),
-          const SizedBox(width: 8),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 11,
-                  color: isDark ? Colors.white60 : Colors.black54,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 16, color: const Color(0xFF6D5EF9)),
+            const SizedBox(width: 8),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: isDark ? Colors.white60 : Colors.black54,
+                  ),
                 ),
-              ),
-              Text(
-                value,
-                style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w800,
-                  color: isDark ? Colors.white : Colors.black87,
+                Text(
+                  value,
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                    color: isDark ? Colors.white : Colors.black87,
+                  ),
                 ),
-              ),
-            ],
-          ),
-        ],
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

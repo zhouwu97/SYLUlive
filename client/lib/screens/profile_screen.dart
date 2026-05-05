@@ -342,41 +342,58 @@ class _ProfileScreenState extends State<ProfileScreen>
   }
 
   Widget _buildAdminSection(BuildContext context, user, bool isDark) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-      child: Column(
-        children: [
-          _buildAdminEntry(
-            context: context,
-            isDark: isDark,
-            icon: Icons.admin_panel_settings,
-            iconColor: Colors.red,
-            title: '管理处',
-            subtitle: '处理举报、审核教师和专业',
-            onTap: () {
-              Navigator.push(context,
-                  MaterialPageRoute(builder: (_) => const AdminPanelScreen()));
-            },
+    final auth = context.read<AuthProvider>();
+    return FutureBuilder<Map<String, int>>(
+      future: _loadAdminOverview(auth, user),
+      builder: (_, snap) {
+        final overview = snap.data ?? const {'admin': 0, 'super': 0};
+        final adminTodo = overview['admin'] ?? 0;
+        final superTodo = overview['super'] ?? 0;
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          child: Column(
+            children: [
+              _buildAdminEntry(
+                context: context,
+                isDark: isDark,
+                icon: Icons.admin_panel_settings,
+                iconColor: Colors.red,
+                title: '管理处',
+                subtitle: adminTodo > 0
+                    ? '处理举报、审核教师和专业 · $adminTodo 条待办'
+                    : '处理举报、审核教师和专业',
+                badgeText: adminTodo > 0 ? '$adminTodo' : null,
+                onTap: () {
+                  Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const AdminPanelScreen()));
+                },
+              ),
+              if (user?.isSuperAdmin == true) ...[
+                const SizedBox(height: 12),
+                _buildAdminEntry(
+                  context: context,
+                  isDark: isDark,
+                  icon: Icons.security,
+                  iconColor: Colors.deepPurple,
+                  title: '超级管理员',
+                  subtitle: superTodo > 0
+                      ? '管理用户、审批管理员邀请 · $superTodo 条待办'
+                      : '管理用户、审批管理员邀请',
+                  badgeText: superTodo > 0 ? '$superTodo' : null,
+                  onTap: () {
+                    Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => const SuperAdminScreen()));
+                  },
+                ),
+              ],
+            ],
           ),
-          if (user?.isSuperAdmin == true) ...[
-            const SizedBox(height: 12),
-            _buildAdminEntry(
-              context: context,
-              isDark: isDark,
-              icon: Icons.security,
-              iconColor: Colors.deepPurple,
-              title: '超级管理员',
-              subtitle: '管理用户、审批管理员邀请',
-              onTap: () {
-                Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                        builder: (_) => const SuperAdminScreen()));
-              },
-            ),
-          ],
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -387,6 +404,7 @@ class _ProfileScreenState extends State<ProfileScreen>
     required Color iconColor,
     required String title,
     required String subtitle,
+    String? badgeText,
     required VoidCallback onTap,
   }) {
     return GlassContainer(
@@ -427,10 +445,57 @@ class _ProfileScreenState extends State<ProfileScreen>
               ],
             ),
           ),
+          if (badgeText != null) ...[
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.red.withValues(alpha: 0.16),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                badgeText,
+                style: const TextStyle(
+                  color: Colors.red,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+          ],
           const Icon(Icons.chevron_right),
         ],
       ),
     );
+  }
+
+  Future<Map<String, int>> _loadAdminOverview(
+      AuthProvider auth, dynamic user) async {
+    Future<List<dynamic>> loadList(String path) async {
+      try {
+        final response = await auth.dio.get(path);
+        return (response.data as List?) ?? [];
+      } catch (_) {
+        return const [];
+      }
+    }
+
+    final pendingTeachers = await loadList('/teachers/pending');
+    final pendingMajors = await loadList('/majors/pending');
+    final pendingInvitations = await loadList('/admin/invitations/pending');
+    final pendingRemovals = await loadList('/admin/removals/pending');
+
+    final adminCount = pendingTeachers.length +
+        pendingMajors.length +
+        pendingInvitations.where((i) => i['my_vote'] != true).length +
+        pendingRemovals.where((r) => r['can_vote'] == true).length;
+
+    var superCount = 0;
+    if (user?.isSuperAdmin == true) {
+      final superInvitations = await loadList('/super/invitations/pending');
+      superCount = superInvitations.where((i) => i['my_vote'] != true).length;
+    }
+
+    return {'admin': adminCount, 'super': superCount};
   }
 
   Widget _buildMyContentSection(BuildContext context, bool isDark) {
@@ -1457,20 +1522,29 @@ class _ProfileScreenState extends State<ProfileScreen>
                   leading: const Icon(Icons.person_add, color: Colors.blue),
                   title: Text('${inv['inviter']?['nickname'] ?? ''} 邀请你成为管理员'),
                   subtitle: Text(
-                      '理由：${inv['reason'] ?? '未填写'}\n同意后会进入管理员代办，满 3 票后生效'),
+                      '理由：${inv['reason'] ?? '未填写'}\n${(inv['inviter']?['role'] == 'super_admin') ? '同意后将直接成为管理员' : '同意后会进入管理员代办，满 3 票后生效'}'),
                   trailing: Row(mainAxisSize: MainAxisSize.min, children: [
                     IconButton(
                         icon:
                             const Icon(Icons.check_circle, color: Colors.green),
                         onPressed: () async {
+                          final messenger = ScaffoldMessenger.of(context);
                           final res = await auth.dio
                               .post('/user/invitations/${inv['id']}/accept');
+                          if (res.data is Map &&
+                              res.data['token'] is String &&
+                              res.data['user'] is Map<String, dynamic>) {
+                            await auth.applyAuthPayload(
+                              res.data['token'] as String,
+                              res.data['user'] as Map<String, dynamic>,
+                            );
+                          }
                           final message =
                               (res.data is Map && res.data['message'] != null)
                                   ? res.data['message'].toString()
                                   : '已接受邀请';
                           if (mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                            messenger.showSnackBar(SnackBar(
                                 content: Text(message),
                                 backgroundColor: Colors.green));
                             auth.refreshUser();
@@ -1499,32 +1573,37 @@ class _ProfileScreenState extends State<ProfileScreen>
   Widget _buildAdminMembersSection(
       BuildContext context, AuthProvider auth, bool isDark) {
     return FutureBuilder(
-      future: auth.dio.get('/admin/members'),
+      future: _loadAdminMembers(auth),
       builder: (_, snap) {
         if (!snap.hasData) return const SizedBox.shrink();
-        final list = (snap.data!.data as List?) ?? [];
-        final admins = list.where((u) => u['role'] == 'admin').toList();
-        if (admins.isEmpty) return const SizedBox.shrink();
+        final list = snap.data!;
+        final staff = list
+            .where((u) => u['role'] == 'admin' || u['role'] == 'super_admin')
+            .toList();
+        if (staff.isEmpty) return const SizedBox.shrink();
         return Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: _buildSettingsCard(isDark, children: [
             Padding(
                 padding: const EdgeInsets.all(16),
-                child: Text('管理员人员 (${admins.length}人)',
+                child: Text('管理人员 (${staff.length}人)',
                     style: TextStyle(
                         fontWeight: FontWeight.bold,
                         color: isDark ? Colors.white : Colors.black87))),
-            ...admins.map((a) {
+            ...staff.map((a) {
               final isCurrentUser = a['id'] == auth.user?.id;
+              final isSuperAdmin = a['role'] == 'super_admin';
               return ListTile(
                 leading: CircleAvatar(
-                    backgroundColor: Colors.orange,
+                    backgroundColor:
+                        isSuperAdmin ? Colors.deepPurple : Colors.orange,
                     child: Text((a['nickname'] as String? ?? '?')[0])),
                 title: Text(a['nickname'] ?? ''),
-                subtitle: Text(a['student_id'] ?? ''),
+                subtitle: Text(
+                    '${a['student_id'] ?? ''}${isSuperAdmin ? ' · 超级管理员' : ' · 管理员'}'),
                 trailing: isCurrentUser
                     ? const Chip(label: Text('当前账号'))
-                    : auth.user?.isSuperAdmin == true
+                    : auth.user?.isSuperAdmin == true && !isSuperAdmin
                         ? ElevatedButton(
                             onPressed: () => _confirmRemoveAdmin(
                                 context, auth, a['id'], a['nickname']),
@@ -1541,6 +1620,20 @@ class _ProfileScreenState extends State<ProfileScreen>
         );
       },
     );
+  }
+
+  Future<List<dynamic>> _loadAdminMembers(AuthProvider auth) async {
+    try {
+      final response = await auth.dio.get('/admin/members');
+      return (response.data as List?) ?? [];
+    } on DioException catch (e) {
+      final isMissingMembersRoute = e.response?.statusCode == 404;
+      if (isMissingMembersRoute && auth.user?.isSuperAdmin == true) {
+        final fallback = await auth.dio.get('/super/users');
+        return (fallback.data as List?) ?? [];
+      }
+      rethrow;
+    }
   }
 
   void _confirmRemoveAdmin(
@@ -1596,12 +1689,12 @@ class _ProfileScreenState extends State<ProfileScreen>
                     child: const Text('取消')),
                 ElevatedButton(
                     onPressed: () async {
+                      final messenger = ScaffoldMessenger.of(context);
                       final reason = reasonCtrl.text.trim();
                       if (reason.isEmpty) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                                content: Text('请填写理由'),
-                                backgroundColor: Colors.red));
+                        messenger.showSnackBar(const SnackBar(
+                            content: Text('请填写理由'),
+                            backgroundColor: Colors.red));
                         return;
                       }
                       Navigator.pop(ctx);
@@ -1613,16 +1706,17 @@ class _ProfileScreenState extends State<ProfileScreen>
                             (res.data is Map && res.data['message'] != null)
                                 ? res.data['message'].toString()
                                 : '已提交罢免申请';
-                        if (mounted)
-                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                        if (mounted) {
+                          messenger.showSnackBar(SnackBar(
                               content: Text(message),
                               backgroundColor: Colors.green));
+                        }
                       } catch (_) {
-                        if (mounted)
-                          ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                  content: Text('提交失败'),
-                                  backgroundColor: Colors.red));
+                        if (mounted) {
+                          messenger.showSnackBar(const SnackBar(
+                              content: Text('提交失败'),
+                              backgroundColor: Colors.red));
+                        }
                       }
                     },
                     style:

@@ -95,7 +95,7 @@ func main() {
 	announcementHandler := handlers.NewAnnouncementHandler(db)
 	reportHandler := handlers.NewReportHandler(db)
 	appealHandler := handlers.NewAppealHandler(db)
-	invitationHandler := handlers.NewInvitationHandler(db)
+	invitationHandler := handlers.NewInvitationHandler(db, cfg.JWTSecret)
 	uploadHandler := handlers.NewUploadHandler(cfg.UploadDir, cfg.MaxFileSize, db)
 	superAdminHandler := handlers.NewSuperAdminHandler(db)
 	eduHandler := handlers.NewEduHandler(db)

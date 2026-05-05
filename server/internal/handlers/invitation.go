@@ -9,17 +9,19 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	"shenliyuan/internal/middleware"
 	"shenliyuan/internal/models"
 )
 
 // InvitationHandler 邀请处理器
 type InvitationHandler struct {
-	db *gorm.DB
+	db        *gorm.DB
+	jwtSecret string
 }
 
 // NewInvitationHandler 创建邀请处理器
-func NewInvitationHandler(db *gorm.DB) *InvitationHandler {
-	return &InvitationHandler{db: db}
+func NewInvitationHandler(db *gorm.DB, jwtSecret string) *InvitationHandler {
+	return &InvitationHandler{db: db, jwtSecret: jwtSecret}
 }
 
 // GetCandidates 获取管理员候选人列表
@@ -181,6 +183,40 @@ func (h *InvitationHandler) Accept(c *gin.Context) {
 	}
 
 	acceptedAt := time.Now()
+	if invitation.Inviter.Role == models.RoleSuperAdmin {
+		if err := h.db.Transaction(func(tx *gorm.DB) error {
+			if err := tx.Model(&invitation).Updates(map[string]interface{}{
+				"status":      models.InvitationStatusApproved,
+				"accepted_at": acceptedAt,
+			}).Error; err != nil {
+				return err
+			}
+			return tx.Model(&models.User{}).
+				Where("id = ?", invitation.UserID).
+				Update("role", models.RoleAdmin).Error
+		}); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "接受邀请失败"})
+			return
+		}
+
+		var updatedUser models.User
+		if err := h.db.First(&updatedUser, invitation.UserID).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "刷新用户信息失败"})
+			return
+		}
+		token, err := middleware.GenerateToken(updatedUser.ID, string(updatedUser.Role), h.jwtSecret)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "生成登录态失败"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"message": "已同意邀请，你已成为管理员",
+			"token":   token,
+			"user":    updatedUser,
+		})
+		return
+	}
+
 	if err := h.db.Model(&invitation).Updates(map[string]interface{}{
 		"status":      models.InvitationStatusAccepted,
 		"accepted_at": acceptedAt,

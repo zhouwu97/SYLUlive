@@ -6,13 +6,15 @@
 <img src="https://img.shields.io/badge/License-MIT-orange" alt="License">
 </p>
 
-## 致谢
+## 🙏 致谢
 
-在此，我要感谢学长 [atopos31](https://github.com/atopos31)。
+本项目的开发参考了以下开源项目：
 
-我目前并不了解如何接入教务系统，所以借鉴了他的项目 [syluinfo](https://github.com/sengeiou/syluinfo)。由于我平时胆子比较小，一直没有联系学长确认。如果对您造成困扰，请联系我的邮箱：**wu22402@gmail.com**，我会立即删除相关内容。
-目前该功能暂未完善，敬请期待。
-感谢学长的开源精神！
+- [syluinfo - atopos31](https://github.com/atopos31/syluinfo) - 教务系统接入参考
+- [融智云考 - luokehan](https://github.com/luokehan/yongzhiyunkao) - 题库提取功能参考
+
+感谢以上学长的开源精神！
+
 
 ## 项目简介
 

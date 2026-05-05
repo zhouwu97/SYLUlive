@@ -14,7 +14,9 @@ var majorLogDB *gorm.DB
 func SetMajorLogDB(db *gorm.DB) { majorLogDB = db }
 
 func logMajorAdmin(c *gin.Context, action, target string) {
-	if majorLogDB == nil { return }
+	if majorLogDB == nil {
+		return
+	}
 	uid, _ := c.Get("user_id")
 	var u models.User
 	majorLogDB.Select("nickname").First(&u, uid)
@@ -31,7 +33,10 @@ func NewMajorHandler(db *gorm.DB) *MajorHandler {
 
 func (h *MajorHandler) GetList(c *gin.Context) {
 	var majors []models.Major
-	h.db.Where("verified = ?", true).Order("created_at DESC").Find(&majors)
+	if err := h.db.Where("verified = ?", true).Order("created_at DESC").Find(&majors).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取专业列表失败"})
+		return
+	}
 
 	type MajorWithStats struct {
 		models.Major
@@ -82,8 +87,15 @@ func (h *MajorHandler) GetDetail(c *gin.Context) {
 	if count > 0 {
 		h.db.Model(&models.MajorRating{}).Where("major_id = ?", id).Select("AVG(CAST(star AS FLOAT))").Scan(&avg)
 	}
+	var myRating *models.MajorRating
+	if userID, exists := c.Get("user_id"); exists {
+		var rating models.MajorRating
+		if err := h.db.Where("major_id = ? AND user_id = ?", id, userID).First(&rating).Error; err == nil {
+			myRating = &rating
+		}
+	}
 	c.JSON(http.StatusOK, gin.H{
-		"major": major, "ratings": ratings, "rating_count": count, "average_star": avg,
+		"major": major, "ratings": ratings, "rating_count": count, "average_star": avg, "my_rating": myRating,
 	})
 }
 
@@ -142,14 +154,16 @@ func (h *MajorHandler) Rate(c *gin.Context) {
 func (h *MajorHandler) Verify(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	h.db.Model(&models.Major{}).Where("id = ?", id).Update("verified", true)
-	var m models.Major; h.db.First(&m, id)
+	var m models.Major
+	h.db.First(&m, id)
 	logMajorAdmin(c, "审核通过专业", m.Name)
 	c.JSON(http.StatusOK, gin.H{"message": "已审核通过"})
 }
 
 func (h *MajorHandler) Reject(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
-	var m models.Major; h.db.First(&m, id)
+	var m models.Major
+	h.db.First(&m, id)
 	h.db.Delete(&models.Major{}, id)
 	logMajorAdmin(c, "拒绝专业", m.Name)
 	c.JSON(http.StatusOK, gin.H{"message": "已拒绝"})
@@ -157,6 +171,9 @@ func (h *MajorHandler) Reject(c *gin.Context) {
 
 func (h *MajorHandler) GetPending(c *gin.Context) {
 	var majors []models.Major
-	h.db.Where("verified = ?", false).Order("created_at DESC").Find(&majors)
+	if err := h.db.Where("verified = ?", false).Order("created_at DESC").Find(&majors).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取待审核专业失败"})
+		return
+	}
 	c.JSON(http.StatusOK, majors)
 }

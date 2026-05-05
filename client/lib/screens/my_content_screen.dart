@@ -5,6 +5,7 @@ import '../models/post.dart';
 import '../providers/auth_provider.dart';
 import '../providers/post_provider.dart';
 import '../providers/theme_provider.dart';
+import '../utils/app_feedback.dart';
 import '../widgets/glass_container.dart';
 import 'post_detail_screen.dart';
 import 'dart:io' show File;
@@ -18,7 +19,8 @@ class MyContentScreen extends StatefulWidget {
   State<MyContentScreen> createState() => _MyContentScreenState();
 }
 
-class _MyContentScreenState extends State<MyContentScreen> with SingleTickerProviderStateMixin {
+class _MyContentScreenState extends State<MyContentScreen>
+    with SingleTickerProviderStateMixin {
   late TabController _tabController;
   bool _isSelectionMode = false;
   final Set<int> _selectedIds = {};
@@ -53,10 +55,11 @@ class _MyContentScreenState extends State<MyContentScreen> with SingleTickerProv
     try {
       final authProvider = context.read<AuthProvider>();
       final postProvider = context.read<PostProvider>();
-      final dio = authProvider.dio;
       final currentUserId = authProvider.user?.id;
       if (currentUserId == null) {
-        setState(() { _isLoading = false; });
+        setState(() {
+          _isLoading = false;
+        });
         return;
       }
 
@@ -71,9 +74,12 @@ class _MyContentScreenState extends State<MyContentScreen> with SingleTickerProv
       // 过滤我的帖子
       _myPosts = posts1.where((p) => p.authorId == currentUserId).toList();
       // 过滤我的集市物品
-      _myMarketPosts = posts2.where((p) => p.authorId == currentUserId).toList();
+      _myMarketPosts =
+          posts2.where((p) => p.authorId == currentUserId).toList();
 
-      setState(() { _isLoading = false; });
+      setState(() {
+        _isLoading = false;
+      });
     } catch (e) {
       setState(() {
         _isLoading = false;
@@ -111,44 +117,37 @@ class _MyContentScreenState extends State<MyContentScreen> with SingleTickerProv
   Future<void> _deleteSelected() async {
     if (_selectedIds.isEmpty) return;
 
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('确认删除'),
-        content: Text('确定要删除选中的 ${_selectedIds.length} 项内容吗？此操作不可恢复。'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('确认删除', style: TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
+    final confirmed = await AppFeedback.confirmDanger(
+      context,
+      title: '确认删除',
+      message: '确定要删除选中的 ${_selectedIds.length} 项内容吗？删除后普通用户不可见，此操作不可撤销。',
     );
 
-    if (confirmed != true) return;
+    if (!confirmed) return;
 
     final postProvider = context.read<PostProvider>();
     int deletedCount = 0;
+    final errors = <String>[];
 
     for (final id in _selectedIds.toList()) {
-      bool success = await postProvider.deletePost(id);
-      if (success) {
+      final result = await postProvider.deletePostDetailed(id);
+      if (result.success) {
         deletedCount++;
         _myPosts.removeWhere((p) => p.id == id);
         _myMarketPosts.removeWhere((p) => p.id == id);
+      } else if (result.errorMessage != null) {
+        errors.add(result.errorMessage!);
       }
     }
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('已删除 $deletedCount 项'),
-          backgroundColor: deletedCount > 0 ? Colors.green : Colors.red,
+          content: Text(errors.isEmpty
+              ? '已删除 $deletedCount 项'
+              : '已删除 $deletedCount 项，${errors.first}'),
+          backgroundColor:
+              errors.isEmpty && deletedCount > 0 ? Colors.green : Colors.red,
         ),
       );
       setState(() {
@@ -194,7 +193,8 @@ class _MyContentScreenState extends State<MyContentScreen> with SingleTickerProv
               children: [
                 // Tab栏
                 Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  margin:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   decoration: BoxDecoration(
                     color: isDark
                         ? Colors.white.withValues(alpha: 0.08)
@@ -205,12 +205,17 @@ class _MyContentScreenState extends State<MyContentScreen> with SingleTickerProv
                     controller: _tabController,
                     indicatorColor: Theme.of(context).primaryColor,
                     indicatorWeight: 3,
-                    labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                    labelStyle: const TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 13),
                     unselectedLabelStyle: const TextStyle(fontSize: 12),
                     dividerColor: Colors.transparent,
                     tabs: [
-                      Tab(text: '我的帖子${_myPosts.isEmpty ? '' : ' (${_myPosts.length})'}'),
-                      Tab(text: '我的集市${_myMarketPosts.isEmpty ? '' : ' (${_myMarketPosts.length})'}'),
+                      Tab(
+                          text:
+                              '我的帖子${_myPosts.isEmpty ? '' : ' (${_myPosts.length})'}'),
+                      Tab(
+                          text:
+                              '我的集市${_myMarketPosts.isEmpty ? '' : ' (${_myMarketPosts.length})'}'),
                     ],
                   ),
                 ),
@@ -244,16 +249,22 @@ class _MyContentScreenState extends State<MyContentScreen> with SingleTickerProv
       final isAsset = !bgPath.startsWith('http') && !bgPath.startsWith('/');
       return Stack(fit: StackFit.expand, children: [
         isAsset
-            ? Image.asset('assets/images/$bgPath', fit: BoxFit.cover,
+            ? Image.asset('assets/images/$bgPath',
+                fit: BoxFit.cover,
                 errorBuilder: (_, __, ___) => _buildDefaultBackground(isDark))
             : bgPath.startsWith('/')
-                ? Image.file(File(bgPath), fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => _buildDefaultBackground(isDark))
-                : Image.network(bgPath, fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => _buildDefaultBackground(isDark)),
-        Container(color: isDark
-            ? Colors.black.withValues(alpha: 0.4)
-            : Colors.white.withValues(alpha: 0.3)),
+                ? Image.file(File(bgPath),
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) =>
+                        _buildDefaultBackground(isDark))
+                : Image.network(bgPath,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) =>
+                        _buildDefaultBackground(isDark)),
+        Container(
+            color: isDark
+                ? Colors.black.withValues(alpha: 0.4)
+                : Colors.white.withValues(alpha: 0.3)),
       ]);
     }
     return _buildDefaultBackground(isDark);
@@ -264,7 +275,9 @@ class _MyContentScreenState extends State<MyContentScreen> with SingleTickerProv
       fit: StackFit.expand,
       children: [
         Image(
-          image: ResizeImage(const AssetImage('assets/images/morenbeijing.jpeg'), width: 1080),
+          image: ResizeImage(
+              const AssetImage('assets/images/morenbeijing.jpeg'),
+              width: 1080),
           fit: BoxFit.cover,
           errorBuilder: (_, __, ___) => Container(
             decoration: BoxDecoration(
@@ -272,13 +285,24 @@ class _MyContentScreenState extends State<MyContentScreen> with SingleTickerProv
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: isDark
-                    ? [const Color(0xFF1A1A2E), const Color(0xFF16213E), const Color(0xFF0F3460)]
-                    : [const Color(0xFF667EEA), const Color(0xFF764BA2), const Color(0xFFF093FB)],
+                    ? [
+                        const Color(0xFF1A1A2E),
+                        const Color(0xFF16213E),
+                        const Color(0xFF0F3460)
+                      ]
+                    : [
+                        const Color(0xFF667EEA),
+                        const Color(0xFF764BA2),
+                        const Color(0xFFF093FB)
+                      ],
               ),
             ),
           ),
         ),
-        Container(color: isDark ? Colors.black.withValues(alpha: 0.35) : Colors.white.withValues(alpha: 0.25)),
+        Container(
+            color: isDark
+                ? Colors.black.withValues(alpha: 0.35)
+                : Colors.white.withValues(alpha: 0.25)),
       ],
     );
   }
@@ -291,17 +315,22 @@ class _MyContentScreenState extends State<MyContentScreen> with SingleTickerProv
         blur: 12,
         opacity: 0.12,
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Icon(Icons.cloud_off, size: 48, color: isDark ? Colors.white30 : Colors.grey[400]),
+          Icon(Icons.cloud_off,
+              size: 48, color: isDark ? Colors.white30 : Colors.grey[400]),
           const SizedBox(height: 14),
-          Text(_errorMessage!, textAlign: TextAlign.center,
-            style: TextStyle(color: isDark ? Colors.white60 : Colors.grey[600], fontSize: 15)),
+          Text(_errorMessage!,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                  color: isDark ? Colors.white60 : Colors.grey[600],
+                  fontSize: 15)),
           const SizedBox(height: 18),
           OutlinedButton.icon(
             onPressed: _loadData,
             icon: const Icon(Icons.refresh, size: 18),
             label: const Text('重试'),
             style: OutlinedButton.styleFrom(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
             ),
           ),
         ]),
@@ -313,7 +342,8 @@ class _MyContentScreenState extends State<MyContentScreen> with SingleTickerProv
 
   Widget _buildPostsList(List<Post> posts, bool isDark) {
     if (posts.isEmpty) {
-      return _buildEmptyState('暂无帖子', '发布你的第一条帖子吧', Icons.article_outlined, isDark);
+      return _buildEmptyState(
+          '暂无帖子', '发布你的第一条帖子吧', Icons.article_outlined, isDark);
     }
 
     return RefreshIndicator(
@@ -348,9 +378,7 @@ class _MyContentScreenState extends State<MyContentScreen> with SingleTickerProv
                 ),
               );
             },
-      onLongPress: _isSelectionMode
-          ? null
-          : () => _onLongPressItem(post.id),
+      onLongPress: _isSelectionMode ? null : () => _onLongPressItem(post.id),
       child: Row(
         children: [
           if (_isSelectionMode) ...[
@@ -358,7 +386,8 @@ class _MyContentScreenState extends State<MyContentScreen> with SingleTickerProv
               value: isSelected,
               onChanged: (_) => _toggleSelect(post.id),
               activeColor: Theme.of(context).primaryColor,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(4)),
             ),
             const SizedBox(width: 8),
           ],
@@ -379,19 +408,27 @@ class _MyContentScreenState extends State<MyContentScreen> with SingleTickerProv
                 const SizedBox(height: 6),
                 Row(
                   children: [
-                    Icon(Icons.access_time, size: 12, color: isDark ? Colors.white38 : Colors.grey[500]),
+                    Icon(Icons.access_time,
+                        size: 12,
+                        color: isDark ? Colors.white38 : Colors.grey[500]),
                     const SizedBox(width: 4),
                     Text(
                       _formatTime(post.createdAt),
-                      style: TextStyle(fontSize: 12, color: isDark ? Colors.white38 : Colors.grey[500]),
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: isDark ? Colors.white38 : Colors.grey[500]),
                     ),
                     const SizedBox(width: 12),
                     if (post.images.isNotEmpty) ...[
-                      Icon(Icons.image, size: 12, color: isDark ? Colors.white38 : Colors.grey[500]),
+                      Icon(Icons.image,
+                          size: 12,
+                          color: isDark ? Colors.white38 : Colors.grey[500]),
                       const SizedBox(width: 4),
                       Text(
                         '${post.images.length}',
-                        style: TextStyle(fontSize: 12, color: isDark ? Colors.white38 : Colors.grey[500]),
+                        style: TextStyle(
+                            fontSize: 12,
+                            color: isDark ? Colors.white38 : Colors.grey[500]),
                       ),
                     ],
                   ],
@@ -400,7 +437,8 @@ class _MyContentScreenState extends State<MyContentScreen> with SingleTickerProv
             ),
           ),
           if (!_isSelectionMode)
-            Icon(Icons.chevron_right, color: isDark ? Colors.white30 : Colors.grey[400]),
+            Icon(Icons.chevron_right,
+                color: isDark ? Colors.white30 : Colors.grey[400]),
         ],
       ),
     );
@@ -441,13 +479,12 @@ class _MyContentScreenState extends State<MyContentScreen> with SingleTickerProv
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (_) => PostDetailScreen(postId: post.id, isMarket: true),
+                  builder: (_) =>
+                      PostDetailScreen(postId: post.id, isMarket: true),
                 ),
               );
             },
-      onLongPress: _isSelectionMode
-          ? null
-          : () => _onLongPressItem(post.id),
+      onLongPress: _isSelectionMode ? null : () => _onLongPressItem(post.id),
       child: Row(
         children: [
           if (_isSelectionMode) ...[
@@ -455,7 +492,8 @@ class _MyContentScreenState extends State<MyContentScreen> with SingleTickerProv
               value: isSelected,
               onChanged: (_) => _toggleSelect(post.id),
               activeColor: Theme.of(context).primaryColor,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(4)),
             ),
             const SizedBox(width: 8),
           ],
@@ -472,7 +510,8 @@ class _MyContentScreenState extends State<MyContentScreen> with SingleTickerProv
                   width: 60,
                   height: 60,
                   color: isDark ? Colors.white12 : Colors.grey[200],
-                  child: Icon(Icons.image, color: isDark ? Colors.white30 : Colors.grey[400]),
+                  child: Icon(Icons.image,
+                      color: isDark ? Colors.white30 : Colors.grey[400]),
                 ),
               ),
             ),
@@ -512,11 +551,15 @@ class _MyContentScreenState extends State<MyContentScreen> with SingleTickerProv
                 const SizedBox(height: 4),
                 Row(
                   children: [
-                    Icon(Icons.access_time, size: 12, color: isDark ? Colors.white38 : Colors.grey[500]),
+                    Icon(Icons.access_time,
+                        size: 12,
+                        color: isDark ? Colors.white38 : Colors.grey[500]),
                     const SizedBox(width: 4),
                     Text(
                       _formatTime(post.createdAt),
-                      style: TextStyle(fontSize: 12, color: isDark ? Colors.white38 : Colors.grey[500]),
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: isDark ? Colors.white38 : Colors.grey[500]),
                     ),
                   ],
                 ),
@@ -524,7 +567,8 @@ class _MyContentScreenState extends State<MyContentScreen> with SingleTickerProv
             ),
           ),
           if (!_isSelectionMode)
-            Icon(Icons.chevron_right, color: isDark ? Colors.white30 : Colors.grey[400]),
+            Icon(Icons.chevron_right,
+                color: isDark ? Colors.white30 : Colors.grey[400]),
         ],
       ),
     );
@@ -563,12 +607,14 @@ class _MyContentScreenState extends State<MyContentScreen> with SingleTickerProv
       ),
       child: Text(
         label,
-        style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w500),
+        style:
+            TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w500),
       ),
     );
   }
 
-  Widget _buildEmptyState(String title, String subtitle, IconData icon, bool isDark) {
+  Widget _buildEmptyState(
+      String title, String subtitle, IconData icon, bool isDark) {
     return Center(
       child: GlassContainer(
         padding: const EdgeInsets.all(32),
@@ -578,16 +624,23 @@ class _MyContentScreenState extends State<MyContentScreen> with SingleTickerProv
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 64, color: isDark ? Colors.white60 : Colors.grey[400]),
+            Icon(icon,
+                size: 64, color: isDark ? Colors.white60 : Colors.grey[400]),
             const SizedBox(height: 16),
             Text(
               title,
-              style: TextStyle(fontSize: 18, color: isDark ? Colors.white70 : Colors.grey[600]),
+              style: TextStyle(
+                  fontSize: 18,
+                  color: isDark ? Colors.white70 : Colors.grey[600]),
             ),
             const SizedBox(height: 8),
             Text(
               subtitle,
-              style: TextStyle(fontSize: 14, color: isDark ? Colors.white.withOpacity(0.4) : Colors.grey[400]),
+              style: TextStyle(
+                  fontSize: 14,
+                  color: isDark
+                      ? Colors.white.withOpacity(0.4)
+                      : Colors.grey[400]),
             ),
           ],
         ),
@@ -605,4 +658,3 @@ class _MyContentScreenState extends State<MyContentScreen> with SingleTickerProv
     return '${dt.month}/${dt.day}';
   }
 }
-

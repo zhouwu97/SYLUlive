@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../main.dart';
@@ -16,102 +18,193 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   int _currentIndex = 0;
   late PageController _pageController;
-  bool _checkedAnnouncements = false;
+  Timer? _announcementTimer;
+  String? _announcementAuthKey;
+  bool _isCheckingAnnouncements = false;
+  bool _announcementDialogOpen = false;
+  final Set<int> _dismissedAnnouncementIds = {};
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _pageController = PageController(initialPage: 0);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _syncAnnouncementPolling(context.read<AuthProvider>());
+      }
+    });
   }
 
-  void _checkUnreadAnnouncements() async {
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _checkUnreadAnnouncements();
+    }
+  }
+
+  void _syncAnnouncementPolling(AuthProvider auth) {
+    final authKey = auth.isLoggedIn ? '${auth.user?.id}:${auth.token}' : null;
+    if (_announcementAuthKey == authKey) return;
+
+    _announcementAuthKey = authKey;
+    _dismissedAnnouncementIds.clear();
+    _announcementTimer?.cancel();
+    _announcementTimer = null;
+
+    if (authKey == null) return;
+
+    _checkUnreadAnnouncements();
+    _announcementTimer = Timer.periodic(
+      const Duration(seconds: 60),
+      (_) => _checkUnreadAnnouncements(),
+    );
+  }
+
+  Future<void> _checkUnreadAnnouncements() async {
+    if (!mounted || _isCheckingAnnouncements || _announcementDialogOpen) return;
+
     final auth = context.read<AuthProvider>();
-    if (!auth.isLoggedIn) { _checkedAnnouncements = false; return; }
-    if (_checkedAnnouncements) return;
-    _checkedAnnouncements = true;
+    if (!auth.isLoggedIn) {
+      _syncAnnouncementPolling(auth);
+      return;
+    }
+
+    _isCheckingAnnouncements = true;
     try {
       final resp = await auth.dio.get('/announcements/unread');
-      final list = resp.data as List? ?? [];
+      final list = ((resp.data as List?) ?? [])
+          .where((item) =>
+              !_dismissedAnnouncementIds.contains(_announcementId(item)))
+          .toList();
       if (list.isEmpty || !mounted) return;
-      _showAnnouncementDialog(list);
-    } catch (_) { _checkedAnnouncements = false; }
+      await _showAnnouncementDialog(list);
+    } catch (e) {
+      debugPrint('检查未读公告失败: $e');
+    } finally {
+      _isCheckingAnnouncements = false;
+    }
   }
 
-  void _showAnnouncementDialog(List unread) {
+  int _announcementId(dynamic announcement) {
+    final id = announcement is Map ? announcement['id'] : null;
+    if (id is int) return id;
+    if (id is num) return id.toInt();
+    return int.tryParse(id?.toString() ?? '') ?? -1;
+  }
+
+  Future<void> _showAnnouncementDialog(List unread) async {
+    _announcementDialogOpen = true;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     int current = 0;
-    final pageCtrl = PageController();
 
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => StatefulBuilder(builder: (ctx, setLocal) {
-        final a = unread[current];
-        return Dialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              Row(children: [
-                Expanded(child: Text(a['title'] ?? '公告', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold))),
-                if (unread.length > 1) Text('${current + 1}/${unread.length}', style: TextStyle(color: Colors.grey)),
-                const Spacer(),
-                GestureDetector(
-                  onTap: () => Navigator.pop(ctx),
-                  child: Icon(Icons.close, color: isDark ? Colors.white54 : Colors.grey[600]),
-                ),
-              ]),
-              const SizedBox(height: 12),
-              Container(
-                constraints: const BoxConstraints(maxHeight: 300),
-                child: SingleChildScrollView(
-                  child: Text(a['content'] ?? '', style: TextStyle(fontSize: 14, height: 1.6, color: isDark ? Colors.white70 : Colors.grey[800])),
-                ),
-              ),
-              const SizedBox(height: 20),
-              Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                if (unread.length > 1)
-                  TextButton(onPressed: current > 0 ? () { setLocal(() => current--); } : null, child: const Text('上一条'))
-                else const Spacer(),
-                ElevatedButton.icon(
-                  onPressed: () async {
-                    // 标记已读
-                    try {
-                      await context.read<AuthProvider>().dio.post('/announcements/${a['id']}/read');
-                    } catch (_) {}
-                    if (current < unread.length - 1) {
-                      setLocal(() => current++);
-                    } else {
-                      if (ctx.mounted) Navigator.pop(ctx);
-                    }
-                  },
-                  icon: const Icon(Icons.check, size: 18),
-                  label: const Text('已阅读'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Theme.of(context).primaryColor,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+    bool? readAll;
+    try {
+      readAll = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => StatefulBuilder(builder: (ctx, setLocal) {
+          final a = unread[current];
+          return Dialog(
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                Row(children: [
+                  Expanded(
+                      child: Text(a['title'] ?? '公告',
+                          style: const TextStyle(
+                              fontSize: 18, fontWeight: FontWeight.bold))),
+                  if (unread.length > 1)
+                    Text('${current + 1}/${unread.length}',
+                        style: const TextStyle(color: Colors.grey)),
+                  const Spacer(),
+                  GestureDetector(
+                    onTap: () => Navigator.pop(ctx, false),
+                    child: Icon(Icons.close,
+                        color: isDark ? Colors.white54 : Colors.grey[600]),
+                  ),
+                ]),
+                const SizedBox(height: 12),
+                Container(
+                  constraints: const BoxConstraints(maxHeight: 300),
+                  child: SingleChildScrollView(
+                    child: Text(a['content'] ?? '',
+                        style: TextStyle(
+                            fontSize: 14,
+                            height: 1.6,
+                            color: isDark ? Colors.white70 : Colors.grey[800])),
                   ),
                 ),
+                const SizedBox(height: 20),
+                Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      if (unread.length > 1)
+                        TextButton(
+                            onPressed: current > 0
+                                ? () {
+                                    setLocal(() => current--);
+                                  }
+                                : null,
+                            child: const Text('上一条'))
+                      else
+                        const Spacer(),
+                      ElevatedButton.icon(
+                        onPressed: () async {
+                          // 标记已读
+                          try {
+                            await context
+                                .read<AuthProvider>()
+                                .dio
+                                .post('/announcements/${a['id']}/read');
+                          } catch (_) {}
+                          if (current < unread.length - 1) {
+                            setLocal(() => current++);
+                          } else {
+                            if (ctx.mounted) Navigator.pop(ctx, true);
+                          }
+                        },
+                        icon: const Icon(Icons.check, size: 18),
+                        label: const Text('已阅读'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Theme.of(context).primaryColor,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10)),
+                        ),
+                      ),
+                    ]),
               ]),
-            ]),
-          ),
-        );
-      }),
-    );
+            ),
+          );
+        }),
+      );
+    } finally {
+      _announcementDialogOpen = false;
+    }
+
+    if (readAll != true) {
+      _dismissedAnnouncementIds.addAll(unread.map(_announcementId));
+    }
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _announcementTimer?.cancel();
     _pageController.dispose();
     super.dispose();
   }
 
   void _onTabTapped(int index) {
-    _pageController.animateToPage(index, duration: const Duration(milliseconds: 350), curve: Curves.easeOutCubic);
+    _pageController.animateToPage(index,
+        duration: const Duration(milliseconds: 350),
+        curve: Curves.easeOutCubic);
   }
 
   void _onPageChanged(int index) {
@@ -123,7 +216,11 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final authProvider = context.watch<AuthProvider>();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _checkUnreadAnnouncements());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _syncAnnouncementPolling(authProvider);
+      }
+    });
 
     return Scaffold(
       backgroundColor: Colors.transparent,

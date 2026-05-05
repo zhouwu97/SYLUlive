@@ -77,8 +77,23 @@ class _MajorDetailScreenState extends State<MajorDetailScreen> {
     if (!auth.isLoggedIn) return const Card(child: Padding(padding: EdgeInsets.all(16), child: Center(child: Text('请先登录后评价'))));
     return Card(color: isDark ? Colors.grey[850] : Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(padding: const EdgeInsets.all(16), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [Text('我的评价', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: isDark ? Colors.white : Colors.black87)), const Spacer(), if (!_editing) TextButton(onPressed: () => setState(() => _editing = true), child: const Text('打分'))]),
-        if (!_editing) ...[
+        Row(children: [
+          Text('我的评价', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: isDark ? Colors.white : Colors.black87)),
+          const Spacer(),
+          if (!_editing)
+            TextButton(onPressed: () => setState(() {
+              _editing = true;
+              if (m.myRating != null) {
+                _star = m.myRating!.star;
+                _commentCtrl.text = m.myRating!.comment;
+              }
+            }), child: Text(m.myRating == null ? '打分' : '修改')),
+        ]),
+        if (!_editing && m.myRating != null) ...[
+          _stars(m.myRating!.star.toDouble(), 28),
+          if (m.myRating!.comment.isNotEmpty)
+            Padding(padding: const EdgeInsets.only(top: 6), child: Text(m.myRating!.comment, style: TextStyle(color: isDark ? Colors.grey[300] : Colors.grey[700]))),
+        ] else if (!_editing) ...[
           const Text('点击打分按钮进行评价', style: TextStyle(color: Colors.grey)),
         ] else ...[
           Row(children: List.generate(5, (i) => GestureDetector(onTap: () => setState(() => _star = i + 1), child: Icon(i < _star ? Icons.star : Icons.star_border, size: 36, color: i < _star ? Colors.amber : Colors.grey[400])))),
@@ -90,7 +105,7 @@ class _MajorDetailScreenState extends State<MajorDetailScreen> {
             ElevatedButton(onPressed: _star == 0 ? null : () async {
               await m.rate(widget.majorId, _star, _commentCtrl.text);
               if (mounted) setState(() => _editing = false);
-            }, child: const Text('提交')),
+            }, child: Text(m.myRating == null ? '提交' : '更新')),
           ]),
         ],
       ])),

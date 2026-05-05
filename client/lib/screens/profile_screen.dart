@@ -1,15 +1,18 @@
 import 'dart:io';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:image_picker/image_picker.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/edu_provider.dart';
+import '../utils/app_feedback.dart';
 import '../widgets/glass_container.dart';
 import '../config/api_constants.dart';
 import 'edu_screen.dart';
@@ -17,7 +20,7 @@ import 'exam_extract_screen.dart';
 import 'login_screen.dart';
 import 'my_content_screen.dart';
 import 'admin_panel_screen.dart';
-import 'exam_extract_screen.dart';
+import 'super_admin_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -26,7 +29,8 @@ class ProfileScreen extends StatefulWidget {
   State<ProfileScreen> createState() => _ProfileScreenState();
 }
 
-class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProviderStateMixin {
+class _ProfileScreenState extends State<ProfileScreen>
+    with SingleTickerProviderStateMixin {
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
 
@@ -82,15 +86,20 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
 
                 // 管理入口（仅管理员可见）
                 if (user?.isAdmin == true)
-                  SliverToBoxAdapter(child: _buildAdminSection(context, isDark)),
+                  SliverToBoxAdapter(
+                      child: _buildAdminSection(context, user, isDark)),
 
                 // 收到邀请（所有用户）
                 if (authProvider.isLoggedIn)
-                  SliverToBoxAdapter(child: _buildInvitationSection(context, authProvider, isDark)),
+                  SliverToBoxAdapter(
+                      child: _buildInvitationSection(
+                          context, authProvider, isDark)),
 
                 // 管理员人员（管理员可见）
                 if (user?.isAdmin == true)
-                  SliverToBoxAdapter(child: _buildAdminMembersSection(context, authProvider, isDark)),
+                  SliverToBoxAdapter(
+                      child: _buildAdminMembersSection(
+                          context, authProvider, isDark)),
 
                 // 教务版块（绑定状态 + 题库入口）
                 SliverToBoxAdapter(
@@ -104,7 +113,8 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
 
                 // 设置区域
                 SliverToBoxAdapter(
-                  child: _buildSettingsSection(context, themeProvider, authProvider, isDark),
+                  child: _buildSettingsSection(
+                      context, themeProvider, authProvider, isDark),
                 ),
 
                 const SliverToBoxAdapter(
@@ -123,7 +133,9 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
       fit: StackFit.expand,
       children: [
         Image(
-          image: ResizeImage(const AssetImage('assets/images/morenbeijing.jpeg'), width: 1080),
+          image: ResizeImage(
+              const AssetImage('assets/images/morenbeijing.jpeg'),
+              width: 1080),
           fit: BoxFit.cover,
           errorBuilder: (_, __, ___) => Container(
             decoration: BoxDecoration(
@@ -131,13 +143,24 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: isDark
-                    ? [const Color(0xFF1A1A2E), const Color(0xFF16213E), const Color(0xFF0F3460)]
-                    : [const Color(0xFF667EEA), const Color(0xFF764BA2), const Color(0xFFF093FB)],
+                    ? [
+                        const Color(0xFF1A1A2E),
+                        const Color(0xFF16213E),
+                        const Color(0xFF0F3460)
+                      ]
+                    : [
+                        const Color(0xFF667EEA),
+                        const Color(0xFF764BA2),
+                        const Color(0xFFF093FB)
+                      ],
               ),
             ),
           ),
         ),
-        Container(color: isDark ? Colors.black.withValues(alpha: 0.35) : Colors.white.withValues(alpha: 0.25)),
+        Container(
+            color: isDark
+                ? Colors.black.withValues(alpha: 0.35)
+                : Colors.white.withValues(alpha: 0.25)),
       ],
     );
   }
@@ -153,10 +176,12 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
               if (authProvider.isLoggedIn) {
                 _showAvatarOptions(context, authProvider);
               } else {
-                Navigator.push(context, PageRouteBuilder(
-                  opaque: false,
-                  pageBuilder: (_, __, ___) => LoginScreen(),
-                ));
+                Navigator.push(
+                    context,
+                    PageRouteBuilder(
+                      opaque: false,
+                      pageBuilder: (_, __, ___) => LoginScreen(),
+                    ));
               }
             },
             child: GlassContainer(
@@ -188,12 +213,15 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                 child: user?.avatar.isNotEmpty == true
                     ? ClipOval(
                         child: GestureDetector(
-                          onLongPress: () => _showAvatarPreview(context, ApiConstants.fullUrl(user!.avatar)),
+                          onLongPress: () => _showAvatarPreview(
+                              context, ApiConstants.fullUrl(user!.avatar)),
                           child: CachedNetworkImage(
                             imageUrl: ApiConstants.fullUrl(user!.avatar),
                             fit: BoxFit.cover,
-                            placeholder: (_, __) => _buildAvatarPlaceholder(user),
-                            errorWidget: (_, __, ___) => _buildAvatarPlaceholder(user),
+                            placeholder: (_, __) =>
+                                _buildAvatarPlaceholder(user),
+                            errorWidget: (_, __, ___) =>
+                                _buildAvatarPlaceholder(user),
                             memCacheWidth: 256,
                           ),
                         ),
@@ -207,14 +235,18 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
 
           GestureDetector(
             onTap: () {
-              if (authProvider.isLoggedIn) _showEditProfileDialog(context, authProvider);
+              if (authProvider.isLoggedIn)
+                _showEditProfileDialog(context, authProvider);
             },
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
                   user?.nickname ?? '未登录',
-                  style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.white),
+                  style: const TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white),
                 ),
                 if (authProvider.isLoggedIn) ...[
                   const SizedBox(width: 6),
@@ -254,8 +286,8 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                 const SizedBox(width: 12),
                 _buildStatBadge(
                   icon: Icons.admin_panel_settings,
-                  label: user!.isSuperAdmin ? '超管' : '管理员',
-                  value: 'exp: ${user.adminExp}',
+                  label: user!.isSuperAdmin ? '超级管理员' : '管理员',
+                  value: '经验 ${user.adminExp}',
                   color: Colors.orange,
                 ),
               ],
@@ -270,12 +302,17 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     return Center(
       child: Text(
         user?.nickname?.substring(0, 1).toUpperCase() ?? '?',
-        style: const TextStyle(fontSize: 48, fontWeight: FontWeight.bold, color: Colors.white),
+        style: const TextStyle(
+            fontSize: 48, fontWeight: FontWeight.bold, color: Colors.white),
       ),
     );
   }
 
-  Widget _buildStatBadge({required IconData icon, required String label, required String value, required Color color}) {
+  Widget _buildStatBadge(
+      {required IconData icon,
+      required String label,
+      required String value,
+      required Color color}) {
     return GlassContainer(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       borderRadius: 25,
@@ -290,8 +327,13 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(label, style: const TextStyle(fontSize: 10, color: Colors.white60)),
-              Text(value, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.black87)),
+              Text(label,
+                  style: const TextStyle(fontSize: 10, color: Colors.black87)),
+              Text(value,
+                  style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black87)),
             ],
           ),
         ],
@@ -299,47 +341,94 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     );
   }
 
-  Widget _buildAdminSection(BuildContext context, bool isDark) {
+  Widget _buildAdminSection(BuildContext context, user, bool isDark) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-      child: GlassContainer(
-        padding: const EdgeInsets.all(16),
-        borderRadius: 16,
-        blur: 10,
-        opacity: 0.15,
-        gradientColors: isDark ? [Colors.red[800]!, Colors.red[900]!] : [Colors.red[50]!, Colors.red[100]!],
-        onTap: () {
-          Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminPanelScreen()));
-        },
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.red.withOpacity(0.2),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Icon(Icons.admin_panel_settings, color: Colors.red, size: 28),
+      child: Column(
+        children: [
+          _buildAdminEntry(
+            context: context,
+            isDark: isDark,
+            icon: Icons.admin_panel_settings,
+            iconColor: Colors.red,
+            title: '管理处',
+            subtitle: '处理举报、审核教师和专业',
+            onTap: () {
+              Navigator.push(context,
+                  MaterialPageRoute(builder: (_) => const AdminPanelScreen()));
+            },
+          ),
+          if (user?.isSuperAdmin == true) ...[
+            const SizedBox(height: 12),
+            _buildAdminEntry(
+              context: context,
+              isDark: isDark,
+              icon: Icons.security,
+              iconColor: Colors.deepPurple,
+              title: '超级管理员',
+              subtitle: '管理用户、审批管理员邀请',
+              onTap: () {
+                Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => const SuperAdminScreen()));
+              },
             ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    '管理处',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-                  ),
-                  Text(
-                    '处理举报、审核内容',
-                    style: TextStyle(fontSize: 13, color: isDark ? Colors.white60 : Colors.grey[600]),
-                  ),
-                ],
-              ),
-            ),
-            const Icon(Icons.chevron_right),
           ],
-        ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAdminEntry({
+    required BuildContext context,
+    required bool isDark,
+    required IconData icon,
+    required Color iconColor,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return GlassContainer(
+      padding: const EdgeInsets.all(16),
+      borderRadius: 16,
+      blur: 10,
+      opacity: 0.15,
+      gradientColors: isDark
+          ? [Colors.red[800]!, Colors.red[900]!]
+          : [Colors.red[50]!, Colors.red[100]!],
+      onTap: onTap,
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: iconColor.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, color: iconColor, size: 28),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                      fontSize: 18, fontWeight: FontWeight.w600),
+                ),
+                Text(
+                  subtitle,
+                  style: TextStyle(
+                      fontSize: 13,
+                      color: isDark ? Colors.white60 : Colors.grey[600]),
+                ),
+              ],
+            ),
+          ),
+          const Icon(Icons.chevron_right),
+        ],
       ),
     );
   }
@@ -418,9 +507,13 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                     ? '${eduProvider.studentId} | ${eduProvider.college}'
                     : '绑定后可查询课表、成绩',
                 isDark: isDark,
-                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const EduScreen())),
+                onTap: () => Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => const EduScreen())),
               ),
-              Divider(height: 1, indent: 68, color: isDark ? Colors.white10 : Colors.grey[200]),
+              Divider(
+                  height: 1,
+                  indent: 68,
+                  color: isDark ? Colors.white10 : Colors.grey[200]),
               // 题库入口
               _buildSettingsTile(
                 icon: Icons.auto_stories,
@@ -431,7 +524,8 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                 onTap: () {
                   Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (_) => const ExamExtractScreen()),
+                    MaterialPageRoute(
+                        builder: (_) => const ExamExtractScreen()),
                   );
                 },
               ),
@@ -443,7 +537,8 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     );
   }
 
-  Widget _buildSettingsSection(BuildContext context, ThemeProvider themeProvider, AuthProvider authProvider, bool isDark) {
+  Widget _buildSettingsSection(BuildContext context,
+      ThemeProvider themeProvider, AuthProvider authProvider, bool isDark) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -460,14 +555,17 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                 isDark: isDark,
                 onTap: () => _showBackgroundPicker(context, themeProvider),
               ),
-              Divider(height: 1, indent: 68, color: isDark ? Colors.white10 : Colors.grey[200]),
+              Divider(
+                  height: 1,
+                  indent: 68,
+                  color: isDark ? Colors.white10 : Colors.grey[200]),
               _buildSettingsTile(
                 icon: Icons.opacity,
                 iconColor: Colors.teal,
                 title: '组件透明度',
                 trailing: SizedBox(
                   width: 150,
-                    child: Slider(
+                  child: Slider(
                     value: themeProvider.componentOpacity,
                     min: 0.0,
                     max: 1.0,
@@ -477,7 +575,10 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                 ),
                 isDark: isDark,
               ),
-              Divider(height: 1, indent: 68, color: isDark ? Colors.white10 : Colors.grey[200]),
+              Divider(
+                  height: 1,
+                  indent: 68,
+                  color: isDark ? Colors.white10 : Colors.grey[200]),
               _buildSettingsTile(
                 icon: Icons.restore,
                 iconColor: Colors.orange,
@@ -504,12 +605,16 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                 title: '液态玻璃效果',
                 trailing: Switch(
                   value: themeProvider.liquidGlass,
-                  onChanged: (v) => _showLiquidGlassWarningDialog(context, themeProvider, v),
+                  onChanged: (v) =>
+                      _showLiquidGlassWarningDialog(context, themeProvider, v),
                   activeColor: Theme.of(context).primaryColor,
                 ),
                 isDark: isDark,
               ),
-              Divider(height: 1, indent: 68, color: isDark ? Colors.white10 : Colors.grey[200]),
+              Divider(
+                  height: 1,
+                  indent: 68,
+                  color: isDark ? Colors.white10 : Colors.grey[200]),
               _buildSettingsTile(
                 icon: Icons.navigation,
                 iconColor: Colors.orange,
@@ -521,7 +626,10 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                 ),
                 isDark: isDark,
               ),
-              Divider(height: 1, indent: 68, color: isDark ? Colors.white10 : Colors.grey[200]),
+              Divider(
+                  height: 1,
+                  indent: 68,
+                  color: isDark ? Colors.white10 : Colors.grey[200]),
               _buildSettingsTile(
                 icon: Icons.dark_mode,
                 iconColor: isDark ? Colors.indigo : Colors.indigo,
@@ -552,7 +660,10 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                 isDark: isDark,
                 onTap: () => _showEditProfileDialog(context, authProvider),
               ),
-              Divider(height: 1, indent: 68, color: isDark ? Colors.white10 : Colors.grey[200]),
+              Divider(
+                  height: 1,
+                  indent: 68,
+                  color: isDark ? Colors.white10 : Colors.grey[200]),
               _buildSettingsTile(
                 icon: Icons.lock,
                 iconColor: Colors.orange,
@@ -560,7 +671,10 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                 isDark: isDark,
                 onTap: () => _showChangePasswordDialog(context, authProvider),
               ),
-              Divider(height: 1, indent: 68, color: isDark ? Colors.white10 : Colors.grey[200]),
+              Divider(
+                  height: 1,
+                  indent: 68,
+                  color: isDark ? Colors.white10 : Colors.grey[200]),
               _buildSettingsTile(
                 icon: Icons.info,
                 iconColor: Colors.blue,
@@ -584,9 +698,11 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                 label: const Text('检查更新'),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: isDark ? Colors.white70 : Colors.grey[700],
-                  side: BorderSide(color: isDark ? Colors.white24 : Colors.grey[300]!),
+                  side: BorderSide(
+                      color: isDark ? Colors.white24 : Colors.grey[300]!),
                   padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16)),
                 ),
               ),
             ),
@@ -604,53 +720,126 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
               },
             ),
           ),
+        ],
       ],
-    ],
     );
   }
 
   Future<void> _checkUpdate(BuildContext context) async {
+    const giteeUrl = 'https://gitee.com/chunhezi/SYLUlive/releases';
+    const githubUrl = 'https://github.com/zhouwu97/SYLUlive/releases';
     try {
       final dio = context.read<AuthProvider>().dio;
+      final packageInfo = await PackageInfo.fromPlatform();
       final resp = await dio.get('/version');
       if (resp.statusCode == 200) {
-        final data = resp.data;
-        final version = data['version'] ?? '';
+        final data = resp.data is Map ? resp.data as Map : <String, dynamic>{};
+        final latestVersion = data['version']?.toString() ?? '';
         final forceUpdate = data['force_update'] ?? false;
-        final downloadUrl = data['download_url'] ?? 'https://gitee.com/chunhezi/SYLUlive/releases';
+        final giteeDownloadUrl =
+            data['gitee_download_url']?.toString().trim().isNotEmpty == true
+                ? data['gitee_download_url'].toString()
+                : giteeUrl;
+        final githubDownloadUrl =
+            data['github_download_url']?.toString().trim().isNotEmpty == true
+                ? data['github_download_url'].toString()
+                : (data['download_url']?.toString().trim().isNotEmpty == true
+                    ? data['download_url'].toString()
+                    : githubUrl);
         final updateMsg = data['update_msg'] ?? '新版本可用';
+        final currentVersion = packageInfo.version;
+        final hasUpdate =
+            forceUpdate || _isRemoteVersionNewer(latestVersion, currentVersion);
 
         if (!context.mounted) return;
         showDialog(
           context: context,
+          barrierDismissible: !forceUpdate,
           builder: (ctx) => AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-            title: const Row(children: [
-              Icon(Icons.system_update, color: Colors.blue),
-              SizedBox(width: 8),
-              Text('版本检查'),
-            ]),
-            content: Text('当前服务器版本: $version\n$updateMsg', style: const TextStyle(height: 1.5)),
-            actions: [
-              if (!forceUpdate)
-                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('稍后')),
-              ElevatedButton.icon(
-                onPressed: () {
-                  launchUrl(Uri.parse(downloadUrl), mode: LaunchMode.externalApplication);
-                },
-                icon: const Icon(Icons.download, size: 18),
-                label: const Text('下载更新'),
-                style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).primaryColor, foregroundColor: Colors.white),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: Row(children: [
+              Icon(
+                hasUpdate ? Icons.system_update : Icons.verified_outlined,
+                color: hasUpdate ? Colors.blue : Colors.green,
               ),
+              const SizedBox(width: 8),
+              Text(hasUpdate ? '发现新版本' : '已是最新版'),
+            ]),
+            content: Text(
+              hasUpdate
+                  ? '当前版本: $currentVersion\n最新版本: $latestVersion\n$updateMsg\n\n请选择下载来源。'
+                  : '当前版本: $currentVersion\n服务器版本: ${latestVersion.isEmpty ? '未知' : latestVersion}\n当前已是最新版本。',
+              style: const TextStyle(height: 1.5),
+            ),
+            actions: [
+              if (!hasUpdate || !forceUpdate)
+                TextButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    child: Text(hasUpdate ? '稍后' : '关闭')),
+              if (hasUpdate)
+                OutlinedButton.icon(
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    launchUrl(Uri.parse(giteeDownloadUrl),
+                        mode: LaunchMode.externalApplication);
+                  },
+                  icon: const Icon(Icons.cloud_download_outlined, size: 18),
+                  label: const Text('Gitee下载'),
+                ),
+              if (hasUpdate)
+                ElevatedButton.icon(
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    launchUrl(Uri.parse(githubDownloadUrl),
+                        mode: LaunchMode.externalApplication);
+                  },
+                  icon: const Icon(Icons.download, size: 18),
+                  label: const Text('GitHub下载'),
+                  style: ElevatedButton.styleFrom(
+                      backgroundColor: Theme.of(context).primaryColor,
+                      foregroundColor: Colors.white),
+                ),
             ],
           ),
         );
       }
-    } catch (_) {
+    } on DioException catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('检查失败，请检查网络'), backgroundColor: Colors.red));
+        AppFeedback.showSnackBar(
+          context,
+          AppFeedback.dioErrorMessage(e, fallback: '检查更新失败'),
+          isError: true,
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        AppFeedback.showSnackBar(context, '检查更新失败: $e', isError: true);
       }
     }
+  }
+
+  bool _isRemoteVersionNewer(String remote, String current) {
+    final remoteParts = _parseVersion(remote);
+    final currentParts = _parseVersion(current);
+    final maxLength = remoteParts.length > currentParts.length
+        ? remoteParts.length
+        : currentParts.length;
+    for (var i = 0; i < maxLength; i++) {
+      final r = i < remoteParts.length ? remoteParts[i] : 0;
+      final c = i < currentParts.length ? currentParts[i] : 0;
+      if (r > c) return true;
+      if (r < c) return false;
+    }
+    return false;
+  }
+
+  List<int> _parseVersion(String version) {
+    final normalized = version.trim().replaceFirst(RegExp(r'^[vV]'), '');
+    return normalized
+        .split(RegExp(r'[.+-]'))
+        .map((part) => int.tryParse(part) ?? 0)
+        .toList();
   }
 
   Widget _buildSettingsCard(bool isDark, {required List<Widget> children}) {
@@ -701,11 +890,14 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
               ),
               if (subtitle != null)
                 Text(subtitle,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(color: isDark ? Colors.white60 : Colors.grey[600], fontSize: 13)),
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        color: isDark ? Colors.white60 : Colors.grey[600],
+                        fontSize: 13)),
               if (trailing != null) trailing,
               if (trailing == null && onTap != null)
-                Icon(Icons.chevron_right, color: isDark ? Colors.white30 : Colors.grey[400]),
+                Icon(Icons.chevron_right,
+                    color: isDark ? Colors.white30 : Colors.grey[400]),
             ],
           ),
         ),
@@ -713,7 +905,8 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     );
   }
 
-  void _showBackgroundPicker(BuildContext context, ThemeProvider themeProvider) {
+  void _showBackgroundPicker(
+      BuildContext context, ThemeProvider themeProvider) {
     final backgrounds = [
       'bg-mobile.png',
       'https://images.unsplash.com/photo-1579546929518-9e396f3cc809?w=800',
@@ -736,7 +929,8 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('选择背景', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+            const Text('选择背景',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
             const SizedBox(height: 16),
             Row(
               children: [
@@ -748,10 +942,13 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                       itemCount: backgrounds.length,
                       itemBuilder: (context, index) {
                         final isAsset = !backgrounds[index].startsWith('http');
-                        final imagePath = isAsset ? 'assets/images/${backgrounds[index]}' : backgrounds[index];
+                        final imagePath = isAsset
+                            ? 'assets/images/${backgrounds[index]}'
+                            : backgrounds[index];
                         return GestureDetector(
                           onTap: () {
-                            themeProvider.setBackgroundImage(backgrounds[index]);
+                            themeProvider
+                                .setBackgroundImage(backgrounds[index]);
                             Navigator.pop(context);
                           },
                           child: Container(
@@ -762,7 +959,8 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                               image: DecorationImage(
                                 image: isAsset
                                     ? AssetImage(imagePath) as ImageProvider
-                                    : NetworkImage(backgrounds[index]) as ImageProvider,
+                                    : NetworkImage(backgrounds[index])
+                                        as ImageProvider,
                                 fit: BoxFit.cover,
                               ),
                             ),
@@ -780,10 +978,12 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
               child: ElevatedButton.icon(
                 onPressed: () async {
                   final picker = ImagePicker();
-                  final image = await picker.pickImage(source: ImageSource.gallery);
+                  final image =
+                      await picker.pickImage(source: ImageSource.gallery);
                   if (image != null) {
                     final appDir = await getApplicationDocumentsDirectory();
-                    final fileName = 'background_${DateTime.now().millisecondsSinceEpoch}${path.extension(image.path)}';
+                    final fileName =
+                        'background_${DateTime.now().millisecondsSinceEpoch}${path.extension(image.path)}';
                     final savedPath = path.join(appDir.path, fileName);
                     await File(image.path).copy(savedPath);
                     themeProvider.setBackgroundImage(savedPath);
@@ -804,7 +1004,8 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     );
   }
 
-  void _showRestoreDefaultDialog(BuildContext context, ThemeProvider themeProvider) {
+  void _showRestoreDefaultDialog(
+      BuildContext context, ThemeProvider themeProvider) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -812,13 +1013,15 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
         title: const Text('恢复默认壁纸'),
         content: const Text('将清除当前自定义背景，所有页面恢复为系统默认壁纸。'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
           TextButton(
             onPressed: () {
               themeProvider.clearBackground();
               Navigator.pop(ctx);
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('已恢复默认壁纸'), backgroundColor: Colors.green),
+                const SnackBar(
+                    content: Text('已恢复默认壁纸'), backgroundColor: Colors.green),
               );
             },
             child: const Text('确认恢复', style: TextStyle(color: Colors.red)),
@@ -828,7 +1031,8 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     );
   }
 
-  void _showLiquidGlassWarningDialog(BuildContext context, ThemeProvider themeProvider, bool enable) {
+  void _showLiquidGlassWarningDialog(
+      BuildContext context, ThemeProvider themeProvider, bool enable) {
     if (!enable) {
       themeProvider.setLiquidGlass(false);
       return;
@@ -838,16 +1042,29 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Row(children: [
-          Icon(Icons.warning_amber_rounded, color: Colors.orange.shade400, size: 28),
+          Icon(Icons.warning_amber_rounded,
+              color: Colors.orange.shade400, size: 28),
           const SizedBox(width: 12),
           const Text('性能警告'),
         ]),
-        content: const Text('液态玻璃效果基于模糊算法实现，在部分设备上可能会造成卡顿。', style: TextStyle(height: 1.5)),
+        content: const Text('液态玻璃效果基于模糊算法实现，在部分设备上可能会造成卡顿。',
+            style: TextStyle(height: 1.5)),
         actions: [
-          TextButton(onPressed: () { Navigator.pop(ctx); }, child: const Text('了解，但继续开启')),
+          TextButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+              },
+              child: const Text('了解，但继续开启')),
           ElevatedButton(
-            onPressed: () { Navigator.pop(ctx); themeProvider.setLiquidGlass(true); },
-            style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).primaryColor, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+            onPressed: () {
+              Navigator.pop(ctx);
+              themeProvider.setLiquidGlass(true);
+            },
+            style: ElevatedButton.styleFrom(
+                backgroundColor: Theme.of(context).primaryColor,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12))),
             child: const Text('开启'),
           ),
         ],
@@ -862,7 +1079,8 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
         backgroundColor: Colors.transparent,
         child: GestureDetector(
           onTap: () => Navigator.pop(context),
-          child: InteractiveViewer(child: CachedNetworkImage(imageUrl: url, fit: BoxFit.contain)),
+          child: InteractiveViewer(
+              child: CachedNetworkImage(imageUrl: url, fit: BoxFit.contain)),
         ),
       ),
     );
@@ -874,16 +1092,21 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('编辑资料'),
-        content: TextField(controller: controller, decoration: const InputDecoration(labelText: '昵称')),
+        content: TextField(
+            controller: controller,
+            decoration: const InputDecoration(labelText: '昵称')),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
+          TextButton(
+              onPressed: () => Navigator.pop(context), child: const Text('取消')),
           ElevatedButton(
             onPressed: () async {
               final result = await authProvider.updateProfile(controller.text);
               if (context.mounted) {
                 Navigator.pop(context);
                 ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                  content: Text(result.success ? '更新成功' : (result.errorMessage ?? '更新失败')),
+                  content: Text(result.success
+                      ? '更新成功'
+                      : (result.errorMessage ?? '更新失败')),
                   backgroundColor: result.success ? Colors.green : Colors.red,
                 ));
               }
@@ -895,7 +1118,8 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     );
   }
 
-  void _showChangePasswordDialog(BuildContext context, AuthProvider authProvider) {
+  void _showChangePasswordDialog(
+      BuildContext context, AuthProvider authProvider) {
     final oldController = TextEditingController();
     final newController = TextEditingController();
     showDialog(
@@ -903,19 +1127,29 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
       builder: (context) => AlertDialog(
         title: const Text('修改密码'),
         content: Column(mainAxisSize: MainAxisSize.min, children: [
-          TextField(controller: oldController, decoration: const InputDecoration(labelText: '旧密码'), obscureText: true),
+          TextField(
+              controller: oldController,
+              decoration: const InputDecoration(labelText: '旧密码'),
+              obscureText: true),
           const SizedBox(height: 16),
-          TextField(controller: newController, decoration: const InputDecoration(labelText: '新密码'), obscureText: true),
+          TextField(
+              controller: newController,
+              decoration: const InputDecoration(labelText: '新密码'),
+              obscureText: true),
         ]),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
+          TextButton(
+              onPressed: () => Navigator.pop(context), child: const Text('取消')),
           ElevatedButton(
             onPressed: () async {
-              final result = await authProvider.changePassword(oldController.text, newController.text);
+              final result = await authProvider.changePassword(
+                  oldController.text, newController.text);
               if (context.mounted) {
                 Navigator.pop(context);
                 ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                  content: Text(result.success ? '修改成功' : (result.errorMessage ?? '修改失败')),
+                  content: Text(result.success
+                      ? '修改成功'
+                      : (result.errorMessage ?? '修改失败')),
                   backgroundColor: result.success ? Colors.green : Colors.red,
                 ));
               }
@@ -934,13 +1168,15 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
       if (image == null) return;
 
       final appDir = await getApplicationDocumentsDirectory();
-      final fileName = 'avatar_${DateTime.now().millisecondsSinceEpoch}${path.extension(image.path)}';
+      final fileName =
+          'avatar_${DateTime.now().millisecondsSinceEpoch}${path.extension(image.path)}';
       final savedPath = path.join(appDir.path, fileName);
       await File(image.path).copy(savedPath);
       final result = await authProvider.updateAvatar(savedPath);
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(result.success ? '头像更新成功' : (result.errorMessage ?? '头像更新失败')),
+          content: Text(
+              result.success ? '头像更新成功' : (result.errorMessage ?? '头像更新失败')),
           backgroundColor: result.success ? Colors.green : Colors.red,
         ));
       }
@@ -972,13 +1208,16 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
   }
 
   void _showAvatarViewer(BuildContext context, String avatarUrl) {
-    Navigator.push(context, MaterialPageRoute(
-      builder: (_) => Scaffold(
-        backgroundColor: Colors.black,
-        appBar: AppBar(backgroundColor: Colors.transparent),
-        body: Center(child: InteractiveViewer(child: Image.network(avatarUrl))),
-      ),
-    ));
+    Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => Scaffold(
+            backgroundColor: Colors.black,
+            appBar: AppBar(backgroundColor: Colors.transparent),
+            body: Center(
+                child: InteractiveViewer(child: Image.network(avatarUrl))),
+          ),
+        ));
   }
 
   void _showAboutDialog(BuildContext context) {
@@ -1044,19 +1283,25 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
 
               // Author
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                 decoration: BoxDecoration(
-                  color: isDark ? Colors.white.withOpacity(0.05) : Colors.grey.shade100,
+                  color: isDark
+                      ? Colors.white.withOpacity(0.05)
+                      : Colors.grey.shade100,
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.person_outline, size: 18, color: Colors.grey.shade600),
+                    Icon(Icons.person_outline,
+                        size: 18, color: Colors.grey.shade600),
                     const SizedBox(width: 8),
                     Text(
                       '作者：纯合子',
-                      style: TextStyle(color: isDark ? Colors.white70 : Colors.grey.shade700),
+                      style: TextStyle(
+                          color:
+                              isDark ? Colors.white70 : Colors.grey.shade700),
                     ),
                   ],
                 ),
@@ -1081,7 +1326,8 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                     icon: Icons.code,
                     label: 'GitHub',
                     color: Colors.grey.shade800,
-                    onTap: () => _launchUrl('https://github.com/zhouwu97/SYLUlive'),
+                    onTap: () =>
+                        _launchUrl('https://github.com/zhouwu97/SYLUlive'),
                   ),
                   const SizedBox(width: 12),
                   // Email
@@ -1090,7 +1336,8 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                     icon: Icons.email_outlined,
                     label: '邮箱',
                     color: Colors.red.shade400,
-                    onTap: () => _copyToClipboard(context, '3170305904@qq.com', '邮箱地址已复制'),
+                    onTap: () => _copyToClipboard(
+                        context, '3170305904@qq.com', '邮箱地址已复制'),
                   ),
                   const SizedBox(width: 12),
                   // QQ
@@ -1099,7 +1346,8 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                     icon: Icons.chat_outlined,
                     label: 'QQ',
                     color: Colors.blue.shade400,
-                    onTap: () => _launchUrl('mqqapi://card/show_pslcard?src_type=internal&version=1&uin=3170305904&card_type=person'),
+                    onTap: () => _launchUrl(
+                        'mqqapi://card/show_pslcard?src_type=internal&version=1&uin=3170305904&card_type=person'),
                   ),
                 ],
               ),
@@ -1112,7 +1360,8 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                   onPressed: () => Navigator.pop(context),
                   style: TextButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
                   ),
                   child: Text(
                     '关闭',
@@ -1163,7 +1412,8 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     );
   }
 
-  void _copyToClipboard(BuildContext context, String text, String successMessage) {
+  void _copyToClipboard(
+      BuildContext context, String text, String successMessage) {
     Clipboard.setData(ClipboardData(text: text));
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -1186,7 +1436,8 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
   }
 
   // ---- 邀请版块 ----
-  Widget _buildInvitationSection(BuildContext context, AuthProvider auth, bool isDark) {
+  Widget _buildInvitationSection(
+      BuildContext context, AuthProvider auth, bool isDark) {
     return FutureBuilder(
       future: auth.dio.get('/user/invitations'),
       builder: (_, snap) {
@@ -1196,21 +1447,48 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
         return Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: _buildSettingsCard(isDark, children: [
-            Padding(padding: const EdgeInsets.all(16), child: Text('收到管理员邀请', style: TextStyle(fontWeight: FontWeight.bold, color: isDark ? Colors.white : Colors.black87))),
+            Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text('收到管理员邀请',
+                    style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: isDark ? Colors.white : Colors.black87))),
             ...list.map((inv) => ListTile(
-              leading: const Icon(Icons.person_add, color: Colors.blue),
-              title: Text('${inv['inviter']?['nickname'] ?? ''} 邀请你成为管理员'),
-              trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-                IconButton(icon: const Icon(Icons.check_circle, color: Colors.green), onPressed: () async {
-                  await auth.dio.post('/user/invitations/${inv['id']}/accept');
-                  if (mounted) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已接受，等待超管批准'), backgroundColor: Colors.green)); auth.refreshUser(); }
-                }),
-                IconButton(icon: const Icon(Icons.cancel, color: Colors.red), onPressed: () async {
-                  await auth.dio.post('/user/invitations/${inv['id']}/reject');
-                  if (mounted) { auth.refreshUser(); setState(() {}); }
-                }),
-              ]),
-            )),
+                  leading: const Icon(Icons.person_add, color: Colors.blue),
+                  title: Text('${inv['inviter']?['nickname'] ?? ''} 邀请你成为管理员'),
+                  subtitle: Text(
+                      '理由：${inv['reason'] ?? '未填写'}\n同意后会进入管理员代办，满 3 票后生效'),
+                  trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                    IconButton(
+                        icon:
+                            const Icon(Icons.check_circle, color: Colors.green),
+                        onPressed: () async {
+                          final res = await auth.dio
+                              .post('/user/invitations/${inv['id']}/accept');
+                          final message =
+                              (res.data is Map && res.data['message'] != null)
+                                  ? res.data['message'].toString()
+                                  : '已接受邀请';
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                                content: Text(message),
+                                backgroundColor: Colors.green));
+                            auth.refreshUser();
+                            setState(() {});
+                          }
+                        }),
+                    IconButton(
+                        icon: const Icon(Icons.cancel, color: Colors.red),
+                        onPressed: () async {
+                          await auth.dio
+                              .post('/user/invitations/${inv['id']}/reject');
+                          if (mounted) {
+                            auth.refreshUser();
+                            setState(() {});
+                          }
+                        }),
+                  ]),
+                )),
           ]),
         );
       },
@@ -1218,7 +1496,8 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
   }
 
   // ---- 管理员人员版块 ----
-  Widget _buildAdminMembersSection(BuildContext context, AuthProvider auth, bool isDark) {
+  Widget _buildAdminMembersSection(
+      BuildContext context, AuthProvider auth, bool isDark) {
     return FutureBuilder(
       future: auth.dio.get('/admin/members'),
       builder: (_, snap) {
@@ -1229,54 +1508,127 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
         return Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: _buildSettingsCard(isDark, children: [
-            Padding(padding: const EdgeInsets.all(16), child: Text('管理员人员 (${admins.length}人)', style: TextStyle(fontWeight: FontWeight.bold, color: isDark ? Colors.white : Colors.black87))),
-            ...admins.map((a) => ListTile(
-              leading: CircleAvatar(backgroundColor: Colors.orange, child: Text((a['nickname'] as String? ?? '?')[0])),
-              title: Text(a['nickname'] ?? ''), subtitle: Text(a['student_id'] ?? ''),
-              trailing: auth.user?.isSuperAdmin == true
-                  ? ElevatedButton(onPressed: () => _confirmRemoveAdmin(context, auth, a['id'], a['nickname']), style: ElevatedButton.styleFrom(backgroundColor: Colors.red), child: const Text('移除'))
-                  : TextButton(onPressed: () => _voteRemoveAdmin(context, auth, a['id'], a['nickname'], isDark), child: const Text('申请移除')),
-            )),
+            Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text('管理员人员 (${admins.length}人)',
+                    style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: isDark ? Colors.white : Colors.black87))),
+            ...admins.map((a) {
+              final isCurrentUser = a['id'] == auth.user?.id;
+              return ListTile(
+                leading: CircleAvatar(
+                    backgroundColor: Colors.orange,
+                    child: Text((a['nickname'] as String? ?? '?')[0])),
+                title: Text(a['nickname'] ?? ''),
+                subtitle: Text(a['student_id'] ?? ''),
+                trailing: isCurrentUser
+                    ? const Chip(label: Text('当前账号'))
+                    : auth.user?.isSuperAdmin == true
+                        ? ElevatedButton(
+                            onPressed: () => _confirmRemoveAdmin(
+                                context, auth, a['id'], a['nickname']),
+                            style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.red),
+                            child: const Text('移除'))
+                        : TextButton(
+                            onPressed: () => _voteRemoveAdmin(
+                                context, auth, a['id'], a['nickname'], isDark),
+                            child: const Text('申请罢免')),
+              );
+            }),
           ]),
         );
       },
     );
   }
 
-  void _confirmRemoveAdmin(BuildContext context, AuthProvider auth, int adminId, String name) {
+  void _confirmRemoveAdmin(
+      BuildContext context, AuthProvider auth, int adminId, String name) {
     int countdown = 3;
-    showDialog(context: context, barrierDismissible: false, builder: (ctx) {
-      return StatefulBuilder(builder: (ctx, setLocal) {
-        if (countdown == 0) {
-          Future.delayed(const Duration(milliseconds: 100), () async {
-            await auth.dio.put('/super/users/$adminId/role', data: {'role': 'user'});
-            if (ctx.mounted) Navigator.pop(ctx);
+    showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) {
+          return StatefulBuilder(builder: (ctx, setLocal) {
+            if (countdown == 0) {
+              Future.delayed(const Duration(milliseconds: 100), () async {
+                await auth.dio
+                    .put('/super/users/$adminId/role', data: {'role': 'user'});
+                if (ctx.mounted) Navigator.pop(ctx);
+              });
+              return const AlertDialog(title: Text('正在移除...'));
+            }
+            Future.delayed(const Duration(seconds: 1), () {
+              countdown--;
+              if (ctx.mounted) setLocal(() {});
+            });
+            return AlertDialog(
+              title: const Text('移除管理员', style: TextStyle(color: Colors.red)),
+              content: Text('将在 $countdown 秒后移除 $name 的管理员权限'),
+              actions: [
+                TextButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text('取消'))
+              ],
+            );
           });
-          return const AlertDialog(title: Text('正在移除...'));
-        }
-        Future.delayed(const Duration(seconds: 1), () { countdown--; if (ctx.mounted) setLocal(() {}); });
-        return AlertDialog(
-          title: const Text('移除管理员', style: TextStyle(color: Colors.red)),
-          content: Text('将在 $countdown 秒后移除 $name 的管理员权限'),
-          actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消'))],
-        );
-      });
-    });
+        });
   }
 
-  void _voteRemoveAdmin(BuildContext context, AuthProvider auth, int adminId, String name, bool isDark) {
+  void _voteRemoveAdmin(BuildContext context, AuthProvider auth, int adminId,
+      String name, bool isDark) {
     final reasonCtrl = TextEditingController();
-    showDialog(context: context, builder: (ctx) => AlertDialog(
-      title: Text('申请移除 $name'),
-      content: TextField(controller: reasonCtrl, maxLines: 3, decoration: const InputDecoration(labelText: '理由', border: OutlineInputBorder())),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
-        ElevatedButton(onPressed: () async {
-          Navigator.pop(ctx);
-          await auth.dio.post('/teachers/admin/$adminId/vote-remove');
-          if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已投票'), backgroundColor: Colors.green));
-        }, style: ElevatedButton.styleFrom(backgroundColor: Colors.red), child: const Text('提交投票')),
-      ],
-    ));
+    showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+              title: Text('申请罢免 $name'),
+              content: TextField(
+                  controller: reasonCtrl,
+                  maxLines: 3,
+                  decoration: const InputDecoration(
+                      labelText: '罢免理由',
+                      hintText: '提交后会进入管理员代办，由其他管理员投票',
+                      border: OutlineInputBorder())),
+              actions: [
+                TextButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text('取消')),
+                ElevatedButton(
+                    onPressed: () async {
+                      final reason = reasonCtrl.text.trim();
+                      if (reason.isEmpty) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                                content: Text('请填写理由'),
+                                backgroundColor: Colors.red));
+                        return;
+                      }
+                      Navigator.pop(ctx);
+                      try {
+                        final res = await auth.dio.post(
+                            '/teachers/admin/$adminId/vote-remove',
+                            data: {'reason': reason});
+                        final message =
+                            (res.data is Map && res.data['message'] != null)
+                                ? res.data['message'].toString()
+                                : '已提交罢免申请';
+                        if (mounted)
+                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                              content: Text(message),
+                              backgroundColor: Colors.green));
+                      } catch (_) {
+                        if (mounted)
+                          ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                  content: Text('提交失败'),
+                                  backgroundColor: Colors.red));
+                      }
+                    },
+                    style:
+                        ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                    child: const Text('确认提交')),
+              ],
+            ));
   }
 }

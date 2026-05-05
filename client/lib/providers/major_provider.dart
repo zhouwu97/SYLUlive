@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
 
@@ -32,6 +31,7 @@ class MajorProvider extends ChangeNotifier {
   List<MajorItem> _majors = [];
   MajorItem? _selected;
   List<MajorRating> _ratings = [];
+  MajorRating? _myRating;
   int _ratingCount = 0;
   double _averageStar = 0;
   bool _isLoading = false;
@@ -39,6 +39,7 @@ class MajorProvider extends ChangeNotifier {
   List<MajorItem> get majors => _majors;
   MajorItem? get selected => _selected;
   List<MajorRating> get ratings => _ratings;
+  MajorRating? get myRating => _myRating;
   int get ratingCount => _ratingCount;
   double get averageStar => _averageStar;
   bool get isLoading => _isLoading;
@@ -57,6 +58,7 @@ class MajorProvider extends ChangeNotifier {
       final r = await _dio.get('/majors/$id');
       _selected = MajorItem.fromJson(r.data['major']);
       _ratings = (r.data['ratings'] as List).map((j) => MajorRating.fromJson(j)).toList();
+      _myRating = r.data['my_rating'] == null ? null : MajorRating.fromJson(r.data['my_rating']);
       _ratingCount = r.data['rating_count'] ?? 0;
       _averageStar = (r.data['average_star'] ?? 0).toDouble();
     } catch (_) {}

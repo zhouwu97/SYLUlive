@@ -16,6 +16,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _appPasswordController = TextEditingController(); // APP密码
   final _nicknameController = TextEditingController(); // 昵称
   final _formKey = GlobalKey<FormState>();
+  final _eduPasswordFocus = FocusNode();
 
   bool _isRegister = false;
   bool _isLoading = false;
@@ -26,6 +27,7 @@ class _LoginScreenState extends State<LoginScreen> {
     _eduPasswordController.dispose();
     _appPasswordController.dispose();
     _nicknameController.dispose();
+    _eduPasswordFocus.dispose();
     super.dispose();
   }
 
@@ -72,6 +74,19 @@ class _LoginScreenState extends State<LoginScreen> {
       }
       Navigator.pop(context);
     } else if (mounted && result.errorMessage != null) {
+      if (!_isRegister && result.errorMessage!.contains('尚未注册')) {
+        setState(() {
+          _isRegister = true;
+          _eduPasswordController.clear();
+          _appPasswordController.clear();
+          _nicknameController.clear();
+        });
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            _eduPasswordFocus.requestFocus();
+          }
+        });
+      }
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text(result.errorMessage!),
           backgroundColor: Colors.red.shade600));
@@ -333,6 +348,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               // 教务密码
                               TextFormField(
                                 controller: _eduPasswordController,
+                                focusNode: _eduPasswordFocus,
                                 obscureText: true,
                                 decoration: InputDecoration(
                                   labelText: '教务密码',

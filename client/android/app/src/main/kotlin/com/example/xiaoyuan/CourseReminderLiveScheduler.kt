@@ -19,6 +19,8 @@ import org.json.JSONObject
 
 object CourseReminderLiveScheduler {
     const val CHANNEL = "shenliyuan/course_reminders"
+    private const val ACTION_DISMISS_REMINDER =
+        "com.example.shenliyuan.action.DISMISS_COURSE_REMINDER"
 
     private const val NOTIFICATION_CHANNEL_ID = "course_reminders_silent"
     private const val NOTIFICATION_CHANNEL_NAME = "课程提醒"
@@ -28,24 +30,30 @@ object CourseReminderLiveScheduler {
     private const val EXTRA_TIME_MILLIS = "timeMillis"
     private const val EXTRA_TITLE = "title"
     private const val EXTRA_BODY = "body"
+    private const val EXTRA_DETAIL_TEXT = "detailText"
     private const val EXTRA_TICKER = "ticker"
     private const val EXTRA_SHORT_TEXT = "shortText"
+    private const val EXTRA_CLASS_START_MILLIS = "classStartMillis"
 
     data class LiveReminder(
         val id: Int,
         val timeMillis: Long,
         val title: String,
         val body: String,
+        val detailText: String,
         val ticker: String,
         val shortText: String,
+        val classStartMillis: Long,
     ) {
         fun toJson(): JSONObject = JSONObject()
             .put(EXTRA_ID, id)
             .put(EXTRA_TIME_MILLIS, timeMillis)
             .put(EXTRA_TITLE, title)
             .put(EXTRA_BODY, body)
+            .put(EXTRA_DETAIL_TEXT, detailText)
             .put(EXTRA_TICKER, ticker)
             .put(EXTRA_SHORT_TEXT, shortText)
+            .put(EXTRA_CLASS_START_MILLIS, classStartMillis)
 
         companion object {
             fun fromMap(map: Map<*, *>): LiveReminder? {
@@ -53,22 +61,37 @@ object CourseReminderLiveScheduler {
                 val timeMillis = (map[EXTRA_TIME_MILLIS] as? Number)?.toLong() ?: return null
                 val title = map[EXTRA_TITLE]?.toString().orEmpty()
                 val body = map[EXTRA_BODY]?.toString().orEmpty()
+                val detailText = map[EXTRA_DETAIL_TEXT]?.toString().orEmpty()
                 val ticker = map[EXTRA_TICKER]?.toString().orEmpty()
                 val shortText = map[EXTRA_SHORT_TEXT]?.toString().orEmpty()
-                return LiveReminder(id, timeMillis, title, body, ticker, shortText)
+                val classStartMillis =
+                    (map[EXTRA_CLASS_START_MILLIS] as? Number)?.toLong() ?: return null
+                return LiveReminder(
+                    id,
+                    timeMillis,
+                    title,
+                    body,
+                    detailText,
+                    ticker,
+                    shortText,
+                    classStartMillis,
+                )
             }
 
             fun fromJson(json: JSONObject): LiveReminder? {
                 val id = json.optInt(EXTRA_ID, 0)
                 val timeMillis = json.optLong(EXTRA_TIME_MILLIS, 0)
-                if (id == 0 || timeMillis == 0L) return null
+                val classStartMillis = json.optLong(EXTRA_CLASS_START_MILLIS, 0)
+                if (id == 0 || timeMillis == 0L || classStartMillis == 0L) return null
                 return LiveReminder(
                     id = id,
                     timeMillis = timeMillis,
                     title = json.optString(EXTRA_TITLE),
                     body = json.optString(EXTRA_BODY),
+                    detailText = json.optString(EXTRA_DETAIL_TEXT),
                     ticker = json.optString(EXTRA_TICKER),
                     shortText = json.optString(EXTRA_SHORT_TEXT),
+                    classStartMillis = classStartMillis,
                 )
             }
         }
@@ -90,6 +113,7 @@ object CourseReminderLiveScheduler {
 
         cancelIds.forEach { id ->
             alarmManager.cancel(pendingIntent(context, id, null))
+            alarmManager.cancel(dismissPendingIntent(context, id))
             notificationManager.cancel(id)
         }
 
@@ -241,6 +265,7 @@ object CourseReminderLiveScheduler {
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
             )
         }
+        val dismissIntent = dismissPendingIntent(context, reminder.id)
 
         val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             Notification.Builder(context, NOTIFICATION_CHANNEL_ID)
@@ -254,24 +279,42 @@ object CourseReminderLiveScheduler {
             .setContentTitle(reminder.title)
             .setContentText(reminder.body)
             .setTicker(reminder.ticker)
+            .setSubText("课前静音提醒")
             .setVisibility(Notification.VISIBILITY_PUBLIC)
             .setCategory(Notification.CATEGORY_REMINDER)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setAutoCancel(false)
             .setShowWhen(true)
-            .setWhen(System.currentTimeMillis())
+            .setWhen(reminder.classStartMillis)
+            .setUsesChronometer(true)
             .setDefaults(0)
             .setSound(null)
             .setVibrate(longArrayOf(0L))
+            .setColor(0xFF4F46E5.toInt())
+            .setDeleteIntent(dismissIntent)
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            builder.setChronometerCountDown(true)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
+            builder.setStyle(
+                Notification.BigTextStyle(builder)
+                    .bigText(reminder.detailText)
+                    .setBigContentTitle(reminder.title)
+                    .setSummaryText("静音提醒 · 即将上课"),
+            )
+        }
 
         if (contentIntent != null) {
             builder.setContentIntent(contentIntent)
+            builder.addAction(0, "查看课表", contentIntent)
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             builder.setTimeoutAfter(6 * 60 * 1000L)
         }
+        builder.addAction(0, "忽略本次", dismissIntent)
 
         requestPromotedOngoing(builder, reminder.shortText)
 
@@ -357,13 +400,28 @@ object CourseReminderLiveScheduler {
                 putExtra(EXTRA_TIME_MILLIS, reminder.timeMillis)
                 putExtra(EXTRA_TITLE, reminder.title)
                 putExtra(EXTRA_BODY, reminder.body)
+                putExtra(EXTRA_DETAIL_TEXT, reminder.detailText)
                 putExtra(EXTRA_TICKER, reminder.ticker)
                 putExtra(EXTRA_SHORT_TEXT, reminder.shortText)
+                putExtra(EXTRA_CLASS_START_MILLIS, reminder.classStartMillis)
             }
         }
         return PendingIntent.getBroadcast(
             context,
             id,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+    }
+
+    private fun dismissPendingIntent(context: Context, id: Int): PendingIntent {
+        val intent = Intent(context, CourseReminderLiveReceiver::class.java).apply {
+            action = ACTION_DISMISS_REMINDER
+            putExtra(EXTRA_ID, id)
+        }
+        return PendingIntent.getBroadcast(
+            context,
+            id xor 0x40000000.toInt(),
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
@@ -423,10 +481,29 @@ object CourseReminderLiveScheduler {
             }
         }
     }
+
+    private fun removePersisted(context: Context, id: Int) {
+        persist(context, readPersisted(context).filterNot { it.id == id })
+    }
+
+    fun dismissShownReminder(context: Context, id: Int) {
+        if (id == 0) return
+        val notificationManager =
+            context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        notificationManager.cancel(id)
+        removePersisted(context, id)
+    }
 }
 
 class CourseReminderLiveReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action == "com.example.shenliyuan.action.DISMISS_COURSE_REMINDER") {
+            CourseReminderLiveScheduler.dismissShownReminder(
+                context,
+                intent.getIntExtra("id", 0),
+            )
+            return
+        }
         val id = intent.getIntExtra("id", 0)
         val timeMillis = intent.getLongExtra("timeMillis", 0)
         if (id == 0 || timeMillis == 0L) return
@@ -438,8 +515,10 @@ class CourseReminderLiveReceiver : BroadcastReceiver() {
                 timeMillis = timeMillis,
                 title = intent.getStringExtra("title").orEmpty(),
                 body = intent.getStringExtra("body").orEmpty(),
+                detailText = intent.getStringExtra("detailText").orEmpty(),
                 ticker = intent.getStringExtra("ticker").orEmpty(),
                 shortText = intent.getStringExtra("shortText").orEmpty(),
+                classStartMillis = intent.getLongExtra("classStartMillis", 0),
             ),
         )
     }

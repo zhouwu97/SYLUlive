@@ -9,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 	"shenliyuan/internal/models"
 )
 
@@ -26,6 +27,7 @@ func NewPostHandler(db *gorm.DB) *PostHandler {
 func (h *PostHandler) GetList(c *gin.Context) {
 	boardIDStr := c.Query("board")
 	postType := c.Query("type")
+	searchQuery := strings.TrimSpace(strings.ToLower(c.Query("q")))
 	sort := c.DefaultQuery("sort", "time")
 	pageStr := c.DefaultQuery("page", "1")
 	limitStr := c.DefaultQuery("limit", "20")
@@ -52,10 +54,37 @@ func (h *PostHandler) GetList(c *gin.Context) {
 		query = query.Where("post_type = ?", postType)
 	}
 
+	if searchQuery != "" {
+		searchLike := "%" + searchQuery + "%"
+		query = query.Where(
+			"(LOWER(title) LIKE ? OR LOWER(content) LIKE ?)",
+			searchLike,
+			searchLike,
+		)
+		query = query.Order(clause.Expr{
+			SQL: `CASE
+				WHEN LOWER(title) = ? THEN 0
+				WHEN LOWER(title) LIKE ? THEN 1
+				WHEN LOWER(title) LIKE ? THEN 2
+				WHEN LOWER(content) LIKE ? THEN 3
+				ELSE 4
+			END,
+			POSITION(? IN LOWER(title)),
+			CHAR_LENGTH(title)`,
+			Vars: []interface{}{
+				searchQuery,
+				searchQuery + "%",
+				searchLike,
+				searchLike,
+				searchQuery,
+			},
+		})
+	}
+
 	// 排序
 	switch sort {
 	case "price":
-		query = query.Order("price ASC")
+		query = query.Order("price ASC").Order("created_at DESC")
 	case "score":
 		query = query.Order("created_at DESC")
 	default:

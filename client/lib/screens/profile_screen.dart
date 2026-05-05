@@ -21,6 +21,7 @@ import 'login_screen.dart';
 import 'my_content_screen.dart';
 import 'admin_panel_screen.dart';
 import 'super_admin_screen.dart';
+import 'admin_members_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -93,12 +94,6 @@ class _ProfileScreenState extends State<ProfileScreen>
                 if (authProvider.isLoggedIn)
                   SliverToBoxAdapter(
                       child: _buildInvitationSection(
-                          context, authProvider, isDark)),
-
-                // 管理员人员（管理员可见）
-                if (user?.isAdmin == true)
-                  SliverToBoxAdapter(
-                      child: _buildAdminMembersSection(
                           context, authProvider, isDark)),
 
                 // 教务版块（绑定状态 + 题库入口）
@@ -390,6 +385,23 @@ class _ProfileScreenState extends State<ProfileScreen>
                   },
                 ),
               ],
+              const SizedBox(height: 12),
+              _buildAdminEntry(
+                context: context,
+                isDark: isDark,
+                icon: Icons.groups_2_outlined,
+                iconColor: Colors.indigo,
+                title: '管理人员',
+                subtitle: '查看管理员与超级管理员列表',
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const AdminMembersScreen(),
+                    ),
+                  );
+                },
+              ),
             ],
           ),
         );
@@ -1569,160 +1581,4 @@ class _ProfileScreenState extends State<ProfileScreen>
     );
   }
 
-  // ---- 管理员人员版块 ----
-  Widget _buildAdminMembersSection(
-      BuildContext context, AuthProvider auth, bool isDark) {
-    return FutureBuilder(
-      future: _loadAdminMembers(auth),
-      builder: (_, snap) {
-        if (!snap.hasData) return const SizedBox.shrink();
-        final list = snap.data!;
-        final staff = list
-            .where((u) => u['role'] == 'admin' || u['role'] == 'super_admin')
-            .toList();
-        if (staff.isEmpty) return const SizedBox.shrink();
-        return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: _buildSettingsCard(isDark, children: [
-            Padding(
-                padding: const EdgeInsets.all(16),
-                child: Text('管理人员 (${staff.length}人)',
-                    style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: isDark ? Colors.white : Colors.black87))),
-            ...staff.map((a) {
-              final isCurrentUser = a['id'] == auth.user?.id;
-              final isSuperAdmin = a['role'] == 'super_admin';
-              return ListTile(
-                leading: CircleAvatar(
-                    backgroundColor:
-                        isSuperAdmin ? Colors.deepPurple : Colors.orange,
-                    child: Text((a['nickname'] as String? ?? '?')[0])),
-                title: Text(a['nickname'] ?? ''),
-                subtitle: Text(
-                    '${a['student_id'] ?? ''}${isSuperAdmin ? ' · 超级管理员' : ' · 管理员'}'),
-                trailing: isCurrentUser
-                    ? const Chip(label: Text('当前账号'))
-                    : auth.user?.isSuperAdmin == true && !isSuperAdmin
-                        ? ElevatedButton(
-                            onPressed: () => _confirmRemoveAdmin(
-                                context, auth, a['id'], a['nickname']),
-                            style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.red),
-                            child: const Text('移除'))
-                        : TextButton(
-                            onPressed: () => _voteRemoveAdmin(
-                                context, auth, a['id'], a['nickname'], isDark),
-                            child: const Text('申请罢免')),
-              );
-            }),
-          ]),
-        );
-      },
-    );
-  }
-
-  Future<List<dynamic>> _loadAdminMembers(AuthProvider auth) async {
-    try {
-      final response = await auth.dio.get('/admin/members');
-      return (response.data as List?) ?? [];
-    } on DioException catch (e) {
-      final isMissingMembersRoute = e.response?.statusCode == 404;
-      if (isMissingMembersRoute && auth.user?.isSuperAdmin == true) {
-        final fallback = await auth.dio.get('/super/users');
-        return (fallback.data as List?) ?? [];
-      }
-      rethrow;
-    }
-  }
-
-  void _confirmRemoveAdmin(
-      BuildContext context, AuthProvider auth, int adminId, String name) {
-    int countdown = 3;
-    showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (ctx) {
-          return StatefulBuilder(builder: (ctx, setLocal) {
-            if (countdown == 0) {
-              Future.delayed(const Duration(milliseconds: 100), () async {
-                await auth.dio
-                    .put('/super/users/$adminId/role', data: {'role': 'user'});
-                if (ctx.mounted) Navigator.pop(ctx);
-              });
-              return const AlertDialog(title: Text('正在移除...'));
-            }
-            Future.delayed(const Duration(seconds: 1), () {
-              countdown--;
-              if (ctx.mounted) setLocal(() {});
-            });
-            return AlertDialog(
-              title: const Text('移除管理员', style: TextStyle(color: Colors.red)),
-              content: Text('将在 $countdown 秒后移除 $name 的管理员权限'),
-              actions: [
-                TextButton(
-                    onPressed: () => Navigator.pop(ctx),
-                    child: const Text('取消'))
-              ],
-            );
-          });
-        });
-  }
-
-  void _voteRemoveAdmin(BuildContext context, AuthProvider auth, int adminId,
-      String name, bool isDark) {
-    final reasonCtrl = TextEditingController();
-    showDialog(
-        context: context,
-        builder: (ctx) => AlertDialog(
-              title: Text('申请罢免 $name'),
-              content: TextField(
-                  controller: reasonCtrl,
-                  maxLines: 3,
-                  decoration: const InputDecoration(
-                      labelText: '罢免理由',
-                      hintText: '提交后会进入管理员代办，由其他管理员投票',
-                      border: OutlineInputBorder())),
-              actions: [
-                TextButton(
-                    onPressed: () => Navigator.pop(ctx),
-                    child: const Text('取消')),
-                ElevatedButton(
-                    onPressed: () async {
-                      final messenger = ScaffoldMessenger.of(context);
-                      final reason = reasonCtrl.text.trim();
-                      if (reason.isEmpty) {
-                        messenger.showSnackBar(const SnackBar(
-                            content: Text('请填写理由'),
-                            backgroundColor: Colors.red));
-                        return;
-                      }
-                      Navigator.pop(ctx);
-                      try {
-                        final res = await auth.dio.post(
-                            '/teachers/admin/$adminId/vote-remove',
-                            data: {'reason': reason});
-                        final message =
-                            (res.data is Map && res.data['message'] != null)
-                                ? res.data['message'].toString()
-                                : '已提交罢免申请';
-                        if (mounted) {
-                          messenger.showSnackBar(SnackBar(
-                              content: Text(message),
-                              backgroundColor: Colors.green));
-                        }
-                      } catch (_) {
-                        if (mounted) {
-                          messenger.showSnackBar(const SnackBar(
-                              content: Text('提交失败'),
-                              backgroundColor: Colors.red));
-                        }
-                      }
-                    },
-                    style:
-                        ElevatedButton.styleFrom(backgroundColor: Colors.red),
-                    child: const Text('确认提交')),
-              ],
-            ));
-  }
 }

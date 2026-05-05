@@ -22,5 +22,7 @@ server/uploads/*
 shenliyuan
 shenliyuan.exe
 shenliyuan.exe~
+server/*.exe
+server/*.exe~
 *.apk
 *.aab

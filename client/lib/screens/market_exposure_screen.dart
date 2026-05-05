@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/post_provider.dart';
+import '../widgets/glass_container.dart';
 import '../widgets/post_card.dart';
 import 'post_detail_screen.dart';
 
@@ -13,8 +14,7 @@ class MarketExposureScreen extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor:
-          isDark ? const Color(0xFF0F131A) : const Color(0xFFF5F7FB),
+      backgroundColor: Colors.transparent,
       appBar: AppBar(
         title: const Text('曝光台'),
         backgroundColor: Colors.transparent,
@@ -33,18 +33,17 @@ class MarketExposureScreen extends StatelessWidget {
 
           if (exposurePosts.isEmpty) {
             return Center(
-              child: Container(
+              child: GlassContainer(
                 margin: const EdgeInsets.symmetric(horizontal: 24),
                 padding: const EdgeInsets.all(24),
-                decoration: BoxDecoration(
-                  color: isDark ? const Color(0xFF171B24) : Colors.white,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: isDark
-                        ? Colors.white.withValues(alpha: 0.05)
-                        : const Color(0xFFE8ECF4),
-                  ),
-                ),
+                borderRadius: 20,
+                blur: 12,
+                opacity: 0.18,
+                backgroundColor:
+                    isDark ? const Color(0x99171B24) : const Color(0xCCFFFFFF),
+                borderColor: isDark
+                    ? Colors.white.withValues(alpha: 0.08)
+                    : Colors.white.withValues(alpha: 0.72),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [

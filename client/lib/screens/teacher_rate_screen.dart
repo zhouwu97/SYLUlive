@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../models/teacher.dart';
 import '../providers/major_provider.dart';
 import '../providers/teacher_provider.dart';
+import '../widgets/glass_container.dart';
 import 'major_detail_screen.dart';
 import 'subject_ranking_detail_screen.dart';
 
@@ -50,8 +51,7 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
-      backgroundColor:
-          isDark ? const Color(0xFF0E1117) : const Color(0xFFF5F7FB),
+      backgroundColor: Colors.transparent,
       appBar: AppBar(
         title: const Text('榜单'),
         backgroundColor: Colors.transparent,
@@ -90,13 +90,14 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
     );
   }
 
-  Widget _buildDisclaimer(bool isDark) => Container(
+  Widget _buildDisclaimer(bool isDark) => GlassContainer(
         margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
         padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF182033) : const Color(0xFFEAF1FF),
-          borderRadius: BorderRadius.circular(14),
-        ),
+        borderRadius: 14,
+        blur: 12,
+        opacity: 0.18,
+        backgroundColor:
+            isDark ? const Color(0xA3182033) : const Color(0xCCEAF1FF),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -126,28 +127,36 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
 
   Widget _buildSearchBar(bool isDark) => Padding(
         padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-        child: TextField(
-          controller: _searchCtrl,
-          decoration: InputDecoration(
-            hintText: _tabCtrl.index == 0 ? '搜索学科或教师...' : '搜索专业...',
-            prefixIcon: const Icon(Icons.search, size: 20),
-            filled: true,
-            fillColor: isDark ? const Color(0xFF171B24) : Colors.white,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
-              borderSide: BorderSide.none,
+        child: GlassContainer(
+          borderRadius: 14,
+          blur: 12,
+          opacity: 0.18,
+          backgroundColor:
+              isDark ? const Color(0x99171B24) : const Color(0xCCFFFFFF),
+          borderColor: isDark
+              ? Colors.white.withValues(alpha: 0.08)
+              : Colors.white.withValues(alpha: 0.72),
+          child: TextField(
+            controller: _searchCtrl,
+            decoration: InputDecoration(
+              hintText: _tabCtrl.index == 0 ? '搜索学科或教师...' : '搜索专业...',
+              prefixIcon: const Icon(Icons.search, size: 20),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: BorderSide.none,
+              ),
+              contentPadding: const EdgeInsets.symmetric(vertical: 10),
             ),
-            contentPadding: const EdgeInsets.symmetric(vertical: 10),
+            onChanged: (value) {
+              if (_tabCtrl.index == 0) {
+                context
+                    .read<TeacherProvider>()
+                    .loadTeachers(query: value.trim().isEmpty ? null : value);
+              } else {
+                setState(() {});
+              }
+            },
           ),
-          onChanged: (value) {
-            if (_tabCtrl.index == 0) {
-              context
-                  .read<TeacherProvider>()
-                  .loadTeachers(query: value.trim().isEmpty ? null : value);
-            } else {
-              setState(() {});
-            }
-          },
         ),
       );
 
@@ -200,11 +209,10 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
                     ),
                   ),
                 ).then((changed) async {
-                  if (changed == true || mounted) {
-                    await context
-                        .read<TeacherProvider>()
-                        .loadTeachers(query: _currentQuery);
-                  }
+                  if (changed != true || !mounted) return;
+                  await context
+                      .read<TeacherProvider>()
+                      .loadTeachers(query: _currentQuery);
                 }),
               );
             },
@@ -259,7 +267,10 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
                       majorName: major.name,
                     ),
                   ),
-                ).then((_) => context.read<MajorProvider>().loadMajors()),
+                ).then((_) {
+                  if (!mounted) return;
+                  context.read<MajorProvider>().loadMajors();
+                }),
               );
             },
           ),
@@ -278,123 +289,115 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
     required VoidCallback onTap,
   }) {
     final accent = _rankColor(rank - 1);
-    return Container(
+    return GlassContainer(
       margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF171B24) : Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: isDark
-              ? Colors.white.withValues(alpha: 0.05)
-              : const Color(0xFFE8ECF4),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: isDark ? 0.18 : 0.04),
-            blurRadius: 22,
-            offset: const Offset(0, 10),
-          ),
-        ],
-      ),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(20),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: accent.withValues(alpha: 0.14),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(icon, color: accent, size: 18),
-                    const SizedBox(height: 2),
-                    Text(
-                      '#$rank',
-                      style: TextStyle(
-                        color: accent,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ],
-                ),
+      borderRadius: 20,
+      blur: 12,
+      opacity: 0.18,
+      backgroundColor:
+          isDark ? const Color(0x99171B24) : const Color(0xCCFFFFFF),
+      borderColor: isDark
+          ? Colors.white.withValues(alpha: 0.08)
+          : Colors.white.withValues(alpha: 0.72),
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: accent.withValues(alpha: 0.14),
+                borderRadius: BorderRadius.circular(16),
               ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                        color: isDark ? Colors.white : Colors.black87,
-                      ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(icon, color: accent, size: 18),
+                  const SizedBox(height: 2),
+                  Text(
+                    '#$rank',
+                    style: TextStyle(
+                      color: accent,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
                     ),
-                    const SizedBox(height: 6),
-                    Text(
-                      subtitle,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 13,
-                        height: 1.35,
-                        color: isDark ? Colors.white60 : Colors.black54,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        _buildMetricChip(
-                          isDark,
-                          Icons.star_rounded,
-                          average.toStringAsFixed(1),
-                        ),
-                        _buildMetricChip(
-                          isDark,
-                          Icons.rate_review_outlined,
-                          '$count 条评价',
-                        ),
-                        _buildMetricChip(
-                          isDark,
-                          Icons.layers_outlined,
-                          extraLabel,
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-              const SizedBox(width: 8),
-              const Icon(Icons.chevron_right_rounded, color: Colors.grey),
-            ],
-          ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: isDark ? Colors.white : Colors.black87,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    subtitle,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 13,
+                      height: 1.35,
+                      color: isDark ? Colors.white60 : Colors.black54,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _buildMetricChip(
+                        isDark,
+                        Icons.star_rounded,
+                        average.toStringAsFixed(1),
+                      ),
+                      _buildMetricChip(
+                        isDark,
+                        Icons.rate_review_outlined,
+                        '$count 条评价',
+                      ),
+                      _buildMetricChip(
+                        isDark,
+                        Icons.layers_outlined,
+                        extraLabel,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            const Icon(Icons.chevron_right_rounded, color: Colors.grey),
+          ],
         ),
       ),
     );
   }
 
   Widget _buildMetricChip(bool isDark, IconData icon, String text) {
-    return Container(
+    return GlassContainer(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: isDark
-            ? Colors.white.withValues(alpha: 0.05)
-            : const Color(0xFFF5F7FB),
-        borderRadius: BorderRadius.circular(999),
-      ),
+      borderRadius: 999,
+      blur: 8,
+      opacity: 0.14,
+      backgroundColor: isDark
+          ? Colors.white.withValues(alpha: 0.06)
+          : Colors.white.withValues(alpha: 0.68),
+      borderColor: isDark
+          ? Colors.white.withValues(alpha: 0.05)
+          : Colors.white.withValues(alpha: 0.52),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -477,7 +480,7 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
               )
             else
               DropdownButtonFormField(
-                value: '本科',
+                initialValue: '本科',
                 items: const [
                   DropdownMenuItem(value: '本科', child: Text('本科')),
                   DropdownMenuItem(value: '研究生', child: Text('研究生')),
@@ -505,6 +508,7 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
               Navigator.pop(ctx);
               if (isTeacher) {
                 await context.read<TeacherProvider>().addTeacher(name, course);
+                if (!mounted) return;
                 await context
                     .read<TeacherProvider>()
                     .loadTeachers(query: _currentQuery);
@@ -512,6 +516,7 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
                 await context
                     .read<MajorProvider>()
                     .addMajor(name, levelCtrl.text);
+                if (!mounted) return;
                 await context.read<MajorProvider>().loadMajors();
               }
             },

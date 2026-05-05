@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 
 import '../config/api_constants.dart';
 import '../models/post.dart';
+import '../screens/image_viewer_screen.dart';
 import '../utils/post_image_cache.dart';
+import 'glass_container.dart';
 
 class PostCard extends StatelessWidget {
   final Post post;
@@ -23,160 +25,143 @@ class PostCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return Container(
+    return GlassContainer(
       margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF171B24) : Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: isDark
-              ? Colors.white.withValues(alpha: 0.05)
-              : const Color(0xFFE8ECF4),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: isDark ? 0.12 : 0.04),
-            blurRadius: 18,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(16),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+      borderRadius: 18,
+      blur: 14,
+      opacity: 0.18,
+      backgroundColor:
+          isDark ? const Color(0x99171B24) : const Color(0xCCFFFFFF),
+      borderColor: isDark
+          ? Colors.white.withValues(alpha: 0.08)
+          : Colors.white.withValues(alpha: 0.72),
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
               children: [
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(2),
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        gradient: LinearGradient(
-                          colors: [
-                            Theme.of(context).primaryColor,
-                            Theme.of(context)
-                                .primaryColor
-                                .withValues(alpha: 0.6),
-                          ],
-                        ),
-                      ),
-                      child: CircleAvatar(
-                        radius: 18,
-                        backgroundImage: post.author?.avatar.isNotEmpty == true
-                            ? NetworkImage(
-                                ApiConstants.fullUrl(post.author!.avatar),
-                              )
-                            : null,
-                        child: post.author?.avatar.isEmpty == true
-                            ? Text(
-                                post.author?.nickname
-                                        .substring(0, 1)
-                                        .toUpperCase() ??
-                                    '?',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              )
-                            : null,
-                      ),
+                Container(
+                  padding: const EdgeInsets.all(2),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: LinearGradient(
+                      colors: [
+                        Theme.of(context).primaryColor,
+                        Theme.of(context).primaryColor.withValues(alpha: 0.6),
+                      ],
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            post.author?.nickname ?? '匿名',
-                            style: const TextStyle(fontWeight: FontWeight.w600),
-                          ),
-                          Text(
-                            _formatTime(post.createdAt),
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: isDark ? Colors.white54 : Colors.grey[600],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    if (post.author != null)
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: _getCreditColor(post.author!.creditScore)
-                              .withValues(alpha: 0.2),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.verified,
-                              size: 12,
-                              color: _getCreditColor(post.author!.creditScore),
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              '${post.author!.creditScore}%',
-                              style: TextStyle(
-                                color:
-                                    _getCreditColor(post.author!.creditScore),
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                  ],
-                ),
-                if (post.title.isNotEmpty) ...[
-                  const SizedBox(height: 12),
-                  Text(
-                    post.title,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
                   ),
-                ],
-                const SizedBox(height: 8),
-                Text(
-                  post.content,
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: isDark ? Colors.white70 : Colors.black87,
-                    height: 1.4,
+                  child: CircleAvatar(
+                    radius: 18,
+                    backgroundImage: post.author?.avatar.isNotEmpty == true
+                        ? NetworkImage(
+                            ApiConstants.fullUrl(post.author!.avatar),
+                          )
+                        : null,
+                    child: post.author?.avatar.isEmpty == true
+                        ? Text(
+                            post.author?.nickname
+                                    .substring(0, 1)
+                                    .toUpperCase() ??
+                                '?',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          )
+                        : null,
                   ),
                 ),
-                if (post.images.isNotEmpty) ...[
-                  const SizedBox(height: 12),
-                  _buildImageGrid(context, post.images),
-                ],
-                if ((showPrice && post.price > 0) || showWarning) ...[
-                  const SizedBox(height: 12),
-                  _buildPriceOrWarningTag(context),
-                ],
-                if (post.postType.isNotEmpty && !showWarning) ...[
-                  const SizedBox(height: 8),
-                  _buildTypeTag(post.postType),
-                ],
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        post.author?.nickname ?? '匿名',
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      Text(
+                        _formatTime(post.createdAt),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: isDark ? Colors.white54 : Colors.grey[700],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (post.author != null)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: _getCreditColor(post.author!.creditScore)
+                          .withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.verified,
+                          size: 12,
+                          color: _getCreditColor(post.author!.creditScore),
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          '${post.author!.creditScore}%',
+                          style: TextStyle(
+                            color: _getCreditColor(post.author!.creditScore),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
               ],
             ),
-          ),
+            if (post.title.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Text(
+                post.title,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+            const SizedBox(height: 8),
+            Text(
+              post.content,
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: isDark ? Colors.white70 : Colors.black87,
+                height: 1.4,
+              ),
+            ),
+            if (post.images.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              _buildImageGrid(context, post.images),
+            ],
+            if ((showPrice && post.price > 0) || showWarning) ...[
+              const SizedBox(height: 12),
+              _buildPriceOrWarningTag(context),
+            ],
+            if (post.postType.isNotEmpty && !showWarning) ...[
+              const SizedBox(height: 8),
+              _buildTypeTag(post.postType),
+            ],
+          ],
         ),
       ),
     );
@@ -298,21 +283,26 @@ class PostCard extends StatelessWidget {
         images.where((image) => image.url.trim().isNotEmpty).toList();
     final count = validImages.length;
     if (count == 0) return const SizedBox.shrink();
+    final imageUrls =
+        validImages.map((image) => ApiConstants.fullUrl(image.url)).toList();
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(12),
       child: SizedBox(
-        height: 200,
+        height: count == 1 ? 220 : (count == 2 ? 168 : 220),
         child: count == 1
-            ? CachedNetworkImage(
-                cacheManager: PostImageCache.manager,
-                imageUrl: ApiConstants.fullUrl(validImages[0].url),
-                width: double.infinity,
-                fit: BoxFit.cover,
-                placeholder: (_, __) => Container(color: Colors.grey[300]),
-                errorWidget: (_, __, ___) => Container(
-                  color: Colors.grey[300],
-                  child: const Icon(Icons.image),
+            ? GestureDetector(
+                onTap: () => _openImageViewer(context, imageUrls, 0),
+                child: CachedNetworkImage(
+                  cacheManager: PostImageCache.manager,
+                  imageUrl: imageUrls[0],
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                  placeholder: (_, __) => Container(color: Colors.grey[300]),
+                  errorWidget: (_, __, ___) => Container(
+                    color: Colors.grey[300],
+                    child: const Icon(Icons.image),
+                  ),
                 ),
               )
             : GridView.builder(
@@ -326,46 +316,65 @@ class PostCard extends StatelessWidget {
                 itemCount: count > 4 ? 4 : count,
                 itemBuilder: (context, index) {
                   if (index == 3 && count > 4) {
-                    return Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        CachedNetworkImage(
-                          cacheManager: PostImageCache.manager,
-                          imageUrl:
-                              ApiConstants.fullUrl(validImages[index].url),
-                          fit: BoxFit.cover,
-                          placeholder: (_, __) =>
-                              Container(color: Colors.grey[300]),
-                          errorWidget: (_, __, ___) =>
-                              Container(color: Colors.grey[300]),
-                        ),
-                        Container(
-                          color: Colors.black54,
-                          alignment: Alignment.center,
-                          child: Text(
-                            '+${count - 3}',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
+                    return GestureDetector(
+                      onTap: () => _openImageViewer(context, imageUrls, index),
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          CachedNetworkImage(
+                            cacheManager: PostImageCache.manager,
+                            imageUrl: imageUrls[index],
+                            fit: BoxFit.cover,
+                            placeholder: (_, __) =>
+                                Container(color: Colors.grey[300]),
+                            errorWidget: (_, __, ___) =>
+                                Container(color: Colors.grey[300]),
+                          ),
+                          Container(
+                            color: Colors.black54,
+                            alignment: Alignment.center,
+                            child: Text(
+                              '+${count - 3}',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     );
                   }
-                  return CachedNetworkImage(
-                    cacheManager: PostImageCache.manager,
-                    imageUrl: ApiConstants.fullUrl(validImages[index].url),
-                    fit: BoxFit.cover,
-                    placeholder: (_, __) => Container(color: Colors.grey[300]),
-                    errorWidget: (_, __, ___) => Container(
-                      color: Colors.grey[300],
-                      child: const Icon(Icons.image),
+                  return GestureDetector(
+                    onTap: () => _openImageViewer(context, imageUrls, index),
+                    child: CachedNetworkImage(
+                      cacheManager: PostImageCache.manager,
+                      imageUrl: imageUrls[index],
+                      fit: BoxFit.cover,
+                      placeholder: (_, __) =>
+                          Container(color: Colors.grey[300]),
+                      errorWidget: (_, __, ___) => Container(
+                        color: Colors.grey[300],
+                        child: const Icon(Icons.image),
+                      ),
                     ),
                   );
                 },
               ),
+      ),
+    );
+  }
+
+  void _openImageViewer(
+      BuildContext context, List<String> imageUrls, int initialIndex) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ImageViewerScreen(
+          imageUrls: imageUrls,
+          initialIndex: initialIndex,
+        ),
       ),
     );
   }

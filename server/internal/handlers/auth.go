@@ -400,12 +400,16 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
 	var user models.User
 	if err := h.db.Where("student_id = ?", input.StudentID).First(&user).Error; err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "学号或密码错误"})
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "该账号尚未注册，请先注册"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询账号失败"})
 		return
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(input.Password)); err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "学号或密码错误"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "密码错误，请重新输入"})
 		return
 	}
 

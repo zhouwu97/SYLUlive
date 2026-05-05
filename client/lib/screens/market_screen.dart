@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../models/post.dart';
 import '../providers/auth_provider.dart';
 import '../providers/post_provider.dart';
+import '../widgets/glass_container.dart';
 import '../widgets/post_card.dart';
 import 'create_post_screen.dart';
 import 'login_screen.dart';
@@ -116,8 +117,7 @@ class _MarketScreenState extends State<MarketScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor:
-          isDark ? const Color(0xFF0F131A) : const Color(0xFFF5F7FB),
+      backgroundColor: Colors.transparent,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -219,17 +219,16 @@ class _MarketScreenState extends State<MarketScreen> {
   }
 
   Widget _buildSearchBar(bool isDark) {
-    return Container(
+    return GlassContainer(
       padding: const EdgeInsets.symmetric(horizontal: 14),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF171B24) : Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: isDark
-              ? Colors.white.withValues(alpha: 0.05)
-              : const Color(0xFFE8ECF4),
-        ),
-      ),
+      borderRadius: 16,
+      blur: 12,
+      opacity: 0.18,
+      backgroundColor:
+          isDark ? const Color(0x99171B24) : const Color(0xCCFFFFFF),
+      borderColor: isDark
+          ? Colors.white.withValues(alpha: 0.08)
+          : Colors.white.withValues(alpha: 0.72),
       child: TextField(
         controller: _searchController,
         onChanged: _onSearchChanged,
@@ -262,15 +261,14 @@ class _MarketScreenState extends State<MarketScreen> {
         context,
         MaterialPageRoute(builder: (_) => const MarketExposureScreen()),
       ),
-      child: Container(
+      child: GlassContainer(
         padding: const EdgeInsets.all(18),
-        decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF1C1620) : const Color(0xFFFFF4F2),
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(
-            color: isDark ? const Color(0x66FF8A80) : const Color(0xFFFFD5D0),
-          ),
-        ),
+        borderRadius: 18,
+        blur: 12,
+        opacity: 0.18,
+        backgroundColor:
+            isDark ? const Color(0xA31C1620) : const Color(0xD9FFF4F2),
+        borderColor: isDark ? const Color(0x66FF8A80) : const Color(0x88FFD5D0),
         child: Row(
           children: [
             Container(
@@ -387,17 +385,16 @@ class _MarketScreenState extends State<MarketScreen> {
   }
 
   Widget _buildEmptyState(bool isDark, String title, String subtitle) {
-    return Container(
+    return GlassContainer(
       padding: const EdgeInsets.all(28),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF171B24) : Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: isDark
-              ? Colors.white.withValues(alpha: 0.05)
-              : const Color(0xFFE8ECF4),
-        ),
-      ),
+      borderRadius: 18,
+      blur: 12,
+      opacity: 0.18,
+      backgroundColor:
+          isDark ? const Color(0x99171B24) : const Color(0xCCFFFFFF),
+      borderColor: isDark
+          ? Colors.white.withValues(alpha: 0.08)
+          : Colors.white.withValues(alpha: 0.72),
       child: Column(
         children: [
           Icon(

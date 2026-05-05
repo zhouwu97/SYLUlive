@@ -244,32 +244,31 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
   }
 
   Future<void> _inviteAdmin(dynamic candidate) async {
+    final dio = context.read<AuthProvider>().dio;
+    final messenger = ScaffoldMessenger.of(context);
     final reason = await _showReasonDialog(
       title: '邀请 ${candidate['nickname'] ?? ''} 成为管理员',
       label: '邀请理由',
       hint: '说明为什么推荐该用户成为管理员',
       confirmText: '发送邀请',
     );
-    if (reason == null) return;
+    if (!mounted || reason == null) return;
 
     try {
-      final dio = context.read<AuthProvider>().dio;
+      await Future<void>.delayed(Duration.zero);
       await dio
           .post('/admin/invite/${candidate['id']}', data: {'reason': reason});
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text('邀请已发送，用户同意后进入管理员代办'),
-              backgroundColor: Colors.green),
-        );
-        _loadData();
-      }
+      if (!mounted) return;
+      messenger.showSnackBar(
+        const SnackBar(
+            content: Text('邀请已发送，用户同意后进入管理员代办'), backgroundColor: Colors.green),
+      );
+      await _loadData();
     } on DioException catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text(_dioErrorMessage(e, '邀请失败')),
-            backgroundColor: Colors.red));
-      }
+      if (!mounted) return;
+      messenger.showSnackBar(SnackBar(
+          content: Text(_dioErrorMessage(e, '邀请失败')),
+          backgroundColor: Colors.red));
     }
   }
 
@@ -280,37 +279,40 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
     required String confirmText,
   }) async {
     final controller = TextEditingController();
-    final result = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(title),
-        content: TextField(
-          controller: controller,
-          maxLines: 4,
-          autofocus: true,
-          decoration: InputDecoration(
-            labelText: label,
-            hintText: hint,
-            border: const OutlineInputBorder(),
+    try {
+      final result = await showDialog<String>(
+        context: context,
+        useRootNavigator: false,
+        builder: (ctx) => AlertDialog(
+          title: Text(title),
+          content: TextField(
+            controller: controller,
+            maxLines: 4,
+            decoration: InputDecoration(
+              labelText: label,
+              hintText: hint,
+              border: const OutlineInputBorder(),
+            ),
           ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+            FilledButton(
+              onPressed: () {
+                final reason = controller.text.trim();
+                if (reason.isEmpty) return;
+                Navigator.pop(ctx, reason);
+              },
+              child: Text(confirmText),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
-          FilledButton(
-            onPressed: () {
-              final reason = controller.text.trim();
-              if (reason.isEmpty) return;
-              Navigator.pop(ctx, reason);
-            },
-            child: Text(confirmText),
-          ),
-        ],
-      ),
-    );
-    controller.dispose();
-    if (result == null || result.trim().isEmpty) return null;
-    return result.trim();
+      );
+      if (result == null || result.trim().isEmpty) return null;
+      return result.trim();
+    } finally {
+      controller.dispose();
+    }
   }
 
   String _dioErrorMessage(DioException e, String fallback) {
@@ -1009,6 +1011,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
   }
 
   Future<void> _voteInvitation(dynamic inv) async {
+    final dio = context.read<AuthProvider>().dio;
+    final messenger = ScaffoldMessenger.of(context);
     final user = (inv['user'] as Map?) ?? {};
     final reason = await _showReasonDialog(
       title: '同意 ${user['nickname'] ?? '该用户'} 成为管理员',
@@ -1016,10 +1020,10 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
       hint: '说明同意该用户成为管理员的原因',
       confirmText: '确认同意',
     );
-    if (reason == null) return;
+    if (!mounted || reason == null) return;
 
     try {
-      final dio = context.read<AuthProvider>().dio;
+      await Future<void>.delayed(Duration.zero);
       final res = await dio.post('/admin/invitations/${inv['id']}/vote', data: {
         'reason': reason,
       });
@@ -1027,18 +1031,20 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
       final message = (res.data is Map && res.data['message'] != null)
           ? res.data['message'].toString()
           : '已同意';
-      ScaffoldMessenger.of(context).showSnackBar(
+      messenger.showSnackBar(
           SnackBar(content: Text(message), backgroundColor: Colors.green));
-      _loadData();
+      await _loadData();
     } on DioException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      messenger.showSnackBar(SnackBar(
           content: Text(_dioErrorMessage(e, '操作失败')),
           backgroundColor: Colors.red));
     }
   }
 
   Future<void> _voteRemoval(dynamic removal) async {
+    final dio = context.read<AuthProvider>().dio;
+    final messenger = ScaffoldMessenger.of(context);
     final admin = (removal['admin'] as Map?) ?? {};
     final reason = await _showReasonDialog(
       title: '同意罢免 ${admin['nickname'] ?? '该管理员'}',
@@ -1046,10 +1052,10 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
       hint: '说明同意罢免的原因',
       confirmText: '确认投票',
     );
-    if (reason == null) return;
+    if (!mounted || reason == null) return;
 
     try {
-      final dio = context.read<AuthProvider>().dio;
+      await Future<void>.delayed(Duration.zero);
       final res = await dio.post(
         '/teachers/admin/${admin['id']}/vote-remove',
         data: {'reason': reason},
@@ -1058,12 +1064,12 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
       final message = (res.data is Map && res.data['message'] != null)
           ? res.data['message'].toString()
           : '已投票';
-      ScaffoldMessenger.of(context).showSnackBar(
+      messenger.showSnackBar(
           SnackBar(content: Text(message), backgroundColor: Colors.green));
-      _loadData();
+      await _loadData();
     } on DioException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      messenger.showSnackBar(SnackBar(
           content: Text(_dioErrorMessage(e, '操作失败')),
           backgroundColor: Colors.red));
     }

@@ -1,7 +1,9 @@
 import 'dart:async';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../main.dart';
 import '../providers/auth_provider.dart';
 import '../widgets/bottom_nav.dart';
@@ -26,6 +28,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   bool _isCheckingAnnouncements = false;
   bool _announcementDialogOpen = false;
   final Set<int> _dismissedAnnouncementIds = {};
+  final Set<int> _seenAnnouncementIds = {};
+  String? _announcementSeenKey;
 
   @override
   void initState() {
@@ -51,21 +55,90 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (_announcementAuthKey == authKey) return;
 
     _announcementAuthKey = authKey;
+    _announcementSeenKey =
+        auth.isLoggedIn ? 'seen_announcements_${auth.user?.id}' : null;
     _dismissedAnnouncementIds.clear();
+    _seenAnnouncementIds.clear();
     _announcementTimer?.cancel();
     _announcementTimer = null;
 
     if (authKey == null) return;
 
-    _checkUnreadAnnouncements();
+    unawaited(_initializeAnnouncementPolling());
+  }
+
+  Future<void> _initializeAnnouncementPolling() async {
+    await _loadSeenAnnouncements();
+    if (!mounted) return;
+    await _checkUnreadAnnouncements();
+    if (!mounted) return;
     _announcementTimer = Timer.periodic(
       const Duration(seconds: 60),
       (_) => _checkUnreadAnnouncements(),
     );
   }
 
+  Future<void> _loadSeenAnnouncements() async {
+    final key = _announcementSeenKey;
+    if (key == null) return;
+    final prefs = await SharedPreferences.getInstance();
+    final stored = prefs.getStringList(key) ?? const [];
+    _seenAnnouncementIds
+      ..clear()
+      ..addAll(stored.map(int.tryParse).whereType<int>());
+  }
+
+  Future<void> _saveSeenAnnouncements() async {
+    final key = _announcementSeenKey;
+    if (key == null) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(
+      key,
+      _seenAnnouncementIds.map((id) => id.toString()).toList(),
+    );
+  }
+
+  Future<void> _markAnnouncementsSeen(Iterable<dynamic> announcements) async {
+    var changed = false;
+    for (final item in announcements) {
+      final id = _announcementId(item);
+      if (id > 0 && _seenAnnouncementIds.add(id)) {
+        changed = true;
+      }
+    }
+    if (changed) {
+      await _saveSeenAnnouncements();
+    }
+  }
+
+  Future<List<dynamic>> _fetchAnnouncementsFallback(AuthProvider auth) async {
+    final resp = await auth.dio.get('/announcements');
+    final list = (resp.data as List?) ?? const [];
+    return list
+        .where((item) => !_seenAnnouncementIds.contains(_announcementId(item)))
+        .toList();
+  }
+
+  Future<List<dynamic>> _loadUnreadAnnouncements(AuthProvider auth) async {
+    try {
+      final resp = await auth.dio.get('/announcements/unread');
+      return (resp.data as List?) ?? const [];
+    } on DioException catch (e) {
+      final isBadUnreadRoute = e.response?.statusCode == 400 &&
+          e.response?.data is Map &&
+          (e.response!.data['error']?.toString().contains('无效的公告ID') ?? false);
+      if (isBadUnreadRoute) {
+        debugPrint('未读公告接口异常，降级到 /announcements');
+        return _fetchAnnouncementsFallback(auth);
+      }
+      rethrow;
+    }
+  }
+
   Future<void> _checkUnreadAnnouncements() async {
-    if (!mounted || _isCheckingAnnouncements || _announcementDialogOpen) return;
+    if (!mounted || _isCheckingAnnouncements || _announcementDialogOpen) {
+      return;
+    }
 
     final auth = context.read<AuthProvider>();
     if (!auth.isLoggedIn) {
@@ -75,10 +148,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
     _isCheckingAnnouncements = true;
     try {
-      final resp = await auth.dio.get('/announcements/unread');
-      final list = ((resp.data as List?) ?? [])
+      final list = (await _loadUnreadAnnouncements(auth))
           .where((item) =>
-              !_dismissedAnnouncementIds.contains(_announcementId(item)))
+              !_dismissedAnnouncementIds.contains(_announcementId(item)) &&
+              !_seenAnnouncementIds.contains(_announcementId(item)))
           .toList();
       if (list.isEmpty || !mounted) return;
       await _showAnnouncementDialog(list);
@@ -163,6 +236,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                 .dio
                                 .post('/announcements/${a['id']}/read');
                           } catch (_) {}
+                          await _markAnnouncementsSeen([a]);
                           if (current < unread.length - 1) {
                             setLocal(() => current++);
                           } else {
@@ -190,6 +264,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
     if (readAll != true) {
       _dismissedAnnouncementIds.addAll(unread.map(_announcementId));
+    } else {
+      await _markAnnouncementsSeen(unread);
     }
   }
 

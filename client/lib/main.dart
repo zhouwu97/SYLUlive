@@ -10,11 +10,16 @@ import 'providers/post_provider.dart';
 import 'providers/message_provider.dart';
 import 'providers/edu_provider.dart';
 import 'providers/course_schedule_provider.dart';
+import 'providers/major_provider.dart';
+import 'providers/teacher_provider.dart';
 import 'screens/home_screen.dart';
+import 'services/course_reminder_service.dart';
 import 'theme/AppTheme.dart';
 import 'config/api_constants.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await CourseReminderService.instance.initialize();
   runApp(const MyApp());
 }
 
@@ -24,7 +29,8 @@ Dio? _sharedDio;
 Dio getSharedDio() {
   if (_sharedDio == null) {
     final dio = Dio(BaseOptions(
-      baseUrl: kDebugMode ? ApiConstants.baseUrl : 'http://156.233.229.232:8080/api',
+      baseUrl:
+          kDebugMode ? ApiConstants.baseUrl : 'http://156.233.229.232:8080/api',
       connectTimeout: ApiConstants.connectTimeout,
       receiveTimeout: ApiConstants.receiveTimeout,
     ));
@@ -67,6 +73,8 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => MessageProvider(dio)),
         ChangeNotifierProvider(create: (_) => EduProvider(dio)),
         ChangeNotifierProvider(create: (_) => CourseScheduleProvider()),
+        ChangeNotifierProvider(create: (_) => TeacherProvider(dio)),
+        ChangeNotifierProvider(create: (_) => MajorProvider(dio)),
       ],
       child: Consumer<ThemeProvider>(
         builder: (context, themeProvider, child) {
@@ -75,7 +83,8 @@ class MyApp extends StatelessWidget {
             debugShowCheckedModeBanner: false,
             theme: AppTheme.lightTheme,
             darkTheme: AppTheme.darkTheme,
-            themeMode: themeProvider.isDarkMode ? ThemeMode.dark : ThemeMode.light,
+            themeMode:
+                themeProvider.isDarkMode ? ThemeMode.dark : ThemeMode.light,
             navigatorKey: navigatorKey,
             home: GlobalBackgroundWrapper(
               child: const AuthWrapper(),
@@ -87,7 +96,8 @@ class MyApp extends StatelessWidget {
   }
 }
 
-final GlobalKey<_BackgroundWrapperState> backgroundWrapperKey = GlobalKey<_BackgroundWrapperState>();
+final GlobalKey<_BackgroundWrapperState> backgroundWrapperKey =
+    GlobalKey<_BackgroundWrapperState>();
 
 class GlobalBackgroundWrapper extends StatefulWidget {
   final Widget child;
@@ -157,12 +167,14 @@ class _BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
                 ? Image.file(
                     File(bgPath),
                     fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => _buildDefaultBackground(isDark),
+                    errorBuilder: (_, __, ___) =>
+                        _buildDefaultBackground(isDark),
                   )
                 : Image.network(
                     bgPath,
                     fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => _buildDefaultBackground(isDark),
+                    errorBuilder: (_, __, ___) =>
+                        _buildDefaultBackground(isDark),
                     loadingBuilder: (_, child, loadingProgress) {
                       if (loadingProgress == null) return child;
                       return _buildDefaultBackground(isDark);
@@ -204,14 +216,24 @@ class _BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: isDark
-                    ? [const Color(0xFF1A1A2E), const Color(0xFF16213E), const Color(0xFF0F3460)]
-                    : [const Color(0xFF667EEA), const Color(0xFF764BA2), const Color(0xFFF093FB)],
+                    ? [
+                        const Color(0xFF1A1A2E),
+                        const Color(0xFF16213E),
+                        const Color(0xFF0F3460)
+                      ]
+                    : [
+                        const Color(0xFF667EEA),
+                        const Color(0xFF764BA2),
+                        const Color(0xFFF093FB)
+                      ],
               ),
             ),
           ),
         ),
         Container(
-          color: isDark ? Colors.black.withValues(alpha: 0.35) : Colors.white.withValues(alpha: 0.25),
+          color: isDark
+              ? Colors.black.withValues(alpha: 0.35)
+              : Colors.white.withValues(alpha: 0.25),
         ),
       ],
     );

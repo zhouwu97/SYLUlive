@@ -9,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 	"shenliyuan/internal/models"
 )
 
@@ -26,6 +27,7 @@ func NewPostHandler(db *gorm.DB) *PostHandler {
 func (h *PostHandler) GetList(c *gin.Context) {
 	boardIDStr := c.Query("board")
 	postType := c.Query("type")
+	searchQuery := strings.TrimSpace(strings.ToLower(c.Query("q")))
 	sort := c.DefaultQuery("sort", "time")
 	pageStr := c.DefaultQuery("page", "1")
 	limitStr := c.DefaultQuery("limit", "20")
@@ -52,10 +54,37 @@ func (h *PostHandler) GetList(c *gin.Context) {
 		query = query.Where("post_type = ?", postType)
 	}
 
+	if searchQuery != "" {
+		searchLike := "%" + searchQuery + "%"
+		query = query.Where(
+			"(LOWER(title) LIKE ? OR LOWER(content) LIKE ?)",
+			searchLike,
+			searchLike,
+		)
+		query = query.Order(clause.Expr{
+			SQL: `CASE
+				WHEN LOWER(title) = ? THEN 0
+				WHEN LOWER(title) LIKE ? THEN 1
+				WHEN LOWER(title) LIKE ? THEN 2
+				WHEN LOWER(content) LIKE ? THEN 3
+				ELSE 4
+			END,
+			POSITION(? IN LOWER(title)),
+			CHAR_LENGTH(title)`,
+			Vars: []interface{}{
+				searchQuery,
+				searchQuery + "%",
+				searchLike,
+				searchLike,
+				searchQuery,
+			},
+		})
+	}
+
 	// 排序
 	switch sort {
 	case "price":
-		query = query.Order("price ASC")
+		query = query.Order("price ASC").Order("created_at DESC")
 	case "score":
 		query = query.Order("created_at DESC")
 	default:
@@ -96,12 +125,7 @@ func (h *PostHandler) Create(c *gin.Context) {
 		return
 	}
 
-	// 骗子曝光板块暂不开放
-	if input.BoardID == int(models.BoardScam) {
-		c.JSON(http.StatusForbidden, gin.H{"error": "此功能即将开放"})
-		return
-	}
-
+	// 先创建帖子
 	post := models.Post{
 		Title:    input.Title,
 		Content:  input.Content,
@@ -119,19 +143,32 @@ func (h *PostHandler) Create(c *gin.Context) {
 		return
 	}
 
-	// 处理图片
+	// 处理图片 - 从 multipart form 读取 file_ids
 	fileIDs := c.PostForm("file_ids")
+	if fileIDs == "" {
+		// 降级：直接从 Request.MultipartForm 读取
+		if c.Request.MultipartForm != nil {
+			if vals, ok := c.Request.MultipartForm.Value["file_ids"]; ok && len(vals) > 0 {
+				fileIDs = vals[0]
+			}
+		}
+	}
+	log.Printf("创建帖子 file_ids=%q (post_id=%d)", fileIDs, post.ID)
 	if fileIDs != "" {
 		ids := strings.Split(fileIDs, ",")
 		for i, idStr := range ids {
 			fileID, err := strconv.ParseUint(idStr, 10, 64)
-			if err == nil {
-				postImage := models.PostImage{
-					PostID:    post.ID,
-					FileID:    uint(fileID),
-					SortOrder: i,
-				}
-				h.db.Create(&postImage)
+			if err != nil {
+				log.Printf("解析 file_id 失败: %q → %v", idStr, err)
+				continue
+			}
+			postImage := models.PostImage{
+				PostID:    post.ID,
+				FileID:    uint(fileID),
+				SortOrder: i,
+			}
+			if err := h.db.Create(&postImage).Error; err != nil {
+				log.Printf("创建 PostImage 失败: post_id=%d, file_id=%d, err=%v", post.ID, fileID, err)
 			}
 		}
 	}
@@ -241,14 +278,12 @@ func (h *PostHandler) Delete(c *gin.Context) {
 
 	// 记录管理员操作
 	if role == "admin" || role == "super_admin" {
-		log := models.AdminActionLog{
-			AdminID:    userID.(uint),
-			Action:     "delete_post",
-			TargetType: "post",
-			TargetID:   uint(id),
-			Detail:     fmt.Sprintf("删除帖子: %s", post.Title),
-		}
-		h.db.Create(&log)
+		var u models.User
+		h.db.Select("nickname").First(&u, userID)
+		h.db.Create(&models.AdminLog{
+			AdminID: userID.(uint), AdminName: u.Nickname,
+			Action: "删除帖子", Target: post.Title,
+		})
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})

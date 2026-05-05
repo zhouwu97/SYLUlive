@@ -1,317 +1,280 @@
-# 沈理校园 - 校园互助社交应用
+# 沈理校园
 
-<p align="center">
-<img src="https://img.shields.io/badge/Flutter-3.x+-blue" alt="Flutter">
-<img src="https://img.shields.io/badge/Go-1.21+-green" alt="Go">
-<img src="https://img.shields.io/badge/License-MIT-orange" alt="License">
-</p>
+沈理校园是一个面向校内学生的前后端分离应用，当前包含：
 
-## 致谢
+- 水贴广场
+- 校园集市与曝光台
+- 课程提醒
+- 教师 / 学科评价榜
+- 公告系统
+- 管理员邀请、投票罢免、超级管理员管理
+- 教务绑定、课表与成绩查询
+- 融智云考题库提取
 
-在此，我要感谢学长 [atopos31](https://github.com/atopos31)。
+## 仓库结构
 
-我目前并不了解如何接入教务系统，所以借鉴了他的项目 [syluinfo](https://github.com/sengeiou/syluinfo)。由于我平时胆子比较小，一直没有联系学长确认。如果对您造成困扰，请联系我的邮箱：**wu22402@gmail.com**，我会立即删除相关内容。
-目前该功能暂未完善，敬请期待。
-感谢学长的开源精神！
+```text
+E:\AI\xiaoyuan
+├── client/               Flutter 客户端
+├── server/               Go 后端
+├── python-edu-service/   教务相关 Python 服务
+├── nginx/                反向代理配置
+├── deploy.sh             服务器部署脚本
+├── DEPLOY.md             部署与验收文档
+├── docker-compose.yml    容器编排
+└── shenliyuan.service    systemd 服务文件
+```
 
-## 项目简介
-
-沈理校园是一款面向高校学生的互助社交应用，提供水贴交流、校园集市、举报申诉等功能。
-
-## 功能列表
-
-### 已实现 ✅
-
-| 功能 | 说明 | 状态 |
-|------|------|------|
-| 用户注册/登录 | 学号+密码注册，JWT认证 | ✅ |
-| 个性化设置 | 头像、昵称、背景图、主题切换 | ✅ |
-| 水贴广场 | 发布图文帖子，支持点赞 | ✅ |
-| 校园集市 | 二手交易信息发布 | ✅ |
-| 公告系统 | 管理员发布公告 | ✅ |
-
-### 开发中 🔨
-
-| 功能 | 说明 | 状态 |
-|------|------|------|
-| 私信聊天 | 点对点即时消息 | 🔨 |
-| 课表日历视图 | 可视化课表展示 | 🔨 |
-| 成绩统计分析 | 成绩趋势、 GPA 计算 | 🔨 |
-
-### 待开发 📋
-
-| 功能 | 说明 | 优先级 |
-|------|------|--------|
-| 推送通知 | 帖子回复、私信提醒 | P1 |
-| 深色模式自动切换 | 根据时间自动切换 | P2 |
-| 多图上传 | 帖子支持多图 | P2 |
-| 用户等级系统 | 发帖数、活跃度 | P2 |
-| 实名认证 | 接入学校认证 | P3 |
-| 积分商城 | 虚拟货币、兑换 | P3 |
-| 教务系统绑定 | 接入教务系统（课表、成绩查询）| P3 |
-| 管理员系统 | 邀请制管理员、举报处理 | P4 |
-| 公众法庭 | 申诉投票自治系统 | P4 |
-| 文件上传 | 图片上传功能 | P4 |
 ## 技术栈
 
-### 后端
+### 客户端
+
+- Flutter 3.x
+- Provider
+- Dio
+- cached_network_image
+- flutter_local_notifications
+
+### 服务端
+
 - Go 1.21+
-- Gin (Web框架)
-- GORM (ORM)
-- SQLite (本地开发) / PostgreSQL (生产环境)
-- JWT (认证)
-- bcrypt (密码加密)
+- Gin
+- GORM
+- PostgreSQL / SQLite
+- JWT
 
-### 前端
-- Flutter 3.x+
-- Provider (状态管理)
-- Dio (HTTP客户端)
-- cached_network_image (图片缓存)
-- sqflite (本地数据库)
-- flutter_secure_storage (安全存储)
+## 当前功能状态
 
-## 项目结构
+### 已实现
 
-```
-shenliyuan/
-├── server/                # Go 后端
-│   ├── cmd/              # 入口
-│   ├── internal/         # 内部包
-│   │   ├── config/       # 配置
-│   │   ├── handlers/     # 处理器
-│   │   ├── middleware/   # 中间件
-│   │   ├── models/       # 数据模型
-│   │   └── services/     # 服务
-│   ├── uploads/          # 上传文件
-│   ├── go.mod
-│   └── Dockerfile
-├── client/               # Flutter 前端
-│   ├── lib/
-│   │   ├── models/       # 数据模型
-│   │   ├── providers/    # 状态管理
-│   │   ├── screens/      # 页面
-│   │   ├── widgets/      # 组件
-│   │   └── theme/        # 主题
-│   ├── pubspec.yaml
-│   └── Dockerfile
-├── docker-compose.yml
-└── README.md
-```
+- 用户注册 / 登录 / 修改资料
+- 水贴发帖、图片上传、评论、点赞、举报
+- 集市发帖、曝光台、商品搜索
+- 帖子图片缓存到本地磁盘
+- 教师评价、学科榜、专业榜
+- 公告发布与未读弹窗
+- 课程静音提醒
+- 管理员邀请链路
+- 管理员罢免投票链路
+- 超级管理员面板
+- 教务绑定、课表、成绩
+- 题库提取
 
-## 环境要求
+### 仍在演进
 
-### 开发环境
-- Go 1.21+
-- Flutter 3.x+
+- 客户端全量 lint 清理
+- 更细的榜单统计与服务端聚合
+- 更多前端自动化测试
 
-### 安装 Go
+## 本地开发
 
-**Linux:**
-```bash
-wget https://go.dev/dl/go1.23.4.linux-amd64.tar.gz
-sudo tar -C /usr/local -xzf go1.23.4.linux-amd64.tar.gz
-echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.bashrc
-source ~/.bashrc
-```
-
-**macOS:**
-```bash
-brew install go
-```
-
-**Windows:**
-下载安装包: https://go.dev/dl/
-或使用包管理器:
-```powershell
-winget install GoLang.Go
-```
-
-### 生产环境
-- Docker >= 20.10 和 Docker Compose >= 2.0（Docker 部署）
-- 或 Linux + PostgreSQL（直接部署）
-
-## 快速开始
-
-### 本地运行（零配置，推荐开发使用）
-
-无需安装数据库，一条命令启动：
+### 1. 启动后端
 
 ```bash
 cd server
-go run cmd/main.go
+go run ./cmd/main.go
 ```
 
-启动后访问 http://localhost:8080，数据库自动创建为 `server/shenliyuan.db`。
+默认会启动在 `http://localhost:8080`。
 
-默认账号：
-
-| 角色 | 用户名 | 密码 |
-|------|--------|------|
-| 超级管理员 | `super_admin` | `dev-only-password-do-not-use-in-production` |
-| 管理员 | `admin` | `admin123` |
-| 普通用户 | `2024001` | `test123456` |
-
-> **Windows** 同样操作，进入 `server` 目录执行 `go run cmd/main.go`。
-
-### Docker 部署（生产环境，PostgreSQL）
+### 2. 启动客户端
 
 ```bash
-# 设置环境变量
-export JWT_SECRET=$(openssl rand -base64 32)
-export SUPER_ADMIN_DEFAULT_PASSWORD="your-strong-password"
-
-# 启动
-docker-compose up -d --build
+cd client
+flutter pub get
+flutter run
 ```
 
-### Linux 直接部署
+客户端 API 地址配置在：
+
+- [E:\AI\xiaoyuan\client\lib\config\api_constants.dart](E:\AI\xiaoyuan\client\lib\config\api_constants.dart)
+
+如果你本地联调本地后端，需要先把 `baseUrl` 改成你本机可访问地址。
+
+### 3. 可选：启动教务 Python 服务
+
+如果你需要联调教务相关能力，再启动：
 
 ```bash
-sudo bash deploy.sh
-# 部署后可用 xiaoyuan start/stop/restart/status/logs 管理
+cd python-edu-service
+python main.py
 ```
 
-## 配置说明
+## 常用检查命令
 
-### 环境变量
-
-| 变量名 | 说明 | 必填 |
-|--------|------|------|
-| JWT_SECRET | JWT密钥（至少32位随机字符串） | 是 |
-| DSN | 数据库连接字符串。不设置默认 `./shenliyuan.db` (SQLite)，Docker/生产环境设为 PostgreSQL 格式 | 否 |
-| SUPER_ADMIN_DEFAULT_PASSWORD | 超级管理员初始密码 | 是 |
-| UPLOAD_DIR | 文件上传目录 | 否（默认./uploads） |
-
-## 超级管理员
-
-首次启动后，使用以下命令获取超级管理员账号信息：
+### 客户端
 
 ```bash
-# 查看服务日志
-docker-compose logs server
+cd client
+flutter analyze
+flutter test
+flutter build apk --debug
 ```
 
-超级管理员账号信息会在首次启动时输出。
+### 服务端
 
-## API 文档
-
-### 认证
-- `POST /api/register` - 注册
-- `POST /api/login` - 登录
-- `POST /api/change_password` - 修改密码（需认证）
-
-### 用户
-- `GET /api/user/profile` - 获取个人资料（需认证）
-- `PUT /api/user/profile` - 更新个人资料（需认证）
-- `PUT /api/user/avatar` - 更新头像（需认证）
-- `PUT /api/user/background` - 更新背景图（需认证）
-- `PUT /api/user/nightmode` - 更新夜间模式（需认证）
-
-### 帖子
-- `GET /api/posts` - 获取帖子列表
-- `POST /api/posts` - 创建帖子（需认证）
-- `GET /api/posts/:id` - 获取帖子详情
-- `PUT /api/posts/:id` - 更新帖子（需认证）
-- `DELETE /api/posts/:id` - 删除帖子（需认证）
-
-### 回复
-- `GET /api/posts/:id/replies` - 获取回复列表
-- `POST /api/posts/:id/replies` - 创建回复（需认证）
-- `DELETE /api/replies/:id` - 删除回复（需认证）
-
-### 私信
-- `GET /api/messages/conversations` - 获取会话列表（需认证）
-- `GET /api/messages/conversations/:id` - 获取消息列表（需认证）
-- `POST /api/messages/:user_id` - 发送消息（需认证）
-
-### 公告
-- `GET /api/announcements` - 获取公告列表
-- `POST /api/announcements` - 创建公告（需管理员）
-- `PUT /api/announcements/:id` - 更新公告（需管理员）
-- `DELETE /api/announcements/:id` - 删除公告（需管理员）
-
-### 举报
-- `POST /api/reports` - 创建举报（需认证）
-- `GET /api/reports` - 获取举报列表（需管理员）
-- `PUT /api/reports/:id/handle` - 处理举报（需管理员）
-
-### 申诉
-- `POST /api/posts/:id/appeal` - 创建申诉（需认证）
-- `GET /api/appeals` - 获取申诉列表（需认证）
-- `POST /api/appeals/:id/vote` - 投票（需认证）
-
-### 管理员邀请
-- `GET /api/admin/candidates` - 获取候选人列表（需认证）
-- `POST /api/admin/invite/:user_id` - 邀请用户（需管理员）
-- `GET /api/user/invitations` - 获取待处理邀请（需认证）
-- `POST /api/user/invitations/:id/accept` - 接受邀请（需认证）
-- `POST /api/user/invitations/:id/reject` - 拒绝邀请（需认证）
-
-### 超级管理员
-- `GET /api/super/users` - 获取所有用户
-- `PUT /api/super/users/:id/role` - 修改用户角色
-- `PUT /api/super/users/:id/credit` - 修改用户诚信度
-- `POST /api/super/users/:id/reset_password` - 重置用户密码
-- `DELETE /api/super/users/:id` - 删除用户
-- `GET /api/super/stats` - 获取系统统计
-
-### 文件上传
-- `POST /api/upload` - 上传单个文件（需认证）
-- `POST /api/upload_multiple` - 批量上传文件（需认证）
-
-### 教务系统
-- `GET /api/edu/status` - 获取绑定状态（需认证）
-- `POST /api/edu/bind` - 绑定教务账号（需认证）
-- `DELETE /api/edu/bind` - 解绑教务账号（需认证）
-- `POST /api/edu/courses` - 获取课表（需认证）
-- `POST /api/edu/grades` - 获取成绩（需认证）
-
-## 安全建议
-
-生产环境部署请注意：
-
-1. **JWT密钥**：使用随机字符串（至少32位）
-2. **超级管理员密码**：设置强密码
-3. **数据库**：如使用MySQL/PostgreSQL，设置强密码
-4. **HTTPS**：生产环境务必使用HTTPS
-5. **环境变量**：不要将敏感信息提交到版本控制
-6. **定期更新**：保持依赖和Docker镜像更新
-
-## 数据库
-
-项目根据 DSN 环境变量自动选择数据库驱动：
-
-| DSN 格式 | 数据库 | 适用场景 |
-|----------|--------|---------|
-| 不设置 / `./xxx.db` | SQLite | 本地开发、Windows |
-| `host=... port=... user=...` | PostgreSQL | Docker、生产环境 |
-
-应用启动时会自动执行数据库迁移，无需手动建表。
-
-**重置数据库：**
 ```bash
-# Docker
-docker-compose down -v
-
-# 本地 SQLite
-rm -f server/shenliyuan.db
+cd server
+go test ./...
+go build ./...
 ```
+
+## 部署
+
+服务器部署、重建、验收、排障请直接看：
+
+- [E:\AI\xiaoyuan\DEPLOY.md](E:\AI\xiaoyuan\DEPLOY.md)
+
+不要只看 README 里的摘要命令做线上运维，当前项目的部署基线已经单独沉淀在 `DEPLOY.md`。
+
+## 当前部署原则
+
+线上以 `/opt/shenliyuan` 为唯一部署目录，部署与排查顺序固定为：
+
+```text
+commit -> 编译 -> 进程 -> token
+```
+
+这个规则的完整背景和操作步骤也在 `DEPLOY.md` 里。
+
+## 权限链路基线
+
+当前已经验证通过的两条核心链路：
+
+1. 超级管理员邀请普通用户 -> 用户同意后直接成为管理员
+2. 管理员发起罢免 -> 过半投票 -> 目标降级为普通用户
+
+如果你改动了权限逻辑，发布前至少回归这两条链路。
+
+## GitHub 打包 iOS
+
+仓库已经补了 GitHub Actions 工作流：
+
+- [E:\AI\xiaoyuan\.github\workflows\ios.yml](E:\AI\xiaoyuan\.github\workflows\ios.yml)
+
+以及导出配置：
+
+- [E:\AI\xiaoyuan\client\ios\ExportOptions.plist](E:\AI\xiaoyuan\client\ios\ExportOptions.plist)
+
+### 前置条件
+
+你必须先准备好：
+
+1. Apple Developer 账号
+2. 正式的 iOS Bundle ID
+3. iOS Distribution 证书 `.p12`
+4. Provisioning Profile `.mobileprovision`
+5. `p12` 密码
+
+注意：当前项目里的 iOS 包名还是默认值：
+
+- `com.example.shenliyuan`
+
+正式打包前应先把它改成你自己的 Bundle ID。
+
+### GitHub Secrets
+
+在 GitHub 仓库设置里添加这些 Secrets：
+
+- `IOS_P12_BASE64`
+- `IOS_P12_PASSWORD`
+- `IOS_MOBILEPROVISION_BASE64`
+- `IOS_TEAM_ID`
+- `IOS_BUNDLE_ID`
+
+建议生成方式：
+
+```bash
+base64 -i dist.p12 | pbcopy
+base64 -i dist.mobileprovision | pbcopy
+```
+
+Windows 可以用：
+
+```powershell
+[Convert]::ToBase64String([IO.File]::ReadAllBytes("dist.p12"))
+[Convert]::ToBase64String([IO.File]::ReadAllBytes("dist.mobileprovision"))
+```
+
+### 触发方式
+
+工作流会在两种情况下触发：
+
+1. 手动触发 `workflow_dispatch`
+2. push 到 `fwqtest`
+
+### 构建产物
+
+工作流成功后会在 GitHub Actions 的 Artifacts 中上传：
+
+- `shenliyuan-ios-ipa`
+
+你可以直接下载生成的 `.ipa`。
+
+### 当前工作流做的事情
+
+1. 拉代码
+2. 安装 Flutter
+3. 执行 `flutter pub get`
+4. 解码证书和描述文件
+5. 临时导入 macOS keychain
+6. 构建 Flutter iOS 工程
+7. 用 `xcodebuild archive + exportArchive` 导出 IPA
+8. 上传 IPA artifact
+
+### 当前限制
+
+- 这套流程负责“自动打包”
+- 不负责替你申请苹果签名资产
+- 不负责自动上传 TestFlight
+
+如果后面你要加 TestFlight 自动上传，可以在现有工作流基础上继续补 App Store Connect API Key 步骤。
 
 ## 开发说明
 
-### 添加新的API端点
+### 帖子与集市
 
-1. 在 `internal/models/` 添加数据模型
-2. 在 `internal/handlers/` 添加处理器
-3. 在 `cmd/main.go` 注册路由
+- 帖子列表与详情接口在 `server/internal/handlers/post.go`
+- 客户端帖子状态在 `client/lib/providers/post_provider.dart`
+- 集市页在 `client/lib/screens/market_screen.dart`
 
-### 前端页面开发
+### 教师评价与榜单
 
-1. 在 `lib/models/` 添加数据模型
-2. 在 `lib/providers/` 添加状态管理
-3. 在 `lib/screens/` 添加页面
-4. 在 `lib/widgets/` 添加通用组件
+- 教师接口在 `server/internal/handlers/teacher.go`
+- 客户端榜单页在 `client/lib/screens/teacher_rate_screen.dart`
 
-## 许可证
+### 权限与管理
 
-MIT License
+- 登录与 token 逻辑在 `server/internal/handlers/auth.go`
+- 邀请逻辑在 `server/internal/handlers/invitation.go`
+- 超级管理员逻辑在 `server/internal/handlers/super_admin.go`
+
+## 已知事实
+
+- 当前客户端支持标准 emoji 输入和展示
+- Apple 风格 emoji 是否显示，取决于操作系统字体，不是应用能强制决定
+- Android 课程提醒支持静音通知和实时提醒优先尝试
+- iOS 当前走普通静音通知，不做灵动岛
+
+## 提交前建议
+
+至少跑一遍：
+
+```bash
+cd client
+flutter analyze
+flutter build apk --debug
+
+cd ../server
+go test ./...
+go build ./...
+```
+
+然后再根据改动范围做人工回归，尤其是：
+
+- 登录态
+- 公告
+- 集市
+- 发帖详情
+- 教师评分
+- 管理员权限流转

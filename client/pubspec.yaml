@@ -13,6 +13,7 @@ dependencies:
   provider: ^6.1.1
   dio: ^5.4.0
   cached_network_image: ^3.3.1
+  flutter_cache_manager: ^3.4.1
   sqflite: ^2.3.2
   flutter_secure_storage: ^9.0.0
   image_picker: ^1.0.7
@@ -24,6 +25,11 @@ dependencies:
   file_picker: ^8.1.7
   flutter_markdown: ^0.7.6
   webview_flutter: ^4.10.0
+  flutter_local_notifications: 17.2.4
+  timezone: 0.9.4
+  share_plus: 10.1.4
+  path: 1.9.1
+  package_info_plus: ^8.0.0
 
 dev_dependencies:
   flutter_test:
@@ -35,3 +41,4 @@ flutter:
   assets:
     - assets/images/
     - assets/scripts/
+    - assets/yongzhiyunkao/

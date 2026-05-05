@@ -3,6 +3,7 @@ package handlers
 import (
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -23,6 +24,13 @@ func NewAnnouncementHandler(db *gorm.DB) *AnnouncementHandler {
 func (h *AnnouncementHandler) GetList(c *gin.Context) {
 	var announcements []models.Announcement
 	h.db.Preload("Creator").Order("is_pinned DESC, created_at DESC").Find(&announcements)
+	c.JSON(http.StatusOK, announcements)
+}
+
+// GetActive 获取置顶公告（用于首页展示）
+func (h *AnnouncementHandler) GetActive(c *gin.Context) {
+	var announcements []models.Announcement
+	h.db.Where("is_pinned = ?", true).Preload("Creator").Order("created_at DESC").Find(&announcements)
 	c.JSON(http.StatusOK, announcements)
 }
 
@@ -136,4 +144,46 @@ func (h *AnnouncementHandler) Delete(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})
+}
+
+// GetUnread 获取当前用户未读公告
+func (h *AnnouncementHandler) GetUnread(c *gin.Context) {
+	userID, exists := c.Get("user_id")
+	uid, ok := userID.(uint)
+	if !exists || !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "无效的用户身份"})
+		return
+	}
+
+	var announcements []models.Announcement
+	if err := h.db.Where("id NOT IN (SELECT announcement_id FROM announcement_reads WHERE user_id = ?)", uid).
+		Order("created_at DESC").Find(&announcements).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取未读公告失败"})
+		return
+	}
+	c.JSON(http.StatusOK, announcements)
+}
+
+// MarkRead 标记公告已读
+func (h *AnnouncementHandler) MarkRead(c *gin.Context) {
+	userID, exists := c.Get("user_id")
+	uid, ok := userID.(uint)
+	if !exists || !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "无效的用户身份"})
+		return
+	}
+
+	idStr := c.Param("id")
+	id, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的公告ID"})
+		return
+	}
+
+	if err := h.db.Where("user_id = ? AND announcement_id = ?", uid, id).
+		FirstOrCreate(&models.AnnouncementRead{UserID: uid, AnnouncementID: uint(id), ReadAt: time.Now()}).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "标记公告已读失败"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "ok"})
 }

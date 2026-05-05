@@ -1,7 +1,9 @@
 import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import '../config/api_constants.dart';
+import '../utils/app_feedback.dart';
 
 /// 操作结果，包含成功状态和错误信息
 class OperationResult<T> {
@@ -11,9 +13,11 @@ class OperationResult<T> {
 
   const OperationResult({required this.success, this.data, this.errorMessage});
 
-  factory OperationResult.ok(T data) => OperationResult(success: true, data: data);
+  factory OperationResult.ok(T data) =>
+      OperationResult(success: true, data: data);
 
-  factory OperationResult.fail(String message) => OperationResult(success: false, errorMessage: message);
+  factory OperationResult.fail(String message) =>
+      OperationResult(success: false, errorMessage: message);
 }
 
 class EduProvider extends ChangeNotifier {
@@ -57,41 +61,12 @@ class EduProvider extends ChangeNotifier {
 
   /// 解析Dio异常并返回友好的错误信息
   String _parseDioError(DioException e) {
-    if (e.response != null) {
-      final data = e.response!.data;
-      // FastAPI 错误格式
-      if (data is Map) {
-        if (data.containsKey('detail')) {
-          return data['detail'].toString();
-        }
-        if (data.containsKey('error')) {
-          return data['error'].toString();
-        }
-      }
-      switch (e.response!.statusCode) {
-        case 401:
-          return '账号或密码错误';
-        case 503:
-          return '教务系统不可用，请稍后重试';
-        default:
-          return '服务器错误 (${e.response!.statusCode})';
-      }
-    }
-
-    final errType = e.type.toString();
-    final cause = e.error?.toString() ?? '(无详情)';
-
-    if (e.type == DioExceptionType.connectionTimeout ||
-        e.type == DioExceptionType.receiveTimeout) {
-      return '连接超时，请检查网络';
-    }
-    if (e.type == DioExceptionType.connectionError) {
-      return '无法连接到教务服务，请确保Python服务已启动';
-    }
-    if (e.type == DioExceptionType.badCertificate) {
-      return 'SSL证书错误';
-    }
-    return '网络异常[$errType]: $cause';
+    debugPrint('Edu Dio error: ${e.requestOptions.uri} ${e.type} ${e.error}');
+    return AppFeedback.dioErrorMessage(
+      e,
+      serviceName: '教务服务',
+      fallback: '教务操作失败，请稍后再试',
+    );
   }
 
   // 获取绑定状态
@@ -99,27 +74,40 @@ class EduProvider extends ChangeNotifier {
     if (_userId == null) return;
 
     try {
-      final response = await _eduDio.get(
-        '/api/edu/status',
-        queryParameters: {'user_id': _userId},
-      );
+      final response = await _authDio.get('/edu/status');
 
       if (response.statusCode == 200) {
         final data = response.data;
-        _isBound = data['bound'] ?? false;
-        _studentId = data['student_id'] ?? '';
+        _isBound = data['edu_bound'] ?? false;
+        _studentId = data['edu_student_id'] ?? '';
         _name = data['name'] ?? '';
-        _grade = data['grade'] ?? '';
-        _college = data['college'] ?? '';
-        _major = data['major'] ?? '';
+        _grade = data['edu_grade'] ?? '';
+        _college = data['edu_college'] ?? '';
+        _major = data['edu_major'] ?? '';
         _errorMessage = null;
+        await _saveBoundStatus();
         notifyListeners();
       }
     } on DioException catch (e) {
+      // 网络错误时使用本地缓存
+      final cached = await _loadBoundStatus();
+      _isBound = cached;
       _errorMessage = _parseDioError(e);
-      debugPrint('获取教务状态失败: $_errorMessage');
+      debugPrint('获取教务状态失败: $_errorMessage，使用缓存: $cached');
       notifyListeners();
     }
+  }
+
+  Future<void> _saveBoundStatus() async {
+    if (_userId == null) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('edu_bound_$_userId', _isBound);
+  }
+
+  Future<bool> _loadBoundStatus() async {
+    if (_userId == null) return false;
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool('edu_bound_$_userId') ?? false;
   }
 
   // 绑定教务账号
@@ -154,6 +142,7 @@ class EduProvider extends ChangeNotifier {
         _college = data['college'] ?? '';
         _major = data['major'] ?? '';
         _errorMessage = null;
+        await _saveBoundStatus();
         notifyListeners();
         return true;
       }
@@ -201,16 +190,17 @@ class EduProvider extends ChangeNotifier {
   }
 
   // 获取课表
-  Future<OperationResult<List<Map<String, dynamic>>>?> getCourses(String year, int semester) async {
+  Future<OperationResult<List<Map<String, dynamic>>>?> getCourses(
+      String year, int semester) async {
     if (_userId == null) {
       return OperationResult.fail('用户未登录');
     }
 
     try {
-      final response = await _eduDio.post(
-        '/api/edu/courses/fetch',
+      // 调用 Go 服务器，由 Go 使用存储的 cookie 访问教务系统
+      final response = await _authDio.post(
+        '/edu/courses',
         data: {
-          'user_id': _userId,
           'year': year,
           'semester': semester,
         },
@@ -218,8 +208,13 @@ class EduProvider extends ChangeNotifier {
 
       if (response.statusCode == 200) {
         final data = response.data;
+        // Go 返回的是课程列表
         if (data['courses'] != null) {
-          return OperationResult.ok(List<Map<String, dynamic>>.from(data['courses']));
+          return OperationResult.ok(
+              List<Map<String, dynamic>>.from(data['courses']));
+        }
+        if (data['error'] != null) {
+          return OperationResult.fail(data['error'].toString());
         }
       }
       return OperationResult.fail('获取课表失败');
@@ -231,16 +226,17 @@ class EduProvider extends ChangeNotifier {
   }
 
   // 获取成绩
-  Future<OperationResult<List<Map<String, dynamic>>>?> getGrades(String year, int semester) async {
+  Future<OperationResult<List<Map<String, dynamic>>>?> getGrades(
+      String year, int semester) async {
     if (_userId == null) {
       return OperationResult.fail('用户未登录');
     }
 
     try {
-      final response = await _eduDio.post(
-        '/api/edu/grades/',
+      // 调用 Go 服务器，由 Go 使用存储的 cookie 访问教务系统
+      final response = await _authDio.post(
+        '/edu/grades',
         data: {
-          'user_id': _userId,
           'year': year,
           'semester': semester,
         },
@@ -249,7 +245,11 @@ class EduProvider extends ChangeNotifier {
       if (response.statusCode == 200) {
         final data = response.data;
         if (data['grades'] != null) {
-          return OperationResult.ok(List<Map<String, dynamic>>.from(data['grades']));
+          return OperationResult.ok(
+              List<Map<String, dynamic>>.from(data['grades']));
+        }
+        if (data['error'] != null) {
+          return OperationResult.fail(data['error'].toString());
         }
       }
       return OperationResult.fail('获取成绩失败');
@@ -262,7 +262,8 @@ class EduProvider extends ChangeNotifier {
 
   /// 将课表同步到本地数据库（供课表页展示）
   /// [courses] 为 fetch 返回的原始课程列表
-  Future<bool> syncCourses(String year, int semester, List<Map<String, dynamic>> courses) async {
+  Future<bool> syncCourses(
+      String year, int semester, List<Map<String, dynamic>> courses) async {
     if (_userId == null) return false;
 
     final kbList = courses.map((c) {
@@ -271,7 +272,8 @@ class EduProvider extends ChangeNotifier {
         'kcmc': c['name'] ?? '',
         'xm': c['teacher'] ?? '',
         'cdmc': c['location'] ?? '',
-        'jc': '${time.toString().padLeft(2, '0')}${(time + 1).toString().padLeft(2, '0')}',
+        'jc':
+            '${time.toString().padLeft(2, '0')}${(time + 1).toString().padLeft(2, '0')}',
         'xqj': (c['week_day'] as int? ?? 1).toString(),
         'zcd': (c['weeks'] as List?)?.join(',') ?? '',
       };

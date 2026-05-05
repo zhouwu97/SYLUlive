@@ -395,6 +395,11 @@ class CourseReminderService {
         channelDescription: '上课前 5 分钟静音提醒',
         importance: Importance.defaultImportance,
         priority: Priority.defaultPriority,
+        styleInformation: BigTextStyleInformation(
+          reminder.detailText,
+          contentTitle: reminder.title,
+          summaryText: '静音提醒 · 即将上课',
+        ),
         playSound: false,
         enableVibration: false,
         silent: true,
@@ -405,6 +410,12 @@ class CourseReminderService {
         ticker: _tickerFor(reminder.course),
         category: AndroidNotificationCategory.reminder,
         visibility: NotificationVisibility.public,
+        color: const Color(0xFF4F46E5),
+        colorized: false,
+        subText: '课前静音提醒',
+        when: reminder.classStart.millisecondsSinceEpoch,
+        usesChronometer: true,
+        chronometerCountDown: true,
       ),
       iOS: DarwinNotificationDetails(
         presentAlert: true,
@@ -455,8 +466,10 @@ class CourseReminderService {
           id: _notificationId(course, reminderAt),
           course: course,
           time: reminderAt,
+          classStart: classStart,
           title: _titleFor(course),
           body: _bodyFor(course),
+          detailText: _detailTextFor(course, classStart),
           payload: 'course:${course.id}:${reminderAt.toIso8601String()}',
         ));
       }
@@ -484,47 +497,61 @@ class CourseReminderService {
 
   String _titleFor(CourseBlock course) {
     final name = course.name.isEmpty ? '课程' : course.name;
-    final teacher = course.teacher?.trim();
-    if (teacher != null && teacher.isNotEmpty) {
-      return '5 分钟后上课：$name · $teacher';
-    }
-    return '5 分钟后上课：$name';
+    return '即将上课 · $name';
   }
 
   String _tickerFor(CourseBlock course) {
     final name = course.name.isEmpty ? '课程' : course.name;
     final teacher = course.teacher?.trim();
     if (teacher != null && teacher.isNotEmpty) {
-      return '$teacher · $name · 5 分钟后上课';
+      return '$teacher · $name · 即将开始';
     }
-    return '$name · 5 分钟后上课';
+    return '$name · 即将开始';
   }
 
   String _bodyFor(CourseBlock course) {
     final parts = <String>[];
     final teacher = course.teacher?.trim();
     final location = course.location?.trim();
-    if (teacher != null && teacher.isNotEmpty) parts.add('教师：$teacher');
-    if (location != null && location.isNotEmpty) parts.add('教室：$location');
+    if (teacher != null && teacher.isNotEmpty) parts.add(teacher);
+    if (location != null && location.isNotEmpty) parts.add(location);
     parts.add('第${course.startSection}-${course.endSection}节');
     return parts.join(' · ');
   }
+
+  String _detailTextFor(CourseBlock course, DateTime classStart) {
+    final lines = <String>[];
+    final teacher = course.teacher?.trim();
+    final location = course.location?.trim();
+    if (teacher != null && teacher.isNotEmpty) lines.add('教师：$teacher');
+    if (location != null && location.isNotEmpty) lines.add('教室：$location');
+    lines.add('节次：第${course.startSection}-${course.endSection}节');
+    lines.add('开始时间：${_hm(classStart)}');
+    return lines.join('\n');
+  }
+
+  String _hm(DateTime d) =>
+      '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
 }
 
 class _CourseReminderEntry {
   final int id;
   final CourseBlock course;
   final DateTime time;
+  final DateTime classStart;
   final String title;
   final String body;
+  final String detailText;
   final String payload;
 
   const _CourseReminderEntry({
     required this.id,
     required this.course,
     required this.time,
+    required this.classStart,
     required this.title,
     required this.body,
+    required this.detailText,
     required this.payload,
   });
 
@@ -536,11 +563,13 @@ class _CourseReminderEntry {
     return {
       'id': id,
       'timeMillis': time.millisecondsSinceEpoch,
+      'classStartMillis': classStart.millisecondsSinceEpoch,
       'title': title,
       'body': body,
+      'detailText': detailText,
       'ticker': teacher != null && teacher.isNotEmpty
-          ? '$teacher · $name · 5 分钟后上课'
-          : '$name · 5 分钟后上课',
+          ? '$teacher · $name · 即将开始'
+          : '$name · 即将开始',
       'shortText':
           shortText.length <= 7 ? shortText : shortText.substring(0, 7),
     };

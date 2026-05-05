@@ -231,6 +231,15 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  Future<void> applyAuthPayload(
+      String token, Map<String, dynamic> userJson) async {
+    _token = token;
+    _user = User.fromJson(userJson);
+    _dio.options.headers['Authorization'] = 'Bearer $_token';
+    await _saveAuth();
+    notifyListeners();
+  }
+
   Future<AuthResult> updateAvatar(String avatarPath) async {
     try {
       // 步骤1: 上传图片文件到服务器

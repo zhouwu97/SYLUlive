@@ -1,3 +1,12 @@
+## 🙏 致谢
+
+本项目的开发参考了以下开源项目：
+
+- [syluinfo - atopos31](https://github.com/atopos31/syluinfo) - 教务系统接入参考
+- [融智云考 - luokehan](https://github.com/luokehan/yongzhiyunkao) - 题库提取功能参考
+
+感谢以上学长的开源精神！
+
 # 沈理校园
 
 沈理校园是一个面向校内学生的前后端分离应用，当前包含：

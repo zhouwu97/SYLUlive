@@ -45,6 +45,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
   }
 
   Future<void> _loadData() async {
+    if (!mounted) return;
     setState(() {
       _isLoading = true;
       _errorMessage = null;
@@ -214,8 +215,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
             backgroundColor: action == 'handled' ? Colors.green : Colors.grey,
           ),
         );
+        _loadData();
       }
-      _loadData();
     } on DioException catch (e) {
       String msg = '操作失败';
       if (e.response?.data is Map) {

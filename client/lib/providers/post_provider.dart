@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'dart:io';
 import '../models/post.dart';
+import '../utils/app_feedback.dart';
 
 /// 每个板块的帖子状态
 class _BoardState {
@@ -18,6 +19,13 @@ class CreatePostResult {
   final bool success;
   final String? errorMessage;
   const CreatePostResult({required this.success, this.errorMessage});
+}
+
+class DeletePostResult {
+  final bool success;
+  final String? errorMessage;
+
+  const DeletePostResult({required this.success, this.errorMessage});
 }
 
 class PostProvider extends ChangeNotifier {
@@ -46,7 +54,8 @@ class PostProvider extends ChangeNotifier {
   bool isLoadingFor(int boardId) => _boards[boardId]?.isLoading ?? false;
   bool hasLoadedFor(int boardId) => _boards[boardId]?.hasLoaded ?? false;
 
-  Future<void> loadPosts({int boardId = 1, String? type, String sort = 'time'}) async {
+  Future<void> loadPosts(
+      {int boardId = 1, String? type, String sort = 'time'}) async {
     final board = _boards[boardId]!;
     if (board.isLoading) return;
 
@@ -65,9 +74,8 @@ class PostProvider extends ChangeNotifier {
 
       if (response.statusCode == 200) {
         final data = response.data;
-        final List<Post> newPosts = (data['posts'] as List)
-            .map((e) => Post.fromJson(e))
-            .toList();
+        final List<Post> newPosts =
+            (data['posts'] as List).map((e) => Post.fromJson(e)).toList();
 
         if (board.currentPage == 1) {
           board.posts = newPosts;
@@ -79,7 +87,7 @@ class PostProvider extends ChangeNotifier {
         board.currentPage++;
       }
     } on DioException catch (e) {
-      board.error = e.message ?? '网络错误';
+      board.error = AppFeedback.dioErrorMessage(e);
       debugPrint('加载帖子失败: ${board.error}');
     } catch (e) {
       board.error = e.toString();
@@ -97,7 +105,8 @@ class PostProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> refresh({int boardId = 1, String? type, String sort = 'time'}) async {
+  Future<void> refresh(
+      {int boardId = 1, String? type, String sort = 'time'}) async {
     final board = _boards[boardId]!;
     board.currentPage = 1;
     board.hasMore = true;
@@ -129,19 +138,10 @@ class PostProvider extends ChangeNotifier {
       if (response.statusCode == 201) {
         return const CreatePostResult(success: true);
       }
-      return CreatePostResult(success: false, errorMessage: '发布失败 (${response.statusCode})');
+      return CreatePostResult(
+          success: false, errorMessage: '发布失败 (${response.statusCode})');
     } on DioException catch (e) {
-      String msg = '网络错误';
-      if (e.response != null) {
-        final data = e.response!.data;
-        if (data is Map && data.containsKey('error')) {
-          msg = data['error'].toString();
-        } else {
-          msg = '服务器返回错误 (${e.response!.statusCode})';
-        }
-      } else {
-        msg = '网络连接失败: ${e.message}';
-      }
+      final msg = AppFeedback.dioErrorMessage(e, fallback: '发布失败');
       debugPrint('创建帖子失败: $msg');
       return CreatePostResult(success: false, errorMessage: msg);
     } catch (e) {
@@ -158,7 +158,8 @@ class PostProvider extends ChangeNotifier {
       if (filePath.startsWith('content://')) {
         // 复制到临时文件
         final tempDir = Directory.systemTemp;
-        final tempFile = File('${tempDir.path}/upload_${DateTime.now().millisecondsSinceEpoch}.jpg');
+        final tempFile = File(
+            '${tempDir.path}/upload_${DateTime.now().millisecondsSinceEpoch}.jpg');
         await File(filePath).copy(tempFile.path);
         uploadPath = tempFile.path;
       }
@@ -178,7 +179,7 @@ class PostProvider extends ChangeNotifier {
     return null;
   }
 
-  Future<bool> deletePost(int postId) async {
+  Future<DeletePostResult> deletePostDetailed(int postId) async {
     try {
       final response = await _dio.delete('/posts/$postId');
       if (response.statusCode == 200) {
@@ -186,24 +187,48 @@ class PostProvider extends ChangeNotifier {
           board.posts.removeWhere((p) => p.id == postId);
         }
         notifyListeners();
-        return true;
+        return const DeletePostResult(success: true);
       }
+      return DeletePostResult(
+          success: false, errorMessage: '删除失败 (${response.statusCode})');
+    } on DioException catch (e) {
+      final msg = AppFeedback.dioErrorMessage(e, fallback: '删除帖子失败');
+      debugPrint('删除帖子失败: $msg');
+      return DeletePostResult(success: false, errorMessage: msg);
     } catch (e) {
-      debugPrint('删除帖子失败: $e');
+      final msg = '删除帖子失败: $e';
+      debugPrint(msg);
+      return DeletePostResult(success: false, errorMessage: msg);
     }
-    return false;
   }
 
-  Future<bool> deleteReply(int replyId) async {
+  Future<bool> deletePost(int postId) async {
+    final result = await deletePostDetailed(postId);
+    return result.success;
+  }
+
+  Future<DeletePostResult> deleteReplyDetailed(int replyId) async {
     try {
       final response = await _dio.delete('/replies/$replyId');
       if (response.statusCode == 200) {
-        return true;
+        return const DeletePostResult(success: true);
       }
+      return DeletePostResult(
+          success: false, errorMessage: '删除失败 (${response.statusCode})');
+    } on DioException catch (e) {
+      final msg = AppFeedback.dioErrorMessage(e, fallback: '删除评论失败');
+      debugPrint('删除评论失败: $msg');
+      return DeletePostResult(success: false, errorMessage: msg);
     } catch (e) {
-      debugPrint('删除评论失败: $e');
+      final msg = '删除评论失败: $e';
+      debugPrint(msg);
+      return DeletePostResult(success: false, errorMessage: msg);
     }
-    return false;
+  }
+
+  Future<bool> deleteReply(int replyId) async {
+    final result = await deleteReplyDetailed(replyId);
+    return result.success;
   }
 
   Future<bool> likePost(int postId) async {

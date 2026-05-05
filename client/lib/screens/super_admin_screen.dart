@@ -9,7 +9,8 @@ class SuperAdminScreen extends StatefulWidget {
   State<SuperAdminScreen> createState() => _SuperAdminScreenState();
 }
 
-class _SuperAdminScreenState extends State<SuperAdminScreen> with SingleTickerProviderStateMixin {
+class _SuperAdminScreenState extends State<SuperAdminScreen>
+    with SingleTickerProviderStateMixin {
   late Dio _dio;
   late TabController _tabController;
   List<dynamic> _users = [];
@@ -21,9 +22,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> with SingleTickerPr
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-    _dio = Dio(BaseOptions(baseUrl: 'http://localhost:8080/api'));
-    final authProvider = context.read<AuthProvider>();
-    _dio.options.headers['Authorization'] = 'Bearer ${authProvider.token}';
+    _dio = context.read<AuthProvider>().dio;
     _loadAll();
   }
 
@@ -56,33 +55,49 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> with SingleTickerPr
   }
 
   Future<void> _approveInvitation(dynamic inv, bool approve) async {
-    String? rejectReason;
-    if (!approve) {
-      final ctrl = TextEditingController();
-      final ok = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('驳回理由（选填）'),
-          content: TextField(controller: ctrl, maxLines: 2, decoration: const InputDecoration(hintText: '可选填驳回原因')),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
-            ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('驳回')),
-          ],
+    final ctrl = TextEditingController();
+    final reason = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(approve ? '同意理由' : '驳回理由'),
+        content: TextField(
+          controller: ctrl,
+          maxLines: 3,
+          decoration: InputDecoration(
+            hintText: approve ? '填写同意该用户成为管理员的理由' : '填写驳回原因',
+            border: const OutlineInputBorder(),
+          ),
         ),
-      );
-      if (ok != true) return;
-      rejectReason = ctrl.text.trim();
-    }
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+          ElevatedButton(
+            onPressed: () {
+              final value = ctrl.text.trim();
+              if (value.isEmpty) return;
+              Navigator.pop(ctx, value);
+            },
+            child: Text(approve ? '同意' : '驳回'),
+          ),
+        ],
+      ),
+    );
+    ctrl.dispose();
+    if (reason == null) return;
 
     try {
       if (approve) {
-        await _dio.post('/super/invitations/${inv['id']}/approve');
+        await _dio.post('/admin/invitations/${inv['id']}/vote',
+            data: {'reason': reason});
       } else {
-        await _dio.post('/super/invitations/${inv['id']}/approve', data: {'reject': true, 'reason': rejectReason});
+        await _dio.post('/super/invitations/${inv['id']}/approve',
+            data: {'reject': true, 'reason': reason});
       }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(approve ? '已批准' : '已驳回'), backgroundColor: approve ? Colors.green : Colors.red),
+          SnackBar(
+              content: Text(approve ? '已同意，等待满 3 票' : '已驳回'),
+              backgroundColor: approve ? Colors.green : Colors.red),
         );
         _loadInvitations();
       }
@@ -120,8 +135,14 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> with SingleTickerPr
       Padding(
         padding: const EdgeInsets.all(8),
         child: TextField(
-          decoration: const InputDecoration(hintText: '搜索学号/昵称...', prefixIcon: Icon(Icons.search), border: OutlineInputBorder()),
-          onChanged: (v) { _searchQuery = v; _loadUsers(); },
+          decoration: const InputDecoration(
+              hintText: '搜索学号/昵称...',
+              prefixIcon: Icon(Icons.search),
+              border: OutlineInputBorder()),
+          onChanged: (v) {
+            _searchQuery = v;
+            _loadUsers();
+          },
         ),
       ),
       Expanded(
@@ -139,9 +160,11 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> with SingleTickerPr
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       child: ListTile(
-        leading: CircleAvatar(child: Text((user['nickname'] ?? '?').toString().substring(0, 1))),
+        leading: CircleAvatar(
+            child: Text((user['nickname'] ?? '?').toString().substring(0, 1))),
         title: Text(user['nickname'] ?? '未知'),
-        subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        subtitle:
+            Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text('学号: ${user['student_id']}'),
           Text('角色: ${user['role']} | 诚信: ${user['credit_score']}%'),
         ]),
@@ -151,7 +174,8 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> with SingleTickerPr
           itemBuilder: (_) => [
             const PopupMenuItem(value: 'role', child: Text('修改角色')),
             const PopupMenuItem(value: 'reset', child: Text('重置密码')),
-            if (user['role'] != 'super_admin') const PopupMenuItem(value: 'delete', child: Text('删除用户')),
+            if (user['role'] != 'super_admin')
+              const PopupMenuItem(value: 'delete', child: Text('删除用户')),
           ],
         ),
       ),
@@ -159,13 +183,16 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> with SingleTickerPr
   }
 
   void _handleUserAction(dynamic user, String action) {
-    if (action == 'role') _showChangeRoleDialog(user);
-    else if (action == 'reset') _resetPassword(user['id']);
+    if (action == 'role')
+      _showChangeRoleDialog(user);
+    else if (action == 'reset')
+      _resetPassword(user['id']);
     else if (action == 'delete') _deleteUser(user['id']);
   }
 
   Widget _buildApprovalsTab() {
-    if (_pendingInvitations.isEmpty) return const Center(child: Text('暂无待审批的申请'));
+    if (_pendingInvitations.isEmpty)
+      return const Center(child: Text('暂无待审批的申请'));
     return RefreshIndicator(
       onRefresh: _loadAll,
       child: ListView.builder(
@@ -179,32 +206,52 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> with SingleTickerPr
             margin: const EdgeInsets.only(bottom: 10),
             child: Padding(
               padding: const EdgeInsets.all(14),
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Row(children: [
-                  CircleAvatar(radius: 18, child: Text((user['nickname'] ?? '?').toString().substring(0, 1))),
-                  const SizedBox(width: 10),
-                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text(user['nickname'] ?? '未知', style: const TextStyle(fontWeight: FontWeight.w600)),
-                    Text('学号: ${user['student_id']} | 诚信: ${user['credit_score']}%', style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                    Text('邀请人: ${inviter['nickname'] ?? '未知'}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                  ])),
-                ]),
-                const SizedBox(height: 12),
-                Row(mainAxisAlignment: MainAxisAlignment.end, children: [
-                  TextButton.icon(
-                    onPressed: () => _approveInvitation(inv, false),
-                    icon: const Icon(Icons.close, size: 16, color: Colors.red),
-                    label: const Text('驳回', style: TextStyle(color: Colors.red)),
-                  ),
-                  const SizedBox(width: 8),
-                  ElevatedButton.icon(
-                    onPressed: () => _approveInvitation(inv, true),
-                    icon: const Icon(Icons.check, size: 16),
-                    label: const Text('批准'),
-                    style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
-                  ),
-                ]),
-              ]),
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(children: [
+                      CircleAvatar(
+                          radius: 18,
+                          child: Text((user['nickname'] ?? '?')
+                              .toString()
+                              .substring(0, 1))),
+                      const SizedBox(width: 10),
+                      Expanded(
+                          child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                            Text(user['nickname'] ?? '未知',
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w600)),
+                            Text(
+                                '学号: ${user['student_id']} | 诚信: ${user['credit_score']}%',
+                                style: const TextStyle(
+                                    fontSize: 12, color: Colors.grey)),
+                            Text('邀请人: ${inviter['nickname'] ?? '未知'}',
+                                style: const TextStyle(
+                                    fontSize: 12, color: Colors.grey)),
+                          ])),
+                    ]),
+                    const SizedBox(height: 12),
+                    Row(mainAxisAlignment: MainAxisAlignment.end, children: [
+                      TextButton.icon(
+                        onPressed: () => _approveInvitation(inv, false),
+                        icon: const Icon(Icons.close,
+                            size: 16, color: Colors.red),
+                        label: const Text('驳回',
+                            style: TextStyle(color: Colors.red)),
+                      ),
+                      const SizedBox(width: 8),
+                      ElevatedButton.icon(
+                        onPressed: () => _approveInvitation(inv, true),
+                        icon: const Icon(Icons.check, size: 16),
+                        label: const Text('同意'),
+                        style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.green,
+                            foregroundColor: Colors.white),
+                      ),
+                    ]),
+                  ]),
             ),
           );
         },
@@ -221,8 +268,18 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> with SingleTickerPr
         content: Text('用户: ${user['nickname']}'),
         actions: [
           if (user['role'] != 'super_admin')
-            TextButton(onPressed: () { _changeRole(user['id'], 'user'); Navigator.pop(ctx); }, child: const Text('普通用户')),
-          TextButton(onPressed: () { _changeRole(user['id'], 'admin'); Navigator.pop(ctx); }, child: const Text('管理员')),
+            TextButton(
+                onPressed: () {
+                  _changeRole(user['id'], 'user');
+                  Navigator.pop(ctx);
+                },
+                child: const Text('普通用户')),
+          TextButton(
+              onPressed: () {
+                _changeRole(user['id'], 'admin');
+                Navigator.pop(ctx);
+              },
+              child: const Text('管理员')),
         ],
       ),
     );
@@ -231,27 +288,45 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> with SingleTickerPr
   Future<void> _changeRole(int uid, String role) async {
     try {
       await _dio.put('/super/users/$uid/role', data: {'role': role});
-      if (mounted) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('角色修改成功'))); _loadUsers(); }
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('角色修改成功')));
+        _loadUsers();
+      }
     } catch (_) {}
   }
 
   Future<void> _resetPassword(int uid) async {
     try {
       await _dio.post('/super/users/$uid/reset_password');
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('密码已重置')));
+      if (mounted)
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('密码已重置')));
     } catch (_) {}
   }
 
   Future<void> _deleteUser(int uid) async {
-    final ok = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
-      title: const Text('确认删除'), content: const Text('不可撤销'),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
-        ElevatedButton(onPressed: () => Navigator.pop(ctx, true), style: ElevatedButton.styleFrom(backgroundColor: Colors.red), child: const Text('删除')),
-      ],
-    ));
+    final ok = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+              title: const Text('确认删除'),
+              content: const Text('不可撤销'),
+              actions: [
+                TextButton(
+                    onPressed: () => Navigator.pop(ctx, false),
+                    child: const Text('取消')),
+                ElevatedButton(
+                    onPressed: () => Navigator.pop(ctx, true),
+                    style:
+                        ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                    child: const Text('删除')),
+              ],
+            ));
     if (ok == true) {
-      try { await _dio.delete('/super/users/$uid'); _loadUsers(); } catch (_) {}
+      try {
+        await _dio.delete('/super/users/$uid');
+        _loadUsers();
+      } catch (_) {}
     }
   }
 }

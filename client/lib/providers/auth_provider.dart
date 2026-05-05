@@ -6,6 +6,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user.dart';
 import '../config/api_constants.dart';
+import '../utils/app_feedback.dart';
 
 /// 认证结果，包含成功状态和错误信息
 class AuthResult {
@@ -16,7 +17,8 @@ class AuthResult {
 
   factory AuthResult.success() => const AuthResult(success: true);
 
-  factory AuthResult.failure(String message) => AuthResult(success: false, errorMessage: message);
+  factory AuthResult.failure(String message) =>
+      AuthResult(success: false, errorMessage: message);
 }
 
 class AuthProvider extends ChangeNotifier {
@@ -99,60 +101,12 @@ class AuthProvider extends ChangeNotifier {
 
   /// 解析Dio异常并返回友好的错误信息（附带技术细节方便排查）
   String _parseDioError(DioException e) {
-    final url = e.requestOptions.uri.toString();
-
-    if (e.response != null) {
-      final data = e.response!.data;
-      if (data is Map) {
-        if (data.containsKey('error')) {
-          return data['error'].toString();
-        }
-        if (data.containsKey('message')) {
-          return data['message'].toString();
-        }
-      }
-      switch (e.response!.statusCode) {
-        case 400:
-          return '请求参数错误';
-        case 401:
-          return '学号/邮箱或密码错误';
-        case 403:
-          return '登录已过期，请重新登录';
-        case 404:
-          return '学号不存在，请先注册';
-        case 409:
-          return '学号/邮箱已存在';
-        case 500:
-          return '服务器错误，请稍后再试';
-        default:
-          return '服务器返回错误 (${e.response!.statusCode})';
-      }
-    }
-
-    // 网络错误 — 附带底层异常详情
-    final errType = e.type.toString();
-    final cause = e.error?.toString() ?? '(无详情)';
-
-    if (e.type == DioExceptionType.connectionTimeout) {
-      return '连接超时 → $url\n$cause';
-    }
-    if (e.type == DioExceptionType.receiveTimeout) {
-      return '接收超时 → $url\n$cause';
-    }
-    if (e.type == DioExceptionType.sendTimeout) {
-      return '发送超时 → $url\n$cause';
-    }
-    if (e.type == DioExceptionType.connectionError) {
-      // SocketException: No route to host / Connection refused / Network is unreachable 等
-      return '无法连接到服务器 → $url\n$cause';
-    }
-    if (e.type == DioExceptionType.badCertificate) {
-      return 'SSL证书错误 → $url\n$cause';
-    }
-    return '网络异常[$errType] → $url\n$cause';
+    debugPrint('Dio error: ${e.requestOptions.uri} ${e.type} ${e.error}');
+    return AppFeedback.dioErrorMessage(e, fallback: '操作失败，请稍后再试');
   }
 
-  Future<AuthResult> register(String studentId, String password, {String? nickname, String? qq}) async {
+  Future<AuthResult> register(String studentId, String password,
+      {String? nickname, String? qq}) async {
     _isLoading = true;
     notifyListeners();
 
@@ -246,7 +200,8 @@ class AuthProvider extends ChangeNotifier {
 
   Future<AuthResult> updateProfile(String nickname) async {
     try {
-      final response = await _dio.put('/user/profile', data: {'nickname': nickname});
+      final response =
+          await _dio.put('/user/profile', data: {'nickname': nickname});
       if (response.statusCode == 200) {
         _user = User.fromJson(response.data);
         await _saveAuth();
@@ -284,14 +239,16 @@ class AuthProvider extends ChangeNotifier {
       });
       final uploadResponse = await _dio.post('/upload', data: uploadFormData);
 
-      if (uploadResponse.statusCode != 200 || uploadResponse.data['url'] == null) {
+      if (uploadResponse.statusCode != 200 ||
+          uploadResponse.data['url'] == null) {
         return AuthResult.failure('头像上传失败');
       }
 
       final avatarUrl = uploadResponse.data['url'] as String;
 
       // 步骤2: 更新用户头像URL
-      final response = await _dio.put('/user/avatar', data: {'avatar': avatarUrl});
+      final response =
+          await _dio.put('/user/avatar', data: {'avatar': avatarUrl});
       if (response.statusCode == 200) {
         // 刷新用户信息以获取最新的avatar
         final profileResponse = await _dio.get('/user/profile');
@@ -310,7 +267,8 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  Future<AuthResult> changePassword(String oldPassword, String newPassword) async {
+  Future<AuthResult> changePassword(
+      String oldPassword, String newPassword) async {
     try {
       final response = await _dio.post('/change_password', data: {
         'old_password': oldPassword,
@@ -324,6 +282,31 @@ class AuthProvider extends ChangeNotifier {
       final errorMsg = _parseDioError(e);
       debugPrint('修改密码失败: $errorMsg');
       return AuthResult.failure(errorMsg);
+    }
+  }
+
+  Future<AuthResult> resetPasswordWithEdu(
+    String studentId,
+    String eduPassword,
+    String newPassword,
+  ) async {
+    try {
+      final response = await _dio.post('/forgot_password', data: {
+        'student_id': studentId,
+        'edu_password': eduPassword,
+        'new_password': newPassword,
+      });
+      if (response.statusCode == 200) {
+        return AuthResult.success();
+      }
+      return AuthResult.failure('密码重置失败');
+    } on DioException catch (e) {
+      final errorMsg = _parseDioError(e);
+      debugPrint('密码重置失败: $errorMsg');
+      return AuthResult.failure(errorMsg);
+    } catch (e) {
+      debugPrint('密码重置失败: $e');
+      return AuthResult.failure('密码重置失败: $e');
     }
   }
 
@@ -343,7 +326,8 @@ class AuthProvider extends ChangeNotifier {
   /// 校验验证码
   Future<AuthResult> verifyCode(String qq, String code) async {
     try {
-      final response = await _dio.post('/verify_code', data: {'qq': qq, 'code': code});
+      final response =
+          await _dio.post('/verify_code', data: {'qq': qq, 'code': code});
       if (response.statusCode == 200 && response.data['success'] == true) {
         return AuthResult.success();
       }

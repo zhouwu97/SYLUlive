@@ -280,40 +280,38 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
     required String confirmText,
   }) async {
     final controller = TextEditingController();
-    try {
-      final result = await showDialog<String>(
-        context: context,
-        useRootNavigator: false,
-        builder: (ctx) => AlertDialog(
-          title: Text(title),
-          content: TextField(
-            controller: controller,
-            maxLines: 4,
-            decoration: InputDecoration(
-              labelText: label,
-              hintText: hint,
-              border: const OutlineInputBorder(),
-            ),
+    final result = await showDialog<String>(
+      context: context,
+      useRootNavigator: false,
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: TextField(
+          controller: controller,
+          maxLines: 4,
+          decoration: InputDecoration(
+            labelText: label,
+            hintText: hint,
+            border: const OutlineInputBorder(),
           ),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
-            FilledButton(
-              onPressed: () {
-                final reason = controller.text.trim();
-                if (reason.isEmpty) return;
-                Navigator.pop(ctx, reason);
-              },
-              child: Text(confirmText),
-            ),
-          ],
         ),
-      );
-      if (result == null || result.trim().isEmpty) return null;
-      return result.trim();
-    } finally {
-      controller.dispose();
-    }
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+          FilledButton(
+            onPressed: () {
+              final reason = controller.text.trim();
+              if (reason.isEmpty) return;
+              Navigator.pop(ctx, reason);
+            },
+            child: Text(confirmText),
+          ),
+        ],
+      ),
+    );
+    // 推迟到下一帧 dispose，避免对话框退出动画期间 controller 被提前回收
+    WidgetsBinding.instance.addPostFrameCallback((_) => controller.dispose());
+    if (result == null || result.trim().isEmpty) return null;
+    return result.trim();
   }
 
   String _dioErrorMessage(DioException e, String fallback) {

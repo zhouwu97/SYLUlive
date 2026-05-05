@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -27,7 +28,10 @@ func (h *TeacherHandler) GetList(c *gin.Context) {
 		query = query.Where("name LIKE ?", "%"+q+"%")
 	}
 	var teachers []models.Teacher
-	query.Find(&teachers)
+	if err := query.Find(&teachers).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取教师列表失败"})
+		return
+	}
 
 	type TeacherWithStats struct {
 		models.Teacher
@@ -76,11 +80,19 @@ func (h *TeacherHandler) GetDetail(c *gin.Context) {
 	if count > 0 {
 		h.db.Model(&models.TeacherRating{}).Where("teacher_id = ?", id).Select("AVG(CAST(star AS FLOAT))").Scan(&avg)
 	}
+	var myRating *models.TeacherRating
+	if userID, exists := c.Get("user_id"); exists {
+		var rating models.TeacherRating
+		if err := h.db.Where("teacher_id = ? AND user_id = ?", id, userID).First(&rating).Error; err == nil {
+			myRating = &rating
+		}
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"teacher":      teacher,
 		"ratings":      ratings,
 		"rating_count": count,
 		"average_star": avg,
+		"my_rating":    myRating,
 	})
 }
 
@@ -177,7 +189,10 @@ func (h *TeacherHandler) RejectTeacher(c *gin.Context) {
 // GetPending 获取待审核教师列表
 func (h *TeacherHandler) GetPending(c *gin.Context) {
 	var teachers []models.Teacher
-	h.db.Where("verified = ?", false).Order("created_at DESC").Find(&teachers)
+	if err := h.db.Where("verified = ?", false).Order("created_at DESC").Find(&teachers).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取待审核教师失败"})
+		return
+	}
 	c.JSON(http.StatusOK, teachers)
 }
 
@@ -225,6 +240,18 @@ func (h *TeacherHandler) ReportRating(c *gin.Context) {
 func (h *TeacherHandler) VoteRemoveAdmin(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 	adminID, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+	var input struct {
+		Reason string `json:"reason" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请填写申请理由"})
+		return
+	}
+	input.Reason = strings.TrimSpace(input.Reason)
+	if input.Reason == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请填写申请理由"})
+		return
+	}
 
 	// 只能投票罢免普通管理员
 	var admin models.User
@@ -240,24 +267,27 @@ func (h *TeacherHandler) VoteRemoveAdmin(c *gin.Context) {
 	}
 
 	// 检查是否已投票
-	var exist models.AdminVote
-	if h.db.Where("admin_id = ? AND voter_id = ?", adminID, userID).First(&exist).Error == nil {
+	var exist models.AdminRemovalVote
+	if h.db.Where("target_admin_id = ? AND voter_id = ?", adminID, userID).First(&exist).Error == nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "你已经投过票了"})
 		return
 	}
 
-	h.db.Create(&models.AdminVote{AdminID: uint(adminID), VoterID: userID.(uint)})
+	if err := h.db.Create(&models.AdminRemovalVote{TargetAdminID: uint(adminID), VoterID: userID.(uint), Reason: input.Reason}).Error; err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "你已经投过票了"})
+		return
+	}
 
-	// 判断是否达到半数
+	// 判断是否超过可投票管理员半数，目标管理员本人不计入可投票人数。
 	var totalAdmins int64
-	h.db.Model(&models.User{}).Where("role IN ?", []string{"admin", "super_admin"}).Count(&totalAdmins)
+	h.db.Model(&models.User{}).Where("role IN ? AND id <> ?", []string{"admin", "super_admin"}, adminID).Count(&totalAdmins)
 	var votes int64
-	h.db.Model(&models.AdminVote{}).Where("admin_id = ?", adminID).Count(&votes)
+	h.db.Model(&models.AdminRemovalVote{}).Where("target_admin_id = ?", adminID).Count(&votes)
 
 	if votes > totalAdmins/2 {
 		h.db.Model(&models.User{}).Where("id = ?", adminID).Update("role", models.RoleUser)
-		h.db.Where("admin_id = ?", adminID).Delete(&models.AdminVote{})
-		h.logAdmin(c, "投票罢免管理员", admin.Nickname, "")
+		h.db.Where("target_admin_id = ?", adminID).Delete(&models.AdminRemovalVote{})
+		h.logAdmin(c, "投票罢免管理员", admin.Nickname, input.Reason)
 		c.JSON(http.StatusOK, gin.H{"message": "投票过半，管理员已被罢免"})
 	} else {
 		c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("已投票，还需%d票达到半数", (totalAdmins/2+1)-votes)})
@@ -268,13 +298,70 @@ func (h *TeacherHandler) VoteRemoveAdmin(c *gin.Context) {
 func (h *TeacherHandler) GetAdminVotes(c *gin.Context) {
 	adminID := c.Param("id")
 	var votes int64
-	h.db.Model(&models.AdminVote{}).Where("admin_id = ?", adminID).Count(&votes)
+	h.db.Model(&models.AdminRemovalVote{}).Where("target_admin_id = ?", adminID).Count(&votes)
 	var total int64
-	h.db.Model(&models.User{}).Where("role IN ?", []string{"admin", "super_admin"}).Count(&total)
+	h.db.Model(&models.User{}).Where("role IN ? AND id <> ?", []string{"admin", "super_admin"}, adminID).Count(&total)
 	var myVote int64
 	uid, _ := c.Get("user_id")
-	h.db.Model(&models.AdminVote{}).Where("admin_id = ? AND voter_id = ?", adminID, uid).Count(&myVote)
-	c.JSON(http.StatusOK, gin.H{"votes": votes, "total": total, "my_vote": myVote > 0})
+	h.db.Model(&models.AdminRemovalVote{}).Where("target_admin_id = ? AND voter_id = ?", adminID, uid).Count(&myVote)
+	c.JSON(http.StatusOK, gin.H{"votes": votes, "total": total, "required_votes": total/2 + 1, "my_vote": myVote > 0})
+}
+
+// GetRemovalRequests 获取管理员罢免待办
+func (h *TeacherHandler) GetRemovalRequests(c *gin.Context) {
+	uid, _ := c.Get("user_id")
+
+	type targetRow struct {
+		TargetAdminID uint
+	}
+	var rows []targetRow
+	if err := h.db.Model(&models.AdminRemovalVote{}).
+		Select("target_admin_id").
+		Group("target_admin_id").
+		Scan(&rows).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取罢免待办失败"})
+		return
+	}
+
+	result := make([]gin.H, 0, len(rows))
+	for _, row := range rows {
+		var admin models.User
+		if err := h.db.Select("id, nickname, student_id, role").First(&admin, row.TargetAdminID).Error; err != nil || admin.Role != models.RoleAdmin {
+			continue
+		}
+
+		var votes []models.AdminRemovalVote
+		h.db.Where("target_admin_id = ?", row.TargetAdminID).Preload("Voter").Order("created_at ASC").Find(&votes)
+		if len(votes) == 0 {
+			continue
+		}
+		var myVote int64
+		h.db.Model(&models.AdminRemovalVote{}).Where("target_admin_id = ? AND voter_id = ?", row.TargetAdminID, uid).Count(&myVote)
+		var total int64
+		h.db.Model(&models.User{}).Where("role IN ? AND id <> ?", []string{"admin", "super_admin"}, row.TargetAdminID).Count(&total)
+
+		initiator := gin.H{}
+		if votes[0].Voter.ID != 0 {
+			initiator = gin.H{
+				"id":         votes[0].Voter.ID,
+				"nickname":   votes[0].Voter.Nickname,
+				"student_id": votes[0].Voter.StudentID,
+			}
+		}
+
+		result = append(result, gin.H{
+			"admin":          admin,
+			"reason":         votes[0].Reason,
+			"initiator":      initiator,
+			"votes":          len(votes),
+			"total":          total,
+			"required_votes": total/2 + 1,
+			"my_vote":        myVote > 0,
+			"can_vote":       uid.(uint) != row.TargetAdminID && myVote == 0,
+			"created_at":     votes[0].CreatedAt,
+		})
+	}
+	c.JSON(http.StatusOK, result)
 }
 
 // GetViolations 获取用户违规记录

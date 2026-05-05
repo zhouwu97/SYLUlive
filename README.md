@@ -6,71 +6,64 @@
 <img src="https://img.shields.io/badge/License-MIT-orange" alt="License">
 </p>
 
-## 致谢
+## 🙏 致谢
 
-在此，我要感谢学长 [atopos31](https://github.com/atopos31)。
+本项目的开发参考了以下开源项目：
 
-我目前并不了解如何接入教务系统，所以借鉴了他的项目 [syluinfo](https://github.com/sengeiou/syluinfo)。由于我平时胆子比较小，一直没有联系学长确认。如果对您造成困扰，请联系我的邮箱：**wu22402@gmail.com**，我会立即删除相关内容。
-目前该功能暂未完善，敬请期待。
-感谢学长的开源精神！
+- [syluinfo - atopos31](https://github.com/atopos31/syluinfo) - 教务系统接入参考
+- [融智云考 - luokehan](https://github.com/luokehan/yongzhiyunkao) - 题库提取功能参考
 
-## 项目简介
+感谢以上学长的开源精神！
 
-沈理校园是一款面向高校学生的互助社交应用，提供水贴交流、校园集市、举报申诉等功能。
 
-## 功能列表
+## 📱 项目简介
 
-### 已实现 ✅
+沈理校园是一款面向高校学生的互助社交应用，采用前后端分离架构，提供水贴交流、校园集市、举报申诉等功能。
+
+## ✨ 功能列表
+
+### ✅ 已实现
 
 | 功能 | 说明 | 状态 |
 |------|------|------|
 | 用户注册/登录 | 学号+密码注册，JWT认证 | ✅ |
+| 课表日历视图 | 可视化课表展示 | ✅ |
 | 个性化设置 | 头像、昵称、背景图、主题切换 | ✅ |
 | 水贴广场 | 发布图文帖子，支持点赞 | ✅ |
 | 校园集市 | 二手交易信息发布 | ✅ |
 | 公告系统 | 管理员发布公告 | ✅ |
+| 避雷版块 | 教师评价与举报 | ✅ |
+| 专业榜 | 专业评价与排名 | ✅ |
+| 举报申诉 | 用户举报 | ✅ |
+| 教务绑定 | 课表、成绩查询 | ✅ |
+| 管理员系统 | 邀请制管理员、分级权限 | ✅ |
+| 题库提取 | 考试题目识别提取 | ✅ |
+| 学生认证 | 接入学校认证 | ✅ |
+(学生认证仅用于验证学生身份，登录教务获取课表，查看期末成绩等等)
 
-### 开发中 🔨
-
-| 功能 | 说明 | 状态 |
-|------|------|------|
-| 私信聊天 | 点对点即时消息 | 🔨 |
-| 课表日历视图 | 可视化课表展示 | 🔨 |
-| 成绩统计分析 | 成绩趋势、 GPA 计算 | 🔨 |
-
-### 待开发 📋
+### 📋 待开发
 
 | 功能 | 说明 | 优先级 |
 |------|------|--------|
-| 推送通知 | 帖子回复、私信提醒 | P1 |
+| 用户等级系统 | 发帖数、活跃度 | P1 |
 | 深色模式自动切换 | 根据时间自动切换 | P2 |
 | 多图上传 | 帖子支持多图 | P2 |
-| 用户等级系统 | 发帖数、活跃度 | P2 |
-| 实名认证 | 接入学校认证 | P3 |
 | 积分商城 | 虚拟货币、兑换 | P3 |
-| 教务系统绑定 | 接入教务系统（课表、成绩查询）| P3 |
-| 管理员系统 | 邀请制管理员、举报处理 | P4 |
-| 公众法庭 | 申诉投票自治系统 | P4 |
-| 文件上传 | 图片上传功能 | P4 |
-## 技术栈
+
+## 🛠️ 技术栈
 
 ### 后端
-- Go 1.21+
-- Gin (Web框架)
-- GORM (ORM)
+- Go 1.21+ / Gin (Web框架) / GORM (ORM)
 - SQLite (本地开发) / PostgreSQL (生产环境)
-- JWT (认证)
-- bcrypt (密码加密)
+- JWT (认证) / bcrypt (密码加密)
+- go-resty + rod (教务系统爬虫)
 
 ### 前端
-- Flutter 3.x+
-- Provider (状态管理)
-- Dio (HTTP客户端)
-- cached_network_image (图片缓存)
-- sqflite (本地数据库)
-- flutter_secure_storage (安全存储)
+- Flutter 3.x+ / Provider (状态管理)
+- Dio (HTTP客户端) / cached_network_image (图片缓存)
+- sqflite (本地数据库) / flutter_secure_storage (安全存储)
 
-## 项目结构
+## 📁 项目结构
 
 ```
 shenliyuan/
@@ -94,47 +87,18 @@ shenliyuan/
 │   │   └── theme/        # 主题
 │   ├── pubspec.yaml
 │   └── Dockerfile
+├── python-edu-service/   # Python 教务爬虫服务
 ├── docker-compose.yml
 └── README.md
 ```
 
-## 环境要求
+## 🚀 快速开始
 
-### 开发环境
-- Go 1.21+
-- Flutter 3.x+
+### 环境要求
+- Go 1.21+ / Flutter 3.x+
+- Docker >= 20.10 和 Docker Compose >= 2.0 (可选)
 
-### 安装 Go
-
-**Linux:**
-```bash
-wget https://go.dev/dl/go1.23.4.linux-amd64.tar.gz
-sudo tar -C /usr/local -xzf go1.23.4.linux-amd64.tar.gz
-echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.bashrc
-source ~/.bashrc
-```
-
-**macOS:**
-```bash
-brew install go
-```
-
-**Windows:**
-下载安装包: https://go.dev/dl/
-或使用包管理器:
-```powershell
-winget install GoLang.Go
-```
-
-### 生产环境
-- Docker >= 20.10 和 Docker Compose >= 2.0（Docker 部署）
-- 或 Linux + PostgreSQL（直接部署）
-
-## 快速开始
-
-### 本地运行（零配置，推荐开发使用）
-
-无需安装数据库，一条命令启动：
+### 本地运行（零配置）
 
 ```bash
 cd server
@@ -143,24 +107,11 @@ go run cmd/main.go
 
 启动后访问 http://localhost:8080，数据库自动创建为 `server/shenliyuan.db`。
 
-默认账号：
-
-| 角色 | 用户名 | 密码 |
-|------|--------|------|
-| 超级管理员 | `super_admin` | `dev-only-password-do-not-use-in-production` |
-| 管理员 | `admin` | `admin123` |
-| 普通用户 | `2024001` | `test123456` |
-
-> **Windows** 同样操作，进入 `server` 目录执行 `go run cmd/main.go`。
-
-### Docker 部署（生产环境，PostgreSQL）
+### Docker 部署
 
 ```bash
-# 设置环境变量
 export JWT_SECRET=$(openssl rand -base64 32)
 export SUPER_ADMIN_DEFAULT_PASSWORD="your-strong-password"
-
-# 启动
 docker-compose up -d --build
 ```
 
@@ -171,33 +122,24 @@ sudo bash deploy.sh
 # 部署后可用 xiaoyuan start/stop/restart/status/logs 管理
 ```
 
-## 配置说明
+## ⚙️ 配置说明
 
 ### 环境变量
 
 | 变量名 | 说明 | 必填 |
 |--------|------|------|
 | JWT_SECRET | JWT密钥（至少32位随机字符串） | 是 |
-| DSN | 数据库连接字符串。不设置默认 `./shenliyuan.db` (SQLite)，Docker/生产环境设为 PostgreSQL 格式 | 否 |
+| DSN | 数据库连接字符串，默认 `./shenliyuan.db` (SQLite) | 否 |
 | SUPER_ADMIN_DEFAULT_PASSWORD | 超级管理员初始密码 | 是 |
-| UPLOAD_DIR | 文件上传目录 | 否（默认./uploads） |
+| UPLOAD_DIR | 文件上传目录（默认 ./uploads） | 否 |
 
-## 超级管理员
-
-首次启动后，使用以下命令获取超级管理员账号信息：
-
-```bash
-# 查看服务日志
-docker-compose logs server
-```
-
-超级管理员账号信息会在首次启动时输出。
-
-## API 文档
+## 🔌 API 文档
 
 ### 认证
-- `POST /api/register` - 注册
 - `POST /api/login` - 登录
+- `POST /api/login_edu` - 教务验证登录
+- `POST /api/register_with_edu` - 教务验证注册
+- `POST /api/forgot_password` - 找回密码
 - `POST /api/change_password` - 修改密码（需认证）
 
 ### 用户
@@ -266,9 +208,14 @@ docker-compose logs server
 - `POST /api/edu/courses` - 获取课表（需认证）
 - `POST /api/edu/grades` - 获取成绩（需认证）
 
-## 安全建议
+### 教师评价
+- `GET /api/teachers` - 教师列表
+- `POST /api/teachers/:id/rate` - 评价教师
 
-生产环境部署请注意：
+### 题库提取
+- `POST /api/exam/extract` - 提取考试题目（需认证）
+
+## 🔒 安全建议
 
 1. **JWT密钥**：使用随机字符串（至少32位）
 2. **超级管理员密码**：设置强密码
@@ -277,7 +224,7 @@ docker-compose logs server
 5. **环境变量**：不要将敏感信息提交到版本控制
 6. **定期更新**：保持依赖和Docker镜像更新
 
-## 数据库
+## 💾 数据库
 
 项目根据 DSN 环境变量自动选择数据库驱动：
 
@@ -297,7 +244,7 @@ docker-compose down -v
 rm -f server/shenliyuan.db
 ```
 
-## 开发说明
+## 📝 开发说明
 
 ### 添加新的API端点
 
@@ -312,6 +259,6 @@ rm -f server/shenliyuan.db
 3. 在 `lib/screens/` 添加页面
 4. 在 `lib/widgets/` 添加通用组件
 
-## 许可证
+## 📄 许可证
 
 MIT License

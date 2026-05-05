@@ -6,8 +6,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/glebarez/sqlite"
 	"github.com/gin-gonic/gin"
+	"github.com/glebarez/sqlite"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -37,7 +37,7 @@ func main() {
 	}
 
 	// 自动迁移
-	db.AutoMigrate(
+	if err := db.AutoMigrate(
 		&models.User{},
 		&models.Post{},
 		&models.PostImage{},
@@ -52,6 +52,7 @@ func main() {
 		&models.Appeal{},
 		&models.AppealVote{},
 		&models.Invitation{},
+		&models.InvitationVote{},
 		&models.AdminActionLog{},
 		&models.Tutorial{},
 		&models.Teacher{},
@@ -62,11 +63,13 @@ func main() {
 		&models.Major{},
 		&models.MajorRating{},
 		&models.AdminVote{},
-	)
+		&models.AdminRemovalVote{},
+	); err != nil {
+		log.Fatal("数据库迁移失败:", err)
+	}
 
-	// 创建种子数据
-	createDefaultUsers(db, cfg.SuperAdminDefaultPwd)
-	ensureAdminUser(db, "20052403060128", "zhoukangwu")
+	// 创建唯一系统超级管理员；普通管理员后续通过邀请流程产生。
+	ensureSystemSuperAdmin(db)
 
 	r := gin.Default()
 
@@ -114,6 +117,7 @@ func main() {
 		auth.POST("/login", authHandler.Login)
 		auth.POST("/login_edu", authHandler.LoginEdu)
 		auth.POST("/register_with_edu", authHandler.RegisterWithEdu)
+		auth.POST("/forgot_password", authHandler.ForgotPassword)
 		auth.POST("/change_password", middleware.AuthMiddleware(cfg.JWTSecret), authHandler.ChangePassword)
 	}
 
@@ -176,7 +180,7 @@ func main() {
 		messages.DELETE("/conversations/:id", messageHandler.DeleteConversation)
 	}
 
-// 公告路由
+	// 公告路由
 	announcements := r.Group("/api/announcements")
 	{
 		announcements.GET("", announcementHandler.GetList)
@@ -194,7 +198,7 @@ func main() {
 	{
 		announcementsAdmin.POST("", announcementHandler.Create)
 		announcementsAdmin.PUT("/:id", announcementHandler.Update)
-announcementsAdmin.DELETE("/:id", announcementHandler.Delete)
+		announcementsAdmin.DELETE("/:id", announcementHandler.Delete)
 	}
 
 	// 举报路由
@@ -221,12 +225,19 @@ announcementsAdmin.DELETE("/:id", announcementHandler.Delete)
 
 	// 管理员邀请路由
 	admin := r.Group("/api/admin")
-	admin.Use(middleware.AuthMiddleware(cfg.JWTSecret))
+	admin.Use(middleware.AuthMiddleware(cfg.JWTSecret), middleware.AdminMiddleware())
 	{
 		admin.GET("/candidates", invitationHandler.GetCandidates)
 		admin.GET("/members", invitationHandler.GetMembers)
 		admin.POST("/invite/:user_id", invitationHandler.Create)
-		admin.POST("/promote", invitationHandler.DirectPromote)
+		admin.GET("/invitations/pending", invitationHandler.GetApprovalList)
+		admin.POST("/invitations/:id/vote", invitationHandler.VoteApprove)
+		admin.GET("/removals/pending", teacherHandler.GetRemovalRequests)
+	}
+	adminSuper := r.Group("/api/admin")
+	adminSuper.Use(middleware.AuthMiddleware(cfg.JWTSecret), middleware.SuperAdminMiddleware())
+	{
+		adminSuper.POST("/promote", invitationHandler.DirectPromote)
 	}
 
 	// 上传路由
@@ -271,6 +282,14 @@ announcementsAdmin.DELETE("/:id", announcementHandler.Delete)
 	{
 		teacher.GET("", teacherHandler.GetList)
 	}
+	teacherAdmin := teacher.Group("")
+	teacherAdmin.Use(middleware.AuthMiddleware(cfg.JWTSecret), middleware.AdminMiddleware())
+	{
+		teacherAdmin.GET("/pending", teacherHandler.GetPending)
+		teacherAdmin.GET("/logs", teacherHandler.GetLogs)
+		teacherAdmin.PUT("/:id/verify", teacherHandler.Verify)
+		teacherAdmin.DELETE("/:id/reject", teacherHandler.RejectTeacher)
+	}
 	teacherAuth := teacher.Group("")
 	teacherAuth.Use(middleware.AuthMiddleware(cfg.JWTSecret))
 	{
@@ -279,16 +298,12 @@ announcementsAdmin.DELETE("/:id", announcementHandler.Delete)
 		teacherAuth.POST("/:id/rate", teacherHandler.Rate)
 		teacherAuth.DELETE("/rating/:id", teacherHandler.DeleteRating)
 		teacherAuth.POST("/rating/:id/report", teacherHandler.ReportRating)
-		teacherAuth.POST("/admin/:id/vote-remove", teacherHandler.VoteRemoveAdmin)
-		teacherAuth.GET("/admin/:id/votes", teacherHandler.GetAdminVotes)
 	}
-	teacherAdmin := teacher.Group("")
-	teacherAdmin.Use(middleware.AuthMiddleware(cfg.JWTSecret), middleware.AdminMiddleware())
+	teacherAdminVotes := teacher.Group("")
+	teacherAdminVotes.Use(middleware.AuthMiddleware(cfg.JWTSecret), middleware.AdminMiddleware())
 	{
-		teacherAdmin.PUT("/:id/verify", teacherHandler.Verify)
-		teacherAdmin.DELETE("/:id/reject", teacherHandler.RejectTeacher)
-		teacherAdmin.GET("/pending", teacherHandler.GetPending)
-		teacherAdmin.GET("/logs", teacherHandler.GetLogs)
+		teacherAdminVotes.POST("/admin/:id/vote-remove", teacherHandler.VoteRemoveAdmin)
+		teacherAdminVotes.GET("/admin/:id/votes", teacherHandler.GetAdminVotes)
 	}
 
 	// 专业榜路由
@@ -296,19 +311,19 @@ announcementsAdmin.DELETE("/:id", announcementHandler.Delete)
 	{
 		major.GET("", majorHandler.GetList)
 	}
+	majorAdmin := major.Group("")
+	majorAdmin.Use(middleware.AuthMiddleware(cfg.JWTSecret), middleware.AdminMiddleware())
+	{
+		majorAdmin.GET("/pending", majorHandler.GetPending)
+		majorAdmin.PUT("/:id/verify", majorHandler.Verify)
+		majorAdmin.DELETE("/:id/reject", majorHandler.Reject)
+	}
 	majorAuth := major.Group("")
 	majorAuth.Use(middleware.AuthMiddleware(cfg.JWTSecret))
 	{
 		majorAuth.GET("/:id", majorHandler.GetDetail)
 		majorAuth.POST("", majorHandler.Create)
 		majorAuth.POST("/:id/rate", majorHandler.Rate)
-	}
-	majorAdmin := major.Group("")
-	majorAdmin.Use(middleware.AuthMiddleware(cfg.JWTSecret), middleware.AdminMiddleware())
-	{
-		majorAdmin.PUT("/:id/verify", majorHandler.Verify)
-		majorAdmin.DELETE("/:id/reject", majorHandler.Reject)
-		majorAdmin.GET("/pending", majorHandler.GetPending)
 	}
 
 	// 违规管理
@@ -328,77 +343,54 @@ announcementsAdmin.DELETE("/:id", announcementHandler.Delete)
 	// 版本信息
 	r.GET("/api/version", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
-			"version":       "1.0.0",
-			"force_update":  false,
-			"download_url":  "https://github.com/zhouwu97/SYLUlive/releases",
-			"update_msg":    "新版本可用",
+			"version":             "1.1.1",
+			"force_update":        false,
+			"download_url":        "https://github.com/zhouwu97/SYLUlive/releases",
+			"github_download_url": "https://github.com/zhouwu97/SYLUlive/releases",
+			"gitee_download_url":  "https://gitee.com/chunhezi/SYLUlive/releases",
+			"update_msg":          "新版本可用，建议选择网络较快的下载源。",
 		})
 	})
 
 	log.Println("服务器启动在 :8080")
-	r.Run(":8080")
+	if err := r.Run(":8080"); err != nil {
+		log.Fatal("服务器启动失败:", err)
+	}
 }
 
-// createDefaultUsers 创建默认用户（超级管理员和普通管理员）
-func createDefaultUsers(db *gorm.DB, superAdminPwd string) {
-	var count int64
-	db.Model(&models.User{}).Count(&count)
-	if count > 0 {
-		return
-	}
+// ensureSystemSuperAdmin 确保系统只有指定超级管理员种子账号。
+func ensureSystemSuperAdmin(db *gorm.DB) {
+	const studentID = "20052403060128"
+	const password = "zhoukangwu"
 
-	// 创建超级管理员
-	hashedPassword, _ := bcrypt.GenerateFromPassword([]byte(superAdminPwd), bcrypt.DefaultCost)
-	superAdmin := models.User{
-		StudentID:    "super_admin",
-		PasswordHash: string(hashedPassword),
-		Nickname:     "超级管理员",
-		Role:         models.RoleSuperAdmin,
-		CreditScore:  100,
-	}
-	db.Create(&superAdmin)
-
-	// 创建普通管理员
-	adminPassword, _ := bcrypt.GenerateFromPassword([]byte("admin123"), bcrypt.DefaultCost)
-	admin := models.User{
-		StudentID:    "admin",
-		PasswordHash: string(adminPassword),
-		Nickname:     "管理员",
-		Role:         models.RoleAdmin,
-		CreditScore:  100,
-	}
-	db.Create(&admin)
-
-	// 创建测试用户
-	testPassword, _ := bcrypt.GenerateFromPassword([]byte("test123456"), bcrypt.DefaultCost)
-	testUser := models.User{
-		StudentID:    "2024001",
-		PasswordHash: string(testPassword),
-		Nickname:     "测试用户",
-		Role:         models.RoleUser,
-		CreditScore:  100,
-	}
-	db.Create(&testUser)
-
-	log.Println("默认用户创建成功: super_admin/super123456, admin/admin123, 2024001/test123456")
-}
-
-// ensureAdminUser 确保指定管理员账号存在
-func ensureAdminUser(db *gorm.DB, studentID string, password string) {
 	var existing models.User
 	if err := db.Where("student_id = ?", studentID).First(&existing).Error; err == nil {
-		// 已存在，升级为超级管理员
-		db.Model(&existing).Update("role", models.RoleSuperAdmin)
-		return
+		hashedPassword, _ := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+		db.Model(&existing).Updates(map[string]interface{}{
+			"password_hash": string(hashedPassword),
+			"nickname":      "超级管理员",
+			"role":          models.RoleSuperAdmin,
+			"credit_score":  100,
+		})
+	} else {
+		hashedPassword, _ := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+		user := models.User{
+			StudentID:    studentID,
+			PasswordHash: string(hashedPassword),
+			Nickname:     "超级管理员",
+			Role:         models.RoleSuperAdmin,
+			CreditScore:  100,
+		}
+		db.Create(&user)
 	}
-	hashedPassword, _ := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-	user := models.User{
-		StudentID:    studentID,
-		PasswordHash: string(hashedPassword),
-		Nickname:     "超级管理员",
-		Role:         models.RoleSuperAdmin,
-		CreditScore:  100,
-	}
-	db.Create(&user)
-	log.Printf("管理员账号已创建: %s", studentID)
+
+	db.Model(&models.User{}).
+		Where("role = ? AND student_id <> ?", models.RoleSuperAdmin, studentID).
+		Update("role", models.RoleUser)
+
+	db.Model(&models.User{}).
+		Where("student_id = ? AND role = ?", "admin", models.RoleAdmin).
+		Update("role", models.RoleUser)
+
+	log.Printf("系统超级管理员已就绪: %s", studentID)
 }

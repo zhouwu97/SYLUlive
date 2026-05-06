@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
@@ -12,22 +14,30 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final _studentIdController = TextEditingController();
+  final _qqController = TextEditingController();
   final _eduPasswordController = TextEditingController(); // 教务密码
   final _appPasswordController = TextEditingController(); // APP密码
   final _nicknameController = TextEditingController(); // 昵称
+  final _verifyCodeController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
   final _eduPasswordFocus = FocusNode();
+  Timer? _codeCooldownTimer;
 
   bool _isRegister = false;
   bool _isLoading = false;
+  String _registerMode = 'campus';
+  int _codeCooldown = 0;
 
   @override
   void dispose() {
     _studentIdController.dispose();
+    _qqController.dispose();
     _eduPasswordController.dispose();
     _appPasswordController.dispose();
     _nicknameController.dispose();
+    _verifyCodeController.dispose();
     _eduPasswordFocus.dispose();
+    _codeCooldownTimer?.cancel();
     super.dispose();
   }
 
@@ -48,19 +58,28 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _isLoading = true);
 
     if (_isRegister) {
-      // 注册：教务验证后自动注册
-      result = await authProvider.registerWithEdu(
-        _studentIdController.text.trim(),
-        _appPasswordController.text,
-        nickname: _nicknameController.text.trim().isNotEmpty
-            ? _nicknameController.text.trim()
-            : null,
-        eduPassword: _eduPasswordController.text,
-      );
+      if (_registerMode == 'graduate') {
+        result = await authProvider.registerGraduate(
+          _qqController.text.trim(),
+          _verifyCodeController.text.trim(),
+          _appPasswordController.text,
+          nickname: _nicknameController.text.trim().isNotEmpty
+              ? _nicknameController.text.trim()
+              : null,
+        );
+      } else {
+        result = await authProvider.registerWithEdu(
+          _studentIdController.text.trim(),
+          _appPasswordController.text,
+          nickname: _nicknameController.text.trim().isNotEmpty
+              ? _nicknameController.text.trim()
+              : null,
+          eduPassword: _eduPasswordController.text,
+        );
+      }
     } else {
-      // 登录：学号 + APP密码
-      result = await authProvider.login(
-          _studentIdController.text.trim(), _appPasswordController.text);
+      final account = _studentIdController.text.trim();
+      result = await authProvider.login(account, _appPasswordController.text);
     }
 
     setState(() => _isLoading = false);
@@ -90,6 +109,45 @@ class _LoginScreenState extends State<LoginScreen> {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text(result.errorMessage!),
           backgroundColor: Colors.red.shade600));
+    }
+  }
+
+  Future<void> _sendGraduateCode() async {
+    final qq = _qqController.text.trim();
+    if (qq.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('请先输入QQ号')),
+      );
+      return;
+    }
+    setState(() => _isLoading = true);
+    final result = await context.read<AuthProvider>().sendVerifyCode(qq);
+    if (!mounted) return;
+    setState(() => _isLoading = false);
+    if (result.success) {
+      _codeCooldownTimer?.cancel();
+      setState(() => _codeCooldown = 60);
+      _codeCooldownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+        if (!mounted || _codeCooldown <= 1) {
+          timer.cancel();
+          if (mounted) setState(() => _codeCooldown = 0);
+          return;
+        }
+        setState(() => _codeCooldown -= 1);
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('验证码已发送到 QQ 邮箱'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(result.errorMessage ?? '发送失败'),
+          backgroundColor: Colors.red.shade600,
+        ),
+      );
     }
   }
 
@@ -312,21 +370,59 @@ class _LoginScreenState extends State<LoginScreen> {
 
                             // 学号
                             TextFormField(
-                              controller: _studentIdController,
-                              maxLength: 20,
+                              controller:
+                                  _isRegister && _registerMode == 'graduate'
+                                      ? _qqController
+                                      : _studentIdController,
+                              maxLength:
+                                  _isRegister && _registerMode == 'graduate'
+                                      ? 15
+                                      : 20,
+                              keyboardType: TextInputType.text,
                               decoration: InputDecoration(
-                                labelText: '学号',
+                                labelText:
+                                    _isRegister && _registerMode == 'graduate'
+                                        ? 'QQ号'
+                                        : '学号 / QQ',
                                 prefixIcon: const Icon(Icons.person_outline),
                                 border: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(12)),
                                 contentPadding: const EdgeInsets.symmetric(
                                     horizontal: 16, vertical: 14),
                               ),
-                              validator: (v) =>
-                                  (v == null || v.isEmpty) ? '请输入学号' : null,
+                              validator: (v) => (v == null || v.isEmpty)
+                                  ? (_isRegister && _registerMode == 'graduate'
+                                      ? '请输入QQ号'
+                                      : '请输入学号或QQ')
+                                  : null,
                             ),
 
                             if (_isRegister) ...[
+                              const SizedBox(height: 16),
+
+                              SegmentedButton<String>(
+                                segments: const [
+                                  ButtonSegment(
+                                    value: 'campus',
+                                    label: Text('在校生注册'),
+                                    icon: Icon(Icons.school_outlined),
+                                  ),
+                                  ButtonSegment(
+                                    value: 'graduate',
+                                    label: Text('毕业人员注册'),
+                                    icon: Icon(Icons.mark_email_read_outlined),
+                                  ),
+                                ],
+                                selected: {_registerMode},
+                                onSelectionChanged: (value) {
+                                  setState(() {
+                                    _registerMode = value.first;
+                                    _appPasswordController.clear();
+                                    _eduPasswordController.clear();
+                                    _verifyCodeController.clear();
+                                  });
+                                },
+                              ),
                               const SizedBox(height: 16),
 
                               // 昵称
@@ -345,24 +441,69 @@ class _LoginScreenState extends State<LoginScreen> {
                               ),
                               const SizedBox(height: 16),
 
-                              // 教务密码
-                              TextFormField(
-                                controller: _eduPasswordController,
-                                focusNode: _eduPasswordFocus,
-                                obscureText: true,
-                                decoration: InputDecoration(
-                                  labelText: '教务密码',
-                                  prefixIcon: const Icon(Icons.lock_outline),
-                                  border: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(12)),
-                                  contentPadding: const EdgeInsets.symmetric(
-                                      horizontal: 16, vertical: 14),
-                                  helperText: '用于验证学号真实性',
-                                  helperStyle: TextStyle(color: Colors.orange),
+                              if (_registerMode == 'campus')
+                                TextFormField(
+                                  controller: _eduPasswordController,
+                                  focusNode: _eduPasswordFocus,
+                                  obscureText: true,
+                                  decoration: InputDecoration(
+                                    labelText: '教务密码',
+                                    prefixIcon: const Icon(Icons.lock_outline),
+                                    border: OutlineInputBorder(
+                                        borderRadius:
+                                            BorderRadius.circular(12)),
+                                    contentPadding: const EdgeInsets.symmetric(
+                                        horizontal: 16, vertical: 14),
+                                    helperText: '用于验证学号真实性',
+                                    helperStyle:
+                                        TextStyle(color: Colors.orange),
+                                  ),
+                                  validator: (v) => (v == null || v.isEmpty)
+                                      ? '请输入教务密码'
+                                      : null,
+                                )
+                              else
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: TextFormField(
+                                        controller: _verifyCodeController,
+                                        keyboardType: TextInputType.number,
+                                        decoration: InputDecoration(
+                                          labelText: '验证码',
+                                          prefixIcon: const Icon(
+                                              Icons.verified_outlined),
+                                          border: OutlineInputBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(12)),
+                                          contentPadding:
+                                              const EdgeInsets.symmetric(
+                                                  horizontal: 16, vertical: 14),
+                                          helperText: '发送到 QQ 邮箱',
+                                          helperStyle:
+                                              TextStyle(color: Colors.orange),
+                                        ),
+                                        validator: (v) =>
+                                            (v == null || v.trim().length != 6)
+                                                ? '请输入6位验证码'
+                                                : null,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    SizedBox(
+                                      height: 54,
+                                      child: FilledButton.tonal(
+                                        onPressed:
+                                            (_isLoading || _codeCooldown > 0)
+                                                ? null
+                                                : _sendGraduateCode,
+                                        child: Text(_codeCooldown > 0
+                                            ? '${_codeCooldown}s'
+                                            : '发送验证码'),
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                                validator: (v) =>
-                                    (v == null || v.isEmpty) ? '请输入教务密码' : null,
-                              ),
                             ],
 
                             const SizedBox(height: 16),
@@ -439,6 +580,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                   _eduPasswordController.clear();
                                   _nicknameController.clear();
                                   _appPasswordController.clear();
+                                  _verifyCodeController.clear();
                                 });
                               },
                               child: Text(_isRegister ? '已有账号？去登录' : '没有账号？去注册',

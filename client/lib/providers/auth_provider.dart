@@ -466,4 +466,44 @@ class AuthProvider extends ChangeNotifier {
       return AuthResult.failure('注册失败: $e');
     }
   }
+
+  Future<AuthResult> registerGraduate(
+    String qq,
+    String code,
+    String password, {
+    String? nickname,
+  }) async {
+    _isLoading = true;
+    notifyListeners();
+    try {
+      final response = await _dio.post('/register', data: {
+        'qq': qq,
+        'code': code,
+        'password': password,
+        if (nickname != null && nickname.isNotEmpty) 'nickname': nickname,
+      });
+
+      _isLoading = false;
+      if (response.statusCode == 201) {
+        _token = response.data['token'];
+        _user = User.fromJson(response.data['user']);
+        _dio.options.headers['Authorization'] = 'Bearer $_token';
+        await _saveAuth();
+        notifyListeners();
+        return AuthResult.success();
+      }
+      return AuthResult.failure('注册失败，服务器返回异常');
+    } on DioException catch (e) {
+      _isLoading = false;
+      notifyListeners();
+      final errorMsg = _parseDioError(e);
+      debugPrint('毕业用户注册失败: $errorMsg');
+      return AuthResult.failure(errorMsg);
+    } catch (e) {
+      _isLoading = false;
+      notifyListeners();
+      debugPrint('毕业用户注册失败: $e');
+      return AuthResult.failure('注册失败: $e');
+    }
+  }
 }

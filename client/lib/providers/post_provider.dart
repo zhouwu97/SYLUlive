@@ -37,6 +37,12 @@ class PostProvider extends ChangeNotifier {
   PostProvider(this._dio) {
     _boards[1] = _BoardState();
     _boards[2] = _BoardState();
+    _boards[3] = _BoardState();
+    _boards[4] = _BoardState();
+  }
+
+  _BoardState _ensureBoard(int boardId) {
+    return _boards.putIfAbsent(boardId, _BoardState.new);
   }
 
   // ---- 当前活跃板块 (兼容旧 getter，水帖 / 首页用) ----
@@ -56,7 +62,7 @@ class PostProvider extends ChangeNotifier {
 
   Future<void> loadPosts(
       {int boardId = 1, String? type, String sort = 'time'}) async {
-    final board = _boards[boardId]!;
+    final board = _ensureBoard(boardId);
     if (board.isLoading) return;
 
     board.isLoading = true;
@@ -107,7 +113,7 @@ class PostProvider extends ChangeNotifier {
 
   Future<void> refresh(
       {int boardId = 1, String? type, String sort = 'time'}) async {
-    final board = _boards[boardId]!;
+    final board = _ensureBoard(boardId);
     board.currentPage = 1;
     board.hasMore = true;
     await loadPosts(boardId: boardId, type: type, sort: sort);
@@ -179,6 +185,48 @@ class PostProvider extends ChangeNotifier {
     } catch (e) {
       debugPrint('创建帖子失败: $e');
       return CreatePostResult(success: false, errorMessage: '创建帖子失败: $e');
+    }
+  }
+
+  Future<CreatePostResult> updatePost({
+    required int postId,
+    required int boardId,
+    required String content,
+    String? title,
+    String? postType,
+    double? price,
+    String? contact,
+    List<int>? fileIds,
+  }) async {
+    try {
+      final formData = FormData.fromMap({
+        'board_id': boardId,
+        'content': content,
+        'title': title ?? '',
+        'post_type': postType ?? '',
+        'price': price ?? 0,
+        'contact': contact ?? '',
+        'file_ids': fileIds?.join(',') ?? '',
+      });
+
+      final response = await _dio.put('/posts/$postId', data: formData);
+      if (response.statusCode == 200) {
+        final updated = Post.fromJson(response.data as Map<String, dynamic>);
+        _replacePostInBoards(updated);
+        notifyListeners();
+        return const CreatePostResult(success: true);
+      }
+      return CreatePostResult(
+        success: false,
+        errorMessage: '更新失败 (${response.statusCode})',
+      );
+    } on DioException catch (e) {
+      final msg = AppFeedback.dioErrorMessage(e, fallback: '更新失败');
+      debugPrint('更新帖子失败: $msg');
+      return CreatePostResult(success: false, errorMessage: msg);
+    } catch (e) {
+      debugPrint('更新帖子失败: $e');
+      return CreatePostResult(success: false, errorMessage: '更新帖子失败: $e');
     }
   }
 
@@ -280,6 +328,15 @@ class PostProvider extends ChangeNotifier {
     } catch (e) {
       debugPrint('取消点赞失败: $e');
       return false;
+    }
+  }
+
+  void _replacePostInBoards(Post updated) {
+    for (final board in _boards.values) {
+      final index = board.posts.indexWhere((p) => p.id == updated.id);
+      if (index >= 0) {
+        board.posts[index] = updated;
+      }
     }
   }
 }

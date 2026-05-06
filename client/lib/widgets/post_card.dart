@@ -243,6 +243,16 @@ class PostCard extends StatelessWidget {
         color = Colors.blue;
         icon = Icons.school;
         break;
+      case 'lost':
+        label = '失物';
+        color = Colors.deepPurple;
+        icon = Icons.search_off_outlined;
+        break;
+      case 'found':
+        label = '招领';
+        color = Colors.teal;
+        icon = Icons.inventory_2_outlined;
+        break;
       case 'exposure':
         label = '曝光';
         color = Colors.red;
@@ -293,15 +303,18 @@ class PostCard extends StatelessWidget {
         child: count == 1
             ? GestureDetector(
                 onTap: () => _openImageViewer(context, imageUrls, 0),
-                child: CachedNetworkImage(
-                  cacheManager: PostImageCache.manager,
-                  imageUrl: imageUrls[0],
-                  width: double.infinity,
-                  fit: BoxFit.cover,
-                  placeholder: (_, __) => Container(color: Colors.grey[300]),
-                  errorWidget: (_, __, ___) => Container(
-                    color: Colors.grey[300],
-                    child: const Icon(Icons.image),
+                child: Container(
+                  color: Colors.black.withValues(alpha: showPrice ? 0.04 : 0),
+                  child: CachedNetworkImage(
+                    cacheManager: PostImageCache.manager,
+                    imageUrl: imageUrls[0],
+                    width: double.infinity,
+                    fit: showPrice ? BoxFit.contain : BoxFit.cover,
+                    placeholder: (_, __) => Container(color: Colors.grey[300]),
+                    errorWidget: (_, __, ___) => Container(
+                      color: Colors.grey[300],
+                      child: const Icon(Icons.image),
+                    ),
                   ),
                 ),
               )

@@ -3,8 +3,14 @@ package handlers
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
+	"math/rand"
 	"net/http"
+	"net/smtp"
+	"regexp"
 	"strconv"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -22,6 +28,28 @@ var EduServiceConfig = struct {
 	BaseURL: "", // 从config加载
 }
 
+var VerifyCodeConfig = struct {
+	SMTPHost string
+	SMTPPort string
+	SMTPUser string
+	SMTPPass string
+	SMTPFrom string
+}{}
+
+type verifyCodeRecord struct {
+	Code      string
+	ExpiresAt time.Time
+}
+
+var verifyCodeStore = struct {
+	sync.Mutex
+	codes    map[string]verifyCodeRecord
+	verified map[string]time.Time
+}{
+	codes:    map[string]verifyCodeRecord{},
+	verified: map[string]time.Time{},
+}
+
 // AuthHandler 认证处理器
 type AuthHandler struct {
 	db        *gorm.DB
@@ -31,6 +59,222 @@ type AuthHandler struct {
 // NewAuthHandler 创建认证处理器
 func NewAuthHandler(db *gorm.DB, jwtSecret string) *AuthHandler {
 	return &AuthHandler{db: db, jwtSecret: jwtSecret}
+}
+
+type GraduateRegisterInput struct {
+	QQ       string `json:"qq" binding:"required"`
+	Code     string `json:"code" binding:"required,len=6"`
+	Password string `json:"password" binding:"required,min=8,max=32"`
+	Nickname string `json:"nickname"`
+}
+
+type verifyCodeInput struct {
+	QQ string `json:"qq" binding:"required"`
+}
+
+type verifyQQCodeInput struct {
+	QQ   string `json:"qq" binding:"required"`
+	Code string `json:"code" binding:"required,len=6"`
+}
+
+func normalizeQQ(input string) string {
+	return strings.TrimSpace(input)
+}
+
+func validateQQ(qq string) bool {
+	return regexp.MustCompile(`^[1-9][0-9]{4,14}$`).MatchString(qq)
+}
+
+func generateVerifyCode() string {
+	return fmt.Sprintf("%06d", rand.New(rand.NewSource(time.Now().UnixNano())).Intn(1000000))
+}
+
+func markQQVerified(qq string) {
+	verifyCodeStore.Lock()
+	defer verifyCodeStore.Unlock()
+	verifyCodeStore.verified[qq] = time.Now().Add(10 * time.Minute)
+}
+
+func isQQVerified(qq string) bool {
+	verifyCodeStore.Lock()
+	defer verifyCodeStore.Unlock()
+	expiresAt, ok := verifyCodeStore.verified[qq]
+	if !ok {
+		return false
+	}
+	if time.Now().After(expiresAt) {
+		delete(verifyCodeStore.verified, qq)
+		return false
+	}
+	return true
+}
+
+func consumeQQVerified(qq string) {
+	verifyCodeStore.Lock()
+	defer verifyCodeStore.Unlock()
+	delete(verifyCodeStore.verified, qq)
+	delete(verifyCodeStore.codes, qq)
+}
+
+func sendMailCode(qq, code string) error {
+	if VerifyCodeConfig.SMTPHost == "" || VerifyCodeConfig.SMTPUser == "" || VerifyCodeConfig.SMTPPass == "" || VerifyCodeConfig.SMTPFrom == "" {
+		return errors.New("服务器未配置验证码邮箱，请联系管理员")
+	}
+	to := qq + "@qq.com"
+	addr := VerifyCodeConfig.SMTPHost + ":" + VerifyCodeConfig.SMTPPort
+	auth := smtp.PlainAuth("", VerifyCodeConfig.SMTPUser, VerifyCodeConfig.SMTPPass, VerifyCodeConfig.SMTPHost)
+	subject := "沈理校园注册验证码"
+	body := fmt.Sprintf("您的验证码是：%s\n10分钟内有效。\n如果不是本人操作，请忽略此邮件。", code)
+	message := []byte("To: " + to + "\r\n" +
+		"From: " + VerifyCodeConfig.SMTPFrom + "\r\n" +
+		"Subject: " + subject + "\r\n" +
+		"MIME-Version: 1.0\r\n" +
+		"Content-Type: text/plain; charset=UTF-8\r\n\r\n" +
+		body)
+	return smtp.SendMail(addr, auth, VerifyCodeConfig.SMTPFrom, []string{to}, message)
+}
+
+// SendVerifyCode 发送毕业用户注册验证码到 QQ 邮箱
+func (h *AuthHandler) SendVerifyCode(c *gin.Context) {
+	var input verifyCodeInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	qq := normalizeQQ(input.QQ)
+	if !validateQQ(qq) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请输入正确的QQ号"})
+		return
+	}
+
+	var count int64
+	h.db.Model(&models.User{}).Where("student_id = ?", qq).Count(&count)
+	if count > 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "该QQ号已注册，请直接登录"})
+		return
+	}
+
+	code := generateVerifyCode()
+	verifyCodeStore.Lock()
+	verifyCodeStore.codes[qq] = verifyCodeRecord{
+		Code:      code,
+		ExpiresAt: time.Now().Add(10 * time.Minute),
+	}
+	verifyCodeStore.Unlock()
+
+	if err := sendMailCode(qq, code); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "验证码已发送"})
+}
+
+// VerifyCode 校验毕业用户邮箱验证码
+func (h *AuthHandler) VerifyCode(c *gin.Context) {
+	var input verifyQQCodeInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	qq := normalizeQQ(input.QQ)
+	if !validateQQ(qq) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请输入正确的QQ号"})
+		return
+	}
+
+	verifyCodeStore.Lock()
+	record, ok := verifyCodeStore.codes[qq]
+	verifyCodeStore.Unlock()
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请先发送验证码"})
+		return
+	}
+	if time.Now().After(record.ExpiresAt) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "验证码已过期，请重新发送"})
+		return
+	}
+	if strings.TrimSpace(input.Code) != record.Code {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "验证码错误"})
+		return
+	}
+
+	markQQVerified(qq)
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "验证通过"})
+}
+
+// Register 毕业人员普通账号注册（QQ 验证码）
+func (h *AuthHandler) Register(c *gin.Context) {
+	var input GraduateRegisterInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	qq := normalizeQQ(input.QQ)
+	if !validateQQ(qq) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请输入正确的QQ号"})
+		return
+	}
+
+	var count int64
+	h.db.Model(&models.User{}).Where("student_id = ?", qq).Count(&count)
+	if count > 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "该QQ号已注册，请直接登录"})
+		return
+	}
+
+	verifyCodeStore.Lock()
+	record, ok := verifyCodeStore.codes[qq]
+	verifyCodeStore.Unlock()
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请先发送验证码"})
+		return
+	}
+	if time.Now().After(record.ExpiresAt) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "验证码已过期，请重新发送"})
+		return
+	}
+	if strings.TrimSpace(input.Code) != record.Code && !isQQVerified(qq) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "验证码错误"})
+		return
+	}
+
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "密码加密失败"})
+		return
+	}
+
+	nickname := strings.TrimSpace(input.Nickname)
+	if nickname == "" {
+		nickname = "毕业用户"
+	}
+
+	user := models.User{
+		StudentID:    qq,
+		Nickname:     nickname,
+		PasswordHash: string(hashedPassword),
+		Role:         models.RoleUser,
+		CreditScore:  100,
+		QQ:           qq,
+		EduBound:     false,
+	}
+	if err := h.db.Create(&user).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建用户失败"})
+		return
+	}
+
+	if strings.TrimSpace(input.Nickname) == "" {
+		user.Nickname = "毕业用户" + strconv.FormatUint(uint64(user.ID), 10)
+		h.db.Model(&user).Update("nickname", user.Nickname)
+	}
+
+	consumeQQVerified(qq)
+	token, _ := middleware.GenerateToken(user.ID, string(user.Role), h.jwtSecret)
+	c.JSON(http.StatusCreated, gin.H{
+		"token": token,
+		"user":  user,
+	})
 }
 
 // EduRegisterInput 教务验证后注册输入

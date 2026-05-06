@@ -100,8 +100,10 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   bool _didLoad = false;
   bool _initializing = true;
   bool _hasCache = false;
+  String? _preparedUserId;
   double _cardOpacity = 0.4;
   bool _courseReminderEnabled = false;
+  bool _courseReminderBusy = false;
   int _scheduledReminderCount = 0;
   bool _isFetchingCourses = false;
   CourseBackgroundKeepAliveStatus _backgroundKeepAliveStatus =
@@ -133,6 +135,12 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _prepareProviders();
+  }
+
+  @override
   void dispose() {
     _weekPageController.dispose();
     super.dispose();
@@ -140,6 +148,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
   void _autoLoad(EduProvider edu, CourseScheduleProvider sc) async {
     if (_didLoad) return;
+    if (!edu.isStatusLoaded) return;
     if (!edu.isBound) {
       _didLoad = true;
       _initializing = false;
@@ -151,7 +160,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     _initializing = false;
 
     // 优先读手机本地缓存
-    _hasCache = await sc.hasCachedCourses();
+    _hasCache = sc.courses.isNotEmpty || await sc.hasCachedCourses();
 
     if (_hasCache) {
       // 有缓存 → 立即展示，同时静默后台拉取最新数据
@@ -197,6 +206,28 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     }
   }
 
+  Future<void> _prepareProviders() async {
+    final auth = context.read<AuthProvider>();
+    final user = auth.user;
+    if (user == null) return;
+    final uid = user.id.toString();
+    if (_preparedUserId == uid) return;
+
+    _preparedUserId = uid;
+    final edu = context.read<EduProvider>();
+    final sc = context.read<CourseScheduleProvider>();
+    edu.setUserId(uid);
+    sc.setUserId(uid);
+    final hasCache = await sc.loadCachedCoursesIfAvailable();
+    if (!mounted) return;
+    setState(() {
+      _hasCache = hasCache || sc.courses.isNotEmpty;
+      if (_hasCache) {
+        _initializing = false;
+      }
+    });
+  }
+
   // PageView 滑动切换周
   void _onWeekPageChanged(int index) {
     // 以当前周为基准，向前向后推算
@@ -221,6 +252,10 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
             return Consumer2<EduProvider, CourseScheduleProvider>(
               builder: (context, edu, sc, _) {
                 _autoLoad(edu, sc);
+
+                if (!edu.isStatusLoaded && sc.courses.isEmpty) {
+                  return const Center(child: CircularProgressIndicator());
+                }
 
                 if (_initializing)
                   return const Center(child: CircularProgressIndicator());
@@ -583,6 +618,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
         .push(MaterialPageRoute(builder: (_) => const EduScreen()));
     if (mounted) {
       final sc = context.read<CourseScheduleProvider>();
+      await sc.loadCachedCoursesIfAvailable();
       await sc.loadCourses(forceRefresh: true);
       await _syncCourseReminders(sc);
     }
@@ -622,6 +658,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                   // 返回后强制刷新课表
                   if (mounted) {
                     final sc = context.read<CourseScheduleProvider>();
+                    await sc.loadCachedCoursesIfAvailable();
                     setState(() {
                       _didLoad = false;
                       _hasCache = false;
@@ -693,7 +730,10 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       await _syncCourseReminders(sc);
       if (!mounted) return;
 
-      setState(() => _hasCache = sc.courses.isNotEmpty);
+      setState(() {
+        _hasCache = sc.courses.isNotEmpty;
+        _didLoad = true;
+      });
       messenger.showSnackBar(
         SnackBar(
           content: Text(synced
@@ -1107,42 +1147,60 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                           ? '已安排 $_scheduledReminderCount 个提醒，课表更新后会自动重排'
                           : '上课前 5 分钟静音提醒，通知内容包含课程教师'),
                       value: _courseReminderEnabled,
-                      onChanged: (v) async {
-                        if (v && sc.semesterStart == null) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('请先点击周次设置学期开始日期')),
-                          );
-                          return;
-                        }
-                        if (v && sc.courses.isEmpty) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('请先从教务导入课表')),
-                          );
-                          return;
-                        }
-                        if (v && !await _confirmCourseReminderEnable(context)) {
-                          return;
-                        }
-                        final result =
-                            await CourseReminderService.instance.setEnabled(
-                          v,
-                          courses: sc.courses,
-                          semesterStart: sc.semesterStart,
-                        );
-                        setSheetState(() {
-                          _courseReminderEnabled = result.enabled;
-                          _scheduledReminderCount = result.scheduledCount;
-                        });
-                        if (mounted) {
-                          setState(() {
-                            _courseReminderEnabled = result.enabled;
-                            _scheduledReminderCount = result.scheduledCount;
-                          });
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text(result.message)),
-                          );
-                        }
-                      },
+                      onChanged: _courseReminderBusy
+                          ? null
+                          : (v) async {
+                              if (v && sc.semesterStart == null) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                      content: Text('请先点击周次设置学期开始日期')),
+                                );
+                                return;
+                              }
+                              if (v && sc.courses.isEmpty) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('请先从教务导入课表')),
+                                );
+                                return;
+                              }
+                              if (v &&
+                                  !await _confirmCourseReminderEnable(
+                                      context)) {
+                                return;
+                              }
+                              setSheetState(() => _courseReminderBusy = true);
+                              if (mounted) {
+                                setState(() => _courseReminderBusy = true);
+                              }
+                              final result = await CourseReminderService
+                                  .instance
+                                  .setEnabled(
+                                v,
+                                courses: sc.courses,
+                                semesterStart: sc.semesterStart,
+                              );
+                              final persistedEnabled =
+                                  await CourseReminderService.instance
+                                      .isEnabled();
+                              setSheetState(() {
+                                _courseReminderEnabled =
+                                    result.enabled && persistedEnabled;
+                                _scheduledReminderCount = result.scheduledCount;
+                                _courseReminderBusy = false;
+                              });
+                              if (mounted) {
+                                setState(() {
+                                  _courseReminderEnabled =
+                                      result.enabled && persistedEnabled;
+                                  _scheduledReminderCount =
+                                      result.scheduledCount;
+                                  _courseReminderBusy = false;
+                                });
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text(result.message)),
+                                );
+                              }
+                            },
                     ),
                   ),
                   const SizedBox(height: 10),

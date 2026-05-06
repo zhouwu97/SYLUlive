@@ -1,8 +1,12 @@
+import 'dart:io' show File;
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/teacher_provider.dart';
+import '../providers/theme_provider.dart';
 import '../models/teacher.dart';
+import '../widgets/glass_container.dart';
 
 class TeacherDetailScreen extends StatefulWidget {
   final int teacherId;
@@ -38,6 +42,7 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final themeProvider = context.watch<ThemeProvider>();
 
     return WillPopScope(
       onWillPop: () async {
@@ -45,7 +50,7 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
         return false;
       },
       child: Scaffold(
-        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+        backgroundColor: Colors.transparent,
         appBar: AppBar(
           leading: IconButton(
             icon: const Icon(Icons.arrow_back),
@@ -55,46 +60,113 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
           backgroundColor: Colors.transparent,
           elevation: 0,
         ),
-        body: Consumer<TeacherProvider>(
-          builder: (context, provider, _) {
-            if (provider.isLoading)
-              return const Center(child: CircularProgressIndicator());
+        body: Stack(
+          children: [
+            _buildBackground(themeProvider, isDark),
+            Consumer<TeacherProvider>(
+              builder: (context, provider, _) {
+                if (provider.isLoading) {
+                  return const Center(child: CircularProgressIndicator());
+                }
 
-            final teacher = provider.selectedTeacher;
-            if (teacher == null) return const Center(child: Text('加载失败'));
+                final teacher = provider.selectedTeacher;
+                if (teacher == null) return const Center(child: Text('加载失败'));
 
-            return ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                // 教师信息头
-                _buildHeader(teacher, provider, isDark),
-                const SizedBox(height: 16),
-                // 我的评价区域
-                _buildMyRating(provider, isDark),
-                const SizedBox(height: 20),
-                // 其他人的评价
-                if (provider.ratings.isNotEmpty) ...[
-                  Text('${provider.ratingCount}人评价',
-                      style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: isDark ? Colors.white : Colors.black87)),
-                  const SizedBox(height: 8),
-                  ...provider.ratings.map((r) => _buildRatingCard(r, isDark)),
-                ],
-                const SizedBox(height: 80),
-              ],
-            );
-          },
+                return ListView(
+                  padding: const EdgeInsets.all(16),
+                  children: [
+                    _buildHeader(teacher, provider, isDark),
+                    const SizedBox(height: 16),
+                    _buildMyRating(provider, isDark),
+                    const SizedBox(height: 20),
+                    if (provider.ratings.isNotEmpty) ...[
+                      Text('${provider.ratingCount}人评价',
+                          style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: isDark ? Colors.white : Colors.black87)),
+                      const SizedBox(height: 8),
+                      ...provider.ratings
+                          .map((r) => _buildRatingCard(r, isDark)),
+                    ],
+                    const SizedBox(height: 80),
+                  ],
+                );
+              },
+            ),
+          ],
         ),
       ),
     );
   }
 
+  Widget _buildBackground(ThemeProvider themeProvider, bool isDark) {
+    if (themeProvider.hasBackground && themeProvider.backgroundImage != null) {
+      final bgPath = themeProvider.backgroundImage!;
+      final isAsset = !bgPath.startsWith('http') && !bgPath.startsWith('/');
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          isAsset
+              ? Image.asset(
+                  'assets/images/$bgPath',
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => _buildDefaultBackground(isDark),
+                )
+              : bgPath.startsWith('/')
+                  ? Image.file(
+                      File(bgPath),
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) =>
+                          _buildDefaultBackground(isDark),
+                    )
+                  : Image.network(
+                      bgPath,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) =>
+                          _buildDefaultBackground(isDark),
+                    ),
+          Container(
+            color: isDark
+                ? Colors.black.withValues(alpha: 0.35)
+                : Colors.white.withValues(alpha: 0.25),
+          ),
+        ],
+      );
+    }
+    return _buildDefaultBackground(isDark);
+  }
+
+  Widget _buildDefaultBackground(bool isDark) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        Image(
+          image: ResizeImage(
+            const AssetImage('assets/images/morenbeijing.jpeg'),
+            width: 1080,
+          ),
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => Container(
+            color: isDark ? const Color(0xFF0F131A) : const Color(0xFFF5F7FB),
+          ),
+        ),
+        Container(
+          color: isDark
+              ? Colors.black.withValues(alpha: 0.35)
+              : Colors.white.withValues(alpha: 0.25),
+        ),
+      ],
+    );
+  }
+
   Widget _buildHeader(Teacher teacher, TeacherProvider provider, bool isDark) {
-    return Card(
-      color: isDark ? Colors.grey[850] : Colors.white,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+    return GlassContainer(
+      borderRadius: 16,
+      blur: 12,
+      opacity: 0.16,
+      backgroundColor:
+          isDark ? const Color(0x99171B24) : const Color(0xCCFFFFFF),
       child: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
@@ -132,17 +204,23 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
   Widget _buildMyRating(TeacherProvider provider, bool isDark) {
     final auth = context.watch<AuthProvider>();
     if (!auth.isLoggedIn) {
-      return Card(
-        color: isDark ? Colors.grey[850] : Colors.white,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      return GlassContainer(
+        borderRadius: 12,
+        blur: 12,
+        opacity: 0.16,
+        backgroundColor:
+            isDark ? const Color(0x99171B24) : const Color(0xCCFFFFFF),
         child: const Padding(
             padding: EdgeInsets.all(16), child: Center(child: Text('请先登录后评价'))),
       );
     }
 
-    return Card(
-      color: isDark ? Colors.grey[850] : Colors.white,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    return GlassContainer(
+      borderRadius: 12,
+      blur: 12,
+      opacity: 0.16,
+      backgroundColor:
+          isDark ? const Color(0x99171B24) : const Color(0xCCFFFFFF),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -239,10 +317,13 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
     final auth = context.watch<AuthProvider>();
     final isOwn = auth.user?.id == r.userId;
 
-    return Card(
+    return GlassContainer(
       margin: const EdgeInsets.only(bottom: 8),
-      color: isDark ? Colors.grey[800] : Colors.white,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      borderRadius: 10,
+      blur: 10,
+      opacity: 0.14,
+      backgroundColor:
+          isDark ? const Color(0x99171B24) : const Color(0xCCFFFFFF),
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Column(

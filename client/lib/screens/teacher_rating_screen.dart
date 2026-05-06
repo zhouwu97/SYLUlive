@@ -6,9 +6,7 @@ import '../providers/theme_provider.dart';
 import '../providers/post_provider.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/post_card.dart';
-import 'create_post_screen.dart';
 import 'post_detail_screen.dart';
-import 'login_screen.dart';
 import 'dart:io' show File;
 
 class TeacherRatingScreen extends StatefulWidget {
@@ -17,7 +15,8 @@ class TeacherRatingScreen extends StatefulWidget {
   State<TeacherRatingScreen> createState() => _TeacherRatingScreenState();
 }
 
-class _TeacherRatingScreenState extends State<TeacherRatingScreen> with SingleTickerProviderStateMixin {
+class _TeacherRatingScreenState extends State<TeacherRatingScreen>
+    with SingleTickerProviderStateMixin {
   late TabController _tabController;
   List<dynamic> _teachers = [];
   List<dynamic> _posts = [];
@@ -66,13 +65,22 @@ class _TeacherRatingScreenState extends State<TeacherRatingScreen> with SingleTi
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text('添加教师'),
         content: Column(mainAxisSize: MainAxisSize.min, children: [
-          TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: '教师姓名', hintText: '不可重复')),
+          TextField(
+              controller: nameCtrl,
+              decoration:
+                  const InputDecoration(labelText: '教师姓名', hintText: '不可重复')),
           const SizedBox(height: 12),
-          TextField(controller: deptCtrl, decoration: const InputDecoration(labelText: '院系（选填）')),
+          TextField(
+              controller: deptCtrl,
+              decoration: const InputDecoration(labelText: '院系（选填）')),
         ]),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
-          ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('添加')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('取消')),
+          ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('添加')),
         ],
       ),
     );
@@ -86,13 +94,18 @@ class _TeacherRatingScreenState extends State<TeacherRatingScreen> with SingleTi
       });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('教师已提交，等待管理员验证'), backgroundColor: Colors.green),
+          const SnackBar(
+              content: Text('教师已提交，等待管理员验证'), backgroundColor: Colors.green),
         );
         _loadData();
       }
     } on DioException catch (e) {
-      final msg = (e.response?.data is Map) ? (e.response!.data as Map)['error']?.toString() ?? '添加失败' : '添加失败';
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), backgroundColor: Colors.red));
+      final msg = (e.response?.data is Map)
+          ? (e.response!.data as Map)['error']?.toString() ?? '添加失败'
+          : '添加失败';
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(msg), backgroundColor: Colors.red));
     }
   }
 
@@ -104,7 +117,11 @@ class _TeacherRatingScreenState extends State<TeacherRatingScreen> with SingleTi
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Text('评价 ${teacher['name']}'),
         content: Column(mainAxisSize: MainAxisSize.min, children: [
-          TextField(controller: commentCtrl, maxLines: 3, decoration: const InputDecoration(labelText: '评语（选填）', hintText: '请文明发言')),
+          TextField(
+              controller: commentCtrl,
+              maxLines: 3,
+              decoration: const InputDecoration(
+                  labelText: '评语（选填）', hintText: '请文明发言')),
         ]),
         actions: [
           TextButton(
@@ -133,8 +150,12 @@ class _TeacherRatingScreenState extends State<TeacherRatingScreen> with SingleTi
         _loadData();
       }
     } on DioException catch (e) {
-      final msg = (e.response?.data is Map) ? (e.response!.data as Map)['error']?.toString() ?? '评价失败' : '评价失败';
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), backgroundColor: Colors.red));
+      final msg = (e.response?.data is Map)
+          ? (e.response!.data as Map)['error']?.toString() ?? '评价失败'
+          : '评价失败';
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(msg), backgroundColor: Colors.red));
     }
   }
 
@@ -168,14 +189,17 @@ class _TeacherRatingScreenState extends State<TeacherRatingScreen> with SingleTi
               Container(
                 margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                 decoration: BoxDecoration(
-                  color: isDark ? Colors.white.withValues(alpha: 0.08) : Colors.white.withValues(alpha: 0.5),
+                  color: isDark
+                      ? Colors.white.withValues(alpha: 0.08)
+                      : Colors.white.withValues(alpha: 0.5),
                   borderRadius: BorderRadius.circular(14),
                 ),
                 child: TabBar(
                   controller: _tabController,
                   indicatorColor: Colors.red[400],
                   indicatorWeight: 3,
-                  labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                  labelStyle: const TextStyle(
+                      fontWeight: FontWeight.bold, fontSize: 13),
                   unselectedLabelStyle: const TextStyle(fontSize: 12),
                   dividerColor: Colors.transparent,
                   tabs: const [
@@ -205,20 +229,41 @@ class _TeacherRatingScreenState extends State<TeacherRatingScreen> with SingleTi
       final isAsset = !bg.startsWith('http') && !bg.startsWith('/');
       return Stack(fit: StackFit.expand, children: [
         isAsset
-            ? Image.asset('assets/images/$bg', fit: BoxFit.cover, errorBuilder: (_, __, ___) => _gradient(d))
+            ? Image.asset('assets/images/$bg',
+                fit: BoxFit.cover, errorBuilder: (_, __, ___) => _gradient(d))
             : bg.startsWith('/')
-                ? Image.file(File(bg), fit: BoxFit.cover, errorBuilder: (_, __, ___) => _gradient(d))
-                : Image.network(bg, fit: BoxFit.cover, errorBuilder: (_, __, ___) => _gradient(d)),
-        Container(color: d ? Colors.black.withValues(alpha: 0.4) : Colors.white.withValues(alpha: 0.3)),
+                ? Image.file(File(bg),
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => _gradient(d))
+                : Image.network(bg,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => _gradient(d)),
+        Container(
+            color: d
+                ? Colors.black.withValues(alpha: 0.4)
+                : Colors.white.withValues(alpha: 0.3)),
       ]);
     }
     return _gradient(d);
   }
 
-  Widget _gradient(bool d) => Container(decoration: BoxDecoration(gradient: LinearGradient(
-    begin: Alignment.topLeft, end: Alignment.bottomRight,
-    colors: d ? [const Color(0xFF1A1A2E), const Color(0xFF16213E), const Color(0xFF0F3460)] : [const Color(0xFF667EEA), const Color(0xFF764BA2), const Color(0xFFF093FB)],
-  )));
+  Widget _gradient(bool d) => Container(
+          decoration: BoxDecoration(
+              gradient: LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: d
+            ? [
+                const Color(0xFF1A1A2E),
+                const Color(0xFF16213E),
+                const Color(0xFF0F3460)
+              ]
+            : [
+                const Color(0xFF667EEA),
+                const Color(0xFF764BA2),
+                const Color(0xFFF093FB)
+              ],
+      )));
 
   Widget _buildWarningBanner(bool isDark) {
     return Container(
@@ -232,16 +277,21 @@ class _TeacherRatingScreenState extends State<TeacherRatingScreen> with SingleTi
       child: Row(children: [
         const Icon(Icons.warning_amber, color: Colors.red, size: 20),
         const SizedBox(width: 8),
-        Expanded(child: Text(
+        Expanded(
+            child: Text(
           '严禁辱骂、攻击教师。违规：1次删帖禁言7天，2次禁言1个月，3次永久禁言。',
-          style: TextStyle(fontSize: 11, color: isDark ? Colors.white70 : Colors.red[800], height: 1.3),
+          style: TextStyle(
+              fontSize: 11,
+              color: isDark ? Colors.white70 : Colors.red[800],
+              height: 1.3),
         )),
       ]),
     );
   }
 
   Widget _buildRankTab(bool isDark) {
-    if (_teachers.isEmpty) return _empty('暂无教师', '点击右上角 + 添加教师', Icons.school, isDark);
+    if (_teachers.isEmpty)
+      return _empty('暂无教师', '点击右上角 + 添加教师', Icons.school, isDark);
     return RefreshIndicator(
       onRefresh: _loadData,
       child: ListView.builder(
@@ -252,7 +302,6 @@ class _TeacherRatingScreenState extends State<TeacherRatingScreen> with SingleTi
           final t = _teachers[i];
           final pos = t['positive_count'] ?? 0;
           final neg = t['negative_count'] ?? 0;
-          final total = pos + neg;
           return GlassContainer(
             margin: const EdgeInsets.only(bottom: 10),
             padding: const EdgeInsets.all(14),
@@ -262,34 +311,68 @@ class _TeacherRatingScreenState extends State<TeacherRatingScreen> with SingleTi
             child: Row(children: [
               // 排名
               Container(
-                width: 36, height: 36,
+                width: 36,
+                height: 36,
                 decoration: BoxDecoration(
-                  color: i < 3 ? (i == 0 ? Colors.amber : i == 1 ? Colors.grey[400] : Colors.brown[300]) : Colors.transparent,
+                  color: i < 3
+                      ? (i == 0
+                          ? Colors.amber
+                          : i == 1
+                              ? Colors.grey[400]
+                              : Colors.brown[300])
+                      : Colors.transparent,
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: Center(child: Text('${i + 1}', style: TextStyle(fontWeight: FontWeight.bold, color: i < 3 ? Colors.white : (isDark ? Colors.white54 : Colors.grey[600])))),
+                child: Center(
+                    child: Text('${i + 1}',
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: i < 3
+                                ? Colors.white
+                                : (isDark
+                                    ? Colors.white54
+                                    : Colors.grey[600])))),
               ),
               const SizedBox(width: 12),
-              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Row(children: [
-                  Text(t['name'] ?? '', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: isDark ? Colors.white : Colors.black87)),
-                  if (t['verified'] != true) ...[
-                    const SizedBox(width: 6),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                      decoration: BoxDecoration(color: Colors.orange.withOpacity(0.15), borderRadius: BorderRadius.circular(4)),
-                      child: const Text('待验证', style: TextStyle(fontSize: 9, color: Colors.orange)),
-                    ),
-                  ],
-                ]),
-                if (t['department'] != null && t['department'].toString().isNotEmpty)
-                  Text(t['department'], style: TextStyle(fontSize: 12, color: isDark ? Colors.white38 : Colors.grey[500])),
-              ])),
+              Expanded(
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                    Row(children: [
+                      Text(t['name'] ?? '',
+                          style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: isDark ? Colors.white : Colors.black87)),
+                      if (t['verified'] != true) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 1),
+                          decoration: BoxDecoration(
+                              color: Colors.orange.withOpacity(0.15),
+                              borderRadius: BorderRadius.circular(4)),
+                          child: const Text('待验证',
+                              style:
+                                  TextStyle(fontSize: 9, color: Colors.orange)),
+                        ),
+                      ],
+                    ]),
+                    if (t['department'] != null &&
+                        t['department'].toString().isNotEmpty)
+                      Text(t['department'],
+                          style: TextStyle(
+                              fontSize: 12,
+                              color:
+                                  isDark ? Colors.white38 : Colors.grey[500])),
+                  ])),
               // 评价按钮
               Column(children: [
-                Text('👍 $pos', style: TextStyle(fontSize: 12, color: Colors.green)),
+                Text('👍 $pos',
+                    style: TextStyle(fontSize: 12, color: Colors.green)),
                 const SizedBox(height: 2),
-                Text('👎 $neg', style: TextStyle(fontSize: 12, color: Colors.red)),
+                Text('👎 $neg',
+                    style: TextStyle(fontSize: 12, color: Colors.red)),
               ]),
               const SizedBox(width: 8),
               IconButton(
@@ -308,29 +391,44 @@ class _TeacherRatingScreenState extends State<TeacherRatingScreen> with SingleTi
     return RefreshIndicator(
       onRefresh: _loadData,
       child: _posts.isEmpty
-          ? ListView(children: [_empty('暂无讨论', '点击右下角 + 发起讨论', Icons.forum, isDark)])
+          ? ListView(
+              children: [_empty('暂无讨论', '点击右下角 + 发起讨论', Icons.forum, isDark)])
           : ListView.builder(
               physics: const BouncingScrollPhysics(),
               padding: const EdgeInsets.fromLTRB(12, 8, 12, 80),
               itemCount: _posts.length,
               itemBuilder: (_, i) => PostCard(
                 post: _posts[i],
-                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => PostDetailScreen(postId: _posts[i].id))),
+                onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => PostDetailScreen(
+                            postId: _posts[i].id, initialPost: _posts[i]))),
               ),
             ),
     );
   }
 
   Widget _empty(String t, String s, IconData ic, bool d) => Center(
-    child: GlassContainer(
-      padding: const EdgeInsets.all(32), borderRadius: 20, blur: 15, opacity: 0.1,
-      child: Column(mainAxisSize: MainAxisSize.min, children: [
-        Icon(ic, size: 64, color: d ? Colors.white60 : Colors.grey[400]),
-        const SizedBox(height: 16),
-        Text(t, style: TextStyle(fontSize: 18, color: d ? Colors.white70 : Colors.grey[600])),
-        const SizedBox(height: 8),
-        Text(s, style: TextStyle(fontSize: 14, color: d ? Colors.white.withOpacity(0.4) : Colors.grey[400])),
-      ]),
-    ),
-  );
+        child: GlassContainer(
+          padding: const EdgeInsets.all(32),
+          borderRadius: 20,
+          blur: 15,
+          opacity: 0.1,
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Icon(ic, size: 64, color: d ? Colors.white60 : Colors.grey[400]),
+            const SizedBox(height: 16),
+            Text(t,
+                style: TextStyle(
+                    fontSize: 18,
+                    color: d ? Colors.white70 : Colors.grey[600])),
+            const SizedBox(height: 8),
+            Text(s,
+                style: TextStyle(
+                    fontSize: 14,
+                    color:
+                        d ? Colors.white.withOpacity(0.4) : Colors.grey[400])),
+          ]),
+        ),
+      );
 }

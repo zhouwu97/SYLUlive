@@ -100,6 +100,7 @@ class CourseScheduleProvider extends ChangeNotifier {
   Map<int, Map<int, List<CourseBlock>>> get gridData => _gridData;
   String? get userId => _userId;
   DateTime? get semesterStart => _semesterStart;
+  String? get cacheUserId => _userId;
 
   CourseScheduleProvider() {
     _eduDio = Dio(BaseOptions(
@@ -118,6 +119,7 @@ class CourseScheduleProvider extends ChangeNotifier {
 
   /// 设置当前用户，但不自动拉取数据（由调用方决定何时拉取）
   void setUserId(String userId) {
+    if (_userId == userId) return;
     _userId = userId;
     loadSemesterStart();
   }
@@ -140,6 +142,21 @@ class CourseScheduleProvider extends ChangeNotifier {
     final cacheKey = '$_cacheKeyPrefix$_userId';
     final cached = await _loadFromCache(cacheKey);
     return cached != null && cached.isNotEmpty;
+  }
+
+  Future<bool> loadCachedCoursesIfAvailable() async {
+    if (_userId == null) return false;
+    final cacheKey = '$_cacheKeyPrefix$_userId';
+    final cached = await _loadFromCache(cacheKey);
+    if (cached == null || cached.isEmpty) {
+      return false;
+    }
+    _courses = cached;
+    _buildGrid();
+    _isLoading = false;
+    _errorMessage = null;
+    notifyListeners();
+    return true;
   }
 
   Future<void> applyFetchedCourses(

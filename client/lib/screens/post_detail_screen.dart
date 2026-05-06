@@ -2,22 +2,30 @@ import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
+import 'dart:io' show File;
 import '../providers/auth_provider.dart';
+import '../providers/theme_provider.dart';
 import '../config/api_constants.dart';
 import '../models/post.dart';
 import '../models/reply.dart';
 import '../providers/post_provider.dart';
 import '../utils/app_feedback.dart';
 import '../utils/post_image_cache.dart';
+import '../widgets/glass_container.dart';
 import '../widgets/report_sheet.dart';
+import 'create_post_screen.dart';
 import 'image_viewer_screen.dart';
 
 class PostDetailScreen extends StatefulWidget {
   final int postId;
   final bool isMarket;
+  final Post? initialPost;
 
   const PostDetailScreen(
-      {super.key, required this.postId, this.isMarket = false});
+      {super.key,
+      required this.postId,
+      this.isMarket = false,
+      this.initialPost});
 
   @override
   State<PostDetailScreen> createState() => _PostDetailScreenState();
@@ -34,11 +42,16 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   final _replyController = TextEditingController();
   final _replyFocus = FocusNode();
   bool _isReplyComposerOpen = false;
+  int _marketImageIndex = 0;
 
   @override
   void initState() {
     super.initState();
     _dio = context.read<AuthProvider>().dio;
+    if (widget.initialPost != null) {
+      _post = widget.initialPost;
+      _isLoading = false;
+    }
     _loadPost();
   }
 
@@ -57,8 +70,27 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     try {
       final response = await _dio.get('/posts/${widget.postId}');
       final repliesResponse = await _dio.get('/posts/${widget.postId}/replies');
+      final fetchedPost = Post.fromJson(response.data);
+      final fallbackPost = widget.initialPost;
+      final mergedPost = fallbackPost != null &&
+              fallbackPost.images.length > fetchedPost.images.length
+          ? Post(
+              id: fetchedPost.id,
+              title: fetchedPost.title,
+              content: fetchedPost.content,
+              boardId: fetchedPost.boardId,
+              authorId: fetchedPost.authorId,
+              postType: fetchedPost.postType,
+              price: fetchedPost.price,
+              contact: fetchedPost.contact,
+              status: fetchedPost.status,
+              images: fallbackPost.images,
+              author: fetchedPost.author,
+              createdAt: fetchedPost.createdAt,
+            )
+          : fetchedPost;
       setState(() {
-        _post = Post.fromJson(response.data);
+        _post = mergedPost;
         _replies = (repliesResponse.data as List)
             .map((e) => Reply.fromJson(e))
             .toList();
@@ -142,13 +174,58 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
   }
 
+  Future<void> _editPost() async {
+    final post = _post;
+    if (post == null) return;
+    final updated = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => CreatePostScreen(
+          boardId: post.boardId,
+          defaultPostType: post.postType,
+          editingPost: post,
+        ),
+      ),
+    );
+    if (updated == true && mounted) {
+      await _loadPost();
+    }
+  }
+
+  Future<void> _resolveMarketPost() async {
+    final post = _post;
+    if (post == null) return;
+    final actionLabel = _marketCompleteLabel(post.postType);
+    final postProvider = context.read<PostProvider>();
+    final confirmed = await AppFeedback.confirmDanger(
+      context,
+      title: actionLabel,
+      message: '确认后会直接删除这条帖子，避免继续占用集市列表。此操作不可撤销。',
+    );
+    if (!confirmed) return;
+    final result = await postProvider.deletePostDetailed(post.id);
+    if (!mounted) return;
+    if (result.success) {
+      AppFeedback.showSnackBar(context, '$actionLabel，帖子已移除');
+      Navigator.pop(context, true);
+    } else {
+      AppFeedback.showSnackBar(
+        context,
+        result.errorMessage ?? '$actionLabel失败',
+        isError: true,
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final themeProvider = context.watch<ThemeProvider>();
     final currentUser = context.watch<AuthProvider>().user;
     final canDelete = _post != null &&
         currentUser != null &&
         (currentUser.id == _post!.authorId || currentUser.isAdmin);
+    final canEditMarket = widget.isMarket && _isCurrentUserPostOwner();
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -158,6 +235,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         elevation: 0,
         leading: const BackButton(),
         actions: [
+          if (canEditMarket)
+            IconButton(
+              icon: const Icon(Icons.edit_outlined),
+              tooltip: '编辑帖子',
+              onPressed: _editPost,
+            ),
           if (canDelete)
             IconButton(
               icon: Icon(Icons.delete_outline, color: Colors.red[300]),
@@ -175,7 +258,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       body: Stack(
         children: [
           // 背景 —— 复用全局背景风格
-          _buildBackground(isDark),
+          _buildBackground(themeProvider, isDark),
           // 内容
           SafeArea(
             child: _isLoading
@@ -195,9 +278,63 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   // ---- 背景 ----
 
-  Widget _buildBackground(bool isDark) {
-    return Container(
-      color: isDark ? const Color(0xFF0F131A) : const Color(0xFFF5F7FB),
+  Widget _buildBackground(ThemeProvider themeProvider, bool isDark) {
+    if (themeProvider.hasBackground && themeProvider.backgroundImage != null) {
+      final bgPath = themeProvider.backgroundImage!;
+      final isAsset = !bgPath.startsWith('http') && !bgPath.startsWith('/');
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          isAsset
+              ? Image.asset(
+                  'assets/images/$bgPath',
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => _buildDefaultBackground(isDark),
+                )
+              : bgPath.startsWith('/')
+                  ? Image.file(
+                      File(bgPath),
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) =>
+                          _buildDefaultBackground(isDark),
+                    )
+                  : Image.network(
+                      bgPath,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) =>
+                          _buildDefaultBackground(isDark),
+                    ),
+          Container(
+            color: isDark
+                ? Colors.black.withValues(alpha: 0.35)
+                : Colors.white.withValues(alpha: 0.25),
+          ),
+        ],
+      );
+    }
+    return _buildDefaultBackground(isDark);
+  }
+
+  Widget _buildDefaultBackground(bool isDark) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        Image(
+          image: ResizeImage(
+            const AssetImage('assets/images/morenbeijing.jpeg'),
+            width: 1080,
+          ),
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => Container(
+            color: isDark ? const Color(0xFF0F131A) : const Color(0xFFF5F7FB),
+          ),
+        ),
+        Container(
+          color: isDark
+              ? Colors.black.withValues(alpha: 0.35)
+              : Colors.white.withValues(alpha: 0.25),
+        ),
+      ],
     );
   }
 
@@ -286,6 +423,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               const SizedBox(height: 18),
               _buildContactChip(p.contact, isDark),
             ],
+            if (_isCurrentUserPostOwner()) ...[
+              const SizedBox(height: 18),
+              _buildOwnerMarketActions(isDark),
+            ],
             const SizedBox(height: 28),
             _buildActionBar(isDark),
             const SizedBox(height: 24),
@@ -346,17 +487,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   // ---- 作者卡片 ----
 
   Widget _buildAuthorCard(Post p, bool isDark) {
-    return Container(
+    return GlassContainer(
       padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF171B24) : Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: isDark
-              ? Colors.white.withValues(alpha: 0.05)
-              : const Color(0xFFE8ECF4),
-        ),
-      ),
+      borderRadius: 18,
+      blur: 12,
+      opacity: 0.16,
+      backgroundColor:
+          isDark ? const Color(0x99171B24) : const Color(0xCCFFFFFF),
       child: Row(children: [
         CircleAvatar(
           radius: 24,
@@ -415,28 +552,74 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   Widget _buildHeroImage(Post p, bool isDark) {
     final urls = _resolvedImageUrls(p);
     if (urls.isEmpty) return const SizedBox.shrink();
-    return GestureDetector(
-      onTap: () => Navigator.push(
-          context,
-          MaterialPageRoute(
-              builder: (_) =>
-                  ImageViewerScreen(imageUrls: urls, initialIndex: 0))),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(18),
-        child: CachedNetworkImage(
-          cacheManager: PostImageCache.manager,
-          imageUrl: urls.first,
-          width: double.infinity,
-          fit: BoxFit.cover,
-          placeholder: (_, __) => Container(
-              height: 300, color: isDark ? Colors.white10 : Colors.grey[200]),
-          errorWidget: (_, __, ___) => Container(
-              height: 300,
-              color: isDark ? Colors.white10 : Colors.grey[200],
-              child:
-                  const Icon(Icons.broken_image, size: 40, color: Colors.grey)),
+    return Column(
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(18),
+          child: Container(
+            height: 340,
+            color: isDark
+                ? Colors.white.withValues(alpha: 0.06)
+                : Colors.black.withValues(alpha: 0.04),
+            child: PageView.builder(
+              itemCount: urls.length,
+              onPageChanged: (index) =>
+                  setState(() => _marketImageIndex = index),
+              itemBuilder: (_, index) => GestureDetector(
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => ImageViewerScreen(
+                      imageUrls: urls,
+                      initialIndex: index,
+                    ),
+                  ),
+                ),
+                child: CachedNetworkImage(
+                  cacheManager: PostImageCache.manager,
+                  imageUrl: urls[index],
+                  width: double.infinity,
+                  fit: BoxFit.contain,
+                  placeholder: (_, __) => Container(
+                    height: 340,
+                    color: isDark ? Colors.white10 : Colors.grey[200],
+                  ),
+                  errorWidget: (_, __, ___) => Container(
+                    height: 340,
+                    color: isDark ? Colors.white10 : Colors.grey[200],
+                    child: const Icon(
+                      Icons.broken_image,
+                      size: 40,
+                      color: Colors.grey,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
         ),
-      ),
+        if (urls.length > 1) ...[
+          const SizedBox(height: 10),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: List.generate(
+              urls.length,
+              (index) => AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                margin: const EdgeInsets.symmetric(horizontal: 3),
+                width: _marketImageIndex == index ? 18 : 6,
+                height: 6,
+                decoration: BoxDecoration(
+                  color: _marketImageIndex == index
+                      ? Theme.of(context).primaryColor
+                      : Colors.white.withValues(alpha: isDark ? 0.35 : 0.55),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ],
     );
   }
 
@@ -515,6 +698,48 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     ]);
   }
 
+  Widget _buildOwnerMarketActions(bool isDark) {
+    final post = _post!;
+    return Row(
+      children: [
+        Expanded(
+          child: OutlinedButton.icon(
+            onPressed: _editPost,
+            icon: const Icon(Icons.edit_outlined, size: 18),
+            label: const Text('编辑内容'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: isDark ? Colors.white : Colors.black87,
+              side: BorderSide(
+                color: isDark
+                    ? Colors.white.withValues(alpha: 0.14)
+                    : Colors.black.withValues(alpha: 0.08),
+              ),
+              minimumSize: const Size.fromHeight(44),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: FilledButton.icon(
+            onPressed: _resolveMarketPost,
+            icon: const Icon(Icons.check_circle_outline, size: 18),
+            label: Text(_marketCompleteLabel(post.postType)),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFF16A34A),
+              minimumSize: const Size.fromHeight(44),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildActionButton(
       {required IconData icon,
       required Color color,
@@ -535,12 +760,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   // ---- 联系方式 ----
 
   Widget _buildContactChip(String contact, bool isDark) {
-    return Container(
+    return GlassContainer(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF171B24) : Colors.white,
-        borderRadius: BorderRadius.circular(14),
-      ),
+      borderRadius: 14,
+      blur: 10,
+      opacity: 0.16,
+      backgroundColor:
+          isDark ? const Color(0x99171B24) : const Color(0xCCFFFFFF),
       child: Row(mainAxisSize: MainAxisSize.min, children: [
         Icon(Icons.contact_phone_outlined,
             size: 16, color: isDark ? Colors.white54 : Colors.grey[600]),
@@ -623,17 +849,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         ),
         const SizedBox(width: 10),
         Expanded(
-          child: Container(
+          child: GlassContainer(
             padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF171B24) : Colors.white,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(
-                color: isDark
-                    ? Colors.white.withValues(alpha: 0.05)
-                    : const Color(0xFFE8ECF4),
-              ),
-            ),
+            borderRadius: 14,
+            blur: 10,
+            opacity: 0.16,
+            backgroundColor:
+                isDark ? const Color(0x99171B24) : const Color(0xCCFFFFFF),
             child:
                 Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Row(children: [
@@ -771,6 +993,31 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     if (diff.inHours < 24) return '${diff.inHours}小时前';
     if (diff.inDays < 7) return '${diff.inDays}天前';
     return '${dt.month}/${dt.day}';
+  }
+
+  String _marketCompleteLabel(String postType) {
+    switch (postType) {
+      case 'sell':
+        return '已售出';
+      case 'buy':
+        return '已买到';
+      case 'proxy':
+        return '已完成';
+      case 'lost':
+      case 'found':
+        return '已解决';
+      default:
+        return '已处理';
+    }
+  }
+
+  bool _isCurrentUserPostOwner() {
+    final post = _post;
+    final currentUser = context.read<AuthProvider>().user;
+    return widget.isMarket &&
+        post != null &&
+        currentUser != null &&
+        currentUser.id == post.authorId;
   }
 
   List<String> _resolvedImageUrls(Post post) {

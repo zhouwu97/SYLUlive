@@ -15,7 +15,6 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
   late TabController _tabController;
   List<dynamic> _users = [];
   List<dynamic> _pendingInvitations = [];
-  bool _isLoading = true;
   String _searchQuery = '';
 
   @override
@@ -33,9 +32,8 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
   }
 
   Future<void> _loadAll() async {
-    setState(() => _isLoading = true);
     await Future.wait([_loadUsers(), _loadInvitations()]);
-    if (mounted) setState(() => _isLoading = false);
+    if (mounted) setState(() {});
   }
 
   Future<void> _loadUsers() async {
@@ -86,23 +84,37 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
     if (reason == null) return;
 
     try {
-      if (approve) {
-        await _dio.post('/admin/invitations/${inv['id']}/vote',
-            data: {'reason': reason});
-      } else {
-        await _dio.post('/super/invitations/${inv['id']}/approve',
-            data: {'reject': true, 'reason': reason});
-      }
+      await _dio.post(
+        '/super/invitations/${inv['id']}/approve',
+        data: {
+          'reject': !approve,
+          'reason': reason,
+        },
+      );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-              content: Text(approve ? '已同意，等待满 3 票' : '已驳回'),
+              content: Text(approve ? '已提交同意审批' : '已驳回'),
               backgroundColor: approve ? Colors.green : Colors.red),
         );
         _loadInvitations();
       }
+    } on DioException catch (e) {
+      final data = e.response?.data;
+      final message = data is Map && data['error'] != null
+          ? data['error'].toString()
+          : '操作失败';
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(message), backgroundColor: Colors.red),
+        );
+      }
     } catch (e) {
-      debugPrint('操作失败: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('操作失败'), backgroundColor: Colors.red),
+        );
+      }
     }
   }
 

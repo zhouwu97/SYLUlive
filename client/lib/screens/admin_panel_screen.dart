@@ -1,12 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
+import '../utils/app_feedback.dart';
 import '../widgets/glass_container.dart';
-import '../config/api_constants.dart';
-import 'super_admin_screen.dart';
 import 'dart:io' show File;
+
+class _OptionalListResult {
+  final List<dynamic> items;
+  final int? statusCode;
+
+  const _OptionalListResult({
+    required this.items,
+    this.statusCode,
+  });
+}
 
 /// 管理员面板：查看/处理举报、邀请管理员
 class AdminPanelScreen extends StatefulWidget {
@@ -26,6 +36,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
   List<dynamic> _pendingRemovals = [];
   List<dynamic> _logs = [];
   List<dynamic> _pendingMajors = [];
+  bool _reportsForbidden = false;
   bool _isLoading = true;
   String? _errorMessage;
   final _searchController = TextEditingController();
@@ -52,8 +63,9 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
     });
     try {
       final dio = context.read<AuthProvider>().dio;
-      final reportsRes = await dio.get('/reports');
-      final candidatesRes = await dio.get('/admin/candidates');
+      final reportsResult = await _loadOptionalResult(dio, '/reports');
+      final candidatesResult =
+          await _loadOptionalResult(dio, '/admin/candidates');
       final pendingTeachers =
           await _loadOptionalList(dio, '/teachers/pending', '待审核教师');
       final pendingMajors =
@@ -65,8 +77,9 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
       final logs = await _loadOptionalList(dio, '/teachers/logs', '管理员日志');
       if (!mounted) return;
       setState(() {
-        _reports = (reportsRes.data as List?) ?? [];
-        _candidates = (candidatesRes.data as List?) ?? [];
+        _reports = reportsResult.items;
+        _candidates = candidatesResult.items;
+        _reportsForbidden = reportsResult.statusCode == 403;
         _pendingTeachers = pendingTeachers;
         _pendingMajors = pendingMajors;
         _pendingInvitations = pendingInvitations;
@@ -78,7 +91,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
       if (!mounted) return;
       setState(() {
         _isLoading = false;
-        _errorMessage = e.message ?? '加载失败';
+        _errorMessage = AppFeedback.dioErrorMessage(e, fallback: '加载失败');
       });
     } catch (e) {
       if (!mounted) return;
@@ -86,6 +99,23 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
         _isLoading = false;
         _errorMessage = e.toString();
       });
+    }
+  }
+
+  Future<_OptionalListResult> _loadOptionalResult(Dio dio, String path) async {
+    try {
+      final response = await dio.get(path);
+      return _OptionalListResult(
+        items: (response.data as List?) ?? const [],
+        statusCode: response.statusCode,
+      );
+    } on DioException catch (e) {
+      debugPrint(
+          '可选数据加载失败 [$path]: ${e.response?.statusCode} ${e.response?.data ?? e.message}');
+      return _OptionalListResult(
+        items: const [],
+        statusCode: e.response?.statusCode,
+      );
     }
   }
 
@@ -344,23 +374,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
       ),
       body: Stack(
         children: [
-          // 默认背景图
-          Positioned.fill(
-            child: Image(
-              image: ResizeImage(
-                  const AssetImage('assets/images/morenbeijing.jpeg'),
-                  width: 1080),
-              fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => Container(
-                  color: isDark
-                      ? const Color(0xFF1A1A2E)
-                      : const Color(0xFFF8FAFC)),
-            ),
-          ),
-          Container(
-              color: isDark
-                  ? Colors.black.withValues(alpha: 0.35)
-                  : Colors.white.withValues(alpha: 0.25)),
+          Positioned.fill(child: _buildBackground(themeProvider, isDark)),
           SafeArea(
             child: Column(
               children: [
@@ -509,6 +523,31 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
 
   // ---- 举报 Tab ----
   Widget _buildReportsTab(bool isDark) {
+    if (_reportsForbidden) {
+      return Center(
+        child: GlassContainer(
+          padding: const EdgeInsets.all(28),
+          borderRadius: 20,
+          blur: 12,
+          opacity: 0.12,
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Icon(Icons.lock_outline,
+                size: 48, color: isDark ? Colors.white30 : Colors.grey[500]),
+            const SizedBox(height: 14),
+            Text('当前账号暂无举报处理权限',
+                style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: isDark ? Colors.white70 : Colors.black87)),
+            const SizedBox(height: 8),
+            Text('你仍然可以处理管理员代办、审核教师和专业。',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                    color: isDark ? Colors.white54 : Colors.grey[600])),
+          ]),
+        ),
+      );
+    }
     final pending = _reports.where((r) => r['status'] == 'pending').toList();
     final handled = _reports.where((r) => r['status'] != 'pending').toList();
 
@@ -1146,6 +1185,9 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
   }
 
   // ---- 公告 Tab ----
+  String _announcementDraftKey([int? id]) =>
+      'announcement_draft_${id ?? 'new'}';
+
   Widget _buildAnnouncementTab() {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return StatefulBuilder(builder: (context, setLocalState) {
@@ -1154,7 +1196,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
           Padding(
             padding: const EdgeInsets.all(12),
             child: ElevatedButton.icon(
-              onPressed: () => _showCreateAnnouncement(context)
+              onPressed: () => _showAnnouncementEditor(context)
                   .then((_) => setLocalState(() {})),
               icon: const Icon(Icons.add, size: 18),
               label: const Text('发布公告'),
@@ -1187,23 +1229,53 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(10)),
                     child: ListTile(
+                      onTap: () =>
+                          _showAnnouncementEditor(context, announcement: a)
+                              .then((_) => setLocalState(() {})),
                       title: Text(a['title'] ?? '',
                           maxLines: 1, overflow: TextOverflow.ellipsis),
                       subtitle: Text(a['content'] ?? '',
                           maxLines: 2, overflow: TextOverflow.ellipsis),
                       trailing: PopupMenuButton(
                         itemBuilder: (_) => [
+                          const PopupMenuItem(value: 'edit', child: Text('编辑')),
+                          PopupMenuItem(
+                            value: 'pin',
+                            child: Text(a['is_pinned'] == true ? '取消置顶' : '置顶'),
+                          ),
                           const PopupMenuItem(
                               value: 'delete',
                               child: Text('删除',
                                   style: TextStyle(color: Colors.red))),
                         ],
                         onSelected: (v) async {
-                          if (v == 'delete') {
-                            await context
-                                .read<AuthProvider>()
-                                .dio
-                                .delete('/announcements/${a['id']}');
+                          final dio = context.read<AuthProvider>().dio;
+                          if (v == 'edit') {
+                            await _showAnnouncementEditor(context,
+                                announcement: a);
+                            setLocalState(() {});
+                          } else if (v == 'pin') {
+                            await dio.put('/announcements/${a['id']}', data: {
+                              'is_pinned': !(a['is_pinned'] == true),
+                            });
+                            if (!mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                    a['is_pinned'] == true ? '已取消置顶' : '已置顶公告'),
+                                backgroundColor: Colors.green,
+                              ),
+                            );
+                            setLocalState(() {});
+                          } else if (v == 'delete') {
+                            await dio.delete('/announcements/${a['id']}');
+                            if (!mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('公告已删除'),
+                                backgroundColor: Colors.green,
+                              ),
+                            );
                             setLocalState(() {});
                           }
                         },
@@ -1219,44 +1291,106 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
     });
   }
 
-  Future<void> _showCreateAnnouncement(BuildContext context) async {
+  Future<void> _showAnnouncementEditor(BuildContext context,
+      {Map<dynamic, dynamic>? announcement}) async {
     final titleCtrl = TextEditingController();
     final contentCtrl = TextEditingController();
+    final isEditing = announcement != null;
+    bool isPinned = announcement?['is_pinned'] == true;
+    final draftKey = _announcementDraftKey(announcement?['id'] as int?);
+    final prefs = await SharedPreferences.getInstance();
+    final draftTitle = prefs.getString('${draftKey}_title');
+    final draftContent = prefs.getString('${draftKey}_content');
+    final draftPinned = prefs.getBool('${draftKey}_pinned');
+
+    titleCtrl.text = draftTitle ?? (announcement?['title']?.toString() ?? '');
+    contentCtrl.text =
+        draftContent ?? (announcement?['content']?.toString() ?? '');
+    isPinned = draftPinned ?? isPinned;
+
+    Future<void> saveDraft() async {
+      await prefs.setString('${draftKey}_title', titleCtrl.text);
+      await prefs.setString('${draftKey}_content', contentCtrl.text);
+      await prefs.setBool('${draftKey}_pinned', isPinned);
+    }
+
+    void draftListener() {
+      saveDraft();
+    }
+
+    titleCtrl.addListener(draftListener);
+    contentCtrl.addListener(draftListener);
+
     final ok = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('发布公告'),
-        content: Column(mainAxisSize: MainAxisSize.min, children: [
-          TextField(
-              controller: titleCtrl,
-              decoration: const InputDecoration(
-                  labelText: '标题', border: OutlineInputBorder())),
-          const SizedBox(height: 12),
-          TextField(
-              controller: contentCtrl,
-              maxLines: 4,
-              decoration: const InputDecoration(
-                  labelText: '内容', border: OutlineInputBorder())),
-        ]),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('取消')),
-          ElevatedButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('发布')),
-        ],
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Text(isEditing ? '编辑公告' : '发布公告'),
+          content: SingleChildScrollView(
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              TextField(
+                  controller: titleCtrl,
+                  decoration: const InputDecoration(
+                      labelText: '标题', border: OutlineInputBorder())),
+              const SizedBox(height: 12),
+              TextField(
+                  controller: contentCtrl,
+                  maxLines: 6,
+                  decoration: const InputDecoration(
+                      labelText: '内容', border: OutlineInputBorder())),
+              const SizedBox(height: 12),
+              SwitchListTile(
+                value: isPinned,
+                contentPadding: EdgeInsets.zero,
+                title: const Text('置顶公告'),
+                subtitle: const Text('首页优先展示置顶公告'),
+                onChanged: (value) async {
+                  setDialogState(() => isPinned = value);
+                  await saveDraft();
+                },
+              ),
+            ]),
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('关闭')),
+            ElevatedButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: Text(isEditing ? '保存' : '发布')),
+          ],
+        ),
       ),
     );
+    titleCtrl.removeListener(draftListener);
+    contentCtrl.removeListener(draftListener);
+
     if (ok == true &&
         (titleCtrl.text.isNotEmpty || contentCtrl.text.isNotEmpty)) {
       final dio = context.read<AuthProvider>().dio;
-      await dio.post('/announcements',
-          data: {'title': titleCtrl.text, 'content': contentCtrl.text});
+      if (isEditing) {
+        await dio.put('/announcements/${announcement['id']}', data: {
+          'title': titleCtrl.text,
+          'content': contentCtrl.text,
+          'is_pinned': isPinned,
+        });
+      } else {
+        await dio.post('/announcements', data: {
+          'title': titleCtrl.text,
+          'content': contentCtrl.text,
+          'is_pinned': isPinned,
+        });
+      }
+      await prefs.remove('${draftKey}_title');
+      await prefs.remove('${draftKey}_content');
+      await prefs.remove('${draftKey}_pinned');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('公告已发布'), backgroundColor: Colors.green));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(isEditing ? '公告已更新' : '公告已发布'),
+            backgroundColor: Colors.green));
         _loadData();
       }
     }

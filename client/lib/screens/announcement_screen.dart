@@ -46,7 +46,12 @@ class _AnnouncementScreenState extends State<AnnouncementScreen>
         final list = (response.data as List)
             .map((e) => model.Announcement.fromJson(e))
             .toList()
-          ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+          ..sort((a, b) {
+            if (a.isPinned != b.isPinned) {
+              return a.isPinned ? -1 : 1;
+            }
+            return b.createdAt.compareTo(a.createdAt);
+          });
         setState(() {
           _announcements = list;
           _isLoading = false;
@@ -119,9 +124,13 @@ class _AnnouncementScreenState extends State<AnnouncementScreen>
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final themeProvider = context.watch<ThemeProvider>();
+    final topInset = MediaQuery.paddingOf(context).top + kToolbarHeight + 12;
+    final pinned = _announcements.where((a) => a.isPinned).toList();
+    final regular = _announcements.where((a) => !a.isPinned).toList();
 
     return Scaffold(
       backgroundColor: Colors.transparent,
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -145,20 +154,97 @@ class _AnnouncementScreenState extends State<AnnouncementScreen>
                     ? _buildEmptyState(isDark)
                     : RefreshIndicator(
                         onRefresh: _loadAnnouncements,
-                        child: ListView.builder(
+                        child: ListView(
                           physics: const BouncingScrollPhysics(),
-                          padding: const EdgeInsets.fromLTRB(12, 8, 12, 100),
-                          itemCount: _announcements.length,
-                          itemBuilder: (context, index) {
-                            final announcement = _announcements[index];
-                            return _buildAnnouncementCard(
-                              announcement,
+                          padding: EdgeInsets.fromLTRB(12, topInset, 12, 100),
+                          children: [
+                            if (pinned.isNotEmpty) ...[
+                              _buildSectionHeader(
+                                isDark,
+                                icon: Icons.push_pin_rounded,
+                                title: '置顶公告',
+                                subtitle: '${pinned.length} 条需要优先查看',
+                                accent: Colors.red,
+                              ),
+                              const SizedBox(height: 10),
+                              ...List.generate(
+                                pinned.length,
+                                (index) => _buildAnnouncementCard(
+                                  pinned[index],
+                                  isDark,
+                                  index,
+                                  emphasized: true,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                            ],
+                            _buildSectionHeader(
                               isDark,
-                              index,
-                            );
-                          },
+                              icon: Icons.history_rounded,
+                              title: pinned.isEmpty ? '全部公告' : '最新公告',
+                              subtitle: '${regular.length} 条按时间排序',
+                              accent: Theme.of(context).primaryColor,
+                            ),
+                            const SizedBox(height: 10),
+                            ...List.generate(
+                              regular.length,
+                              (index) => _buildAnnouncementCard(
+                                regular[index],
+                                isDark,
+                                index + pinned.length,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSectionHeader(
+    bool isDark, {
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required Color accent,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: Row(
+        children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: accent.withValues(alpha: 0.14),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, color: accent, size: 18),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: isDark ? Colors.white : Colors.black87,
+                  ),
+                ),
+                Text(
+                  subtitle,
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    color: isDark ? Colors.white54 : Colors.black54,
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -195,10 +281,8 @@ class _AnnouncementScreenState extends State<AnnouncementScreen>
   }
 
   Widget _buildAnnouncementCard(
-    model.Announcement announcement,
-    bool isDark,
-    int index,
-  ) {
+      model.Announcement announcement, bool isDark, int index,
+      {bool emphasized = false}) {
     return TweenAnimationBuilder<double>(
       tween: Tween(begin: 0.0, end: 1.0),
       duration: Duration(milliseconds: 300 + (index * 50).clamp(0, 300)),
@@ -218,6 +302,12 @@ class _AnnouncementScreenState extends State<AnnouncementScreen>
         borderRadius: 16,
         blur: 10,
         opacity: isDark ? 0.15 : 0.3,
+        backgroundColor: emphasized
+            ? (isDark ? const Color(0x99A32020) : const Color(0xFFFDF0F0))
+            : null,
+        borderColor: emphasized
+            ? Colors.red.withValues(alpha: isDark ? 0.35 : 0.22)
+            : null,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [

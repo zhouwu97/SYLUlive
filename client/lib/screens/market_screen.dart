@@ -179,9 +179,11 @@ class _MarketScreenState extends State<MarketScreen> {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final themeProvider = context.watch<ThemeProvider>();
+    final topInset = MediaQuery.paddingOf(context).top + kToolbarHeight + 12;
 
     return Scaffold(
       backgroundColor: Colors.transparent,
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -221,7 +223,7 @@ class _MarketScreenState extends State<MarketScreen> {
                   physics: const AlwaysScrollableScrollPhysics(
                     parent: BouncingScrollPhysics(),
                   ),
-                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 100),
+                  padding: EdgeInsets.fromLTRB(12, topInset, 12, 100),
                   children: [
                     _buildSearchBar(isDark),
                     if (widget.onlyPostTypes == null) ...[

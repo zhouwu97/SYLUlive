@@ -125,6 +125,16 @@ func (h *PostHandler) Create(c *gin.Context) {
 		return
 	}
 
+	var user models.User
+	if err := h.db.Select("id", "edu_bound").First(&user, userID).Error; err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "用户不存在"})
+		return
+	}
+	if models.BoardID(input.BoardID) == models.BoardMarket && !user.EduBound {
+		c.JSON(http.StatusForbidden, gin.H{"error": "毕业用户仅可发布普通帖子，不能在集市发帖"})
+		return
+	}
+
 	// 先创建帖子
 	post := models.Post{
 		Title:    input.Title,
@@ -197,10 +207,11 @@ func (h *PostHandler) GetOne(c *gin.Context) {
 
 // UpdatePostInput 更新帖子输入
 type UpdatePostInput struct {
-	Title   string  `form:"title"`
-	Content string  `form:"content"`
-	Price   float64 `form:"price"`
-	Contact string  `form:"contact"`
+	Title    string  `form:"title"`
+	Content  string  `form:"content"`
+	PostType string  `form:"post_type"`
+	Price    float64 `form:"price"`
+	Contact  string  `form:"contact"`
 }
 
 // Update 更新帖子
@@ -226,27 +237,59 @@ func (h *PostHandler) Update(c *gin.Context) {
 		return
 	}
 
+	var user models.User
+	if err := h.db.Select("id", "edu_bound").First(&user, userID).Error; err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "用户不存在"})
+		return
+	}
+	if post.BoardID == models.BoardMarket && !user.EduBound {
+		c.JSON(http.StatusForbidden, gin.H{"error": "毕业用户不能编辑集市帖子"})
+		return
+	}
+
 	var input UpdatePostInput
 	if err := c.ShouldBind(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	updates := make(map[string]interface{})
-	if input.Title != "" {
-		updates["title"] = input.Title
-	}
-	if input.Content != "" {
-		updates["content"] = input.Content
-	}
-	if input.Price > 0 {
-		updates["price"] = input.Price
-	}
-	if input.Contact != "" {
-		updates["contact"] = input.Contact
+	updates := map[string]interface{}{
+		"title":     input.Title,
+		"content":   input.Content,
+		"post_type": input.PostType,
+		"price":     input.Price,
+		"contact":   input.Contact,
 	}
 
-	h.db.Model(&post).Updates(updates)
+	if err := h.db.Model(&post).Updates(updates).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新帖子失败"})
+		return
+	}
+
+	if fileIDs, exists := c.GetPostForm("file_ids"); exists {
+		if err := h.db.Where("post_id = ?", post.ID).Delete(&models.PostImage{}).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "更新帖子图片失败"})
+			return
+		}
+		if strings.TrimSpace(fileIDs) != "" {
+			ids := strings.Split(fileIDs, ",")
+			for i, idStr := range ids {
+				fileID, err := strconv.ParseUint(strings.TrimSpace(idStr), 10, 64)
+				if err != nil {
+					continue
+				}
+				postImage := models.PostImage{
+					PostID:    post.ID,
+					FileID:    uint(fileID),
+					SortOrder: i,
+				}
+				if err := h.db.Create(&postImage).Error; err != nil {
+					log.Printf("更新 PostImage 失败: post_id=%d, file_id=%d, err=%v", post.ID, fileID, err)
+				}
+			}
+		}
+	}
+
 	h.db.Preload("Author").Preload("Images").Preload("Images.File").First(&post, id)
 	c.JSON(http.StatusOK, post)
 }

@@ -106,6 +106,11 @@ func main() {
 
 	// 初始化教务服务配置
 	handlers.EduServiceConfig.BaseURL = cfg.EduServiceURL
+	handlers.VerifyCodeConfig.SMTPHost = cfg.SMTPHost
+	handlers.VerifyCodeConfig.SMTPPort = cfg.SMTPPort
+	handlers.VerifyCodeConfig.SMTPUser = cfg.SMTPUser
+	handlers.VerifyCodeConfig.SMTPPass = cfg.SMTPPass
+	handlers.VerifyCodeConfig.SMTPFrom = cfg.SMTPFrom
 	handlers.SetMajorLogDB(db)
 
 	// 静态文件服务
@@ -114,6 +119,9 @@ func main() {
 	// 认证路由
 	auth := r.Group("/api")
 	{
+		auth.POST("/send_code", authHandler.SendVerifyCode)
+		auth.POST("/verify_code", authHandler.VerifyCode)
+		auth.POST("/register", authHandler.Register)
 		auth.POST("/login", authHandler.Login)
 		auth.POST("/login_edu", authHandler.LoginEdu)
 		auth.POST("/register_with_edu", authHandler.RegisterWithEdu)

@@ -208,10 +208,12 @@ class _ProfileScreenState extends State<ProfileScreen>
                 child: user?.avatar.isNotEmpty == true
                     ? ClipOval(
                         child: GestureDetector(
-                          onLongPress: () => _showAvatarPreview(
-                              context, ApiConstants.fullUrl(user!.avatar)),
+                          onLongPress: user?.avatar.isNotEmpty == true
+                              ? () => _showAvatarPreview(
+                                  context, ApiConstants.fullUrl(user!.avatar))
+                              : null,
                           child: CachedNetworkImage(
-                            imageUrl: ApiConstants.fullUrl(user!.avatar),
+                            imageUrl: ApiConstants.fullUrl(user?.avatar ?? ''),
                             fit: BoxFit.cover,
                             placeholder: (_, __) =>
                                 _buildAvatarPlaceholder(user),
@@ -281,8 +283,8 @@ class _ProfileScreenState extends State<ProfileScreen>
                 const SizedBox(width: 12),
                 _buildStatBadge(
                   icon: Icons.admin_panel_settings,
-                  label: user!.isSuperAdmin ? '超级管理员' : '管理员',
-                  value: '经验 ${user.adminExp}',
+                  label: user?.isSuperAdmin == true ? '超级管理员' : '管理员',
+                  value: '经验 ${user?.adminExp ?? 0}',
                   color: Colors.orange,
                 ),
               ],
@@ -1580,5 +1582,4 @@ class _ProfileScreenState extends State<ProfileScreen>
       },
     );
   }
-
 }

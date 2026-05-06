@@ -41,6 +41,11 @@ type verifyCodeRecord struct {
 	ExpiresAt time.Time
 }
 
+type loginThrottleRecord struct {
+	FailureCount int
+	LockedUntil  time.Time
+}
+
 var verifyCodeStore = struct {
 	sync.Mutex
 	codes    map[string]verifyCodeRecord
@@ -48,6 +53,13 @@ var verifyCodeStore = struct {
 }{
 	codes:    map[string]verifyCodeRecord{},
 	verified: map[string]time.Time{},
+}
+
+var loginThrottleStore = struct {
+	sync.Mutex
+	records map[string]loginThrottleRecord
+}{
+	records: map[string]loginThrottleRecord{},
 }
 
 // AuthHandler 认证处理器
@@ -79,6 +91,79 @@ type verifyQQCodeInput struct {
 
 func normalizeQQ(input string) string {
 	return strings.TrimSpace(input)
+}
+
+func normalizeLoginAccount(input string) string {
+	return strings.ToLower(strings.TrimSpace(input))
+}
+
+func loginLockDurationForFailures(failures int) time.Duration {
+	switch {
+	case failures >= 6:
+		return 10 * time.Minute
+	case failures == 5:
+		return 5 * time.Minute
+	case failures == 4:
+		return 3 * time.Minute
+	case failures >= 3:
+		return 1 * time.Minute
+	default:
+		return 0
+	}
+}
+
+func formatRetryAfterCN(d time.Duration) string {
+	if d <= 0 {
+		return "稍后"
+	}
+	if d < time.Minute {
+		seconds := int(d.Round(time.Second).Seconds())
+		if seconds < 1 {
+			seconds = 1
+		}
+		return fmt.Sprintf("%d秒", seconds)
+	}
+	minutes := int((d + time.Minute - 1) / time.Minute)
+	if minutes < 1 {
+		minutes = 1
+	}
+	return fmt.Sprintf("%d分钟", minutes)
+}
+
+func currentLoginLock(account string, now time.Time) (time.Duration, bool) {
+	loginThrottleStore.Lock()
+	defer loginThrottleStore.Unlock()
+
+	record, ok := loginThrottleStore.records[account]
+	if !ok {
+		return 0, false
+	}
+	if now.After(record.LockedUntil) || now.Equal(record.LockedUntil) {
+		record.LockedUntil = time.Time{}
+		loginThrottleStore.records[account] = record
+		return 0, false
+	}
+	return record.LockedUntil.Sub(now), true
+}
+
+func registerLoginFailure(account string, now time.Time) time.Duration {
+	loginThrottleStore.Lock()
+	defer loginThrottleStore.Unlock()
+
+	record := loginThrottleStore.records[account]
+	record.FailureCount++
+	lockFor := loginLockDurationForFailures(record.FailureCount)
+	if lockFor > 0 {
+		record.LockedUntil = now.Add(lockFor)
+	}
+	loginThrottleStore.records[account] = record
+	return lockFor
+}
+
+func clearLoginFailures(account string) {
+	loginThrottleStore.Lock()
+	defer loginThrottleStore.Unlock()
+	delete(loginThrottleStore.records, account)
 }
 
 func validateQQ(qq string) bool {
@@ -594,6 +679,7 @@ func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 		return
 	}
 
+	clearLoginFailures(normalizeLoginAccount(input.StudentID))
 	c.JSON(http.StatusOK, gin.H{"message": "密码已重置，请使用新密码登录"})
 }
 
@@ -642,6 +728,16 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
+	account := normalizeLoginAccount(input.StudentID)
+	now := time.Now()
+	if remaining, locked := currentLoginLock(account, now); locked {
+		c.Header("Retry-After", strconv.Itoa(int(remaining.Round(time.Second).Seconds())))
+		c.JSON(http.StatusTooManyRequests, gin.H{
+			"error": fmt.Sprintf("连续登录失败次数过多，请在%s后重试，或使用忘记密码", formatRetryAfterCN(remaining)),
+		})
+		return
+	}
+
 	var user models.User
 	if err := h.db.Where("student_id = ?", input.StudentID).First(&user).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -653,10 +749,19 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(input.Password)); err != nil {
+		lockFor := registerLoginFailure(account, now)
+		if lockFor > 0 {
+			c.Header("Retry-After", strconv.Itoa(int(lockFor.Round(time.Second).Seconds())))
+			c.JSON(http.StatusTooManyRequests, gin.H{
+				"error": fmt.Sprintf("连续登录失败次数过多，请在%s后重试，或使用忘记密码", formatRetryAfterCN(lockFor)),
+			})
+			return
+		}
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "密码错误，请重新输入"})
 		return
 	}
 
+	clearLoginFailures(account)
 	token, _ := middleware.GenerateToken(user.ID, string(user.Role), h.jwtSecret)
 	c.JSON(http.StatusOK, gin.H{
 		"token": token,

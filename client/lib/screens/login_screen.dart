@@ -49,6 +49,8 @@ class _LoginScreenState extends State<LoginScreen> {
     return null;
   }
 
+  bool get _isGraduateRegister => _isRegister && _registerMode == 'graduate';
+
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -368,33 +370,83 @@ class _LoginScreenState extends State<LoginScreen> {
                                 textAlign: TextAlign.center),
                             const SizedBox(height: 28),
 
-                            // 学号
+                            if (_isRegister) ...[
+                              Container(
+                                padding: const EdgeInsets.all(14),
+                                decoration: BoxDecoration(
+                                  color: _isGraduateRegister
+                                      ? const Color(0xFFFDF5E8)
+                                      : const Color(0xFFF3F6FF),
+                                  borderRadius: BorderRadius.circular(14),
+                                  border: Border.all(
+                                    color: _isGraduateRegister
+                                        ? const Color(0xFFFFD8A8)
+                                        : const Color(0xFFD6E4FF),
+                                  ),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      _isGraduateRegister
+                                          ? '毕业人员注册说明'
+                                          : '在校生注册说明',
+                                      style: const TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      _isGraduateRegister
+                                          ? '毕业人员使用 QQ 号注册，验证码会发送到 QQ 邮箱。为降低交易风险，毕业人员账号不能在集市发布帖子，可在首页转到闲鱼等专业平台。'
+                                          : '在校生仅使用学号注册，并通过教务密码验证身份。注册成功后可使用校园全部功能。',
+                                      style: TextStyle(
+                                        fontSize: 12.5,
+                                        height: 1.45,
+                                        color: Colors.grey[700],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                            ],
+
                             TextFormField(
-                              controller:
-                                  _isRegister && _registerMode == 'graduate'
-                                      ? _qqController
-                                      : _studentIdController,
-                              maxLength:
-                                  _isRegister && _registerMode == 'graduate'
-                                      ? 15
-                                      : 20,
-                              keyboardType: TextInputType.text,
+                              controller: _isGraduateRegister
+                                  ? _qqController
+                                  : _studentIdController,
+                              maxLength: _isGraduateRegister ? 15 : 20,
+                              keyboardType: _isGraduateRegister
+                                  ? TextInputType.number
+                                  : TextInputType.text,
                               decoration: InputDecoration(
-                                labelText:
-                                    _isRegister && _registerMode == 'graduate'
-                                        ? 'QQ号'
-                                        : '学号 / QQ',
+                                labelText: _isRegister
+                                    ? (_isGraduateRegister ? 'QQ号' : '学号')
+                                    : '学号 / QQ',
+                                helperText: _isRegister
+                                    ? (_isGraduateRegister
+                                        ? '仅毕业人员使用 QQ 注册'
+                                        : '仅在校生使用学号注册')
+                                    : '在校生用学号登录，毕业人员用 QQ 登录',
                                 prefixIcon: const Icon(Icons.person_outline),
                                 border: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(12)),
                                 contentPadding: const EdgeInsets.symmetric(
                                     horizontal: 16, vertical: 14),
                               ),
-                              validator: (v) => (v == null || v.isEmpty)
-                                  ? (_isRegister && _registerMode == 'graduate'
-                                      ? '请输入QQ号'
-                                      : '请输入学号或QQ')
-                                  : null,
+                              validator: (v) {
+                                if (v == null || v.isEmpty) {
+                                  if (_isRegister) {
+                                    return _isGraduateRegister
+                                        ? '请输入QQ号'
+                                        : '请输入学号';
+                                  }
+                                  return '请输入学号或QQ';
+                                }
+                                return null;
+                              },
                             ),
 
                             if (_isRegister) ...[

@@ -102,7 +102,13 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       if (response.statusCode == 200) {
         final all = (response.data as List)
             .map((e) => model.Announcement.fromJson(e))
-            .toList();
+            .toList()
+          ..sort((a, b) {
+            if (a.isPinned != b.isPinned) {
+              return a.isPinned ? -1 : 1;
+            }
+            return b.createdAt.compareTo(a.createdAt);
+          });
         final dismissed = await _loadDismissedIds();
         if (!mounted) return;
         setState(() {
@@ -497,10 +503,13 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   }
 
   Widget _buildQuickActions(bool isDark, List<Post> lostFoundPosts) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return Wrap(
+      alignment: WrapAlignment.spaceBetween,
+      spacing: 10,
+      runSpacing: 10,
       children: [
-        Expanded(
+        SizedBox(
+          width: 96,
           child: _buildUtilityCard(
             isDark: isDark,
             backgroundColor:
@@ -513,8 +522,8 @@ class _ShuitieScreenState extends State<ShuitieScreen>
             onTap: () => _showComingSoon('签到'),
           ),
         ),
-        const SizedBox(width: 10),
-        Expanded(
+        SizedBox(
+          width: 96,
           child: _buildUtilityCard(
             isDark: isDark,
             backgroundColor:
@@ -536,8 +545,8 @@ class _ShuitieScreenState extends State<ShuitieScreen>
             ),
           ),
         ),
-        const SizedBox(width: 10),
-        Expanded(
+        SizedBox(
+          width: 96,
           child: _buildUtilityCard(
             isDark: isDark,
             backgroundColor:
@@ -565,8 +574,8 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     required VoidCallback onTap,
   }) {
     return GlassContainer(
-      height: 78,
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+      height: 92,
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
       borderRadius: 18,
       blur: 12,
       opacity: 0.18,
@@ -576,20 +585,22 @@ class _ShuitieScreenState extends State<ShuitieScreen>
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Container(
-            width: 28,
-            height: 28,
+            width: 30,
+            height: 30,
             decoration: BoxDecoration(
               color: iconBg,
               borderRadius: BorderRadius.circular(10),
             ),
-            child: Icon(icon, color: iconColor, size: 15),
+            child: Icon(icon, color: iconColor, size: 16),
           ),
           const SizedBox(height: 6),
           Text(
             title,
             textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              fontSize: 11,
+              fontSize: 11.5,
               fontWeight: FontWeight.w700,
               color: isDark ? Colors.white : Colors.black87,
             ),
@@ -598,10 +609,11 @@ class _ShuitieScreenState extends State<ShuitieScreen>
           Text(
             subtitle,
             textAlign: TextAlign.center,
-            maxLines: 1,
+            maxLines: 2,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
               fontSize: 9.5,
+              height: 1.1,
               color: isDark ? Colors.white54 : Colors.black54,
             ),
           ),

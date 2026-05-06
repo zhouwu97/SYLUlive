@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show File;
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -6,6 +7,7 @@ import 'package:provider/provider.dart';
 import '../models/post.dart';
 import '../providers/auth_provider.dart';
 import '../providers/post_provider.dart';
+import '../providers/theme_provider.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/post_card.dart';
 import 'create_post_screen.dart';
@@ -14,7 +16,14 @@ import 'market_exposure_screen.dart';
 import 'post_detail_screen.dart';
 
 class MarketScreen extends StatefulWidget {
-  const MarketScreen({super.key});
+  final List<String>? onlyPostTypes;
+  final String? titleOverride;
+
+  const MarketScreen({
+    super.key,
+    this.onlyPostTypes,
+    this.titleOverride,
+  });
 
   @override
   State<MarketScreen> createState() => _MarketScreenState();
@@ -27,6 +36,13 @@ class _MarketScreenState extends State<MarketScreen> {
   String _searchQuery = '';
   bool _isSearching = false;
   List<Post> _searchResults = [];
+
+  static const _marketPostTypes = ['sell', 'buy', 'proxy', 'lost', 'found'];
+
+  List<String> get _allowedTypes =>
+      widget.onlyPostTypes == null || widget.onlyPostTypes!.isEmpty
+          ? _marketPostTypes
+          : widget.onlyPostTypes!;
 
   @override
   void initState() {
@@ -72,10 +88,7 @@ class _MarketScreenState extends State<MarketScreen> {
 
     setState(() {
       _searchResults = results
-          .where((post) =>
-              post.postType == 'sell' ||
-              post.postType == 'buy' ||
-              post.postType == 'proxy')
+          .where((post) => _allowedTypes.contains(post.postType))
           .toList();
       _isSearching = false;
     });
@@ -104,24 +117,75 @@ class _MarketScreenState extends State<MarketScreen> {
   }
 
   List<Post> _buildMarketPosts(List<Post> allPosts) {
-    return allPosts
-        .where((p) =>
-            p.postType == 'sell' ||
-            p.postType == 'buy' ||
-            p.postType == 'proxy')
-        .toList();
+    return allPosts.where((p) => _allowedTypes.contains(p.postType)).toList();
+  }
+
+  Widget _buildDefaultBg(bool isDark) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        Image.asset(
+          'assets/images/morenbeijing.jpeg',
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => Container(
+            color: isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
+          ),
+        ),
+        Container(
+          color: isDark
+              ? Colors.black.withValues(alpha: 0.34)
+              : Colors.white.withValues(alpha: 0.20),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildBackground(ThemeProvider themeProvider, bool isDark) {
+    final path = themeProvider.backgroundImage;
+    if (themeProvider.hasBackground && path != null && path.isNotEmpty) {
+      final isAsset = !path.startsWith('http') && !path.startsWith('/');
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          isAsset
+              ? Image.asset(
+                  'assets/images/$path',
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => _buildDefaultBg(isDark),
+                )
+              : path.startsWith('/')
+                  ? Image.file(
+                      File(path),
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => _buildDefaultBg(isDark),
+                    )
+                  : Image.network(
+                      path,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => _buildDefaultBg(isDark),
+                    ),
+          Container(
+            color: isDark
+                ? Colors.black.withValues(alpha: 0.34)
+                : Colors.white.withValues(alpha: 0.20),
+          ),
+        ],
+      );
+    }
+    return _buildDefaultBg(isDark);
   }
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final themeProvider = context.watch<ThemeProvider>();
 
     return Scaffold(
       backgroundColor: Colors.transparent,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        title: const Text('集市'),
+        title: Text(widget.titleOverride ?? '集市'),
         actions: [
           PopupMenuButton<String>(
             icon: const Icon(Icons.sort),
@@ -134,51 +198,63 @@ class _MarketScreenState extends State<MarketScreen> {
           ),
         ],
       ),
-      body: Consumer<PostProvider>(
-        builder: (context, postProvider, child) {
-          final allPosts = postProvider.postsFor(2);
-          final exposurePosts =
-              allPosts.where((post) => post.postType == 'exposure').toList();
-          final marketPosts = _searchQuery.isNotEmpty
-              ? _searchResults
-              : _buildMarketPosts(allPosts);
+      body: Stack(
+        children: [
+          Positioned.fill(child: _buildBackground(themeProvider, isDark)),
+          Consumer<PostProvider>(
+            builder: (context, postProvider, child) {
+              final allPosts = postProvider.postsFor(2);
+              final exposurePosts = allPosts
+                  .where((post) => post.postType == 'exposure')
+                  .toList();
+              final marketPosts = _searchQuery.isNotEmpty
+                  ? _searchResults
+                  : _buildMarketPosts(allPosts);
 
-          if (postProvider.isLoadingFor(2) && allPosts.isEmpty) {
-            return const Center(child: CircularProgressIndicator());
-          }
+              if (postProvider.isLoadingFor(2) && allPosts.isEmpty) {
+                return const Center(child: CircularProgressIndicator());
+              }
 
-          return RefreshIndicator(
-            onRefresh: _refreshCurrent,
-            child: ListView(
-              physics: const AlwaysScrollableScrollPhysics(
-                  parent: BouncingScrollPhysics()),
-              padding: const EdgeInsets.fromLTRB(12, 8, 12, 100),
-              children: [
-                _buildSearchBar(isDark),
-                const SizedBox(height: 12),
-                _buildExposureEntry(isDark, exposurePosts),
-                const SizedBox(height: 16),
-                _buildSectionHeader(isDark, marketPosts.length),
-                const SizedBox(height: 12),
-                if (_isSearching)
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 40),
-                    child: Center(child: CircularProgressIndicator()),
-                  )
-                else if (marketPosts.isEmpty)
-                  _buildEmptyState(
-                    isDark,
-                    _searchQuery.isNotEmpty ? '没有找到匹配的物品' : '暂无物品',
-                    _searchQuery.isNotEmpty ? '换个商品名称试试' : '发布你的第一条商品吧',
-                  )
-                else
-                  ...marketPosts.map(
-                    (post) => _buildMarketCard(post),
+              return RefreshIndicator(
+                onRefresh: _refreshCurrent,
+                child: ListView(
+                  physics: const AlwaysScrollableScrollPhysics(
+                    parent: BouncingScrollPhysics(),
                   ),
-              ],
-            ),
-          );
-        },
+                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 100),
+                  children: [
+                    _buildSearchBar(isDark),
+                    if (widget.onlyPostTypes == null) ...[
+                      const SizedBox(height: 12),
+                      _buildExposureEntry(isDark, exposurePosts),
+                      const SizedBox(height: 16),
+                    ] else
+                      const SizedBox(height: 16),
+                    _buildSectionHeader(isDark, marketPosts.length),
+                    const SizedBox(height: 12),
+                    if (_isSearching)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 40),
+                        child: Center(child: CircularProgressIndicator()),
+                      )
+                    else if (marketPosts.isEmpty)
+                      _buildEmptyState(
+                        isDark,
+                        _searchQuery.isNotEmpty ? '没有找到匹配内容' : '暂无内容',
+                        _searchQuery.isNotEmpty
+                            ? '换个关键词试试'
+                            : (widget.titleOverride == '失物招领'
+                                ? '发布一条失物或招领信息吧'
+                                : '发布你的第一条商品吧'),
+                      )
+                    else
+                      ...marketPosts.map(_buildMarketCard),
+                  ],
+                ),
+              );
+            },
+          ),
+        ],
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       floatingActionButton: Padding(
@@ -202,9 +278,12 @@ class _MarketScreenState extends State<MarketScreen> {
             await Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (_) => const CreatePostScreen(
+                builder: (_) => CreatePostScreen(
                   boardId: 2,
-                  defaultPostType: 'sell',
+                  defaultPostType: widget.onlyPostTypes != null &&
+                          widget.onlyPostTypes!.contains('lost')
+                      ? 'lost'
+                      : 'sell',
                 ),
               ),
             );
@@ -345,10 +424,12 @@ class _MarketScreenState extends State<MarketScreen> {
   }
 
   Widget _buildSectionHeader(bool isDark, int count) {
+    final title =
+        _searchQuery.isNotEmpty ? '搜索结果' : (widget.titleOverride ?? '商品列表');
     return Row(
       children: [
         Text(
-          _searchQuery.isNotEmpty ? '搜索结果' : '商品列表',
+          title,
           style: TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.w700,
@@ -377,7 +458,11 @@ class _MarketScreenState extends State<MarketScreen> {
         onTap: () => Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (_) => PostDetailScreen(postId: post.id, isMarket: true),
+            builder: (_) => PostDetailScreen(
+              postId: post.id,
+              isMarket: true,
+              initialPost: post,
+            ),
           ),
         ),
       ),

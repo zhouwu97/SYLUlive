@@ -28,7 +28,6 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   int _currentIndex = 0;
-  late PageController _pageController;
   Timer? _announcementTimer;
   String? _announcementAuthKey;
   bool _isCheckingAnnouncements = false;
@@ -41,7 +40,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _pageController = PageController(initialPage: 0);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _syncAnnouncementPolling(context.read<AuthProvider>());
@@ -618,17 +616,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _announcementTimer?.cancel();
-    _pageController.dispose();
     super.dispose();
   }
 
   void _onTabTapped(int index) {
-    _pageController.animateToPage(index,
-        duration: const Duration(milliseconds: 350),
-        curve: Curves.easeOutCubic);
-  }
-
-  void _onPageChanged(int index) {
     setState(() => _currentIndex = index);
     final screenNames = ['shuitie', 'market', 'schedule', 'teacher', 'profile'];
     backgroundWrapperKey.currentState?.updateScreen(screenNames[index]);
@@ -646,10 +637,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     return Scaffold(
       backgroundColor: Colors.transparent,
       extendBody: true,
-      body: PageView(
-        controller: _pageController,
-        onPageChanged: _onPageChanged,
-        physics: const NeverScrollableScrollPhysics(),
+      body: IndexedStack(
+        index: _currentIndex,
         children: const [
           ShuitieScreen(),
           MarketScreen(),

@@ -1,7 +1,11 @@
+import 'dart:io' show File;
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../providers/auth_provider.dart';
+
 import '../models/announcement.dart' as model;
+import '../providers/auth_provider.dart';
+import '../providers/theme_provider.dart';
 import '../widgets/glass_container.dart';
 
 class AnnouncementScreen extends StatefulWidget {
@@ -11,7 +15,8 @@ class AnnouncementScreen extends StatefulWidget {
   State<AnnouncementScreen> createState() => _AnnouncementScreenState();
 }
 
-class _AnnouncementScreenState extends State<AnnouncementScreen> with SingleTickerProviderStateMixin {
+class _AnnouncementScreenState extends State<AnnouncementScreen>
+    with SingleTickerProviderStateMixin {
   List<model.Announcement> _announcements = [];
   bool _isLoading = true;
   late AnimationController _animationController;
@@ -38,10 +43,12 @@ class _AnnouncementScreenState extends State<AnnouncementScreen> with SingleTick
     try {
       final response = await authProvider.dio.get('/announcements');
       if (response.statusCode == 200) {
+        final list = (response.data as List)
+            .map((e) => model.Announcement.fromJson(e))
+            .toList()
+          ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
         setState(() {
-          _announcements = (response.data as List)
-              .map((e) => model.Announcement.fromJson(e))
-              .toList();
+          _announcements = list;
           _isLoading = false;
         });
       }
@@ -53,9 +60,65 @@ class _AnnouncementScreenState extends State<AnnouncementScreen> with SingleTick
     }
   }
 
+  Widget _buildDefaultBg(bool isDark) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        Image.asset(
+          'assets/images/morenbeijing.jpeg',
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => Container(
+            color: isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
+          ),
+        ),
+        Container(
+          color: isDark
+              ? Colors.black.withValues(alpha: 0.34)
+              : Colors.white.withValues(alpha: 0.20),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildBackground(ThemeProvider themeProvider, bool isDark) {
+    final path = themeProvider.backgroundImage;
+    if (themeProvider.hasBackground && path != null && path.isNotEmpty) {
+      final isAsset = !path.startsWith('http') && !path.startsWith('/');
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          isAsset
+              ? Image.asset(
+                  'assets/images/$path',
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => _buildDefaultBg(isDark),
+                )
+              : path.startsWith('/')
+                  ? Image.file(
+                      File(path),
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => _buildDefaultBg(isDark),
+                    )
+                  : Image.network(
+                      path,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => _buildDefaultBg(isDark),
+                    ),
+          Container(
+            color: isDark
+                ? Colors.black.withValues(alpha: 0.34)
+                : Colors.white.withValues(alpha: 0.20),
+          ),
+        ],
+      );
+    }
+    return _buildDefaultBg(isDark);
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final themeProvider = context.watch<ThemeProvider>();
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -68,27 +131,36 @@ class _AnnouncementScreenState extends State<AnnouncementScreen> with SingleTick
         ),
         leading: const BackButton(),
       ),
-      body: FadeTransition(
-        opacity: CurvedAnimation(
-          parent: _animationController,
-          curve: Curves.easeOut,
-        ),
-        child: _isLoading
-            ? const Center(child: CircularProgressIndicator())
-            : _announcements.isEmpty
-                ? _buildEmptyState(isDark)
-                : RefreshIndicator(
-                    onRefresh: _loadAnnouncements,
-                    child: ListView.builder(
-                      physics: const BouncingScrollPhysics(),
-                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 100),
-                      itemCount: _announcements.length,
-                      itemBuilder: (context, index) {
-                        final announcement = _announcements[index];
-                        return _buildAnnouncementCard(announcement, isDark, index);
-                      },
-                    ),
-                  ),
+      body: Stack(
+        children: [
+          Positioned.fill(child: _buildBackground(themeProvider, isDark)),
+          FadeTransition(
+            opacity: CurvedAnimation(
+              parent: _animationController,
+              curve: Curves.easeOut,
+            ),
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : _announcements.isEmpty
+                    ? _buildEmptyState(isDark)
+                    : RefreshIndicator(
+                        onRefresh: _loadAnnouncements,
+                        child: ListView.builder(
+                          physics: const BouncingScrollPhysics(),
+                          padding: const EdgeInsets.fromLTRB(12, 8, 12, 100),
+                          itemCount: _announcements.length,
+                          itemBuilder: (context, index) {
+                            final announcement = _announcements[index];
+                            return _buildAnnouncementCard(
+                              announcement,
+                              isDark,
+                              index,
+                            );
+                          },
+                        ),
+                      ),
+          ),
+        ],
       ),
     );
   }
@@ -122,7 +194,11 @@ class _AnnouncementScreenState extends State<AnnouncementScreen> with SingleTick
     );
   }
 
-  Widget _buildAnnouncementCard(model.Announcement announcement, bool isDark, int index) {
+  Widget _buildAnnouncementCard(
+    model.Announcement announcement,
+    bool isDark,
+    int index,
+  ) {
     return TweenAnimationBuilder<double>(
       tween: Tween(begin: 0.0, end: 1.0),
       duration: Duration(milliseconds: 300 + (index * 50).clamp(0, 300)),
@@ -149,9 +225,10 @@ class _AnnouncementScreenState extends State<AnnouncementScreen> with SingleTick
               children: [
                 if (announcement.isPinned) ...[
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
-                      color: Colors.red.withOpacity(0.2),
+                      color: Colors.red.withValues(alpha: 0.2),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: const Row(

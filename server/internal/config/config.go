@@ -12,6 +12,11 @@ type Config struct {
 	UploadDir     string // 文件上传目录
 	MaxFileSize   int64  // 最大文件大小(字节)
 	EduServiceURL string // Python教务服务地址
+	SMTPHost      string // SMTP 地址
+	SMTPPort      string // SMTP 端口
+	SMTPUser      string // SMTP 用户名
+	SMTPPass      string // SMTP 密码/授权码
+	SMTPFrom      string // 发件人邮箱
 }
 
 // Load 从环境变量加载配置
@@ -43,11 +48,28 @@ func Load() *Config {
 		eduServiceURL = "http://101.42.27.44:8000"
 	}
 
+	smtpHost := os.Getenv("SMTP_HOST")
+	smtpPort := os.Getenv("SMTP_PORT")
+	if smtpPort == "" {
+		smtpPort = "587"
+	}
+	smtpUser := os.Getenv("SMTP_USER")
+	smtpPass := os.Getenv("SMTP_PASS")
+	smtpFrom := os.Getenv("SMTP_FROM")
+	if smtpFrom == "" {
+		smtpFrom = smtpUser
+	}
+
 	return &Config{
 		JWTSecret:     jwtSecret,
 		DSN:           dsn,
 		UploadDir:     uploadDir,
 		MaxFileSize:   2 * 1024 * 1024, // 2MB
 		EduServiceURL: eduServiceURL,
+		SMTPHost:      smtpHost,
+		SMTPPort:      smtpPort,
+		SMTPUser:      smtpUser,
+		SMTPPass:      smtpPass,
+		SMTPFrom:      smtpFrom,
 	}
 }

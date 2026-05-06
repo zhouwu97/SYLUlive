@@ -3,17 +3,22 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import '../config/api_constants.dart';
+import '../models/post.dart';
+import '../providers/auth_provider.dart';
 import '../providers/post_provider.dart';
 import '../widgets/glass_container.dart';
 
 class CreatePostScreen extends StatefulWidget {
   final int boardId;
   final String? defaultPostType;
+  final Post? editingPost;
 
   const CreatePostScreen({
     super.key,
     required this.boardId,
     this.defaultPostType,
+    this.editingPost,
   });
 
   @override
@@ -29,11 +34,23 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   String _postType = '';
   bool _isLoading = false;
   final List<XFile> _selectedImages = [];
+  final List<PostImage> _existingImages = [];
+
+  bool get _isEditing => widget.editingPost != null;
 
   @override
   void initState() {
     super.initState();
-    if (widget.defaultPostType != null) {
+    final editingPost = widget.editingPost;
+    if (editingPost != null) {
+      _titleController.text = editingPost.title;
+      _contentController.text = editingPost.content;
+      _priceController.text =
+          editingPost.price > 0 ? editingPost.price.toString() : '';
+      _contactController.text = editingPost.contact;
+      _postType = editingPost.postType;
+      _existingImages.addAll(editingPost.images);
+    } else if (widget.defaultPostType != null) {
       _postType = widget.defaultPostType!;
     }
   }
@@ -77,6 +94,12 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     });
   }
 
+  void _removeExistingImage(int index) {
+    setState(() {
+      _existingImages.removeAt(index);
+    });
+  }
+
   void _showImageSourceDialog() {
     showModalBottomSheet(
       context: context,
@@ -106,6 +129,17 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   }
 
   Future<void> _submit() async {
+    final auth = context.read<AuthProvider>();
+    if (widget.boardId == 2 && auth.user?.eduBound != true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('毕业用户仅可发布普通帖子，不能在集市发帖'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
     if (_contentController.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('请输入内容')),
@@ -135,22 +169,41 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       }
     }
 
-    final result = await postProvider.createPost(
-      boardId: widget.boardId,
-      content: _contentController.text,
-      title: _titleController.text.isNotEmpty ? _titleController.text : null,
-      postType: _postType.isNotEmpty ? _postType : null,
-      price: double.tryParse(_priceController.text),
-      contact: _contactController.text.isNotEmpty ? _contactController.text : null,
-      fileIds: fileIds.isNotEmpty ? fileIds : null,
-    );
+    final mergedFileIds = [
+      ..._existingImages.map((image) => image.fileId),
+      ...fileIds,
+    ];
+
+    final result = _isEditing
+        ? await postProvider.updatePost(
+            postId: widget.editingPost!.id,
+            boardId: widget.boardId,
+            content: _contentController.text,
+            title: _titleController.text,
+            postType: _postType,
+            price: double.tryParse(_priceController.text),
+            contact: _contactController.text,
+            fileIds: mergedFileIds,
+          )
+        : await postProvider.createPost(
+            boardId: widget.boardId,
+            content: _contentController.text,
+            title:
+                _titleController.text.isNotEmpty ? _titleController.text : null,
+            postType: _postType.isNotEmpty ? _postType : null,
+            price: double.tryParse(_priceController.text),
+            contact: _contactController.text.isNotEmpty
+                ? _contactController.text
+                : null,
+            fileIds: mergedFileIds.isNotEmpty ? mergedFileIds : null,
+          );
 
     setState(() {
       _isLoading = false;
     });
 
     if (result.success && mounted) {
-      Navigator.pop(context);
+      Navigator.pop(context, true);
     } else if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -163,16 +216,16 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
         title: Text(
-          widget.boardId == 2
-              ? (_postType == 'exposure' ? '曝光骗子' : '发布商品')
-              : '发布水贴',
+          _isEditing
+              ? '编辑帖子'
+              : widget.boardId == 2
+                  ? (_postType == 'exposure' ? '曝光骗子' : '发布商品')
+                  : '发布水贴',
         ),
         leading: const BackButton(),
         actions: [
@@ -184,7 +237,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                     height: 20,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Text('发布'),
+                : Text(_isEditing ? '保存' : '发布'),
           ),
         ],
       ),
@@ -229,11 +282,13 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                       decoration: const InputDecoration(
                         labelText: '类型',
                       ),
-                      value: _postType.isEmpty ? null : _postType,
+                      initialValue: _postType.isEmpty ? null : _postType,
                       items: const [
                         DropdownMenuItem(value: 'sell', child: Text('出售')),
                         DropdownMenuItem(value: 'buy', child: Text('求购')),
                         DropdownMenuItem(value: 'proxy', child: Text('代课')),
+                        DropdownMenuItem(value: 'lost', child: Text('失物')),
+                        DropdownMenuItem(value: 'found', child: Text('招领')),
                         DropdownMenuItem(value: 'exposure', child: Text('曝光')),
                       ],
                       onChanged: (value) {
@@ -297,7 +352,11 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                     ? '分享你的想法...'
                     : (_postType == 'exposure'
                         ? '详细描述被骗经过，上传截图证据...'
-                        : '详细描述商品或服务...'),
+                        : (_postType == 'lost'
+                            ? '描述丢失物品、时间、地点和联系方式...'
+                            : _postType == 'found'
+                                ? '描述捡到的物品、地点、时间和领取方式...'
+                                : '详细描述商品或服务...')),
                 alignLabelWithHint: true,
               ),
               maxLines: widget.boardId == 2 ? 12 : 10,
@@ -305,14 +364,20 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
             const SizedBox(height: 16),
 
             // 图片上传
-            if (_selectedImages.isNotEmpty) ...[
+            if (_existingImages.isNotEmpty || _selectedImages.isNotEmpty) ...[
               SizedBox(
                 height: 100,
                 child: ListView.builder(
                   scrollDirection: Axis.horizontal,
-                  itemCount: _selectedImages.length + (_selectedImages.length < 9 ? 1 : 0),
+                  itemCount: _existingImages.length +
+                      _selectedImages.length +
+                      (_existingImages.length + _selectedImages.length < 9
+                          ? 1
+                          : 0),
                   itemBuilder: (context, index) {
-                    if (index == _selectedImages.length) {
+                    final totalImages =
+                        _existingImages.length + _selectedImages.length;
+                    if (index == totalImages) {
                       // Add more button
                       return GestureDetector(
                         onTap: _showImageSourceDialog,
@@ -325,11 +390,55 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                             border: Border.all(color: Colors.grey[400]!),
                             color: Colors.grey[100],
                           ),
-                          child: Icon(Icons.add, color: Colors.grey[600], size: 32),
+                          child: Icon(Icons.add,
+                              color: Colors.grey[600], size: 32),
                         ),
                       );
                     }
-                    final image = _selectedImages[index];
+                    if (index < _existingImages.length) {
+                      final image = _existingImages[index];
+                      return Stack(
+                        children: [
+                          Container(
+                            width: 100,
+                            height: 100,
+                            margin: const EdgeInsets.only(right: 8),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(12),
+                              child: CachedNetworkImage(
+                                imageUrl: ApiConstants.fullUrl(image.url),
+                                fit: BoxFit.cover,
+                                errorWidget: (_, __, ___) => Container(
+                                  color: Colors.grey[300],
+                                  child: const Icon(Icons.broken_image),
+                                ),
+                              ),
+                            ),
+                          ),
+                          Positioned(
+                            top: 4,
+                            right: 12,
+                            child: GestureDetector(
+                              onTap: () => _removeExistingImage(index),
+                              child: Container(
+                                padding: const EdgeInsets.all(4),
+                                decoration: const BoxDecoration(
+                                  color: Colors.black54,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(Icons.close,
+                                    color: Colors.white, size: 14),
+                              ),
+                            ),
+                          ),
+                        ],
+                      );
+                    }
+                    final image =
+                        _selectedImages[index - _existingImages.length];
                     return Stack(
                       children: [
                         Container(
@@ -355,14 +464,16 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                           top: 4,
                           right: 12,
                           child: GestureDetector(
-                            onTap: () => _removeImage(index),
+                            onTap: () =>
+                                _removeImage(index - _existingImages.length),
                             child: Container(
                               padding: const EdgeInsets.all(4),
                               decoration: const BoxDecoration(
                                 color: Colors.black54,
                                 shape: BoxShape.circle,
                               ),
-                              child: const Icon(Icons.close, color: Colors.white, size: 14),
+                              child: const Icon(Icons.close,
+                                  color: Colors.white, size: 14),
                             ),
                           ),
                         ),

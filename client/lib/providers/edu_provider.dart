@@ -32,6 +32,7 @@ class EduProvider extends ChangeNotifier {
   String _college = '';
   String _major = '';
   bool _isLoading = false;
+  bool _statusLoaded = false;
   String? _errorMessage;
 
   bool get isBound => _isBound;
@@ -41,6 +42,7 @@ class EduProvider extends ChangeNotifier {
   String get college => _college;
   String get major => _major;
   bool get isLoading => _isLoading;
+  bool get isStatusLoaded => _statusLoaded;
   String? get errorMessage => _errorMessage;
 
   EduProvider(Dio authDio) {
@@ -53,7 +55,9 @@ class EduProvider extends ChangeNotifier {
   }
 
   void setUserId(String userId) {
+    if (_userId == userId) return;
     _userId = userId;
+    _statusLoaded = false;
     loadStatus();
   }
 
@@ -85,6 +89,7 @@ class EduProvider extends ChangeNotifier {
         _college = data['edu_college'] ?? '';
         _major = data['edu_major'] ?? '';
         _errorMessage = null;
+        _statusLoaded = true;
         await _saveBoundStatus();
         notifyListeners();
       }
@@ -93,6 +98,7 @@ class EduProvider extends ChangeNotifier {
       final cached = await _loadBoundStatus();
       _isBound = cached;
       _errorMessage = _parseDioError(e);
+      _statusLoaded = true;
       debugPrint('获取教务状态失败: $_errorMessage，使用缓存: $cached');
       notifyListeners();
     }
@@ -142,6 +148,7 @@ class EduProvider extends ChangeNotifier {
         _college = data['college'] ?? '';
         _major = data['major'] ?? '';
         _errorMessage = null;
+        _statusLoaded = true;
         await _saveBoundStatus();
         notifyListeners();
         return true;
@@ -178,6 +185,7 @@ class EduProvider extends ChangeNotifier {
         _grade = '';
         _college = '';
         _major = '';
+        _statusLoaded = true;
         notifyListeners();
         return OperationResult.ok(null);
       }

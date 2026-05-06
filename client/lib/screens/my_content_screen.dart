@@ -374,7 +374,8 @@ class _MyContentScreenState extends State<MyContentScreen>
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (_) => PostDetailScreen(postId: post.id),
+                  builder: (_) =>
+                      PostDetailScreen(postId: post.id, initialPost: post),
                 ),
               );
             },
@@ -479,8 +480,11 @@ class _MyContentScreenState extends State<MyContentScreen>
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (_) =>
-                      PostDetailScreen(postId: post.id, isMarket: true),
+                  builder: (_) => PostDetailScreen(
+                    postId: post.id,
+                    isMarket: true,
+                    initialPost: post,
+                  ),
                 ),
               );
             },

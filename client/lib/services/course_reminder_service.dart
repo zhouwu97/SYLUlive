@@ -212,26 +212,17 @@ class CourseReminderService {
         reminders.take(_maxPendingNotifications).toList(growable: false);
     final ids = <String>[];
 
-    if (_usesAndroidLiveReminders) {
-      final androidIds = await _scheduleAndroidLiveReminders(pendingReminders);
-      if (androidIds != null) {
-        ids.addAll(androidIds.map((id) => id.toString()));
-      }
-    }
-
-    if (ids.isEmpty) {
-      for (final reminder in pendingReminders) {
-        final scheduled = await _scheduleReminder(
-          reminder,
-          AndroidScheduleMode.exactAllowWhileIdle,
-        );
-        if (scheduled ||
-            await _scheduleReminder(
-              reminder,
-              AndroidScheduleMode.inexactAllowWhileIdle,
-            )) {
-          ids.add(reminder.id.toString());
-        }
+    for (final reminder in pendingReminders) {
+      final scheduled = await _scheduleReminder(
+        reminder,
+        AndroidScheduleMode.exactAllowWhileIdle,
+      );
+      if (scheduled ||
+          await _scheduleReminder(
+            reminder,
+            AndroidScheduleMode.inexactAllowWhileIdle,
+          )) {
+        ids.add(reminder.id.toString());
       }
     }
 
@@ -355,24 +346,6 @@ class CourseReminderService {
 
   bool get _usesAndroidLiveReminders =>
       !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
-
-  Future<List<int>?> _scheduleAndroidLiveReminders(
-    List<_CourseReminderEntry> reminders,
-  ) async {
-    if (!_usesAndroidLiveReminders) return null;
-    try {
-      final result = await _platform.invokeMethod<List<dynamic>>(
-        'scheduleAndroidLiveReminders',
-        {
-          'reminders': reminders.map((r) => r.toAndroidLiveMap()).toList(),
-        },
-      );
-      return result?.map((id) => (id as num).toInt()).toList();
-    } catch (e) {
-      debugPrint('Android Live Updates 课程提醒排程失败: $e');
-      return null;
-    }
-  }
 
   Future<void> _cancelAndroidLiveReminders(List<int> ids) async {
     if (!_usesAndroidLiveReminders) return;
@@ -554,24 +527,4 @@ class _CourseReminderEntry {
     required this.detailText,
     required this.payload,
   });
-
-  Map<String, Object> toAndroidLiveMap() {
-    final teacher = course.teacher?.trim();
-    final name = course.name.trim().isEmpty ? '课程' : course.name.trim();
-    final shortText =
-        (teacher != null && teacher.isNotEmpty ? teacher : name).trim();
-    return {
-      'id': id,
-      'timeMillis': time.millisecondsSinceEpoch,
-      'classStartMillis': classStart.millisecondsSinceEpoch,
-      'title': title,
-      'body': body,
-      'detailText': detailText,
-      'ticker': teacher != null && teacher.isNotEmpty
-          ? '$teacher · $name · 即将开始'
-          : '$name · 即将开始',
-      'shortText':
-          shortText.length <= 7 ? shortText : shortText.substring(0, 7),
-    };
-  }
 }

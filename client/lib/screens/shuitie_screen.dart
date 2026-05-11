@@ -34,11 +34,11 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   List<model.Announcement> _announcements = [];
   bool _wasLoggedIn = false;
   List<Post> _cachedPosts = [];
-  String _feedMode = 'new';
+  String _feedMode = 'all';
   String _searchQuery = '';
   bool _isSearching = false;
   List<Post> _searchResults = [];
-
+  
   static const _autoRefreshInterval = Duration(seconds: 60);
 
   String get _currentSort => _feedMode == 'hot' ? 'score' : 'time';
@@ -450,15 +450,12 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       children: [
         Expanded(
           child: GlassContainer(
-            padding: const EdgeInsets.symmetric(horizontal: 14),
-            borderRadius: 18,
-            blur: 12,
-            opacity: 0.18,
-            backgroundColor:
-                isDark ? const Color(0x99171B24) : const Color(0xCCFFFFFF),
-            borderColor: isDark
-                ? Colors.white.withValues(alpha: 0.08)
-                : Colors.white.withValues(alpha: 0.72),
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            borderRadius: 20,
+            blur: 16,
+            opacity: 0.85,
+            backgroundColor: isDark ? const Color(0xE6171B24) : const Color(0xF2FFFFFF),
+            borderColor: isDark ? Colors.white.withValues(alpha: 0.12) : Colors.white.withValues(alpha: 0.85),
             child: TextField(
               controller: _searchController,
               onChanged: _onSearchChanged,
@@ -484,13 +481,13 @@ class _ShuitieScreenState extends State<ShuitieScreen>
         ),
         const SizedBox(width: 10),
         GlassContainer(
-          width: 54,
-          height: 54,
-          borderRadius: 18,
-          blur: 12,
-          opacity: 0.18,
-          backgroundColor:
-              isDark ? const Color(0xA3251B3A) : const Color(0xFFEFE8FF),
+          width: 56,
+          height: 56,
+          borderRadius: 20,
+          blur: 16,
+          opacity: 0.85,
+          backgroundColor: isDark ? const Color(0xE6251B3A) : const Color(0xF2EFE8FF),
+          borderColor: isDark ? Colors.white.withValues(alpha: 0.12) : Colors.white.withValues(alpha: 0.85),
           onTap: () => _navigateToCreatePost(context),
           child: const Icon(
             Icons.add_rounded,
@@ -577,9 +574,10 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       height: 92,
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
       borderRadius: 18,
-      blur: 12,
-      opacity: 0.18,
-      backgroundColor: backgroundColor,
+      blur: 20,
+      opacity: 0.85,
+      backgroundColor: isDark ? const Color(0xE6171B24) : const Color(0xF2FFFFFF),
+      borderColor: isDark ? Colors.white.withValues(alpha: 0.12) : Colors.white.withValues(alpha: 0.85),
       onTap: onTap,
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -624,17 +622,16 @@ class _ShuitieScreenState extends State<ShuitieScreen>
 
   Widget _buildAnnouncementPanel(bool isDark) {
     final latest = _announcements.isNotEmpty ? _announcements.first : null;
-    return GlassContainer(
+    return PremiumCard(
       onTap: () => Navigator.push(
         context,
         MaterialPageRoute(builder: (_) => const AnnouncementScreen()),
       ),
       padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
       borderRadius: 22,
-      blur: 12,
-      opacity: 0.18,
-      backgroundColor:
-          isDark ? const Color(0x99202A43) : const Color(0xD9EEF6FF),
+      gradientColors: isDark 
+          ? [const Color(0xFF202A43), const Color(0xFF161B2E)] 
+          : [const Color(0xFFEEF6FF), const Color(0xFFE4F0FF)],
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -778,11 +775,11 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     ];
     return GlassContainer(
       padding: const EdgeInsets.all(4),
-      borderRadius: 18,
-      blur: 10,
-      opacity: 0.16,
-      backgroundColor:
-          isDark ? const Color(0x99171B24) : const Color(0xCCFFFFFF),
+      borderRadius: 20,
+      blur: 16,
+      opacity: 0.85,
+      backgroundColor: isDark ? const Color(0xE6171B24) : const Color(0xF2FFFFFF),
+      borderColor: isDark ? Colors.white.withValues(alpha: 0.12) : Colors.white.withValues(alpha: 0.85),
       child: Row(
         children: items.map((item) {
           final active = _feedMode == item.$1;
@@ -790,14 +787,19 @@ class _ShuitieScreenState extends State<ShuitieScreen>
             child: GestureDetector(
               onTap: () => _changeFeedMode(item.$1),
               child: AnimatedContainer(
-                duration: const Duration(milliseconds: 180),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+                duration: const Duration(milliseconds: 200),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
                 decoration: BoxDecoration(
-                  color: active
-                      ? Theme.of(context).primaryColor.withValues(alpha: 0.18)
-                      : Colors.transparent,
-                  borderRadius: BorderRadius.circular(14),
+                  gradient: active
+                      ? LinearGradient(
+                          colors: [
+                            Theme.of(context).primaryColor,
+                            Theme.of(context).primaryColor.withValues(alpha: 0.8)
+                          ],
+                        )
+                      : null,
+                  color: active ? null : Colors.transparent,
+                  borderRadius: BorderRadius.circular(16),
                 ),
                 child: Text(
                   item.$2,
@@ -806,7 +808,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                     fontSize: 13,
                     fontWeight: FontWeight.w700,
                     color: active
-                        ? Theme.of(context).primaryColor
+                        ? Colors.white
                         : (isDark ? Colors.white70 : Colors.black54),
                   ),
                 ),

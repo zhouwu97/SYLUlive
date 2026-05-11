@@ -103,6 +103,7 @@ func main() {
 	tutorialHandler := handlers.NewTutorialHandler(db)
 	teacherHandler := handlers.NewTeacherHandler(db)
 	majorHandler := handlers.NewMajorHandler(db)
+	feedbackHandler := handlers.NewFeedbackHandler(db)
 
 	// 初始化教务服务配置
 	handlers.EduServiceConfig.BaseURL = cfg.EduServiceURL
@@ -280,6 +281,9 @@ func main() {
 
 	// 题库提取路由
 	r.POST("/api/exam/extract", middleware.AuthMiddleware(cfg.JWTSecret), examHandler.Extract)
+
+	// 用户反馈路由
+	r.POST("/api/feedback", middleware.AuthMiddleware(cfg.JWTSecret), feedbackHandler.Submit)
 
 	// 教程页面路由（公开读，管理员写）
 	r.GET("/api/tutorial/:key", tutorialHandler.Get)

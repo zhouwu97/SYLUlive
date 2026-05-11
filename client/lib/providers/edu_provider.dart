@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'dart:convert';
 import '../config/api_constants.dart';
 import '../utils/app_feedback.dart';
@@ -116,17 +117,41 @@ class EduProvider extends ChangeNotifier {
     return prefs.getBool('edu_bound_$_userId') ?? false;
   }
 
+  Future<void> _saveEduPassword(String studentId, String password) async {
+    if (kIsWeb) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('edu_pwd_$studentId', password);
+    } else {
+      const storage = FlutterSecureStorage();
+      await storage.write(key: 'edu_pwd_$studentId', value: password);
+    }
+  }
+
+  Future<String?> _loadEduPassword(String studentId) async {
+    if (kIsWeb) {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString('edu_pwd_$studentId');
+    } else {
+      const storage = FlutterSecureStorage();
+      return await storage.read(key: 'edu_pwd_$studentId');
+    }
+  }
+
   // 绑定教务账号
-  Future<bool> bind(String studentId, String password) async {
+  Future<bool> bind(String studentId, String password, {bool isSilent = false}) async {
     if (_userId == null) {
-      _errorMessage = '用户未登录';
-      notifyListeners();
+      if (!isSilent) {
+        _errorMessage = '用户未登录';
+        notifyListeners();
+      }
       return false;
     }
 
-    _isLoading = true;
-    _errorMessage = null;
-    notifyListeners();
+    if (!isSilent) {
+      _isLoading = true;
+      _errorMessage = null;
+      notifyListeners();
+    }
 
     try {
       final response = await _eduDio.post(
@@ -138,7 +163,9 @@ class EduProvider extends ChangeNotifier {
         },
       );
 
-      _isLoading = false;
+      if (!isSilent) {
+        _isLoading = false;
+      }
       if (response.statusCode == 200) {
         final data = response.data;
         _isBound = true;
@@ -150,19 +177,24 @@ class EduProvider extends ChangeNotifier {
         _errorMessage = null;
         _statusLoaded = true;
         await _saveBoundStatus();
+        await _saveEduPassword(_studentId, password);
         notifyListeners();
         return true;
       }
     } on DioException catch (e) {
-      _isLoading = false;
-      _errorMessage = _parseDioError(e);
+      if (!isSilent) {
+        _isLoading = false;
+        _errorMessage = _parseDioError(e);
+        notifyListeners();
+      }
       debugPrint('绑定教务失败: $_errorMessage');
-      notifyListeners();
       return false;
     }
-    _isLoading = false;
-    _errorMessage = '绑定失败，未知错误';
-    notifyListeners();
+    if (!isSilent) {
+      _isLoading = false;
+      _errorMessage = '绑定失败，未知错误';
+      notifyListeners();
+    }
     return false;
   }
 
@@ -222,7 +254,22 @@ class EduProvider extends ChangeNotifier {
               List<Map<String, dynamic>>.from(data['courses']));
         }
         if (data['error'] != null) {
-          return OperationResult.fail(data['error'].toString());
+          final errorMsg = data['error'].toString();
+          if (errorMsg.contains('未登录') || errorMsg.contains('过期') || errorMsg.contains('重新登录') || errorMsg.contains('会话')) {
+            final pwd = await _loadEduPassword(_studentId);
+            if (pwd != null && pwd.isNotEmpty) {
+              debugPrint('后台尝试静默恢复教务登录...');
+              final rebindSuccess = await bind(_studentId, pwd, isSilent: true);
+              if (rebindSuccess) {
+                // 重试一次
+                final retryResp = await _authDio.post('/edu/courses', data: {'year': year, 'semester': semester});
+                if (retryResp.statusCode == 200 && retryResp.data['courses'] != null) {
+                  return OperationResult.ok(List<Map<String, dynamic>>.from(retryResp.data['courses']));
+                }
+              }
+            }
+          }
+          return OperationResult.fail(errorMsg);
         }
       }
       return OperationResult.fail('获取课表失败');
@@ -257,7 +304,22 @@ class EduProvider extends ChangeNotifier {
               List<Map<String, dynamic>>.from(data['grades']));
         }
         if (data['error'] != null) {
-          return OperationResult.fail(data['error'].toString());
+          final errorMsg = data['error'].toString();
+          if (errorMsg.contains('未登录') || errorMsg.contains('过期') || errorMsg.contains('重新登录') || errorMsg.contains('会话')) {
+            final pwd = await _loadEduPassword(_studentId);
+            if (pwd != null && pwd.isNotEmpty) {
+              debugPrint('后台尝试静默恢复教务登录...');
+              final rebindSuccess = await bind(_studentId, pwd, isSilent: true);
+              if (rebindSuccess) {
+                // 重试一次
+                final retryResp = await _authDio.post('/edu/grades', data: {'year': year, 'semester': semester});
+                if (retryResp.statusCode == 200 && retryResp.data['grades'] != null) {
+                  return OperationResult.ok(List<Map<String, dynamic>>.from(retryResp.data['grades']));
+                }
+              }
+            }
+          }
+          return OperationResult.fail(errorMsg);
         }
       }
       return OperationResult.fail('获取成绩失败');

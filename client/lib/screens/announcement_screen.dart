@@ -169,11 +169,12 @@ class _AnnouncementScreenState extends State<AnnouncementScreen>
                               const SizedBox(height: 10),
                               ...List.generate(
                                 pinned.length,
-                                (index) => _buildAnnouncementCard(
-                                  pinned[index],
-                                  isDark,
-                                  index,
+                                (index) => _AnnouncementCard(
+                                  announcement: pinned[index],
+                                  isDark: isDark,
+                                  index: index,
                                   emphasized: true,
+                                  timeText: _formatTime(pinned[index].createdAt),
                                 ),
                               ),
                               const SizedBox(height: 6),
@@ -188,10 +189,11 @@ class _AnnouncementScreenState extends State<AnnouncementScreen>
                             const SizedBox(height: 10),
                             ...List.generate(
                               regular.length,
-                              (index) => _buildAnnouncementCard(
-                                regular[index],
-                                isDark,
-                                index + pinned.length,
+                              (index) => _AnnouncementCard(
+                                announcement: regular[index],
+                                isDark: isDark,
+                                index: index + pinned.length,
+                                timeText: _formatTime(regular[index].createdAt),
                               ),
                             ),
                           ],
@@ -280,12 +282,52 @@ class _AnnouncementScreenState extends State<AnnouncementScreen>
     );
   }
 
-  Widget _buildAnnouncementCard(
-      model.Announcement announcement, bool isDark, int index,
-      {bool emphasized = false}) {
+  String _formatTime(DateTime dateTime) {
+    final now = DateTime.now();
+    final diff = now.difference(dateTime);
+
+    if (diff.inMinutes < 1) return '刚刚';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}分钟前';
+    if (diff.inHours < 24) return '${diff.inHours}小时前';
+    if (diff.inDays < 7) return '${diff.inDays}天前';
+
+    return '${dateTime.year}-${dateTime.month.toString().padLeft(2, '0')}-${dateTime.day.toString().padLeft(2, '0')}';
+  }
+}
+
+class _AnnouncementCard extends StatefulWidget {
+  final model.Announcement announcement;
+  final bool isDark;
+  final int index;
+  final bool emphasized;
+  final String timeText;
+
+  const _AnnouncementCard({
+    required this.announcement,
+    required this.isDark,
+    required this.index,
+    this.emphasized = false,
+    required this.timeText,
+  });
+
+  @override
+  State<_AnnouncementCard> createState() => _AnnouncementCardState();
+}
+
+class _AnnouncementCardState extends State<_AnnouncementCard> {
+  late bool _expanded;
+
+  @override
+  void initState() {
+    super.initState();
+    _expanded = !widget.emphasized; // 置顶公告默认收起，普通公告展开
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return TweenAnimationBuilder<double>(
       tween: Tween(begin: 0.0, end: 1.0),
-      duration: Duration(milliseconds: 300 + (index * 50).clamp(0, 300)),
+      duration: Duration(milliseconds: 300 + (widget.index * 50).clamp(0, 300)),
       curve: Curves.easeOutCubic,
       builder: (context, value, child) {
         return Transform.translate(
@@ -301,22 +343,26 @@ class _AnnouncementScreenState extends State<AnnouncementScreen>
         padding: const EdgeInsets.all(16),
         borderRadius: 16,
         blur: 10,
-        opacity: isDark ? 0.15 : 0.3,
-        backgroundColor: emphasized
-            ? (isDark ? const Color(0x99A32020) : const Color(0xFFFDF0F0))
+        opacity: widget.isDark ? 0.15 : 0.3,
+        backgroundColor: widget.emphasized
+            ? (widget.isDark ? const Color(0x99A32020) : const Color(0xFFFDF0F0))
             : null,
-        borderColor: emphasized
-            ? Colors.red.withValues(alpha: isDark ? 0.35 : 0.22)
+        borderColor: widget.emphasized
+            ? Colors.red.withValues(alpha: widget.isDark ? 0.35 : 0.22)
             : null,
+        onTap: widget.emphasized ? () {
+          setState(() {
+            _expanded = !_expanded;
+          });
+        } : null,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
-                if (announcement.isPinned) ...[
+                if (widget.announcement.isPinned) ...[
                   Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
                       color: Colors.red.withValues(alpha: 0.2),
                       borderRadius: BorderRadius.circular(8),
@@ -337,57 +383,54 @@ class _AnnouncementScreenState extends State<AnnouncementScreen>
                 ],
                 Expanded(
                   child: Text(
-                    announcement.title,
+                    widget.announcement.title,
+                    maxLines: _expanded ? null : 1,
+                    overflow: _expanded ? null : TextOverflow.ellipsis,
                     style: const TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
                 ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Text(
-              announcement.content,
-              style: TextStyle(
-                fontSize: 14,
-                color: isDark ? Colors.white70 : Colors.black87,
-                height: 1.5,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Icon(
-                  Icons.access_time,
-                  size: 14,
-                  color: isDark ? Colors.white30 : Colors.grey[500],
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  _formatTime(announcement.createdAt),
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: isDark ? Colors.white30 : Colors.grey[500],
+                if (widget.emphasized)
+                  Icon(
+                    _expanded ? Icons.expand_less : Icons.expand_more,
+                    color: widget.isDark ? Colors.white54 : Colors.black54,
                   ),
-                ),
               ],
             ),
+            if (_expanded) ...[
+              const SizedBox(height: 12),
+              Text(
+                widget.announcement.content,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: widget.isDark ? Colors.white70 : Colors.black87,
+                  height: 1.5,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Icon(
+                    Icons.access_time,
+                    size: 14,
+                    color: widget.isDark ? Colors.white30 : Colors.grey[500],
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    widget.timeText,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: widget.isDark ? Colors.white30 : Colors.grey[500],
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ],
         ),
       ),
     );
-  }
-
-  String _formatTime(DateTime dateTime) {
-    final now = DateTime.now();
-    final diff = now.difference(dateTime);
-
-    if (diff.inMinutes < 1) return '刚刚';
-    if (diff.inMinutes < 60) return '${diff.inMinutes}分钟前';
-    if (diff.inHours < 24) return '${diff.inHours}小时前';
-    if (diff.inDays < 7) return '${diff.inDays}天前';
-
-    return '${dateTime.year}-${dateTime.month.toString().padLeft(2, '0')}-${dateTime.day.toString().padLeft(2, '0')}';
   }
 }

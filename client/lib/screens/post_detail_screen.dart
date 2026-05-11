@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:dio/dio.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
@@ -228,7 +229,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final canEditMarket = widget.isMarket && _isCurrentUserPostOwner();
 
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: isDark ? const Color(0xFF131720) : Colors.white,
       extendBodyBehindAppBar: true,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
@@ -257,8 +258,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       ),
       body: Stack(
         children: [
-          // 背景 —— 复用全局背景风格
-          _buildBackground(themeProvider, isDark),
           // 内容
           SafeArea(
             child: _isLoading
@@ -273,68 +272,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           ),
         ],
       ),
-    );
-  }
-
-  // ---- 背景 ----
-
-  Widget _buildBackground(ThemeProvider themeProvider, bool isDark) {
-    if (themeProvider.hasBackground && themeProvider.backgroundImage != null) {
-      final bgPath = themeProvider.backgroundImage!;
-      final isAsset = !bgPath.startsWith('http') && !bgPath.startsWith('/');
-      return Stack(
-        fit: StackFit.expand,
-        children: [
-          isAsset
-              ? Image.asset(
-                  'assets/images/$bgPath',
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => _buildDefaultBackground(isDark),
-                )
-              : bgPath.startsWith('/')
-                  ? Image.file(
-                      File(bgPath),
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) =>
-                          _buildDefaultBackground(isDark),
-                    )
-                  : Image.network(
-                      bgPath,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) =>
-                          _buildDefaultBackground(isDark),
-                    ),
-          Container(
-            color: isDark
-                ? Colors.black.withValues(alpha: 0.35)
-                : Colors.white.withValues(alpha: 0.25),
-          ),
-        ],
-      );
-    }
-    return _buildDefaultBackground(isDark);
-  }
-
-  Widget _buildDefaultBackground(bool isDark) {
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        Image(
-          image: ResizeImage(
-            const AssetImage('assets/images/morenbeijing.jpeg'),
-            width: 1080,
-          ),
-          fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => Container(
-            color: isDark ? const Color(0xFF0F131A) : const Color(0xFFF5F7FB),
-          ),
-        ),
-        Container(
-          color: isDark
-              ? Colors.black.withValues(alpha: 0.35)
-              : Colors.white.withValues(alpha: 0.25),
-        ),
-      ],
     );
   }
 
@@ -397,32 +334,47 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               _buildHeroImage(p, isDark),
               const SizedBox(height: 16),
             ],
-            if (p.title.isNotEmpty) ...[
-              Text(p.title,
-                  style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
-                      color: isDark ? Colors.white : Colors.black87)),
-              const SizedBox(height: 10),
-            ],
-            if (p.price > 0) ...[
-              Text(
-                  '¥ ${p.price.toStringAsFixed(p.price.truncateToDouble() == p.price ? 0 : 2)}',
-                  style: TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.w800,
-                      color: const Color(0xFFFF6B6B))),
-              const SizedBox(height: 12),
-            ],
-            Text(p.content,
-                style: TextStyle(
-                    fontSize: 15,
-                    height: 1.7,
-                    color: isDark ? Colors.white70 : Colors.black87)),
-            if (p.contact.isNotEmpty) ...[
-              const SizedBox(height: 18),
-              _buildContactChip(p.contact, isDark),
-            ],
+            if (p.title.isNotEmpty || p.content.isNotEmpty)
+              Container(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (p.title.isNotEmpty) ...[
+                      Text(p.title,
+                          style: TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold,
+                              color: isDark ? Colors.white : Colors.black87)),
+                      const SizedBox(height: 10),
+                    ],
+                    if (p.price > 0) ...[
+                      Text(
+                          '¥ ${p.price.toStringAsFixed(p.price.truncateToDouble() == p.price ? 0 : 2)}',
+                          style: TextStyle(
+                              fontSize: 24,
+                              fontWeight: FontWeight.w800,
+                              color: const Color(0xFFFF6B6B))),
+                      const SizedBox(height: 12),
+                    ],
+                    Text(p.content,
+                        style: TextStyle(
+                            fontSize: 15,
+                            height: 1.7,
+                            color: isDark ? Colors.white70 : Colors.black87)),
+                    if (p.contact.isNotEmpty) ...[
+                      const SizedBox(height: 18),
+                      GestureDetector(
+                        onTap: () {
+                          Clipboard.setData(ClipboardData(text: p.contact));
+                          AppFeedback.showSnackBar(context, '联系方式已复制到剪贴板');
+                        },
+                        child: _buildContactChip(p.contact, isDark),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
             if (_isCurrentUserPostOwner()) ...[
               const SizedBox(height: 18),
               _buildOwnerMarketActions(isDark),
@@ -452,21 +404,30 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             _buildAuthorCard(p, isDark),
             const SizedBox(height: 18),
-            if (p.title.isNotEmpty) ...[
-              Text(p.title,
-                  style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
-                      color: isDark ? Colors.white : Colors.black87)),
-              const SizedBox(height: 12),
-            ],
-            Text(p.content,
-                style: TextStyle(
-                    fontSize: 16,
-                    height: 1.75,
-                    color: isDark
-                        ? Colors.white.withValues(alpha: 0.80)
-                        : Colors.black87)),
+            if (p.title.isNotEmpty || p.content.isNotEmpty)
+              Container(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (p.title.isNotEmpty) ...[
+                      Text(p.title,
+                          style: TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold,
+                              color: isDark ? Colors.white : Colors.black87)),
+                      const SizedBox(height: 12),
+                    ],
+                    Text(p.content,
+                        style: TextStyle(
+                            fontSize: 16,
+                            height: 1.75,
+                            color: isDark
+                                ? Colors.white.withValues(alpha: 0.80)
+                                : Colors.black87)),
+                  ],
+                ),
+              ),
             if (p.images.isNotEmpty) ...[
               const SizedBox(height: 18),
               _buildImageGrid(p, isDark),
@@ -487,13 +448,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   // ---- 作者卡片 ----
 
   Widget _buildAuthorCard(Post p, bool isDark) {
-    return GlassContainer(
+    return Container(
       padding: const EdgeInsets.all(14),
-      borderRadius: 18,
-      blur: 12,
-      opacity: 0.16,
-      backgroundColor:
-          isDark ? const Color(0x99171B24) : const Color(0xCCFFFFFF),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0x99171B24) : const Color(0x0A000000),
+        borderRadius: BorderRadius.circular(18),
+      ),
       child: Row(children: [
         CircleAvatar(
           radius: 24,

@@ -28,13 +28,13 @@ class PostCard extends StatelessWidget {
     return GlassContainer(
       margin: const EdgeInsets.only(bottom: 12),
       borderRadius: 18,
-      blur: 14,
-      opacity: 0.18,
+      blur: 20,
+      opacity: 0.85,
       backgroundColor:
-          isDark ? const Color(0x99171B24) : const Color(0xCCFFFFFF),
+          isDark ? const Color(0xE6171B24) : const Color(0xF2FFFFFF),
       borderColor: isDark
-          ? Colors.white.withValues(alpha: 0.08)
-          : Colors.white.withValues(alpha: 0.72),
+          ? Colors.white.withValues(alpha: 0.12)
+          : Colors.white.withValues(alpha: 0.85),
       onTap: onTap,
       child: Padding(
         padding: const EdgeInsets.all(16),

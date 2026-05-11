@@ -12,13 +12,17 @@ import '../utils/app_feedback.dart';
 class AuthResult {
   final bool success;
   final String? errorMessage;
+  final int? statusCode;
 
-  const AuthResult({required this.success, this.errorMessage});
+  const AuthResult({required this.success, this.errorMessage, this.statusCode});
 
   factory AuthResult.success() => const AuthResult(success: true);
 
-  factory AuthResult.failure(String message) =>
-      AuthResult(success: false, errorMessage: message);
+  factory AuthResult.failure(String message, {int? statusCode}) => AuthResult(
+        success: false,
+        errorMessage: message,
+        statusCode: statusCode,
+      );
 }
 
 class AuthProvider extends ChangeNotifier {
@@ -99,6 +103,16 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  Future<void> _saveEduPassword(String studentId, String password) async {
+    if (kIsWeb) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('edu_pwd_$studentId', password);
+    } else {
+      const storage = FlutterSecureStorage();
+      await storage.write(key: 'edu_pwd_$studentId', value: password);
+    }
+  }
+
   /// 解析Dio异常并返回友好的错误信息（附带技术细节方便排查）
   String _parseDioError(DioException e) {
     debugPrint('Dio error: ${e.requestOptions.uri} ${e.type} ${e.error}');
@@ -173,7 +187,10 @@ class AuthProvider extends ChangeNotifier {
       notifyListeners();
       final errorMsg = _parseDioError(e);
       debugPrint('登录失败: $errorMsg');
-      return AuthResult.failure(errorMsg);
+      return AuthResult.failure(
+        errorMsg,
+        statusCode: e.response?.statusCode,
+      );
     } catch (e) {
       _isLoading = false;
       notifyListeners();
@@ -407,6 +424,7 @@ class AuthProvider extends ChangeNotifier {
         _user = User.fromJson(response.data['user']);
         _dio.options.headers['Authorization'] = 'Bearer $_token';
         await _saveAuth();
+        await _saveEduPassword(studentId, eduPassword);
         notifyListeners();
         return AuthResult.success();
       }
@@ -449,6 +467,7 @@ class AuthProvider extends ChangeNotifier {
         _user = User.fromJson(response.data['user']);
         _dio.options.headers['Authorization'] = 'Bearer $_token';
         await _saveAuth();
+        await _saveEduPassword(studentId, eduPassword);
         notifyListeners();
         return AuthResult.success();
       }

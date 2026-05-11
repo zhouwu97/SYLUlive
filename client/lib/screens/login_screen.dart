@@ -27,6 +27,8 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _isLoading = false;
   String _registerMode = 'campus';
   int _codeCooldown = 0;
+  bool _obscureAppPassword = true;
+  bool _obscureEduPassword = true;
 
   @override
   void dispose() {
@@ -51,8 +53,35 @@ class _LoginScreenState extends State<LoginScreen> {
 
   bool get _isGraduateRegister => _isRegister && _registerMode == 'graduate';
 
+  Future<void> _showLoginLimitedDialog(String message) async {
+    FocusManager.instance.primaryFocus?.unfocus();
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      builder: (dialogContext) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        title: const Text('登录受限'),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(dialogContext);
+              await _showForgotPasswordDialog();
+            },
+            child: const Text('去忘记密码'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('知道了'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
+    FocusManager.instance.primaryFocus?.unfocus();
 
     final authProvider = context.read<AuthProvider>();
     AuthResult result;
@@ -95,7 +124,12 @@ class _LoginScreenState extends State<LoginScreen> {
       }
       Navigator.pop(context);
     } else if (mounted && result.errorMessage != null) {
+      if (!_isRegister && result.statusCode == 429) {
+        await _showLoginLimitedDialog(result.errorMessage!);
+        return;
+      }
       if (!_isRegister && result.errorMessage!.contains('尚未注册')) {
+        FocusManager.instance.primaryFocus?.unfocus();
         setState(() {
           _isRegister = true;
           _eduPasswordController.clear();
@@ -154,6 +188,7 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _showForgotPasswordDialog() async {
+    FocusManager.instance.primaryFocus?.unfocus();
     final studentIdController =
         TextEditingController(text: _studentIdController.text.trim());
     final eduPasswordController = TextEditingController();
@@ -161,6 +196,9 @@ class _LoginScreenState extends State<LoginScreen> {
     final confirmPasswordController = TextEditingController();
     final formKey = GlobalKey<FormState>();
     var isSubmitting = false;
+    var obscureEduPassword = true;
+    var obscureNewPassword = true;
+    var obscureConfirmPassword = true;
 
     await showDialog<void>(
       context: context,
@@ -206,12 +244,23 @@ class _LoginScreenState extends State<LoginScreen> {
                     const SizedBox(height: 12),
                     TextFormField(
                       controller: eduPasswordController,
-                      obscureText: true,
+                      obscureText: obscureEduPassword,
                       decoration: const InputDecoration(
                         labelText: '教务密码',
                         prefixIcon: Icon(Icons.school_outlined),
                         border: OutlineInputBorder(),
                         helperText: '仅用于确认账号属于本人',
+                      ).copyWith(
+                        suffixIcon: IconButton(
+                          onPressed: () => setLocalState(
+                            () => obscureEduPassword = !obscureEduPassword,
+                          ),
+                          icon: Icon(
+                            obscureEduPassword
+                                ? Icons.visibility_off_outlined
+                                : Icons.visibility_outlined,
+                          ),
+                        ),
                       ),
                       validator: (v) =>
                           (v == null || v.isEmpty) ? '请输入教务密码' : null,
@@ -219,23 +268,46 @@ class _LoginScreenState extends State<LoginScreen> {
                     const SizedBox(height: 12),
                     TextFormField(
                       controller: newPasswordController,
-                      obscureText: true,
+                      obscureText: obscureNewPassword,
                       decoration: const InputDecoration(
                         labelText: '新的软件密码',
                         prefixIcon: Icon(Icons.lock_reset),
                         border: OutlineInputBorder(),
                         helperText: '8位以上，需包含数字和字母',
+                      ).copyWith(
+                        suffixIcon: IconButton(
+                          onPressed: () => setLocalState(
+                            () => obscureNewPassword = !obscureNewPassword,
+                          ),
+                          icon: Icon(
+                            obscureNewPassword
+                                ? Icons.visibility_off_outlined
+                                : Icons.visibility_outlined,
+                          ),
+                        ),
                       ),
                       validator: _validateAppPassword,
                     ),
                     const SizedBox(height: 12),
                     TextFormField(
                       controller: confirmPasswordController,
-                      obscureText: true,
+                      obscureText: obscureConfirmPassword,
                       decoration: const InputDecoration(
                         labelText: '确认新密码',
                         prefixIcon: Icon(Icons.check_circle_outline),
                         border: OutlineInputBorder(),
+                      ).copyWith(
+                        suffixIcon: IconButton(
+                          onPressed: () => setLocalState(
+                            () => obscureConfirmPassword =
+                                !obscureConfirmPassword,
+                          ),
+                          icon: Icon(
+                            obscureConfirmPassword
+                                ? Icons.visibility_off_outlined
+                                : Icons.visibility_outlined,
+                          ),
+                        ),
                       ),
                       validator: (v) {
                         if (v == null || v.isEmpty) return '请再次输入新密码';
@@ -467,6 +539,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                 ],
                                 selected: {_registerMode},
                                 onSelectionChanged: (value) {
+                                  FocusManager.instance.primaryFocus?.unfocus();
                                   setState(() {
                                     _registerMode = value.first;
                                     _appPasswordController.clear();
@@ -497,7 +570,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                 TextFormField(
                                   controller: _eduPasswordController,
                                   focusNode: _eduPasswordFocus,
-                                  obscureText: true,
+                                  obscureText: _obscureEduPassword,
                                   decoration: InputDecoration(
                                     labelText: '教务密码',
                                     prefixIcon: const Icon(Icons.lock_outline),
@@ -509,6 +582,17 @@ class _LoginScreenState extends State<LoginScreen> {
                                     helperText: '用于验证学号真实性',
                                     helperStyle:
                                         TextStyle(color: Colors.orange),
+                                    suffixIcon: IconButton(
+                                      onPressed: () => setState(() {
+                                        _obscureEduPassword =
+                                            !_obscureEduPassword;
+                                      }),
+                                      icon: Icon(
+                                        _obscureEduPassword
+                                            ? Icons.visibility_off_outlined
+                                            : Icons.visibility_outlined,
+                                      ),
+                                    ),
                                   ),
                                   validator: (v) => (v == null || v.isEmpty)
                                       ? '请输入教务密码'
@@ -563,7 +647,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             // APP密码
                             TextFormField(
                               controller: _appPasswordController,
-                              obscureText: true,
+                              obscureText: _obscureAppPassword,
                               decoration: InputDecoration(
                                 labelText: _isRegister ? 'APP密码' : '密码',
                                 prefixIcon: const Icon(Icons.lock_outline),
@@ -574,6 +658,16 @@ class _LoginScreenState extends State<LoginScreen> {
                                 helperText:
                                     _isRegister ? '8位以上，需包含数字和字母' : null,
                                 helperStyle: TextStyle(color: Colors.orange),
+                                suffixIcon: IconButton(
+                                  onPressed: () => setState(() {
+                                    _obscureAppPassword = !_obscureAppPassword;
+                                  }),
+                                  icon: Icon(
+                                    _obscureAppPassword
+                                        ? Icons.visibility_off_outlined
+                                        : Icons.visibility_outlined,
+                                  ),
+                                ),
                               ),
                               validator: _isRegister
                                   ? _validateAppPassword
@@ -627,6 +721,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             // 切换登录/注册
                             TextButton(
                               onPressed: () {
+                                FocusManager.instance.primaryFocus?.unfocus();
                                 setState(() {
                                   _isRegister = !_isRegister;
                                   _eduPasswordController.clear();

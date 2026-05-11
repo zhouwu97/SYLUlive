@@ -209,12 +209,23 @@ func sendMailCode(qq, code string) error {
 	addr := VerifyCodeConfig.SMTPHost + ":" + VerifyCodeConfig.SMTPPort
 	auth := smtp.PlainAuth("", VerifyCodeConfig.SMTPUser, VerifyCodeConfig.SMTPPass, VerifyCodeConfig.SMTPHost)
 	subject := "沈理校园注册验证码"
-	body := fmt.Sprintf("您的验证码是：%s\n10分钟内有效。\n如果不是本人操作，请忽略此邮件。", code)
+	body := fmt.Sprintf(`
+<html>
+  <body style="font-family: Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif; line-height: 1.6; color: #222;">
+    <h2 style="margin: 0 0 12px;">沈理校园注册验证码</h2>
+    <p style="margin: 0 0 8px;">您的验证码为：</p>
+    <div style="display: inline-block; padding: 10px 16px; margin: 4px 0 12px; font-size: 28px; font-weight: 700; letter-spacing: 4px; color: #4F46E5; background: #F5F3FF; border-radius: 10px;">
+      %s
+    </div>
+    <p style="margin: 0 0 6px;"><strong>有效期：</strong>10 分钟</p>
+    <p style="margin: 0; color: #666;">如果不是本人操作，请忽略此邮件。</p>
+  </body>
+</html>`, code)
 	message := []byte("To: " + to + "\r\n" +
 		"From: " + VerifyCodeConfig.SMTPFrom + "\r\n" +
 		"Subject: " + subject + "\r\n" +
 		"MIME-Version: 1.0\r\n" +
-		"Content-Type: text/plain; charset=UTF-8\r\n\r\n" +
+		"Content-Type: text/html; charset=UTF-8\r\n\r\n" +
 		body)
 	return smtp.SendMail(addr, auth, VerifyCodeConfig.SMTPFrom, []string{to}, message)
 }

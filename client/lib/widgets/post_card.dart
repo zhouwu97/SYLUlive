@@ -296,85 +296,88 @@ class PostCard extends StatelessWidget {
     final imageUrls =
         validImages.map((image) => ApiConstants.fullUrl(image.url)).toList();
 
+    if (count == 1) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: GestureDetector(
+          onTap: () => _openImageViewer(context, imageUrls, 0),
+          child: Container(
+            height: 220,
+            color: Colors.black.withValues(alpha: showPrice ? 0.04 : 0),
+            child: CachedNetworkImage(
+              cacheManager: PostImageCache.manager,
+              imageUrl: imageUrls[0],
+              width: double.infinity,
+              fit: showPrice ? BoxFit.contain : BoxFit.cover,
+              placeholder: (_, __) => Container(color: Colors.grey[300]),
+              errorWidget: (_, __, ___) => Container(
+                color: Colors.grey[300],
+                child: const Icon(Icons.image),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
     return ClipRRect(
       borderRadius: BorderRadius.circular(12),
-      child: SizedBox(
-        height: count == 1 ? 220 : (count == 2 ? 168 : 220),
-        child: count == 1
-            ? GestureDetector(
-                onTap: () => _openImageViewer(context, imageUrls, 0),
-                child: Container(
-                  color: Colors.black.withValues(alpha: showPrice ? 0.04 : 0),
-                  child: CachedNetworkImage(
+      child: GridView.builder(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        padding: EdgeInsets.zero,
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: count == 2 ? 2 : 3,
+          mainAxisSpacing: 4,
+          crossAxisSpacing: 4,
+          childAspectRatio: 1,
+        ),
+        itemCount: count > 4 ? 4 : count,
+        itemBuilder: (context, index) {
+          if (index == 3 && count > 4) {
+            return GestureDetector(
+              onTap: () => _openImageViewer(context, imageUrls, index),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  CachedNetworkImage(
                     cacheManager: PostImageCache.manager,
-                    imageUrl: imageUrls[0],
-                    width: double.infinity,
-                    fit: showPrice ? BoxFit.contain : BoxFit.cover,
+                    imageUrl: imageUrls[index],
+                    fit: BoxFit.cover,
                     placeholder: (_, __) => Container(color: Colors.grey[300]),
-                    errorWidget: (_, __, ___) => Container(
-                      color: Colors.grey[300],
-                      child: const Icon(Icons.image),
+                    errorWidget: (_, __, ___) =>
+                        Container(color: Colors.grey[300]),
+                  ),
+                  Container(
+                    color: Colors.black54,
+                    alignment: Alignment.center,
+                    child: Text(
+                      '+${count - 3}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
-                ),
-              )
-            : GridView.builder(
-                physics: const NeverScrollableScrollPhysics(),
-                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: count == 2 ? 2 : 3,
-                  mainAxisSpacing: 4,
-                  crossAxisSpacing: 4,
-                  childAspectRatio: 1,
-                ),
-                itemCount: count > 4 ? 4 : count,
-                itemBuilder: (context, index) {
-                  if (index == 3 && count > 4) {
-                    return GestureDetector(
-                      onTap: () => _openImageViewer(context, imageUrls, index),
-                      child: Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          CachedNetworkImage(
-                            cacheManager: PostImageCache.manager,
-                            imageUrl: imageUrls[index],
-                            fit: BoxFit.cover,
-                            placeholder: (_, __) =>
-                                Container(color: Colors.grey[300]),
-                            errorWidget: (_, __, ___) =>
-                                Container(color: Colors.grey[300]),
-                          ),
-                          Container(
-                            color: Colors.black54,
-                            alignment: Alignment.center,
-                            child: Text(
-                              '+${count - 3}',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  }
-                  return GestureDetector(
-                    onTap: () => _openImageViewer(context, imageUrls, index),
-                    child: CachedNetworkImage(
-                      cacheManager: PostImageCache.manager,
-                      imageUrl: imageUrls[index],
-                      fit: BoxFit.cover,
-                      placeholder: (_, __) =>
-                          Container(color: Colors.grey[300]),
-                      errorWidget: (_, __, ___) => Container(
-                        color: Colors.grey[300],
-                        child: const Icon(Icons.image),
-                      ),
-                    ),
-                  );
-                },
+                ],
               ),
+            );
+          }
+          return GestureDetector(
+            onTap: () => _openImageViewer(context, imageUrls, index),
+            child: CachedNetworkImage(
+              cacheManager: PostImageCache.manager,
+              imageUrl: imageUrls[index],
+              fit: BoxFit.cover,
+              placeholder: (_, __) => Container(color: Colors.grey[300]),
+              errorWidget: (_, __, ___) => Container(
+                color: Colors.grey[300],
+                child: const Icon(Icons.image),
+              ),
+            ),
+          );
+        },
       ),
     );
   }

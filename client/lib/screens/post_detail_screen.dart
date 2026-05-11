@@ -259,17 +259,15 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       body: Stack(
         children: [
           // 内容
-          SafeArea(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : _errorMessage != null
-                    ? _buildErrorView(isDark)
-                    : _post == null
-                        ? _buildEmptyView(isDark)
-                        : widget.isMarket
-                            ? _buildMarketDetail(isDark)
-                            : _buildWaterDetail(isDark),
-          ),
+          _isLoading
+              ? const SafeArea(child: Center(child: CircularProgressIndicator()))
+              : _errorMessage != null
+                  ? SafeArea(child: _buildErrorView(isDark))
+                  : _post == null
+                      ? SafeArea(child: _buildEmptyView(isDark))
+                      : widget.isMarket
+                          ? _buildMarketDetail(isDark)
+                          : SafeArea(child: _buildWaterDetail(isDark)),
         ],
       ),
     );
@@ -325,71 +323,147 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     return Column(children: [
       Expanded(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 80),
-          child:
-              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            _buildAuthorCard(p, isDark),
-            const SizedBox(height: 16),
-            if (p.images.isNotEmpty) ...[
-              _buildHeroImage(p, isDark),
-              const SizedBox(height: 16),
-            ],
-            if (p.title.isNotEmpty || p.content.isNotEmpty)
-              Container(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (p.title.isNotEmpty) ...[
-                      Text(p.title,
+          padding: const EdgeInsets.only(bottom: 80),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (p.images.isNotEmpty) 
+                _buildMarketHeroImage(p, isDark)
+              else
+                SizedBox(height: MediaQuery.of(context).padding.top + kToolbarHeight),
+              Transform.translate(
+                offset: Offset(0, p.images.isNotEmpty ? -24 : 0),
+                child: Container(
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: isDark ? const Color(0xFF131720) : Colors.white,
+                    borderRadius: BorderRadius.vertical(
+                        top: Radius.circular(p.images.isNotEmpty ? 24 : 0)),
+                  ),
+                  padding: const EdgeInsets.fromLTRB(16, 24, 16, 0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (p.price > 0) ...[
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            const Text('¥ ',
+                                style: TextStyle(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.bold,
+                                    color: Color(0xFFFF6B6B))),
+                            Text(
+                              p.price.toStringAsFixed(
+                                  p.price.truncateToDouble() == p.price ? 0 : 2),
+                              style: const TextStyle(
+                                  fontSize: 32,
+                                  fontWeight: FontWeight.w900,
+                                  color: Color(0xFFFF6B6B),
+                                  height: 1.0),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                      ],
+                      if (p.title.isNotEmpty) ...[
+                        Text(p.title,
+                            style: TextStyle(
+                                fontSize: 24,
+                                fontWeight: FontWeight.bold,
+                                color: isDark ? Colors.white : Colors.black87)),
+                        const SizedBox(height: 12),
+                      ],
+                      Text(p.content,
                           style: TextStyle(
-                              fontSize: 22,
-                              fontWeight: FontWeight.bold,
-                              color: isDark ? Colors.white : Colors.black87)),
+                              fontSize: 16,
+                              height: 1.6,
+                              color: isDark ? Colors.white70 : Colors.black87)),
+                      const SizedBox(height: 24),
+                      _buildAuthorCard(p, isDark),
+                      if (p.contact.isNotEmpty) ...[
+                        const SizedBox(height: 24),
+                        GestureDetector(
+                          onTap: () {
+                            Clipboard.setData(ClipboardData(text: p.contact));
+                            AppFeedback.showSnackBar(context, '联系方式已复制到剪贴板');
+                          },
+                          child: _buildContactChip(p.contact, isDark),
+                        ),
+                      ],
+                      if (_isCurrentUserPostOwner()) ...[
+                        const SizedBox(height: 24),
+                        _buildOwnerMarketActions(isDark),
+                      ],
+                      const SizedBox(height: 32),
+                      _buildActionBar(isDark),
+                      const SizedBox(height: 24),
+                      _buildCommentsHeader(isDark),
                       const SizedBox(height: 10),
+                      _buildCompactReplies(isDark),
                     ],
-                    if (p.price > 0) ...[
-                      Text(
-                          '¥ ${p.price.toStringAsFixed(p.price.truncateToDouble() == p.price ? 0 : 2)}',
-                          style: TextStyle(
-                              fontSize: 24,
-                              fontWeight: FontWeight.w800,
-                              color: const Color(0xFFFF6B6B))),
-                      const SizedBox(height: 12),
-                    ],
-                    Text(p.content,
-                        style: TextStyle(
-                            fontSize: 15,
-                            height: 1.7,
-                            color: isDark ? Colors.white70 : Colors.black87)),
-                    if (p.contact.isNotEmpty) ...[
-                      const SizedBox(height: 18),
-                      GestureDetector(
-                        onTap: () {
-                          Clipboard.setData(ClipboardData(text: p.contact));
-                          AppFeedback.showSnackBar(context, '联系方式已复制到剪贴板');
-                        },
-                        child: _buildContactChip(p.contact, isDark),
-                      ),
-                    ],
-                  ],
+                  ),
                 ),
               ),
-            if (_isCurrentUserPostOwner()) ...[
-              const SizedBox(height: 18),
-              _buildOwnerMarketActions(isDark),
             ],
-            const SizedBox(height: 28),
-            _buildActionBar(isDark),
-            const SizedBox(height: 24),
-            _buildCommentsHeader(isDark),
-            const SizedBox(height: 10),
-            _buildCompactReplies(isDark),
-          ]),
+          ),
         ),
       ),
       _buildReplyBar(isDark),
     ]);
+  }
+
+  Widget _buildMarketHeroImage(Post p, bool isDark) {
+    final urls = _resolvedImageUrls(p);
+    if (urls.isEmpty) return const SizedBox.shrink();
+    return Stack(
+      children: [
+        Container(
+          width: double.infinity,
+          height: 400,
+          color: isDark ? Colors.white.withValues(alpha: 0.06) : Colors.black.withValues(alpha: 0.04),
+          child: PageView.builder(
+            itemCount: urls.length,
+            onPageChanged: (index) => setState(() => _marketImageIndex = index),
+            itemBuilder: (_, index) => GestureDetector(
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => ImageViewerScreen(imageUrls: urls, initialIndex: index),
+                ),
+              ),
+              child: CachedNetworkImage(
+                cacheManager: PostImageCache.manager,
+                imageUrl: urls[index],
+                width: double.infinity,
+                fit: BoxFit.cover,
+                placeholder: (_, __) => Container(color: isDark ? Colors.white10 : Colors.grey[200]),
+                errorWidget: (_, __, ___) => Container(
+                  color: isDark ? Colors.white10 : Colors.grey[200],
+                  child: const Icon(Icons.broken_image, size: 40, color: Colors.grey),
+                ),
+              ),
+            ),
+          ),
+        ),
+        if (urls.length > 1)
+          Positioned(
+            bottom: 40,
+            right: 16,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.5),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Text(
+                '${_marketImageIndex + 1}/${urls.length}',
+                style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ),
+      ],
+    );
   }
 
   // ---- 水帖布局 ----
@@ -720,23 +794,79 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   // ---- 联系方式 ----
 
   Widget _buildContactChip(String contact, bool isDark) {
-    return GlassContainer(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      borderRadius: 14,
-      blur: 10,
-      opacity: 0.16,
-      backgroundColor:
-          isDark ? const Color(0x99171B24) : const Color(0xCCFFFFFF),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Icon(Icons.contact_phone_outlined,
-            size: 16, color: isDark ? Colors.white54 : Colors.grey[600]),
-        const SizedBox(width: 8),
-        Text(contact,
-            style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-                color: isDark ? Colors.white70 : Colors.grey[700])),
-      ]),
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF222731) : const Color(0xFFF8F9FA),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isDark
+              ? Colors.white.withValues(alpha: 0.06)
+              : Colors.black.withValues(alpha: 0.05),
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Theme.of(context).primaryColor.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(Icons.alternate_email_rounded,
+                size: 20, color: Theme.of(context).primaryColor),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('联系方式',
+                    style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        color: isDark ? Colors.white54 : Colors.grey[500])),
+                const SizedBox(height: 3),
+                Text(contact,
+                    style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 0.3,
+                        color: isDark ? Colors.white : Colors.black87)),
+              ],
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: isDark ? Colors.white10 : Colors.white,
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: isDark
+                  ? []
+                  : [
+                      BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.03),
+                          blurRadius: 4,
+                          offset: const Offset(0, 2))
+                    ],
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.copy_rounded,
+                    size: 14, color: isDark ? Colors.white70 : Colors.black54),
+                const SizedBox(width: 4),
+                Text('一键复制',
+                    style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: isDark ? Colors.white70 : Colors.black54)),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 

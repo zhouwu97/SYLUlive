@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:path_provider/path_provider.dart';
 import '../main.dart' show getSharedDio;
 import '../models/exam_question.dart';
 import '../providers/auth_provider.dart';
@@ -55,14 +57,34 @@ class _ExamExtractScreenState extends State<ExamExtractScreen> {
     setState(() => _loading = false);
   }
 
-  Future<void> _copyScript() async {
-    await Clipboard.setData(ClipboardData(text: _scriptContent));
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-          content: Text('脚本已复制，去电脑浏览器粘贴到Tampermonkey'),
-          backgroundColor: Colors.green),
-    );
+  Future<void> _shareFiles() async {
+    setState(() => _copyingProject = true);
+    try {
+      final tempDir = await getTemporaryDirectory();
+      
+      // 提取脚本
+      final scriptData = await rootBundle.load('assets/scripts/tampermonkey_script.js');
+      final scriptFile = File('${tempDir.path}/tampermonkey_script.js');
+      await scriptFile.writeAsBytes(scriptData.buffer.asUint8List());
+      
+      // 提取HTML
+      final htmlData = await rootBundle.load('assets/yongzhiyunkao/convert_to_markdown.html');
+      final htmlFile = File('${tempDir.path}/convert_to_markdown.html');
+      await htmlFile.writeAsBytes(htmlData.buffer.asUint8List());
+
+      // 分享
+      if (!mounted) return;
+      await Share.shareXFiles([
+        XFile(scriptFile.path),
+        XFile(htmlFile.path),
+      ], text: '融智云考提取工具（包含脚本与HTML转换工具）');
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('分享失败: $e'), backgroundColor: Colors.red),
+      );
+    }
+    setState(() => _copyingProject = false);
   }
 
   Future<void> _importJson() async {
@@ -89,45 +111,7 @@ class _ExamExtractScreenState extends State<ExamExtractScreen> {
     }
   }
 
-  /// 将内置的 yongzhiyunkao 项目文件复制到手机存储
-  Future<void> _copyProjectToStorage() async {
-    setState(() => _copyingProject = true);
-    try {
-      final manifest = await rootBundle.loadString('AssetManifest.json');
-      final manifestJson = json.decode(manifest) as Map<String, dynamic>;
-      final projectFiles = manifestJson.keys
-          .where((k) => k.startsWith('assets/yongzhiyunkao/'))
-          .toList();
 
-      final dir = Directory('/storage/emulated/0/Download/yongzhiyunkao');
-      if (!await dir.exists()) await dir.create(recursive: true);
-
-      for (final assetPath in projectFiles) {
-        final relativePath =
-            assetPath.replaceFirst('assets/yongzhiyunkao/', '');
-        if (relativePath.isEmpty) continue;
-        final targetFile = File('${dir.path}/$relativePath');
-        final parentDir = targetFile.parent;
-        if (!await parentDir.exists()) await parentDir.create(recursive: true);
-        final data = await rootBundle.load(assetPath);
-        await targetFile.writeAsBytes(data.buffer.asUint8List());
-      }
-
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content: Text('项目已复制到 ${dir.path}，用USB传到电脑即可'),
-            backgroundColor: Colors.green,
-            duration: const Duration(seconds: 4)),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('复制失败: $e'), backgroundColor: Colors.red),
-      );
-    }
-    setState(() => _copyingProject = false);
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -216,13 +200,11 @@ class _ExamExtractScreenState extends State<ExamExtractScreen> {
             : Colors.white.withValues(alpha: 0.86),
       ),
       child: Row(children: [
-        Expanded(child: _btn('复制脚本', Icons.copy, _copyScript)),
-        const SizedBox(width: 12),
         Expanded(
           child: _copyingProject
               ? const Center(
-                  child: CircularProgressIndicator(color: Colors.white))
-              : _btn('将文件传到电脑', Icons.phone_android, _copyProjectToStorage),
+                  child: CircularProgressIndicator(color: Color(0xFF667EEA)))
+              : _btn('分享提取工具', Icons.share, _shareFiles),
         ),
       ]),
     );
@@ -272,47 +254,37 @@ class _ExamExtractScreenState extends State<ExamExtractScreen> {
       ),
       const SizedBox(height: 32),
       // 第一步
-      _sectionCard(isDark, '1', '安装 Tampermonkey', Icons.extension, [
-        _stepLine('在电脑浏览器（Chrome / Edge / Firefox）安装 Tampermonkey 扩展'),
-        _linkTile(
-            'Chrome 商店',
-            'https://chrome.google.com/webstore/detail/tampermonkey/dhdgffkkebhmkfjojejmpbldmpobfkfo',
-            isDark),
-        _linkTile(
-            'Edge 商店',
-            'https://microsoftedge.microsoft.com/addons/detail/tampermonkey/iikmkjmpaadaobahmlepeloendndfphd',
-            isDark),
+      _sectionCard(isDark, '1', '获取工具', Icons.share, [
+        _stepLine('点击下方"分享提取工具"按钮，将文件分享到电脑（可通过微信/QQ文件传输助手）'),
+        _stepLine('您会在电脑收到两个文件：tampermonkey_script.js 和 convert_to_markdown.html'),
+        _actionBtn('分享提取工具', Icons.share, _shareFiles),
       ]),
       const SizedBox(height: 14),
       // 第二步
-      _sectionCard(isDark, '2', '导入油猴脚本', Icons.code, [
-        _stepLine('点击下方"复制脚本"按钮'),
-        _stepLine('在电脑打开 Tampermonkey → 新建脚本'),
-        _stepLine('粘贴全部内容 → 保存（Ctrl+S）'),
-        _actionBtn('复制脚本', Icons.copy, _copyScript),
+      _sectionCard(isDark, '2', '安装脚本', Icons.extension, [
+        _stepLine('请确保电脑浏览器已安装好 Tampermonkey (油猴) 扩展'),
+        _stepLine('打开 Tampermonkey 管理面板'),
+        _stepLine('直接将刚刚收到的 tampermonkey_script.js 拖进浏览器中，点击"安装"即可'),
       ]),
       const SizedBox(height: 14),
       // 第三步
-      _sectionCard(isDark, '3', '提取题目', Icons.download, [
-        _stepLine('电脑浏览器打开练习页面，登录并选择科目'),
-        _stepLine('点击右下角"提取题目" → 开始提取'),
-        _stepLine('浏览器自动下载 JSON 文件'),
+      _sectionCard(isDark, '3', '导出题库', Icons.download, [
+        _stepLine('在电脑打开融智云考，登录并进入练习页面'),
+        _stepLine('此时页面会出现题库提取面板，可以直接使用"提取题目"功能导出 json 文件'),
       ]),
       const SizedBox(height: 14),
       // 第四步
       _sectionCard(isDark, '4', '转为 Markdown', Icons.transform, [
-        _stepLine('点击下方"将文件传到电脑"按钮'),
-        _stepLine('用 USB 连接手机，将 Download/yongzhiyunkao 文件夹复制到电脑'),
-        _stepLine('双击打开 convert_to_markdown.html'),
-        _stepLine('拖拽 JSON 文件到页面 → 设置选项 → 转换 → 下载 .md'),
-        _actionBtn('将文件传到电脑', Icons.phone_android, _copyProjectToStorage),
+        _stepLine('在电脑双击打开收到的 convert_to_markdown.html 文件'),
+        _stepLine('将刚刚从融智云考导出的 json 文件拖进该网页中'),
+        _stepLine('网页会自动将其转换为排版精美的 Markdown 格式，然后就可以使用了！'),
       ]),
       const SizedBox(height: 14),
       // 第五步
-      _sectionCard(isDark, '5', '导入题库', Icons.folder_open, [
-        _stepLine('将转换后的 .json 文件发送到手机（QQ/微信）'),
-        _stepLine('在 App 内点击下方按钮，选择文件导入'),
-        _actionBtn('导入 JSON 文件', Icons.folder_open, _importJson),
+      _sectionCard(isDark, '5', '在手机端练习', Icons.folder_open, [
+        _stepLine('如果您想在手机上练习，可以将导出的 json 文件再传回手机'),
+        _stepLine('点击下方按钮，选择文件即可在 App 内导入并直接进行做题练习'),
+        _actionBtn('导入 JSON 题库到手机端', Icons.folder_open, _importJson),
       ]),
       const SizedBox(height: 40),
     ]);

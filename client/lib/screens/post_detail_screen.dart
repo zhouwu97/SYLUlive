@@ -44,6 +44,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   final _replyFocus = FocusNode();
   bool _isReplyComposerOpen = false;
   int _marketImageIndex = 0;
+  int? _parentReplyId;
+  String? _replyToName;
 
   @override
   void initState() {
@@ -135,11 +137,19 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final content = _replyController.text.trim();
     if (content.isEmpty) return;
     try {
+      final data = <String, dynamic>{'content': content};
+      if (_parentReplyId != null) {
+        data['parent_reply_id'] = _parentReplyId.toString();
+      }
       await _dio
-          .post('/posts/${widget.postId}/replies', data: {'content': content});
+          .post('/posts/${widget.postId}/replies', data: data);
       _replyController.clear();
       _replyFocus.unfocus();
-      setState(() => _isReplyComposerOpen = false);
+      setState(() {
+        _isReplyComposerOpen = false;
+        _parentReplyId = null;
+        _replyToName = null;
+      });
       _loadPost();
     } on DioException catch (e) {
       final msg = AppFeedback.dioErrorMessage(e, fallback: '发送失败');
@@ -887,17 +897,33 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   Widget _buildCompactReplies(bool isDark) {
     if (_replies.isEmpty) return _buildNoComments(isDark);
+    final threads = _buildThreads();
     return Column(
-      children:
-          _replies.take(4).map((r) => _buildReplyBubble(r, isDark)).toList(),
+      children: threads.take(4).map((t) => _buildReplyThread(t, isDark, compact: true)).toList(),
     );
   }
 
   Widget _buildFullReplies(bool isDark) {
     if (_replies.isEmpty) return _buildNoComments(isDark);
+    final threads = _buildThreads();
     return Column(
-      children: _replies.map((r) => _buildReplyBubble(r, isDark)).toList(),
+      children: threads.map((t) => _buildReplyThread(t, isDark, compact: false)).toList(),
     );
+  }
+
+  /// 将回复按楼中楼分组：顶级评论 + 子回复列表
+  List<_ReplyThread> _buildThreads() {
+    final topLevel = _replies.where((r) => r.parentReplyId == null).toList();
+    final childMap = <int, List<Reply>>{};
+    for (final r in _replies) {
+      if (r.parentReplyId != null) {
+        childMap.putIfAbsent(r.parentReplyId!, () => []).add(r);
+      }
+    }
+    return topLevel.map((r) => _ReplyThread(
+      parent: r,
+      children: childMap[r.id] ?? [],
+    )).toList();
   }
 
   Widget _buildNoComments(bool isDark) {
@@ -916,9 +942,59 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
-  Widget _buildReplyBubble(Reply r, bool isDark) {
+  Widget _buildReplyThread(_ReplyThread thread, bool isDark, {bool compact = false}) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 主评论
+          _buildMainReply(thread.parent, isDark),
+          // 子回复区域
+          if (thread.children.isNotEmpty)
+            Container(
+              margin: const EdgeInsets.only(left: 42, top: 4),
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: isDark
+                    ? Colors.white.withValues(alpha: 0.04)
+                    : Colors.grey.withValues(alpha: 0.06),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 最多显示2条子回复
+                  ...thread.children.take(compact ? 1 : 2).map(
+                    (child) => _buildChildReply(child, isDark),
+                  ),
+                  if (thread.children.length > 2 && !compact)
+                    ...thread.children.skip(2).map(
+                      (child) => _buildChildReply(child, isDark),
+                    ),
+                  if (thread.children.length > 2 && compact)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Text(
+                        '共${thread.children.length}条回复，点击查看',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Theme.of(context).primaryColor,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// 主评论（顶级）
+  Widget _buildMainReply(Reply r, bool isDark) {
+    return GestureDetector(
+      onTap: () => _openReplyComposer(parentReplyId: r.id, replyToName: r.author?.nickname),
       child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
         CircleAvatar(
           radius: 16,
@@ -939,15 +1015,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         ),
         const SizedBox(width: 10),
         Expanded(
-          child: GlassContainer(
-            padding: const EdgeInsets.all(12),
-            borderRadius: 14,
-            blur: 10,
-            opacity: 0.16,
-            backgroundColor:
-                isDark ? const Color(0x99171B24) : const Color(0xCCFFFFFF),
-            child:
-                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
               Row(children: [
                 Text(r.author?.nickname ?? '匿名',
                     style: TextStyle(
@@ -970,17 +1040,125 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                         fontSize: 10,
                         color: isDark ? Colors.white30 : Colors.grey[400])),
               ]),
-              const SizedBox(height: 6),
+              const SizedBox(height: 4),
               Text(r.content,
                   style: TextStyle(
                       fontSize: 14,
                       height: 1.5,
-                      color: isDark ? Colors.white60 : Colors.grey[700])),
-            ]),
+                      color: isDark ? Colors.white70 : Colors.grey[800])),
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  Icon(Icons.reply, size: 14,
+                      color: isDark ? Colors.white30 : Colors.grey[400]),
+                  const SizedBox(width: 4),
+                  Text('回复', style: TextStyle(fontSize: 11,
+                      color: isDark ? Colors.white30 : Colors.grey[400])),
+                ],
+              ),
+            ],
           ),
         ),
       ]),
     );
+  }
+
+  /// 子回复（楼中楼）
+  Widget _buildChildReply(Reply r, bool isDark) {
+    // 从 content 中解析 @username
+    final contentWidget = _buildChildContent(r, isDark);
+    return GestureDetector(
+      onTap: () => _openReplyComposer(parentReplyId: r.parentReplyId, replyToName: r.author?.nickname),
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            CircleAvatar(
+              radius: 10,
+              backgroundColor: isDark ? Colors.white12 : Colors.grey[200],
+              backgroundImage: r.author?.avatar.isNotEmpty == true
+                  ? NetworkImage(ApiConstants.fullUrl(r.author!.avatar))
+                  : null,
+              child: r.author?.avatar.isEmpty != false
+                  ? Text(
+                      r.author?.nickname.isNotEmpty == true
+                          ? r.author!.nickname[0].toUpperCase()
+                          : '?',
+                      style: TextStyle(
+                          fontSize: 8,
+                          fontWeight: FontWeight.w600,
+                          color: isDark ? Colors.white60 : Colors.grey[600]))
+                  : null,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(children: [
+                    Text(r.author?.nickname ?? '匿名',
+                        style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: isDark
+                                ? Colors.white.withValues(alpha: 0.70)
+                                : Colors.black87)),
+                    const SizedBox(width: 8),
+                    Text(_formatTime(r.createdAt),
+                        style: TextStyle(
+                            fontSize: 10,
+                            color: isDark ? Colors.white24 : Colors.grey[400])),
+                    const Spacer(),
+                    Text('回复', style: TextStyle(fontSize: 10,
+                        color: isDark ? Colors.white24 : Colors.grey[400])),
+                  ]),
+                  const SizedBox(height: 2),
+                  contentWidget,
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 解析子回复内容中的 @用户名 并高亮
+  Widget _buildChildContent(Reply r, bool isDark) {
+    final content = r.content;
+    final atRegex = RegExp(r'^@(\S+)\s');
+    final match = atRegex.firstMatch(content);
+    if (match != null) {
+      final atName = match.group(1)!;
+      final rest = content.substring(match.end);
+      return Text.rich(
+        TextSpan(children: [
+          TextSpan(
+            text: '@$atName ',
+            style: TextStyle(
+              fontSize: 13,
+              height: 1.4,
+              color: Theme.of(context).primaryColor,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          TextSpan(
+            text: rest,
+            style: TextStyle(
+              fontSize: 13,
+              height: 1.4,
+              color: isDark ? Colors.white60 : Colors.grey[700],
+            ),
+          ),
+        ]),
+      );
+    }
+    return Text(content,
+        style: TextStyle(
+            fontSize: 13,
+            height: 1.4,
+            color: isDark ? Colors.white60 : Colors.grey[700]));
   }
 
   // ---- 回复输入 ----
@@ -1033,7 +1211,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 controller: _replyController,
                 focusNode: _replyFocus,
                 decoration: InputDecoration(
-                  hintText: '写下你的想法...',
+                  hintText: _replyToName != null ? '回复 @$_replyToName...' : '写下你的想法...',
                   hintStyle: TextStyle(
                       color: isDark ? Colors.white30 : Colors.grey[400],
                       fontSize: 14),
@@ -1117,12 +1295,29 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         .toList();
   }
 
-  void _openReplyComposer() {
-    setState(() => _isReplyComposerOpen = true);
+  void _openReplyComposer({int? parentReplyId, String? replyToName}) {
+    setState(() {
+      _isReplyComposerOpen = true;
+      _parentReplyId = parentReplyId;
+      _replyToName = replyToName;
+      if (replyToName != null && replyToName.isNotEmpty) {
+        _replyController.text = '@$replyToName ';
+        _replyController.selection = TextSelection.fromPosition(
+          TextPosition(offset: _replyController.text.length),
+        );
+      }
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _replyFocus.requestFocus();
       }
     });
   }
+}
+
+/// 楼中楼数据结构
+class _ReplyThread {
+  final Reply parent;
+  final List<Reply> children;
+  _ReplyThread({required this.parent, required this.children});
 }

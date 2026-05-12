@@ -6,9 +6,10 @@ import (
 	"strings"
 	"time"
 
+	"shenliyuan/internal/models"
+
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
-	"shenliyuan/internal/models"
 )
 
 // ReplyHandler 回复处理器
@@ -104,6 +105,22 @@ func (h *ReplyHandler) Create(c *gin.Context) {
 			}
 			h.db.Create(&replyImage)
 		}
+	}
+
+	// 发送通知
+	contentPreview := input.Content
+	if len(contentPreview) > 80 {
+		contentPreview = contentPreview[:80] + "..."
+	}
+	if input.ParentReplyID != nil {
+		// 回复别人的评论 → 通知被回复的评论作者
+		var parentReply models.Reply
+		if err := h.db.First(&parentReply, *input.ParentReplyID).Error; err == nil {
+			CreateReplyNotification(h.db, parentReply.AuthorID, userID.(uint), reply.ID, uint(postID), contentPreview)
+		}
+	} else {
+		// 直接回复帖子 → 通知帖子作者
+		CreateReplyNotification(h.db, post.AuthorID, userID.(uint), reply.ID, uint(postID), contentPreview)
 	}
 
 	h.db.Preload("Author").Preload("Images").Preload("Images.File").First(&reply, reply.ID)
@@ -217,4 +234,47 @@ func (h *ReplyHandler) GetMeList(c *gin.Context) {
 		"replies":     result,
 		"next_cursor": nextCursor,
 	})
+}
+
+// GetReceivedList 获取收到的回复（别人回复了我的帖子或我的评论）
+func (h *ReplyHandler) GetReceivedList(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	uid := userID.(uint)
+
+	// 查询通知表中类型为 reply 且目标用户是当前用户的记录
+	var notifications []models.Notification
+	h.db.Where("user_id = ? AND type = ?", uid, "reply").
+		Order("created_at DESC").
+		Limit(50).
+		Find(&notifications)
+
+	// 获取关联的回复详情
+	type ReceivedReplyItem struct {
+		models.Reply
+		PostTitle string `json:"post_title"`
+		IsRead    bool   `json:"is_read"`
+	}
+
+	result := make([]ReceivedReplyItem, 0, len(notifications))
+	for _, n := range notifications {
+		var reply models.Reply
+		if err := h.db.Preload("Author").First(&reply, n.RelatedID).Error; err != nil {
+			continue
+		}
+		var postTitle string
+		var post models.Post
+		if err := h.db.Select("title").First(&post, reply.PostID).Error; err == nil {
+			postTitle = post.Title
+		}
+		result = append(result, ReceivedReplyItem{
+			Reply:     reply,
+			PostTitle: postTitle,
+			IsRead:    n.IsRead,
+		})
+	}
+
+	// 标记所有回复通知为已读
+	h.db.Model(&models.Notification{}).Where("user_id = ? AND type = ? AND is_read = ?", uid, "reply", false).Update("is_read", true)
+
+	c.JSON(http.StatusOK, result)
 }

@@ -32,7 +32,7 @@ class _UserRepliesScreenState extends State<UserRepliesScreen> {
 
     try {
       final auth = context.read<AuthProvider>();
-      // 假设后端接口为 /user/replies/received
+      // 后端接口: GET /api/user/replies/received
       final response = await auth.dio.get('/user/replies/received');
       if (response.statusCode == 200) {
         final list = (response.data as List).map((e) => Reply.fromJson(e)).toList();

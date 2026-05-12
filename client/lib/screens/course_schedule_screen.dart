@@ -11,8 +11,8 @@ import '../main.dart' show navigatorKey;
 import 'edu_screen.dart';
 import 'login_screen.dart';
 
-/// 每节课槽的高度
-const double slotHeight = 85.0;
+/// 每节课槽的默认高度
+const double defaultSlotHeight = 85.0;
 
 /// 左侧时间轴宽度（必须与表头左侧留空一致）
 const double timeColumnWidth = 35.0;
@@ -102,6 +102,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   bool _hasCache = false;
   String? _preparedUserId;
   double _cardOpacity = 0.4;
+  double _slotHeight = defaultSlotHeight;
   bool _courseReminderEnabled = false;
   bool _courseReminderBusy = false;
   int _scheduledReminderCount = 0;
@@ -847,6 +848,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
   // ====== 透明度设置 ======
   static const _opacityKey = 'card_opacity';
+  static const _slotHeightKey = 'slot_height';
 
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
@@ -858,6 +860,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     if (!mounted) return;
     setState(() {
       _cardOpacity = prefs.getDouble(_opacityKey) ?? 0.55;
+      _slotHeight = prefs.getDouble(_slotHeightKey) ?? defaultSlotHeight;
       _courseReminderEnabled = remindersEnabled;
       _scheduledReminderCount = reminderCount;
       _backgroundKeepAliveStatus = backgroundStatus;
@@ -867,6 +870,11 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   Future<void> _saveOpacity(double v) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setDouble(_opacityKey, v);
+  }
+
+  Future<void> _saveSlotHeight(double v) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble(_slotHeightKey, v);
   }
 
   String _backgroundKeepAliveSubtitle() {
@@ -1271,6 +1279,42 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                       ],
                     ),
                   ),
+                  const SizedBox(height: 10),
+                  Container(
+                    padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+                    decoration: tileDecoration(),
+                    child: Column(
+                      children: [
+                        Row(children: [
+                          const Text('紧凑',
+                              style:
+                                  TextStyle(fontSize: 13, color: Colors.grey)),
+                          Expanded(
+                            child: Slider(
+                              value: _slotHeight,
+                              min: 55.0,
+                              max: 120.0,
+                              divisions: 13,
+                              label: '${_slotHeight.round()}',
+                              onChanged: (v) {
+                                setSheetState(() {});
+                                setState(() => _slotHeight = v);
+                                _saveSlotHeight(v);
+                              },
+                            ),
+                          ),
+                          const Text('宽松',
+                              style:
+                                  TextStyle(fontSize: 13, color: Colors.grey)),
+                        ]),
+                        Text('方块高度 ${_slotHeight.round()}',
+                            style: TextStyle(
+                                fontSize: 14,
+                                color: primary,
+                                fontWeight: FontWeight.w600)),
+                      ],
+                    ),
+                  ),
                   const SizedBox(height: 6),
                   Text('这些设置只影响本机显示和提醒，不会修改服务器接口地址。',
                       style: TextStyle(
@@ -1311,7 +1355,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   Widget _buildCourseGridForWeek(
       CourseScheduleProvider sc, DateTime weekStart) {
     final wn = sc.getAcademicWeek(weekStart);
-    final totalH = 12 * slotHeight;
+    final totalH = 12 * _slotHeight;
     final screenW = MediaQuery.of(context).size.width;
     final exactW = (screenW - timeColumnWidth) / 7;
 
@@ -1357,7 +1401,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                 children: List.generate(
                     12,
                     (i) => Container(
-                          height: slotHeight,
+                          height: _slotHeight,
                           alignment: Alignment.center,
                           child: Text('${i + 1}\n${_starts[i]}\n${_ends[i]}',
                               textAlign: TextAlign.center,
@@ -1379,7 +1423,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                   children: List.generate(
                       12,
                       (i) => Container(
-                            height: slotHeight,
+                            height: _slotHeight,
                             decoration: BoxDecoration(
                               border: Border(
                                 left: BorderSide(
@@ -1404,8 +1448,8 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
   // ====== 课程卡片 ======
   Widget _buildCard(CourseBlock c, bool isActive, double exactW, int? wn) {
-    final top = (c.startSection - 1) * slotHeight;
-    final h = c.span * slotHeight - 4;
+    final top = (c.startSection - 1) * _slotHeight;
+    final h = c.span * _slotHeight - 4;
     String? inactiveLabel;
     if (!isActive && wn != null && c.weeks.isNotEmpty) {
       inactiveLabel = c.weeks.first > wn ? '后期' : '前期';
@@ -1413,6 +1457,9 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     final base = getCourseColor(c.name,
             isActive: isActive, courseCode: c.courseCode, location: c.location)
         .withValues(alpha: isActive ? _cardOpacity : 0.3);
+
+    // 根据可用高度决定显示内容（优先课名+地点）
+    final bool isCompact = h < 70;
 
     return Positioned(
       left: timeColumnWidth + (c.weekday - 1) * exactW + 1,
@@ -1424,6 +1471,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
         child: Container(
           alignment: Alignment.topLeft,
           padding: const EdgeInsets.all(4.0),
+          clipBehavior: Clip.hardEdge,
           decoration: BoxDecoration(
             color: base,
             borderRadius: BorderRadius.circular(12.0),
@@ -1433,6 +1481,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.start,
             crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
             children: [
               if (inactiveLabel != null)
                 Text(inactiveLabel,
@@ -1440,35 +1489,39 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                         fontSize: 8,
                         fontWeight: FontWeight.w700,
                         color: Colors.white54)),
-              Text(
-                c.name.isNotEmpty ? c.name : '未知课名',
-                style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 13,
-                    fontWeight: FontWeight.bold,
-                    height: 1.15),
-                textAlign: TextAlign.left,
-                maxLines: 4,
-                overflow: TextOverflow.ellipsis,
+              Flexible(
+                child: Text(
+                  c.name.isNotEmpty ? c.name : '未知课名',
+                  style: TextStyle(
+                      color: Colors.white,
+                      fontSize: isCompact ? 11 : 13,
+                      fontWeight: FontWeight.bold,
+                      height: 1.15),
+                  textAlign: TextAlign.left,
+                  maxLines: isCompact ? 2 : 4,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
               if (c.location != null && c.location!.isNotEmpty) ...[
-                const SizedBox(height: 2),
+                const SizedBox(height: 1),
                 Text(
                   '@${c.location}',
-                  style: const TextStyle(
+                  style: TextStyle(
                       color: Colors.white,
-                      fontSize: 11,
+                      fontSize: isCompact ? 9 : 11,
                       fontWeight: FontWeight.w600,
                       height: 1.15),
                   textAlign: TextAlign.left,
                 ),
               ],
-              if (c.teacher != null && c.teacher!.isNotEmpty) ...[
-                const SizedBox(height: 2),
+              if (!isCompact && c.teacher != null && c.teacher!.isNotEmpty) ...[
+                const SizedBox(height: 1),
                 Text(
                   c.teacher!,
                   style: const TextStyle(color: Colors.white60, fontSize: 10),
                   textAlign: TextAlign.left,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ],
             ],

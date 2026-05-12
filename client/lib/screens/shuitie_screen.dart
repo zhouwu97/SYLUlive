@@ -38,6 +38,9 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   String _searchQuery = '';
   bool _isSearching = false;
   List<Post> _searchResults = [];
+  bool _checkedIn = false;
+  int _streakDays = 0;
+  bool _checkInLoading = false;
   
   static const _autoRefreshInterval = Duration(seconds: 60);
 
@@ -55,6 +58,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       context.read<PostProvider>().loadPosts(boardId: 1, sort: _currentSort);
       context.read<PostProvider>().loadPosts(boardId: 2, sort: 'time');
       _loadAnnouncements();
+      _loadCheckinStatus();
       _animationController.forward();
       _startAutoRefresh();
     });
@@ -241,6 +245,120 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('$label 功能开发中')),
     );
+  }
+
+  Future<void> _loadCheckinStatus() async {
+    final auth = context.read<AuthProvider>();
+    if (!auth.isLoggedIn) return;
+    try {
+      final resp = await auth.dio.get('/user/checkin/status');
+      if (resp.statusCode == 200 && mounted) {
+        setState(() {
+          _checkedIn = resp.data['checked_in'] ?? false;
+          _streakDays = resp.data['streak_days'] ?? 0;
+        });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _doCheckIn() async {
+    final auth = context.read<AuthProvider>();
+    if (!auth.isLoggedIn) {
+      Navigator.push(context, PageRouteBuilder(opaque: false, pageBuilder: (_, __, ___) => const LoginScreen()));
+      return;
+    }
+    if (_checkInLoading || _checkedIn) return;
+    setState(() => _checkInLoading = true);
+    try {
+      final resp = await auth.dio.post('/user/checkin');
+      if (resp.statusCode == 200 && mounted) {
+        final data = resp.data;
+        final already = data['already'] ?? false;
+        final streak = data['streak_days'] ?? 1;
+        final exp = data['exp_earned'] ?? 1;
+        setState(() {
+          _checkedIn = true;
+          _streakDays = streak;
+          _checkInLoading = false;
+        });
+        auth.refreshUser();
+        if (!already) {
+          _showCheckInSuccessDialog(streak, exp);
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('今天已经签过到了')),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _checkInLoading = false);
+        String msg = '签到失败，请稍后再试';
+        if (e is DioException) {
+          msg = AppFeedback.dioErrorMessage(e, fallback: msg);
+        }
+        AppFeedback.showSnackBar(context, msg, isError: true);
+      }
+    }
+  }
+
+  void _showCheckInSuccessDialog(int streak, int exp) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(children: [
+          Icon(Icons.celebration, color: Colors.orange[400]),
+          const SizedBox(width: 8),
+          const Text('签到成功！'),
+        ]),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              '🔥 连续签到 $streak 天',
+              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+              decoration: BoxDecoration(
+                color: isDark ? Colors.amber.withOpacity(0.15) : Colors.amber.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                '+$exp 经验',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.amber[700],
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              _nextRewardHint(streak),
+              style: TextStyle(fontSize: 13, color: isDark ? Colors.white60 : Colors.grey[600]),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('好的'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _nextRewardHint(int streak) {
+    if (streak < 3) return '连续签到3天可获得每日3经验';
+    if (streak < 10) return '连续签到10天可获得每日10经验';
+    if (streak < 30) return '连续签到30天可获得每日15经验';
+    return '已达最高等级，每日15经验！继续保持！';
   }
 
   Future<void> _handleFeedSwipe(DragEndDetails details) async {
@@ -515,8 +633,8 @@ class _ShuitieScreenState extends State<ShuitieScreen>
             icon: Icons.task_alt_rounded,
             iconColor: const Color(0xFF16A34A),
             title: '签到',
-            subtitle: '每日一次',
-            onTap: () => _showComingSoon('签到'),
+            subtitle: _checkedIn ? '已签到 · 连续${_streakDays}天' : '每日一次',
+            onTap: _doCheckIn,
           ),
         ),
         SizedBox(

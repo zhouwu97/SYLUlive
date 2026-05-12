@@ -8,6 +8,7 @@ class User {
   final int creditScore;
   final String role;
   final int adminExp;
+  final int exp;
   final int reportCount;
   final DateTime createdAt;
 
@@ -27,6 +28,7 @@ class User {
     this.creditScore = 100,
     this.role = 'user',
     this.adminExp = 0,
+    this.exp = 0,
     this.reportCount = 0,
     required this.createdAt,
     this.eduStudentId = '',
@@ -46,6 +48,7 @@ class User {
       creditScore: json['credit_score'] ?? 100,
       role: json['role'] ?? 'user',
       adminExp: json['admin_exp'] ?? 0,
+      exp: json['exp'] ?? 0,
       reportCount: json['report_count'] ?? 0,
       createdAt: DateTime.tryParse(json['created_at'] ?? '') ?? DateTime.now(),
       eduStudentId: json['edu_student_id'] ?? '',
@@ -66,6 +69,7 @@ class User {
       'credit_score': creditScore,
       'role': role,
       'admin_exp': adminExp,
+      'exp': exp,
       'report_count': reportCount,
       'created_at': createdAt.toIso8601String(),
       'edu_student_id': eduStudentId,

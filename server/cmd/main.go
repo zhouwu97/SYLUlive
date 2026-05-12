@@ -64,6 +64,8 @@ func main() {
 		&models.MajorRating{},
 		&models.AdminVote{},
 		&models.AdminRemovalVote{},
+		&models.Notification{},
+		&models.CheckIn{},
 	); err != nil {
 		log.Fatal("数据库迁移失败:", err)
 	}
@@ -104,6 +106,8 @@ func main() {
 	teacherHandler := handlers.NewTeacherHandler(db)
 	majorHandler := handlers.NewMajorHandler(db)
 	feedbackHandler := handlers.NewFeedbackHandler(db)
+	checkinHandler := handlers.NewCheckInHandler(db)
+	notificationHandler := handlers.NewNotificationHandler(db)
 
 	// 初始化教务服务配置
 	handlers.EduServiceConfig.BaseURL = cfg.EduServiceURL
@@ -142,6 +146,11 @@ func main() {
 		user.GET("/invitations", invitationHandler.GetPending)
 		user.POST("/invitations/:id/accept", invitationHandler.Accept)
 		user.POST("/invitations/:id/reject", invitationHandler.Reject)
+		user.GET("/replies/received", replyHandler.GetReceivedList)
+		user.GET("/notifications/unread_count", notificationHandler.GetUnreadCount)
+		user.POST("/notifications/read", notificationHandler.MarkAllRead)
+		user.POST("/checkin", checkinHandler.DoCheckIn)
+		user.GET("/checkin/status", checkinHandler.GetStatus)
 		user.GET("/:id", userHandler.GetUserInfo)
 	}
 

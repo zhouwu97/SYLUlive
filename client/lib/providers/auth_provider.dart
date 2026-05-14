@@ -12,13 +12,17 @@ import '../utils/app_feedback.dart';
 class AuthResult {
   final bool success;
   final String? errorMessage;
+  final int? statusCode;
 
-  const AuthResult({required this.success, this.errorMessage});
+  const AuthResult({required this.success, this.errorMessage, this.statusCode});
 
   factory AuthResult.success() => const AuthResult(success: true);
 
-  factory AuthResult.failure(String message) =>
-      AuthResult(success: false, errorMessage: message);
+  factory AuthResult.failure(String message, {int? statusCode}) => AuthResult(
+        success: false,
+        errorMessage: message,
+        statusCode: statusCode,
+      );
 }
 
 class AuthProvider extends ChangeNotifier {
@@ -173,7 +177,10 @@ class AuthProvider extends ChangeNotifier {
       notifyListeners();
       final errorMsg = _parseDioError(e);
       debugPrint('登录失败: $errorMsg');
-      return AuthResult.failure(errorMsg);
+      return AuthResult.failure(
+        errorMsg,
+        statusCode: e.response?.statusCode,
+      );
     } catch (e) {
       _isLoading = false;
       notifyListeners();

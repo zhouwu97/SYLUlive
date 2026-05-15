@@ -431,6 +431,58 @@ class CourseScheduleProvider extends ChangeNotifier {
     return course.weeks.isEmpty || course.weeks.contains(academicWeek);
   }
 
+  /// 添加自定义课程到本地缓存
+  Future<CourseBlock> addCustomCourse({
+    required String name,
+    required int weekday,
+    required int startSection,
+    required int endSection,
+    required int startWeek,
+    required int endWeek,
+    String? teacher,
+    String? location,
+  }) async {
+    final weeks = List.generate(
+      endWeek - startWeek + 1,
+      (i) => startWeek + i,
+    );
+    final colorIdx = name.hashCode.abs() % _colorPool.length;
+    final newId = -DateTime.now().millisecondsSinceEpoch; // 负数ID区分自定义课程
+
+    final course = CourseBlock(
+      id: newId,
+      courseCode: 'custom_$newId',
+      name: name,
+      teacher: teacher,
+      location: location,
+      color: _colorPool[colorIdx],
+      weekday: weekday,
+      startSection: startSection,
+      endSection: endSection,
+      weeks: weeks,
+    );
+
+    _courses.add(course);
+    _buildGrid();
+
+    if (_userId != null) {
+      await _saveToCache('$_cacheKeyPrefix$_userId', _courses);
+    }
+
+    notifyListeners();
+    return course;
+  }
+
+  /// 删除自定义课程
+  Future<void> removeCustomCourse(int courseId) async {
+    _courses.removeWhere((c) => c.id == courseId);
+    _buildGrid();
+    if (_userId != null) {
+      await _saveToCache('$_cacheKeyPrefix$_userId', _courses);
+    }
+    notifyListeners();
+  }
+
   void setSemester(String year, int semester) {
     _selectedYear = year;
     _selectedSemester = semester;

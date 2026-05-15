@@ -53,7 +53,7 @@ Color getCourseColor(String name,
 /// 星期标签
 const _wd = ['一', '二', '三', '四', '五', '六', '日'];
 
-/// 每节课开始时间
+/// 每节课开始时间（每节课45分钟 + 10分钟课间）
 const _starts = [
   '08:00',
   '08:55',
@@ -63,10 +63,10 @@ const _starts = [
   '13:55',
   '14:50',
   '15:45',
-  '19:00',
-  '19:55',
-  '20:50',
-  '21:45'
+  '16:40',
+  '17:35',
+  '18:30',
+  '19:25'
 ];
 
 /// 每节课结束时间
@@ -79,10 +79,10 @@ const _ends = [
   '14:40',
   '15:35',
   '16:30',
-  '19:45',
-  '20:40',
-  '21:35',
-  '22:30'
+  '17:25',
+  '18:20',
+  '19:15',
+  '20:10'
 ];
 
 /// 格式化月/日
@@ -244,6 +244,14 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
     return Scaffold(
       backgroundColor: Colors.transparent,
+      floatingActionButton: _hasCache
+          ? FloatingActionButton.extended(
+              onPressed: () => _showAddCourseDialog(context),
+              icon: const Icon(Icons.add),
+              label: const Text('添加课程'),
+              backgroundColor: Theme.of(context).primaryColor,
+            )
+          : null,
       body: SafeArea(
         child: Consumer<AuthProvider>(
           builder: (context, auth, _) {
@@ -1349,6 +1357,199 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                 Text('已设置开学日期：${picked.year}-${picked.month}-${picked.day}')),
       );
     }
+  }
+
+  // ====== 自定义课程 ======
+
+  void _showAddCourseDialog(BuildContext context) {
+    final nameCtrl = TextEditingController();
+    final teacherCtrl = TextEditingController();
+    final locationCtrl = TextEditingController();
+    int weekday = DateTime.now().weekday;
+    int startSection = 1;
+    int endSection = 2;
+    final sc = context.read<CourseScheduleProvider>();
+    final wn = sc.getAcademicWeek(_weekStart) ?? 1;
+    int startWeek = wn;
+    int endWeek = wn + 15;
+
+    showDialog(
+      context: context,
+      builder: (dialogCtx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('添加自定义课程'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: nameCtrl,
+                  decoration: const InputDecoration(
+                    labelText: '课程名称',
+                    hintText: '如：高等数学',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                // 星期几
+                DropdownButtonFormField<int>(
+                  value: weekday,
+                  decoration: const InputDecoration(labelText: '星期'),
+                  items: List.generate(7, (i) => i + 1)
+                      .map((d) => DropdownMenuItem(
+                            value: d,
+                            child: Text('周${_wd[d - 1]}'),
+                          ))
+                      .toList(),
+                  onChanged: (v) => setDialogState(() => weekday = v ?? 1),
+                ),
+                const SizedBox(height: 12),
+                // 节次
+                Row(
+                  children: [
+                    Expanded(
+                      child: DropdownButtonFormField<int>(
+                        value: startSection,
+                        decoration: const InputDecoration(labelText: '开始节次'),
+                        items: List.generate(12, (i) => i + 1)
+                            .map((s) => DropdownMenuItem(
+                                  value: s,
+                                  child: Text('第$s节'),
+                                ))
+                            .toList(),
+                        onChanged: (v) {
+                          setDialogState(() {
+                            startSection = v ?? 1;
+                            if (endSection < startSection) {
+                              endSection = startSection;
+                            }
+                          });
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: DropdownButtonFormField<int>(
+                        value: endSection,
+                        decoration: const InputDecoration(labelText: '结束节次'),
+                        items: List.generate(12, (i) => i + 1)
+                            .where((s) => s >= startSection)
+                            .map((s) => DropdownMenuItem(
+                                  value: s,
+                                  child: Text('第$s节'),
+                                ))
+                            .toList(),
+                        onChanged: (v) =>
+                            setDialogState(() => endSection = v ?? startSection),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                // 周次范围
+                Row(
+                  children: [
+                    Expanded(
+                      child: DropdownButtonFormField<int>(
+                        value: startWeek,
+                        decoration: const InputDecoration(labelText: '开始周'),
+                        items:
+                            List.generate(20, (i) => i + 1).map((w) {
+                          return DropdownMenuItem(
+                            value: w,
+                            child: Text('第$w周'),
+                          );
+                        }).toList(),
+                        onChanged: (v) {
+                          setDialogState(() {
+                            startWeek = v ?? 1;
+                            if (endWeek < startWeek) endWeek = startWeek;
+                          });
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: DropdownButtonFormField<int>(
+                        value: endWeek,
+                        decoration: const InputDecoration(labelText: '结束周'),
+                        items: List.generate(20, (i) => i + 1)
+                            .where((w) => w >= startWeek)
+                            .map((w) => DropdownMenuItem(
+                                  value: w,
+                                  child: Text('第$w周'),
+                                ))
+                            .toList(),
+                        onChanged: (v) =>
+                            setDialogState(() => endWeek = v ?? startWeek),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: teacherCtrl,
+                  decoration: const InputDecoration(
+                    labelText: '教师（可选）',
+                    hintText: '如：张老师',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: locationCtrl,
+                  decoration: const InputDecoration(
+                    labelText: '教室（可选）',
+                    hintText: '如：综A101',
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogCtx),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () async {
+                if (nameCtrl.text.trim().isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('请输入课程名称')),
+                  );
+                  return;
+                }
+                await sc.addCustomCourse(
+                  name: nameCtrl.text.trim(),
+                  weekday: weekday,
+                  startSection: startSection,
+                  endSection: endSection,
+                  startWeek: startWeek,
+                  endWeek: endWeek,
+                  teacher: teacherCtrl.text.trim().isEmpty
+                      ? null
+                      : teacherCtrl.text.trim(),
+                  location: locationCtrl.text.trim().isEmpty
+                      ? null
+                      : locationCtrl.text.trim(),
+                );
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('课程已添加')),
+                  );
+                  await _syncCourseReminders(sc);
+                  setState(() => _hasCache = true);
+                }
+                Navigator.pop(dialogCtx);
+              },
+              child: const Text('添加'),
+            ),
+          ],
+        ),
+      ),
+    ).then((_) {
+      nameCtrl.dispose();
+      teacherCtrl.dispose();
+      locationCtrl.dispose();
+    });
   }
 
   // ====== 课程网格（指定某一周） ======

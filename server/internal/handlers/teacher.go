@@ -212,6 +212,8 @@ func (h *TeacherHandler) logAdmin(c *gin.Context, action, target, detail string)
 		AdminID: userID.(uint), AdminName: user.Nickname,
 		Action: action, Target: target, Detail: detail,
 	})
+	// 管理员操作经验+1
+	h.db.Model(&models.User{}).Where("id = ?", userID).UpdateColumn("admin_exp", gorm.Expr("admin_exp + 1"))
 }
 
 // DeleteRating 删除自己的评价

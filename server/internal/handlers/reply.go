@@ -156,6 +156,18 @@ func (h *ReplyHandler) Delete(c *gin.Context) {
 	}
 
 	h.db.Model(&reply).Update("status", models.ReplyStatusDeleted)
+
+	// 管理员删除他人回复时，记录日志并增加经验
+	if reply.AuthorID != userID.(uint) && (role == "admin" || role == "super_admin") {
+		var u models.User
+		h.db.Select("nickname").First(&u, userID)
+		h.db.Create(&models.AdminLog{
+			AdminID: userID.(uint), AdminName: u.Nickname,
+			Action: "删除回复", Target: reply.Content,
+		})
+		h.db.Model(&models.User{}).Where("id = ?", userID).UpdateColumn("admin_exp", gorm.Expr("admin_exp + 1"))
+	}
+
 	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})
 }
 

@@ -1,8 +1,10 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
@@ -180,9 +182,106 @@ func (h *SuperAdminHandler) GetStatistics(c *gin.Context) {
 	c.JSON(http.StatusOK, stats)
 }
 
-// GetAdminLogs 获取管理员操作日志
+// AdminLogItem 管理员日志项（含经验信息）
+type AdminLogItem struct {
+	ID        uint      `json:"id"`
+	AdminID   uint      `json:"admin_id"`
+	AdminName string    `json:"admin_name"`
+	Action    string    `json:"action"`
+	Target    string    `json:"target"`
+	Detail    string    `json:"detail"`
+	CreatedAt time.Time `json:"created_at"`
+	AdminExp  int       `json:"admin_exp"`  // 当前管理员经验
+	AdminRole string    `json:"admin_role"` // 管理员角色
+}
+
+// GetAdminLogs 获取管理员操作日志（含经验信息）
 func (h *SuperAdminHandler) GetAdminLogs(c *gin.Context) {
-	var logs []models.AdminActionLog
-	h.db.Preload("Admin").Order("created_at DESC").Limit(100).Find(&logs)
-	c.JSON(http.StatusOK, logs)
+	var logs []models.AdminLog
+	h.db.Preload("Admin").Order("created_at DESC").Limit(200).Find(&logs)
+
+	result := make([]AdminLogItem, len(logs))
+	for i, log := range logs {
+		result[i] = AdminLogItem{
+			ID:        log.ID,
+			AdminID:   log.AdminID,
+			AdminName: log.AdminName,
+			Action:    log.Action,
+			Target:    log.Target,
+			Detail:    log.Detail,
+			CreatedAt: log.CreatedAt,
+			AdminExp:  log.Admin.AdminExp,
+			AdminRole: string(log.Admin.Role),
+		}
+	}
+
+	c.JSON(http.StatusOK, result)
+}
+
+// RevokeAdminExpInput 追回管理员经验输入
+type RevokeAdminExpInput struct {
+	AdminID uint `json:"admin_id" binding:"required"`
+	Amount  int  `json:"amount" binding:"required,min=1"`
+	Reason  string `json:"reason"`
+}
+
+// RevokeAdminExp 追回管理员经验
+func (h *SuperAdminHandler) RevokeAdminExp(c *gin.Context) {
+	operatorID, _ := c.Get("user_id")
+
+	var input RevokeAdminExpInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	var target models.User
+	if err := h.db.First(&target, input.AdminID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "管理员不存在"})
+		return
+	}
+
+	if target.Role != "admin" && target.Role != "super_admin" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "目标用户不是管理员"})
+		return
+	}
+
+	// 不能追回超级管理员的经验（除非操作者也是超级管理员）
+	if target.Role == "super_admin" {
+		var operator models.User
+		h.db.Select("role").First(&operator, operatorID)
+		if operator.Role != "super_admin" {
+			c.JSON(http.StatusForbidden, gin.H{"error": "无权追回超级管理员的经验"})
+			return
+		}
+	}
+
+	// 扣减经验（不低于0）
+	newExp := target.AdminExp - input.Amount
+	if newExp < 0 {
+		newExp = 0
+	}
+	h.db.Model(&target).Update("admin_exp", newExp)
+
+	// 记录操作日志
+	reason := input.Reason
+	if reason == "" {
+		reason = "追回经验"
+	}
+	var operator models.User
+	h.db.Select("nickname").First(&operator, operatorID)
+	h.db.Create(&models.AdminLog{
+		AdminID: operatorID.(uint),
+		AdminName: operator.Nickname,
+		Action: "追回管理员经验",
+		Target: target.Nickname,
+		Detail: fmt.Sprintf("追回 %d 经验（原因: %s），剩余 %d", input.Amount, reason, newExp),
+	})
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":      "经验已追回",
+		"admin_id":     input.AdminID,
+		"revoked":      input.Amount,
+		"remaining":    newExp,
+	})
 }

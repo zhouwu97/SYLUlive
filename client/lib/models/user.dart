@@ -82,4 +82,56 @@ class User {
 
   bool get isAdmin => role == 'admin' || role == 'super_admin';
   bool get isSuperAdmin => role == 'super_admin';
+
+  /// 根据经验值计算用户等级
+  /// Level 1: 0-9 exp
+  /// Level 2: 10-99 exp
+  /// Level 3: 100-249 exp
+  /// Level 4: 250-999 exp
+  /// Level 5: 1000-2499 exp
+  /// Level 6: 2500+ exp
+  int get level {
+    if (exp >= 2500) return 6;
+    if (exp >= 1000) return 5;
+    if (exp >= 250) return 4;
+    if (exp >= 100) return 3;
+    if (exp >= 10) return 2;
+    return 1;
+  }
+
+  /// 升级到下一级所需经验
+  int get expToNextLevel {
+    switch (level) {
+      case 1: return 10;
+      case 2: return 100;
+      case 3: return 250;
+      case 4: return 1000;
+      case 5: return 2500;
+      default: return 0; // 已满级
+    }
+  }
+
+  /// 当前等级进度（0.0 - 1.0）
+  double get levelProgress {
+    if (level >= 6) return 1.0;
+    final currentMin = level == 1 ? 0 : [0, 10, 100, 250, 1000][level - 1];
+    final needed = expToNextLevel - currentMin;
+    if (needed <= 0) return 1.0;
+    return ((exp - currentMin) / needed).clamp(0.0, 1.0);
+  }
+
+  /// 等级标签文字
+  String get levelLabel => 'Lv.$level';
+
+  /// 等级颜色
+  int get levelColorValue {
+    switch (level) {
+      case 6: return 0xFFD4AF37; // 金色
+      case 5: return 0xFFE040FB; // 紫色
+      case 4: return 0xFF448AFF; // 蓝色
+      case 3: return 0xFF00C853; // 绿色
+      case 2: return 0xFFFF9800; // 橙色
+      default: return 0xFF9E9E9E; // 灰色
+    }
+  }
 }

@@ -69,6 +69,7 @@ class Post {
   final double price;
   final String contact;
   final String status;
+  final int viewCount;
   final List<PostImage> images;
   final User? author;
   final DateTime createdAt;
@@ -83,6 +84,7 @@ class Post {
     this.price = 0,
     this.contact = '',
     this.status = 'normal',
+    this.viewCount = 0,
     this.images = const [],
     this.author,
     required this.createdAt,
@@ -99,6 +101,7 @@ class Post {
       price: (json['price'] ?? 0).toDouble(),
       contact: json['contact'] ?? '',
       status: json['status'] ?? 'normal',
+      viewCount: json['view_count'] ?? 0,
       images: (json['images'] as List<dynamic>?)
           ?.map((e) => PostImage.fromJson(e))
           .toList() ?? [],

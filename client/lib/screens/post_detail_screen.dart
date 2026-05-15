@@ -9,6 +9,7 @@ import '../providers/theme_provider.dart';
 import '../config/api_constants.dart';
 import '../models/post.dart';
 import '../models/reply.dart';
+import '../models/user.dart';
 import '../providers/post_provider.dart';
 import '../utils/app_feedback.dart';
 import '../utils/post_image_cache.dart';
@@ -137,12 +138,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final content = _replyController.text.trim();
     if (content.isEmpty) return;
     try {
-      final data = <String, dynamic>{'content': content};
-      if (_parentReplyId != null) {
-        data['parent_reply_id'] = _parentReplyId.toString();
-      }
+      final formData = FormData.fromMap({
+        'content': content,
+        if (_parentReplyId != null) 'parent_reply_id': _parentReplyId.toString(),
+      });
       await _dio
-          .post('/posts/${widget.postId}/replies', data: data);
+          .post('/posts/${widget.postId}/replies', data: formData);
       _replyController.clear();
       _replyFocus.unfocus();
       setState(() {
@@ -560,11 +561,21 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         Expanded(
           child:
               Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(p.author?.nickname ?? '匿名',
-                style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 16,
-                    color: isDark ? Colors.white : Colors.black87)),
+            Row(
+              children: [
+                Flexible(
+                  child: Text(p.author?.nickname ?? '匿名',
+                      style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 16,
+                          color: isDark ? Colors.white : Colors.black87)),
+                ),
+                if (p.author != null) ...[
+                  const SizedBox(width: 6),
+                  _buildLevelBadge(p.author!, isDark),
+                ],
+              ],
+            ),
             const SizedBox(height: 4),
             Row(children: [
               Container(
@@ -580,6 +591,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                         fontWeight: FontWeight.w600,
                         color: _creditColor(p.author?.creditScore ?? 100))),
               ),
+              const SizedBox(width: 8),
+              Icon(Icons.visibility_outlined, size: 13,
+                  color: isDark ? Colors.white30 : Colors.grey[400]),
+              const SizedBox(width: 3),
+              Text('${p.viewCount}',
+                  style: TextStyle(
+                      fontSize: 11,
+                      color: isDark ? Colors.white30 : Colors.grey[400])),
             ]),
           ]),
         ),
@@ -899,7 +918,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     if (_replies.isEmpty) return _buildNoComments(isDark);
     final threads = _buildThreads();
     return Column(
-      children: threads.take(4).map((t) => _buildReplyThread(t, isDark, compact: true)).toList(),
+      children: threads.take(4).map((t) => _buildReplyThread(t, isDark, compact: true, depth: 0)).toList(),
     );
   }
 
@@ -907,23 +926,28 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     if (_replies.isEmpty) return _buildNoComments(isDark);
     final threads = _buildThreads();
     return Column(
-      children: threads.map((t) => _buildReplyThread(t, isDark, compact: false)).toList(),
+      children: threads.map((t) => _buildReplyThread(t, isDark, compact: false, depth: 0)).toList(),
     );
   }
 
-  /// 将回复按楼中楼分组：顶级评论 + 子回复列表
+  /// 将回复递归构建为完整楼中楼树：顶级评论 + 嵌套子回复链
   List<_ReplyThread> _buildThreads() {
-    final topLevel = _replies.where((r) => r.parentReplyId == null).toList();
     final childMap = <int, List<Reply>>{};
     for (final r in _replies) {
       if (r.parentReplyId != null) {
         childMap.putIfAbsent(r.parentReplyId!, () => []).add(r);
       }
     }
-    return topLevel.map((r) => _ReplyThread(
-      parent: r,
-      children: childMap[r.id] ?? [],
-    )).toList();
+
+    _ReplyThread buildNode(Reply reply) {
+      final children = (childMap[reply.id] ?? [])
+          .map(buildNode)
+          .toList();
+      return _ReplyThread(parent: reply, children: children);
+    }
+
+    final topLevel = _replies.where((r) => r.parentReplyId == null).toList();
+    return topLevel.map(buildNode).toList();
   }
 
   Widget _buildNoComments(bool isDark) {
@@ -942,7 +966,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
-  Widget _buildReplyThread(_ReplyThread thread, bool isDark, {bool compact = false}) {
+  Widget _buildReplyThread(_ReplyThread thread, bool isDark, {bool compact = false, int depth = 0}) {
+    final visibleChildren = compact && depth == 0
+        ? thread.children.take(1).toList()
+        : thread.children;
+    final hasMore = compact && depth == 0 && thread.children.length > 1;
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
       child: Column(
@@ -950,10 +979,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         children: [
           // 主评论
           _buildMainReply(thread.parent, isDark),
-          // 子回复区域
-          if (thread.children.isNotEmpty)
+          // 子回复区域（递归嵌套）
+          if (visibleChildren.isNotEmpty)
             Container(
-              margin: const EdgeInsets.only(left: 42, top: 4),
+              margin: EdgeInsets.only(left: 42.0, top: 4),
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
                 color: isDark
@@ -964,15 +993,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // 最多显示2条子回复
-                  ...thread.children.take(compact ? 1 : 2).map(
-                    (child) => _buildChildReply(child, isDark),
+                  ...visibleChildren.map(
+                    (child) => _buildChildReplyThread(child, isDark, compact: compact, depth: depth + 1),
                   ),
-                  if (thread.children.length > 2 && !compact)
-                    ...thread.children.skip(2).map(
-                      (child) => _buildChildReply(child, isDark),
-                    ),
-                  if (thread.children.length > 2 && compact)
+                  if (hasMore)
                     Padding(
                       padding: const EdgeInsets.only(top: 6),
                       child: Text(
@@ -988,6 +1012,34 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             ),
         ],
       ),
+    );
+  }
+
+  /// 子回复线程：显示子回复及其嵌套后代
+  Widget _buildChildReplyThread(_ReplyThread thread, bool isDark, {bool compact = false, int depth = 0}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildChildReply(thread.parent, isDark, depth: depth),
+        // 递归嵌套更深层回复
+        if (thread.children.isNotEmpty)
+          Container(
+            margin: EdgeInsets.only(left: 36.0, top: 4),
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: isDark
+                  ? Colors.white.withValues(alpha: 0.02)
+                  : Colors.grey.withValues(alpha: 0.03),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: thread.children.map(
+                (child) => _buildChildReplyThread(child, isDark, compact: compact, depth: depth + 1),
+              ).toList(),
+            ),
+          ),
+      ],
     );
   }
 
@@ -1026,6 +1078,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                         color: isDark
                             ? Colors.white.withValues(alpha: 0.80)
                             : Colors.black87)),
+                if (r.author != null) ...[
+                  const SizedBox(width: 4),
+                  _buildLevelBadge(r.author!, isDark),
+                ],
                 const Spacer(),
                 GestureDetector(
                   onTap: () => showReportSheet(context,
@@ -1064,13 +1120,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   /// 子回复（楼中楼）
-  Widget _buildChildReply(Reply r, bool isDark) {
+  Widget _buildChildReply(Reply r, bool isDark, {int depth = 0}) {
     // 从 content 中解析 @username
     final contentWidget = _buildChildContent(r, isDark);
     return GestureDetector(
-      onTap: () => _openReplyComposer(parentReplyId: r.parentReplyId, replyToName: r.author?.nickname),
+      onTap: () => _openReplyComposer(parentReplyId: r.id, replyToName: r.author?.nickname),
       child: Padding(
-        padding: const EdgeInsets.only(bottom: 8),
+        padding: EdgeInsets.only(bottom: 8, left: depth * 4.0),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1104,6 +1160,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                             color: isDark
                                 ? Colors.white.withValues(alpha: 0.70)
                                 : Colors.black87)),
+                    if (r.author != null) ...[
+                      const SizedBox(width: 4),
+                      _buildLevelBadgeSmall(r.author!, isDark),
+                    ],
                     const SizedBox(width: 8),
                     Text(_formatTime(r.createdAt),
                         style: TextStyle(
@@ -1295,6 +1355,42 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         .toList();
   }
 
+  Widget _buildLevelBadge(User user, bool isDark) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+      decoration: BoxDecoration(
+        color: Color(user.levelColorValue).withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        user.levelLabel,
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+          color: Color(user.levelColorValue),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLevelBadgeSmall(User user, bool isDark) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+      decoration: BoxDecoration(
+        color: Color(user.levelColorValue).withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(3),
+      ),
+      child: Text(
+        user.levelLabel,
+        style: TextStyle(
+          fontSize: 8,
+          fontWeight: FontWeight.w700,
+          color: Color(user.levelColorValue),
+        ),
+      ),
+    );
+  }
+
   void _openReplyComposer({int? parentReplyId, String? replyToName}) {
     setState(() {
       _isReplyComposerOpen = true;
@@ -1315,9 +1411,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 }
 
-/// 楼中楼数据结构
+/// 楼中楼数据结构（递归嵌套）
 class _ReplyThread {
   final Reply parent;
-  final List<Reply> children;
+  final List<_ReplyThread> children;
   _ReplyThread({required this.parent, required this.children});
 }

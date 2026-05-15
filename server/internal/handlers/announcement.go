@@ -81,6 +81,9 @@ func (h *AnnouncementHandler) Create(c *gin.Context) {
 		return
 	}
 
+	// 管理员创建公告，经验+1
+	h.db.Model(&models.User{}).Where("id = ?", userID).UpdateColumn("admin_exp", gorm.Expr("admin_exp + 1"))
+
 	h.db.Preload("Creator").First(&announcement, announcement.ID)
 	c.JSON(http.StatusCreated, announcement)
 }

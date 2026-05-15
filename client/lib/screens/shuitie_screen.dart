@@ -20,6 +20,7 @@ import 'create_post_screen.dart';
 import 'login_screen.dart';
 import 'market_screen.dart';
 import 'post_detail_screen.dart';
+import 'search_results_screen.dart';
 
 class ShuitieScreen extends StatefulWidget {
   const ShuitieScreen({super.key});
@@ -39,7 +40,6 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   List<Post> _cachedPosts = [];
   String _feedMode = 'all';
   String _searchQuery = '';
-  bool _isSearching = false;
   List<Post> _searchResults = [];
   bool _checkedIn = false;
   int _streakDays = 0;
@@ -149,45 +149,29 @@ class _ShuitieScreenState extends State<ShuitieScreen>
 
   Future<void> _runSearch(String raw) async {
     final query = raw.trim();
-    if (query.isEmpty) {
-      if (!mounted) return;
-      setState(() {
-        _searchQuery = '';
-        _searchResults = [];
-        _isSearching = false;
-      });
-      return;
-    }
+    if (query.isEmpty) return;
 
+    _searchController.clear();
     setState(() {
-      _searchQuery = query;
-      _isSearching = true;
+      _searchQuery = '';
+      _searchResults = [];
     });
 
-    final results = await context.read<PostProvider>().searchPosts(
-          boardId: 1,
-          sort: _currentSort,
-          query: query,
-          limit: 100,
-        );
-
-    if (!mounted || _searchQuery != query) return;
-    final keyword = query.toLowerCase();
-    setState(() {
-      _searchResults = results
-          .where(
-            (post) => post.title.trim().toLowerCase().contains(keyword),
-          )
-          .toList();
-      _isSearching = false;
-    });
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => SearchResultsScreen(query: query, boardId: 1),
+      ),
+    );
   }
 
   void _onSearchChanged(String value) {
     setState(() {});
     _searchDebounce?.cancel();
     _searchDebounce = Timer(const Duration(milliseconds: 260), () {
-      _runSearch(value);
+      if (value.trim().isNotEmpty) {
+        _runSearch(value);
+      }
     });
   }
 
@@ -494,10 +478,13 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                                 const SizedBox(height: 12),
                                 _buildSearchBar(isDark),
                                 const SizedBox(height: 12),
-                                _buildAnnouncementPanel(isDark),
-                                const SizedBox(height: 10),
-                                _buildQuickActions(isDark, lostFoundPosts),
-                                const SizedBox(height: 12),
+                                // 综合模式下显示公告和签到
+                                if (_feedMode == 'all') ...[
+                                  _buildAnnouncementPanel(isDark),
+                                  const SizedBox(height: 10),
+                                  _buildQuickActions(isDark, lostFoundPosts),
+                                  const SizedBox(height: 12),
+                                ],
                                 _buildFeedHeader(isDark, visiblePosts.length),
                                 const SizedBox(height: 10),
                               ],
@@ -505,10 +492,6 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                           ),
                         ),
                         if (postProvider.isLoading && _cachedPosts.isEmpty)
-                          const SliverFillRemaining(
-                            child: Center(child: CircularProgressIndicator()),
-                          )
-                        else if (_isSearching)
                           const SliverFillRemaining(
                             child: Center(child: CircularProgressIndicator()),
                           )

@@ -78,9 +78,8 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
     final themeProvider = context.watch<ThemeProvider>();
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle(
+      value: (isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark).copyWith(
         statusBarColor: Colors.transparent,
-        statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
       ),
       child: WillPopScope(
       onWillPop: () async {
@@ -88,7 +87,7 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
         return false;
       },
       child: Scaffold(
-        backgroundColor: Colors.transparent,
+        backgroundColor: isDark ? const Color(0xFF131720) : Colors.white,
         extendBodyBehindAppBar: true,
         appBar: AppBar(
           leading: IconButton(
@@ -109,7 +108,7 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
         ),
         body: Stack(
           children: [
-            _buildBackground(themeProvider, isDark),
+            Positioned.fill(child: _buildBackground(themeProvider, isDark)),
             Consumer<TeacherProvider>(
               builder: (context, provider, _) {
                 if (provider.isLoading) {
@@ -119,13 +118,9 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
                 final teacher = provider.selectedTeacher;
                 if (teacher == null) return const Center(child: Text('加载失败'));
 
-                return ListView(
-                  padding: EdgeInsets.fromLTRB(
-                    16,
-                    MediaQuery.of(context).padding.top + kToolbarHeight + 8,
-                    16,
-                    80,
-                  ),
+                return SafeArea(
+                  child: ListView(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 80),
                   children: [
                     _buildHeader(teacher, provider, isDark),
                     const SizedBox(height: 16),
@@ -143,7 +138,8 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
                     ],
                     const SizedBox(height: 80),
                   ],
-                );
+                ),
+              );
               },
             ),
           ],

@@ -202,6 +202,10 @@ func (h *PostHandler) GetOne(c *gin.Context) {
 		return
 	}
 
+	// 增加观看次数
+	h.db.Model(&post).UpdateColumn("view_count", gorm.Expr("view_count + 1"))
+	post.ViewCount++
+
 	c.JSON(http.StatusOK, post)
 }
 
@@ -319,7 +323,7 @@ func (h *PostHandler) Delete(c *gin.Context) {
 
 	h.db.Model(&post).Update("status", models.PostStatusDeleted)
 
-	// 记录管理员操作
+	// 记录管理员操作 & 增加管理员经验
 	if role == "admin" || role == "super_admin" {
 		var u models.User
 		h.db.Select("nickname").First(&u, userID)
@@ -327,6 +331,8 @@ func (h *PostHandler) Delete(c *gin.Context) {
 			AdminID: userID.(uint), AdminName: u.Nickname,
 			Action: "删除帖子", Target: post.Title,
 		})
+		// 管理员每使用一次管理权限，经验+1
+		h.db.Model(&models.User{}).Where("id = ?", userID).UpdateColumn("admin_exp", gorm.Expr("admin_exp + 1"))
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})

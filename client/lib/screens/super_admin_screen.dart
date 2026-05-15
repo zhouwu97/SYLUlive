@@ -15,12 +15,13 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
   late TabController _tabController;
   List<dynamic> _users = [];
   List<dynamic> _pendingInvitations = [];
+  List<dynamic> _adminLogs = [];
   String _searchQuery = '';
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
     _dio = context.read<AuthProvider>().dio;
     _loadAll();
   }
@@ -32,8 +33,15 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
   }
 
   Future<void> _loadAll() async {
-    await Future.wait([_loadUsers(), _loadInvitations()]);
+    await Future.wait([_loadUsers(), _loadInvitations(), _loadAdminLogs()]);
     if (mounted) setState(() {});
+  }
+
+  Future<void> _loadAdminLogs() async {
+    try {
+      final res = await _dio.get('/super/admin_logs');
+      _adminLogs = res.data as List;
+    } catch (_) {}
   }
 
   Future<void> _loadUsers() async {
@@ -129,6 +137,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
           tabs: const [
             Tab(text: '用户管理'),
             Tab(text: '管理员审批'),
+            Tab(text: '管理日志'),
           ],
         ),
       ),
@@ -137,6 +146,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
         children: [
           _buildUsersTab(),
           _buildApprovalsTab(),
+          _buildAdminLogsTab(),
         ],
       ),
     );
@@ -340,5 +350,177 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
         _loadUsers();
       } catch (_) {}
     }
+  }
+
+  // ====== 管理员日志 Tab ======
+
+  Widget _buildAdminLogsTab() {
+    if (_adminLogs.isEmpty) {
+      return const Center(child: Text('暂无明显管理员操作日志'));
+    }
+    return RefreshIndicator(
+      onRefresh: _loadAll,
+      child: ListView.builder(
+        padding: const EdgeInsets.all(12),
+        itemCount: _adminLogs.length,
+        itemBuilder: (_, i) {
+          final log = _adminLogs[i];
+          return _buildLogItem(log);
+        },
+      ),
+    );
+  }
+
+  Widget _buildLogItem(dynamic log) {
+    final adminName = log['admin_name'] ?? '未知';
+    final action = log['action'] ?? '';
+    final target = log['target'] ?? '';
+    final adminExp = log['admin_exp'] ?? 0;
+    final adminRole = log['admin_role'] ?? '';
+    final createdAt = log['created_at'] ?? '';
+    final adminId = log['admin_id'];
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '$adminName ($adminRole)',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    '管理经验: $adminExp',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.orange,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              '$action — $target',
+              style: const TextStyle(fontSize: 13),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              _formatLogTime(createdAt),
+              style: const TextStyle(fontSize: 11, color: Colors.grey),
+            ),
+            const SizedBox(height: 8),
+            if (adminRole != 'super_admin' && adminExp > 0)
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  onPressed: () => _showRevokeExpDialog(adminId, adminName, adminExp),
+                  icon: const Icon(Icons.undo, size: 16, color: Colors.red),
+                  label: const Text('追回经验',
+                      style: TextStyle(color: Colors.red, fontSize: 12)),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showRevokeExpDialog(dynamic adminId, String adminName, int currentExp) {
+    final amountCtrl = TextEditingController(text: '1');
+    final reasonCtrl = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('追回 $adminName 的管理经验'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('当前经验: $currentExp'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: amountCtrl,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                labelText: '追回数量',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: reasonCtrl,
+              decoration: const InputDecoration(
+                labelText: '追回原因（可选）',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              final amount = int.tryParse(amountCtrl.text) ?? 0;
+              if (amount <= 0) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('请输入有效的追回数量')),
+                );
+                return;
+              }
+              try {
+                await _dio.post('/super/admin_logs/revoke_exp', data: {
+                  'admin_id': adminId,
+                  'amount': amount,
+                  'reason': reasonCtrl.text.trim(),
+                });
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('经验已追回')),
+                  );
+                  _loadAdminLogs();
+                }
+                Navigator.pop(ctx);
+              } on DioException catch (e) {
+                final msg = e.response?.data?['error'] ?? '操作失败';
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(msg.toString())),
+                  );
+                }
+              }
+            },
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('确认追回'),
+          ),
+        ],
+      ),
+    ).then((_) {
+      amountCtrl.dispose();
+      reasonCtrl.dispose();
+    });
+  }
+
+  String _formatLogTime(String iso) {
+    if (iso.isEmpty) return '';
+    final dt = DateTime.tryParse(iso);
+    if (dt == null) return iso;
+    return '${dt.month}/${dt.day} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
   }
 }

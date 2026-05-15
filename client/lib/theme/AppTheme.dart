@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../utils/page_transitions.dart';
 
 class AppTheme {
   // 主题色
@@ -26,6 +27,12 @@ class AppTheme {
       colorScheme: ColorScheme.fromSeed(
         seedColor: primaryColor,
         brightness: Brightness.light,
+      ),
+      pageTransitionsTheme: const PageTransitionsTheme(
+        builders: {
+          TargetPlatform.android: AppPageTransitionsBuilder(),
+          TargetPlatform.iOS: AppPageTransitionsBuilder(),
+        },
       ),
       appBarTheme: const AppBarTheme(
         centerTitle: true,
@@ -60,6 +67,12 @@ class AppTheme {
       colorScheme: ColorScheme.fromSeed(
         seedColor: primaryColor,
         brightness: Brightness.dark,
+      ),
+      pageTransitionsTheme: const PageTransitionsTheme(
+        builders: {
+          TargetPlatform.android: AppPageTransitionsBuilder(),
+          TargetPlatform.iOS: AppPageTransitionsBuilder(),
+        },
       ),
       appBarTheme: const AppBarTheme(
         centerTitle: true,

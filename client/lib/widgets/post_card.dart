@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../config/api_constants.dart';
 import '../models/post.dart';
+import '../models/user.dart';
 import '../screens/image_viewer_screen.dart';
 import '../utils/post_image_cache.dart';
 import 'glass_container.dart';
@@ -76,55 +77,66 @@ class PostCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        post.author?.nickname ?? '匿名',
-                        style: const TextStyle(fontWeight: FontWeight.w600),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            post.author?.nickname ?? '匿名',
+                            style: const TextStyle(fontWeight: FontWeight.w600),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (post.author != null) ...[
+                          const SizedBox(width: 6),
+                          _buildLevelBadge(post.author!),
+                        ],
+                      ],
+                    ),
+                    Text(
+                      _formatTime(post.createdAt),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: isDark ? Colors.white54 : Colors.grey[700],
                       ),
+                    ),
+                  ],
+                ),
+              ),
+              if (post.author != null)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: _getCreditColor(post.author!.creditScore)
+                        .withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.verified,
+                        size: 12,
+                        color: _getCreditColor(post.author!.creditScore),
+                      ),
+                      const SizedBox(width: 4),
                       Text(
-                        _formatTime(post.createdAt),
+                        '${post.author!.creditScore}%',
                         style: TextStyle(
-                          fontSize: 12,
-                          color: isDark ? Colors.white54 : Colors.grey[700],
+                          color: _getCreditColor(post.author!.creditScore),
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                     ],
                   ),
                 ),
-                if (post.author != null)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: _getCreditColor(post.author!.creditScore)
-                          .withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.verified,
-                          size: 12,
-                          color: _getCreditColor(post.author!.creditScore),
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          '${post.author!.creditScore}%',
-                          style: TextStyle(
-                            color: _getCreditColor(post.author!.creditScore),
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
               ],
             ),
             if (post.title.isNotEmpty) ...[
@@ -161,6 +173,8 @@ class PostCard extends StatelessWidget {
               const SizedBox(height: 8),
               _buildTypeTag(post.postType),
             ],
+            const SizedBox(height: 8),
+            _buildBottomMeta(context),
           ],
         ),
       ),
@@ -400,6 +414,42 @@ class PostCard extends StatelessWidget {
     if (score >= 70) return Colors.orange;
     if (score >= 50) return Colors.red;
     return Colors.grey;
+  }
+
+  Widget _buildBottomMeta(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Row(
+      children: [
+        Icon(Icons.visibility_outlined, size: 14,
+            color: isDark ? Colors.white30 : Colors.grey[400]),
+        const SizedBox(width: 4),
+        Text(
+          '${post.viewCount}',
+          style: TextStyle(
+            fontSize: 11,
+            color: isDark ? Colors.white30 : Colors.grey[400],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLevelBadge(User user) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+      decoration: BoxDecoration(
+        color: Color(user.levelColorValue).withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        user.levelLabel,
+        style: TextStyle(
+          fontSize: 9,
+          fontWeight: FontWeight.w700,
+          color: Color(user.levelColorValue),
+        ),
+      ),
+    );
   }
 
   String _formatTime(DateTime dateTime) {

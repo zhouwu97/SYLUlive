@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
@@ -36,6 +37,7 @@ class _ProfileScreenState extends State<ProfileScreen>
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
   int _unreadReplyCount = 0;
+  bool _swipeFeedEnabled = true;
 
   @override
   void initState() {
@@ -51,6 +53,7 @@ class _ProfileScreenState extends State<ProfileScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<AuthProvider>().refreshUser();
       _loadUnreadCount();
+      _loadSwipePreference();
     });
   }
 
@@ -58,6 +61,21 @@ class _ProfileScreenState extends State<ProfileScreen>
   void dispose() {
     _animationController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadSwipePreference() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted) {
+      setState(() {
+        _swipeFeedEnabled = prefs.getBool('swipe_feed_enabled') ?? true;
+      });
+    }
+  }
+
+  Future<void> _toggleSwipeFeed(bool value) async {
+    setState(() => _swipeFeedEnabled = value);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('swipe_feed_enabled', value);
   }
 
   Future<void> _loadUnreadCount() async {
@@ -766,6 +784,22 @@ class _ProfileScreenState extends State<ProfileScreen>
                 trailing: Switch(
                   value: themeProvider.floatingNavBar,
                   onChanged: (v) => themeProvider.setFloatingNavBar(v),
+                  activeColor: Theme.of(context).primaryColor,
+                ),
+                isDark: isDark,
+              ),
+              Divider(
+                  height: 1,
+                  indent: 68,
+                  color: isDark ? Colors.white10 : Colors.grey[200]),
+              _buildSettingsTile(
+                icon: Icons.swipe,
+                iconColor: Colors.blue,
+                title: '左右滑动切版块',
+                subtitle: '首页左滑切换到热门/最新，关闭后仅手动点击切换',
+                trailing: Switch(
+                  value: _swipeFeedEnabled,
+                  onChanged: _toggleSwipeFeed,
                   activeColor: Theme.of(context).primaryColor,
                 ),
                 isDark: isDark,

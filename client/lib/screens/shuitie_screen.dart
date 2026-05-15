@@ -3,6 +3,7 @@ import 'dart:io' show File;
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -44,7 +45,6 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   bool _checkedIn = false;
   int _streakDays = 0;
   bool _checkInLoading = false;
-  bool _swipeEnabled = true;
   
   static const _autoRefreshInterval = Duration(seconds: 60);
 
@@ -63,7 +63,6 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       context.read<PostProvider>().loadPosts(boardId: 2, sort: 'time');
       _loadAnnouncements();
       _loadCheckinStatus();
-      _loadSwipePreference();
       _animationController.forward();
       _startAutoRefresh();
     });
@@ -234,21 +233,6 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('$label 功能开发中')),
     );
-  }
-
-  Future<void> _loadSwipePreference() async {
-    final prefs = await SharedPreferences.getInstance();
-    if (mounted) {
-      setState(() {
-        _swipeEnabled = prefs.getBool('swipe_feed_enabled') ?? true;
-      });
-    }
-  }
-
-  Future<void> _toggleSwipe(bool value) async {
-    setState(() => _swipeEnabled = value);
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('swipe_feed_enabled', value);
   }
 
   Future<void> _loadCheckinStatus() async {
@@ -439,6 +423,14 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final authProvider = context.watch<AuthProvider>();
     final themeProvider = context.watch<ThemeProvider>();
+    final topPadding = MediaQuery.of(context).padding.top;
+
+    // 透明沉浸式状态栏
+    SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
+      systemNavigationBarColor: Colors.transparent,
+    ));
 
     if (authProvider.isLoggedIn != _wasLoggedIn) {
       _wasLoggedIn = authProvider.isLoggedIn;
@@ -447,6 +439,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
 
     return Scaffold(
       backgroundColor: Colors.transparent,
+      extendBodyBehindAppBar: true,
       body: Stack(
         children: [
           Positioned.fill(child: _buildBackground(themeProvider, isDark)),
@@ -478,32 +471,31 @@ class _ShuitieScreenState extends State<ShuitieScreen>
 
                   return GestureDetector(
                     behavior: HitTestBehavior.translucent,
-                    onHorizontalDragEnd: _swipeEnabled ? _handleFeedSwipe : null,
+                    onHorizontalDragEnd: _handleFeedSwipe,
                     child: CustomScrollView(
                       physics: const AlwaysScrollableScrollPhysics(
                         parent: BouncingScrollPhysics(),
                       ),
                       slivers: [
-                        const SliverToBoxAdapter(child: SizedBox(height: 18)),
+                        SliverToBoxAdapter(child: SizedBox(height: topPadding + 8)),
                         SliverPadding(
-                          padding: const EdgeInsets.fromLTRB(12, 4, 12, 10),
+                          padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
                           sliver: SliverList(
                             delegate: SliverChildListDelegate(
                               [
-                                const SizedBox(height: 12),
                                 _buildFeedModeBar(isDark),
-                                const SizedBox(height: 12),
+                                const SizedBox(height: 10),
                                 _buildSearchBar(isDark),
-                                const SizedBox(height: 12),
+                                const SizedBox(height: 10),
                                 // 综合模式下显示公告和签到
                                 if (_feedMode == 'all') ...[
                                   _buildAnnouncementPanel(isDark),
-                                  const SizedBox(height: 10),
+                                  const SizedBox(height: 8),
                                   _buildQuickActions(isDark, lostFoundPosts),
-                                  const SizedBox(height: 12),
+                                  const SizedBox(height: 10),
                                 ],
                                 _buildFeedHeader(isDark, visiblePosts.length),
-                                const SizedBox(height: 10),
+                                const SizedBox(height: 8),
                               ],
                             ),
                           ),
@@ -552,7 +544,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                               childCount: visiblePosts.length,
                             ),
                           ),
-                        const SliverToBoxAdapter(child: SizedBox(height: 100)),
+                        const SliverToBoxAdapter(child: SizedBox(height: 80)),
                       ],
                     ),
                   );
@@ -571,8 +563,8 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       children: [
         Expanded(
           child: GlassContainer(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            borderRadius: 20,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            borderRadius: 50,
             blur: 16,
             opacity: 0.85,
             backgroundColor: isDark ? const Color(0xE6171B24) : const Color(0xF2FFFFFF),
@@ -582,14 +574,18 @@ class _ShuitieScreenState extends State<ShuitieScreen>
               onChanged: _onSearchChanged,
               onSubmitted: _runSearch,
               textInputAction: TextInputAction.search,
+              style: const TextStyle(fontSize: 14),
               decoration: InputDecoration(
                 border: InputBorder.none,
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(vertical: 11),
                 hintText: '搜索帖子标题',
+                hintStyle: const TextStyle(fontSize: 14),
                 prefixIcon: const Icon(Icons.search, size: 20),
                 suffixIcon: _searchController.text.isEmpty
                     ? null
                     : IconButton(
-                        icon: const Icon(Icons.close, size: 18),
+                        icon: const Icon(Icons.close, size: 16),
                         onPressed: () {
                           _searchController.clear();
                           _runSearch('');
@@ -600,11 +596,11 @@ class _ShuitieScreenState extends State<ShuitieScreen>
             ),
           ),
         ),
-        const SizedBox(width: 10),
+        const SizedBox(width: 8),
         GlassContainer(
-          width: 56,
-          height: 56,
-          borderRadius: 20,
+          width: 44,
+          height: 44,
+          borderRadius: 50,
           blur: 16,
           opacity: 0.85,
           backgroundColor: isDark ? const Color(0xE6251B3A) : const Color(0xF2EFE8FF),
@@ -613,7 +609,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
           child: const Icon(
             Icons.add_rounded,
             color: Color(0xFF6D5EF9),
-            size: 26,
+            size: 22,
           ),
         ),
       ],
@@ -692,9 +688,8 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     required VoidCallback onTap,
   }) {
     return GlassContainer(
-      height: 92,
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-      borderRadius: 18,
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+      borderRadius: 12,
       blur: 20,
       opacity: 0.85,
       backgroundColor: isDark ? const Color(0xE6171B24) : const Color(0xF2FFFFFF),
@@ -704,34 +699,34 @@ class _ShuitieScreenState extends State<ShuitieScreen>
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Container(
-            width: 30,
-            height: 30,
+            width: 26,
+            height: 26,
             decoration: BoxDecoration(
               color: iconBg,
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(8),
             ),
-            child: Icon(icon, color: iconColor, size: 16),
+            child: Icon(icon, color: iconColor, size: 15),
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 2),
           Text(
             title,
             textAlign: TextAlign.center,
-            maxLines: 2,
+            maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              fontSize: 11.5,
+              fontSize: 11,
               fontWeight: FontWeight.w700,
               color: isDark ? Colors.white : Colors.black87,
             ),
           ),
-          const SizedBox(height: 2),
+          const SizedBox(height: 1),
           Text(
             subtitle,
             textAlign: TextAlign.center,
-            maxLines: 2,
+            maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              fontSize: 9.5,
+              fontSize: 9,
               height: 1.1,
               color: isDark ? Colors.white54 : Colors.black54,
             ),
@@ -748,8 +743,8 @@ class _ShuitieScreenState extends State<ShuitieScreen>
         context,
         MaterialPageRoute(builder: (_) => const AnnouncementScreen()),
       ),
-      padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
-      borderRadius: 22,
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      borderRadius: 16,
       gradientColors: isDark 
           ? [const Color(0xFF202A43), const Color(0xFF161B2E)] 
           : [const Color(0xFFEEF6FF), const Color(0xFFE4F0FF)],
@@ -895,8 +890,8 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       ('hot', '热门'),
     ];
     return GlassContainer(
-      padding: const EdgeInsets.all(4),
-      borderRadius: 20,
+      padding: const EdgeInsets.all(3),
+      borderRadius: 12,
       blur: 16,
       opacity: 0.85,
       backgroundColor: isDark ? const Color(0xE6171B24) : const Color(0xF2FFFFFF),
@@ -909,7 +904,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
               onTap: () => _changeFeedMode(item.$1),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
                 decoration: BoxDecoration(
                   gradient: active
                       ? LinearGradient(
@@ -920,7 +915,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                         )
                       : null,
                   color: active ? null : Colors.transparent,
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: BorderRadius.circular(10),
                 ),
                 child: Text(
                   item.$2,

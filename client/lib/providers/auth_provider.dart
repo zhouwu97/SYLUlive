@@ -7,6 +7,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user.dart';
 import '../config/api_constants.dart';
 import '../utils/app_feedback.dart';
+import '../utils/app_navigator.dart';
+import '../widgets/auth_expired_overlay.dart';
 
 /// 认证结果，包含成功状态和错误信息
 class AuthResult {
@@ -49,6 +51,27 @@ class AuthProvider extends ChangeNotifier {
       baseUrl: ApiConstants.eduServiceUrl,
       connectTimeout: ApiConstants.connectTimeout,
       receiveTimeout: ApiConstants.receiveTimeout,
+    ));
+    // 添加 401 拦截器：自动登出并提示重新登录
+    _dio.interceptors.add(InterceptorsWrapper(
+      onError: (error, handler) {
+        if (error.response?.statusCode == 401 && _token != null) {
+          // 无效令牌，自动登出
+          debugPrint('检测到 401，自动登出');
+          _token = null;
+          _user = null;
+          _dio.options.headers.remove('Authorization');
+          _clearStoredAuth();
+          notifyListeners();
+          // 重置 overlay 标记，允许再次弹出
+          AuthExpiredManager.resetSessionFlag();
+          // 延迟一帧弹出重新登录提示
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _showAuthExpiredOverlay();
+          });
+        }
+        handler.next(error);
+      },
     ));
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadStoredAuth());
   }
@@ -202,6 +225,12 @@ class AuthProvider extends ChangeNotifier {
   Future<void> logout() async {
     _token = null;
     _user = null;
+    _dio.options.headers.remove('Authorization');
+    await _clearStoredAuth();
+    notifyListeners();
+  }
+
+  Future<void> _clearStoredAuth() async {
     if (kIsWeb) {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove(_tokenKey);
@@ -211,8 +240,19 @@ class AuthProvider extends ChangeNotifier {
       await storage.delete(key: _tokenKey);
       await storage.delete(key: _userKey);
     }
-    _dio.options.headers.remove('Authorization');
-    notifyListeners();
+  }
+
+  void _showAuthExpiredOverlay() {
+    final context = appNavigatorKey.currentContext;
+    if (context == null) return;
+    AuthExpiredManager.show(
+      context,
+      onDismiss: () {},
+      onRelogin: () {
+        // 导航到登录页
+        appNavigatorKey.currentState?.pushNamed('/login');
+      },
+    );
   }
 
   Future<AuthResult> updateProfile(String nickname) async {

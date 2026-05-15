@@ -637,6 +637,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     return Scaffold(
       backgroundColor: Colors.transparent,
       extendBody: true,
+      extendBodyBehindAppBar: true,
       body: IndexedStack(
         index: _currentIndex,
         children: const [

@@ -6,6 +6,7 @@ import '../models/post.dart';
 import '../models/user.dart';
 import '../screens/image_viewer_screen.dart';
 import '../utils/post_image_cache.dart';
+import 'cached_avatar.dart';
 import 'glass_container.dart';
 
 class PostCard extends StatelessWidget {
@@ -27,18 +28,18 @@ class PostCard extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return GlassContainer(
-      margin: const EdgeInsets.only(bottom: 12),
-      borderRadius: 18,
-      blur: 20,
+      margin: const EdgeInsets.only(bottom: 8),
+      borderRadius: 12,
+      blur: 12,
       opacity: 0.85,
       backgroundColor:
           isDark ? const Color(0xE6171B24) : const Color(0xF2FFFFFF),
       borderColor: isDark
-          ? Colors.white.withValues(alpha: 0.12)
+          ? Colors.white.withValues(alpha: 0.10)
           : Colors.white.withValues(alpha: 0.85),
       onTap: onTap,
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -55,57 +56,45 @@ class PostCard extends StatelessWidget {
                       ],
                     ),
                   ),
-                  child: CircleAvatar(
+                  child: CachedAvatar(
                     radius: 18,
-                    backgroundImage: post.author?.avatar.isNotEmpty == true
-                        ? NetworkImage(
-                            ApiConstants.fullUrl(post.author!.avatar),
-                          )
+                    imageUrl: post.author?.avatar.isNotEmpty == true
+                        ? ApiConstants.fullUrl(post.author!.avatar)
                         : null,
-                    child: post.author?.avatar.isEmpty == true
-                        ? Text(
-                            post.author?.nickname
-                                    .substring(0, 1)
-                                    .toUpperCase() ??
-                                '?',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          )
-                        : null,
+                    fallbackText: post.author?.nickname,
                   ),
                 ),
-                const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Flexible(
-                          child: Text(
-                            post.author?.nickname ?? '匿名',
-                            style: const TextStyle(fontWeight: FontWeight.w600),
-                            overflow: TextOverflow.ellipsis,
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              post.author?.nickname ?? '匿名',
+                              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
-                        ),
-                        if (post.author != null) ...[
-                          const SizedBox(width: 6),
-                          _buildLevelBadge(post.author!),
+                          if (post.author != null) ...[
+                            const SizedBox(width: 4),
+                            _buildLevelBadge(post.author!),
+                          ],
                         ],
-                      ],
-                    ),
-                    Text(
-                      _formatTime(post.createdAt),
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: isDark ? Colors.white54 : Colors.grey[700],
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 1),
+                      Text(
+                        _formatTime(post.createdAt),
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: isDark ? Colors.white54 : Colors.grey[700],
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
               if (post.author != null)
                 Container(
                   padding: const EdgeInsets.symmetric(
@@ -140,40 +129,41 @@ class PostCard extends StatelessWidget {
               ],
             ),
             if (post.title.isNotEmpty) ...[
-              const SizedBox(height: 12),
+              const SizedBox(height: 8),
               Text(
                 post.title,
                 style: const TextStyle(
-                  fontSize: 16,
+                  fontSize: 15,
                   fontWeight: FontWeight.bold,
                 ),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
             ],
-            const SizedBox(height: 8),
+            const SizedBox(height: 6),
             Text(
               post.content,
               maxLines: 3,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 color: isDark ? Colors.white70 : Colors.black87,
-                height: 1.4,
+                height: 1.3,
+                fontSize: 13,
               ),
             ),
             if (post.images.isNotEmpty) ...[
-              const SizedBox(height: 12),
+              const SizedBox(height: 8),
               _buildImageGrid(context, post.images),
             ],
             if ((showPrice && post.price > 0) || showWarning) ...[
-              const SizedBox(height: 12),
+              const SizedBox(height: 8),
               _buildPriceOrWarningTag(context),
             ],
             if (post.postType.isNotEmpty && !showWarning) ...[
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
               _buildTypeTag(post.postType),
             ],
-            const SizedBox(height: 8),
+            const SizedBox(height: 6),
             _buildBottomMeta(context),
           ],
         ),

@@ -3,6 +3,7 @@ import 'dart:io' show File;
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import 'package:provider/provider.dart';
 import 'providers/auth_provider.dart';
 import 'providers/theme_provider.dart';
@@ -21,6 +22,7 @@ import 'utils/app_navigator.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await Hive.initFlutter();
   await CourseReminderService.instance.initialize();
   runApp(const MyApp());
 }
@@ -87,8 +89,10 @@ class MyApp extends StatelessWidget {
             routes: {
               '/login': (context) => const LoginScreen(),
             },
-            home: GlobalBackgroundWrapper(
-              child: const AuthWrapper(),
+            home: const PredictiveBackGate(
+              child: GlobalBackgroundWrapper(
+                child: AuthWrapper(),
+              ),
             ),
           );
         },
@@ -260,6 +264,22 @@ class AuthWrapper extends StatelessWidget {
         // 登录状态由各需要认证的页面自行检查
         return const HomeScreen();
       },
+    );
+  }
+}
+
+/// 预测性返回手势开关门控
+/// 通过 ThemeProvider.predictiveBack 控制，默认开启
+class PredictiveBackGate extends StatelessWidget {
+  final Widget child;
+  const PredictiveBackGate({super.key, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = context.watch<ThemeProvider>().predictiveBack;
+    return PopScope(
+      canPop: !enabled, // 关闭时 canPop=false，系统返回手势被阻止
+      child: child,
     );
   }
 }

@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../models/reply.dart';
 import '../providers/auth_provider.dart';
 import '../widgets/glass_container.dart';
+import '../widgets/cached_avatar.dart';
 import '../config/api_constants.dart';
 import 'post_detail_screen.dart';
 
@@ -32,11 +33,9 @@ class _UserRepliesScreenState extends State<UserRepliesScreen> {
 
     try {
       final auth = context.read<AuthProvider>();
-      // 后端接口: GET /api/user/replies/received
       final response = await auth.dio.get('/user/replies/received');
       if (response.statusCode == 200) {
         final list = (response.data as List).map((e) => Reply.fromJson(e)).toList();
-        // 按时间倒序
         list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
         setState(() {
           _replies = list;
@@ -88,7 +87,7 @@ class _UserRepliesScreenState extends State<UserRepliesScreen> {
                             parent: BouncingScrollPhysics()),
                         padding: const EdgeInsets.all(16),
                         itemCount: _replies.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 12),
+                        separatorBuilder: (_, __) => const SizedBox(height: 8),
                         itemBuilder: (context, index) {
                           final reply = _replies[index];
                           return _buildReplyCard(reply, isDark);
@@ -99,93 +98,70 @@ class _UserRepliesScreenState extends State<UserRepliesScreen> {
   }
 
   Widget _buildReplyCard(Reply reply, bool isDark) {
-    return GestureDetector(
-      onTap: () {
-        if (reply.postId > 0) {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => PostDetailScreen(postId: reply.postId),
-            ),
-          );
-        }
-      },
-      child: GlassContainer(
-        padding: const EdgeInsets.all(16),
-        borderRadius: 16,
-        blur: 10,
-        opacity: isDark ? 0.15 : 0.3,
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            CircleAvatar(
-              radius: 20,
-              backgroundColor: isDark ? Colors.white12 : Colors.grey[200],
-              backgroundImage: reply.author?.avatar.isNotEmpty == true
-                  ? NetworkImage(ApiConstants.fullUrl(reply.author!.avatar))
-                  : null,
-              child: reply.author?.avatar.isEmpty != false
-                  ? Text(
-                      reply.author?.nickname.isNotEmpty == true
-                          ? reply.author!.nickname[0].toUpperCase()
-                          : '?',
+    return GlassContainer(
+      padding: const EdgeInsets.all(12),
+      borderRadius: 12,
+      blur: 8,
+      opacity: isDark ? 0.15 : 0.3,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          CachedAvatar(
+            radius: 20,
+            imageUrl: reply.author?.avatar.isNotEmpty == true
+                ? ApiConstants.fullUrl(reply.author!.avatar)
+                : null,
+            fallbackText: reply.author?.nickname,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      reply.author?.nickname ?? '匿名用户',
                       style: TextStyle(
+                        fontSize: 15,
                         fontWeight: FontWeight.w600,
-                        color: isDark ? Colors.white70 : Colors.grey[700],
+                        color: isDark ? Colors.white : Colors.black87,
                       ),
-                    )
-                  : null,
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        reply.author?.nickname ?? '匿名用户',
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
-                          color: isDark ? Colors.white : Colors.black87,
-                        ),
-                      ),
-                      Text(
-                        _formatTime(reply.createdAt),
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: isDark ? Colors.white30 : Colors.black54,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    '回复了您的帖子',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Theme.of(context).primaryColor,
-                      fontWeight: FontWeight.w500,
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    reply.content,
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: isDark ? Colors.white70 : Colors.black87,
-                      height: 1.4,
+                    Text(
+                      _formatTime(reply.createdAt),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: isDark ? Colors.white30 : Colors.black54,
+                      ),
                     ),
-                    maxLines: 3,
-                    overflow: TextOverflow.ellipsis,
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  '回复了您的帖子',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(context).primaryColor,
+                    fontWeight: FontWeight.w500,
                   ),
-                ],
-              ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  reply.content,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: isDark ? Colors.white70 : Colors.black87,
+                    height: 1.4,
+                  ),
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

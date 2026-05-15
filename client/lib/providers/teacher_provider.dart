@@ -35,7 +35,11 @@ class TeacherProvider extends ChangeNotifier {
       if (query != null && query.isNotEmpty) params['q'] = query;
       final resp = await _dio.get('/teachers', queryParameters: params.isEmpty ? null : params);
       if (resp.statusCode == 200) {
-        _teachers = (resp.data as List).map((j) => Teacher.fromJson(j)).toList();
+        final seen = <int>{};
+        _teachers = (resp.data as List)
+            .map((j) => Teacher.fromJson(j))
+            .where((t) => seen.add(t.id))
+            .toList();
       }
     } on DioException catch (e) {
       _errorMessage = _parseError(e);

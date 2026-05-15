@@ -676,16 +676,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         onTap: _onTabTapped,
         authProvider: authProvider,
       ),
-      floatingActionButton: Padding(
-        padding: EdgeInsets.only(bottom: 110 + bottomSafe),
-        child: FloatingActionButton(
-          onPressed: () => _openCreatePost(context),
-          backgroundColor: const Color(0xFF16A34A),
-          elevation: 4,
-          shape: const CircleBorder(),
-          child: const Icon(Icons.add, color: Colors.white, size: 32),
-        ),
-      ),
+      floatingActionButton: _currentIndex == 0
+          ? Padding(
+              padding: EdgeInsets.only(bottom: 110 + bottomSafe),
+              child: FloatingActionButton(
+                onPressed: () => _openCreatePost(context),
+                backgroundColor: const Color(0xFF16A34A),
+                elevation: 4,
+                shape: const CircleBorder(),
+                child: const Icon(Icons.add, color: Colors.white, size: 32),
+              ),
+            )
+          : null,
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
     );
   }

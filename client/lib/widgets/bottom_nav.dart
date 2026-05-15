@@ -28,7 +28,7 @@ class BottomNavWrapper extends StatelessWidget {
     return _buildBlurNav(context, isDark);
   }
 
-  // 标准模式：毛玻璃底栏（带文字）
+  // 标准模式：毛玻璃底栏 紧贴底部 + 紧凑
   Widget _buildBlurNav(BuildContext context, bool isDark) {
     final bottomSafe = MediaQuery.of(context).padding.bottom;
     final primaryColor = Theme.of(context).primaryColor;
@@ -37,10 +37,11 @@ class BottomNavWrapper extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         ClipRRect(
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
           child: BackdropFilter(
             filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
             child: Container(
+              padding: EdgeInsets.only(top: 4, bottom: 2 + bottomSafe),
               decoration: BoxDecoration(
                 color: (isDark ? const Color(0xFF1A1A2E) : Colors.white)
                     .withValues(alpha: 0.85),
@@ -51,27 +52,20 @@ class BottomNavWrapper extends StatelessWidget {
                   ),
                 ),
               ),
-              child: SafeArea(
-                top: false,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 6),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceAround,
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      _labeledItem(Icons.home_rounded, '首页', 0, context, primaryColor),
-                      _labeledItem(Icons.storefront_rounded, '集市', 1, context, primaryColor),
-                      _labeledItem(Icons.calendar_month_rounded, '课表', 2, context, primaryColor),
-                      _labeledItem(Icons.leaderboard_rounded, '榜单', 3, context, primaryColor),
-                      _labeledItem(Icons.person_rounded, '我', 4, context, primaryColor),
-                    ],
-                  ),
-                ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  _labeledItem(Icons.home_rounded, '首页', 0, context, primaryColor),
+                  _labeledItem(Icons.storefront_rounded, '集市', 1, context, primaryColor),
+                  _labeledItem(Icons.calendar_month_rounded, '课表', 2, context, primaryColor),
+                  _labeledItem(Icons.leaderboard_rounded, '榜单', 3, context, primaryColor),
+                  _labeledItem(Icons.person_rounded, '我', 4, context, primaryColor),
+                ],
               ),
             ),
           ),
         ),
-        SizedBox(height: bottomSafe),
       ],
     );
   }
@@ -133,10 +127,10 @@ class BottomNavWrapper extends StatelessWidget {
     return GestureDetector(
       onTap: () => onTap(index),
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+        padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 2),
         child: Column(mainAxisSize: MainAxisSize.min, mainAxisAlignment: MainAxisAlignment.center, children: [
-          Icon(icon, color: color, size: 24),
-          const SizedBox(height: 2),
+          Icon(icon, color: color, size: 22),
+          const SizedBox(height: 1),
           Text(label, style: TextStyle(color: color, fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500, fontSize: 10)),
         ]),
       ),

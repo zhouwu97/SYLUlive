@@ -284,6 +284,7 @@ func main() {
 		superAdmin.DELETE("/users/:id", superAdminHandler.DeleteUser)
 		superAdmin.GET("/stats", superAdminHandler.GetStatistics)
 		superAdmin.GET("/admin_logs", superAdminHandler.GetAdminLogs)
+		superAdmin.POST("/admin_logs/revoke_exp", superAdminHandler.RevokeAdminExp)
 		superAdmin.GET("/invitations/pending", invitationHandler.GetApprovalList)
 		superAdmin.POST("/invitations/:id/approve", invitationHandler.Approve)
 	}

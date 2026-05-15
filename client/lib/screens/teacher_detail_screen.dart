@@ -1,5 +1,3 @@
-import 'dart:io' show File;
-
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
@@ -51,6 +49,7 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
       },
       child: Scaffold(
         backgroundColor: Colors.transparent,
+        extendBodyBehindAppBar: true,
         appBar: AppBar(
           leading: IconButton(
             icon: const Icon(Icons.arrow_back),
@@ -73,7 +72,12 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
                 if (teacher == null) return const Center(child: Text('加载失败'));
 
                 return ListView(
-                  padding: const EdgeInsets.all(16),
+                  padding: EdgeInsets.fromLTRB(
+                    16,
+                    MediaQuery.of(context).padding.top + kToolbarHeight + 8,
+                    16,
+                    80,
+                  ),
                   children: [
                     _buildHeader(teacher, provider, isDark),
                     const SizedBox(height: 16),
@@ -101,39 +105,7 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
   }
 
   Widget _buildBackground(ThemeProvider themeProvider, bool isDark) {
-    if (themeProvider.hasBackground && themeProvider.backgroundImage != null) {
-      final bgPath = themeProvider.backgroundImage!;
-      final isAsset = !bgPath.startsWith('http') && !bgPath.startsWith('/');
-      return Stack(
-        fit: StackFit.expand,
-        children: [
-          isAsset
-              ? Image.asset(
-                  'assets/images/$bgPath',
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => _buildDefaultBackground(isDark),
-                )
-              : bgPath.startsWith('/')
-                  ? Image.file(
-                      File(bgPath),
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) =>
-                          _buildDefaultBackground(isDark),
-                    )
-                  : Image.network(
-                      bgPath,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) =>
-                          _buildDefaultBackground(isDark),
-                    ),
-          Container(
-            color: isDark
-                ? Colors.black.withValues(alpha: 0.35)
-                : Colors.white.withValues(alpha: 0.25),
-          ),
-        ],
-      );
-    }
+    // 榜单详情页始终使用默认背景，不受全局自定义背景影响
     return _buildDefaultBackground(isDark);
   }
 

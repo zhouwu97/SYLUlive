@@ -17,6 +17,8 @@ import 'market_screen.dart';
 import 'course_schedule_screen.dart';
 import 'teacher_rate_screen.dart';
 import 'profile_screen.dart';
+import 'create_post_screen.dart';
+import 'login_screen.dart';
 import 'image_viewer_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -625,9 +627,30 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     backgroundWrapperKey.currentState?.updateScreen(screenNames[index]);
   }
 
+  void _openCreatePost(BuildContext context) {
+    final auth = context.read<AuthProvider>();
+    if (!auth.isLoggedIn) {
+      Navigator.push(
+        context,
+        PageRouteBuilder(
+          opaque: false,
+          pageBuilder: (_, __, ___) => const LoginScreen(),
+        ),
+      );
+      return;
+    }
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const CreatePostScreen(boardId: 1),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final authProvider = context.watch<AuthProvider>();
+    final bottomSafe = MediaQuery.of(context).padding.bottom;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _syncAnnouncementPolling(authProvider);
@@ -653,6 +676,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         onTap: _onTabTapped,
         authProvider: authProvider,
       ),
+      floatingActionButton: Padding(
+        padding: EdgeInsets.only(bottom: 110 + bottomSafe),
+        child: FloatingActionButton(
+          onPressed: () => _openCreatePost(context),
+          backgroundColor: const Color(0xFF16A34A),
+          elevation: 4,
+          shape: const CircleBorder(),
+          child: const Icon(Icons.add, color: Colors.white, size: 32),
+        ),
+      ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
     );
   }
 }

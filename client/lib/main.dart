@@ -278,7 +278,7 @@ class PredictiveBackGate extends StatelessWidget {
   Widget build(BuildContext context) {
     final enabled = context.watch<ThemeProvider>().predictiveBack;
     return PopScope(
-      canPop: !enabled, // 关闭时 canPop=false，系统返回手势被阻止
+      canPop: enabled, // 关闭时 canPop=false，系统返回手势被阻止
       child: child,
     );
   }

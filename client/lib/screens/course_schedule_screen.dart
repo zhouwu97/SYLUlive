@@ -1567,27 +1567,29 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
     final allActive = <CourseBlock>[];
     final allInactive = <CourseBlock>[];
-    // 用于去重：同一天同一时段只保留一个（优先级：当前周 > 未来周 > 过去周）
-    final seen = <String>{};
+    // 先用活跃课程占据时间槽，非活跃课程只在槽位为空时才显示
+    final activeSlots = <String>{};
+    final inactiveSeen = <String>{};
 
     for (final c in sc.courses) {
       final key = '${c.weekday}_${c.startSection}';
       if (wn == null || c.weeks.isEmpty || c.weeks.contains(wn)) {
-        if (!seen.contains(key)) {
+        // 当前周课程：直接加入，优先级最高
+        if (!activeSlots.contains(key)) {
           allActive.add(c);
-          seen.add(key);
+          activeSlots.add(key);
         }
-      } else if (!seen.contains(key)) {
-        // 非本周课程分两类：未来的（优先）已结束的（次要）
-        allInactive.add(c);
-        allInactive.sort((a, b) {
-          final aFuture = a.weeks.isNotEmpty && a.weeks.first > wn;
-          final bFuture = b.weeks.isNotEmpty && b.weeks.first > wn;
-          if (aFuture && !bFuture) return -1;
-          if (!aFuture && bFuture) return 1;
-          return 0;
-        });
-        seen.add(key);
+      }
+    }
+
+    // 第二轮：非当前周课程，只在槽位未被活跃课程占用时才显示
+    for (final c in sc.courses) {
+      final key = '${c.weekday}_${c.startSection}';
+      if (wn != null && c.weeks.isNotEmpty && !c.weeks.contains(wn)) {
+        if (!activeSlots.contains(key) && !inactiveSeen.contains(key)) {
+          allInactive.add(c);
+          inactiveSeen.add(key);
+        }
       }
     }
 
@@ -1662,7 +1664,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     }
     final base = getCourseColor(c.name,
             isActive: isActive, courseCode: c.courseCode, location: c.location)
-        .withValues(alpha: isActive ? _cardOpacity : 0.3);
+        .withValues(alpha: isActive ? _cardOpacity : 0.2);
 
     // 根据可用高度决定显示内容（优先课名+地点）
     final bool isCompact = h < 70;

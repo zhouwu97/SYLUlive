@@ -36,28 +36,28 @@ class _MajorDetailScreenState extends State<MajorDetailScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final themeProvider = context.watch<ThemeProvider>();
 
-    return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: (isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark).copyWith(
-        statusBarColor: Colors.transparent,
-      ),
-      child: Scaffold(
-        backgroundColor: isDark ? const Color(0xFF131720) : Colors.white,
-        extendBodyBehindAppBar: true,
-        appBar: AppBar(
-          title: Text(widget.majorName),
-          backgroundColor: Colors.transparent,
-          elevation: 0,
-          scrolledUnderElevation: 0,
+    return Scaffold(
+      backgroundColor: isDark ? const Color(0xFF131720) : Colors.white,
+      extendBodyBehindAppBar: true,
+      appBar: AppBar(
+        systemOverlayStyle: SystemUiOverlayStyle(
+          statusBarColor: Colors.transparent,
+          statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
         ),
-        body: Stack(
-          children: [
-            Positioned.fill(child: _buildBackground(themeProvider, isDark)),
-            Consumer<MajorProvider>(
-              builder: (_, m, __) {
-                if (m.isLoading) return const Center(child: CircularProgressIndicator());
-                if (m.selected == null) return const Center(child: Text('加载失败'));
-                return SafeArea(
-                  child: ListView(
+        title: Text(widget.majorName),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+      ),
+      body: Stack(
+        children: [
+          Positioned.fill(child: _buildBackground(themeProvider, isDark)),
+          Consumer<MajorProvider>(
+            builder: (_, m, __) {
+              if (m.isLoading) return const Center(child: CircularProgressIndicator());
+              if (m.selected == null) return const Center(child: Text('加载失败'));
+              return SafeArea(
+                child: ListView(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 80),
                   children: [
                     Card(
@@ -106,10 +106,9 @@ class _MajorDetailScreenState extends State<MajorDetailScreen> {
                   ],
                 ),
               );
-              },
-            ),
-          ],
-        ),
+            },
+          ),
+        ],
       ),
     );
   }

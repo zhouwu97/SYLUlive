@@ -77,11 +77,7 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final themeProvider = context.watch<ThemeProvider>();
 
-    return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: (isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark).copyWith(
-        statusBarColor: Colors.transparent,
-      ),
-      child: WillPopScope(
+    return WillPopScope(
       onWillPop: () async {
         Navigator.pop(context, _didChange);
         return false;
@@ -90,6 +86,10 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
         backgroundColor: isDark ? const Color(0xFF131720) : Colors.white,
         extendBodyBehindAppBar: true,
         appBar: AppBar(
+          systemOverlayStyle: SystemUiOverlayStyle(
+            statusBarColor: Colors.transparent,
+            statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
+          ),
           leading: IconButton(
             icon: const Icon(Icons.arrow_back),
             onPressed: () => Navigator.pop(context, _didChange),
@@ -144,7 +144,6 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
             ),
           ],
         ),
-      ),
       ),
     );
   }

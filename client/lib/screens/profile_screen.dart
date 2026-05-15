@@ -1348,264 +1348,101 @@ class _ProfileScreenState extends State<ProfileScreen>
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) => Container(
-        height: MediaQuery.of(context).size.height * 0.65,
         decoration: BoxDecoration(
           color: isDark ? const Color(0xFF1A1A2E) : Colors.white,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
         ),
-        child: Column(
-          children: [
-            // 顶部拖拽条
-            Padding(
-              padding: const EdgeInsets.only(top: 12, bottom: 8),
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: isDark ? Colors.white24 : Colors.grey[300],
-                  borderRadius: BorderRadius.circular(2),
+        child: SafeArea(
+          top: false,
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+            child: Column(
+              children: [
+                // 拖拽条
+                Padding(
+                  padding: const EdgeInsets.only(top: 12, bottom: 16),
+                  child: Container(
+                    width: 40, height: 4,
+                    decoration: BoxDecoration(color: isDark ? Colors.white24 : Colors.grey[300], borderRadius: BorderRadius.circular(2)),
+                  ),
                 ),
-              ),
-            ),
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: Column(
-                  children: [
+                // App 图标
+                Container(
+                  width: 80, height: 80,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [primary, primary.withValues(alpha: 0.6)]),
+                    borderRadius: BorderRadius.circular(22),
+                  ),
+                  child: const Icon(Icons.school, color: Colors.white, size: 38),
+                ),
+                const SizedBox(height: 16),
+                // 标题
+                Text('沈理校园', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800, letterSpacing: 0.5, color: isDark ? Colors.white : Colors.black87)),
+                const SizedBox(height: 4),
+                Text('一款为沈理人写的开源校园工具', style: TextStyle(fontSize: 13, color: isDark ? Colors.white54 : Colors.grey[500])),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
+                  decoration: BoxDecoration(color: primary.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(20)),
+                  child: Text('v1.3.2', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: primary)),
+                ),
+                const SizedBox(height: 24),
+
+                // 开发者卡片
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: isDark ? Colors.white.withValues(alpha: 0.04) : const Color(0xFFF5F7FB),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Row(children: [
+                      Icon(Icons.code_rounded, size: 18, color: primary),
+                      const SizedBox(width: 10),
+                      Text('开发者', style: TextStyle(fontSize: 13, color: isDark ? Colors.white54 : Colors.grey[500])),
+                      const Spacer(),
+                      Text('纯合子', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: isDark ? Colors.white : Colors.black87)),
+                    ]),
                     const SizedBox(height: 12),
-                    // App 图标 - 渐变圆角
-                    Container(
-                      width: 88,
-                      height: 88,
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [primary, primary.withOpacity(0.6)],
-                        ),
-                        borderRadius: BorderRadius.circular(24),
-                        boxShadow: [
-                          BoxShadow(
-                            color: primary.withOpacity(0.35),
-                            blurRadius: 24,
-                            offset: const Offset(0, 10),
-                          ),
-                        ],
-                      ),
-                      child: const Icon(Icons.school, color: Colors.white, size: 42),
-                    ),
-                    const SizedBox(height: 20),
-                    // 标题
-                    Text(
-                      '沈理校园',
-                      style: TextStyle(
-                        fontSize: 26,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 1,
-                        color: isDark ? Colors.white : Colors.black87,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      '校园互助社交应用',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: isDark ? Colors.white54 : Colors.grey[500],
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: primary.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Text(
-                        'v1.0.0',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: primary,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 28),
-
-                    // 信息卡片
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: isDark
-                            ? Colors.white.withOpacity(0.05)
-                            : Colors.grey.withOpacity(0.05),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                          color: isDark ? Colors.white10 : Colors.grey.withOpacity(0.12),
-                        ),
-                      ),
-                      child: Column(children: [
-                        _buildAboutInfoRow(
-                          Icons.person_outline_rounded,
-                          '开发者',
-                          '纯合子',
-                          isDark,
-                        ),
-                        Divider(height: 20, color: isDark ? Colors.white10 : Colors.grey[200]),
-                        _buildAboutInfoRow(
-                          Icons.school_outlined,
-                          '面向',
-                          '沈阳理工大学全体师生',
-                          isDark,
-                        ),
-                        Divider(height: 20, color: isDark ? Colors.white10 : Colors.grey[200]),
-                        _buildAboutInfoRow(
-                          Icons.favorite_outline_rounded,
-                          '理念',
-                          '让校园生活更简单',
-                          isDark,
-                        ),
-                      ]),
-                    ),
-                    const SizedBox(height: 20),
-
-                    // 联系方式标题
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        '联系与反馈',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: isDark ? Colors.white54 : Colors.grey[600],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-
-                    // 联系按钮组
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _buildAboutContactCard(
-                            context,
-                            icon: Icons.code_rounded,
-                            label: 'GitHub',
-                            subtitle: '开源仓库',
-                            gradient: [const Color(0xFF24292E), const Color(0xFF404448)],
-                            onTap: () => _launchUrl('https://github.com/zhouwu97/SYLUlive'),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: _buildAboutContactCard(
-                            context,
-                            icon: Icons.email_rounded,
-                            label: '邮箱',
-                            subtitle: '复制地址',
-                            gradient: [const Color(0xFFEA4335), const Color(0xFFFF6B6B)],
-                            onTap: () => _copyToClipboard(context, '3170305904@qq.com', '邮箱地址已复制'),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: _buildAboutContactCard(
-                            context,
-                            icon: Icons.chat_rounded,
-                            label: 'QQ',
-                            subtitle: '直接联系',
-                            gradient: [const Color(0xFF12B7F5), const Color(0xFF5DC4F8)],
-                            onTap: () => _launchUrl(
-                                'mqqapi://card/show_pslcard?src_type=internal&version=1&uin=3170305904&card_type=person'),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 24),
-                  ],
+                    Text('用爱发电，写个自己觉得好用的课表和论坛。', style: TextStyle(fontSize: 12, height: 1.5, color: isDark ? Colors.white38 : Colors.grey[500])),
+                  ]),
                 ),
-              ),
+                const SizedBox(height: 24),
+
+                // 联系方式
+                _aboutLink(context, Icons.code_rounded, '查看源码 / 提交 PR', 'https://github.com/zhouwu97/SYLUlive', isDark),
+                const SizedBox(height: 8),
+                _aboutLink(context, Icons.chat_rounded, '加入交流群', 'mqqapi://card/show_pslcard?src_type=internal&version=1&uin=3170305904&card_type=person', isDark),
+                const SizedBox(height: 8),
+                _aboutLink(context, Icons.email_outlined, '发送邮件', null, isDark, onTapOverride: () => _copyToClipboard(context, '3170305904@qq.com', '邮箱地址已复制')),
+                const SizedBox(height: 16),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildAboutInfoRow(IconData icon, String label, String value, bool isDark) {
-    return Row(
-      children: [
-        Icon(icon, size: 20, color: isDark ? Colors.white38 : Colors.grey[500]),
-        const SizedBox(width: 12),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 13,
-            color: isDark ? Colors.white38 : Colors.grey[500],
+  Widget _aboutLink(BuildContext context, IconData icon, String label, String? url, bool isDark, {VoidCallback? onTapOverride}) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTapOverride ?? (url != null ? () => _launchUrl(url) : null),
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: isDark ? Colors.white.withValues(alpha: 0.04) : const Color(0xFFF5F7FB),
+            borderRadius: BorderRadius.circular(12),
           ),
-        ),
-        const Spacer(),
-        Text(
-          value,
-          style: TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
-            color: isDark ? Colors.white70 : Colors.black87,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildAboutContactCard(
-    BuildContext context, {
-    required IconData icon,
-    required String label,
-    required String subtitle,
-    required List<Color> gradient,
-    required VoidCallback onTap,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 16),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: gradient,
-          ),
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: gradient.first.withOpacity(0.3),
-              blurRadius: 12,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, color: Colors.white, size: 26),
-            const SizedBox(height: 6),
-            Text(
-              label,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              subtitle,
-              style: TextStyle(
-                color: Colors.white.withOpacity(0.7),
-                fontSize: 10,
-              ),
-            ),
-          ],
+          child: Row(children: [
+            Icon(icon, size: 20, color: Theme.of(context).primaryColor),
+            const SizedBox(width: 12),
+            Expanded(child: Text(label, style: TextStyle(fontSize: 14, color: isDark ? Colors.white70 : Colors.black87))),
+            Icon(Icons.chevron_right, size: 18, color: isDark ? Colors.white24 : Colors.grey[400]),
+          ]),
         ),
       ),
     );

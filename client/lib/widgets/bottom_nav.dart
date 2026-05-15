@@ -28,7 +28,7 @@ class BottomNavWrapper extends StatelessWidget {
     return _buildBlurNav(context, isDark);
   }
 
-  // 标准模式：毛玻璃底栏（纯图标）
+  // 标准模式：毛玻璃底栏（带文字）
   Widget _buildBlurNav(BuildContext context, bool isDark) {
     final bottomSafe = MediaQuery.of(context).padding.bottom;
     final primaryColor = Theme.of(context).primaryColor;
@@ -54,16 +54,16 @@ class BottomNavWrapper extends StatelessWidget {
               child: SafeArea(
                 top: false,
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  padding: const EdgeInsets.symmetric(vertical: 6),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceAround,
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      _iconOnly(Icons.home_rounded, 0, context, primaryColor),
-                      _iconOnly(Icons.storefront_rounded, 1, context, primaryColor),
-                      _iconOnly(Icons.calendar_month_rounded, 2, context, primaryColor),
-                      _iconOnly(Icons.leaderboard_rounded, 3, context, primaryColor),
-                      _iconOnly(Icons.person_rounded, 4, context, primaryColor),
+                      _labeledItem(Icons.home_rounded, '首页', 0, context, primaryColor),
+                      _labeledItem(Icons.storefront_rounded, '集市', 1, context, primaryColor),
+                      _labeledItem(Icons.calendar_month_rounded, '课表', 2, context, primaryColor),
+                      _labeledItem(Icons.leaderboard_rounded, '榜单', 3, context, primaryColor),
+                      _labeledItem(Icons.person_rounded, '我', 4, context, primaryColor),
                     ],
                   ),
                 ),
@@ -125,7 +125,25 @@ class BottomNavWrapper extends StatelessWidget {
     );
   }
 
-  // 纯图标 Item
+  // 标准模式 Item（图标+文字）
+  Widget _labeledItem(IconData icon, String label, int index, BuildContext context, Color primaryColor) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isSelected = currentIndex == index;
+    final color = isSelected ? primaryColor : (isDark ? Colors.white54 : Colors.grey);
+    return GestureDetector(
+      onTap: () => onTap(index),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+        child: Column(mainAxisSize: MainAxisSize.min, mainAxisAlignment: MainAxisAlignment.center, children: [
+          Icon(icon, color: color, size: 24),
+          const SizedBox(height: 2),
+          Text(label, style: TextStyle(color: color, fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500, fontSize: 10)),
+        ]),
+      ),
+    );
+  }
+
+  // 悬浮模式 Item（纯图标）
   Widget _iconOnly(IconData icon, int index, BuildContext context, Color primaryColor) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final isSelected = currentIndex == index;

@@ -1,4 +1,7 @@
+import 'dart:io' show File;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/teacher_provider.dart';
@@ -37,12 +40,49 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
     super.dispose();
   }
 
+  Future<void> _deleteTeacher(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('确认删除'),
+        content: Text('确定要删除教师「${widget.teacherName}」吗？此操作不可撤销。'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    try {
+      final dio = context.read<AuthProvider>().dio;
+      await dio.delete('/teachers/${widget.teacherId}/reject');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('教师已删除')));
+        Navigator.pop(context, true);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('删除失败: $e')));
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final themeProvider = context.watch<ThemeProvider>();
 
-    return WillPopScope(
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
+      ),
+      child: WillPopScope(
       onWillPop: () async {
         Navigator.pop(context, _didChange);
         return false;
@@ -58,6 +98,14 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
           title: Text(widget.teacherName),
           backgroundColor: Colors.transparent,
           elevation: 0,
+          scrolledUnderElevation: 0,
+          actions: [
+            if (context.watch<AuthProvider>().user?.isAdmin == true)
+              IconButton(
+                icon: const Icon(Icons.delete_forever, color: Colors.redAccent),
+                onPressed: () => _deleteTeacher(context),
+              ),
+          ],
         ),
         body: Stack(
           children: [
@@ -101,11 +149,26 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
           ],
         ),
       ),
+      ),
     );
   }
 
   Widget _buildBackground(ThemeProvider themeProvider, bool isDark) {
-    // 榜单详情页始终使用默认背景，不受全局自定义背景影响
+    if (themeProvider.hasBackground && themeProvider.backgroundImage != null) {
+      final bgPath = themeProvider.backgroundImage!;
+      final isAsset = !bgPath.startsWith('http') && !bgPath.startsWith('/');
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          isAsset
+              ? Image.asset('assets/images/$bgPath', fit: BoxFit.cover, errorBuilder: (_, __, ___) => _buildDefaultBackground(isDark))
+              : bgPath.startsWith('/')
+                  ? Image.file(File(bgPath), fit: BoxFit.cover, errorBuilder: (_, __, ___) => _buildDefaultBackground(isDark))
+                  : Image.network(bgPath, fit: BoxFit.cover, errorBuilder: (_, __, ___) => _buildDefaultBackground(isDark)),
+          Container(color: isDark ? Colors.black.withValues(alpha: 0.35) : Colors.white.withValues(alpha: 0.25)),
+        ],
+      );
+    }
     return _buildDefaultBackground(isDark);
   }
 

@@ -13,9 +13,11 @@ import 'providers/course_schedule_provider.dart';
 import 'providers/major_provider.dart';
 import 'providers/teacher_provider.dart';
 import 'screens/home_screen.dart';
+import 'screens/login_screen.dart';
 import 'services/course_reminder_service.dart';
 import 'theme/AppTheme.dart';
 import 'config/api_constants.dart';
+import 'utils/app_navigator.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -23,7 +25,6 @@ Future<void> main() async {
   runApp(const MyApp());
 }
 
-final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 Dio? _sharedDio;
 
 Dio getSharedDio() {
@@ -45,10 +46,7 @@ Dio getSharedDio() {
 
     dio.interceptors.add(InterceptorsWrapper(
       onError: (error, handler) {
-        debugPrint('DioError: ${error.message}');
-        if (error.response?.statusCode == 401) {
-          debugPrint('登录已过期，请重新登录');
-        }
+        debugPrint('DioError [${error.response?.statusCode}]: ${error.requestOptions.uri}');
         handler.next(error);
       },
     ));
@@ -85,7 +83,10 @@ class MyApp extends StatelessWidget {
             darkTheme: AppTheme.darkTheme,
             themeMode:
                 themeProvider.isDarkMode ? ThemeMode.dark : ThemeMode.light,
-            navigatorKey: navigatorKey,
+            navigatorKey: appNavigatorKey,
+            routes: {
+              '/login': (context) => const LoginScreen(),
+            },
             home: GlobalBackgroundWrapper(
               child: const AuthWrapper(),
             ),

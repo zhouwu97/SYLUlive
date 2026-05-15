@@ -7,7 +7,7 @@ import '../providers/edu_provider.dart';
 import '../providers/course_schedule_provider.dart';
 import '../services/course_reminder_service.dart';
 import '../widgets/glass_container.dart';
-import '../main.dart' show navigatorKey;
+import '../utils/app_navigator.dart' show appNavigatorKey;
 import 'edu_screen.dart';
 import 'login_screen.dart';
 
@@ -1738,7 +1738,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     final wdn = _wd[c.weekday - 1];
 
     showModalBottomSheet(
-      context: navigatorKey.currentContext!,
+      context: appNavigatorKey.currentContext!,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (_) => Padding(

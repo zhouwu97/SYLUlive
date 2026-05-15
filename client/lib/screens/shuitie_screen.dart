@@ -44,6 +44,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   bool _checkedIn = false;
   int _streakDays = 0;
   bool _checkInLoading = false;
+  bool _swipeEnabled = true;
   
   static const _autoRefreshInterval = Duration(seconds: 60);
 
@@ -62,6 +63,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       context.read<PostProvider>().loadPosts(boardId: 2, sort: 'time');
       _loadAnnouncements();
       _loadCheckinStatus();
+      _loadSwipePreference();
       _animationController.forward();
       _startAutoRefresh();
     });
@@ -232,6 +234,21 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('$label 功能开发中')),
     );
+  }
+
+  Future<void> _loadSwipePreference() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted) {
+      setState(() {
+        _swipeEnabled = prefs.getBool('swipe_feed_enabled') ?? true;
+      });
+    }
+  }
+
+  Future<void> _toggleSwipe(bool value) async {
+    setState(() => _swipeEnabled = value);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('swipe_feed_enabled', value);
   }
 
   Future<void> _loadCheckinStatus() async {
@@ -461,7 +478,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
 
                   return GestureDetector(
                     behavior: HitTestBehavior.translucent,
-                    onHorizontalDragEnd: _handleFeedSwipe,
+                    onHorizontalDragEnd: _swipeEnabled ? _handleFeedSwipe : null,
                     child: CustomScrollView(
                       physics: const AlwaysScrollableScrollPhysics(
                         parent: BouncingScrollPhysics(),
@@ -877,50 +894,77 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       ('all', '综合'),
       ('hot', '热门'),
     ];
-    return GlassContainer(
-      padding: const EdgeInsets.all(4),
-      borderRadius: 20,
-      blur: 16,
-      opacity: 0.85,
-      backgroundColor: isDark ? const Color(0xE6171B24) : const Color(0xF2FFFFFF),
-      borderColor: isDark ? Colors.white.withValues(alpha: 0.12) : Colors.white.withValues(alpha: 0.85),
-      child: Row(
-        children: items.map((item) {
-          final active = _feedMode == item.$1;
-          return Expanded(
-            child: GestureDetector(
-              onTap: () => _changeFeedMode(item.$1),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
-                decoration: BoxDecoration(
-                  gradient: active
-                      ? LinearGradient(
-                          colors: [
-                            Theme.of(context).primaryColor,
-                            Theme.of(context).primaryColor.withValues(alpha: 0.8)
-                          ],
-                        )
-                      : null,
-                  color: active ? null : Colors.transparent,
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Text(
-                  item.$2,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: active
-                        ? Colors.white
-                        : (isDark ? Colors.white70 : Colors.black54),
+    return Row(
+      children: [
+        Expanded(
+          child: GlassContainer(
+            padding: const EdgeInsets.all(4),
+            borderRadius: 20,
+            blur: 16,
+            opacity: 0.85,
+            backgroundColor: isDark ? const Color(0xE6171B24) : const Color(0xF2FFFFFF),
+            borderColor: isDark ? Colors.white.withValues(alpha: 0.12) : Colors.white.withValues(alpha: 0.85),
+            child: Row(
+              children: items.map((item) {
+                final active = _feedMode == item.$1;
+                return Expanded(
+                  child: GestureDetector(
+                    onTap: () => _changeFeedMode(item.$1),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+                      decoration: BoxDecoration(
+                        gradient: active
+                            ? LinearGradient(
+                                colors: [
+                                  Theme.of(context).primaryColor,
+                                  Theme.of(context).primaryColor.withValues(alpha: 0.8)
+                                ],
+                              )
+                            : null,
+                        color: active ? null : Colors.transparent,
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Text(
+                        item.$2,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: active
+                              ? Colors.white
+                              : (isDark ? Colors.white70 : Colors.black54),
+                        ),
+                      ),
+                    ),
                   ),
-                ),
-              ),
+                );
+              }).toList(),
             ),
-          );
-        }).toList(),
-      ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        GestureDetector(
+          onTap: () => _toggleSwipe(!_swipeEnabled),
+          child: Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: _swipeEnabled
+                  ? Theme.of(context).primaryColor.withValues(alpha: 0.15)
+                  : (isDark ? Colors.white10 : Colors.black.withValues(alpha: 0.05)),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(
+              _swipeEnabled ? Icons.swipe : Icons.swipe_left_outlined,
+              size: 18,
+              color: _swipeEnabled
+                  ? Theme.of(context).primaryColor
+                  : (isDark ? Colors.white38 : Colors.grey[500]),
+            ),
+          ),
+        ),
+      ],
     );
   }
 

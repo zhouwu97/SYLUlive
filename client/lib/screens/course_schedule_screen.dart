@@ -149,6 +149,9 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
   void _autoLoad(EduProvider edu, CourseScheduleProvider sc) async {
     if (_didLoad) return;
+    // 未登录不做任何拉取
+    final auth = context.read<AuthProvider>();
+    if (!auth.isLoggedIn) return;
     if (!edu.isStatusLoaded) return;
     if (!edu.isBound) {
       _didLoad = true;
@@ -187,6 +190,8 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
   void _silentSync(CourseScheduleProvider sc) async {
     try {
+      // 未登录不请求
+      if (!context.read<AuthProvider>().isLoggedIn) return;
       await sc.loadCourses(forceRefresh: true);
       await _syncCourseReminders(sc);
       // 新数据自动覆盖旧缓存
@@ -312,7 +317,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
         children: [
           // 标题栏：大字号周次 + 日期 + 右侧图标
           Padding(
-            padding: const EdgeInsets.fromLTRB(24, 12, 16, 4),
+            padding: const EdgeInsets.fromLTRB(24, 8, 16, 4),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
@@ -326,16 +331,16 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                           academicWeek != null ? '第 $academicWeek 周' : '设置学期',
                           style: const TextStyle(
                               color: Colors.white,
-                              fontSize: 32,
+                              fontSize: 26,
                               fontWeight: FontWeight.w900,
                               height: 1.1),
                         ),
                       ),
-                      const SizedBox(height: 2),
+                      const SizedBox(height: 1),
                       Text(
                         '${_weekStart.year}/${_weekStart.month}/${_weekStart.day} 周${_wd[_weekStart.weekday - 1]}',
                         style: const TextStyle(
-                            color: Colors.white70, fontSize: 18),
+                            color: Colors.white70, fontSize: 15),
                       ),
                     ],
                   ),
@@ -389,13 +394,13 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                       Text(_wd[i],
                           style: const TextStyle(
                               color: Colors.white,
-                              fontSize: 18,
+                              fontSize: 16,
                               fontWeight: FontWeight.bold)),
-                      const SizedBox(height: 2),
+                      const SizedBox(height: 1),
                       Text(_md(d),
                           style: TextStyle(
                               color: Colors.white70,
-                              fontSize: 13,
+                              fontSize: 12,
                               fontWeight:
                                   isToday ? FontWeight.w600 : FontWeight.w400)),
                     ],
@@ -1650,7 +1655,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   // ====== 课程卡片 ======
   Widget _buildCard(CourseBlock c, bool isActive, double exactW, int? wn) {
     final top = (c.startSection - 1) * _slotHeight;
-    final h = c.span * _slotHeight - 4;
+    final h = c.span * _slotHeight - 2;
     String? inactiveLabel;
     if (!isActive && wn != null && c.weeks.isNotEmpty) {
       inactiveLabel = c.weeks.first > wn ? '后期' : '前期';
@@ -1663,21 +1668,21 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     final bool isCompact = h < 70;
 
     return Positioned(
-      left: timeColumnWidth + (c.weekday - 1) * exactW + 1,
-      width: exactW - 2,
+      left: timeColumnWidth + (c.weekday - 1) * exactW + 1.5,
+      width: exactW - 3,
       top: top,
       height: h,
       child: GestureDetector(
         onTap: () => _showDetail(c),
         child: Container(
           alignment: Alignment.topLeft,
-          padding: const EdgeInsets.all(4.0),
+          padding: const EdgeInsets.all(3.0),
           clipBehavior: Clip.hardEdge,
           decoration: BoxDecoration(
             color: base,
-            borderRadius: BorderRadius.circular(12.0),
+            borderRadius: BorderRadius.circular(6.0),
             border: Border.all(
-                color: Colors.white.withValues(alpha: 0.5), width: 0.8),
+                color: Colors.white.withValues(alpha: 0.35), width: 0.5),
           ),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.start,

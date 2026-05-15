@@ -128,7 +128,7 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
   Widget _buildSearchBar(bool isDark) => Padding(
         padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
         child: GlassContainer(
-          borderRadius: 14,
+          borderRadius: 50,
           blur: 12,
           opacity: 0.18,
           backgroundColor:
@@ -142,7 +142,7 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
               hintText: _tabCtrl.index == 0 ? '搜索学科或教师...' : '搜索专业...',
               prefixIcon: const Icon(Icons.search, size: 20),
               border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
+                borderRadius: BorderRadius.circular(12),
                 borderSide: BorderSide.none,
               ),
               contentPadding: const EdgeInsets.symmetric(vertical: 10),

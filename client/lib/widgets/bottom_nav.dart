@@ -25,58 +25,74 @@ class BottomNavWrapper extends StatelessWidget {
       return _buildFloatingNav(context, isDark);
     }
 
-    return _buildStandardNav(context, isDark);
+    return _buildBlurNav(context, isDark);
   }
 
-  Widget _buildStandardNav(BuildContext context, bool isDark) {
-    return Container(
-      decoration: BoxDecoration(
-        color:
-            Theme.of(context).scaffoldBackgroundColor.withValues(alpha: 0.95),
-        border: Border(
-          top: BorderSide(
-            color: Theme.of(context).dividerColor.withValues(alpha: 0.1),
-            width: 0.5,
+  // 标准模式：毛玻璃底栏
+  Widget _buildBlurNav(BuildContext context, bool isDark) {
+    return ClipRRect(
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+        child: Container(
+          decoration: BoxDecoration(
+            color: (isDark ? const Color(0xFF1A1A2E) : Colors.white)
+                .withValues(alpha: 0.85),
+            border: Border(
+              top: BorderSide(
+                color: isDark ? Colors.white10 : Colors.black.withValues(alpha: 0.06),
+                width: 0.5,
+              ),
+            ),
+          ),
+          child: SafeArea(
+            top: false,
+            child: NavigationBar(
+            selectedIndex: currentIndex,
+            onDestinationSelected: onTap,
+            backgroundColor: Colors.transparent,
+            elevation: 0,
+            height: 60,
+            animationDuration: const Duration(milliseconds: 300),
+            indicatorShape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+            labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+            destinations: const [
+              NavigationDestination(
+                icon: Icon(Icons.home_outlined, size: 20),
+                selectedIcon: Icon(Icons.home, size: 20),
+                label: '首页',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.store_outlined, size: 20),
+                selectedIcon: Icon(Icons.store, size: 20),
+                label: '集市',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.calendar_today_outlined, size: 20),
+                selectedIcon: Icon(Icons.calendar_today, size: 20),
+                label: '课表',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.leaderboard_outlined, size: 20),
+                selectedIcon: Icon(Icons.leaderboard, size: 20),
+                label: '榜单',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.person_outlined, size: 20),
+                selectedIcon: Icon(Icons.person, size: 20),
+                label: '我',
+              ),
+            ],
+          ),
           ),
         ),
-      ),
-      child: NavigationBar(
-        selectedIndex: currentIndex,
-        onDestinationSelected: onTap,
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        animationDuration: const Duration(milliseconds: 420),
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.home_outlined),
-            selectedIcon: Icon(Icons.home),
-            label: '首页',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.store_outlined),
-            selectedIcon: Icon(Icons.store),
-            label: '集市',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.calendar_today_outlined),
-            selectedIcon: Icon(Icons.calendar_today),
-            label: '课表',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.leaderboard_outlined),
-            selectedIcon: Icon(Icons.leaderboard),
-            label: '榜单',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.person_outlined),
-            selectedIcon: Icon(Icons.person),
-            label: '我',
-          ),
-        ],
       ),
     );
   }
 
+  // 悬浮模式
   Widget _buildFloatingNav(BuildContext context, bool isDark) {
     final primaryColor = Theme.of(context).primaryColor;
 
@@ -90,17 +106,17 @@ class BottomNavWrapper extends StatelessWidget {
         }
       },
       child: Container(
-        margin: const EdgeInsets.all(16),
+        margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(30),
+          borderRadius: BorderRadius.circular(16),
           child: BackdropFilter(
             filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
               decoration: BoxDecoration(
                 color: (isDark ? Colors.grey[900]! : Colors.white)
                     .withValues(alpha: 0.7),
-                borderRadius: BorderRadius.circular(30),
+                borderRadius: BorderRadius.circular(16),
                 border: Border.all(
                   color: isDark ? Colors.white10 : Colors.white30,
                   width: 1,
@@ -110,21 +126,11 @@ class BottomNavWrapper extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
-                  _buildFloatingItem(0, Icons.home, Icons.home_outlined, '首页',
-                      context, primaryColor),
-                  _buildFloatingItem(1, Icons.store, Icons.store_outlined, '集市',
-                      context, primaryColor),
-                  _buildFloatingItem(
-                      2,
-                      Icons.calendar_today,
-                      Icons.calendar_today_outlined,
-                      '课表',
-                      context,
-                      primaryColor),
-                  _buildFloatingItem(3, Icons.leaderboard,
-                      Icons.leaderboard_outlined, '榜单', context, primaryColor),
-                  _buildFloatingItem(4, Icons.person, Icons.person_outlined,
-                      '我', context, primaryColor),
+                  _buildItem(0, Icons.home, Icons.home_outlined, '首页', context, primaryColor),
+                  _buildItem(1, Icons.store, Icons.store_outlined, '集市', context, primaryColor),
+                  _buildItem(2, Icons.calendar_today, Icons.calendar_today_outlined, '课表', context, primaryColor),
+                  _buildItem(3, Icons.leaderboard, Icons.leaderboard_outlined, '榜单', context, primaryColor),
+                  _buildItem(4, Icons.person, Icons.person_outlined, '我', context, primaryColor),
                 ],
               ),
             ),
@@ -134,54 +140,49 @@ class BottomNavWrapper extends StatelessWidget {
     );
   }
 
-  Widget _buildFloatingItem(int index, IconData selectedIcon, IconData icon,
+  Widget _buildItem(int index, IconData selectedIcon, IconData icon,
       String label, BuildContext context, Color primaryColor) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final isSelected = currentIndex == index;
-    final color =
-        isSelected ? primaryColor : (isDark ? Colors.white54 : Colors.grey);
+    final color = isSelected ? primaryColor : (isDark ? Colors.white54 : Colors.grey);
 
     return GestureDetector(
       onTap: () => onTap(index),
       child: SizedBox(
-        width: 60,
+        width: 58,
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 320),
+          duration: const Duration(milliseconds: 280),
           curve: Curves.easeInOutCubicEmphasized,
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5),
           decoration: BoxDecoration(
             color: isSelected
-                ? primaryColor.withValues(alpha: 0.15)
+                ? primaryColor.withValues(alpha: 0.12)
                 : Colors.transparent,
-            borderRadius: BorderRadius.circular(18),
+            borderRadius: BorderRadius.circular(10),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               AnimatedScale(
-                duration: const Duration(milliseconds: 320),
+                duration: const Duration(milliseconds: 280),
                 curve: Curves.easeInOutCubicEmphasized,
-                scale: isSelected ? 1.08 : 1,
+                scale: isSelected ? 1.06 : 1,
                 child: Icon(
                   isSelected ? selectedIcon : icon,
                   color: color,
-                  size: 21,
+                  size: 20,
                 ),
               ),
-              const SizedBox(height: 3),
+              const SizedBox(height: 2),
               AnimatedDefaultTextStyle(
-                duration: const Duration(milliseconds: 320),
+                duration: const Duration(milliseconds: 280),
                 curve: Curves.easeInOutCubicEmphasized,
                 style: TextStyle(
                   color: color,
                   fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                  fontSize: 10.5,
+                  fontSize: 9.5,
                 ),
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
+                child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
               ),
             ],
           ),

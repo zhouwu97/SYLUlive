@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -31,6 +32,7 @@ func (h *PostHandler) GetList(c *gin.Context) {
 	sort := c.DefaultQuery("sort", "time")
 	pageStr := c.DefaultQuery("page", "1")
 	limitStr := c.DefaultQuery("limit", "20")
+	sinceStr := c.Query("since") // 增量拉取：只返回此时间之后更新的帖子
 
 	page, _ := strconv.Atoi(pageStr)
 	limit, _ := strconv.Atoi(limitStr)
@@ -52,6 +54,14 @@ func (h *PostHandler) GetList(c *gin.Context) {
 
 	if postType != "" {
 		query = query.Where("post_type = ?", postType)
+	}
+
+	// 增量查询：只返回 since 时间之后更新的帖子
+	if sinceStr != "" {
+		sinceTime, err := time.Parse(time.RFC3339, sinceStr)
+		if err == nil {
+			query = query.Where("updated_at > ?", sinceTime)
+		}
 	}
 
 	if searchQuery != "" {

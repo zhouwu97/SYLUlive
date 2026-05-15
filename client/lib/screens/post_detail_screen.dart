@@ -15,6 +15,7 @@ import '../utils/app_feedback.dart';
 import '../utils/post_image_cache.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/report_sheet.dart';
+import '../widgets/cached_avatar.dart';
 import 'create_post_screen.dart';
 import 'image_viewer_screen.dart';
 
@@ -540,22 +541,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         borderRadius: BorderRadius.circular(18),
       ),
       child: Row(children: [
-        CircleAvatar(
+        CachedAvatar(
           radius: 24,
-          backgroundColor: isDark ? Colors.white12 : Colors.grey[200],
-          backgroundImage: p.author?.avatar.isNotEmpty == true
-              ? NetworkImage(ApiConstants.fullUrl(p.author!.avatar))
+          imageUrl: p.author?.avatar.isNotEmpty == true
+              ? ApiConstants.fullUrl(p.author!.avatar)
               : null,
-          child: p.author?.avatar.isEmpty != false
-              ? Text(
-                  p.author?.nickname.isNotEmpty == true
-                      ? p.author!.nickname[0].toUpperCase()
-                      : '?',
-                  style: TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 16,
-                      color: isDark ? Colors.white70 : Colors.grey[700]))
-              : null,
+          fallbackText: p.author?.nickname,
         ),
         const SizedBox(width: 14),
         Expanded(
@@ -1048,22 +1039,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     return GestureDetector(
       onTap: () => _openReplyComposer(parentReplyId: r.id, replyToName: r.author?.nickname),
       child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        CircleAvatar(
+        CachedAvatar(
           radius: 16,
-          backgroundColor: isDark ? Colors.white12 : Colors.grey[200],
-          backgroundImage: r.author?.avatar.isNotEmpty == true
-              ? NetworkImage(ApiConstants.fullUrl(r.author!.avatar))
+          imageUrl: r.author?.avatar.isNotEmpty == true
+              ? ApiConstants.fullUrl(r.author!.avatar)
               : null,
-          child: r.author?.avatar.isEmpty != false
-              ? Text(
-                  r.author?.nickname.isNotEmpty == true
-                      ? r.author!.nickname[0].toUpperCase()
-                      : '?',
-                  style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: isDark ? Colors.white60 : Colors.grey[600]))
-              : null,
+          fallbackText: r.author?.nickname,
         ),
         const SizedBox(width: 10),
         Expanded(
@@ -1130,22 +1111,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            CircleAvatar(
+            CachedAvatar(
               radius: 10,
-              backgroundColor: isDark ? Colors.white12 : Colors.grey[200],
-              backgroundImage: r.author?.avatar.isNotEmpty == true
-                  ? NetworkImage(ApiConstants.fullUrl(r.author!.avatar))
+              imageUrl: r.author?.avatar.isNotEmpty == true
+                  ? ApiConstants.fullUrl(r.author!.avatar)
                   : null,
-              child: r.author?.avatar.isEmpty != false
-                  ? Text(
-                      r.author?.nickname.isNotEmpty == true
-                          ? r.author!.nickname[0].toUpperCase()
-                          : '?',
-                      style: TextStyle(
-                          fontSize: 8,
-                          fontWeight: FontWeight.w600,
-                          color: isDark ? Colors.white60 : Colors.grey[600]))
-                  : null,
+              fallbackText: r.author?.nickname,
             ),
             const SizedBox(width: 8),
             Expanded(

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'dart:io';
 import '../models/post.dart';
+import '../services/post_cache_service.dart';
 import '../utils/app_feedback.dart';
 
 /// 每个板块的帖子状态
@@ -12,6 +13,7 @@ class _BoardState {
   int currentPage = 1;
   bool hasMore = true;
   bool hasLoaded = false;
+  bool hasCacheLoaded = false;
 }
 
 /// 创建帖子的返回结果
@@ -24,7 +26,6 @@ class CreatePostResult {
 class DeletePostResult {
   final bool success;
   final String? errorMessage;
-
   const DeletePostResult({required this.success, this.errorMessage});
 }
 
@@ -39,14 +40,17 @@ class PostProvider extends ChangeNotifier {
     _boards[2] = _BoardState();
     _boards[3] = _BoardState();
     _boards[4] = _BoardState();
+    // 启动后异步加载缓存（首页优先）
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadCachedThenRefresh(1, sort: 'time');
+    });
   }
 
   _BoardState _ensureBoard(int boardId) {
     return _boards.putIfAbsent(boardId, _BoardState.new);
   }
 
-  // ---- 当前活跃板块 (兼容旧 getter，水帖 / 首页用) ----
-
+  // ---- 当前活跃板块 ----
   List<Post> get posts => _board.posts;
   bool get isLoading => _board.isLoading;
   String? get error => _board.error;
@@ -55,38 +59,112 @@ class PostProvider extends ChangeNotifier {
 
   _BoardState get _board => _boards[_activeBoardId]!;
 
-  /// 获取指定板块的帖子列表
   List<Post> postsFor(int boardId) => _boards[boardId]?.posts ?? [];
   bool isLoadingFor(int boardId) => _boards[boardId]?.isLoading ?? false;
   bool hasLoadedFor(int boardId) => _boards[boardId]?.hasLoaded ?? false;
 
+  /// SWR 模式：先读缓存秒开 → 后台增量拉取
+  Future<void> _loadCachedThenRefresh(int boardId, {String? type, String sort = 'time'}) async {
+    final board = _ensureBoard(boardId);
+    if (board.hasCacheLoaded) return;
+    board.hasCacheLoaded = true;
+
+    // 第一步：极速上屏 — 读本地缓存
+    try {
+      final cached = await PostCacheService.loadPosts(boardId);
+      if (cached.isNotEmpty) {
+        board.posts = cached;
+        notifyListeners();
+      }
+    } catch (_) {}
+
+    // 第二步 + 第三步：查找锚点，增量请求
+    try {
+      final since = await PostCacheService.getLatestTimestamp(boardId);
+      final params = <String, dynamic>{
+        'board': boardId,
+        'type': type,
+        'sort': sort,
+        'page': 1,
+        'limit': 20,
+      };
+      if (since != null) {
+        params['since'] = since;
+      }
+
+      final response = await _dio.get('/posts', queryParameters: params);
+      if (response.statusCode == 200) {
+        final data = response.data;
+        final newPosts = (data['posts'] as List)
+            .map((e) => Post.fromJson(e))
+            .toList();
+
+        // 第四步：增量合并 — 有新帖插入头部，无新帖保持原样
+        if (newPosts.isNotEmpty) {
+          final existingIds = board.posts.map((p) => p.id).toSet();
+          final uniqueNew = newPosts.where((p) => !existingIds.contains(p.id)).toList();
+          if (uniqueNew.isNotEmpty) {
+            board.posts = [...uniqueNew, ...board.posts];
+          }
+          // 写回缓存
+          await PostCacheService.savePosts(boardId, board.posts);
+        }
+
+        board.hasMore = newPosts.length >= 20;
+        board.currentPage = 2;
+      }
+    } on DioException catch (e) {
+      // 网络失败时，缓存已上屏，静默忽略
+      debugPrint('增量拉取失败(board=$boardId): ${e.message}');
+    } catch (e) {
+      debugPrint('增量拉取异常(board=$boardId): $e');
+    }
+
+    board.hasLoaded = true;
+    if (boardId == _activeBoardId) {
+      _boards[_activeBoardId] = board;
+    }
+    notifyListeners();
+  }
+
+  /// 加载更多（翻页）
   Future<void> loadPosts(
       {int boardId = 1, String? type, String sort = 'time'}) async {
     final board = _ensureBoard(boardId);
-    if (board.isLoading) return;
 
+    // 首次加载走 SWR
+    if (!board.hasCacheLoaded) {
+      await _loadCachedThenRefresh(boardId, type: type, sort: sort);
+      return;
+    }
+
+    if (board.isLoading || !board.hasMore) return;
     board.isLoading = true;
     board.error = null;
     notifyListeners();
 
     try {
-      final response = await _dio.get('/posts', queryParameters: {
+      final params = <String, dynamic>{
         'board': boardId,
         'type': type,
         'sort': sort,
         'page': board.currentPage,
         'limit': 20,
-      });
+      };
 
+      final response = await _dio.get('/posts', queryParameters: params);
       if (response.statusCode == 200) {
         final data = response.data;
-        final List<Post> newPosts =
-            (data['posts'] as List).map((e) => Post.fromJson(e)).toList();
+        final newPosts = (data['posts'] as List)
+            .map((e) => Post.fromJson(e))
+            .toList();
 
         if (board.currentPage == 1) {
           board.posts = newPosts;
         } else {
-          board.posts.addAll(newPosts);
+          final existingIds = board.posts.map((p) => p.id).toSet();
+          final uniqueNew = newPosts.where((p) => !existingIds.contains(p.id)).toList();
+          board.posts.addAll(uniqueNew);
         }
 
         board.hasMore = newPosts.length >= 20 && newPosts.isNotEmpty;
@@ -94,20 +172,15 @@ class PostProvider extends ChangeNotifier {
       }
     } on DioException catch (e) {
       board.error = AppFeedback.dioErrorMessage(e);
-      debugPrint('加载帖子失败: ${board.error}');
     } catch (e) {
       board.error = e.toString();
-      debugPrint('加载帖子失败: ${board.error}');
     }
 
     board.isLoading = false;
     board.hasLoaded = true;
-
-    // 同时更新活跃板块引用
     if (boardId == _activeBoardId) {
       _boards[_activeBoardId] = board;
     }
-
     notifyListeners();
   }
 
@@ -116,7 +189,44 @@ class PostProvider extends ChangeNotifier {
     final board = _ensureBoard(boardId);
     board.currentPage = 1;
     board.hasMore = true;
-    await loadPosts(boardId: boardId, type: type, sort: sort);
+
+    final since = await PostCacheService.getLatestTimestamp(boardId);
+    try {
+      final params = <String, dynamic>{
+        'board': boardId,
+        'type': type,
+        'sort': sort,
+        'page': 1,
+        'limit': 20,
+      };
+      if (since != null) {
+        params['since'] = since;
+      }
+
+      final response = await _dio.get('/posts', queryParameters: params);
+      if (response.statusCode == 200) {
+        final newPosts = (response.data['posts'] as List)
+            .map((e) => Post.fromJson(e))
+            .toList();
+
+        if (newPosts.isNotEmpty) {
+          final existingIds = board.posts.map((p) => p.id).toSet();
+          final uniqueNew = newPosts.where((p) => !existingIds.contains(p.id)).toList();
+          if (uniqueNew.isNotEmpty) {
+            board.posts = [...uniqueNew, ...board.posts];
+            await PostCacheService.savePosts(boardId, board.posts);
+          }
+        }
+        board.hasMore = newPosts.length >= 20;
+      }
+    } on DioException catch (e) {
+      debugPrint('刷新失败(board=$boardId): ${e.message}');
+    }
+
+    if (boardId == _activeBoardId) {
+      _boards[_activeBoardId] = board;
+    }
+    notifyListeners();
   }
 
   Future<List<Post>> searchPosts({
@@ -151,6 +261,8 @@ class PostProvider extends ChangeNotifier {
     return [];
   }
 
+  // ---- 以下为原有方法，保持不变 ----
+
   Future<CreatePostResult> createPost({
     required int boardId,
     required String content,
@@ -180,10 +292,8 @@ class PostProvider extends ChangeNotifier {
           success: false, errorMessage: '发布失败 (${response.statusCode})');
     } on DioException catch (e) {
       final msg = AppFeedback.dioErrorMessage(e, fallback: '发布失败');
-      debugPrint('创建帖子失败: $msg');
       return CreatePostResult(success: false, errorMessage: msg);
     } catch (e) {
-      debugPrint('创建帖子失败: $e');
       return CreatePostResult(success: false, errorMessage: '创建帖子失败: $e');
     }
   }
@@ -222,21 +332,16 @@ class PostProvider extends ChangeNotifier {
       );
     } on DioException catch (e) {
       final msg = AppFeedback.dioErrorMessage(e, fallback: '更新失败');
-      debugPrint('更新帖子失败: $msg');
       return CreatePostResult(success: false, errorMessage: msg);
     } catch (e) {
-      debugPrint('更新帖子失败: $e');
       return CreatePostResult(success: false, errorMessage: '更新帖子失败: $e');
     }
   }
 
-  /// 上传单张图片，返回 file_id，失败返回 null
   Future<int?> uploadImage(String filePath) async {
     try {
-      // 处理 Android content:// URI
       String uploadPath = filePath;
       if (filePath.startsWith('content://')) {
-        // 复制到临时文件
         final tempDir = Directory.systemTemp;
         final tempFile = File(
             '${tempDir.path}/upload_${DateTime.now().millisecondsSinceEpoch}.jpg');
@@ -247,11 +352,8 @@ class PostProvider extends ChangeNotifier {
         'file': await MultipartFile.fromFile(uploadPath),
       });
       final response = await _dio.post('/upload', data: formData);
-      debugPrint('上传响应: status=${response.statusCode}, data=${response.data}');
       if (response.statusCode == 200 && response.data != null) {
-        final fileId = response.data['file_id'];
-        debugPrint('上传成功: file_id=$fileId');
-        return fileId as int?;
+        return response.data['file_id'] as int?;
       }
     } catch (e) {
       debugPrint('上传图片失败: $e');
@@ -273,11 +375,9 @@ class PostProvider extends ChangeNotifier {
           success: false, errorMessage: '删除失败 (${response.statusCode})');
     } on DioException catch (e) {
       final msg = AppFeedback.dioErrorMessage(e, fallback: '删除帖子失败');
-      debugPrint('删除帖子失败: $msg');
       return DeletePostResult(success: false, errorMessage: msg);
     } catch (e) {
       final msg = '删除帖子失败: $e';
-      debugPrint(msg);
       return DeletePostResult(success: false, errorMessage: msg);
     }
   }
@@ -297,11 +397,9 @@ class PostProvider extends ChangeNotifier {
           success: false, errorMessage: '删除失败 (${response.statusCode})');
     } on DioException catch (e) {
       final msg = AppFeedback.dioErrorMessage(e, fallback: '删除评论失败');
-      debugPrint('删除评论失败: $msg');
       return DeletePostResult(success: false, errorMessage: msg);
     } catch (e) {
       final msg = '删除评论失败: $e';
-      debugPrint(msg);
       return DeletePostResult(success: false, errorMessage: msg);
     }
   }

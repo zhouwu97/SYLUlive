@@ -8,7 +8,6 @@ import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
@@ -37,7 +36,6 @@ class _ProfileScreenState extends State<ProfileScreen>
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
   int _unreadReplyCount = 0;
-  bool _swipeFeedEnabled = true;
 
   @override
   void initState() {
@@ -53,7 +51,6 @@ class _ProfileScreenState extends State<ProfileScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<AuthProvider>().refreshUser();
       _loadUnreadCount();
-      _loadSwipePreference();
     });
   }
 
@@ -61,21 +58,6 @@ class _ProfileScreenState extends State<ProfileScreen>
   void dispose() {
     _animationController.dispose();
     super.dispose();
-  }
-
-  Future<void> _loadSwipePreference() async {
-    final prefs = await SharedPreferences.getInstance();
-    if (mounted) {
-      setState(() {
-        _swipeFeedEnabled = prefs.getBool('swipe_feed_enabled') ?? true;
-      });
-    }
-  }
-
-  Future<void> _toggleSwipeFeed(bool value) async {
-    setState(() => _swipeFeedEnabled = value);
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('swipe_feed_enabled', value);
   }
 
   Future<void> _loadUnreadCount() async {
@@ -463,8 +445,8 @@ class _ProfileScreenState extends State<ProfileScreen>
     required VoidCallback onTap,
   }) {
     return GlassContainer(
-      padding: const EdgeInsets.all(16),
-      borderRadius: 16,
+      padding: const EdgeInsets.all(12),
+      borderRadius: 12,
       blur: 10,
       opacity: 0.15,
       gradientColors: isDark
@@ -474,14 +456,14 @@ class _ProfileScreenState extends State<ProfileScreen>
       child: Row(
         children: [
           Container(
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              color: iconColor.withOpacity(0.2),
-              borderRadius: BorderRadius.circular(12),
+              color: iconColor.withValues(alpha: 0.2),
+              borderRadius: BorderRadius.circular(10),
             ),
-            child: Icon(icon, color: iconColor, size: 28),
+            child: Icon(icon, color: iconColor, size: 22),
           ),
-          const SizedBox(width: 16),
+          const SizedBox(width: 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -489,12 +471,12 @@ class _ProfileScreenState extends State<ProfileScreen>
                 Text(
                   title,
                   style: const TextStyle(
-                      fontSize: 18, fontWeight: FontWeight.w600),
+                      fontSize: 16, fontWeight: FontWeight.w600),
                 ),
                 Text(
                   subtitle,
                   style: TextStyle(
-                      fontSize: 13,
+                      fontSize: 12,
                       color: isDark ? Colors.white60 : Colors.grey[600]),
                 ),
               ],
@@ -561,7 +543,7 @@ class _ProfileScreenState extends State<ProfileScreen>
         children: [
           // 标题
           Padding(
-            padding: const EdgeInsets.only(left: 4, bottom: 8),
+            padding: const EdgeInsets.only(left: 4, bottom: 10),
             child: Text(
               '我的内容',
               style: TextStyle(
@@ -571,67 +553,54 @@ class _ProfileScreenState extends State<ProfileScreen>
               ),
             ),
           ),
-          _buildSettingsCard(
-            isDark,
-            children: [
-              _buildSettingsTile(
-                icon: Icons.article_outlined,
-                iconColor: const Color(0xFF6366F1),
-                title: '我的内容',
-                subtitle: '管理发布的帖子与集市物品',
-                isDark: isDark,
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const MyContentScreen()),
-                  );
-                },
-              ),
-              Divider(
-                  height: 1,
-                  indent: 68,
-                  color: isDark ? Colors.white10 : Colors.grey[200]),
-              _buildSettingsTile(
-                icon: Icons.notifications_active_outlined,
-                iconColor: Colors.orange,
-                title: '收到的回复',
-                subtitle: _unreadReplyCount > 0 ? '$_unreadReplyCount条新回复' : null,
-                trailing: _unreadReplyCount > 0
-                    ? Container(
-                        width: 10,
-                        height: 10,
-                        margin: const EdgeInsets.only(right: 8),
-                        decoration: const BoxDecoration(
-                          color: Colors.red,
-                          shape: BoxShape.circle,
-                        ),
-                      )
-                    : null,
-                isDark: isDark,
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const UserRepliesScreen()),
-                  ).then((_) {
-                    _loadUnreadCount();
-                  });
-                },
-              ),
-              Divider(
-                  height: 1,
-                  indent: 68,
-                  color: isDark ? Colors.white10 : Colors.grey[200]),
-              _buildSettingsTile(
-                icon: Icons.bug_report_outlined,
-                iconColor: Colors.green,
-                title: '功能建议 (Bug提交)',
-                subtitle: '提交的建议会发送至开发者邮箱',
-                isDark: isDark,
-                onTap: () => _showFeedbackDialog(context),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
+          _buildSettingsRow(child: _buildSettingsTile(
+            icon: Icons.article_outlined,
+            iconColor: const Color(0xFF6366F1),
+            title: '我的内容',
+            subtitle: '管理发布的帖子与集市物品',
+            isDark: isDark,
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const MyContentScreen()),
+              );
+            },
+          )),
+          _buildSettingsRow(child: _buildSettingsTile(
+            icon: Icons.notifications_active_outlined,
+            iconColor: Colors.orange,
+            title: '收到的回复',
+            subtitle: _unreadReplyCount > 0 ? '$_unreadReplyCount条新回复' : null,
+            trailing: _unreadReplyCount > 0
+                ? Container(
+                    width: 8,
+                    height: 8,
+                    margin: const EdgeInsets.only(right: 8),
+                    decoration: const BoxDecoration(
+                      color: Colors.red,
+                      shape: BoxShape.circle,
+                    ),
+                  )
+                : null,
+            isDark: isDark,
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const UserRepliesScreen()),
+              ).then((_) {
+                _loadUnreadCount();
+              });
+            },
+          )),
+          _buildSettingsRow(child: _buildSettingsTile(
+            icon: Icons.bug_report_outlined,
+            iconColor: Colors.green,
+            title: '功能建议 (Bug提交)',
+            subtitle: '提交的建议会发送至开发者邮箱',
+            isDark: isDark,
+            onTap: () => _showFeedbackDialog(context),
+          )),
+          const SizedBox(height: 8),
         ],
       ),
     );
@@ -647,7 +616,7 @@ class _ProfileScreenState extends State<ProfileScreen>
         children: [
           // 标题
           Padding(
-            padding: const EdgeInsets.only(left: 4, bottom: 8),
+            padding: const EdgeInsets.only(left: 4, bottom: 10),
             child: Text(
               '教务',
               style: TextStyle(
@@ -657,43 +626,32 @@ class _ProfileScreenState extends State<ProfileScreen>
               ),
             ),
           ),
-          _buildSettingsCard(
-            isDark,
-            children: [
-              // 绑定状态
-              _buildSettingsTile(
-                icon: Icons.school,
-                iconColor: eduProvider.isBound ? Colors.green : Colors.grey,
-                title: '教务',
-                subtitle: eduProvider.isBound
-                    ? '${eduProvider.studentId} | ${eduProvider.college}'
-                    : '绑定后可查询课表、成绩',
-                isDark: isDark,
-                onTap: () => Navigator.push(context,
-                    MaterialPageRoute(builder: (_) => const EduScreen())),
-              ),
-              Divider(
-                  height: 1,
-                  indent: 68,
-                  color: isDark ? Colors.white10 : Colors.grey[200]),
-              // 题库入口
-              _buildSettingsTile(
-                icon: Icons.auto_stories,
-                iconColor: const Color(0xFF667EEA),
-                title: '导入融智云考题库',
-                subtitle: '提取练习题，导出 Markdown',
-                isDark: isDark,
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                        builder: (_) => const ExamExtractScreen()),
-                  );
-                },
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
+          _buildSettingsRow(child: _buildSettingsTile(
+            icon: Icons.school,
+            iconColor: eduProvider.isBound ? Colors.green : Colors.grey,
+            title: '教务',
+            subtitle: eduProvider.isBound
+                ? '${eduProvider.studentId} | ${eduProvider.college}'
+                : '绑定后可查询课表、成绩',
+            isDark: isDark,
+            onTap: () => Navigator.push(context,
+                MaterialPageRoute(builder: (_) => const EduScreen())),
+          )),
+          _buildSettingsRow(child: _buildSettingsTile(
+            icon: Icons.auto_stories,
+            iconColor: const Color(0xFF667EEA),
+            title: '导入融智云考题库',
+            subtitle: '提取练习题，导出 Markdown',
+            isDark: isDark,
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => const ExamExtractScreen()),
+              );
+            },
+          )),
+          const SizedBox(height: 8),
         ],
       ),
     );
@@ -704,165 +662,125 @@ class _ProfileScreenState extends State<ProfileScreen>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // 背景设置
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: _buildSettingsCard(
-            isDark,
-            children: [
-              _buildSettingsTile(
-                icon: Icons.wallpaper,
-                iconColor: Colors.purple,
-                title: '自定义背景',
-                isDark: isDark,
-                onTap: () => _showBackgroundPicker(context, themeProvider),
-              ),
-              Divider(
-                  height: 1,
-                  indent: 68,
-                  color: isDark ? Colors.white10 : Colors.grey[200]),
-              _buildSettingsTile(
-                icon: Icons.opacity,
-                iconColor: Colors.teal,
-                title: '组件透明度',
-                trailing: SizedBox(
-                  width: 150,
-                  child: Slider(
-                    value: themeProvider.componentOpacity,
-                    min: 0.0,
-                    max: 1.0,
-                    onChanged: (v) => themeProvider.setComponentOpacity(v),
-                    activeColor: Theme.of(context).primaryColor,
-                  ),
-                ),
-                isDark: isDark,
-              ),
-              Divider(
-                  height: 1,
-                  indent: 68,
-                  color: isDark ? Colors.white10 : Colors.grey[200]),
-              _buildSettingsTile(
-                icon: Icons.restore,
-                iconColor: Colors.orange,
-                title: '默认壁纸',
-                subtitle: '恢复为系统默认背景',
-                isDark: isDark,
-                onTap: () => _showRestoreDefaultDialog(context, themeProvider),
-              ),
-            ],
+        // 背景设置 — 独立卡片
+        _buildSettingsRow(child: _buildSettingsTile(
+          icon: Icons.wallpaper,
+          iconColor: Colors.purple,
+          title: '自定义背景',
+          isDark: isDark,
+          onTap: () => _showBackgroundPicker(context, themeProvider),
+        )),
+        _buildSettingsRow(child: _buildSettingsTile(
+          icon: Icons.opacity,
+          iconColor: Colors.teal,
+          title: '组件透明度',
+          trailing: SizedBox(
+            width: 120,
+            height: 32,
+            child: Slider(
+              value: themeProvider.componentOpacity,
+              min: 0.0,
+              max: 1.0,
+              onChanged: (v) => themeProvider.setComponentOpacity(v),
+              activeColor: Theme.of(context).primaryColor,
+            ),
           ),
-        ),
+          isDark: isDark,
+        )),
+        _buildSettingsRow(child: _buildSettingsTile(
+          icon: Icons.restore,
+          iconColor: Colors.orange,
+          title: '默认壁纸',
+          subtitle: '恢复为系统默认背景',
+          isDark: isDark,
+          onTap: () => _showRestoreDefaultDialog(context, themeProvider),
+        )),
 
-        const SizedBox(height: 12),
+        const SizedBox(height: 8),
 
-        // 视觉效果
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: _buildSettingsCard(
-            isDark,
-            children: [
-              _buildSettingsTile(
-                icon: Icons.blur_on,
-                iconColor: Colors.indigo,
-                title: '液态玻璃效果',
-                trailing: Switch(
-                  value: themeProvider.liquidGlass,
-                  onChanged: (v) =>
-                      _showLiquidGlassWarningDialog(context, themeProvider, v),
-                  activeColor: Theme.of(context).primaryColor,
-                ),
-                isDark: isDark,
-              ),
-              Divider(
-                  height: 1,
-                  indent: 68,
-                  color: isDark ? Colors.white10 : Colors.grey[200]),
-              _buildSettingsTile(
-                icon: Icons.navigation,
-                iconColor: Colors.orange,
-                title: '悬浮底栏',
-                trailing: Switch(
-                  value: themeProvider.floatingNavBar,
-                  onChanged: (v) => themeProvider.setFloatingNavBar(v),
-                  activeColor: Theme.of(context).primaryColor,
-                ),
-                isDark: isDark,
-              ),
-              Divider(
-                  height: 1,
-                  indent: 68,
-                  color: isDark ? Colors.white10 : Colors.grey[200]),
-              _buildSettingsTile(
-                icon: Icons.swipe,
-                iconColor: Colors.blue,
-                title: '左右滑动切版块',
-                subtitle: '首页左滑切换到热门/最新，关闭后仅手动点击切换',
-                trailing: Switch(
-                  value: _swipeFeedEnabled,
-                  onChanged: _toggleSwipeFeed,
-                  activeColor: Theme.of(context).primaryColor,
-                ),
-                isDark: isDark,
-              ),
-              Divider(
-                  height: 1,
-                  indent: 68,
-                  color: isDark ? Colors.white10 : Colors.grey[200]),
-              _buildSettingsTile(
-                icon: Icons.dark_mode,
-                iconColor: isDark ? Colors.indigo : Colors.indigo,
-                title: '夜间模式',
-                trailing: Switch(
-                  value: themeProvider.isDarkMode,
-                  onChanged: (v) => themeProvider.setDarkMode(v),
-                  activeColor: Theme.of(context).primaryColor,
-                ),
-                isDark: isDark,
-              ),
-            ],
+        // 视觉效果 — 独立卡片
+        _buildSettingsRow(child: _buildSettingsTile(
+          icon: Icons.blur_on,
+          iconColor: Colors.indigo,
+          title: '液态玻璃效果',
+          trailing: Transform.scale(
+            scale: 0.8,
+            child: Switch(
+              value: themeProvider.liquidGlass,
+              onChanged: (v) => _showLiquidGlassWarningDialog(context, themeProvider, v),
+              activeColor: Theme.of(context).primaryColor,
+            ),
           ),
-        ),
-
-        const SizedBox(height: 12),
-
-        // 账号
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: _buildSettingsCard(
-            isDark,
-            children: [
-              _buildSettingsTile(
-                icon: Icons.person,
-                iconColor: Colors.blue,
-                title: '编辑资料',
-                isDark: isDark,
-                onTap: () => _showEditProfileDialog(context, authProvider),
-              ),
-              Divider(
-                  height: 1,
-                  indent: 68,
-                  color: isDark ? Colors.white10 : Colors.grey[200]),
-              _buildSettingsTile(
-                icon: Icons.lock,
-                iconColor: Colors.orange,
-                title: '修改密码',
-                isDark: isDark,
-                onTap: () => _showChangePasswordDialog(context, authProvider),
-              ),
-              Divider(
-                  height: 1,
-                  indent: 68,
-                  color: isDark ? Colors.white10 : Colors.grey[200]),
-              _buildSettingsTile(
-                icon: Icons.info,
-                iconColor: Colors.blue,
-                title: '关于',
-                isDark: isDark,
-                onTap: () => _showAboutDialog(context),
-              ),
-            ],
+          isDark: isDark,
+        )),
+        _buildSettingsRow(child: _buildSettingsTile(
+          icon: Icons.navigation,
+          iconColor: Colors.orange,
+          title: '悬浮底栏',
+          trailing: Transform.scale(
+            scale: 0.8,
+            child: Switch(
+              value: themeProvider.floatingNavBar,
+              onChanged: (v) => themeProvider.setFloatingNavBar(v),
+              activeColor: Theme.of(context).primaryColor,
+            ),
           ),
-        ),
+          isDark: isDark,
+        )),
+        _buildSettingsRow(child: _buildSettingsTile(
+          icon: Icons.swipe,
+          iconColor: Colors.blue,
+          title: '预测性返回手势',
+          subtitle: 'Android 侧滑返回时预览上一页，关闭后仅顶部返回按钮可用',
+          trailing: Transform.scale(
+            scale: 0.8,
+            child: Switch(
+              value: themeProvider.predictiveBack,
+              onChanged: (v) => themeProvider.setPredictiveBack(v),
+              activeColor: Theme.of(context).primaryColor,
+            ),
+          ),
+          isDark: isDark,
+        )),
+        _buildSettingsRow(child: _buildSettingsTile(
+          icon: Icons.dark_mode,
+          iconColor: isDark ? Colors.indigo : Colors.indigo,
+          title: '夜间模式',
+          trailing: Transform.scale(
+            scale: 0.8,
+            child: Switch(
+              value: themeProvider.isDarkMode,
+              onChanged: (v) => themeProvider.setDarkMode(v),
+              activeColor: Theme.of(context).primaryColor,
+            ),
+          ),
+          isDark: isDark,
+        )),
+
+        const SizedBox(height: 8),
+
+        // 账号 — 独立卡片
+        _buildSettingsRow(child: _buildSettingsTile(
+          icon: Icons.person,
+          iconColor: Colors.blue,
+          title: '编辑资料',
+          isDark: isDark,
+          onTap: () => _showEditProfileDialog(context, authProvider),
+        )),
+        _buildSettingsRow(child: _buildSettingsTile(
+          icon: Icons.lock,
+          iconColor: Colors.orange,
+          title: '修改密码',
+          isDark: isDark,
+          onTap: () => _showChangePasswordDialog(context, authProvider),
+        )),
+        _buildSettingsRow(child: _buildSettingsTile(
+          icon: Icons.info,
+          iconColor: Colors.blue,
+          title: '关于',
+          isDark: isDark,
+          onTap: () => _showAboutDialog(context),
+        )),
 
         // 退出登录
         if (authProvider.isLoggedIn) ...[
@@ -1023,10 +941,24 @@ class _ProfileScreenState extends State<ProfileScreen>
   Widget _buildSettingsCard(bool isDark, {required List<Widget> children}) {
     return GlassContainer(
       padding: EdgeInsets.zero,
-      borderRadius: 16,
-      blur: 10,
+      borderRadius: 12,
+      blur: 12,
       opacity: 0.15,
       child: Column(children: children),
+    );
+  }
+
+  /// 独立的设置卡片行（每个设置项单独一张毛玻璃卡片）
+  Widget _buildSettingsRow({required Widget child}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
+      child: GlassContainer(
+        padding: EdgeInsets.zero,
+        borderRadius: 12,
+        blur: 12,
+        opacity: 0.15,
+        child: child,
+      ),
     );
   }
 
@@ -1043,38 +975,47 @@ class _ProfileScreenState extends State<ProfileScreen>
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           child: Row(
             children: [
               Container(
-                padding: const EdgeInsets.all(10),
+                padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: iconColor.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(10),
+                  color: iconColor.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
                 ),
-                child: Icon(icon, color: iconColor, size: 22),
+                child: Icon(icon, color: iconColor, size: 20),
               ),
-              const SizedBox(width: 16),
+              const SizedBox(width: 14),
               Expanded(
-                child: Text(
-                  title,
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w500,
-                    color: isDark ? Colors.white : Colors.black87,
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                        color: isDark ? Colors.white : Colors.black87,
+                      ),
+                    ),
+                    if (subtitle != null) ...[
+                      const SizedBox(height: 2),
+                      Text(subtitle,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              color: isDark ? Colors.white54 : Colors.grey[600],
+                              fontSize: 11)),
+                    ],
+                  ],
                 ),
               ),
-              if (subtitle != null)
-                Text(subtitle,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                        color: isDark ? Colors.white60 : Colors.grey[600],
-                        fontSize: 13)),
               if (trailing != null) trailing,
               if (trailing == null && onTap != null)
-                Icon(Icons.chevron_right,
+                Icon(Icons.chevron_right, size: 18,
                     color: isDark ? Colors.white30 : Colors.grey[400]),
             ],
           ),

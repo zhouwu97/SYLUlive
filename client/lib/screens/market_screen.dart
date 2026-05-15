@@ -223,7 +223,7 @@ class _MarketScreenState extends State<MarketScreen> {
                   physics: const AlwaysScrollableScrollPhysics(
                     parent: BouncingScrollPhysics(),
                   ),
-                  padding: EdgeInsets.fromLTRB(12, topInset, 12, 100),
+                  padding: EdgeInsets.fromLTRB(12, topInset, 12, 80),
                   children: [
                     _buildSearchBar(isDark),
                     if (widget.onlyPostTypes == null) ...[
@@ -301,8 +301,8 @@ class _MarketScreenState extends State<MarketScreen> {
 
   Widget _buildSearchBar(bool isDark) {
     return GlassContainer(
-      padding: const EdgeInsets.symmetric(horizontal: 14),
-      borderRadius: 16,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      borderRadius: 12,
       blur: 12,
       opacity: 0.18,
       backgroundColor:
@@ -315,14 +315,18 @@ class _MarketScreenState extends State<MarketScreen> {
         onChanged: _onSearchChanged,
         onSubmitted: _runSearch,
         textInputAction: TextInputAction.search,
+        style: const TextStyle(fontSize: 14),
         decoration: InputDecoration(
           border: InputBorder.none,
+          isDense: true,
+          contentPadding: const EdgeInsets.symmetric(vertical: 10),
           hintText: '搜索商品名称，支持模糊匹配',
+          hintStyle: const TextStyle(fontSize: 14),
           prefixIcon: const Icon(Icons.search, size: 20),
           suffixIcon: _searchController.text.isEmpty
               ? null
               : IconButton(
-                  icon: const Icon(Icons.close, size: 18),
+                  icon: const Icon(Icons.close, size: 16),
                   onPressed: () {
                     _searchController.clear();
                     _runSearch('');
@@ -337,15 +341,15 @@ class _MarketScreenState extends State<MarketScreen> {
   Widget _buildExposureEntry(bool isDark, List<Post> exposurePosts) {
     final latest = exposurePosts.isNotEmpty ? exposurePosts.first : null;
     return InkWell(
-      borderRadius: BorderRadius.circular(18),
+      borderRadius: BorderRadius.circular(12),
       onTap: () => Navigator.push(
         context,
         MaterialPageRoute(builder: (_) => const MarketExposureScreen()),
       ),
       child: GlassContainer(
-        padding: const EdgeInsets.all(18),
-        borderRadius: 18,
-        blur: 12,
+        padding: const EdgeInsets.all(14),
+      borderRadius: 50,
+      blur: 12,
         opacity: 0.18,
         backgroundColor:
             isDark ? const Color(0xA31C1620) : const Color(0xD9FFF4F2),
@@ -353,16 +357,16 @@ class _MarketScreenState extends State<MarketScreen> {
         child: Row(
           children: [
             Container(
-              width: 44,
-              height: 44,
+              width: 38,
+              height: 38,
               decoration: BoxDecoration(
                 color: const Color(0xFFFF6B6B).withValues(alpha: 0.14),
-                borderRadius: BorderRadius.circular(14),
+                borderRadius: BorderRadius.circular(10),
               ),
               child: const Icon(Icons.gpp_maybe_outlined,
-                  color: Color(0xFFFF6B6B)),
+                  color: Color(0xFFFF6B6B), size: 20),
             ),
-            const SizedBox(width: 14),
+            const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -433,8 +437,8 @@ class _MarketScreenState extends State<MarketScreen> {
         Text(
           title,
           style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w700,
+          fontSize: 16,
+          fontWeight: FontWeight.w700,
             color: isDark ? Colors.white : Colors.black87,
           ),
         ),
@@ -473,8 +477,8 @@ class _MarketScreenState extends State<MarketScreen> {
 
   Widget _buildEmptyState(bool isDark, String title, String subtitle) {
     return GlassContainer(
-      padding: const EdgeInsets.all(28),
-      borderRadius: 18,
+      padding: const EdgeInsets.all(20),
+      borderRadius: 12,
       blur: 12,
       opacity: 0.18,
       backgroundColor:

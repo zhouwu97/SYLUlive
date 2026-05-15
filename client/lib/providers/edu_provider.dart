@@ -248,28 +248,31 @@ class EduProvider extends ChangeNotifier {
 
       if (response.statusCode == 200) {
         final data = response.data;
-        // Go 返回的是课程列表
-        if (data['courses'] != null) {
+        if (data['courses'] != null && (data['courses'] as List).isNotEmpty) {
           return OperationResult.ok(
               List<Map<String, dynamic>>.from(data['courses']));
         }
-        if (data['error'] != null) {
-          final errorMsg = data['error'].toString();
-          if (errorMsg.contains('未登录') || errorMsg.contains('过期') || errorMsg.contains('重新登录') || errorMsg.contains('会话')) {
+        // 错误信息可能在 error / message / detail 字段
+        final errorMsg = (data['error'] ?? data['message'] ?? data['detail'] ?? '').toString();
+        if (errorMsg.isNotEmpty) {
+          if (errorMsg.contains('未登录') || errorMsg.contains('过期') || errorMsg.contains('重新登录') || errorMsg.contains('会话') || errorMsg.contains('cookie') || errorMsg.contains('暂未开放') || errorMsg.contains('失效') || errorMsg.contains('Cookie')) {
             final pwd = await _loadEduPassword(_studentId);
             if (pwd != null && pwd.isNotEmpty) {
-              debugPrint('后台尝试静默恢复教务登录...');
+              debugPrint('后台尝试静默恢复教务登录(课表)...');
               final rebindSuccess = await bind(_studentId, pwd, isSilent: true);
               if (rebindSuccess) {
-                // 重试一次
                 final retryResp = await _authDio.post('/edu/courses', data: {'year': year, 'semester': semester});
-                if (retryResp.statusCode == 200 && retryResp.data['courses'] != null) {
+                if (retryResp.statusCode == 200 && retryResp.data['courses'] != null && (retryResp.data['courses'] as List).isNotEmpty) {
                   return OperationResult.ok(List<Map<String, dynamic>>.from(retryResp.data['courses']));
                 }
               }
             }
           }
           return OperationResult.fail(errorMsg);
+        }
+        // success=false 但 courses 为空的静默情况（如真正的暂未开放）
+        if (data['success'] == false) {
+          return OperationResult.fail(data['message'] ?? '获取课表失败');
         }
       }
       return OperationResult.fail('获取课表失败');
@@ -305,10 +308,10 @@ class EduProvider extends ChangeNotifier {
         }
         if (data['error'] != null) {
           final errorMsg = data['error'].toString();
-          if (errorMsg.contains('未登录') || errorMsg.contains('过期') || errorMsg.contains('重新登录') || errorMsg.contains('会话')) {
+          if (errorMsg.contains('未登录') || errorMsg.contains('过期') || errorMsg.contains('重新登录') || errorMsg.contains('会话') || errorMsg.contains('cookie') || errorMsg.contains('暂未开放') || errorMsg.contains('失效')) {
             final pwd = await _loadEduPassword(_studentId);
             if (pwd != null && pwd.isNotEmpty) {
-              debugPrint('后台尝试静默恢复教务登录...');
+              debugPrint('后台尝试静默恢复教务登录(成绩)...');
               final rebindSuccess = await bind(_studentId, pwd, isSilent: true);
               if (rebindSuccess) {
                 // 重试一次

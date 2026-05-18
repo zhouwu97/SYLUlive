@@ -526,6 +526,16 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  /// 更新极光设备 RegistrationID 到后端
+  Future<void> updateDeviceToken(String registrationId) async {
+    if (!isLoggedIn || registrationId.isEmpty) return;
+    try {
+      await _dio.put('/user/device_token', data: {'device_token': registrationId});
+    } catch (e) {
+      debugPrint('更新设备Token失败: $e');
+    }
+  }
+
   Future<AuthResult> registerGraduate(
     String qq,
     String code,

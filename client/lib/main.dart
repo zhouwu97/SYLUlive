@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:jpush_flutter/jpush_flutter.dart';
 import 'package:provider/provider.dart';
 import 'providers/auth_provider.dart';
 import 'providers/theme_provider.dart';
@@ -27,13 +28,37 @@ Future<void> main() async {
   runApp(const MyApp());
 }
 
+/// 极光推送初始化
+var jpush = JPush.newJPush();
+
+Future<void> setupJPush() async {
+  jpush.setup(
+    appKey: 'fbbd87f741e919f39519afe6',
+    channel: 'developer-default',
+    production: false,
+    debug: true,
+  );
+  jpush.addEventHandler(
+    onReceiveNotification: (Map<String, dynamic> message) async {
+      debugPrint('🔔 收到通知: $message');
+    },
+    onOpenNotification: (Map<String, dynamic> message) async {
+      debugPrint('👆 用户点击通知: $message');
+    },
+  );
+  final rid = await jpush.getRegistrationID();
+  debugPrint('🔥 JPush RegistrationID: $rid');
+  // 获取 auth provider 并更新 token
+  // 注意：需要在 AuthWrapper 完成初始化后调用
+}
+
 Dio? _sharedDio;
 
 Dio getSharedDio() {
   if (_sharedDio == null) {
     final dio = Dio(BaseOptions(
       baseUrl:
-          kDebugMode ? ApiConstants.baseUrl : 'http://156.233.229.232:8080/api',
+          kDebugMode ? ApiConstants.baseUrl : 'https://sylu.zhouwu.ccwu.cc/api',
       connectTimeout: ApiConstants.connectTimeout,
       receiveTimeout: ApiConstants.receiveTimeout,
     ));

@@ -28,6 +28,7 @@ type User struct {
 	Exp          int       `gorm:"default:0" json:"exp"`                           // 用户经验值（签到等获得）
 	ReportCount  int       `gorm:"default:0;index" json:"report_count"`            // 90天内举报数
 	QQ           string    `gorm:"size:20" json:"qq"`                              // QQ号
+	DeviceToken  string    `gorm:"size:255" json:"device_token"`                   // 极光 RegistrationID
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
 

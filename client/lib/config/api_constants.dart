@@ -1,11 +1,12 @@
 class ApiConstants {
   // Go 服务器（帖子、用户、消息等）
-  static const String baseUrl = 'http://156.233.229.232:8080/api';
+  // 统一走 HTTPS 域名，避免浏览器混合内容阻止
+  static const String baseUrl = 'https://sylu.zhouwu.ccwu.cc/api';
   // Python 教务服务（绑定、课表、成绩）
   static const String eduServiceUrl = 'http://101.42.27.44:8000';
 
   /// 将服务端返回的相对路径转为完整 URL
-  /// 如 /uploads/ab/cd.jpg → http://156.233.229.232:8080/uploads/ab/cd.jpg
+  /// 如 /uploads/ab/cd.jpg → https://sylu.zhouwu.ccwu.cc/uploads/ab/cd.jpg
   static String fullUrl(String path) {
     if (path.isEmpty) return '';
     if (path.startsWith('http://') || path.startsWith('https://')) return path;

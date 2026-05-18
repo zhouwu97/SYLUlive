@@ -14,12 +14,18 @@ import (
 
 // ReplyHandler 回复处理器
 type ReplyHandler struct {
-	db *gorm.DB
+	db              *gorm.DB
+	jpushAppKey      string
+	jpushMasterSecret string
 }
 
 // NewReplyHandler 创建回复处理器
-func NewReplyHandler(db *gorm.DB) *ReplyHandler {
-	return &ReplyHandler{db: db}
+func NewReplyHandler(db *gorm.DB, jpushAppKey, jpushMasterSecret string) *ReplyHandler {
+	return &ReplyHandler{
+		db:              db,
+		jpushAppKey:     jpushAppKey,
+		jpushMasterSecret: jpushMasterSecret,
+	}
 }
 
 // GetList 获取回复列表
@@ -107,7 +113,7 @@ func (h *ReplyHandler) Create(c *gin.Context) {
 		}
 	}
 
-	// 发送通知
+	// 发送通知（数据库 + 极光推送）
 	contentPreview := input.Content
 	if len(contentPreview) > 80 {
 		contentPreview = contentPreview[:80] + "..."
@@ -117,10 +123,12 @@ func (h *ReplyHandler) Create(c *gin.Context) {
 		var parentReply models.Reply
 		if err := h.db.First(&parentReply, *input.ParentReplyID).Error; err == nil {
 			CreateReplyNotification(h.db, parentReply.AuthorID, userID.(uint), reply.ID, uint(postID), contentPreview)
+			SendJPushNotification(h.jpushAppKey, h.jpushMasterSecret, h.db, parentReply.AuthorID, userID.(uint), reply.ID, uint(postID), contentPreview)
 		}
 	} else {
 		// 直接回复帖子 → 通知帖子作者
 		CreateReplyNotification(h.db, post.AuthorID, userID.(uint), reply.ID, uint(postID), contentPreview)
+		SendJPushNotification(h.jpushAppKey, h.jpushMasterSecret, h.db, post.AuthorID, userID.(uint), reply.ID, uint(postID), contentPreview)
 	}
 
 	h.db.Preload("Author").Preload("Images").Preload("Images.File").First(&reply, reply.ID)

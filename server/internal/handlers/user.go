@@ -129,3 +129,21 @@ func (h *UserHandler) GetUserInfo(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, user)
 }
+
+// UpdateDeviceTokenInput 更新设备Token输入
+type UpdateDeviceTokenInput struct {
+	DeviceToken string `json:"device_token" binding:"required"`
+}
+
+// UpdateDeviceToken 更新极光设备Token（用户登录时前端调用）
+func (h *UserHandler) UpdateDeviceToken(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	var input UpdateDeviceTokenInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	h.db.Model(&models.User{}).Where("id = ?", userID).Update("device_token", input.DeviceToken)
+	c.JSON(http.StatusOK, gin.H{"message": "设备Token更新成功"})
+}

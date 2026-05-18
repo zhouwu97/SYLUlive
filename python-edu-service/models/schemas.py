@@ -18,6 +18,7 @@ class BindResponse(BaseModel):
     success: bool
     message: str
     student_id: str
+    cookie: Optional[str] = None  # 登录Cookie，供Go服务器存储
     name: Optional[str] = None
     grade: Optional[str] = None
     college: Optional[str] = None
@@ -33,6 +34,38 @@ class UnbindResponse(BaseModel):
 class EduStatusResponse(BaseModel):
     """教务绑定状态"""
     bound: bool
+    student_id: Optional[str] = None
+    name: Optional[str] = None
+    grade: Optional[str] = None
+    college: Optional[str] = None
+    major: Optional[str] = None
+
+
+class PreVerifyInput(BaseModel):
+    """预验证教务账号输入"""
+    student_id: str = Field(..., min_length=10, max_length=10, description="学号")
+    password: str = Field(..., description="教务密码")
+
+
+class PreVerifyResponse(BaseModel):
+    """预验证响应"""
+    success: bool
+    message: str
+    student_id: Optional[str] = None
+    name: Optional[str] = None
+
+
+class LoginEduInput(BaseModel):
+    """统一登录输入"""
+    student_id: str = Field(..., min_length=10, max_length=10, description="学号")
+    edu_password: str = Field(..., description="教务密码")
+    password: str = Field(..., min_length=8, max_length=32, description="APP密码")
+
+
+class LoginEduResponse(BaseModel):
+    """统一登录响应"""
+    success: bool
+    message: str
     student_id: Optional[str] = None
     name: Optional[str] = None
     grade: Optional[str] = None

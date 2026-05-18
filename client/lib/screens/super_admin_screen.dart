@@ -5,40 +5,124 @@ import '../providers/auth_provider.dart';
 
 class SuperAdminScreen extends StatefulWidget {
   const SuperAdminScreen({super.key});
-
   @override
   State<SuperAdminScreen> createState() => _SuperAdminScreenState();
 }
 
-class _SuperAdminScreenState extends State<SuperAdminScreen> {
-  final Dio _dio = Dio(BaseOptions(baseUrl: 'http://localhost:8080/api'));
+class _SuperAdminScreenState extends State<SuperAdminScreen>
+    with SingleTickerProviderStateMixin {
+  late Dio _dio;
+  late TabController _tabController;
   List<dynamic> _users = [];
-  bool _isLoading = true;
+  List<dynamic> _pendingInvitations = [];
+  List<dynamic> _adminLogs = [];
   String _searchQuery = '';
 
   @override
   void initState() {
     super.initState();
-    final authProvider = context.read<AuthProvider>();
-    _dio.options.headers['Authorization'] = 'Bearer ${authProvider.token}';
-    _loadUsers();
+    _tabController = TabController(length: 3, vsync: this);
+    _dio = context.read<AuthProvider>().dio;
+    _loadAll();
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadAll() async {
+    await Future.wait([_loadUsers(), _loadInvitations(), _loadAdminLogs()]);
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _loadAdminLogs() async {
+    try {
+      final res = await _dio.get('/super/admin_logs');
+      _adminLogs = res.data as List;
+    } catch (_) {}
   }
 
   Future<void> _loadUsers() async {
     try {
-      final response = await _dio.get('/super/users', queryParameters: {
+      final res = await _dio.get('/super/users', queryParameters: {
         if (_searchQuery.isNotEmpty) 'search': _searchQuery,
       });
+      _users = res.data as List;
+    } catch (_) {}
+  }
 
-      setState(() {
-        _users = response.data;
-        _isLoading = false;
-      });
+  Future<void> _loadInvitations() async {
+    try {
+      final res = await _dio.get('/super/invitations/pending');
+      _pendingInvitations = res.data as List;
+    } catch (_) {}
+  }
+
+  Future<void> _approveInvitation(dynamic inv, bool approve) async {
+    final ctrl = TextEditingController();
+    final reason = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(approve ? '同意理由' : '驳回理由'),
+        content: TextField(
+          controller: ctrl,
+          maxLines: 3,
+          decoration: InputDecoration(
+            hintText: approve ? '填写同意该用户成为管理员的理由' : '填写驳回原因',
+            border: const OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+          ElevatedButton(
+            onPressed: () {
+              final value = ctrl.text.trim();
+              if (value.isEmpty) return;
+              Navigator.pop(ctx, value);
+            },
+            child: Text(approve ? '同意' : '驳回'),
+          ),
+        ],
+      ),
+    );
+    ctrl.dispose();
+    if (reason == null) return;
+
+    try {
+      await _dio.post(
+        '/super/invitations/${inv['id']}/approve',
+        data: {
+          'reject': !approve,
+          'reason': reason,
+        },
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text(approve ? '已提交同意审批' : '已驳回'),
+              backgroundColor: approve ? Colors.green : Colors.red),
+        );
+        _loadInvitations();
+      }
+    } on DioException catch (e) {
+      final data = e.response?.data;
+      final message = data is Map && data['error'] != null
+          ? data['error'].toString()
+          : '操作失败';
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(message), backgroundColor: Colors.red),
+        );
+      }
     } catch (e) {
-      debugPrint('加载用户失败: $e');
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('操作失败'), backgroundColor: Colors.red),
+        );
+      }
     }
   }
 
@@ -46,44 +130,52 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('用户管理'),
+        title: const Text('超级管理员面板'),
         leading: const BackButton(),
+        bottom: TabBar(
+          controller: _tabController,
+          tabs: const [
+            Tab(text: '用户管理'),
+            Tab(text: '管理员审批'),
+            Tab(text: '管理日志'),
+          ],
+        ),
       ),
-      body: Column(
+      body: TabBarView(
+        controller: _tabController,
         children: [
-          // 搜索栏
-          Padding(
-            padding: const EdgeInsets.all(8),
-            child: TextField(
-              decoration: const InputDecoration(
-                hintText: '搜索学号/昵称...',
-                prefixIcon: Icon(Icons.search),
-                border: OutlineInputBorder(),
-              ),
-              onChanged: (value) {
-                _searchQuery = value;
-                _loadUsers();
-              },
-            ),
-          ),
-
-          // 用户列表
-          Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : _users.isEmpty
-                    ? const Center(child: Text('暂无用户'))
-                    : ListView.builder(
-                        itemCount: _users.length,
-                        itemBuilder: (context, index) {
-                          final user = _users[index];
-                          return _buildUserItem(user);
-                        },
-                      ),
-          ),
+          _buildUsersTab(),
+          _buildApprovalsTab(),
+          _buildAdminLogsTab(),
         ],
       ),
     );
+  }
+
+  Widget _buildUsersTab() {
+    return Column(children: [
+      Padding(
+        padding: const EdgeInsets.all(8),
+        child: TextField(
+          decoration: const InputDecoration(
+              hintText: '搜索学号/昵称...',
+              prefixIcon: Icon(Icons.search),
+              border: OutlineInputBorder()),
+          onChanged: (v) {
+            _searchQuery = v;
+            _loadUsers();
+          },
+        ),
+      ),
+      Expanded(
+        child: _users.isEmpty
+            ? const Center(child: Text('暂无用户'))
+            : ListView.builder(
+                itemCount: _users.length,
+                itemBuilder: (_, i) => _buildUserItem(_users[i]),
+              ),
+      ),
+    ]);
   }
 
   Widget _buildUserItem(dynamic user) {
@@ -91,33 +183,17 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       child: ListTile(
         leading: CircleAvatar(
-          backgroundImage: user['avatar']?.toString().isNotEmpty == true
-              ? NetworkImage(user['avatar'])
-              : null,
-          child: user['avatar']?.toString().isEmpty == true
-              ? Text(user['nickname']?.toString().substring(0, 1) ?? '?')
-              : null,
-        ),
+            child: Text((user['nickname'] ?? '?').toString().substring(0, 1))),
         title: Text(user['nickname'] ?? '未知'),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('学号: ${user['student_id']}'),
-            Text('角色: ${user['role']} | 诚信度: ${user['credit_score']}%'),
-          ],
-        ),
+        subtitle:
+            Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('学号: ${user['student_id']}'),
+          Text('角色: ${user['role']} | 诚信: ${user['credit_score']}%'),
+        ]),
         isThreeLine: true,
         trailing: PopupMenuButton<String>(
-          onSelected: (value) {
-            if (value == 'role') {
-              _showChangeRoleDialog(user);
-            } else if (value == 'reset') {
-              _resetPassword(user['id']);
-            } else if (value == 'delete') {
-              _deleteUser(user['id']);
-            }
-          },
-          itemBuilder: (context) => [
+          onSelected: (v) => _handleUserAction(user, v),
+          itemBuilder: (_) => [
             const PopupMenuItem(value: 'role', child: Text('修改角色')),
             const PopupMenuItem(value: 'reset', child: Text('重置密码')),
             if (user['role'] != 'super_admin')
@@ -128,92 +204,323 @@ class _SuperAdminScreenState extends State<SuperAdminScreen> {
     );
   }
 
+  void _handleUserAction(dynamic user, String action) {
+    if (action == 'role')
+      _showChangeRoleDialog(user);
+    else if (action == 'reset')
+      _resetPassword(user['id']);
+    else if (action == 'delete') _deleteUser(user['id']);
+  }
+
+  Widget _buildApprovalsTab() {
+    if (_pendingInvitations.isEmpty)
+      return const Center(child: Text('暂无待审批的申请'));
+    return RefreshIndicator(
+      onRefresh: _loadAll,
+      child: ListView.builder(
+        padding: const EdgeInsets.all(12),
+        itemCount: _pendingInvitations.length,
+        itemBuilder: (_, i) {
+          final inv = _pendingInvitations[i];
+          final user = inv['user'] ?? {};
+          final inviter = inv['inviter'] ?? {};
+          return Card(
+            margin: const EdgeInsets.only(bottom: 10),
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(children: [
+                      CircleAvatar(
+                          radius: 18,
+                          child: Text((user['nickname'] ?? '?')
+                              .toString()
+                              .substring(0, 1))),
+                      const SizedBox(width: 10),
+                      Expanded(
+                          child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                            Text(user['nickname'] ?? '未知',
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w600)),
+                            Text(
+                                '学号: ${user['student_id']} | 诚信: ${user['credit_score']}%',
+                                style: const TextStyle(
+                                    fontSize: 12, color: Colors.grey)),
+                            Text('邀请人: ${inviter['nickname'] ?? '未知'}',
+                                style: const TextStyle(
+                                    fontSize: 12, color: Colors.grey)),
+                          ])),
+                    ]),
+                    const SizedBox(height: 12),
+                    Row(mainAxisAlignment: MainAxisAlignment.end, children: [
+                      TextButton.icon(
+                        onPressed: () => _approveInvitation(inv, false),
+                        icon: const Icon(Icons.close,
+                            size: 16, color: Colors.red),
+                        label: const Text('驳回',
+                            style: TextStyle(color: Colors.red)),
+                      ),
+                      const SizedBox(width: 8),
+                      ElevatedButton.icon(
+                        onPressed: () => _approveInvitation(inv, true),
+                        icon: const Icon(Icons.check, size: 16),
+                        label: const Text('同意'),
+                        style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.green,
+                            foregroundColor: Colors.white),
+                      ),
+                    ]),
+                  ]),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  // --- 以下为原有用户管理逻辑 ---
   void _showChangeRoleDialog(dynamic user) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (ctx) => AlertDialog(
         title: const Text('修改角色'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
+        content: Text('用户: ${user['nickname']}'),
+        actions: [
+          if (user['role'] != 'super_admin')
+            TextButton(
+                onPressed: () {
+                  _changeRole(user['id'], 'user');
+                  Navigator.pop(ctx);
+                },
+                child: const Text('普通用户')),
+          TextButton(
+              onPressed: () {
+                _changeRole(user['id'], 'admin');
+                Navigator.pop(ctx);
+              },
+              child: const Text('管理员')),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _changeRole(int uid, String role) async {
+    try {
+      await _dio.put('/super/users/$uid/role', data: {'role': role});
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('角色修改成功')));
+        _loadUsers();
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _resetPassword(int uid) async {
+    try {
+      await _dio.post('/super/users/$uid/reset_password');
+      if (mounted)
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('密码已重置')));
+    } catch (_) {}
+  }
+
+  Future<void> _deleteUser(int uid) async {
+    final ok = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+              title: const Text('确认删除'),
+              content: const Text('不可撤销'),
+              actions: [
+                TextButton(
+                    onPressed: () => Navigator.pop(ctx, false),
+                    child: const Text('取消')),
+                ElevatedButton(
+                    onPressed: () => Navigator.pop(ctx, true),
+                    style:
+                        ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                    child: const Text('删除')),
+              ],
+            ));
+    if (ok == true) {
+      try {
+        await _dio.delete('/super/users/$uid');
+        _loadUsers();
+      } catch (_) {}
+    }
+  }
+
+  // ====== 管理员日志 Tab ======
+
+  Widget _buildAdminLogsTab() {
+    if (_adminLogs.isEmpty) {
+      return const Center(child: Text('暂无明显管理员操作日志'));
+    }
+    return RefreshIndicator(
+      onRefresh: _loadAll,
+      child: ListView.builder(
+        padding: const EdgeInsets.all(12),
+        itemCount: _adminLogs.length,
+        itemBuilder: (_, i) {
+          final log = _adminLogs[i];
+          return _buildLogItem(log);
+        },
+      ),
+    );
+  }
+
+  Widget _buildLogItem(dynamic log) {
+    final adminName = log['admin_name'] ?? '未知';
+    final action = log['action'] ?? '';
+    final target = log['target'] ?? '';
+    final adminExp = log['admin_exp'] ?? 0;
+    final adminRole = log['admin_role'] ?? '';
+    final createdAt = log['created_at'] ?? '';
+    final adminId = log['admin_id'];
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('用户: ${user['nickname']}'),
-            const SizedBox(height: 16),
-            if (user['role'] != 'super_admin') ...[
-              ListTile(
-                title: const Text('设为普通用户'),
-                onTap: () => _changeRole(user['id'], 'user'),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '$adminName ($adminRole)',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    '管理经验: $adminExp',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.orange,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              '$action — $target',
+              style: const TextStyle(fontSize: 13),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              _formatLogTime(createdAt),
+              style: const TextStyle(fontSize: 11, color: Colors.grey),
+            ),
+            const SizedBox(height: 8),
+            if (adminRole != 'super_admin' && adminExp > 0)
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  onPressed: () => _showRevokeExpDialog(adminId, adminName, adminExp),
+                  icon: const Icon(Icons.undo, size: 16, color: Colors.red),
+                  label: const Text('追回经验',
+                      style: TextStyle(color: Colors.red, fontSize: 12)),
+                ),
               ),
-              ListTile(
-                title: const Text('设为管理员'),
-                onTap: () => _changeRole(user['id'], 'admin'),
-              ),
-            ],
           ],
         ),
       ),
     );
   }
 
-  Future<void> _changeRole(int userId, String role) async {
-    try {
-      await _dio.put('/super/users/$userId/role', data: {'role': role});
-      if (mounted) {
-        Navigator.pop(context);
-        _loadUsers();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('角色修改成功')),
-        );
-      }
-    } catch (e) {
-      debugPrint('修改角色失败: $e');
-    }
-  }
+  void _showRevokeExpDialog(dynamic adminId, String adminName, int currentExp) {
+    final amountCtrl = TextEditingController(text: '1');
+    final reasonCtrl = TextEditingController();
 
-  Future<void> _resetPassword(int userId) async {
-    try {
-      final response = await _dio.post('/super/users/$userId/reset_password');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('密码已重置为: ${response.data['message']}')),
-        );
-      }
-    } catch (e) {
-      debugPrint('重置密码失败: $e');
-    }
-  }
-
-  Future<void> _deleteUser(int userId) async {
-    final confirmed = await showDialog<bool>(
+    showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('确认删除'),
-        content: const Text('确定要删除此用户吗？此操作不可撤销。'),
+      builder: (ctx) => AlertDialog(
+        title: Text('追回 $adminName 的管理经验'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('当前经验: $currentExp'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: amountCtrl,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                labelText: '追回数量',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: reasonCtrl,
+              decoration: const InputDecoration(
+                labelText: '追回原因（可选）',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context, false),
+            onPressed: () => Navigator.pop(ctx),
             child: const Text('取消'),
           ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('删除'),
+          FilledButton(
+            onPressed: () async {
+              final amount = int.tryParse(amountCtrl.text) ?? 0;
+              if (amount <= 0) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('请输入有效的追回数量')),
+                );
+                return;
+              }
+              try {
+                await _dio.post('/super/admin_logs/revoke_exp', data: {
+                  'admin_id': adminId,
+                  'amount': amount,
+                  'reason': reasonCtrl.text.trim(),
+                });
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('经验已追回')),
+                  );
+                  _loadAdminLogs();
+                }
+                Navigator.pop(ctx);
+              } on DioException catch (e) {
+                final msg = e.response?.data?['error'] ?? '操作失败';
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(msg.toString())),
+                  );
+                }
+              }
+            },
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('确认追回'),
           ),
         ],
       ),
-    );
+    ).then((_) {
+      amountCtrl.dispose();
+      reasonCtrl.dispose();
+    });
+  }
 
-    if (confirmed == true) {
-      try {
-        await _dio.delete('/super/users/$userId');
-        _loadUsers();
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('用户已删除')),
-          );
-        }
-      } catch (e) {
-        debugPrint('删除用户失败: $e');
-      }
-    }
+  String _formatLogTime(String iso) {
+    if (iso.isEmpty) return '';
+    final dt = DateTime.tryParse(iso);
+    if (dt == null) return iso;
+    return '${dt.month}/${dt.day} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
   }
 }

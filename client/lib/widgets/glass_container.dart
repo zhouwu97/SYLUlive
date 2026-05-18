@@ -16,6 +16,7 @@ class GlassContainer extends StatelessWidget {
   final double borderWidth;
   final Color? borderColor;
   final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
   final List<Color>? gradientColors;
   final bool showHighlight;
 
@@ -26,13 +27,14 @@ class GlassContainer extends StatelessWidget {
     this.height,
     this.padding,
     this.margin,
-    this.borderRadius = 16,
+    this.borderRadius = 12,
     this.backgroundColor,
     this.blur = 10,
     this.opacity = 0.2,
-    this.borderWidth = 1,
+    this.borderWidth = 0.5,
     this.borderColor,
     this.onTap,
+    this.onLongPress,
     this.gradientColors,
     this.showHighlight = true,
   });
@@ -135,11 +137,12 @@ class GlassContainer extends StatelessWidget {
       ),
     );
 
-    if (onTap != null) {
+    if (onTap != null || onLongPress != null) {
       return Material(
         color: Colors.transparent,
         child: InkWell(
           onTap: onTap,
+          onLongPress: onLongPress,
           borderRadius: BorderRadius.circular(borderRadius),
           child: content,
         ),
@@ -176,31 +179,33 @@ class PremiumCard extends StatelessWidget {
             ? [Colors.grey[800]!, Colors.grey[900]!]
             : [Colors.white, Colors.grey[50]!]);
 
-    return Container(
-      margin: margin,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(borderRadius),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: colors,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: (isDark ? Colors.black : Colors.grey).withValues(alpha: 0.1),
-            blurRadius: 20,
-            offset: const Offset(0, 4),
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(borderRadius),
+      child: Container(
+        margin: margin,
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: colors,
           ),
-        ],
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(borderRadius),
-          child: Padding(
-            padding: padding!,
-            child: child,
+          boxShadow: [
+            BoxShadow(
+              color: (isDark ? Colors.black : Colors.grey).withValues(alpha: 0.1),
+              blurRadius: 20,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(borderRadius),
+            child: Padding(
+              padding: padding!,
+              child: child,
+            ),
           ),
         ),
       ),

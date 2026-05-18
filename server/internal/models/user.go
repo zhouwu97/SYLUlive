@@ -25,7 +25,10 @@ type User struct {
 	CreditScore  int       `gorm:"default:100;index" json:"credit_score"`          // 诚信度 0-100
 	Role         Role      `gorm:"size:20;default:user;index" json:"role"`         // 角色
 	AdminExp     int       `gorm:"default:0" json:"admin_exp"`                     // 管理员经验
+	Exp          int       `gorm:"default:0" json:"exp"`                           // 用户经验值（签到等获得）
 	ReportCount  int       `gorm:"default:0;index" json:"report_count"`            // 90天内举报数
+	QQ           string    `gorm:"size:20" json:"qq"`                              // QQ号
+	DeviceToken  string    `gorm:"size:255" json:"device_token"`                   // 极光 RegistrationID
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
 

@@ -77,18 +77,29 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final themeProvider = context.watch<ThemeProvider>();
 
-    return WillPopScope(
-      onWillPop: () async {
+    return PopScope(
+      canPop: !themeProvider.predictiveBack,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
         Navigator.pop(context, _didChange);
-        return false;
       },
       child: Scaffold(
         backgroundColor: isDark ? const Color(0xFF131720) : Colors.white,
-        extendBodyBehindAppBar: true,
+        extendBodyBehindAppBar: false, // 修复重叠：不再将 body 延伸到 AppBar 后方
         appBar: AppBar(
           systemOverlayStyle: SystemUiOverlayStyle(
             statusBarColor: Colors.transparent,
-            statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
+            statusBarIconBrightness:
+                isDark ? Brightness.light : Brightness.dark,
+          ),
+          centerTitle: true,
+          titleTextStyle: TextStyle(
+            color: isDark ? Colors.white : Colors.black87,
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+          ),
+          iconTheme: IconThemeData(
+            color: isDark ? Colors.white : Colors.black87,
           ),
           leading: IconButton(
             icon: const Icon(Icons.arrow_back),
@@ -118,9 +129,8 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
                 final teacher = provider.selectedTeacher;
                 if (teacher == null) return const Center(child: Text('加载失败'));
 
-                return SafeArea(
-                  child: ListView(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 80),
+                return ListView(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 80), // 顶部边距设为 0
                   children: [
                     _buildHeader(teacher, provider, isDark),
                     const SizedBox(height: 16),
@@ -138,8 +148,7 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
                     ],
                     const SizedBox(height: 80),
                   ],
-                ),
-              );
+                );
               },
             ),
           ],

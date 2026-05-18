@@ -15,7 +15,7 @@ import '../widgets/bottom_nav.dart';
 import 'shuitie_screen.dart';
 import 'market_screen.dart';
 import 'course_schedule_screen.dart';
-import 'teacher_rate_screen.dart';
+import 'campus_screen.dart';
 import 'profile_screen.dart';
 import 'create_post_screen.dart';
 import 'login_screen.dart';
@@ -623,7 +623,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   void _onTabTapped(int index) {
     setState(() => _currentIndex = index);
-    final screenNames = ['shuitie', 'market', 'schedule', 'teacher', 'profile'];
+    final screenNames = ['shuitie', 'market', 'schedule', 'campus', 'profile'];
     backgroundWrapperKey.currentState?.updateScreen(screenNames[index]);
   }
 
@@ -651,6 +651,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     final authProvider = context.watch<AuthProvider>();
     final bottomSafe = MediaQuery.of(context).padding.bottom;
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isWideScreen = screenWidth > 800;
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _syncAnnouncementPolling(authProvider);
@@ -661,22 +664,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       backgroundColor: Colors.transparent,
       extendBody: true,
       extendBodyBehindAppBar: true,
-      body: IndexedStack(
-        index: _currentIndex,
-        children: const [
-          ShuitieScreen(),
-          MarketScreen(),
-          CourseScheduleScreen(),
-          TeacherRateScreen(),
-          ProfileScreen(),
-        ],
-      ),
-      bottomNavigationBar: BottomNavWrapper(
-        currentIndex: _currentIndex,
-        onTap: _onTabTapped,
-        authProvider: authProvider,
-      ),
-      floatingActionButton: _currentIndex == 0
+      body: isWideScreen
+          ? _buildWideLayout(bottomSafe, authProvider)
+          : _buildNarrowLayout(bottomSafe, authProvider),
+      bottomNavigationBar: isWideScreen
+          ? null
+          : BottomNavWrapper(
+              currentIndex: _currentIndex,
+              onTap: _onTabTapped,
+              authProvider: authProvider,
+            ),
+      floatingActionButton: _currentIndex == 0 && !isWideScreen
           ? Padding(
               padding: EdgeInsets.only(bottom: 110 + bottomSafe),
               child: FloatingActionButton(
@@ -689,6 +687,78 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             )
           : null,
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+    );
+  }
+
+  Widget _buildWideLayout(double bottomSafe, AuthProvider authProvider) {
+    return Row(
+      children: [
+        NavigationRail(
+          selectedIndex: _currentIndex,
+          onDestinationSelected: (index) {
+            setState(() => _currentIndex = index);
+            final screenNames = ['shuitie', 'market', 'schedule', 'campus', 'profile'];
+            backgroundWrapperKey.currentState?.updateScreen(screenNames[index]);
+          },
+          labelType: NavigationRailLabelType.all,
+          backgroundColor: Theme.of(context).brightness == Brightness.dark
+              ? const Color(0xFF1A1A2E).withValues(alpha: 0.9)
+              : Colors.white.withValues(alpha: 0.9),
+          destinations: const [
+            NavigationRailDestination(
+              icon: Icon(Icons.home_rounded),
+              label: Text('首页'),
+            ),
+            NavigationRailDestination(
+              icon: Icon(Icons.storefront_rounded),
+              label: Text('集市'),
+            ),
+            NavigationRailDestination(
+              icon: Icon(Icons.calendar_month_rounded),
+              label: Text('课表'),
+            ),
+            NavigationRailDestination(
+              icon: Icon(Icons.apartment_rounded),
+              label: Text('校园'),
+            ),
+            NavigationRailDestination(
+              icon: Icon(Icons.person_rounded),
+              label: Text('我的'),
+            ),
+          ],
+        ),
+        const VerticalDivider(thickness: 1, width: 1),
+        Expanded(
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 1200),
+              child: IndexedStack(
+                index: _currentIndex,
+                children: const [
+                  ShuitieScreen(),
+                  MarketScreen(),
+                  CourseScheduleScreen(),
+                  CampusScreen(),
+                  ProfileScreen(),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildNarrowLayout(double bottomSafe, AuthProvider authProvider) {
+    return IndexedStack(
+      index: _currentIndex,
+      children: const [
+        ShuitieScreen(),
+        MarketScreen(),
+        CourseScheduleScreen(),
+        CampusScreen(),
+        ProfileScreen(),
+      ],
     );
   }
 }

@@ -1,0 +1,722 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>练习题转换器 - JSON to Markdown</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .container {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 1200px;
+            width: 100%;
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 2.5em;
+            font-weight: 300;
+            margin-bottom: 10px;
+        }
+        
+        .header p {
+            opacity: 0.9;
+            font-size: 1.1em;
+        }
+        
+        .main {
+            padding: 40px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+        }
+        
+        @media (max-width: 768px) {
+            .main {
+                grid-template-columns: 1fr;
+            }
+        }
+        
+        .section {
+            background: #f8f9fa;
+            border-radius: 15px;
+            padding: 25px;
+        }
+        
+        .section-title {
+            font-size: 1.3em;
+            color: #333;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .upload-area {
+            border: 2px dashed #667eea;
+            border-radius: 10px;
+            padding: 40px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            background: white;
+        }
+        
+        .upload-area:hover {
+            border-color: #764ba2;
+            background: #f8f9fa;
+        }
+        
+        .upload-area.dragover {
+            background: #e7e9ff;
+            border-color: #764ba2;
+        }
+        
+        .upload-icon {
+            font-size: 3em;
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+        
+        input[type="file"] {
+            display: none;
+        }
+        
+        .file-info {
+            margin-top: 20px;
+            padding: 15px;
+            background: #e7e9ff;
+            border-radius: 10px;
+            display: none;
+        }
+        
+        .options {
+            margin-top: 20px;
+        }
+        
+        .option-group {
+            margin-bottom: 15px;
+        }
+        
+        label {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            cursor: pointer;
+            user-select: none;
+        }
+        
+        input[type="checkbox"] {
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+        }
+        
+        .convert-btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 10px;
+            font-size: 1.1em;
+            cursor: pointer;
+            width: 100%;
+            margin-top: 20px;
+            transition: all 0.3s;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        }
+        
+        .convert-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.5);
+        }
+        
+        .convert-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+        
+        .preview-area {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            height: 500px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        
+        .preview-area::-webkit-scrollbar {
+            width: 8px;
+        }
+        
+        .preview-area::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 10px;
+        }
+        
+        .preview-area::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 10px;
+        }
+        
+        .preview-area::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+        
+        .download-section {
+            margin-top: 20px;
+            display: flex;
+            gap: 10px;
+        }
+        
+        .download-btn, .copy-btn {
+            flex: 1;
+            padding: 12px 20px;
+            border-radius: 10px;
+            border: none;
+            font-size: 1em;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .download-btn {
+            background: #28a745;
+            color: white;
+        }
+        
+        .download-btn:hover {
+            background: #218838;
+            transform: translateY(-2px);
+        }
+        
+        .copy-btn {
+            background: #6c757d;
+            color: white;
+        }
+        
+        .copy-btn:hover {
+            background: #5a6268;
+            transform: translateY(-2px);
+        }
+        
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+        
+        .stat-card {
+            background: white;
+            padding: 15px;
+            border-radius: 10px;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .stat-number {
+            font-size: 2em;
+            font-weight: bold;
+            color: #667eea;
+        }
+        
+        .stat-label {
+            color: #666;
+            font-size: 0.9em;
+            margin-top: 5px;
+        }
+        
+        .toast {
+            position: fixed;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #333;
+            color: white;
+            padding: 15px 30px;
+            border-radius: 50px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            opacity: 0;
+            transition: opacity 0.3s;
+            z-index: 1000;
+        }
+        
+        .toast.show {
+            opacity: 1;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>✨ 练习题转换器</h1>
+            <p>将JSON格式的题目转换为优美的Markdown文档</p>
+        </div>
+        
+        <div class="main">
+            <div class="left-panel">
+                <div class="section">
+                    <h2 class="section-title">
+                        <span>📤</span>
+                        上传文件
+                    </h2>
+                    
+                    <div class="upload-area" id="uploadArea">
+                        <div class="upload-icon">📁</div>
+                        <p><strong>点击选择文件</strong> 或 <strong>拖拽文件到此处</strong></p>
+                        <p style="margin-top: 10px; color: #666; font-size: 0.9em;">支持 .json 格式</p>
+                        <input type="file" id="fileInput" accept=".json">
+                    </div>
+                    
+                    <div class="file-info" id="fileInfo">
+                        <p><strong>文件名：</strong><span id="fileName"></span></p>
+                        <p><strong>文件大小：</strong><span id="fileSize"></span></p>
+                    </div>
+                    
+                    <div class="stats" id="stats" style="display: none;">
+                        <div class="stat-card">
+                            <div class="stat-number" id="totalQuestions">0</div>
+                            <div class="stat-label">总题数</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-number" id="totalScore">0</div>
+                            <div class="stat-label">总分值</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-number" id="chapterCount">0</div>
+                            <div class="stat-label">章节数</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="section" style="margin-top: 20px;">
+                    <h2 class="section-title">
+                        <span>⚙️</span>
+                        转换选项
+                    </h2>
+                    
+                    <div class="options">
+                        <div class="option-group">
+                            <label>
+                                <input type="checkbox" id="includeToc" checked>
+                                <span>生成目录（题目较多时推荐）</span>
+                            </label>
+                        </div>
+                        <div class="option-group">
+                            <label>
+                                <input type="checkbox" id="includeStats" checked>
+                                <span>生成统计信息</span>
+                            </label>
+                        </div>
+                        <div class="option-group">
+                            <label>
+                                <input type="checkbox" id="markCorrectAnswers" checked>
+                                <span>标记正确答案（✓）</span>
+                            </label>
+                        </div>
+                        <div class="option-group">
+                            <label>
+                                <input type="checkbox" id="groupByChapter" checked>
+                                <span>按章节分组</span>
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <button class="convert-btn" id="convertBtn" disabled>
+                        开始转换
+                    </button>
+                </div>
+            </div>
+            
+            <div class="right-panel">
+                <div class="section">
+                    <h2 class="section-title">
+                        <span>👁️</span>
+                        预览结果
+                    </h2>
+                    
+                    <div class="preview-area" id="preview">
+                        请先上传JSON文件...
+                    </div>
+                    
+                    <div class="download-section" id="downloadSection" style="display: none;">
+                        <button class="download-btn" id="downloadBtn">
+                            📥 下载 Markdown
+                        </button>
+                        <button class="copy-btn" id="copyBtn">
+                            📋 复制到剪贴板
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="toast" id="toast"></div>
+    
+    <script>
+        let questionsData = null;
+        let markdownContent = '';
+        
+        // DOM元素
+        const uploadArea = document.getElementById('uploadArea');
+        const fileInput = document.getElementById('fileInput');
+        const fileInfo = document.getElementById('fileInfo');
+        const fileName = document.getElementById('fileName');
+        const fileSize = document.getElementById('fileSize');
+        const convertBtn = document.getElementById('convertBtn');
+        const preview = document.getElementById('preview');
+        const downloadSection = document.getElementById('downloadSection');
+        const downloadBtn = document.getElementById('downloadBtn');
+        const copyBtn = document.getElementById('copyBtn');
+        const toast = document.getElementById('toast');
+        const stats = document.getElementById('stats');
+        
+        // 文件上传处理
+        uploadArea.addEventListener('click', () => fileInput.click());
+        
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('dragover');
+        });
+        
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('dragover');
+        });
+        
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                handleFile(files[0]);
+            }
+        });
+        
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                handleFile(e.target.files[0]);
+            }
+        });
+        
+        // 处理文件
+        function handleFile(file) {
+            if (!file.name.endsWith('.json')) {
+                showToast('请上传JSON格式的文件！', 'error');
+                return;
+            }
+            
+            fileName.textContent = file.name;
+            fileSize.textContent = formatFileSize(file.size);
+            fileInfo.style.display = 'block';
+            
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    questionsData = JSON.parse(e.target.result);
+                    convertBtn.disabled = false;
+                    showToast('文件加载成功！');
+                    updateStats();
+                } catch (error) {
+                    showToast('JSON格式错误！', 'error');
+                    console.error(error);
+                }
+            };
+            reader.readAsText(file);
+        }
+        
+        // 更新统计信息
+        function updateStats() {
+            if (!questionsData) return;
+            
+            const totalQuestions = questionsData.length;
+            let totalScore = 0;
+            const chapters = new Set();
+            
+            questionsData.forEach(q => {
+                totalScore += parseFloat(q.score || 0);
+                if (q.chapter) chapters.add(q.chapter);
+            });
+            
+            document.getElementById('totalQuestions').textContent = totalQuestions;
+            document.getElementById('totalScore').textContent = totalScore;
+            document.getElementById('chapterCount').textContent = chapters.size;
+            stats.style.display = 'grid';
+        }
+        
+        // 转换按钮点击
+        convertBtn.addEventListener('click', () => {
+            if (!questionsData) return;
+            
+            const options = {
+                includeToc: document.getElementById('includeToc').checked,
+                includeStats: document.getElementById('includeStats').checked,
+                markCorrectAnswers: document.getElementById('markCorrectAnswers').checked,
+                groupByChapter: document.getElementById('groupByChapter').checked
+            };
+            
+            markdownContent = convertToMarkdown(questionsData, options);
+            preview.textContent = markdownContent;
+            downloadSection.style.display = 'flex';
+            showToast('转换成功！');
+        });
+        
+        // 转换函数
+        function convertToMarkdown(questions, options) {
+            let md = [];
+            
+            // 标题
+            const timestamp = new Date().toLocaleString('zh-CN');
+            md.push('# 练习题整理\n');
+            md.push(`> 生成时间：${timestamp}`);
+            md.push(`> 题目总数：${questions.length} 题\n`);
+            
+            // 统计信息
+            if (options.includeStats) {
+                md.push(generateStatistics(questions));
+            }
+            
+            // 目录
+            if (options.includeToc && questions.length > 10) {
+                md.push(generateToc(questions));
+            }
+            
+            // 题目内容
+            md.push('## 📝 题目详情\n');
+            
+            if (options.groupByChapter) {
+                // 按章节分组
+                const chapters = {};
+                questions.forEach(q => {
+                    const chapter = q.chapter || '未分类';
+                    if (!chapters[chapter]) chapters[chapter] = [];
+                    chapters[chapter].push(q);
+                });
+                
+                Object.keys(chapters).sort().forEach(chapter => {
+                    if (Object.keys(chapters).length > 1) {
+                        md.push(`## 📚 ${chapter}\n`);
+                    }
+                    chapters[chapter].forEach(q => {
+                        md.push(formatQuestion(q, options.markCorrectAnswers));
+                    });
+                });
+            } else {
+                // 不分组
+                questions.forEach(q => {
+                    md.push(formatQuestion(q, options.markCorrectAnswers));
+                });
+            }
+            
+            return md.join('\n');
+        }
+        
+        // 格式化单个题目
+        function formatQuestion(question, markCorrect) {
+            let md = [];
+            
+            // 题目标题
+            let title = `### ${question.index || '?'}. `;
+            if (question.questionType) {
+                title += `【${question.questionType}】`;
+            }
+            if (question.score) {
+                title += `（${question.score}分）`;
+            }
+            md.push(title);
+            md.push('');
+            
+            // 章节
+            if (question.chapter) {
+                md.push(`**章节：** ${question.chapter}`);
+                md.push('');
+            }
+            
+            // 题目内容
+            if (question.question) {
+                md.push('**题目：**');
+                md.push(question.question);
+                md.push('');
+            }
+            
+            // 选项
+            if (question.options && question.options.length > 0) {
+                md.push('**选项：**');
+                question.options.forEach(opt => {
+                    const isCorrect = markCorrect && question.answer && question.answer.includes(opt.label);
+                    if (isCorrect) {
+                        md.push(`- **${opt.label}. ${opt.text}** ✓`);
+                    } else {
+                        md.push(`- ${opt.label}. ${opt.text}`);
+                    }
+                });
+                md.push('');
+            }
+            
+            // 答案
+            if (question.answer) {
+                md.push(`**答案：** ${question.answer}`);
+                md.push('');
+            }
+            
+            // 解析
+            if (question.analysis && question.analysis.trim()) {
+                md.push('**解析：**');
+                md.push(question.analysis);
+                md.push('');
+            }
+            
+            md.push('---\n');
+            return md.join('\n');
+        }
+        
+        // 生成统计信息
+        function generateStatistics(questions) {
+            let stats = ['## 📊 统计信息\n'];
+            
+            stats.push(`- **总题数：** ${questions.length} 题`);
+            
+            // 题型统计
+            const typeCount = {};
+            const typeScore = {};
+            questions.forEach(q => {
+                const type = q.questionType || '未知';
+                typeCount[type] = (typeCount[type] || 0) + 1;
+                typeScore[type] = (typeScore[type] || 0) + parseFloat(q.score || 0);
+            });
+            
+            stats.push('\n### 题型分布：');
+            Object.keys(typeCount).sort().forEach(type => {
+                stats.push(`- **${type}：** ${typeCount[type]} 题（${typeScore[type]} 分）`);
+            });
+            
+            // 总分
+            const totalScore = Object.values(typeScore).reduce((a, b) => a + b, 0);
+            stats.push(`\n- **总分值：** ${totalScore} 分`);
+            
+            // 章节统计
+            const chapterCount = {};
+            questions.forEach(q => {
+                const chapter = q.chapter || '未分类';
+                chapterCount[chapter] = (chapterCount[chapter] || 0) + 1;
+            });
+            
+            if (Object.keys(chapterCount).length > 1) {
+                stats.push('\n### 章节分布：');
+                Object.keys(chapterCount).sort().forEach(chapter => {
+                    stats.push(`- **${chapter}：** ${chapterCount[chapter]} 题`);
+                });
+            }
+            
+            stats.push('\n---\n');
+            return stats.join('\n');
+        }
+        
+        // 生成目录
+        function generateToc(questions) {
+            let toc = ['## 📑 目录\n'];
+            
+            const chapters = {};
+            questions.forEach(q => {
+                const chapter = q.chapter || '未分类';
+                if (!chapters[chapter]) chapters[chapter] = [];
+                chapters[chapter].push(q);
+            });
+            
+            Object.keys(chapters).sort().forEach(chapter => {
+                if (chapter) {
+                    toc.push(`### 📂 ${chapter}`);
+                    chapters[chapter].forEach(q => {
+                        const index = q.index || '?';
+                        const type = q.questionType || '';
+                        let title = q.question || '';
+                        if (title.length > 50) {
+                            title = title.substring(0, 50) + '...';
+                        }
+                        toc.push(`- [${index}. 【${type}】 ${title}](#${index})`);
+                    });
+                    toc.push('');
+                }
+            });
+            
+            return toc.join('\n');
+        }
+        
+        // 下载按钮
+        downloadBtn.addEventListener('click', () => {
+            const blob = new Blob([markdownContent], { type: 'text/markdown' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `练习题_${new Date().getTime()}.md`;
+            a.click();
+            URL.revokeObjectURL(url);
+            showToast('文件已下载！');
+        });
+        
+        // 复制按钮
+        copyBtn.addEventListener('click', async () => {
+            try {
+                await navigator.clipboard.writeText(markdownContent);
+                showToast('已复制到剪贴板！');
+            } catch (err) {
+                // 备用方法
+                const textarea = document.createElement('textarea');
+                textarea.value = markdownContent;
+                document.body.appendChild(textarea);
+                textarea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textarea);
+                showToast('已复制到剪贴板！');
+            }
+        });
+        
+        // 工具函数
+        function formatFileSize(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(2) + ' KB';
+            return (bytes / 1024 / 1024).toFixed(2) + ' MB';
+        }
+        
+        function showToast(message, type = 'success') {
+            toast.textContent = message;
+            toast.style.background = type === 'error' ? '#dc3545' : '#28a745';
+            toast.classList.add('show');
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 3000);
+        }
+    </script>
+</body>
+</html> 

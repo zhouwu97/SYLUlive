@@ -3,6 +3,8 @@ import 'dart:io' show File;
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
+import 'package:hive_flutter/hive_flutter.dart';
+import 'package:jpush_flutter/jpush_flutter.dart';
 import 'package:provider/provider.dart';
 import 'providers/auth_provider.dart';
 import 'providers/theme_provider.dart';
@@ -10,21 +12,53 @@ import 'providers/post_provider.dart';
 import 'providers/message_provider.dart';
 import 'providers/edu_provider.dart';
 import 'providers/course_schedule_provider.dart';
+import 'providers/major_provider.dart';
+import 'providers/teacher_provider.dart';
 import 'screens/home_screen.dart';
+import 'screens/login_screen.dart';
+import 'services/course_reminder_service.dart';
 import 'theme/AppTheme.dart';
 import 'config/api_constants.dart';
+import 'utils/app_navigator.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Hive.initFlutter();
+  await CourseReminderService.instance.initialize();
   runApp(const MyApp());
 }
 
-final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+/// 极光推送初始化
+var jpush = JPush.newJPush();
+
+Future<void> setupJPush() async {
+  jpush.setup(
+    appKey: 'fbbd87f741e919f39519afe6',
+    channel: 'developer-default',
+    production: false,
+    debug: true,
+  );
+  jpush.addEventHandler(
+    onReceiveNotification: (Map<String, dynamic> message) async {
+      debugPrint('🔔 收到通知: $message');
+    },
+    onOpenNotification: (Map<String, dynamic> message) async {
+      debugPrint('👆 用户点击通知: $message');
+    },
+  );
+  final rid = await jpush.getRegistrationID();
+  debugPrint('🔥 JPush RegistrationID: $rid');
+  // 获取 auth provider 并更新 token
+  // 注意：需要在 AuthWrapper 完成初始化后调用
+}
+
 Dio? _sharedDio;
 
 Dio getSharedDio() {
   if (_sharedDio == null) {
     final dio = Dio(BaseOptions(
-      baseUrl: kDebugMode ? ApiConstants.baseUrl : 'http://156.233.229.232:8080/api',
+      baseUrl:
+          kDebugMode ? ApiConstants.baseUrl : 'https://sylu.zhouwu.ccwu.cc/api',
       connectTimeout: ApiConstants.connectTimeout,
       receiveTimeout: ApiConstants.receiveTimeout,
     ));
@@ -39,10 +73,7 @@ Dio getSharedDio() {
 
     dio.interceptors.add(InterceptorsWrapper(
       onError: (error, handler) {
-        debugPrint('DioError: ${error.message}');
-        if (error.response?.statusCode == 401) {
-          debugPrint('登录已过期，请重新登录');
-        }
+        debugPrint('DioError [${error.response?.statusCode}]: ${error.requestOptions.uri}');
         handler.next(error);
       },
     ));
@@ -67,6 +98,8 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => MessageProvider(dio)),
         ChangeNotifierProvider(create: (_) => EduProvider(dio)),
         ChangeNotifierProvider(create: (_) => CourseScheduleProvider()),
+        ChangeNotifierProvider(create: (_) => TeacherProvider(dio)),
+        ChangeNotifierProvider(create: (_) => MajorProvider(dio)),
       ],
       child: Consumer<ThemeProvider>(
         builder: (context, themeProvider, child) {
@@ -75,10 +108,16 @@ class MyApp extends StatelessWidget {
             debugShowCheckedModeBanner: false,
             theme: AppTheme.lightTheme,
             darkTheme: AppTheme.darkTheme,
-            themeMode: themeProvider.isDarkMode ? ThemeMode.dark : ThemeMode.light,
-            navigatorKey: navigatorKey,
-            home: GlobalBackgroundWrapper(
-              child: const AuthWrapper(),
+            themeMode:
+                themeProvider.isDarkMode ? ThemeMode.dark : ThemeMode.light,
+            navigatorKey: appNavigatorKey,
+            routes: {
+              '/login': (context) => const LoginScreen(),
+            },
+            home: const PredictiveBackGate(
+              child: GlobalBackgroundWrapper(
+                child: AuthWrapper(),
+              ),
             ),
           );
         },
@@ -87,7 +126,8 @@ class MyApp extends StatelessWidget {
   }
 }
 
-final GlobalKey<_BackgroundWrapperState> backgroundWrapperKey = GlobalKey<_BackgroundWrapperState>();
+final GlobalKey<_BackgroundWrapperState> backgroundWrapperKey =
+    GlobalKey<_BackgroundWrapperState>();
 
 class GlobalBackgroundWrapper extends StatefulWidget {
   final Widget child;
@@ -157,12 +197,14 @@ class _BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
                 ? Image.file(
                     File(bgPath),
                     fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => _buildDefaultBackground(isDark),
+                    errorBuilder: (_, __, ___) =>
+                        _buildDefaultBackground(isDark),
                   )
                 : Image.network(
                     bgPath,
                     fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => _buildDefaultBackground(isDark),
+                    errorBuilder: (_, __, ___) =>
+                        _buildDefaultBackground(isDark),
                     loadingBuilder: (_, child, loadingProgress) {
                       if (loadingProgress == null) return child;
                       return _buildDefaultBackground(isDark);
@@ -204,14 +246,24 @@ class _BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: isDark
-                    ? [const Color(0xFF1A1A2E), const Color(0xFF16213E), const Color(0xFF0F3460)]
-                    : [const Color(0xFF667EEA), const Color(0xFF764BA2), const Color(0xFFF093FB)],
+                    ? [
+                        const Color(0xFF1A1A2E),
+                        const Color(0xFF16213E),
+                        const Color(0xFF0F3460)
+                      ]
+                    : [
+                        const Color(0xFF667EEA),
+                        const Color(0xFF764BA2),
+                        const Color(0xFFF093FB)
+                      ],
               ),
             ),
           ),
         ),
         Container(
-          color: isDark ? Colors.black.withValues(alpha: 0.35) : Colors.white.withValues(alpha: 0.25),
+          color: isDark
+              ? Colors.black.withValues(alpha: 0.35)
+              : Colors.white.withValues(alpha: 0.25),
         ),
       ],
     );
@@ -238,5 +290,18 @@ class AuthWrapper extends StatelessWidget {
         return const HomeScreen();
       },
     );
+  }
+}
+
+/// 预测性返回手势开关门控
+/// 通过 ThemeProvider.predictiveBack 控制，默认开启
+class PredictiveBackGate extends StatelessWidget {
+  final Widget child;
+  const PredictiveBackGate({super.key, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    // 这里不再由全局接管拦截逻辑，而是由子页面按需拦截
+    return child;
   }
 }

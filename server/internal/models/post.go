@@ -33,6 +33,7 @@ type Post struct {
 	Price     float64     `gorm:"default:0" json:"price"`             // 价格（校园集市用）
 	Contact   string      `gorm:"size:500" json:"contact"`            // 联系方式
 	Status    PostStatus  `gorm:"default:normal;index" json:"status"` // 状态
+	ViewCount int         `gorm:"default:0" json:"view_count"`        // 观看次数
 	Images    []PostImage `gorm:"foreignKey:PostID" json:"images"`
 	Author    User        `gorm:"foreignKey:AuthorID" json:"author"`
 	CreatedAt time.Time   `json:"created_at"`

@@ -28,6 +28,5 @@ ENV DSN=host=postgres port=5432 user=postgres password=postgres123 dbname=shenli
 ENV UPLOAD_DIR=/app/uploads
 ENV GIN_MODE=release
 ENV JWT_SECRET=your-super-secret-jwt-key-change-this
-ENV SUPER_ADMIN_DEFAULT_PASSWORD=super_admin_password_change_this
 
 CMD ["./server"]

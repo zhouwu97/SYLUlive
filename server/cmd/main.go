@@ -91,7 +91,7 @@ func main() {
 	authHandler := handlers.NewAuthHandler(db, cfg.JWTSecret)
 	userHandler := handlers.NewUserHandler(db)
 	postHandler := handlers.NewPostHandler(db)
-	replyHandler := handlers.NewReplyHandler(db)
+	replyHandler := handlers.NewReplyHandler(db, cfg.JPushAppKey, cfg.JPushMasterSecret)
 	likeHandler := handlers.NewLikeHandler(db)
 	messageHandler := handlers.NewMessageHandler(db)
 	announcementHandler := handlers.NewAnnouncementHandler(db)
@@ -143,6 +143,7 @@ func main() {
 		user.PUT("/avatar", userHandler.UpdateAvatar)
 		user.PUT("/background", userHandler.UpdateBackground)
 		user.PUT("/nightmode", userHandler.UpdateNightMode)
+		user.PUT("/device_token", userHandler.UpdateDeviceToken)
 		user.GET("/invitations", invitationHandler.GetPending)
 		user.POST("/invitations/:id/accept", invitationHandler.Accept)
 		user.POST("/invitations/:id/reject", invitationHandler.Reject)
@@ -365,7 +366,7 @@ func main() {
 	// 版本信息
 	r.GET("/api/version", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
-			"version":             "1.1.1",
+			"version":             "1.4.0",
 			"force_update":        false,
 			"download_url":        "https://github.com/zhouwu97/SYLUlive/releases",
 			"github_download_url": "https://github.com/zhouwu97/SYLUlive/releases",

@@ -32,6 +32,7 @@ dependencies:
   share_plus: 10.1.4
   path: 1.9.1
   package_info_plus: ^8.0.0
+  jpush_flutter: ^3.4.5
 
 dev_dependencies:
   flutter_test:

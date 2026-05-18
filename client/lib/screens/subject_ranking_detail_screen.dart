@@ -1,6 +1,7 @@
 import 'dart:io' show File;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../models/teacher.dart';
@@ -97,17 +98,34 @@ class _SubjectRankingDetailScreenState
         return a.name.compareTo(b.name);
       });
 
-    return WillPopScope(
-      onWillPop: () async {
+    return PopScope(
+      canPop: !themeProvider.predictiveBack,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
         Navigator.pop(context, _changed);
-        return false;
       },
       child: Scaffold(
         backgroundColor: Colors.transparent,
+        extendBodyBehindAppBar: false, // 关闭延伸，防止 AppBar 与 Body 重叠
         appBar: AppBar(
           title: Text(widget.subjectName),
           backgroundColor: Colors.transparent,
           elevation: 0,
+          scrolledUnderElevation: 0,
+          centerTitle: true, // 标题居中显示
+          systemOverlayStyle: SystemUiOverlayStyle(
+            statusBarColor: Colors.transparent,
+            statusBarIconBrightness:
+                isDark ? Brightness.light : Brightness.dark,
+          ),
+          titleTextStyle: TextStyle(
+            color: isDark ? Colors.white : Colors.black87,
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+          ),
+          iconTheme: IconThemeData(
+            color: isDark ? Colors.white : Colors.black87,
+          ),
           leading: IconButton(
             icon: const Icon(Icons.arrow_back),
             onPressed: () => Navigator.pop(context, _changed),
@@ -117,7 +135,7 @@ class _SubjectRankingDetailScreenState
           children: [
             Positioned.fill(child: _buildBackground(themeProvider, isDark)),
             ListView(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 24), // 顶部边距设为 0
               children: [
                 GlassContainer(
                   padding: const EdgeInsets.all(20),

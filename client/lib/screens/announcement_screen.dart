@@ -1,7 +1,9 @@
 import 'dart:io' show File;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../models/announcement.dart' as model;
 import '../providers/auth_provider.dart';
@@ -401,14 +403,7 @@ class _AnnouncementCardState extends State<_AnnouncementCard> {
             ),
             if (_expanded) ...[
               const SizedBox(height: 12),
-              Text(
-                widget.announcement.content,
-                style: TextStyle(
-                  fontSize: 14,
-                  color: widget.isDark ? Colors.white70 : Colors.black87,
-                  height: 1.5,
-                ),
-              ),
+              _buildRichContent(widget.announcement.content, widget.isDark),
               const SizedBox(height: 12),
               Row(
                 children: [
@@ -432,5 +427,46 @@ class _AnnouncementCardState extends State<_AnnouncementCard> {
         ),
       ),
     );
+  }
+
+  /// 将文字中的 URL 渲染为可点击链接
+  Widget _buildRichContent(String text, bool isDark) {
+    final urlRegex = RegExp(r'(https?://[^\s]+)');
+    final matches = urlRegex.allMatches(text);
+    if (matches.isEmpty) {
+      return Text(text, style: TextStyle(fontSize: 14, color: isDark ? Colors.white70 : Colors.black87, height: 1.5));
+    }
+
+    final spans = <TextSpan>[];
+    var lastEnd = 0;
+    for (final match in matches) {
+      if (match.start > lastEnd) {
+        spans.add(TextSpan(text: text.substring(lastEnd, match.start)));
+      }
+      final url = match.group(1)!;
+      spans.add(TextSpan(
+        text: url,
+        style: TextStyle(color: Colors.blue[400], decoration: TextDecoration.underline),
+        recognizer: TapGestureRecognizer()..onTap = () => _openUrl(url),
+      ));
+      lastEnd = match.end;
+    }
+    if (lastEnd < text.length) {
+      spans.add(TextSpan(text: text.substring(lastEnd)));
+    }
+
+    return RichText(
+      text: TextSpan(
+        style: TextStyle(fontSize: 14, color: isDark ? Colors.white70 : Colors.black87, height: 1.5),
+        children: spans,
+      ),
+    );
+  }
+
+  Future<void> _openUrl(String url) async {
+    final uri = Uri.tryParse(url);
+    if (uri != null && await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
   }
 }

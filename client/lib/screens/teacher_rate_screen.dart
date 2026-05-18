@@ -52,40 +52,98 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
       backgroundColor: Colors.transparent,
-      appBar: AppBar(
-        title: const Text('榜单'),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        bottom: TabBar(
-          controller: _tabCtrl,
-          labelStyle: const TextStyle(fontWeight: FontWeight.bold),
-          tabs: const [
-            Tab(text: '学科榜'),
-            Tab(text: '专业榜'),
-          ],
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.add_circle_outline),
-            tooltip: '添加',
-            onPressed: _showAddDialog,
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          if (_showDisclaimer) _buildDisclaimer(isDark),
-          _buildSearchBar(isDark),
-          Expanded(
-            child: TabBarView(
-              controller: _tabCtrl,
+      body: SafeArea(
+        top: false,
+        child: Stack(
+          children: [
+            Column(
               children: [
-                _buildSubjectList(isDark),
-                _buildMajorList(isDark),
+                if (_showDisclaimer) _buildDisclaimer(isDark),
+                _buildSearchBar(isDark),
+                _buildSegmentedControl(isDark),
+                Expanded(
+                  child: _tabCtrl.index == 0
+                      ? _buildSubjectList(isDark)
+                      : _buildMajorList(isDark),
+                ),
               ],
             ),
+            Positioned(
+              right: 20,
+              bottom: 20,
+              child: _buildFAB(context),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSegmentedControl(bool isDark) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 20, 16, 12),
+      child: Container(
+        height: 40,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(10),
+          color: isDark
+              ? Colors.white.withValues(alpha: 0.08)
+              : Colors.black.withValues(alpha: 0.05),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: _buildSegmentItem(0, '学科榜', isDark),
+            ),
+            Expanded(
+              child: _buildSegmentItem(1, '专业榜', isDark),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSegmentItem(int index, String label, bool isDark) {
+    final isSelected = _tabCtrl.index == index;
+    return GestureDetector(
+      onTap: () {
+        _tabCtrl.animateTo(index);
+        setState(() {});
+      },
+      child: Container(
+        margin: const EdgeInsets.all(3),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(8),
+          color: isSelected
+              ? const Color(0xFF6D5EF9).withValues(alpha: 0.15)
+              : Colors.transparent,
+        ),
+        alignment: Alignment.center,
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: isSelected
+                ? const Color(0xFF6D5EF9)
+                : (isDark ? Colors.white60 : Colors.black54),
           ),
-        ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFAB(BuildContext context) {
+    final bottomSafe = MediaQuery.of(context).padding.bottom;
+    return Padding(
+      padding: EdgeInsets.only(bottom: bottomSafe > 0 ? bottomSafe : 0),
+      child: FloatingActionButton(
+        onPressed: _showAddDialog,
+        backgroundColor: const Color(0xFF16A34A),
+        elevation: 4,
+        shape: const CircleBorder(),
+        child: const Icon(Icons.add, color: Colors.white, size: 28),
       ),
     );
   }

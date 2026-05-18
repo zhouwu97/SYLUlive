@@ -10,11 +10,13 @@ android {
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
 
     kotlinOptions {
+        @Suppress("DEPRECATION")
         jvmTarget = JavaVersion.VERSION_17.toString()
     }
 
@@ -24,6 +26,9 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        manifestPlaceholders["JPUSH_PKGNAME"] = "com.example.shenliyuan"
+        manifestPlaceholders["JPUSH_APPKEY"] = "fbbd87f741e919f39519afe6"
+        manifestPlaceholders["JPUSH_CHANNEL"] = "developer-default"
     }
 
     signingConfigs {
@@ -50,4 +55,8 @@ android {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:1.2.2")
 }

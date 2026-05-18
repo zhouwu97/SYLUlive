@@ -23,18 +23,20 @@ const _reportReasons = [
 ];
 
 /// 弹出举报 BottomSheet
-void showReportSheet(BuildContext context, {required int postId}) {
+/// [targetType] = "post" 或 "reply"
+void showReportSheet(BuildContext context, {required int targetId, String targetType = 'post'}) {
   showModalBottomSheet(
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
-    builder: (ctx) => _ReportSheetContent(postId: postId),
+    builder: (ctx) => _ReportSheetContent(targetId: targetId, targetType: targetType),
   );
 }
 
 class _ReportSheetContent extends StatefulWidget {
-  final int postId;
-  const _ReportSheetContent({required this.postId});
+  final int targetId;
+  final String targetType;
+  const _ReportSheetContent({required this.targetId, required this.targetType});
 
   @override
   State<_ReportSheetContent> createState() => _ReportSheetContentState();
@@ -58,7 +60,8 @@ class _ReportSheetContentState extends State<_ReportSheetContent> {
     try {
       final dio = context.read<AuthProvider>().dio;
       await dio.post('/reports', data: {
-        'post_id': widget.postId,
+        'target_type': widget.targetType,
+        'target_id': widget.targetId,
         'reason': _selectedReason,
         'detail': _reasonController.text,
       });
@@ -98,6 +101,7 @@ class _ReportSheetContentState extends State<_ReportSheetContent> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final targetLabel = widget.targetType == 'reply' ? '举报评论' : '举报帖子';
 
     return Container(
       constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.75),
@@ -125,7 +129,7 @@ class _ReportSheetContentState extends State<_ReportSheetContent> {
               children: [
                 Icon(Icons.report_outlined, color: Colors.red[400], size: 24),
                 const SizedBox(width: 10),
-                const Text('举报帖子', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+                Text(targetLabel, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
               ],
             ),
           ),

@@ -8,6 +8,7 @@ class ThemeProvider extends ChangeNotifier {
   static const String _componentOpacityKey = 'background_transparency'; // 保持 key 兼容
   static const String _liquidGlassKey = 'liquid_glass';
   static const String _floatingNavBarKey = 'floating_nav_bar';
+  static const String _predictiveBackKey = 'predictive_back_enabled';
 
   bool _isDarkMode = false;
   String? _backgroundImage;
@@ -15,6 +16,7 @@ class ThemeProvider extends ChangeNotifier {
   double _componentOpacity = 0.7;  // 组件不透明度：越大越实，越小越透
   bool _liquidGlass = true;
   bool _floatingNavBar = false;
+  bool _predictiveBack = true;
 
   bool get isDarkMode => _isDarkMode;
   String? get backgroundImage => _backgroundImage;
@@ -22,6 +24,7 @@ class ThemeProvider extends ChangeNotifier {
   double get componentOpacity => _componentOpacity;
   bool get liquidGlass => _liquidGlass;
   bool get floatingNavBar => _floatingNavBar;
+  bool get predictiveBack => _predictiveBack;
   bool get hasBackground => _backgroundImage != null && _backgroundImage!.isNotEmpty;
 
   /// 是否有自定义背景（全局生效）
@@ -39,6 +42,7 @@ class ThemeProvider extends ChangeNotifier {
     _componentOpacity = prefs.getDouble(_componentOpacityKey) ?? 0.7;
     _liquidGlass = prefs.getBool(_liquidGlassKey) ?? true;
     _floatingNavBar = prefs.getBool(_floatingNavBarKey) ?? false;
+    _predictiveBack = prefs.getBool(_predictiveBackKey) ?? true;
     notifyListeners();
   }
 
@@ -92,6 +96,13 @@ class ThemeProvider extends ChangeNotifier {
     _floatingNavBar = value;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_floatingNavBarKey, value);
+    notifyListeners();
+  }
+
+  Future<void> setPredictiveBack(bool value) async {
+    _predictiveBack = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_predictiveBackKey, value);
     notifyListeners();
   }
 

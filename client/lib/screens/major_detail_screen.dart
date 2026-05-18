@@ -38,11 +38,20 @@ class _MajorDetailScreenState extends State<MajorDetailScreen> {
 
     return Scaffold(
       backgroundColor: isDark ? const Color(0xFF131720) : Colors.white,
-      extendBodyBehindAppBar: true,
+      extendBodyBehindAppBar: false, // 修复重叠
       appBar: AppBar(
         systemOverlayStyle: SystemUiOverlayStyle(
           statusBarColor: Colors.transparent,
           statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
+        ),
+        centerTitle: true,
+        titleTextStyle: TextStyle(
+          color: isDark ? Colors.white : Colors.black87,
+          fontSize: 18,
+          fontWeight: FontWeight.bold,
+        ),
+        iconTheme: IconThemeData(
+          color: isDark ? Colors.white : Colors.black87,
         ),
         title: Text(widget.majorName),
         backgroundColor: Colors.transparent,
@@ -56,10 +65,9 @@ class _MajorDetailScreenState extends State<MajorDetailScreen> {
             builder: (_, m, __) {
               if (m.isLoading) return const Center(child: CircularProgressIndicator());
               if (m.selected == null) return const Center(child: Text('加载失败'));
-              return SafeArea(
-                child: ListView(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 80),
-                  children: [
+              return ListView(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 80), // 顶部边距设为 0
+                children: [
                     Card(
                       color: isDark ? Colors.grey[850] : Colors.white,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -104,8 +112,7 @@ class _MajorDetailScreenState extends State<MajorDetailScreen> {
                       )),
                     ],
                   ],
-                ),
-              );
+                );
             },
           ),
         ],

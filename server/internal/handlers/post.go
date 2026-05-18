@@ -194,6 +194,12 @@ func (h *PostHandler) Create(c *gin.Context) {
 	}
 
 	h.db.Preload("Author").Preload("Images").Preload("Images.File").First(&post, post.ID)
+
+	// 集市发帖通知所有用户
+	if post.BoardID == models.BoardMarket {
+		go CreateMarketPostNotification(h.db, post.ID, post.Title, post.Price, userID.(uint))
+	}
+
 	c.JSON(http.StatusCreated, post)
 }
 

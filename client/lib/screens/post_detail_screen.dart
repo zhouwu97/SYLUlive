@@ -921,7 +921,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
-  /// 将回复递归构建为完整楼中楼树：顶级评论 + 嵌套子回复链
+  /// 将回复构建为楼中楼结构：顶级评论 + 所有子回复扁平展示
   List<_ReplyThread> _buildThreads() {
     final childMap = <int, List<Reply>>{};
     for (final r in _replies) {
@@ -930,11 +930,21 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       }
     }
 
+    // 扁平收集所有子回复（不管嵌套多深）
+    List<Reply> flattenChildren(int parentId) {
+      final directChildren = childMap[parentId] ?? [];
+      final result = <Reply>[];
+      for (final child in directChildren) {
+        result.add(child);
+        // 不再递归，把所有层级的回复都收集到同一层级
+      }
+      return result;
+    }
+
     _ReplyThread buildNode(Reply reply) {
-      final children = (childMap[reply.id] ?? [])
-          .map(buildNode)
-          .toList();
-      return _ReplyThread(parent: reply, children: children);
+      // 所有子回复扁平化
+      final flatChildren = flattenChildren(reply.id);
+      return _ReplyThread(parent: reply, children: flatChildren);
     }
 
     final topLevel = _replies.where((r) => r.parentReplyId == null).toList();
@@ -958,10 +968,18 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   Widget _buildReplyThread(_ReplyThread thread, bool isDark, {bool compact = false, int depth = 0}) {
+    // 获取该顶级评论的所有子回复（扁平化）
+    final childMap = <int, List<Reply>>{};
+    for (final r in _replies) {
+      if (r.parentReplyId != null) {
+        childMap.putIfAbsent(r.parentReplyId!, () => []).add(r);
+      }
+    }
+    final allChildren = childMap[thread.parent.id] ?? [];
     final visibleChildren = compact && depth == 0
-        ? thread.children.take(1).toList()
-        : thread.children;
-    final hasMore = compact && depth == 0 && thread.children.length > 1;
+        ? allChildren.take(1).toList()
+        : allChildren;
+    final hasMore = compact && depth == 0 && allChildren.length > 1;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
@@ -970,7 +988,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         children: [
           // 主评论
           _buildMainReply(thread.parent, isDark),
-          // 子回复区域（递归嵌套）
+          // 子回复区域（扁平化展示）
           if (visibleChildren.isNotEmpty)
             Container(
               margin: EdgeInsets.only(left: 42.0, top: 4),
@@ -985,13 +1003,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   ...visibleChildren.map(
-                    (child) => _buildChildReplyThread(child, isDark, compact: compact, depth: depth + 1),
+                    (child) => _buildChildReply(child, isDark, depth: 0),
                   ),
                   if (hasMore)
                     Padding(
                       padding: const EdgeInsets.only(top: 6),
                       child: Text(
-                        '共${thread.children.length}条回复，点击查看',
+                        '共${allChildren.length}条回复，点击查看',
                         style: TextStyle(
                           fontSize: 12,
                           color: Theme.of(context).primaryColor,
@@ -1006,38 +1024,31 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
-  /// 子回复线程：显示子回复及其嵌套后代
+  /// 子回复线程：显示扁平化后的所有子回复（不再递归嵌套）
   Widget _buildChildReplyThread(_ReplyThread thread, bool isDark, {bool compact = false, int depth = 0}) {
+    // 扁平化后：从 childMap 中获取该顶级评论的所有子回复
+    final childMap = <int, List<Reply>>{};
+    for (final r in _replies) {
+      if (r.parentReplyId != null) {
+        childMap.putIfAbsent(r.parentReplyId!, () => []).add(r);
+      }
+    }
+    final directChildren = childMap[thread.parent.id] ?? [];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildChildReply(thread.parent, isDark, depth: depth),
-        // 递归嵌套更深层回复
-        if (thread.children.isNotEmpty)
-          Container(
-            margin: EdgeInsets.only(left: 36.0, top: 4),
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: isDark
-                  ? Colors.white.withValues(alpha: 0.02)
-                  : Colors.grey.withValues(alpha: 0.03),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: thread.children.map(
-                (child) => _buildChildReplyThread(child, isDark, compact: compact, depth: depth + 1),
-              ).toList(),
-            ),
-          ),
-      ],
+      children: directChildren.map(
+        (child) => _buildChildReply(child, isDark, depth: 0),
+      ).toList(),
     );
   }
 
   /// 主评论（顶级）
   Widget _buildMainReply(Reply r, bool isDark) {
+    final currentUser = context.read<AuthProvider>().user;
+    final isOwn = currentUser?.id == r.authorId;
     return GestureDetector(
       onTap: () => _openReplyComposer(parentReplyId: r.id, replyToName: r.author?.nickname),
+      onLongPress: () => _showReplyActionSheet(r, isOwn, isDark),
       child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
         CachedAvatar(
           radius: 16,
@@ -1104,8 +1115,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   Widget _buildChildReply(Reply r, bool isDark, {int depth = 0}) {
     // 从 content 中解析 @username
     final contentWidget = _buildChildContent(r, isDark);
+    // 回复按钮指向顶级评论（楼中楼的根），避免多层嵌套
+    final threadParentId = _findTopLevelParentId(r);
+    final currentUser = context.read<AuthProvider>().user;
+    final isOwn = currentUser?.id == r.authorId;
     return GestureDetector(
-      onTap: () => _openReplyComposer(parentReplyId: r.id, replyToName: r.author?.nickname),
+      onTap: () => _openReplyComposer(parentReplyId: threadParentId, replyToName: r.author?.nickname),
+      onLongPress: () => _showReplyActionSheet(r, isOwn, isDark),
       child: Padding(
         padding: EdgeInsets.only(bottom: 8, left: depth * 4.0),
         child: Row(
@@ -1310,6 +1326,24 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
   }
 
+  /// 查找回复的顶级评论id（楼中楼的根）
+  int _findTopLevelParentId(Reply r) {
+    // 查找这条回复的顶级父评论
+    final parentMap = <int, int>{}; // replyId -> parentReplyId
+    for (final reply in _replies) {
+      if (reply.parentReplyId != null) {
+        parentMap[reply.id] = reply.parentReplyId!;
+      }
+    }
+    // 循环向上找到顶级评论
+    int currentId = r.id;
+    while (parentMap.containsKey(currentId)) {
+      currentId = parentMap[currentId]!;
+    }
+    // currentId 现在是顶级评论的id
+    return currentId;
+  }
+
   bool _isCurrentUserPostOwner() {
     final post = _post;
     final currentUser = context.read<AuthProvider>().user;
@@ -1380,11 +1414,92 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       }
     });
   }
+
+  void _showReplyActionSheet(Reply r, bool isOwn, bool isDark) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: isDark ? const Color(0xFF1E1E32) : Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              margin: const EdgeInsets.only(top: 12),
+              decoration: BoxDecoration(
+                color: isDark ? Colors.white24 : Colors.grey[300],
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            ListTile(
+              leading: Icon(Icons.copy, color: isDark ? Colors.white70 : Colors.black87),
+              title: Text('复制', style: TextStyle(color: isDark ? Colors.white70 : Colors.black87)),
+              onTap: () {
+                Clipboard.setData(ClipboardData(text: r.content));
+                Navigator.pop(ctx);
+                AppFeedback.showSnackBar(context, '已复制');
+              },
+            ),
+            if (isOwn)
+              ListTile(
+                leading: const Icon(Icons.delete_outline, color: Colors.red),
+                title: const Text('删除', style: TextStyle(color: Colors.red)),
+                onTap: () async {
+                  Navigator.pop(ctx);
+                  await _deleteReply(r);
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _deleteReply(Reply r) async {
+    final confirmed = await AppFeedback.confirmDanger(
+      context,
+      title: '删除回复',
+      message: '确定要删除这条回复吗？',
+    );
+    if (!confirmed) return;
+    try {
+      await _dio.delete('/replies/${r.id}');
+      if (mounted) {
+        AppFeedback.showSnackBar(context, '已删除');
+        _loadReplies();
+      }
+    } on DioException catch (e) {
+      final msg = AppFeedback.dioErrorMessage(e, fallback: '删除失败');
+      if (mounted) {
+        AppFeedback.showSnackBar(context, msg, isError: true);
+      }
+    }
+  }
+
+  Future<void> _loadReplies() async {
+    try {
+      final repliesResponse = await _dio.get('/posts/${widget.postId}/replies');
+      setState(() {
+        _replies = (repliesResponse.data as List)
+            .map((e) => Reply.fromJson(e))
+            .toList();
+      });
+    } on DioException catch (e) {
+      final msg = AppFeedback.dioErrorMessage(e, fallback: '加载回复失败');
+      if (mounted) {
+        AppFeedback.showSnackBar(context, msg, isError: true);
+      }
+    }
+  }
 }
 
-/// 楼中楼数据结构（递归嵌套）
+/// 楼中楼数据结构（扁平化子回复）
 class _ReplyThread {
   final Reply parent;
-  final List<_ReplyThread> children;
+  final List<Reply> children; // 直接子回复列表，不再递归
   _ReplyThread({required this.parent, required this.children});
 }

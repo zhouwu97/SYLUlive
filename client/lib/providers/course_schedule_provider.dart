@@ -35,24 +35,33 @@ class CourseBlock {
   int get span => endSection - startSection + 1;
 
   Map<String, dynamic> toJson() => {
-    'id': id, 'course_code': courseCode, 'name': name,
-    'teacher': teacher, 'location': location, 'color': color,
-    'weekday': weekday, 'start_section': startSection, 'end_section': endSection,
-    'weeks': weeks, 'note': note,
-  };
+        'id': id,
+        'course_code': courseCode,
+        'name': name,
+        'teacher': teacher,
+        'location': location,
+        'color': color,
+        'weekday': weekday,
+        'start_section': startSection,
+        'end_section': endSection,
+        'weeks': weeks,
+        'note': note,
+      };
 
   factory CourseBlock.fromJson(Map<String, dynamic> json) {
     return CourseBlock(
       id: json['id'] ?? 0,
       courseCode: json['course_code'] ?? '',
-      name: (json['custom_name'] ?? json['original_name'] ?? json['name'] ?? '') as String,
+      name: (json['custom_name'] ?? json['original_name'] ?? json['name'] ?? '')
+          as String,
       teacher: json['teacher'] as String?,
       location: json['location'] as String?,
       color: json['color'] ?? '#6366F1',
       weekday: json['weekday'] ?? 1,
       startSection: json['start_section'] ?? 1,
       endSection: json['end_section'] ?? 1,
-      weeks: (json['weeks'] as List<dynamic>?)?.map((e) => e as int).toList() ?? [],
+      weeks: (json['weeks'] as List<dynamic>?)?.map((e) => e as int).toList() ??
+          [],
       note: json['note'] as String?,
     );
   }
@@ -78,7 +87,6 @@ class CourseScheduleProvider extends ChangeNotifier {
   // 本地缓存 key 前缀
   static const String _cacheKeyPrefix = 'course_cache_v3_';
   static const int _cacheVersion = 3;
-  static const String _syncVerKey = 'course_sync_ver';
 
   // 学期起始日期（用于推算教学周）
   DateTime? _semesterStart;
@@ -92,6 +100,7 @@ class CourseScheduleProvider extends ChangeNotifier {
   Map<int, Map<int, List<CourseBlock>>> get gridData => _gridData;
   String? get userId => _userId;
   DateTime? get semesterStart => _semesterStart;
+  String? get cacheUserId => _userId;
 
   CourseScheduleProvider() {
     _eduDio = Dio(BaseOptions(
@@ -110,18 +119,84 @@ class CourseScheduleProvider extends ChangeNotifier {
 
   /// 设置当前用户，但不自动拉取数据（由调用方决定何时拉取）
   void setUserId(String userId) {
+    if (_userId == userId) return;
     _userId = userId;
     loadSemesterStart();
   }
 
   /// 默认颜色池（按课程名哈希分配）
   static const List<String> _colorPool = [
-    '#6366F1', '#8B5CF6', '#EC4899', '#06B6D4',
-    '#F59E0B', '#10B981', '#EF4444', '#3B82F6',
+    '#6366F1',
+    '#8B5CF6',
+    '#EC4899',
+    '#06B6D4',
+    '#F59E0B',
+    '#10B981',
+    '#EF4444',
+    '#3B82F6',
   ];
 
+  /// 检查是否有缓存的课程（不自动拉取）
+  Future<bool> hasCachedCourses() async {
+    if (_userId == null) return false;
+    final cacheKey = '$_cacheKeyPrefix$_userId';
+    final cached = await _loadFromCache(cacheKey);
+    return cached != null && cached.isNotEmpty;
+  }
+
+  Future<bool> loadCachedCoursesIfAvailable() async {
+    if (_userId == null) return false;
+    final cacheKey = '$_cacheKeyPrefix$_userId';
+    final cached = await _loadFromCache(cacheKey);
+    if (cached == null || cached.isEmpty) {
+      return false;
+    }
+    _courses = cached;
+    _buildGrid();
+    _isLoading = false;
+    _errorMessage = null;
+    notifyListeners();
+    return true;
+  }
+
+  Future<void> applyFetchedCourses(
+      List<Map<String, dynamic>> rawCourses) async {
+    if (_userId == null) return;
+
+    _courses = rawCourses.map(_courseFromFetchedMap).toList();
+    _buildGrid();
+    _isLoading = false;
+    _errorMessage = null;
+
+    if (_courses.isNotEmpty) {
+      await _saveToCache('$_cacheKeyPrefix$_userId', _courses);
+    }
+
+    notifyListeners();
+  }
+
+  CourseBlock _courseFromFetchedMap(Map<String, dynamic> map) {
+    final name = map['name'] as String? ?? '';
+    final time = map['time'] as int? ?? 1;
+    return CourseBlock(
+      id: 0,
+      courseCode: '',
+      name: name,
+      teacher: map['teacher'] as String?,
+      location: map['location'] as String?,
+      color: _colorPool[name.hashCode.abs() % _colorPool.length],
+      weekday: map['week_day'] as int? ?? 1,
+      startSection: time,
+      endSection: time + 1,
+      weeks:
+          (map['weeks'] as List<dynamic>?)?.map((e) => e as int).toList() ?? [],
+    );
+  }
+
   /// 加载课程。默认先从手机缓存读取，[forceRefresh]=true 时跳过缓存从服务器拉取
-  Future<void> loadCourses({bool forceRefresh = false}) async {
+  /// [onlyCache] 为 true 时，如果没有缓存则不自动拉取，直接返回
+  Future<void> loadCourses(
+      {bool forceRefresh = false, bool onlyCache = false}) async {
     if (_userId == null) return;
 
     final cacheKey = '$_cacheKeyPrefix$_userId';
@@ -134,12 +209,22 @@ class CourseScheduleProvider extends ChangeNotifier {
         _buildGrid();
         debugPrint('📱 从手机缓存加载: ${_courses.length}门课');
         for (final c in _courses) {
-          debugPrint('  ${c.name} | 周${c.weekday} | 第${c.startSection}-${c.endSection}节');
+          debugPrint(
+              '  ${c.name} | 周${c.weekday} | 第${c.startSection}-${c.endSection}节');
         }
         _isLoading = false;
         notifyListeners();
         return; // 缓存命中，不请求网络
       }
+    }
+
+    // 缓存未命中且 onlyCache=true 时，不自动拉取
+    if (onlyCache) {
+      _courses = [];
+      _gridData = {};
+      _isLoading = false;
+      notifyListeners();
+      return;
     }
 
     // 缓存未命中或强制刷新 → 先清旧缓存，再请求网络
@@ -169,7 +254,8 @@ class CourseScheduleProvider extends ChangeNotifier {
           localSuccess = true;
           debugPrint('✅ 从服务器本地加载: ${_courses.length}门课');
           for (final c in _courses) {
-            debugPrint('  ${c.name} | 周${c.weekday} | 第${c.startSection}-${c.endSection}节');
+            debugPrint(
+                '  ${c.name} | 周${c.weekday} | 第${c.startSection}-${c.endSection}节');
           }
         }
       }
@@ -193,27 +279,15 @@ class CourseScheduleProvider extends ChangeNotifier {
           final data = fetchResp.data;
           if (data['success'] == true) {
             final rawCourses = data['courses'] as List<dynamic>? ?? [];
-            _courses = rawCourses.map((c) {
-              final map = c as Map<String, dynamic>;
-              final name = map['name'] as String? ?? '';
-              final time = map['time'] as int? ?? 1;
-              return CourseBlock(
-                id: 0, courseCode: '',
-                name: name,
-                teacher: map['teacher'] as String?,
-                location: map['location'] as String?,
-                color: _colorPool[name.hashCode.abs() % _colorPool.length],
-                weekday: map['week_day'] as int? ?? 1,
-                startSection: time,
-                endSection: time + 1,
-                weeks: (map['weeks'] as List<dynamic>?)?.map((e) => e as int).toList() ?? [],
-              );
-            }).toList();
-        _buildGrid();
-        debugPrint('🌐 从教务拉取原始数据: ${_courses.length}门课');
-        for (final c in _courses) {
-          debugPrint('  ${c.name} | 周${c.weekday} | 第${c.startSection}-${c.endSection}节 | ${c.teacher} | ${c.location}');
-        }
+            _courses = rawCourses
+                .map((c) => _courseFromFetchedMap(c as Map<String, dynamic>))
+                .toList();
+            _buildGrid();
+            debugPrint('🌐 从教务拉取原始数据: ${_courses.length}门课');
+            for (final c in _courses) {
+              debugPrint(
+                  '  ${c.name} | 周${c.weekday} | 第${c.startSection}-${c.endSection}节 | ${c.teacher} | ${c.location}');
+            }
           } else {
             _errorMessage = data['message'] as String?;
           }
@@ -259,7 +333,9 @@ class CourseScheduleProvider extends ChangeNotifier {
       final json = prefs.getString(key);
       if (json == null || json.isEmpty) return null;
       final list = jsonDecode(json) as List<dynamic>;
-      return list.map((e) => CourseBlock.fromJson(e as Map<String, dynamic>)).toList();
+      return list
+          .map((e) => CourseBlock.fromJson(e as Map<String, dynamic>))
+          .toList();
     } catch (e) {
       debugPrint('读取缓存课程失败: $e');
       return null;
@@ -327,7 +403,8 @@ class CourseScheduleProvider extends ChangeNotifier {
   /// 设置学期起始日期（周一），持久化到 SharedPreferences
   Future<void> setSemesterStart(DateTime date) async {
     // 对齐到周一
-    _semesterStart = DateTime(date.year, date.month, date.day).subtract(Duration(days: date.weekday - 1));
+    _semesterStart = DateTime(date.year, date.month, date.day)
+        .subtract(Duration(days: date.weekday - 1));
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_semesterStartKey, _semesterStart!.toIso8601String());
     notifyListeners();
@@ -352,6 +429,58 @@ class CourseScheduleProvider extends ChangeNotifier {
 
   bool isCourseActive(CourseBlock course, int academicWeek) {
     return course.weeks.isEmpty || course.weeks.contains(academicWeek);
+  }
+
+  /// 添加自定义课程到本地缓存
+  Future<CourseBlock> addCustomCourse({
+    required String name,
+    required int weekday,
+    required int startSection,
+    required int endSection,
+    required int startWeek,
+    required int endWeek,
+    String? teacher,
+    String? location,
+  }) async {
+    final weeks = List.generate(
+      endWeek - startWeek + 1,
+      (i) => startWeek + i,
+    );
+    final colorIdx = name.hashCode.abs() % _colorPool.length;
+    final newId = -DateTime.now().millisecondsSinceEpoch; // 负数ID区分自定义课程
+
+    final course = CourseBlock(
+      id: newId,
+      courseCode: 'custom_$newId',
+      name: name,
+      teacher: teacher,
+      location: location,
+      color: _colorPool[colorIdx],
+      weekday: weekday,
+      startSection: startSection,
+      endSection: endSection,
+      weeks: weeks,
+    );
+
+    _courses.add(course);
+    _buildGrid();
+
+    if (_userId != null) {
+      await _saveToCache('$_cacheKeyPrefix$_userId', _courses);
+    }
+
+    notifyListeners();
+    return course;
+  }
+
+  /// 删除自定义课程
+  Future<void> removeCustomCourse(int courseId) async {
+    _courses.removeWhere((c) => c.id == courseId);
+    _buildGrid();
+    if (_userId != null) {
+      await _saveToCache('$_cacheKeyPrefix$_userId', _courses);
+    }
+    notifyListeners();
   }
 
   void setSemester(String year, int semester) {

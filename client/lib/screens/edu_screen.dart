@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/edu_provider.dart';
-import '../main.dart' show navigatorKey;
+import '../utils/app_navigator.dart' show appNavigatorKey;
 
 class EduScreen extends StatefulWidget {
   const EduScreen({super.key});
@@ -327,7 +327,7 @@ class _EduScreenState extends State<EduScreen> {
 
   void _showCoursesResult(BuildContext context, List<Map<String, dynamic>> courses, String year, int semester, EduProvider eduProvider) {
     showModalBottomSheet(
-      context: navigatorKey.currentContext!,
+      context: appNavigatorKey.currentContext!,
       isScrollControlled: true,
       builder: (ctx) => DraggableScrollableSheet(
         initialChildSize: 0.7,
@@ -374,7 +374,7 @@ class _EduScreenState extends State<EduScreen> {
                 child: ElevatedButton.icon(
                   onPressed: () async {
                     // 先拿到全局 ScaffoldMessenger（此时 context 还活着）
-                    final navContext = navigatorKey.currentContext;
+                    final navContext = appNavigatorKey.currentContext;
                     if (navContext == null) return;
                     final messenger = ScaffoldMessenger.of(navContext);
                     Navigator.pop(ctx); // 关闭底部弹窗
@@ -480,7 +480,7 @@ class _EduScreenState extends State<EduScreen> {
 
   void _showGradesResult(BuildContext context, List<Map<String, dynamic>> grades, String year, int semester) {
     showModalBottomSheet(
-      context: navigatorKey.currentContext!,
+      context: appNavigatorKey.currentContext!,
       isScrollControlled: true,
       builder: (context) => DraggableScrollableSheet(
         initialChildSize: 0.7,

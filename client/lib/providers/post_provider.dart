@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
+import 'dart:io';
 import '../models/post.dart';
+import '../services/post_cache_service.dart';
+import '../utils/app_feedback.dart';
 
 /// 每个板块的帖子状态
 class _BoardState {
@@ -10,6 +13,7 @@ class _BoardState {
   int currentPage = 1;
   bool hasMore = true;
   bool hasLoaded = false;
+  bool hasCacheLoaded = false;
 }
 
 /// 创建帖子的返回结果
@@ -19,19 +23,34 @@ class CreatePostResult {
   const CreatePostResult({required this.success, this.errorMessage});
 }
 
+class DeletePostResult {
+  final bool success;
+  final String? errorMessage;
+  const DeletePostResult({required this.success, this.errorMessage});
+}
+
 class PostProvider extends ChangeNotifier {
   final Dio _dio;
 
   final Map<int, _BoardState> _boards = {};
-  int _activeBoardId = 1;
+  final int _activeBoardId = 1;
 
   PostProvider(this._dio) {
     _boards[1] = _BoardState();
     _boards[2] = _BoardState();
+    _boards[3] = _BoardState();
+    _boards[4] = _BoardState();
+    // 启动后异步加载缓存（首页优先）
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadCachedThenRefresh(1, sort: 'time');
+    });
   }
 
-  // ---- 当前活跃板块 (兼容旧 getter，水帖 / 首页用) ----
+  _BoardState _ensureBoard(int boardId) {
+    return _boards.putIfAbsent(boardId, _BoardState.new);
+  }
 
+  // ---- 当前活跃板块 ----
   List<Post> get posts => _board.posts;
   bool get isLoading => _board.isLoading;
   String? get error => _board.error;
@@ -40,68 +59,209 @@ class PostProvider extends ChangeNotifier {
 
   _BoardState get _board => _boards[_activeBoardId]!;
 
-  /// 获取指定板块的帖子列表
   List<Post> postsFor(int boardId) => _boards[boardId]?.posts ?? [];
   bool isLoadingFor(int boardId) => _boards[boardId]?.isLoading ?? false;
   bool hasLoadedFor(int boardId) => _boards[boardId]?.hasLoaded ?? false;
 
-  Future<void> loadPosts({int boardId = 1, String? type, String sort = 'time'}) async {
-    final board = _boards[boardId]!;
-    if (board.isLoading) return;
+  /// SWR 模式：先读缓存秒开 → 后台增量拉取
+  Future<void> _loadCachedThenRefresh(int boardId, {String? type, String sort = 'time'}) async {
+    final board = _ensureBoard(boardId);
+    if (board.hasCacheLoaded) return;
+    board.hasCacheLoaded = true;
 
+    // 第一步：极速上屏 — 读本地缓存
+    try {
+      final cached = await PostCacheService.loadPosts(boardId);
+      if (cached.isNotEmpty) {
+        board.posts = cached;
+        notifyListeners();
+      }
+    } catch (_) {}
+
+    // 第二步 + 第三步：查找锚点，增量请求
+    try {
+      final since = await PostCacheService.getLatestTimestamp(boardId);
+      final params = <String, dynamic>{
+        'board': boardId,
+        'type': type,
+        'sort': sort,
+        'page': 1,
+        'limit': 20,
+      };
+      if (since != null) {
+        params['since'] = since;
+      }
+
+      final response = await _dio.get('/posts', queryParameters: params);
+      if (response.statusCode == 200) {
+        final data = response.data;
+        final newPosts = (data['posts'] as List)
+            .map((e) => Post.fromJson(e))
+            .toList();
+
+        // 第四步：增量合并 — 有新帖插入头部，无新帖保持原样
+        if (newPosts.isNotEmpty) {
+          final existingIds = board.posts.map((p) => p.id).toSet();
+          final uniqueNew = newPosts.where((p) => !existingIds.contains(p.id)).toList();
+          if (uniqueNew.isNotEmpty) {
+            board.posts = [...uniqueNew, ...board.posts];
+          }
+          // 写回缓存
+          await PostCacheService.savePosts(boardId, board.posts);
+        }
+
+        board.hasMore = newPosts.length >= 20;
+        board.currentPage = 2;
+      }
+    } on DioException catch (e) {
+      // 网络失败时，缓存已上屏，静默忽略
+      debugPrint('增量拉取失败(board=$boardId): ${e.message}');
+    } catch (e) {
+      debugPrint('增量拉取异常(board=$boardId): $e');
+    }
+
+    board.hasLoaded = true;
+    if (boardId == _activeBoardId) {
+      _boards[_activeBoardId] = board;
+    }
+    notifyListeners();
+  }
+
+  /// 加载更多（翻页）
+  Future<void> loadPosts(
+      {int boardId = 1, String? type, String sort = 'time'}) async {
+    final board = _ensureBoard(boardId);
+
+    // 首次加载走 SWR
+    if (!board.hasCacheLoaded) {
+      await _loadCachedThenRefresh(boardId, type: type, sort: sort);
+      return;
+    }
+
+    if (board.isLoading || !board.hasMore) return;
     board.isLoading = true;
     board.error = null;
     notifyListeners();
 
     try {
-      final response = await _dio.get('/posts', queryParameters: {
+      final params = <String, dynamic>{
         'board': boardId,
         'type': type,
         'sort': sort,
         'page': board.currentPage,
         'limit': 20,
-      });
+      };
 
+      final response = await _dio.get('/posts', queryParameters: params);
       if (response.statusCode == 200) {
         final data = response.data;
-        final List<Post> newPosts = (data['posts'] as List)
+        final newPosts = (data['posts'] as List)
             .map((e) => Post.fromJson(e))
             .toList();
 
         if (board.currentPage == 1) {
           board.posts = newPosts;
         } else {
-          board.posts.addAll(newPosts);
+          final existingIds = board.posts.map((p) => p.id).toSet();
+          final uniqueNew = newPosts.where((p) => !existingIds.contains(p.id)).toList();
+          board.posts.addAll(uniqueNew);
         }
 
         board.hasMore = newPosts.length >= 20 && newPosts.isNotEmpty;
         board.currentPage++;
       }
     } on DioException catch (e) {
-      board.error = e.message ?? '网络错误';
-      debugPrint('加载帖子失败: ${board.error}');
+      board.error = AppFeedback.dioErrorMessage(e);
     } catch (e) {
       board.error = e.toString();
-      debugPrint('加载帖子失败: ${board.error}');
     }
 
     board.isLoading = false;
     board.hasLoaded = true;
-
-    // 同时更新活跃板块引用
     if (boardId == _activeBoardId) {
       _boards[_activeBoardId] = board;
     }
-
     notifyListeners();
   }
 
-  Future<void> refresh({int boardId = 1, String? type, String sort = 'time'}) async {
-    final board = _boards[boardId]!;
+  Future<void> refresh(
+      {int boardId = 1, String? type, String sort = 'time'}) async {
+    final board = _ensureBoard(boardId);
     board.currentPage = 1;
     board.hasMore = true;
-    await loadPosts(boardId: boardId, type: type, sort: sort);
+
+    final since = await PostCacheService.getLatestTimestamp(boardId);
+    try {
+      final params = <String, dynamic>{
+        'board': boardId,
+        'type': type,
+        'sort': sort,
+        'page': 1,
+        'limit': 20,
+      };
+      if (since != null) {
+        params['since'] = since;
+      }
+
+      final response = await _dio.get('/posts', queryParameters: params);
+      if (response.statusCode == 200) {
+        final newPosts = (response.data['posts'] as List)
+            .map((e) => Post.fromJson(e))
+            .toList();
+
+        if (newPosts.isNotEmpty) {
+          final existingIds = board.posts.map((p) => p.id).toSet();
+          final uniqueNew = newPosts.where((p) => !existingIds.contains(p.id)).toList();
+          if (uniqueNew.isNotEmpty) {
+            board.posts = [...uniqueNew, ...board.posts];
+            await PostCacheService.savePosts(boardId, board.posts);
+          }
+        }
+        board.hasMore = newPosts.length >= 20;
+      }
+    } on DioException catch (e) {
+      debugPrint('刷新失败(board=$boardId): ${e.message}');
+    }
+
+    if (boardId == _activeBoardId) {
+      _boards[_activeBoardId] = board;
+    }
+    notifyListeners();
   }
+
+  Future<List<Post>> searchPosts({
+    int boardId = 1,
+    String? type,
+    String sort = 'time',
+    required String query,
+    int limit = 50,
+  }) async {
+    final trimmed = query.trim();
+    if (trimmed.isEmpty) return [];
+
+    try {
+      final response = await _dio.get('/posts', queryParameters: {
+        'board': boardId,
+        'type': type,
+        'sort': sort,
+        'page': 1,
+        'limit': limit,
+        'q': trimmed,
+      });
+
+      if (response.statusCode == 200) {
+        final data = response.data;
+        return (data['posts'] as List).map((e) => Post.fromJson(e)).toList();
+      }
+    } on DioException catch (e) {
+      debugPrint('搜索帖子失败: ${AppFeedback.dioErrorMessage(e)}');
+    } catch (e) {
+      debugPrint('搜索帖子失败: $e');
+    }
+    return [];
+  }
+
+  // ---- 以下为原有方法，保持不变 ----
 
   Future<CreatePostResult> createPost({
     required int boardId,
@@ -110,7 +270,7 @@ class PostProvider extends ChangeNotifier {
     String? postType,
     double? price,
     String? contact,
-    List<String>? imagePaths,
+    List<int>? fileIds,
   }) async {
     try {
       final formData = FormData.fromMap({
@@ -120,34 +280,88 @@ class PostProvider extends ChangeNotifier {
         if (postType != null) 'post_type': postType,
         if (price != null) 'price': price,
         if (contact != null && contact.isNotEmpty) 'contact': contact,
+        if (fileIds != null && fileIds.isNotEmpty)
+          'file_ids': fileIds.join(','),
       });
 
       final response = await _dio.post('/posts', data: formData);
       if (response.statusCode == 201) {
         return const CreatePostResult(success: true);
       }
-      return CreatePostResult(success: false, errorMessage: '发布失败 (${response.statusCode})');
+      return CreatePostResult(
+          success: false, errorMessage: '发布失败 (${response.statusCode})');
     } on DioException catch (e) {
-      String msg = '网络错误';
-      if (e.response != null) {
-        final data = e.response!.data;
-        if (data is Map && data.containsKey('error')) {
-          msg = data['error'].toString();
-        } else {
-          msg = '服务器返回错误 (${e.response!.statusCode})';
-        }
-      } else {
-        msg = '网络连接失败: ${e.message}';
-      }
-      debugPrint('创建帖子失败: $msg');
+      final msg = AppFeedback.dioErrorMessage(e, fallback: '发布失败');
       return CreatePostResult(success: false, errorMessage: msg);
     } catch (e) {
-      debugPrint('创建帖子失败: $e');
       return CreatePostResult(success: false, errorMessage: '创建帖子失败: $e');
     }
   }
 
-  Future<bool> deletePost(int postId) async {
+  Future<CreatePostResult> updatePost({
+    required int postId,
+    required int boardId,
+    required String content,
+    String? title,
+    String? postType,
+    double? price,
+    String? contact,
+    List<int>? fileIds,
+  }) async {
+    try {
+      final formData = FormData.fromMap({
+        'board_id': boardId,
+        'content': content,
+        'title': title ?? '',
+        'post_type': postType ?? '',
+        'price': price ?? 0,
+        'contact': contact ?? '',
+        'file_ids': fileIds?.join(',') ?? '',
+      });
+
+      final response = await _dio.put('/posts/$postId', data: formData);
+      if (response.statusCode == 200) {
+        final updated = Post.fromJson(response.data as Map<String, dynamic>);
+        _replacePostInBoards(updated);
+        notifyListeners();
+        return const CreatePostResult(success: true);
+      }
+      return CreatePostResult(
+        success: false,
+        errorMessage: '更新失败 (${response.statusCode})',
+      );
+    } on DioException catch (e) {
+      final msg = AppFeedback.dioErrorMessage(e, fallback: '更新失败');
+      return CreatePostResult(success: false, errorMessage: msg);
+    } catch (e) {
+      return CreatePostResult(success: false, errorMessage: '更新帖子失败: $e');
+    }
+  }
+
+  Future<int?> uploadImage(String filePath) async {
+    try {
+      String uploadPath = filePath;
+      if (filePath.startsWith('content://')) {
+        final tempDir = Directory.systemTemp;
+        final tempFile = File(
+            '${tempDir.path}/upload_${DateTime.now().millisecondsSinceEpoch}.jpg');
+        await File(filePath).copy(tempFile.path);
+        uploadPath = tempFile.path;
+      }
+      final formData = FormData.fromMap({
+        'file': await MultipartFile.fromFile(uploadPath),
+      });
+      final response = await _dio.post('/upload', data: formData);
+      if (response.statusCode == 200 && response.data != null) {
+        return response.data['file_id'] as int?;
+      }
+    } catch (e) {
+      debugPrint('上传图片失败: $e');
+    }
+    return null;
+  }
+
+  Future<DeletePostResult> deletePostDetailed(int postId) async {
     try {
       final response = await _dio.delete('/posts/$postId');
       if (response.statusCode == 200) {
@@ -155,12 +369,44 @@ class PostProvider extends ChangeNotifier {
           board.posts.removeWhere((p) => p.id == postId);
         }
         notifyListeners();
-        return true;
+        return const DeletePostResult(success: true);
       }
+      return DeletePostResult(
+          success: false, errorMessage: '删除失败 (${response.statusCode})');
+    } on DioException catch (e) {
+      final msg = AppFeedback.dioErrorMessage(e, fallback: '删除帖子失败');
+      return DeletePostResult(success: false, errorMessage: msg);
     } catch (e) {
-      debugPrint('删除帖子失败: $e');
+      final msg = '删除帖子失败: $e';
+      return DeletePostResult(success: false, errorMessage: msg);
     }
-    return false;
+  }
+
+  Future<bool> deletePost(int postId) async {
+    final result = await deletePostDetailed(postId);
+    return result.success;
+  }
+
+  Future<DeletePostResult> deleteReplyDetailed(int replyId) async {
+    try {
+      final response = await _dio.delete('/replies/$replyId');
+      if (response.statusCode == 200) {
+        return const DeletePostResult(success: true);
+      }
+      return DeletePostResult(
+          success: false, errorMessage: '删除失败 (${response.statusCode})');
+    } on DioException catch (e) {
+      final msg = AppFeedback.dioErrorMessage(e, fallback: '删除评论失败');
+      return DeletePostResult(success: false, errorMessage: msg);
+    } catch (e) {
+      final msg = '删除评论失败: $e';
+      return DeletePostResult(success: false, errorMessage: msg);
+    }
+  }
+
+  Future<bool> deleteReply(int replyId) async {
+    final result = await deleteReplyDetailed(replyId);
+    return result.success;
   }
 
   Future<bool> likePost(int postId) async {
@@ -180,6 +426,15 @@ class PostProvider extends ChangeNotifier {
     } catch (e) {
       debugPrint('取消点赞失败: $e');
       return false;
+    }
+  }
+
+  void _replacePostInBoards(Post updated) {
+    for (final board in _boards.values) {
+      final index = board.posts.indexWhere((p) => p.id == updated.id);
+      if (index >= 0) {
+        board.posts[index] = updated;
+      }
     }
   }
 }

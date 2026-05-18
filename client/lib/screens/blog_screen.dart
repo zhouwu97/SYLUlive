@@ -1,11 +1,6 @@
-import 'dart:io';
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:provider/provider.dart';
-import '../providers/theme_provider.dart';
-import '../widgets/glass_container.dart';
 
 // ---- 瑞士极客风博客页面 ----
 
@@ -32,55 +27,45 @@ class BlogScreen extends StatefulWidget {
 class _BlogScreenState extends State<BlogScreen> {
   @override
   Widget build(BuildContext context) {
-    final themeProvider = context.watch<ThemeProvider>();
-    final isDark = true; // 博客强制深色模式，护眼
-
     return Scaffold(
-      backgroundColor: const Color(0xFF0B1121), // 极深蓝黑底
+      backgroundColor: Colors.transparent, // 使用全局默认背景
       appBar: _buildAppBar(),
-      body: Stack(
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
         children: [
-          // 背景点阵纹理（极客感）
-          Positioned.fill(
-            child: CustomPaint(painter: _DotGridPainter()),
+          _buildHeroCard(),
+          const SizedBox(height: 20),
+          _buildArticleCard(
+            title: 'Flutter 状态管理深度对比',
+            date: '2026-04-28',
+            excerpt:
+                'Provider、Riverpod、Bloc、GetX — 四种主流方案的优劣分析，以及在不同场景下的选型建议...',
+            tags: ['Flutter', '状态管理', '架构'],
           ),
-          // 内容
-          ListView(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
-            children: [
-              _buildHeroCard(),
-              const SizedBox(height: 20),
-              _buildArticleCard(
-                title: 'Flutter 状态管理深度对比',
-                date: '2026-04-28',
-                excerpt: 'Provider、Riverpod、Bloc、GetX — 四种主流方案的优劣分析，以及在不同场景下的选型建议...',
-                tags: ['Flutter', '状态管理', '架构'],
-              ),
-              const SizedBox(height: 14),
-              _buildArticleCard(
-                title: 'Go 语言并发模式实战',
-                date: '2026-04-25',
-                excerpt: '从 goroutine 到 channel，从 sync 到 context，深入理解 Go 并发编程的核心模式与陷阱...',
-                tags: ['Go', '并发', '后端'],
-              ),
-              const SizedBox(height: 14),
-              _buildArticleCard(
-                title: 'PostgreSQL 查询优化指南',
-                date: '2026-04-20',
-                excerpt: '索引策略、EXPLAIN ANALYZE 解读、慢查询定位 — 让你的数据库查询快 10 倍...',
-                tags: ['PostgreSQL', '数据库', '性能'],
-              ),
-              const SizedBox(height: 14),
-              _buildArticleCard(
-                title: 'Android 签名机制与 APK 安全',
-                date: '2026-04-18',
-                excerpt: 'V1/V2/V3 签名方案的区别，release APK 网络权限陷阱，以及常见签名错误排查...',
-                tags: ['Android', '安全', 'APK'],
-              ),
-              // 订阅卡片
-              const SizedBox(height: 24),
-            ],
+          const SizedBox(height: 14),
+          _buildArticleCard(
+            title: 'Go 语言并发模式实战',
+            date: '2026-04-25',
+            excerpt:
+                '从 goroutine 到 channel，从 sync 到 context，深入理解 Go 并发编程的核心模式与陷阱...',
+            tags: ['Go', '并发', '后端'],
           ),
+          const SizedBox(height: 14),
+          _buildArticleCard(
+            title: 'PostgreSQL 查询优化指南',
+            date: '2026-04-20',
+            excerpt: '索引策略、EXPLAIN ANALYZE 解读、慢查询定位 — 让你的数据库查询快 10 倍...',
+            tags: ['PostgreSQL', '数据库', '性能'],
+          ),
+          const SizedBox(height: 14),
+          _buildArticleCard(
+            title: 'Android 签名机制与 APK 安全',
+            date: '2026-04-18',
+            excerpt: 'V1/V2/V3 签名方案的区别，release APK 网络权限陷阱，以及常见签名错误排查...',
+            tags: ['Android', '安全', 'APK'],
+          ),
+          // 订阅卡片
+          const SizedBox(height: 24),
         ],
       ),
     );
@@ -137,7 +122,8 @@ class _BlogScreenState extends State<BlogScreen> {
             end: Alignment.bottomRight,
             colors: [Color(0xFF1E293B), Color(0xFF0F172A)],
           ),
-          border: Border.all(color: const Color(0xFF22C55E).withValues(alpha: 0.25), width: 1),
+          border: Border.all(
+              color: const Color(0xFF22C55E).withValues(alpha: 0.25), width: 1),
           boxShadow: [
             BoxShadow(
               color: const Color(0xFF22C55E).withValues(alpha: 0.08),
@@ -150,12 +136,17 @@ class _BlogScreenState extends State<BlogScreen> {
           children: [
             // 装饰代码片段
             Positioned(
-              right: -20, top: -10,
+              right: -20,
+              top: -10,
               child: Opacity(
                 opacity: 0.06,
                 child: Text(
                   '</>',
-                  style: TextStyle(fontSize: 120, fontWeight: FontWeight.w900, color: Colors.green[300], fontFamily: 'monospace'),
+                  style: TextStyle(
+                      fontSize: 120,
+                      fontWeight: FontWeight.w900,
+                      color: Colors.green[300],
+                      fontFamily: 'monospace'),
                 ),
               ),
             ),
@@ -169,13 +160,22 @@ class _BlogScreenState extends State<BlogScreen> {
                   Row(
                     children: [
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 3),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF22C55E).withValues(alpha: 0.15),
+                          color:
+                              const Color(0xFF22C55E).withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(4),
-                          border: Border.all(color: const Color(0xFF22C55E).withValues(alpha: 0.3)),
+                          border: Border.all(
+                              color: const Color(0xFF22C55E)
+                                  .withValues(alpha: 0.3)),
                         ),
-                        child: const Text('精选', style: TextStyle(color: Color(0xFF22C55E), fontSize: 10, fontWeight: FontWeight.w600, fontFamily: 'monospace')),
+                        child: const Text('精选',
+                            style: TextStyle(
+                                color: Color(0xFF22C55E),
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                                fontFamily: 'monospace')),
                       ),
                     ],
                   ),
@@ -222,7 +222,8 @@ class _BlogScreenState extends State<BlogScreen> {
     required List<String> tags,
   }) {
     return GestureDetector(
-      onTap: () => _openArticle(title: title, content: _sampleFlutterArticle, tags: tags, date: date),
+      onTap: () => _openArticle(
+          title: title, content: _sampleFlutterArticle, tags: tags, date: date),
       child: Container(
         padding: const EdgeInsets.all(18),
         decoration: BoxDecoration(
@@ -235,15 +236,23 @@ class _BlogScreenState extends State<BlogScreen> {
           children: [
             // 标签
             Wrap(
-              spacing: 6, runSpacing: 4,
-              children: tags.map((t) => Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF334155),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Text(t, style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 10, fontFamily: 'monospace')),
-              )).toList(),
+              spacing: 6,
+              runSpacing: 4,
+              children: tags
+                  .map((t) => Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF334155),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(t,
+                            style: const TextStyle(
+                                color: Color(0xFF94A3B8),
+                                fontSize: 10,
+                                fontFamily: 'monospace')),
+                      ))
+                  .toList(),
             ),
             const SizedBox(height: 12),
             // 标题
@@ -274,9 +283,14 @@ class _BlogScreenState extends State<BlogScreen> {
             // 日期 + 箭头
             Row(
               children: [
-                Text(date, style: const TextStyle(color: Color(0xFF475569), fontSize: 11, fontFamily: 'monospace')),
+                Text(date,
+                    style: const TextStyle(
+                        color: Color(0xFF475569),
+                        fontSize: 11,
+                        fontFamily: 'monospace')),
                 const Spacer(),
-                const Icon(Icons.arrow_forward, color: Color(0xFF475569), size: 16),
+                const Icon(Icons.arrow_forward,
+                    color: Color(0xFF475569), size: 16),
               ],
             ),
           ],
@@ -347,11 +361,13 @@ class _ArticleReaderState extends State<_ArticleReader> {
   void _addComment() {
     if (_commentController.text.isEmpty) return;
     setState(() {
-      _comments.insert(0, _BlogComment(
-        author: '我',
-        text: _commentController.text,
-        time: '刚刚',
-      ));
+      _comments.insert(
+          0,
+          _BlogComment(
+            author: '我',
+            text: _commentController.text,
+            time: '刚刚',
+          ));
     });
     _commentController.clear();
   }
@@ -373,7 +389,12 @@ class _ArticleReaderState extends State<_ArticleReader> {
           icon: const Icon(Icons.arrow_back, color: Color(0xFF94A3B8)),
           onPressed: () => Navigator.pop(context),
         ),
-        title: Text(widget.title, style: const TextStyle(fontFamily: 'monospace', fontWeight: FontWeight.w600, fontSize: 16, color: Color(0xFFE2E8F0))),
+        title: Text(widget.title,
+            style: const TextStyle(
+                fontFamily: 'monospace',
+                fontWeight: FontWeight.w600,
+                fontSize: 16,
+                color: Color(0xFFE2E8F0))),
         actions: [
           IconButton(
             icon: const Icon(Icons.share, color: Color(0xFF64748B), size: 20),
@@ -391,24 +412,44 @@ class _ArticleReaderState extends State<_ArticleReader> {
               Row(
                 children: [
                   ...widget.tags.map((t) => Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF22C55E).withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Text(t, style: const TextStyle(color: Color(0xFF22C55E), fontSize: 10, fontFamily: 'monospace')),
-                    ),
-                  )),
+                        padding: const EdgeInsets.only(right: 8),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color:
+                                const Color(0xFF22C55E).withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(t,
+                              style: const TextStyle(
+                                  color: Color(0xFF22C55E),
+                                  fontSize: 10,
+                                  fontFamily: 'monospace')),
+                        ),
+                      )),
                   const Spacer(),
-                  Text(widget.date, style: const TextStyle(color: Color(0xFF475569), fontSize: 11, fontFamily: 'monospace')),
+                  Text(widget.date,
+                      style: const TextStyle(
+                          color: Color(0xFF475569),
+                          fontSize: 11,
+                          fontFamily: 'monospace')),
                 ],
               ),
               const SizedBox(height: 20),
-              Text(widget.title, style: const TextStyle(color: Color(0xFFF1F5F9), fontSize: 22, fontWeight: FontWeight.w700, fontFamily: 'monospace', height: 1.3)),
+              Text(widget.title,
+                  style: const TextStyle(
+                      color: Color(0xFFF1F5F9),
+                      fontSize: 22,
+                      fontWeight: FontWeight.w700,
+                      fontFamily: 'monospace',
+                      height: 1.3)),
               const SizedBox(height: 8),
-              const Text('作者: 沈理校园 · 阅读 5 min', style: TextStyle(color: Color(0xFF64748B), fontSize: 12, fontFamily: 'monospace')),
+              const Text('作者: 沈理校园 · 阅读 5 min',
+                  style: TextStyle(
+                      color: Color(0xFF64748B),
+                      fontSize: 12,
+                      fontFamily: 'monospace')),
               const SizedBox(height: 24),
               Divider(color: Colors.white.withValues(alpha: 0.06)),
               const SizedBox(height: 20),
@@ -441,9 +482,15 @@ class _ArticleReaderState extends State<_ArticleReader> {
         const SizedBox(height: 12),
         Row(
           children: [
-            const Icon(Icons.chat_bubble_outline, color: Color(0xFF475569), size: 15),
+            const Icon(Icons.chat_bubble_outline,
+                color: Color(0xFF475569), size: 15),
             const SizedBox(width: 6),
-            Text('评论 ${_comments.length}', style: const TextStyle(color: Color(0xFF64748B), fontSize: 12, fontFamily: 'monospace', fontWeight: FontWeight.w600)),
+            Text('评论 ${_comments.length}',
+                style: const TextStyle(
+                    color: Color(0xFF64748B),
+                    fontSize: 12,
+                    fontFamily: 'monospace',
+                    fontWeight: FontWeight.w600)),
           ],
         ),
         const SizedBox(height: 10),
@@ -463,10 +510,16 @@ class _ArticleReaderState extends State<_ArticleReader> {
               Expanded(
                 child: TextField(
                   controller: _commentController,
-                  style: const TextStyle(color: Color(0xFFCBD5E1), fontSize: 13, fontFamily: 'monospace'),
+                  style: const TextStyle(
+                      color: Color(0xFFCBD5E1),
+                      fontSize: 13,
+                      fontFamily: 'monospace'),
                   decoration: const InputDecoration(
                     hintText: '写下你的问题或想法...',
-                    hintStyle: TextStyle(color: Color(0xFF475569), fontSize: 12, fontFamily: 'monospace'),
+                    hintStyle: TextStyle(
+                        color: Color(0xFF475569),
+                        fontSize: 12,
+                        fontFamily: 'monospace'),
                     border: InputBorder.none,
                     isDense: true,
                     contentPadding: EdgeInsets.symmetric(vertical: 10),
@@ -477,7 +530,8 @@ class _ArticleReaderState extends State<_ArticleReader> {
               const SizedBox(width: 8),
               GestureDetector(
                 onTap: _addComment,
-                child: const Icon(Icons.send_rounded, color: Color(0xFF22C55E), size: 20),
+                child: const Icon(Icons.send_rounded,
+                    color: Color(0xFF22C55E), size: 20),
               ),
             ],
           ),
@@ -493,13 +547,19 @@ class _ArticleReaderState extends State<_ArticleReader> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            width: 28, height: 28,
+            width: 28,
+            height: 28,
             decoration: BoxDecoration(
               color: const Color(0xFF22C55E).withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(8),
             ),
             alignment: Alignment.center,
-            child: Text(comment.author[0].toUpperCase(), style: const TextStyle(color: Color(0xFF22C55E), fontSize: 12, fontWeight: FontWeight.w700, fontFamily: 'monospace')),
+            child: Text(comment.author[0].toUpperCase(),
+                style: const TextStyle(
+                    color: Color(0xFF22C55E),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    fontFamily: 'monospace')),
           ),
           const SizedBox(width: 10),
           Expanded(
@@ -508,13 +568,27 @@ class _ArticleReaderState extends State<_ArticleReader> {
               children: [
                 Row(
                   children: [
-                    Text(comment.author, style: const TextStyle(color: Color(0xFFE2E8F0), fontSize: 12, fontWeight: FontWeight.w600, fontFamily: 'monospace')),
+                    Text(comment.author,
+                        style: const TextStyle(
+                            color: Color(0xFFE2E8F0),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            fontFamily: 'monospace')),
                     const SizedBox(width: 8),
-                    Text(comment.time, style: const TextStyle(color: Color(0xFF475569), fontSize: 10, fontFamily: 'monospace')),
+                    Text(comment.time,
+                        style: const TextStyle(
+                            color: Color(0xFF475569),
+                            fontSize: 10,
+                            fontFamily: 'monospace')),
                   ],
                 ),
                 const SizedBox(height: 3),
-                Text(comment.text, style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 13, fontFamily: 'monospace', height: 1.45)),
+                Text(comment.text,
+                    style: const TextStyle(
+                        color: Color(0xFF94A3B8),
+                        fontSize: 13,
+                        fontFamily: 'monospace',
+                        height: 1.45)),
               ],
             ),
           ),
@@ -528,7 +602,11 @@ class _ArticleReaderState extends State<_ArticleReader> {
       children: [
         Icon(icon, color: const Color(0xFF64748B), size: 18),
         const SizedBox(width: 6),
-        Text(label, style: const TextStyle(color: Color(0xFF64748B), fontSize: 13, fontFamily: 'monospace')),
+        Text(label,
+            style: const TextStyle(
+                color: Color(0xFF64748B),
+                fontSize: 13,
+                fontFamily: 'monospace')),
       ],
     );
   }
@@ -536,7 +614,6 @@ class _ArticleReaderState extends State<_ArticleReader> {
   Widget _buildRichContent(String text) {
     // 解析链接和代码块
     final urlRegex = RegExp(r'(https?://[^\s]+)');
-    final codeRegex = RegExp(r'`([^`]+)`');
 
     // 按行渲染，处理特殊格式
     final lines = text.split('\n');
@@ -554,7 +631,12 @@ class _ArticleReaderState extends State<_ArticleReader> {
         if (spans.isNotEmpty) spans.add(const TextSpan(text: '\n'));
         spans.add(TextSpan(
           text: '${line.substring(3)}\n',
-          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 18, color: Color(0xFFE2E8F0), fontFamily: 'monospace', height: 1.5),
+          style: const TextStyle(
+              fontWeight: FontWeight.w700,
+              fontSize: 18,
+              color: Color(0xFFE2E8F0),
+              fontFamily: 'monospace',
+              height: 1.5),
         ));
         continue;
       }
@@ -562,7 +644,11 @@ class _ArticleReaderState extends State<_ArticleReader> {
       if (line.startsWith('- ')) {
         spans.add(TextSpan(
           text: '  › ${line.substring(2)}\n',
-          style: const TextStyle(color: Color(0xFFCBD5E1), fontSize: 15, fontFamily: 'monospace', height: 1.7),
+          style: const TextStyle(
+              color: Color(0xFFCBD5E1),
+              fontSize: 15,
+              fontFamily: 'monospace',
+              height: 1.7),
         ));
         continue;
       }
@@ -570,7 +656,12 @@ class _ArticleReaderState extends State<_ArticleReader> {
       if (inCodeBlock) {
         spans.add(TextSpan(
           text: '  $line\n',
-          style: const TextStyle(color: Color(0xFF22C55E), fontSize: 13, fontFamily: 'monospace', backgroundColor: Color(0x111E293B), height: 1.6),
+          style: const TextStyle(
+              color: Color(0xFF22C55E),
+              fontSize: 13,
+              fontFamily: 'monospace',
+              backgroundColor: Color(0x111E293B),
+              height: 1.6),
         ));
         continue;
       }
@@ -583,13 +674,22 @@ class _ArticleReaderState extends State<_ArticleReader> {
           if (match.start > lastEnd) {
             spans.add(TextSpan(
               text: line.substring(lastEnd, match.start),
-              style: const TextStyle(color: Color(0xFFCBD5E1), fontSize: 15, fontFamily: 'monospace', height: 1.7),
+              style: const TextStyle(
+                  color: Color(0xFFCBD5E1),
+                  fontSize: 15,
+                  fontFamily: 'monospace',
+                  height: 1.7),
             ));
           }
           final url = match.group(0)!;
           spans.add(TextSpan(
             text: url,
-            style: const TextStyle(color: Color(0xFF22C55E), fontSize: 15, fontFamily: 'monospace', decoration: TextDecoration.underline, height: 1.7),
+            style: const TextStyle(
+                color: Color(0xFF22C55E),
+                fontSize: 15,
+                fontFamily: 'monospace',
+                decoration: TextDecoration.underline,
+                height: 1.7),
             recognizer: TapGestureRecognizer()..onTap = () => _launchUrl(url),
           ));
           lastEnd = match.end;
@@ -597,7 +697,11 @@ class _ArticleReaderState extends State<_ArticleReader> {
         if (lastEnd < line.length) {
           spans.add(TextSpan(
             text: '${line.substring(lastEnd)}\n',
-            style: const TextStyle(color: Color(0xFFCBD5E1), fontSize: 15, fontFamily: 'monospace', height: 1.7),
+            style: const TextStyle(
+                color: Color(0xFFCBD5E1),
+                fontSize: 15,
+                fontFamily: 'monospace',
+                height: 1.7),
           ));
         } else {
           spans.add(const TextSpan(text: '\n'));
@@ -605,14 +709,22 @@ class _ArticleReaderState extends State<_ArticleReader> {
       } else {
         spans.add(TextSpan(
           text: '$line\n',
-          style: const TextStyle(color: Color(0xFFCBD5E1), fontSize: 15, fontFamily: 'monospace', height: 1.7),
+          style: const TextStyle(
+              color: Color(0xFFCBD5E1),
+              fontSize: 15,
+              fontFamily: 'monospace',
+              height: 1.7),
         ));
       }
     }
 
     return SelectableText.rich(
       TextSpan(children: spans),
-      style: const TextStyle(color: Color(0xFFCBD5E1), fontSize: 15, fontFamily: 'monospace', height: 1.7),
+      style: const TextStyle(
+          color: Color(0xFFCBD5E1),
+          fontSize: 15,
+          fontFamily: 'monospace',
+          height: 1.7),
       cursorColor: const Color(0xFF22C55E),
     );
   }
@@ -624,7 +736,8 @@ class _BlogComment {
   final String author;
   final String text;
   final String time;
-  const _BlogComment({required this.author, required this.text, required this.time});
+  const _BlogComment(
+      {required this.author, required this.text, required this.time});
 }
 
 // ---- 点阵背景绘制器 ----

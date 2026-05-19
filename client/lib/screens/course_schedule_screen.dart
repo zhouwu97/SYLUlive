@@ -12,7 +12,7 @@ import 'edu_screen.dart';
 import 'login_screen.dart';
 
 /// 每节课槽的默认高度
-const double defaultSlotHeight = 85.0;
+const double defaultSlotHeight = 75.0;
 
 /// 左侧时间轴宽度（必须与表头左侧留空一致）
 const double timeColumnWidth = 35.0;
@@ -47,7 +47,7 @@ Color getCourseColor(String name,
   final idx =
       getCourseColorIndex(name, courseCode: courseCode, location: location);
   final base = courseColors[idx];
-  return isActive ? base.withOpacity(0.55) : Colors.grey.withOpacity(0.4);
+  return isActive ? base.withOpacity(0.45) : Colors.grey.withOpacity(0.4);
 }
 
 /// 星期标签
@@ -249,14 +249,6 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
     return Scaffold(
       backgroundColor: Colors.transparent,
-      floatingActionButton: _hasCache
-          ? FloatingActionButton.extended(
-              onPressed: () => _showAddCourseDialog(context),
-              icon: const Icon(Icons.add),
-              label: const Text('添加课程'),
-              backgroundColor: Theme.of(context).primaryColor,
-            )
-          : null,
       body: SafeArea(
         child: Consumer<AuthProvider>(
           builder: (context, auth, _) {
@@ -1155,6 +1147,22 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                       ],
                     ),
                   ),
+                  const SizedBox(height: 10),
+                  Container(
+                    decoration: tileDecoration(),
+                    child: ListTile(
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 6),
+                      leading: Icon(Icons.add_circle_outline, color: primary),
+                      title: const Text('添加自定义课程'),
+                      subtitle: const Text('手动添加不在教务系统中的课程或活动'),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () {
+                        Navigator.pop(context); // 关闭底部面板
+                        _showAddCourseDialog(context);
+                      },
+                    ),
+                  ),
                   const SizedBox(height: 14),
                   Container(
                     decoration: tileDecoration(),
@@ -1583,9 +1591,12 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     }
 
     // 第二轮：非当前周课程，只在槽位未被活跃课程占用时才显示
+    // 已完全结课的课程（所有周数 < 当前周）不显示
     for (final c in sc.courses) {
       final key = '${c.weekday}_${c.startSection}';
       if (wn != null && c.weeks.isNotEmpty && !c.weeks.contains(wn)) {
+        // 跳过已完全结课的课程
+        if (c.weeks.every((w) => w < wn)) continue;
         if (!activeSlots.contains(key) && !inactiveSeen.contains(key)) {
           allInactive.add(c);
           inactiveSeen.add(key);

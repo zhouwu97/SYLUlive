@@ -22,6 +22,7 @@ import 'login_screen.dart';
 import 'market_screen.dart';
 import 'post_detail_screen.dart';
 import 'search_results_screen.dart';
+import 'toolbox_screen.dart';
 
 class ShuitieScreen extends StatefulWidget {
   const ShuitieScreen({super.key});
@@ -620,8 +621,9 @@ class _ShuitieScreenState extends State<ShuitieScreen>
           Expanded(child: _buildActionItem(
             icon: Icons.handyman_outlined, iconColor: const Color(0xFFF97316),
             iconBg: const Color(0xFFF97316).withValues(alpha: 0.12),
-            title: '工具箱', subtitle: '开发中',
-            isDark: isDark, onTap: () => _showComingSoon('工具箱'),
+            title: '工具箱', subtitle: '快捷小工具',
+            isDark: isDark, 
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ToolboxScreen())),
           )),
         ],
       ),

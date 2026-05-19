@@ -9,25 +9,25 @@ class ToolboxScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      appBar: AppBar(
-        title: const Text('工具箱'),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-      ),
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: isDark 
-              ? [const Color(0xFF131720), const Color(0xFF1A2235)]
-              : [const Color(0xFFF4F6FB), const Color(0xFFE8ECF4)],
-          ),
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: isDark 
+            ? [const Color(0xFF131720), const Color(0xFF1A2235)]
+            : [const Color(0xFFF4F6FB), const Color(0xFFE8ECF4)],
         ),
-        child: GridView.count(
-          padding: const EdgeInsets.all(20),
+      ),
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        appBar: AppBar(
+          title: const Text('工具箱'),
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+        ),
+        body: GridView.count(
+          padding: EdgeInsets.fromLTRB(20, MediaQuery.of(context).padding.top + kToolbarHeight + 20, 20, 20),
           crossAxisCount: 2,
           mainAxisSpacing: 16,
           crossAxisSpacing: 16,

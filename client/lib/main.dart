@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:ui';
 import 'dart:io' show File;
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:home_widget/home_widget.dart';
 import 'package:jpush_flutter/jpush_flutter.dart';
 import 'package:provider/provider.dart';
 import 'providers/auth_provider.dart';
@@ -16,7 +18,9 @@ import 'providers/major_provider.dart';
 import 'providers/teacher_provider.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
+import 'screens/course_schedule_screen.dart';
 import 'services/course_reminder_service.dart';
+import 'services/home_widget_service.dart';
 import 'theme/AppTheme.dart';
 import 'config/api_constants.dart';
 import 'utils/app_navigator.dart';
@@ -25,6 +29,7 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Hive.initFlutter();
   await CourseReminderService.instance.initialize();
+  await HomeWidgetService.initialize();
   runApp(const MyApp());
 }
 
@@ -101,26 +106,121 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => TeacherProvider(dio)),
         ChangeNotifierProvider(create: (_) => MajorProvider(dio)),
       ],
-      child: Consumer<ThemeProvider>(
-        builder: (context, themeProvider, child) {
-          return MaterialApp(
-            title: '沈理校园',
-            debugShowCheckedModeBanner: false,
-            theme: AppTheme.lightTheme,
-            darkTheme: AppTheme.darkTheme,
-            themeMode:
-                themeProvider.isDarkMode ? ThemeMode.dark : ThemeMode.light,
-            navigatorKey: appNavigatorKey,
-            routes: {
-              '/login': (context) => const LoginScreen(),
-            },
-            home: const PredictiveBackGate(
+      child: const _TimetableDeepLinkHandler(
+        child: _AppContent(),
+      ),
+    );
+  }
+}
+
+/// 课表小部件深度链接处理器
+///
+/// 监听 [HomeWidget.widgetClicked] 和 [HomeWidget.initiallyLaunchedFromHomeWidget]，
+/// 当检测到 timetable://home URI 时导航到课表页。
+class _TimetableDeepLinkHandler extends StatefulWidget {
+  final Widget child;
+  const _TimetableDeepLinkHandler({required this.child});
+
+  @override
+  State<_TimetableDeepLinkHandler> createState() =>
+      _TimetableDeepLinkHandlerState();
+}
+
+class _TimetableDeepLinkHandlerState extends State<_TimetableDeepLinkHandler> {
+  StreamSubscription<Uri?>? _clickSub;
+
+  @override
+  void initState() {
+    super.initState();
+    _setupListeners();
+  }
+
+  void _setupListeners() {
+    // 监听 widget 点击事件（App 在后台 / 挂起时）
+    _clickSub = HomeWidget.widgetClicked.listen(_onWidgetClicked);
+
+    // 冷启动检测
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkInitialLaunch();
+    });
+  }
+
+  Future<void> _checkInitialLaunch() async {
+    try {
+      final uri = await HomeWidget.initiallyLaunchedFromHomeWidget();
+      if (uri != null && mounted) {
+        _handleDeepLink(uri);
+      }
+    } catch (e) {
+      debugPrint('检查初始启动 URI 失败: $e');
+    }
+  }
+
+  void _onWidgetClicked(Uri? uri) {
+    if (uri != null) {
+      _handleDeepLink(uri);
+    }
+  }
+
+  void _handleDeepLink(Uri uri) {
+    debugPrint('🔗 收到 widget 深度链接: $uri');
+    if (uri.scheme == 'timetable' && uri.host == 'home') {
+      _navigateToTimetable();
+    }
+  }
+
+  void _navigateToTimetable() {
+    final navigator = appNavigatorKey.currentState;
+    if (navigator == null) {
+      // Navigator 尚未就绪，延迟一帧再试
+      WidgetsBinding.instance.addPostFrameCallback((_) => _navigateToTimetable());
+      return;
+    }
+    // 如果已在课表页，不重复导航
+    final currentRoute = ModalRoute.of(appNavigatorKey.currentContext!);
+    if (currentRoute?.settings.name == '/timetable') return;
+
+    // 先 pop 到根路由，再 push 课表页
+    navigator.popUntil((route) => route.isFirst);
+    navigator.pushNamed('/timetable');
+  }
+
+  @override
+  void dispose() {
+    _clickSub?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
+}
+
+/// 抽离 MaterialApp 构建，避免 Consumer 嵌套层级过深
+class _AppContent extends StatelessWidget {
+  const _AppContent();
+
+  @override
+  Widget build(BuildContext context) {
+    final themeProvider = context.watch<ThemeProvider>();
+    return MaterialApp(
+      title: '沈理校园',
+      debugShowCheckedModeBanner: false,
+      theme: AppTheme.lightTheme,
+      darkTheme: AppTheme.darkTheme,
+      themeMode: themeProvider.isDarkMode ? ThemeMode.dark : ThemeMode.light,
+      navigatorKey: appNavigatorKey,
+      routes: {
+        '/login': (context) => const LoginScreen(),
+        '/timetable': (context) => const PredictiveBackGate(
               child: GlobalBackgroundWrapper(
-                child: AuthWrapper(),
+                child: CourseScheduleScreen(),
               ),
             ),
-          );
-        },
+      },
+      home: const PredictiveBackGate(
+        child: GlobalBackgroundWrapper(
+          child: AuthWrapper(),
+        ),
       ),
     );
   }

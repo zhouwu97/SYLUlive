@@ -147,38 +147,96 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
     _isLoading = false;
   }
 
+  Widget _buildDefaultBg(bool isDark) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        Image.asset(
+          'assets/images/morenbeijing.jpeg',
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => Container(
+            color: isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
+          ),
+        ),
+        Container(
+          color: isDark
+              ? Colors.black.withValues(alpha: 0.32)
+              : Colors.white.withValues(alpha: 0.22),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     
     return Scaffold(
       backgroundColor: Colors.transparent,
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
         title: const Text('二课分查询'),
         backgroundColor: Colors.transparent,
         elevation: 0,
       ),
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: isDark 
-              ? [const Color(0xFF131720), const Color(0xFF1A2235)]
-              : [const Color(0xFFF4F6FB), const Color(0xFFE8ECF4)],
+      body: Stack(
+        children: [
+          Positioned.fill(child: _buildDefaultBg(isDark)),
+          SafeArea(
+            bottom: false,
+            child: Column(
+              children: [
+                SizedBox(height: kToolbarHeight),
+                Expanded(
+                  child: _scores == null ? _buildLoginForm(isDark) : _buildScoreList(isDark),
+                ),
+              ],
+            ),
           ),
-        ),
-        child: _scores == null ? _buildLoginForm(isDark) : _buildScoreList(isDark),
+        ],
       ),
     );
   }
 
   Widget _buildLoginForm(bool isDark) {
+    final studentId = _vpnUserCtrl.text.isNotEmpty ? _vpnUserCtrl.text : '未获取到学号';
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Column(
         children: [
+          const SizedBox(height: 12),
+          // 当前账号信息卡片
+          GlassContainer(
+            padding: const EdgeInsets.all(20),
+            borderRadius: 20,
+            child: Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).primaryColor.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(Icons.person, color: Theme.of(context).primaryColor, size: 24),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('当前账号', style: TextStyle(fontSize: 12, color: isDark ? Colors.white54 : Colors.grey[600])),
+                      const SizedBox(height: 2),
+                      Text(studentId, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                ),
+                Icon(Icons.check_circle, color: Colors.green.shade400, size: 20),
+              ],
+            ),
+          ),
           const SizedBox(height: 20),
+          // WebVPN 密码
           GlassContainer(
             padding: const EdgeInsets.all(24),
             borderRadius: 24,
@@ -192,21 +250,28 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
                     Text('WebVPN 登录 (校外访问专用)', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                   ],
                 ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: _vpnUserCtrl,
-                  decoration: const InputDecoration(labelText: 'WebVPN 账号 (通常为学号)', border: OutlineInputBorder()),
+                const SizedBox(height: 4),
+                Text(
+                  '账号已自动填入学号：$studentId',
+                  style: TextStyle(fontSize: 12, color: isDark ? Colors.white54 : Colors.grey[600]),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 16),
                 TextField(
                   controller: _vpnPwdCtrl,
                   obscureText: true,
-                  decoration: const InputDecoration(labelText: 'WebVPN 密码', border: OutlineInputBorder()),
+                  decoration: InputDecoration(
+                    labelText: 'WebVPN 密码',
+                    prefixIcon: const Icon(Icons.lock_outline),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    filled: true,
+                    fillColor: isDark ? Colors.white.withValues(alpha: 0.05) : Colors.white,
+                  ),
                 ),
               ],
             ),
           ),
           const SizedBox(height: 16),
+          // 二课密码
           GlassContainer(
             padding: const EdgeInsets.all(24),
             borderRadius: 24,
@@ -220,16 +285,22 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
                     Text('二课平台登录', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                   ],
                 ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: _erkeUserCtrl,
-                  decoration: const InputDecoration(labelText: '学号', border: OutlineInputBorder()),
+                const SizedBox(height: 4),
+                Text(
+                  '学号已自动填入：$studentId',
+                  style: TextStyle(fontSize: 12, color: isDark ? Colors.white54 : Colors.grey[600]),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 16),
                 TextField(
                   controller: _erkePwdCtrl,
                   obscureText: true,
-                  decoration: const InputDecoration(labelText: '二课查询密码', border: OutlineInputBorder()),
+                  decoration: InputDecoration(
+                    labelText: '二课查询密码',
+                    prefixIcon: const Icon(Icons.lock_outline),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    filled: true,
+                    fillColor: isDark ? Colors.white.withValues(alpha: 0.05) : Colors.white,
+                  ),
                 ),
               ],
             ),

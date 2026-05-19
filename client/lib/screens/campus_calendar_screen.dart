@@ -11,7 +11,9 @@ class CampusCalendarScreen extends StatefulWidget {
 }
 
 class _CampusCalendarScreenState extends State<CampusCalendarScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
   bool _showControls = true;
   double _currentScale = 1.0;
   late AnimationController _fadeController;
@@ -76,6 +78,7 @@ class _CampusCalendarScreenState extends State<CampusCalendarScreen>
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final primaryColor = Theme.of(context).primaryColor;
 
@@ -114,27 +117,7 @@ class _CampusCalendarScreenState extends State<CampusCalendarScreen>
             ),
           ),
 
-          // Top gradient overlay
-          if (_showControls)
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              child: Container(
-                height: 80,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      (isDark ? Colors.black : Colors.white)
-                          .withValues(alpha: 0.6),
-                      Colors.transparent,
-                    ],
-                  ),
-                ),
-              ),
-            ),
+          /* Removed Top gradient overlay to fix black shadow issue */
 
           /*
           // Bottom events panel

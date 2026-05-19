@@ -1,0 +1,357 @@
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:dio/dio.dart';
+import '../providers/auth_provider.dart';
+import '../widgets/glass_container.dart';
+import '../utils/app_feedback.dart';
+
+class ErkeScoreScreen extends StatefulWidget {
+  const ErkeScoreScreen({super.key});
+
+  @override
+  State<ErkeScoreScreen> createState() => _ErkeScoreScreenState();
+}
+
+class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
+  final _vpnUserCtrl = TextEditingController();
+  final _vpnPwdCtrl = TextEditingController();
+  final _erkeUserCtrl = TextEditingController();
+  final _erkePwdCtrl = TextEditingController();
+  
+  bool _isLoading = false;
+  String _loadingMessage = '';
+  List<dynamic>? _scores;
+
+  /// 加载中的趣味文案池
+  static const _loadingMessages = [
+    '正在穿透学校内网，请稍候…',
+    '正在唤醒教务系统…',
+    'OCR 识别验证码中…',
+    '加密传输中，保障你的密码安全…',
+    '正在与深信服 VPN 握手…',
+    '数据解密中，马上就好…',
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    // 默认填入学号
+    final user = context.read<AuthProvider>().user;
+    if (user != null) {
+      _vpnUserCtrl.text = user.studentId;
+      _erkeUserCtrl.text = user.studentId;
+    }
+  }
+
+  Future<void> _queryScores() async {
+    if (_vpnPwdCtrl.text.isEmpty || _erkePwdCtrl.text.isEmpty) {
+      AppFeedback.showSnackBar(context, '请填写完整密码');
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+      _loadingMessage = _loadingMessages.first;
+    });
+
+    // 每 1.5 秒轮换一条加载文案
+    _startLoadingMessageRotation();
+
+    try {
+      final auth = context.read<AuthProvider>();
+      final resp = await auth.dio.post(
+        '/erke/scores',
+        data: {
+          'vpn_username': _vpnUserCtrl.text.trim(),
+          'vpn_password': _vpnPwdCtrl.text,
+          'erke_username': _erkeUserCtrl.text.trim(),
+          'erke_password': _erkePwdCtrl.text,
+        },
+        // ── 15 秒超时: 正常 3~5s + 内网拥堵余量 ──
+        options: Options(
+          sendTimeout: const Duration(seconds: 15),
+          receiveTimeout: const Duration(seconds: 15),
+        ),
+      );
+
+      if (resp.statusCode == 200) {
+        final data = resp.data;
+        if (data['success'] == true) {
+          setState(() {
+            _scores = data['data'];
+          });
+        } else {
+          AppFeedback.showSnackBar(
+            context,
+            data['message'] ?? '查询失败',
+            isError: true,
+          );
+        }
+      }
+    } on DioException catch (e) {
+      // ── 超时熔断: 区分超时与普通网络错误 ──
+      if (e.type == DioExceptionType.connectionTimeout ||
+          e.type == DioExceptionType.sendTimeout ||
+          e.type == DioExceptionType.receiveTimeout) {
+        AppFeedback.showSnackBar(
+          context,
+          '教务系统响应超时，学校内网可能拥堵，请稍后再试',
+          isError: true,
+        );
+      } else if (e.type == DioExceptionType.connectionError) {
+        AppFeedback.showSnackBar(
+          context,
+          '无法连接到服务器，请检查网络后重试',
+          isError: true,
+        );
+      } else {
+        AppFeedback.showSnackBar(
+          context,
+          '请求失败，请检查网络或账号密码',
+          isError: true,
+        );
+      }
+    } catch (e) {
+      AppFeedback.showSnackBar(
+        context,
+        '请求失败，请检查网络或账号密码',
+        isError: true,
+      );
+    } finally {
+      _stopLoadingMessageRotation();
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _loadingMessage = '';
+        });
+      }
+    }
+  }
+
+  int _messageIndex = 0;
+  void _startLoadingMessageRotation() {
+    _messageIndex = 0;
+    Future.doWhile(() async {
+      if (!_isLoading || !mounted) return false;
+      await Future.delayed(const Duration(milliseconds: 1500));
+      if (!_isLoading || !mounted) return false;
+      setState(() {
+        _messageIndex = (_messageIndex + 1) % _loadingMessages.length;
+        _loadingMessage = _loadingMessages[_messageIndex];
+      });
+      return _isLoading && mounted;
+    });
+  }
+
+  void _stopLoadingMessageRotation() {
+    _isLoading = false;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      appBar: AppBar(
+        title: const Text('二课分查询'),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+      ),
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: isDark 
+              ? [const Color(0xFF131720), const Color(0xFF1A2235)]
+              : [const Color(0xFFF4F6FB), const Color(0xFFE8ECF4)],
+          ),
+        ),
+        child: _scores == null ? _buildLoginForm(isDark) : _buildScoreList(isDark),
+      ),
+    );
+  }
+
+  Widget _buildLoginForm(bool isDark) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        children: [
+          const SizedBox(height: 20),
+          GlassContainer(
+            padding: const EdgeInsets.all(24),
+            borderRadius: 24,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Row(
+                  children: [
+                    Icon(Icons.security, color: Colors.blue),
+                    SizedBox(width: 12),
+                    Text('WebVPN 登录 (校外访问专用)', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: _vpnUserCtrl,
+                  decoration: const InputDecoration(labelText: 'WebVPN 账号 (通常为学号)', border: OutlineInputBorder()),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _vpnPwdCtrl,
+                  obscureText: true,
+                  decoration: const InputDecoration(labelText: 'WebVPN 密码', border: OutlineInputBorder()),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          GlassContainer(
+            padding: const EdgeInsets.all(24),
+            borderRadius: 24,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Row(
+                  children: [
+                    Icon(Icons.school, color: Colors.green),
+                    SizedBox(width: 12),
+                    Text('二课平台登录', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: _erkeUserCtrl,
+                  decoration: const InputDecoration(labelText: '学号', border: OutlineInputBorder()),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _erkePwdCtrl,
+                  obscureText: true,
+                  decoration: const InputDecoration(labelText: '二课查询密码', border: OutlineInputBorder()),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 32),
+          SizedBox(
+            width: double.infinity,
+            child: Column(
+              children: [
+                SizedBox(
+                  width: double.infinity,
+                  height: 52,
+                  child: ElevatedButton(
+                    onPressed: _isLoading ? null : _queryScores,
+                    style: ElevatedButton.styleFrom(
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      backgroundColor: Theme.of(context).primaryColor,
+                      foregroundColor: Colors.white,
+                    ),
+                    child: _isLoading 
+                      ? const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            SizedBox(
+                              width: 20, height: 20,
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 2.5,
+                              ),
+                            ),
+                            SizedBox(width: 12),
+                            Text('查询中…', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                          ],
+                        )
+                      : const Text('立即查询', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  ),
+                ),
+                if (_isLoading && _loadingMessage.isNotEmpty) ...[
+                  const SizedBox(height: 16),
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 400),
+                    child: Text(
+                      _loadingMessage,
+                      key: ValueKey(_loadingMessage),
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: isDark ? Colors.white70 : Colors.grey[700],
+                        fontStyle: FontStyle.italic,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+          Text(
+            '注：系统会自动穿透校内 VPN，外网环境下也能直接查询。',
+            style: TextStyle(fontSize: 12, color: isDark ? Colors.white54 : Colors.grey[600]),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildScoreList(bool isDark) {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(20),
+          child: Row(
+            children: [
+              Text('查询结果 (${_scores!.length})', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              const Spacer(),
+              TextButton(onPressed: () => setState(() => _scores = null), child: const Text('重新查询')),
+            ],
+          ),
+        ),
+        Expanded(
+          child: ListView.builder(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            itemCount: _scores!.length,
+            itemBuilder: (context, index) {
+              final item = _scores![index];
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: GlassContainer(
+                  padding: const EdgeInsets.all(16),
+                  borderRadius: 16,
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(item['item'] ?? '未知项目', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                            const SizedBox(height: 4),
+                            Text(item['date'] ?? '', style: TextStyle(fontSize: 12, color: isDark ? Colors.white54 : Colors.grey[600])),
+                          ],
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Colors.green.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          '+${item['score']}',
+                          style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 16),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}

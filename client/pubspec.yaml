@@ -33,6 +33,7 @@ dependencies:
   path: 1.9.1
   package_info_plus: ^8.0.0
   jpush_flutter: ^3.4.5
+  home_widget: ^0.7.0
 
 dev_dependencies:
   flutter_test:

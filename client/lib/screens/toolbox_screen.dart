@@ -1,9 +1,18 @@
-import 'dart:io' show File;
+import 'dart:io' show File, Platform;
+import 'dart:convert';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:dio/dio.dart';
+import 'package:cookie_jar/cookie_jar.dart';
+import 'package:dio_cookie_manager/dio_cookie_manager.dart';
+import 'package:crypto/crypto.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
 import '../widgets/glass_container.dart';
+import '../utils/sign_utils.dart';
 import 'erke_score_screen.dart';
 import 'physical_test_screen.dart';
 
@@ -14,56 +23,114 @@ class ToolboxScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final themeProvider = context.watch<ThemeProvider>();
+    final is520 = _isMay20();
 
     return Scaffold(
       backgroundColor: Colors.transparent,
       extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: const Text('工具箱'),
+        title: is520 ? null : const Text('工具箱'),
         backgroundColor: Colors.transparent,
         elevation: 0,
+        iconTheme: const IconThemeData(color: Colors.white),
       ),
       body: Stack(
         children: [
-          Positioned.fill(child: _buildBackground(themeProvider, isDark)),
+          Positioned.fill(
+            child: is520
+                ? _build520Background(isDark)
+                : _buildBackground(themeProvider, isDark),
+          ),
           SafeArea(
-            child: GridView.count(
-              padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
-              crossAxisCount: 3,
-              childAspectRatio: 0.85,
-              mainAxisSpacing: 16,
-              crossAxisSpacing: 16,
-              children: [
-                _buildToolCard(
-                  context,
-                  icon: Icons.school_outlined,
-                  color: Colors.green,
-                  title: '二课分查询',
-                  subtitle: '支持 WebVPN 穿透',
-                  onTap: () => Navigator.push(context,
-                      MaterialPageRoute(builder: (_) => const ErkeScoreScreen())),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 1000),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final wide = constraints.maxWidth > 600;
+                    final crossCount = wide ? 4 : 3;
+                    final aspect = wide ? 1.1 : 0.85;
+                    final topPadding = is520 ? (wide ? 320.0 : 255.0) : 20.0;
+                    return GridView.count(
+                      padding: EdgeInsets.fromLTRB(20, topPadding, 20, 20),
+                      crossAxisCount: crossCount,
+                      childAspectRatio: aspect,
+                      mainAxisSpacing: 16,
+                      crossAxisSpacing: 16,
+                      children: [
+                        _buildToolCard(
+                          context,
+                          icon: Icons.school_outlined,
+                          color: Colors.green,
+                          title: '二课分查询',
+                          subtitle: '支持 WebVPN 穿透',
+                          onTap: () => Navigator.push(context,
+                              MaterialPageRoute(builder: (_) => const ErkeScoreScreen())),
+                        ),
+                        _buildToolCard(
+                          context,
+                          icon: Icons.fitness_center,
+                          color: Colors.orange,
+                          title: '体测成绩',
+                          subtitle: '扫码核验 / 查询',
+                          onTap: () => _openPhysicalTest(context),
+                        ),
+                        _buildToolCard(
+                          context,
+                          icon: Icons.sports_esports,
+                          color: const Color(0xFF00BCD4),
+                          title: '云原神',
+                          subtitle: '点击即玩',
+                          onTap: () => _launchCloudGenshin(context),
+                        ),
+                        _buildToolCard(
+                          context,
+                          icon: Icons.auto_stories_outlined,
+                          color: Colors.blue,
+                          title: '更多工具',
+                          subtitle: '敬请期待',
+                          onTap: () {},
+                        ),
+                      ],
+                    );
+                  },
                 ),
-                _buildToolCard(
-                  context,
-                  icon: Icons.fitness_center,
-                  color: Colors.orange,
-                  title: '体测成绩',
-                  subtitle: '扫码核验 / 查询',
-                  onTap: () => _openPhysicalTest(context),
-                ),
-                _buildToolCard(
-                  context,
-                  icon: Icons.auto_stories_outlined,
-                  color: Colors.blue,
-                  title: '更多工具',
-                  subtitle: '敬请期待',
-                  onTap: () {},
-                ),
-              ],
+              ),
             ),
           ),
         ],
       ),
+    );
+  }
+
+  /// 判断是否为 5月20日
+  bool _isMay20() {
+    final now = DateTime.now();
+    return now.month == 5 && now.day == 20;
+  }
+
+  /// 5月20日专属背景
+  Widget _build520Background(bool isDark) {
+    final image = kIsWeb ? 'assets/images/pcys.png' : 'assets/images/sjys.png';
+    debugPrint('520背景: $image (isWeb=$kIsWeb)');
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        Image.asset(
+          image,
+          fit: BoxFit.cover,
+          alignment: Alignment.center,
+          errorBuilder: (_, e, st) {
+            debugPrint('520背景加载失败: $e');
+            return _buildDefaultBg(isDark);
+          },
+        ),
+        Container(
+          color: isDark
+              ? Colors.black.withValues(alpha: 0.35)
+              : Colors.white.withValues(alpha: 0.25),
+        ),
+      ],
     );
   }
 
@@ -77,100 +144,44 @@ class ToolboxScreen extends StatelessWidget {
       return;
     }
 
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final passwordCtrl = TextEditingController();
-    
-    showDialog(
-      context: context,
-      barrierColor: Colors.black54,
-      builder: (ctx) => Dialog(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        child: GlassContainer(
-          padding: const EdgeInsets.all(24),
-          borderRadius: 20,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.orange.withValues(alpha: 0.15),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.fitness_center, color: Colors.orange, size: 32),
-              ),
-              const SizedBox(height: 16),
-              const Text('体测查询', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 8),
-              Text('学号：$username', style: TextStyle(fontSize: 14, color: isDark ? Colors.white70 : Colors.grey[700])),
-              const SizedBox(height: 20),
-              TextField(
-                controller: passwordCtrl,
-                obscureText: true,
-                style: TextStyle(color: isDark ? Colors.white : Colors.black87),
-                decoration: InputDecoration(
-                  labelText: '体测密码',
-                  labelStyle: TextStyle(color: isDark ? Colors.white54 : Colors.grey[600]),
-                  filled: true,
-                  fillColor: isDark ? Colors.white.withValues(alpha: 0.05) : Colors.black.withValues(alpha: 0.03),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none,
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: Colors.orange, width: 1.5),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 24),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextButton(
-                      onPressed: () => Navigator.pop(ctx),
-                      style: TextButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      ),
-                      child: Text('取消', style: TextStyle(color: isDark ? Colors.white60 : Colors.grey[600])),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: () {
-                        final pwd = passwordCtrl.text;
-                        if (pwd.isEmpty) return;
-                        Navigator.pop(ctx);
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => PhysicalTestPage(
-                              username: username,
-                              password: pwd,
-                            ),
-                          ),
-                        );
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.orange,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      ),
-                      child: const Text('查询', style: TextStyle(fontWeight: FontWeight.w600)),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => _PhysicalTestGate(
+          username: username,
         ),
       ),
-    ).then((_) => passwordCtrl.dispose());
+    );
+  }
+
+  void _launchCloudGenshin(BuildContext context) async {
+    String url;
+    LaunchMode mode;
+
+    if (kIsWeb) {
+      url = 'https://ys.mihoyo.com/cloud/';
+      mode = LaunchMode.platformDefault;
+    } else if (Platform.isAndroid) {
+      url = 'https://ys.mihoyo.com/cloud/';
+      mode = LaunchMode.externalApplication;
+    } else if (Platform.isIOS) {
+      url = 'https://apps.apple.com/cn/app/id1569029742';
+      mode = LaunchMode.externalApplication;
+    } else {
+      url = 'https://ys.mihoyo.com/cloud/';
+      mode = LaunchMode.externalApplication;
+    }
+
+    final uri = Uri.parse(url);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: mode, webOnlyWindowName: '_self');
+    } else {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('无法打开链接')),
+        );
+      }
+    }
   }
 
   Widget _buildBackground(ThemeProvider themeProvider, bool isDark) {
@@ -230,12 +241,19 @@ class ToolboxScreen extends StatelessWidget {
     required VoidCallback onTap,
   }) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final is520 = _isMay20();
 
     return GestureDetector(
       onTap: onTap,
       child: GlassContainer(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
         borderRadius: 20,
+        borderColor: is520 ? const Color(0x668BE197) : null,
+        backgroundColor: is520
+            ? (isDark
+                ? Colors.black.withValues(alpha: 0.3)
+                : Colors.white.withValues(alpha: 0.5))
+            : null,
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
@@ -248,20 +266,188 @@ class ToolboxScreen extends StatelessWidget {
               child: Icon(icon, color: color, size: 28),
             ),
             const SizedBox(height: 10),
-            Text(title,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                    fontWeight: FontWeight.w600, fontSize: 13)),
+            Text(
+              title,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                fontSize: 13,
+                color: isDark ? Colors.white : const Color(0xFF1E293B),
+              ),
+            ),
             const SizedBox(height: 4),
-            Text(subtitle,
-                textAlign: TextAlign.center,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                    fontSize: 10,
-                    color: isDark ? Colors.white54 : Colors.grey[600])),
+            Text(
+              subtitle,
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 10,
+                color: isDark ? Colors.white60 : const Color(0xFF64748B),
+              ),
+            ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// 体测密码输入门控 — 独立的 StatefulWidget，避免 controller 生命周期问题
+class _PhysicalTestGate extends StatefulWidget {
+  final String username;
+  const _PhysicalTestGate({required this.username});
+
+  @override
+  State<_PhysicalTestGate> createState() => _PhysicalTestGateState();
+}
+
+class _PhysicalTestGateState extends State<_PhysicalTestGate> {
+  final _pwdCtrl = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkAutoLogin());
+  }
+
+  @override
+  void dispose() {
+    _pwdCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _checkAutoLogin() async {
+    final prefs = await SharedPreferences.getInstance();
+    final pwd = prefs.getString('sylu_physical_test_pwd_${widget.username}');
+    if (pwd != null && pwd.isNotEmpty) {
+      _pwdCtrl.text = pwd;
+      if (mounted) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => PhysicalTestPage(
+              username: widget.username,
+              password: pwd,
+            ),
+          ),
+        );
+      }
+    }
+  }
+
+  void _queryManual() {
+    final pwd = _pwdCtrl.text;
+    if (pwd.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('请输入体测密码')),
+      );
+      return;
+    }
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PhysicalTestPage(
+          username: widget.username,
+          password: pwd,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      extendBodyBehindAppBar: true,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: const BackButton(color: Colors.white),
+      ),
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: Image.asset('assets/images/morenbeijing.jpeg',
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => Container(
+                    color: isDark
+                        ? const Color(0xFF131720)
+                        : const Color(0xFFF4F6FB))),
+          ),
+          SafeArea(
+            child: Center(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(24),
+                child: GlassContainer(
+                  padding: const EdgeInsets.all(28),
+                  borderRadius: 24,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.withValues(alpha: 0.15),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.fitness_center,
+                            color: Colors.orange, size: 36),
+                      ),
+                      const SizedBox(height: 16),
+                      const Text('体测查询',
+                          style: TextStyle(
+                              fontSize: 20, fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 8),
+                      Text('学号：${widget.username}',
+                          style: TextStyle(
+                              fontSize: 14,
+                              color:
+                                  isDark ? Colors.white70 : Colors.grey[700])),
+                      const SizedBox(height: 24),
+                      TextField(
+                        controller: _pwdCtrl,
+                        obscureText: true,
+                        decoration: InputDecoration(
+                          labelText: '体测密码 (默认111111)',
+                          labelStyle: TextStyle(
+                              color: isDark ? Colors.white54 : Colors.grey[600]),
+                          filled: true,
+                          fillColor: isDark
+                              ? Colors.white.withValues(alpha: 0.05)
+                              : Colors.black.withValues(alpha: 0.03),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide.none,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 28),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 50,
+                        child: ElevatedButton(
+                          onPressed: _queryManual,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.orange,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14)),
+                          ),
+                          child: const Text('查询',
+                              style: TextStyle(
+                                  fontSize: 16, fontWeight: FontWeight.w600)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

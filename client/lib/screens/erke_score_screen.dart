@@ -1,9 +1,11 @@
+import 'dart:io' show File;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:dio/dio.dart';
 import '../providers/auth_provider.dart';
+import '../providers/theme_provider.dart';
 import '../widgets/glass_container.dart';
 import '../utils/app_feedback.dart';
+import '../utils/sylu_client_crawler.dart';
 
 class ErkeScoreScreen extends StatefulWidget {
   const ErkeScoreScreen({super.key});
@@ -58,63 +60,33 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
     _startLoadingMessageRotation();
 
     try {
-      final auth = context.read<AuthProvider>();
-      final resp = await auth.dio.post(
-        '/erke/scores',
-        data: {
-          'vpn_username': _vpnUserCtrl.text.trim(),
-          'vpn_password': _vpnPwdCtrl.text,
-          'erke_username': _erkeUserCtrl.text.trim(),
-          'erke_password': _erkePwdCtrl.text,
-        },
-        // ── 15 秒超时: 正常 3~5s + 内网拥堵余量 ──
-        options: Options(
-          sendTimeout: const Duration(seconds: 15),
-          receiveTimeout: const Duration(seconds: 15),
-        ),
-      );
+      // 使用纯本地前端爬虫穿透深信服 WebVPN
+      final crawler = SyluClientCrawler();
+      
+      // 注意：这里的 vpn_password 框暂时用来接收 WebVPN 的 Ticket 
+      // (如果你后续有完整的 WebVPN 自动抓包登录流，这里再改)
+      final vpnTicket = _vpnPwdCtrl.text.trim();
+      final erkeUser = _erkeUserCtrl.text.trim();
+      final erkePwd = _erkePwdCtrl.text;
+      
+      final htmlStr = await crawler.fetchErkeData(erkeUser, erkePwd, vpnTicket);
+      final parsedScores = crawler.parseErkeScores(htmlStr);
 
-      if (resp.statusCode == 200) {
-        final data = resp.data;
-        if (data['success'] == true) {
-          setState(() {
-            _scores = data['data'];
-          });
-        } else {
-          AppFeedback.showSnackBar(
-            context,
-            data['message'] ?? '查询失败',
-            isError: true,
-          );
-        }
-      }
-    } on DioException catch (e) {
-      // ── 超时熔断: 区分超时与普通网络错误 ──
-      if (e.type == DioExceptionType.connectionTimeout ||
-          e.type == DioExceptionType.sendTimeout ||
-          e.type == DioExceptionType.receiveTimeout) {
-        AppFeedback.showSnackBar(
-          context,
-          '教务系统响应超时，学校内网可能拥堵，请稍后再试',
-          isError: true,
-        );
-      } else if (e.type == DioExceptionType.connectionError) {
-        AppFeedback.showSnackBar(
-          context,
-          '无法连接到服务器，请检查网络后重试',
-          isError: true,
-        );
+      if (parsedScores.isNotEmpty) {
+        setState(() {
+          _scores = parsedScores;
+        });
       } else {
         AppFeedback.showSnackBar(
           context,
-          '请求失败，请检查网络或账号密码',
+          '查询成功，但没有解析到成绩数据或账号密码错误',
           isError: true,
         );
       }
     } catch (e) {
       AppFeedback.showSnackBar(
         context,
-        '请求失败，请检查网络或账号密码',
+        '穿透失败: $e',
         isError: true,
       );
     } finally {
@@ -167,9 +139,36 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
     );
   }
 
+  Widget _buildBackground(ThemeProvider themeProvider, bool isDark) {
+    if (themeProvider.hasBackground && themeProvider.backgroundImage != null) {
+      final bgPath = themeProvider.backgroundImage!;
+      final isAsset = !bgPath.startsWith('http') && !bgPath.startsWith('/');
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          isAsset
+              ? Image.asset('assets/images/$bgPath', fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => _buildDefaultBg(isDark))
+              : bgPath.startsWith('/')
+                  ? Image.file(File(bgPath), fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => _buildDefaultBg(isDark))
+                  : Image.network(bgPath, fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => _buildDefaultBg(isDark)),
+          Container(
+            color: isDark
+                ? Colors.black.withValues(alpha: 0.35)
+                : Colors.white.withValues(alpha: 0.25),
+          ),
+        ],
+      );
+    }
+    return _buildDefaultBg(isDark);
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final themeProvider = context.watch<ThemeProvider>();
     
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -181,7 +180,15 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
       ),
       body: Stack(
         children: [
-          Positioned.fill(child: _buildDefaultBg(isDark)),
+          Positioned.fill(child: _buildBackground(themeProvider, isDark)),
+          if (_scores != null)
+            Positioned.fill(
+              child: Container(
+                color: isDark
+                    ? Colors.black.withValues(alpha: 0.45)
+                    : Colors.black.withValues(alpha: 0.3),
+              ),
+            ),
           SafeArea(
             bottom: false,
             child: Column(
@@ -247,7 +254,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
                   children: [
                     Icon(Icons.security, color: Colors.blue),
                     SizedBox(width: 12),
-                    Text('WebVPN 登录 (校外访问专用)', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                    Text('统一认证平台登录', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                   ],
                 ),
                 const SizedBox(height: 4),
@@ -260,7 +267,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
                   controller: _vpnPwdCtrl,
                   obscureText: true,
                   decoration: InputDecoration(
-                    labelText: 'WebVPN 密码',
+                    labelText: '统一认证密码 (目前填 WebVPN Ticket)',
                     prefixIcon: const Icon(Icons.lock_outline),
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                     filled: true,

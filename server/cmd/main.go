@@ -108,6 +108,7 @@ func main() {
 	feedbackHandler := handlers.NewFeedbackHandler(db)
 	checkinHandler := handlers.NewCheckInHandler(db)
 	notificationHandler := handlers.NewNotificationHandler(db)
+	erkeHandler := handlers.NewErkeHandler(db)
 
 	// 初始化教务服务配置
 	handlers.EduServiceConfig.BaseURL = cfg.EduServiceURL
@@ -292,6 +293,9 @@ func main() {
 
 	// 题库提取路由
 	r.POST("/api/exam/extract", middleware.AuthMiddleware(cfg.JWTSecret), examHandler.Extract)
+
+	// 二课查询路由
+	r.POST("/api/erke/scores", middleware.AuthMiddleware(cfg.JWTSecret), erkeHandler.GetScores)
 
 	// 用户反馈路由
 	r.POST("/api/feedback", middleware.AuthMiddleware(cfg.JWTSecret), feedbackHandler.Submit)

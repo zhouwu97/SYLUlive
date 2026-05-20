@@ -12,7 +12,7 @@ import 'edu_screen.dart';
 import 'login_screen.dart';
 
 /// 每节课槽的默认高度
-const double defaultSlotHeight = 85.0;
+const double defaultSlotHeight = 75.0;
 
 /// 左侧时间轴宽度（必须与表头左侧留空一致）
 const double timeColumnWidth = 35.0;
@@ -47,7 +47,7 @@ Color getCourseColor(String name,
   final idx =
       getCourseColorIndex(name, courseCode: courseCode, location: location);
   final base = courseColors[idx];
-  return isActive ? base.withOpacity(0.55) : Colors.grey.withOpacity(0.4);
+  return isActive ? base.withOpacity(0.45) : Colors.grey.withOpacity(0.4);
 }
 
 /// 星期标签
@@ -249,14 +249,6 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
     return Scaffold(
       backgroundColor: Colors.transparent,
-      floatingActionButton: _hasCache
-          ? FloatingActionButton.extended(
-              onPressed: () => _showAddCourseDialog(context),
-              icon: const Icon(Icons.add),
-              label: const Text('添加课程'),
-              backgroundColor: Theme.of(context).primaryColor,
-            )
-          : null,
       body: SafeArea(
         child: Consumer<AuthProvider>(
           builder: (context, auth, _) {
@@ -713,11 +705,97 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       _initializing = sc.courses.isEmpty;
     });
 
+    // 弹出精美加载动画，防止用户乱点
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      barrierColor: Colors.black54,
+      builder: (ctx) => PopScope(
+        canPop: false,
+        child: Center(
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 48),
+            padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 32),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(24),
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Colors.white.withValues(alpha: 0.15),
+                  Colors.white.withValues(alpha: 0.05),
+                ],
+              ),
+              border: Border.all(
+                color: Colors.white.withValues(alpha: 0.2),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.3),
+                  blurRadius: 30,
+                  spreadRadius: 2,
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // 渐变圆形进度指示器
+                Container(
+                  width: 56,
+                  height: 56,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: LinearGradient(
+                      colors: [
+                        const Color(0xFF6366F1).withValues(alpha: 0.2),
+                        const Color(0xFF8B5CF6).withValues(alpha: 0.1),
+                      ],
+                    ),
+                  ),
+                  child: const Padding(
+                    padding: EdgeInsets.all(14),
+                    child: CircularProgressIndicator(
+                      color: Color(0xFF818CF8),
+                      strokeWidth: 3,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                const Text(
+                  '正在从教务系统提取课表',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    decoration: TextDecoration.none,
+                    letterSpacing: 0.3,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '请耐心等待，数据量较大时可能需要几秒…',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.6),
+                    fontSize: 13,
+                    fontWeight: FontWeight.normal,
+                    decoration: TextDecoration.none,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
     try {
       final result = await edu.getCourses(sc.selectedYear, sc.selectedSemester);
       if (!mounted) return;
 
       if (result == null || !result.success) {
+        Navigator.pop(context); // 关闭加载弹窗
         messenger.showSnackBar(
           SnackBar(content: Text(result?.errorMessage ?? '获取课表失败')),
         );
@@ -726,6 +804,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
       final courses = result.data ?? const <Map<String, dynamic>>[];
       if (courses.isEmpty) {
+        Navigator.pop(context); // 关闭加载弹窗
         messenger.showSnackBar(
           const SnackBar(content: Text('教务系统暂无可导入课程')),
         );
@@ -748,13 +827,22 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
         _hasCache = sc.courses.isNotEmpty;
         _didLoad = true;
       });
+      
+      Navigator.pop(context); // 确保课表加载进状态后再关闭弹窗
+      
       messenger.showSnackBar(
         SnackBar(
           content: Text(synced
-              ? '已从教务获取 ${sc.courses.length} 门课'
+              ? '✅ 导入成功！已更新 ${sc.courses.length} 门课程'
               : '已获取课表，本地同步失败，已先缓存显示'),
+          backgroundColor: Colors.green.shade600,
         ),
       );
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context);
+        messenger.showSnackBar(const SnackBar(content: Text('导入过程出现异常，请重试')));
+      }
     } finally {
       if (mounted) {
         setState(() {
@@ -1153,6 +1241,22 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                           ),
                         ),
                       ],
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Container(
+                    decoration: tileDecoration(),
+                    child: ListTile(
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 6),
+                      leading: Icon(Icons.add_circle_outline, color: primary),
+                      title: const Text('添加自定义课程'),
+                      subtitle: const Text('手动添加不在教务系统中的课程或活动'),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () {
+                        Navigator.pop(context); // 关闭底部面板
+                        _showAddCourseDialog(context);
+                      },
                     ),
                   ),
                   const SizedBox(height: 14),
@@ -1583,9 +1687,12 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     }
 
     // 第二轮：非当前周课程，只在槽位未被活跃课程占用时才显示
+    // 已完全结课的课程（所有周数 < 当前周）不显示
     for (final c in sc.courses) {
       final key = '${c.weekday}_${c.startSection}';
       if (wn != null && c.weeks.isNotEmpty && !c.weeks.contains(wn)) {
+        // 跳过已完全结课的课程
+        if (c.weeks.every((w) => w < wn)) continue;
         if (!activeSlots.contains(key) && !inactiveSeen.contains(key)) {
           allInactive.add(c);
           inactiveSeen.add(key);

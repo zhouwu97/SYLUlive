@@ -78,7 +78,7 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
     final themeProvider = context.watch<ThemeProvider>();
 
     return PopScope(
-      canPop: !themeProvider.predictiveBack,
+      canPop: themeProvider.predictiveBack,
       onPopInvokedWithResult: (didPop, result) {
         if (didPop) return;
         Navigator.pop(context, _didChange);

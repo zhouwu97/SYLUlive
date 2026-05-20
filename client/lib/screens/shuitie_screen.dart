@@ -22,6 +22,7 @@ import 'login_screen.dart';
 import 'market_screen.dart';
 import 'post_detail_screen.dart';
 import 'search_results_screen.dart';
+import 'toolbox_screen.dart';
 
 class ShuitieScreen extends StatefulWidget {
   const ShuitieScreen({super.key});
@@ -184,15 +185,41 @@ class _ShuitieScreenState extends State<ShuitieScreen>
 
   List<Post> _resolveVisiblePosts(List<Post> posts) {
     if (_searchQuery.isNotEmpty) return _searchResults;
-    if (_feedMode == 'new') {
+    
+    List<Post> sortedPosts = List.from(posts);
+    
+    if (_feedMode == 'all') {
+      // 综合要看发帖者的经验和获赞评论数
+      sortedPosts.sort((a, b) {
+        int scoreA = (a.author?.exp ?? 0) + (a.likeCount * 2) + (a.replyCount * 3);
+        int scoreB = (b.author?.exp ?? 0) + (b.likeCount * 2) + (b.replyCount * 3);
+        if (scoreB != scoreA) return scoreB.compareTo(scoreA);
+        return b.createdAt.compareTo(a.createdAt);
+      });
+      return sortedPosts;
+    } else if (_feedMode == 'hot') {
+      // 热门看观看次数和评论点赞数
+      sortedPosts.sort((a, b) {
+        int scoreA = (a.viewCount * 2) + (a.likeCount * 3) + (a.replyCount * 4);
+        int scoreB = (b.viewCount * 2) + (b.likeCount * 3) + (b.replyCount * 4);
+        if (scoreB != scoreA) return scoreB.compareTo(scoreA);
+        return b.createdAt.compareTo(a.createdAt);
+      });
+      return sortedPosts;
+    } else if (_feedMode == 'new') {
       final now = DateTime.now();
-      final recent = posts
+      final recent = sortedPosts
           .where((post) => now.difference(post.createdAt).inDays < 3)
           .toList();
-      if (recent.isNotEmpty) return recent;
-      return posts.take(12).toList();
+      if (recent.isNotEmpty) {
+        recent.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+        return recent;
+      }
+      sortedPosts.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      return sortedPosts.take(12).toList();
     }
-    return posts;
+    
+    return sortedPosts;
   }
 
   Future<void> _refresh() async {
@@ -620,8 +647,9 @@ class _ShuitieScreenState extends State<ShuitieScreen>
           Expanded(child: _buildActionItem(
             icon: Icons.handyman_outlined, iconColor: const Color(0xFFF97316),
             iconBg: const Color(0xFFF97316).withValues(alpha: 0.12),
-            title: '工具箱', subtitle: '开发中',
-            isDark: isDark, onTap: () => _showComingSoon('工具箱'),
+            title: '工具箱', subtitle: '快捷小工具',
+            isDark: isDark, 
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ToolboxScreen())),
           )),
         ],
       ),

@@ -96,7 +96,7 @@ class _CampusScreenState extends State<CampusScreen>
                   ),
                 ),
                 bottom: PreferredSize(
-                  preferredSize: const Size.fromHeight(48),
+                  preferredSize: const Size.fromHeight(56),
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
                     child: _buildGlassTabBar(isDark, primaryColor),

@@ -259,8 +259,21 @@ class _EduScreenState extends State<EduScreen> {
   }
 
   void _showCourseDialog(BuildContext context, EduProvider eduProvider) {
-    String selectedYear = DateTime.now().year.toString();
-    int selectedSemester = DateTime.now().month >= 2 && DateTime.now().month <= 7 ? 3 : 12;
+    final now = DateTime.now();
+    int currentYear = now.year;
+    String selectedYear;
+    int selectedSemester;
+    
+    if (now.month >= 2 && now.month <= 7) {
+      selectedYear = (currentYear - 1).toString();
+      selectedSemester = 12; // 春季（第二学期）
+    } else if (now.month == 1) {
+      selectedYear = (currentYear - 1).toString();
+      selectedSemester = 3; // 秋季（第一学期）
+    } else {
+      selectedYear = currentYear.toString();
+      selectedSemester = 3; // 秋季（第一学期）
+    }
 
     showDialog(
       context: context,
@@ -412,8 +425,21 @@ class _EduScreenState extends State<EduScreen> {
   }
 
   void _showGradesDialog(BuildContext context, EduProvider eduProvider) {
-    String selectedYear = DateTime.now().year.toString();
-    int selectedSemester = DateTime.now().month >= 2 && DateTime.now().month <= 7 ? 3 : 12;
+    final now = DateTime.now();
+    int currentYear = now.year;
+    String selectedYear;
+    int selectedSemester;
+    
+    if (now.month >= 2 && now.month <= 7) {
+      selectedYear = (currentYear - 1).toString();
+      selectedSemester = 12; // 春季（第二学期）
+    } else if (now.month == 1) {
+      selectedYear = (currentYear - 1).toString();
+      selectedSemester = 3; // 秋季（第一学期）
+    } else {
+      selectedYear = currentYear.toString();
+      selectedSemester = 3; // 秋季（第一学期）
+    }
 
     showDialog(
       context: context,

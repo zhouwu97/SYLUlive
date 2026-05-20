@@ -25,6 +25,11 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
   void initState() {
     super.initState();
     _tabCtrl = TabController(length: 2, vsync: this);
+    _tabCtrl.addListener(() {
+      if (!_tabCtrl.indexIsChanging) {
+        setState(() {}); // 确保切换 segment 时重建
+      }
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) => _refreshAll());
   }
 
@@ -50,32 +55,26 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: SafeArea(
-        top: false,
-        child: Stack(
+    return Stack(
+      children: [
+        Column(
           children: [
-            Column(
-              children: [
-                if (_showDisclaimer) _buildDisclaimer(isDark),
-                _buildSearchBar(isDark),
-                _buildSegmentedControl(isDark),
-                Expanded(
-                  child: _tabCtrl.index == 0
-                      ? _buildSubjectList(isDark)
-                      : _buildMajorList(isDark),
-                ),
-              ],
-            ),
-            Positioned(
-              right: 20,
-              bottom: 20,
-              child: _buildFAB(context),
+            if (_showDisclaimer) _buildDisclaimer(isDark),
+            _buildSearchBar(isDark),
+            _buildSegmentedControl(isDark),
+            Expanded(
+              child: _tabCtrl.index == 0
+                  ? _buildSubjectList(isDark)
+                  : _buildMajorList(isDark),
             ),
           ],
         ),
-      ),
+        Positioned(
+          right: 20,
+          bottom: 20,
+          child: _buildFAB(context),
+        ),
+      ],
     );
   }
 

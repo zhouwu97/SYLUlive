@@ -259,7 +259,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                   style: const TextStyle(
                       fontSize: 28,
                       fontWeight: FontWeight.bold,
-                      color: Colors.white),
+                       color: Colors.white),
                 ),
                 if (authProvider.isLoggedIn) ...[
                   const SizedBox(width: 6),

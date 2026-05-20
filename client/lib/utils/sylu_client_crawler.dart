@@ -1,15 +1,16 @@
 import 'dart:convert';
 import 'dart:typed_data';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:dio/dio.dart';
 import 'package:dio/io.dart';
 import 'package:dio_cookie_manager/dio_cookie_manager.dart';
 import 'package:cookie_jar/cookie_jar.dart';
-import 'package:encrypt/encrypt.dart' as encrypt;
 import 'package:pointycastle/export.dart' as pc;
 import 'package:asn1lib/asn1lib.dart';
 import 'package:html/parser.dart' show parse;
+import 'package:html/dom.dart' show Document;
 import 'package:fast_gbk/fast_gbk.dart';
 
 /// 纯客户端的前端爬虫工具类
@@ -21,15 +22,15 @@ class SyluClientCrawler {
   /// WebVPN 加密的 Key 和 IV (固定)
   static const String _vpnKeyIvStr = 'wrdvpnisthebest!';
 
-  /// 原始内网登录地址
+  /// 原始内网登录地址（二课登录页）
   static const String _innerUrl =
-      'http://xg.sylu.edu.cn/SyluTW/Sys/SystemForm/main.htm';
+      'http://xg.sylu.edu.cn/SyluTW/Sys/UserLogin.aspx';
 
   /// 域名部分，用于加密
   static const String _targetDomain = 'xg.sylu.edu.cn';
 
-  SyluClientCrawler() {
-    _dio = Dio(BaseOptions(
+  SyluClientCrawler({CookieJar? cookieJar, Dio? dio}) {
+    _dio = dio ?? Dio(BaseOptions(
       connectTimeout: const Duration(seconds: 30),
       receiveTimeout: const Duration(seconds: 30),
       headers: {
@@ -39,15 +40,16 @@ class SyluClientCrawler {
             'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
         'Accept-Language': 'zh-CN,zh;q=0.9',
         'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1',
       },
-      // 允许所有重定向
-      followRedirects: true,
+      // 关闭自动跟随重定向，我们手动处理，以防止 Cookie 丢失
+      followRedirects: false,
       validateStatus: (status) {
-        return status != null && status < 500;
+        return status != null && status < 600; // 捕获所有状态码
       },
     ));
     
-    // 【核心修复】：强制信任所有证书 (相当于 Python 的 verify=False)
+    // 【核心修复】：强制信任所有证书
     _dio.httpClientAdapter = IOHttpClientAdapter(
       createHttpClient: () {
         final client = HttpClient();
@@ -61,28 +63,77 @@ class SyluClientCrawler {
     _dio.interceptors.add(CookieManager(_cookieJar));
   }
 
-  /// 执行登录并返回结果 (HTML 源码)
-  /// [username]: 学号
-  /// [password]: 明文密码
-  /// [vpnTicket]: WebVPN 的认证 Ticket (通常是 wengine_vpn_ticketwebvpn_sylu_edu_cn)
-  Future<String> fetchErkeData(
-      String username, String password, String vpnTicket) async {
+  /// 获取 Dio 实例用于测试脚本
+  Dio getDio() => _dio;
+
+  /// 健壮的响应字节流解码器
+  String decodeResponseBytes(List<int> bytes, Headers headers) {
+    return _decodeResponseBytes(bytes, headers);
+  }
+
+  String _decodeResponseBytes(List<int> bytes, Headers headers) {
+    try {
+      final contentType = headers.value('content-type') ?? '';
+      if (contentType.toLowerCase().contains('utf-8')) {
+        return utf8.decode(bytes);
+      }
+      return gbk.decode(bytes);
+    } catch (e) {
+      try {
+        return utf8.decode(bytes);
+      } catch (e2) {
+        return String.fromCharCodes(bytes);
+      }
+    }
+  }
+
+  /// 执行登录并返回结果状态
+  Future<String> login(String username, String password, [String? vpnTicket]) async {
     // 1. 初始化 Cookie
-    await _injectVpnCookie(vpnTicket);
+    if (vpnTicket != null) {
+      await _injectVpnCookie(vpnTicket);
+    }
 
     // 2. 生成加密后的 WebVPN 目标 URL
     final encryptedUrl = _buildVpnUrl();
+    print('[Crawler] 初始 VPN URL: $encryptedUrl');
 
-    // 3. 踩点请求 (GET) - 必须用 ResponseType.bytes 防止 GBK 乱码
-    final getResp = await _dio.get(
-      encryptedUrl,
-      options: Options(responseType: ResponseType.bytes),
-    );
+    // 3. 手动处理 GET 重定向链，以维持 WebVPN 的会话
+    String currentUrl = encryptedUrl;
+    Response getResp;
+    int redirectCount = 0;
 
-    // 使用 fast_gbk 将字节流解码为字符串
-    final htmlStr = gbk.decode(getResp.data as List<int>);
+    while (true) {
+      getResp = await _dio.get(
+        currentUrl,
+        options: Options(responseType: ResponseType.bytes),
+      );
 
-    // 4. 解析提取 ASP.NET 隐藏字段和 RSA 公钥
+      print('[Crawler] GET 响应状态: ${getResp.statusCode}, URL: $currentUrl');
+
+      if (getResp.statusCode == 301 || getResp.statusCode == 302) {
+        final location = getResp.headers.value('location');
+        if (location != null) {
+          if (location.startsWith('http')) {
+            currentUrl = location;
+          } else if (location.startsWith('/')) {
+            final uri = Uri.parse(currentUrl);
+            currentUrl = '${uri.scheme}://${uri.host}$location';
+          }
+          print('[Crawler] 重定向到: $currentUrl');
+          redirectCount++;
+          if (redirectCount > 10) throw Exception('重定向次数过多');
+          continue;
+        }
+      }
+      break;
+    }
+
+    if (getResp.statusCode != 200) {
+      throw Exception('无法访问登录页，状态码: ${getResp.statusCode}');
+    }
+
+    final htmlStr = _decodeResponseBytes(getResp.data as List<int>, getResp.headers);
     final doc = parse(htmlStr);
 
     final viewState = _getInputValue(doc, '__VIEWSTATE');
@@ -93,49 +144,86 @@ class SyluClientCrawler {
     if (pubKeyBase64.isEmpty) {
       throw Exception('未能从页面提取到 RSA 公钥 (pubKey字段不存在)');
     }
+    print('[Crawler] 找到 RSA 公钥');
 
-    // 5. 使用 RSA 公钥加密密码
+    // 使用 RSA 公钥加密密码
     final encryptedPwd = _encryptRsa(password, pubKeyBase64);
+    print('[Crawler] 加密后的 pwd: $encryptedPwd');
 
-    // 6. 构造表单数据并进行 GBK 编码的 UrlEncode
-    final Map<String, String> formData = {
-      'UserName': username,
-      'Password': password, // ASP.NET 原生需要明文，同时带着 RSA 的 pwd 字段
-      'pwd': encryptedPwd,
-      'pubKey': pubKeyBase64,
+    // 提取伪验证码
+    final codeBoxElement = doc.querySelector('#code-box');
+    String captcha = codeBoxElement?.text.trim() ?? '';
+    if (captcha.isEmpty) captcha = 'K777'; // 兜底的伪造验证码
+    print('[Crawler] 提取的伪验证码: $captcha');
+
+    // 构造表单数据 (使用 UTF-8 URL编码)
+    final Map<String, dynamic> formData = {
+      '__EVENTTARGET': '',
+      '__EVENTARGUMENT': '',
       '__VIEWSTATE': viewState,
       '__VIEWSTATEGENERATOR': viewStateGen,
       '__EVENTVALIDATION': eventValidation,
+      'UserName': username,
+      'Password': password, // JSEncrypt 保留原字段
+      'pwd': encryptedPwd,
+      'pubKey': pubKeyBase64,
+      'codeInput': captcha,
+      'queryBtn': '登          录',
     };
 
-    // [极度关键]：将表单数据转换为 GBK 字节流并 UrlEncode
-    final encodedPayload = _encodeFormGbk(formData);
-
-    // 7. 提交登录 (POST)
+    print('[Crawler] 发送 POST 登录请求到: $currentUrl');
+    // 注意：我们将 followRedirects 设置回 true，以便自动跟随登录后的可能的 302（如果有）
     final postResp = await _dio.post(
-      encryptedUrl,
-      data: encodedPayload,
+      currentUrl,
+      data: formData,
       options: Options(
         responseType: ResponseType.bytes,
+        followRedirects: true,
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
-          'Referer': encryptedUrl, // 防盗链
+          'Referer': currentUrl, 
         },
       ),
     );
 
-    final resultHtml = gbk.decode(postResp.data as List<int>);
+    final postHtml = _decodeResponseBytes(postResp.data as List<int>, postResp.headers);
     
-    // 如果登录成功，结果 HTML 通常会包含系统的框架页面或者重定向提示
-    // 你可以在这里解析 resultHtml 并提取后续需要的具体二课数据
-    return resultHtml;
+    final postDoc = parse(postHtml);
+    for (final script in postDoc.querySelectorAll('script')) {
+      if (script.text.contains('alert')) {
+        print('[Crawler] 发现服务器弹窗提示: ${script.text.trim()}');
+        throw Exception('登录失败: ${script.text.trim()}');
+      }
+      if (script.text.contains("window.location.href='SystemForm/main.htm'") ||
+          script.text.contains('window.location.href="SystemForm/main.htm"')) {
+        print('[Crawler] ✅ 登录成功！直接跳转到成绩查询页');
+        final baseUri = Uri.parse(currentUrl);
+        final mainUrl = '${baseUri.scheme}://${baseUri.host}${baseUri.path.replaceAll('UserLogin.aspx', 'SystemForm/StuAction/StuActionSearch.aspx')}';
+        print('[Crawler] 成绩页URL: $mainUrl');
+        final mainResp = await _dio.get(
+          mainUrl,
+          options: Options(responseType: ResponseType.bytes, followRedirects: true),
+        );
+        final mainHtml = _decodeResponseBytes(mainResp.data as List<int>, mainResp.headers);
+        print('[Crawler] 成绩页获取成功，长度: ${mainHtml.length}');
+        return mainHtml;
+      }
+    }
+
+    for (final element in postDoc.querySelectorAll('*')) {
+      final id = element.id;
+      if (id.contains('msg') || id.contains('error')) {
+        print('[Crawler] 发现提示元素 ID: $id, 内容: ${element.text.trim()}');
+        throw Exception('登录失败: ${element.text.trim()}');
+      }
+    }
+
+    throw Exception('未能确认登录成功，页面未包含重定向脚本。');
   }
 
   /// 注入传入的 WebVPN Cookie
   Future<void> _injectVpnCookie(String vpnTicket) async {
     final vpnUri = Uri.parse('https://webvpn.sylu.edu.cn');
-    // 如果你的 ticket 字符串没有包含 key=value，可以在这里补全，例如 'wengine_vpn_ticketwebvpn_sylu_edu_cn=...'
-    // 这里假设传入的 vpnTicket 就是纯 value 或者是完整的 key=value
     String cookieStr = vpnTicket;
     if (!cookieStr.contains('=')) {
       cookieStr = 'wengine_vpn_ticketwebvpn_sylu_edu_cn=$vpnTicket';
@@ -148,132 +236,80 @@ class SyluClientCrawler {
   }
 
   /// 构造 WebVPN 加密后的目标 URL
-  /// 规则：https://webvpn.sylu.edu.cn/http/ + Hex(Key) + Hex(AES_CFB(xg.sylu.edu.cn)) + 路径
   String _buildVpnUrl() {
     final keyBytes = utf8.encode(_vpnKeyIvStr) as Uint8List;
     final ivBytes = utf8.encode(_vpnKeyIvStr) as Uint8List;
     final plainBytes = utf8.encode(_targetDomain) as Uint8List;
 
-    // 2. 初始化 AES-CFB-128 加密器 (16 代表 128位 块大小)
     final cipher = pc.CFBBlockCipher(pc.AESEngine(), 16);
     cipher.init(true, pc.ParametersWithIV(pc.KeyParameter(keyBytes), ivBytes));
 
-    // 3. CFBBlockCipher 是块加密器，我们必须按 16 字节块处理并手动处理尾部
     final cipherBytes = Uint8List(plainBytes.length);
     int offset = 0;
     while (offset < plainBytes.length) {
-      final block = Uint8List(16); // 保证喂给它的是严格的 16 字节
+      final block = Uint8List(16);
       final remaining = plainBytes.length - offset;
       final chunkSize = remaining < 16 ? remaining : 16;
       block.setRange(0, chunkSize, plainBytes.skip(offset).take(chunkSize));
       
       final outBlock = Uint8List(16);
-      cipher.processBlock(block, 0, outBlock, 0); // 现在绝对不会报 buffer too short
+      cipher.processBlock(block, 0, outBlock, 0); 
       
-      // 取回实际需要的长度
       cipherBytes.setRange(offset, offset + chunkSize, outBlock.take(chunkSize));
       offset += chunkSize;
     }
 
-    // 5. 转换为小写 hex
     final keyHex = _bytesToHex(keyBytes);
     final encryptedHostHex = _bytesToHex(cipherBytes);
     
     final path = _innerUrl.replaceFirst('http://$_targetDomain', '');
     
-    return 'https://webvpn.sylu.edu.cn/http/$keyHex/$encryptedHostHex$path';
+    return 'https://webvpn.sylu.edu.cn/http/$keyHex$encryptedHostHex$path';
   }
 
   /// 从 HTML 文档中提取指定 input 的 value
-  String _getInputValue(var document, String idOrName) {
-    var element = document.querySelector('input[id="$idOrName"]');
-    element ??= document.querySelector('input[name="$idOrName"]');
+  String _getInputValue(Document doc, String name) {
+    var element = doc.querySelector('input[id="$name"]');
+    element ??= doc.querySelector('input[name="$name"]');
     return element?.attributes['value'] ?? '';
   }
 
-  /// 使用 RSA Base64 公钥加密字符串，并返回 Base64 编码的密文
+  /// 使用 RSA Base64 公钥加密字符串，并返回 Base64 编码的密文 (JSEncrypt 兼容)
   String _encryptRsa(String plainText, String publicKeyBase64) {
-    // 1. 解析 Base64 为 Uint8List
-    final publicKeyBytes = base64Decode(publicKeyBase64);
+    try {
+      final cleanBase64 = publicKeyBase64.replaceAll(RegExp(r'\s+'), '');
+      final publicKeyBytes = base64Decode(cleanBase64);
 
-    // 2. 解析 ASN.1 格式的公钥
-    final asn1Parser = ASN1Parser(publicKeyBytes);
-    final topLevelSeq = asn1Parser.nextObject() as ASN1Sequence;
-    
-    ASN1Integer modulus;
-    ASN1Integer exponent;
-    
-    // 兼容 PKCS#1 或 PKCS#8 格式
-    if (topLevelSeq.elements![0] is ASN1Integer) {
-      // PKCS#1 格式: RSAPublicKey ::= SEQUENCE { modulus INTEGER, publicExponent INTEGER }
-      modulus = topLevelSeq.elements![0] as ASN1Integer;
-      exponent = topLevelSeq.elements![1] as ASN1Integer;
-    } else {
-      // PKCS#8 格式: SubjectPublicKeyInfo ::= SEQUENCE { algorithm AlgorithmIdentifier, subjectPublicKey BIT STRING }
-      final subjectPublicKey = topLevelSeq.elements![1] as ASN1BitString;
-      // 内部再包含一个 RSAPublicKey SEQUENCE
-      final innerParser = ASN1Parser(subjectPublicKey.contentBytes()!);
-      final pkSeq = innerParser.nextObject() as ASN1Sequence;
-      modulus = pkSeq.elements![0] as ASN1Integer;
-      exponent = pkSeq.elements![1] as ASN1Integer;
-    }
-
-    final rsaPublicKey = pc.RSAPublicKey(modulus.valueAsBigInteger, exponent.valueAsBigInteger);
-
-    // 3. 初始化 RSA 加密引擎 (PKCS1 填充)
-    final cipher = pc.PKCS1Encoding(pc.RSAEngine())
-      ..init(true, pc.PublicKeyParameter<pc.RSAPublicKey>(rsaPublicKey));
-
-    // 4. 加密
-    final plainBytes = utf8.encode(plainText) as Uint8List;
-    final cipherBytes = cipher.process(plainBytes);
-
-    // 5. 返回 Base64
-    return base64Encode(cipherBytes);
-  }
-
-  /// 构造 GBK 编码的 UrlEncode 字符串
-  String _encodeFormGbk(Map<String, String> data) {
-    final buffer = StringBuffer();
-    bool first = true;
-    
-    data.forEach((key, value) {
-      if (!first) {
-        buffer.write('&');
-      }
-      buffer.write(_urlEncodeGbk(key));
-      buffer.write('=');
-      buffer.write(_urlEncodeGbk(value));
-      first = false;
-    });
-
-    // 必须追加固定的登录按钮参数
-    if (!first) {
-      buffer.write('&');
-    }
-    buffer.write('queryBtn=%B5%C7++++++++++++%C2%BC'); // "登录" 的 GBK UrlEncode
-
-    return buffer.toString();
-  }
-
-  /// 将字符串按 GBK 编码进行 UrlEncode
-  String _urlEncodeGbk(String str) {
-    final gbkBytes = gbk.encode(str);
-    final buffer = StringBuffer();
-    for (int byte in gbkBytes) {
-      // 保留字母、数字和一些安全字符
-      if ((byte >= 0x30 && byte <= 0x39) || // 0-9
-          (byte >= 0x41 && byte <= 0x5A) || // A-Z
-          (byte >= 0x61 && byte <= 0x7A) || // a-z
-          byte == 0x2D || byte == 0x2E || byte == 0x5F || byte == 0x7E) { // - . _ ~
-        buffer.writeCharCode(byte);
+      final asn1Parser = ASN1Parser(publicKeyBytes);
+      final topLevelSeq = asn1Parser.nextObject() as ASN1Sequence;
+      
+      ASN1Integer modulus;
+      ASN1Integer exponent;
+      
+      if (topLevelSeq.elements![0] is ASN1Integer) {
+        modulus = topLevelSeq.elements![0] as ASN1Integer;
+        exponent = topLevelSeq.elements![1] as ASN1Integer;
       } else {
-        // 其他字符转为 %XX
-        buffer.write('%');
-        buffer.write(byte.toRadixString(16).toUpperCase().padLeft(2, '0'));
+        final subjectPublicKey = topLevelSeq.elements![1] as ASN1BitString;
+        final innerParser = ASN1Parser(subjectPublicKey.contentBytes()!);
+        final pkSeq = innerParser.nextObject() as ASN1Sequence;
+        modulus = pkSeq.elements![0] as ASN1Integer;
+        exponent = pkSeq.elements![1] as ASN1Integer;
       }
+
+      final rsaPublicKey = pc.RSAPublicKey(modulus.valueAsBigInteger, exponent.valueAsBigInteger);
+
+      final cipher = pc.PKCS1Encoding(pc.RSAEngine())
+        ..init(true, pc.PublicKeyParameter<pc.RSAPublicKey>(rsaPublicKey));
+
+      final plainBytes = utf8.encode(plainText) as Uint8List;
+      final cipherBytes = cipher.process(plainBytes);
+
+      return base64Encode(cipherBytes);
+    } catch (e) {
+      print('[Crawler] RSA加密失败: $e');
+      return plainText;
     }
-    return buffer.toString();
   }
 
   /// 辅助方法：byte 数组转小写 Hex 字符串
@@ -293,22 +329,49 @@ class SyluClientCrawler {
     final List<Map<String, String>> results = [];
     try {
       final document = parse(htmlStr);
-      // 假设目标数据在 id 为 DataGrid1 的表格中
-      final rows = document.querySelectorAll('#DataGrid1 tr');
-      
+      var rows = document.querySelectorAll('#GridView1 tr');
+      if (rows.isEmpty) rows = document.querySelectorAll('#DataGrid1 tr');
+      if (rows.isEmpty) rows = document.querySelectorAll('table tr');
+      if (rows.isEmpty) {
+        // 搜索关键词定位
+        final hasDataGrid = htmlStr.contains('DataGrid');
+        final hasTable = htmlStr.contains('<table');
+        final hasTr = htmlStr.contains('<tr');
+        final hasIframe = htmlStr.contains('<iframe');
+        print('[Crawler] HTML特征: DataGrid=$hasDataGrid table=$hasTable tr=$hasTr iframe=$hasIframe');
+        if (hasIframe) {
+          final iframeMatch = RegExp(r'<iframe[^>]*src="([^"]*)"').firstMatch(htmlStr);
+          if (iframeMatch != null) {
+            print('[Crawler] 发现iframe: ${iframeMatch.group(1)}');
+          }
+        }
+        // 搜索分数相关
+        final scoreIdx = htmlStr.indexOf('分数');
+        print('[Crawler] "分数"出现位置: $scoreIdx');
+        if (scoreIdx > 0) {
+          print('[Crawler] 附近HTML: ${htmlStr.substring(scoreIdx > 50 ? scoreIdx - 50 : 0, scoreIdx + 100)}');
+        }
+      }
+
+      print('[Crawler] 找到 ${rows.length} 个表格行');
+
       for (int i = 0; i < rows.length; i++) {
         final row = rows[i];
         final columns = row.querySelectorAll('td');
-        
-        // 过滤掉表头（如果有的话）或列数不足的行
-        if (columns.length > 2) {
-          final itemName = columns[0].text.trim();
-          final score = columns[1].text.trim();
-          // 如果表格有第三列是日期，也可以提取出来，这里简单回退
-          final date = columns.length > 2 ? columns[2].text.trim() : '';
 
-          // 避免把纯标题行加进去（视具体 HTML 结构而定）
-          if (itemName.isNotEmpty && itemName != '活动名称') {
+        if (i < 3) {
+          print('[Crawler] 行$i: ${columns.length}列');
+          for (int j = 0; j < columns.length && j < 4; j++) {
+            print('[Crawler]   列$j: "${columns[j].text.trim()}"');
+          }
+        }
+
+        if (columns.length >= 8) {
+          final itemName = columns[0].text.trim();
+          final score = columns[7].text.trim(); // 活动分值
+          final date = columns[2].text.trim();   // 活动时间
+
+          if (itemName.isNotEmpty && !itemName.contains('活动名称') && !itemName.contains('序号')) {
             results.add({
               'item': itemName,
               'score': score,

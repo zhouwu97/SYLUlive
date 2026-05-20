@@ -26,7 +26,7 @@ dependencies:
   path_provider: ^2.1.5
   file_picker: ^8.1.7
   flutter_markdown: ^0.7.6
-  webview_flutter: ^4.10.0
+  webview_flutter: ^4.13.0
   flutter_local_notifications: 17.2.4
   timezone: 0.9.4
   share_plus: 10.1.4
@@ -36,8 +36,8 @@ dependencies:
   home_widget: ^0.7.0
   qr_flutter: ^4.1.0
   crypto: ^3.0.3
-  dio_cookie_manager: ^3.4.0
-  cookie_jar: ^4.0.9
+  dio_cookie_manager: ^3.1.1
+  cookie_jar: ^4.0.8
   encrypt: ^5.0.3
   pointycastle: ^3.9.1
   html: ^0.15.6

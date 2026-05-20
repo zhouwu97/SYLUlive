@@ -429,6 +429,12 @@ class PostProvider extends ChangeNotifier {
     }
   }
 
+  /// 供外部在获取到最新帖子数据（如浏览量增加）时更新本地缓存，保持内外一致
+  void updatePostInCache(Post updated) {
+    _replacePostInBoards(updated);
+    notifyListeners();
+  }
+
   void _replacePostInBoards(Post updated) {
     for (final board in _boards.values) {
       final index = board.posts.indexWhere((p) => p.id == updated.id);

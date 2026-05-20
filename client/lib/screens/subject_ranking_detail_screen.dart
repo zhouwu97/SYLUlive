@@ -99,7 +99,7 @@ class _SubjectRankingDetailScreenState
       });
 
     return PopScope(
-      canPop: !themeProvider.predictiveBack,
+      canPop: themeProvider.predictiveBack,
       onPopInvokedWithResult: (didPop, result) {
         if (didPop) return;
         Navigator.pop(context, _changed);

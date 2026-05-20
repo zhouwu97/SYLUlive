@@ -4,12 +4,14 @@
     android:layout_height="wrap_content"
     android:orientation="horizontal"
     android:gravity="center_vertical"
-    android:paddingTop="3dp"
-    android:paddingBottom="3dp">
+    android:paddingTop="4dp"
+    android:paddingBottom="4dp">
 
-    <View
+    <!-- 垂直指示条：RemoteViews 中不要在横向 LinearLayout 里使用 layout_height="match_parent" 的 View，否则极易崩溃 -->
+    <!-- 改用 TextView 设置固定高度或者利用内容撑开 -->
+    <TextView
         android:layout_width="3dp"
-        android:layout_height="match_parent"
+        android:layout_height="36dp"
         android:background="#6366F1"
         android:layout_marginEnd="8dp" />
 

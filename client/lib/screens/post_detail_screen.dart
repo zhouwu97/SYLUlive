@@ -101,6 +101,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             .toList();
         _isLoading = false;
       });
+      // 同步到外部列表以更新浏览量等数据
+      if (mounted) {
+        context.read<PostProvider>().updatePostInCache(mergedPost);
+      }
     } on DioException catch (e) {
       final msg = AppFeedback.dioErrorMessage(e, fallback: '加载帖子失败');
       setState(() {

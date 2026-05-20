@@ -705,11 +705,97 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       _initializing = sc.courses.isEmpty;
     });
 
+    // 弹出精美加载动画，防止用户乱点
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      barrierColor: Colors.black54,
+      builder: (ctx) => PopScope(
+        canPop: false,
+        child: Center(
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 48),
+            padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 32),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(24),
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Colors.white.withValues(alpha: 0.15),
+                  Colors.white.withValues(alpha: 0.05),
+                ],
+              ),
+              border: Border.all(
+                color: Colors.white.withValues(alpha: 0.2),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.3),
+                  blurRadius: 30,
+                  spreadRadius: 2,
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // 渐变圆形进度指示器
+                Container(
+                  width: 56,
+                  height: 56,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: LinearGradient(
+                      colors: [
+                        const Color(0xFF6366F1).withValues(alpha: 0.2),
+                        const Color(0xFF8B5CF6).withValues(alpha: 0.1),
+                      ],
+                    ),
+                  ),
+                  child: const Padding(
+                    padding: EdgeInsets.all(14),
+                    child: CircularProgressIndicator(
+                      color: Color(0xFF818CF8),
+                      strokeWidth: 3,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                const Text(
+                  '正在从教务系统提取课表',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    decoration: TextDecoration.none,
+                    letterSpacing: 0.3,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '请耐心等待，数据量较大时可能需要几秒…',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.6),
+                    fontSize: 13,
+                    fontWeight: FontWeight.normal,
+                    decoration: TextDecoration.none,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
     try {
       final result = await edu.getCourses(sc.selectedYear, sc.selectedSemester);
       if (!mounted) return;
 
       if (result == null || !result.success) {
+        Navigator.pop(context); // 关闭加载弹窗
         messenger.showSnackBar(
           SnackBar(content: Text(result?.errorMessage ?? '获取课表失败')),
         );
@@ -718,6 +804,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
       final courses = result.data ?? const <Map<String, dynamic>>[];
       if (courses.isEmpty) {
+        Navigator.pop(context); // 关闭加载弹窗
         messenger.showSnackBar(
           const SnackBar(content: Text('教务系统暂无可导入课程')),
         );
@@ -740,13 +827,22 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
         _hasCache = sc.courses.isNotEmpty;
         _didLoad = true;
       });
+      
+      Navigator.pop(context); // 确保课表加载进状态后再关闭弹窗
+      
       messenger.showSnackBar(
         SnackBar(
           content: Text(synced
-              ? '已从教务获取 ${sc.courses.length} 门课'
+              ? '✅ 导入成功！已更新 ${sc.courses.length} 门课程'
               : '已获取课表，本地同步失败，已先缓存显示'),
+          backgroundColor: Colors.green.shade600,
         ),
       );
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context);
+        messenger.showSnackBar(const SnackBar(content: Text('导入过程出现异常，请重试')));
+      }
     } finally {
       if (mounted) {
         setState(() {

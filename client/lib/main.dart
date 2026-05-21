@@ -209,6 +209,18 @@ class _AppContent extends StatelessWidget {
       darkTheme: AppTheme.darkTheme,
       themeMode: themeProvider.isDarkMode ? ThemeMode.dark : ThemeMode.light,
       navigatorKey: appNavigatorKey,
+      builder: (context, child) {
+        if (!themeProvider.predictiveBack) {
+          return PopScope(
+            canPop: false,
+            onPopInvokedWithResult: (didPop, result) {
+              if (!didPop) appNavigatorKey.currentState?.pop();
+            },
+            child: child!,
+          );
+        }
+        return child!;
+      },
       routes: {
         '/login': (context) => const LoginScreen(),
         '/timetable': (context) => const PredictiveBackGate(

@@ -115,8 +115,7 @@ class BottomSheetRoute<T> extends PageRouteBuilder<T> {
         );
 }
 
-/// 为预测性返回提供全局过渡构建器
-/// 替换默认 MaterialPageRoute 的过渡动画
+/// 全局过渡构建器
 class AppPageTransitionsBuilder extends PageTransitionsBuilder {
   const AppPageTransitionsBuilder();
 
@@ -128,18 +127,10 @@ class AppPageTransitionsBuilder extends PageTransitionsBuilder {
     Animation<double> secondaryAnimation,
     Widget child,
   ) {
-    // iOS 保留原生边缘滑动返回
     if (Theme.of(context).platform == TargetPlatform.iOS) {
       return const CupertinoPageTransitionsBuilder()
           .buildTransitions(route, context, animation, secondaryAnimation, child);
     }
-
-    // Android：左右滑动 + 淡入，secondaryAnimation 由系统预测性返回手势驱动
-    // Navigator 内部已渲染前一页快照，我们只需处理当前页的滑出动画
-    return _SlideFadeTransition(
-      animation: animation,
-      secondaryAnimation: secondaryAnimation,
-      child: child,
-    );
+    return child;
   }
 }

@@ -22,7 +22,8 @@ import 'login_screen.dart';
 import 'image_viewer_screen.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  final int initialTab;
+  const HomeScreen({super.key, this.initialTab = 0});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -41,6 +42,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    _currentIndex = widget.initialTab;
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {

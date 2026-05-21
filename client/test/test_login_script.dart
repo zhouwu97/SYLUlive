@@ -36,10 +36,24 @@ void main() async {
       print('=== HTML 结束 ===');
     }
 
-    final scores = crawler.parseErkeScores(html);
-    print('解析出成绩: ${scores.length} 条');
+    final data = crawler.parseErkeData(html);
+    final scores = data['scores'] as List;
+    final summary = data['summary'] as List;
+    print('\n--- 解析结果 ---');
+    print('明细成绩: ${scores.length} 条');
     for (final s in scores) {
-      print('  ${s['item']} → +${s['score']} (${s['date']})');
+      print('  ${s['item']} → +${s['score']} (${s['date']}) [${s['category']}]');
+    }
+    print('\n--- 汇总（各类别总分）---');
+    if (summary.isNotEmpty) {
+      for (final s in summary) {
+        final score = double.tryParse(s['score'] ?? '0') ?? 0;
+        final required = double.tryParse(s['required'] ?? '10') ?? 10;
+        final gap = required - score;
+        print('  ${s['category']}: ${s['score']} / ${s['required']} ${gap <= 0 ? '✓' : '还差$gap'}');
+      }
+    } else {
+      print('  ⚠ 未解析到汇总数据');
     }
   } catch (e, st) {
     print('❌ 爬虫异常: $e');

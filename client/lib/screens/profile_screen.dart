@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
@@ -18,6 +19,7 @@ import '../config/api_constants.dart';
 import 'edu_screen.dart';
 import 'exam_extract_screen.dart';
 import 'login_screen.dart';
+import 'course_schedule_screen.dart';
 import 'my_content_screen.dart';
 import 'admin_panel_screen.dart';
 import 'super_admin_screen.dart';
@@ -36,6 +38,8 @@ class _ProfileScreenState extends State<ProfileScreen>
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
   int _unreadReplyCount = 0;
+  bool _eduGoToTimetable = false;
+  bool _startOnTimetable = false;
 
   @override
   void initState() {
@@ -51,6 +55,14 @@ class _ProfileScreenState extends State<ProfileScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<AuthProvider>().refreshUser();
       _loadUnreadCount();
+      _loadPrefs();
+    });
+  }
+
+  void _loadPrefs() {
+    final tp = context.read<ThemeProvider>();
+    setState(() {
+      _eduGoToTimetable = tp.startOnTimetable;
     });
   }
 
@@ -634,9 +646,34 @@ class _ProfileScreenState extends State<ProfileScreen>
                 ? '${eduProvider.studentId} | ${eduProvider.college}'
                 : '绑定后可查询课表、成绩',
             isDark: isDark,
-            onTap: () => Navigator.push(context,
-                MaterialPageRoute(builder: (_) => const EduScreen())),
+            onTap: () {
+              if (_eduGoToTimetable) {
+                Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => const CourseScheduleScreen()));
+              } else {
+                Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => const EduScreen()));
+              }
+            },
           )),
+          // 下次启动默认进入的版块
+          _buildSettingsRow(
+            child: _buildSettingsTile(
+              icon: _eduGoToTimetable ? Icons.calendar_today : Icons.home_rounded,
+              iconColor: const Color(0xFF667EEA),
+              title: '下次启动默认进入课表',
+              subtitle: _eduGoToTimetable ? '打开：下次直接进入课表版块' : '关闭：下次直接进入首页版块',
+              isDark: isDark,
+              trailing: Switch(
+                value: _eduGoToTimetable,
+                activeColor: const Color(0xFF6366F1),
+                onChanged: (v) {
+                  context.read<ThemeProvider>().setStartOnTimetable(v);
+                  setState(() => _eduGoToTimetable = v);
+                },
+              ),
+            ),
+          ),
           _buildSettingsRow(child: _buildSettingsTile(
             icon: Icons.auto_stories,
             iconColor: const Color(0xFF667EEA),

@@ -43,6 +43,10 @@ class WebVpnService {
 
   Future<bool> login(String username, String password) async {
     try {
+      // 清除旧会话 Cookie，防止残留 cookie 使服务器跳过 CAS 重定向
+      await _jar.deleteAll();
+      _vpnCookie = null;
+      
       // 1. 访问 VPN 首页 → 跟重定向到 CAS
       debugPrint('[VPN] 访问首页...');
       var resp = await _dio.get(_vpnHost);

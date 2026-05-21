@@ -205,22 +205,26 @@ class _AppContent extends StatelessWidget {
     return MaterialApp(
       title: '沈理校园',
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.lightTheme,
-      darkTheme: AppTheme.darkTheme,
+      theme: AppTheme.lightTheme.copyWith(
+        pageTransitionsTheme: PageTransitionsTheme(
+          builders: {
+            TargetPlatform.android: themeProvider.predictiveBack
+                ? const ZoomPageTransitionsBuilder()
+                : const FadeUpwardsPageTransitionsBuilder(),
+          },
+        ),
+      ),
+      darkTheme: AppTheme.darkTheme.copyWith(
+        pageTransitionsTheme: PageTransitionsTheme(
+          builders: {
+            TargetPlatform.android: themeProvider.predictiveBack
+                ? const ZoomPageTransitionsBuilder()
+                : const FadeUpwardsPageTransitionsBuilder(),
+          },
+        ),
+      ),
       themeMode: themeProvider.isDarkMode ? ThemeMode.dark : ThemeMode.light,
       navigatorKey: appNavigatorKey,
-      builder: (context, child) {
-        if (!themeProvider.predictiveBack) {
-          return PopScope(
-            canPop: false,
-            onPopInvokedWithResult: (didPop, result) {
-              if (!didPop) appNavigatorKey.currentState?.pop();
-            },
-            child: child!,
-          );
-        }
-        return child!;
-      },
       routes: {
         '/login': (context) => const LoginScreen(),
         '/timetable': (context) => const PredictiveBackGate(

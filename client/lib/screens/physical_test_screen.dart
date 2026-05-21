@@ -1,15 +1,11 @@
 import 'dart:convert';
-import 'dart:io' show File;
-import 'dart:ui' as ui;
 import 'package:cookie_jar/cookie_jar.dart';
 import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 import 'package:dio_cookie_manager/dio_cookie_manager.dart';
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../providers/theme_provider.dart';
 import '../utils/sign_utils.dart';
 import '../widgets/glass_container.dart';
 
@@ -327,13 +323,12 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final themeProvider = context.watch<ThemeProvider>();
 
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
       appBar: AppBar(
         title: const Text('体测成绩查询'),
-        backgroundColor: Colors.transparent,
+        backgroundColor: isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
         elevation: 0,
         actions: [
           IconButton(
@@ -350,13 +345,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
           ),
         ],
       ),
-      body: Stack(
-        fit: StackFit.expand,
-        children: [
-          _buildBackgroundLayer(themeProvider, isDark),
-          _loggingIn ? _buildLoading() : _buildContent(isDark),
-        ],
-      ),
+      body: _loggingIn ? _buildLoading() : _buildContent(isDark),
     );
   }
 
@@ -370,38 +359,6 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
           Text('正在登录…'),
         ],
       ),
-    );
-  }
-
-  Widget _buildBackgroundLayer(ThemeProvider themeProvider, bool isDark) {
-    if (themeProvider.hasBackground && themeProvider.backgroundImage != null) {
-      final bgPath = themeProvider.backgroundImage!;
-      final isAsset = !bgPath.startsWith('http') && !bgPath.startsWith('/');
-      return Stack(
-        fit: StackFit.expand,
-        children: [
-          isAsset
-              ? Image.asset('assets/images/$bgPath', fit: BoxFit.cover)
-              : bgPath.startsWith('/')
-                  ? Image.file(File(bgPath), fit: BoxFit.cover)
-                  : Image.network(bgPath, fit: BoxFit.cover),
-          Container(
-              color: isDark
-                  ? Colors.black.withValues(alpha: 0.35)
-                  : Colors.white.withValues(alpha: 0.25)),
-        ],
-      );
-    }
-    // 没有自定义背景时用系统默认壁纸
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        Image.asset('assets/images/morenbeijing.jpeg', fit: BoxFit.cover),
-        Container(
-            color: isDark
-                ? Colors.black.withValues(alpha: 0.35)
-                : Colors.white.withValues(alpha: 0.25)),
-      ],
     );
   }
 
@@ -491,7 +448,6 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
               ),
             ),
           ),
-          const SizedBox(width: 8),
         ],
       ),
     );

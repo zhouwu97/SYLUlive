@@ -310,15 +310,26 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
   }
 
   Widget _buildScoreList(bool isDark) {
-    // 收集所有类别用于筛选，去重
-    final categories = <String>{};
+    // 收集所有类别用于筛选，保持与 summary 顺序一致
+    final categoryList = <String>[];
+    if (_summary != null) {
+      for (final item in _summary!) {
+        final cat = item['category']?.toString() ?? '';
+        if (cat.isNotEmpty && !categoryList.contains(cat)) {
+          categoryList.add(cat);
+        }
+      }
+    }
+    
+    // 如果成绩列表中有 summary 未包含的类别，追加到后面
     if (_scores != null) {
       for (final s in _scores!) {
         final cat = s['category']?.toString() ?? '';
-        if (cat.isNotEmpty) categories.add(cat);
+        if (cat.isNotEmpty && !categoryList.contains(cat)) {
+          categoryList.add(cat);
+        }
       }
     }
-    final categoryList = categories.toList()..sort();
 
     // 按筛选过滤
     final filtered = _scores?.where((s) {
@@ -332,7 +343,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
         // 筛选条
         if (categoryList.isNotEmpty)
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+            padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
             child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: Row(

@@ -59,12 +59,13 @@
         android:paddingBottom="16dp"
         android:visibility="visible" />
 
-    <!-- 课程列表容器 -->
+    <!-- 课程列表容器：maxHeight 约束防止在极小尺寸下溢出 -->
     <LinearLayout
         android:id="@+id/widget_courses"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:visibility="gone" />
+        android:visibility="gone"
+        android:clipChildren="false" />
 
 </LinearLayout>

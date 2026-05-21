@@ -209,7 +209,7 @@ class _AppContent extends StatelessWidget {
         pageTransitionsTheme: PageTransitionsTheme(
           builders: {
             TargetPlatform.android: themeProvider.predictiveBack
-                ? const ZoomPageTransitionsBuilder()
+                ? const PredictiveBackPageTransitionsBuilder()
                 : const FadeUpwardsPageTransitionsBuilder(),
           },
         ),
@@ -218,7 +218,7 @@ class _AppContent extends StatelessWidget {
         pageTransitionsTheme: PageTransitionsTheme(
           builders: {
             TargetPlatform.android: themeProvider.predictiveBack
-                ? const ZoomPageTransitionsBuilder()
+                ? const PredictiveBackPageTransitionsBuilder()
                 : const FadeUpwardsPageTransitionsBuilder(),
           },
         ),

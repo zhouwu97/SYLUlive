@@ -5,7 +5,7 @@ from sqlalchemy import select
 
 from models.database import EduUser, get_db
 from models.schemas import GradesInput, GradesResponse, GradeInfo
-from services.crawler import EduCrawler, CookieLapseError, GradesNotOpenError, NetworkError
+from services.crawler import EduCrawler, CookieLapseError, GradesNotOpenError, NetworkError, LoginFailedError
 
 router = APIRouter(prefix="/api/edu/grades", tags=["成绩"])
 
@@ -16,7 +16,6 @@ async def get_grades(
     db: AsyncSession = Depends(get_db)
 ):
     """获取成绩"""
-    # 验证用户绑定
     result = await db.execute(
         select(EduUser).where(EduUser.user_id == input.user_id)
     )
@@ -29,49 +28,51 @@ async def get_grades(
         raise HTTPException(status_code=401, detail="Cookie已失效，请重新绑定")
 
     async with EduCrawler() as crawler:
-        try:
-            raw_grades = await crawler.fetch_grades(
-                edu_user.cookie,
-                input.year,
-                input.semester
-            )
+        cookie = edu_user.cookie
 
-            # 转换为GradeInfo
-            grades = []
-            for item in raw_grades:
-                grade_info = GradeInfo(
-                    name=item.get("kcmc", ""),
-                    class_id=item.get("jxb_id", ""),
-                    teacher=item.get("jsxm", ""),
-                    is_degree=item.get("sfxwkc", "") == "是",
-                    credits=_parse_float(str(item.get("xf", "0"))),
-                    gpa=_parse_float(str(item.get("jd", "0"))),
-                    grade_points=_parse_float(str(item.get("xfjd", "0"))),
-                    fraction=_parse_float(str(item.get("bfzcj", "0"))),
-                    grade=item.get("cj", "")
-                )
-                grades.append(grade_info)
+        for attempt in range(2):
+            try:
+                raw_grades = await crawler.fetch_grades(cookie, input.year, input.semester)
+            except CookieLapseError:
+                if attempt == 1:
+                    raise HTTPException(status_code=401, detail="Cookie已失效且自动登录失败，请重新绑定教务账号")
+                if not edu_user.raw_password:
+                    raise HTTPException(status_code=401, detail="Cookie已失效，请重新绑定教务账号")
+                print(f"  [AUTO] Cookie过期，使用存储密码自动重新登录...")
+                try:
+                    cookie = await crawler.login(edu_user.student_id, edu_user.raw_password)
+                    edu_user.cookie = cookie
+                    await db.commit()
+                    print(f"  [AUTO] 重新登录成功，重试抓取成绩...")
+                except LoginFailedError as e:
+                    raise HTTPException(status_code=401, detail=f"账号密码可能已变更: {e}")
+                continue
+            except GradesNotOpenError as e:
+                return GradesResponse(success=False, year=input.year, semester=input.semester, grades=[], message=str(e))
+            except NetworkError as e:
+                raise HTTPException(status_code=503, detail=str(e))
+            break
 
-            return GradesResponse(
-                success=True,
-                year=input.year,
-                semester=input.semester,
-                grades=grades,
-                message=None
+        # 转换为GradeInfo
+        grades = []
+        for item in raw_grades:
+            grade_info = GradeInfo(
+                name=item.get("kcmc", ""),
+                class_id=item.get("jxb_id", ""),
+                teacher=item.get("jsxm", ""),
+                is_degree=item.get("sfxwkc", "") == "是",
+                credits=_parse_float(str(item.get("xf", "0"))),
+                gpa=_parse_float(str(item.get("jd", "0"))),
+                grade_points=_parse_float(str(item.get("xfjd", "0"))),
+                fraction=_parse_float(str(item.get("bfzcj", "0"))),
+                grade=item.get("cj", "")
             )
+            grades.append(grade_info)
 
-        except CookieLapseError:
-            raise HTTPException(status_code=401, detail="Cookie已失效，请重新绑定教务账号")
-        except GradesNotOpenError as e:
-            return GradesResponse(
-                success=False,
-                year=input.year,
-                semester=input.semester,
-                grades=[],
-                message=str(e)
-            )
-        except NetworkError as e:
-            raise HTTPException(status_code=503, detail=str(e))
+        return GradesResponse(
+            success=True, year=input.year, semester=input.semester,
+            grades=grades, message=None
+        )
 
 
 def _parse_float(value: str) -> float:

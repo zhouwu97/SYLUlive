@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../utils/page_transitions.dart';
 
 class AppTheme {
   // 主题色
@@ -32,12 +31,6 @@ class AppTheme {
       colorScheme: scheme,
       // 全局紧凑密度
       visualDensity: VisualDensity.compact,
-      pageTransitionsTheme: const PageTransitionsTheme(
-        builders: {
-          TargetPlatform.android: AppPageTransitionsBuilder(),
-          TargetPlatform.iOS: AppPageTransitionsBuilder(),
-        },
-      ),
       appBarTheme: AppBarTheme(
         centerTitle: true,
         elevation: 0,

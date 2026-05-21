@@ -324,65 +324,126 @@ class SyluClientCrawler {
     return buffer.toString().toLowerCase();
   }
 
-  /// 从返回的 HTML 源码中提取二课分数列表
-  List<Map<String, String>> parseErkeScores(String htmlStr) {
-    final List<Map<String, String>> results = [];
+  /// 从返回的 HTML 源码中提取二课分数列表和汇总数据
+  Map<String, dynamic> parseErkeData(String htmlStr) {
+    final List<Map<String, String>> scores = [];
+    final List<Map<String, String>> summary = [];
+    
     try {
       final document = parse(htmlStr);
-      var rows = document.querySelectorAll('#GridView1 tr');
-      if (rows.isEmpty) rows = document.querySelectorAll('#DataGrid1 tr');
-      if (rows.isEmpty) rows = document.querySelectorAll('table tr');
-      if (rows.isEmpty) {
-        // 搜索关键词定位
-        final hasDataGrid = htmlStr.contains('DataGrid');
-        final hasTable = htmlStr.contains('<table');
-        final hasTr = htmlStr.contains('<tr');
-        final hasIframe = htmlStr.contains('<iframe');
-        print('[Crawler] HTML特征: DataGrid=$hasDataGrid table=$hasTable tr=$hasTr iframe=$hasIframe');
-        if (hasIframe) {
-          final iframeMatch = RegExp(r'<iframe[^>]*src="([^"]*)"').firstMatch(htmlStr);
-          if (iframeMatch != null) {
-            print('[Crawler] 发现iframe: ${iframeMatch.group(1)}');
+      
+      // 1. 解析汇总数据 (尝试从页面顶部提取各类别总分/要求分)
+      //    注意：活动查询页(StuActionSearch.aspx)没有汇总数据，汇总在成绩总览页。
+      //    但这页的 select 框列出了所有类别，可从明细自行计算。
+      final tables = document.querySelectorAll('table');
+      for (var table in tables) {
+        final text = table.text;
+        // 匹配 "思想成长(13.0/10.0)" 这种典型结构
+        final regex = RegExp(r'([^\d\s\(\/]+)[\s\(\)]*([\d\.]+)\s*/\s*([\d\.]+)');
+        final matches = regex.allMatches(text);
+        
+        if (matches.isNotEmpty) {
+          for (var m in matches) {
+            final category = m.group(1)!;
+            // 排除掉不相关的词
+            if (category.length > 1 && category.length < 10) {
+              summary.add({
+                'category': category,
+                'score': m.group(2)!,
+                'required': m.group(3)!,
+              });
+            }
           }
-        }
-        // 搜索分数相关
-        final scoreIdx = htmlStr.indexOf('分数');
-        print('[Crawler] "分数"出现位置: $scoreIdx');
-        if (scoreIdx > 0) {
-          print('[Crawler] 附近HTML: ${htmlStr.substring(scoreIdx > 50 ? scoreIdx - 50 : 0, scoreIdx + 100)}');
+          if (summary.isNotEmpty) break;
         }
       }
 
-      print('[Crawler] 找到 ${rows.length} 个表格行');
+      // 2. 解析详细列表
+      var rows = document.querySelectorAll('#GridView1 tr');
+      if (rows.isEmpty) rows = document.querySelectorAll('#DataGrid1 tr');
+      if (rows.isEmpty) rows = document.querySelectorAll('table tr');
 
       for (int i = 0; i < rows.length; i++) {
         final row = rows[i];
         final columns = row.querySelectorAll('td');
 
-        if (i < 3) {
-          print('[Crawler] 行$i: ${columns.length}列');
-          for (int j = 0; j < columns.length && j < 4; j++) {
-            print('[Crawler]   列$j: "${columns[j].text.trim()}"');
-          }
-        }
-
         if (columns.length >= 8) {
           final itemName = columns[0].text.trim();
           final score = columns[7].text.trim(); // 活动分值
           final date = columns[2].text.trim();   // 活动时间
+          final category = columns[3].text.trim(); // 活动类型（思想成长/志愿公益/...)  columns[1]是申请单位
 
           if (itemName.isNotEmpty && !itemName.contains('活动名称') && !itemName.contains('序号')) {
-            results.add({
+            scores.add({
               'item': itemName,
               'score': score,
               'date': date,
+              'category': category,
             });
           }
         }
       }
+
+      // 按日期降序排列：最新的在上面
+      scores.sort((a, b) {
+        final aDate = _parseDate(a['date'] ?? '');
+        final bDate = _parseDate(b['date'] ?? '');
+        return bDate.compareTo(aDate);
+      });
+
+      // 3. 如果页面没有汇总数据，从明细自行计算各类别总分
+      if (summary.isEmpty && scores.isNotEmpty) {
+        // 各类别要求分（沈理二课标准）
+        const requiredScores = <String, double>{
+          '思想成长': 10.0,
+          '实践实习': 10.0,
+          '志愿公益': 10.0,
+          '创新创业': 10.0,
+          '文体活动': 10.0,
+        };
+        
+        final categoryTotals = <String, double>{};
+        for (final s in scores) {
+          final cat = s['category'] ?? '';
+          if (cat.isEmpty) continue;
+          final scoreVal = double.tryParse(s['score'] ?? '0') ?? 0;
+          categoryTotals[cat] = (categoryTotals[cat] ?? 0) + scoreVal;
+        }
+        
+        // 始终展示全部六大类，即使分数为 0
+        for (final cat in requiredScores.keys) {
+          final score = categoryTotals[cat] ?? 0;
+          summary.add({
+            'category': cat,
+            'score': score.toStringAsFixed(score == score.roundToDouble() ? 0 : 1),
+            'required': requiredScores[cat]!.toStringAsFixed(0),
+          });
+        }
+        
+        print('[Crawler] 从明细计算汇总: ${summary.length} 个类别');
+      }
     } catch (e) {
       print('解析二课数据失败: $e');
     }
-    return results;
+    
+    return {
+      'summary': summary,
+      'scores': scores,
+    };
+  }
+
+  /// 保持向下兼容
+  List<Map<String, String>> parseErkeScores(String htmlStr) {
+    return parseErkeData(htmlStr)['scores'].cast<Map<String, String>>();
+  }
+
+  /// 从日期字符串 "2024-09-13 00:00:00至..." 中提取 DateTime
+  DateTime _parseDate(String dateStr) {
+    try {
+      final start = dateStr.split('至').first.trim();
+      return DateTime.parse(start);
+    } catch (_) {
+      return DateTime(2000);
+    }
   }
 }

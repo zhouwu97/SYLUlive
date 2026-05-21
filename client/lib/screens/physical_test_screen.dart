@@ -1,11 +1,15 @@
 import 'dart:convert';
+import 'dart:io' show File;
+import 'dart:ui' as ui;
 import 'package:cookie_jar/cookie_jar.dart';
 import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 import 'package:dio_cookie_manager/dio_cookie_manager.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../providers/theme_provider.dart';
 import '../utils/sign_utils.dart';
 import '../widgets/glass_container.dart';
 
@@ -42,7 +46,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
   String? _userId;
   String? _token;
   String _currentYear = '';
-  final List<String> _availableYears = ['2026', '2025', '2024'];
+  late final List<String> _availableYears;
 
   // year → {total_grade, total_score, scores[]}
   final Map<String, _YearData> _yearData = {};
@@ -53,6 +57,11 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
   @override
   void initState() {
     super.initState();
+    // 动态生成可用年份列表：当年份优先，递减
+    final now = DateTime.now();
+    final currentYear = now.month >= 9 ? now.year + 1 : now.year;
+    _availableYears = List.generate(4, (i) => (currentYear - i).toString());
+
     _dio = Dio(BaseOptions(
       baseUrl: _baseUrl,
       headers: _headers,
@@ -78,14 +87,25 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
 
     // 尝试从本地缓存加载已有的年份数据
     await _loadCached();
-    // 自动选中最新可用年份
-    if (_currentYear.isEmpty && _availableYears.isNotEmpty) {
-      _currentYear = _availableYears.first;
-    }
-    if (mounted) setState(() {});
+    // 自动选中最新有数据的年份：优先当前学年，无数据则取最近有缓存的
+    final now = DateTime.now();
+    final academicYear = now.month >= 9 ? now.year + 1 : now.year;
+    final currentYearStr = academicYear.toString();
+    // 服务端的 school_date 可能返回旧年份，不要直接信任
+    setState(() {
+      _currentYear = _yearData[currentYearStr] != null
+          ? currentYearStr  // 当前学年有数据，优先用
+          : _availableYears.firstWhere(
+              (y) => _yearData[y] != null,
+              orElse: () => currentYearStr, // 都没数据，用当前学年
+            );
+    });
 
-    // 如果当前年份没有缓存，自动拉取
+    // 如果选中年份没有缓存，自动拉取；优先拉取当前年份
     if (_yearData[_currentYear] == null) {
+      _fetchYear(_currentYear);
+    } else {
+      // 当前年有缓存，后台静默拉取最新数据
       _fetchYear(_currentYear);
     }
   }
@@ -307,10 +327,10 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final themeProvider = context.watch<ThemeProvider>();
 
     return Scaffold(
-      backgroundColor:
-          isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
+      backgroundColor: Colors.transparent,
       appBar: AppBar(
         title: const Text('体测成绩查询'),
         backgroundColor: Colors.transparent,
@@ -330,7 +350,13 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
           ),
         ],
       ),
-      body: _loggingIn ? _buildLoading() : _buildContent(isDark),
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          _buildBackgroundLayer(themeProvider, isDark),
+          _loggingIn ? _buildLoading() : _buildContent(isDark),
+        ],
+      ),
     );
   }
 
@@ -344,6 +370,38 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
           Text('正在登录…'),
         ],
       ),
+    );
+  }
+
+  Widget _buildBackgroundLayer(ThemeProvider themeProvider, bool isDark) {
+    if (themeProvider.hasBackground && themeProvider.backgroundImage != null) {
+      final bgPath = themeProvider.backgroundImage!;
+      final isAsset = !bgPath.startsWith('http') && !bgPath.startsWith('/');
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          isAsset
+              ? Image.asset('assets/images/$bgPath', fit: BoxFit.cover)
+              : bgPath.startsWith('/')
+                  ? Image.file(File(bgPath), fit: BoxFit.cover)
+                  : Image.network(bgPath, fit: BoxFit.cover),
+          Container(
+              color: isDark
+                  ? Colors.black.withValues(alpha: 0.35)
+                  : Colors.white.withValues(alpha: 0.25)),
+        ],
+      );
+    }
+    // 没有自定义背景时用系统默认壁纸
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        Image.asset('assets/images/morenbeijing.jpeg', fit: BoxFit.cover),
+        Container(
+            color: isDark
+                ? Colors.black.withValues(alpha: 0.35)
+                : Colors.white.withValues(alpha: 0.25)),
+      ],
     );
   }
 
@@ -434,13 +492,6 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
             ),
           ),
           const SizedBox(width: 8),
-          IconButton(
-            icon: const Icon(Icons.refresh, size: 20),
-            onPressed:
-                _loadingYear ? null : () => _fetchYear(_currentYear),
-            tooltip: '刷新数据',
-            visualDensity: VisualDensity.compact,
-          ),
         ],
       ),
     );

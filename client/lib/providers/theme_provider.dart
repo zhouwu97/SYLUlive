@@ -6,17 +6,19 @@ class ThemeProvider extends ChangeNotifier {
   static const String _backgroundImageKey = 'background_image';
   static const String _backgroundBlurKey = 'background_blur';
   static const String _componentOpacityKey = 'background_transparency'; // 保持 key 兼容
-  static const String _liquidGlassKey = 'liquid_glass';
+  static const String _liquidGlassKey = 'liquid_glass_v2';
   static const String _floatingNavBarKey = 'floating_nav_bar';
   static const String _predictiveBackKey = 'predictive_back_enabled';
+  static const String _startOnTimetableKey = 'start_on_timetable';
 
   bool _isDarkMode = false;
   String? _backgroundImage;
   double _backgroundBlur = 10;
   double _componentOpacity = 0.7;  // 组件不透明度：越大越实，越小越透
-  bool _liquidGlass = true;
+  bool _liquidGlass = false;
   bool _floatingNavBar = false;
   bool _predictiveBack = true;
+  bool _startOnTimetable = false;
 
   bool get isDarkMode => _isDarkMode;
   String? get backgroundImage => _backgroundImage;
@@ -25,6 +27,7 @@ class ThemeProvider extends ChangeNotifier {
   bool get liquidGlass => _liquidGlass;
   bool get floatingNavBar => _floatingNavBar;
   bool get predictiveBack => _predictiveBack;
+  bool get startOnTimetable => _startOnTimetable;
   bool get hasBackground => _backgroundImage != null && _backgroundImage!.isNotEmpty;
 
   /// 是否有自定义背景（全局生效）
@@ -40,9 +43,10 @@ class ThemeProvider extends ChangeNotifier {
     _backgroundImage = prefs.getString(_backgroundImageKey);
     _backgroundBlur = prefs.getDouble(_backgroundBlurKey) ?? 10;
     _componentOpacity = prefs.getDouble(_componentOpacityKey) ?? 0.7;
-    _liquidGlass = prefs.getBool(_liquidGlassKey) ?? true;
+    _liquidGlass = prefs.getBool(_liquidGlassKey) ?? false;
     _floatingNavBar = prefs.getBool(_floatingNavBarKey) ?? false;
     _predictiveBack = prefs.getBool(_predictiveBackKey) ?? true;
+    _startOnTimetable = prefs.getBool(_startOnTimetableKey) ?? false;
     notifyListeners();
   }
 
@@ -110,6 +114,13 @@ class ThemeProvider extends ChangeNotifier {
     _backgroundImage = null;
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_backgroundImageKey);
+    notifyListeners();
+  }
+
+  Future<void> setStartOnTimetable(bool v) async {
+    _startOnTimetable = v;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_startOnTimetableKey, v);
     notifyListeners();
   }
 }

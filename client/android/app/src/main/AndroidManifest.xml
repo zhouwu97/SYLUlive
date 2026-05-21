@@ -1,4 +1,5 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.example.shenliyuan">
 
     <!-- 网络权限 — Release 包在部分设备上必须显式声明，否则 socket 连接被拒 (errno=1 EPERM) -->
     <uses-permission android:name="android.permission.INTERNET" />

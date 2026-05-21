@@ -105,7 +105,7 @@ class _SubjectRankingDetailScreenState
         Navigator.pop(context, _changed);
       },
       child: Scaffold(
-        backgroundColor: Colors.transparent,
+        backgroundColor: isDark ? const Color(0xFF131720) : Colors.white,
         extendBodyBehindAppBar: false, // 关闭延伸，防止 AppBar 与 Body 重叠
         appBar: AppBar(
           title: Text(widget.subjectName),

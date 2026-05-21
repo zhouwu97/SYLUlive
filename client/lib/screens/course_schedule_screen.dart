@@ -149,35 +149,32 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
   void _autoLoad(EduProvider edu, CourseScheduleProvider sc) async {
     if (_didLoad) return;
-    // 未登录不做任何拉取
     final auth = context.read<AuthProvider>();
     if (!auth.isLoggedIn) return;
     if (!edu.isStatusLoaded) return;
     if (!edu.isBound) {
       _didLoad = true;
-      _initializing = false;
-      WidgetsBinding.instance.addPostFrameCallback((_) => setState(() {}));
+      setState(() => _initializing = false);
       return;
     }
     if (sc.isLoading) return;
     _didLoad = true;
-    _initializing = false;
 
     // 优先读手机本地缓存
-    _hasCache = sc.courses.isNotEmpty || await sc.hasCachedCourses();
+    final hasCache = sc.courses.isNotEmpty || await sc.hasCachedCourses();
 
-    if (_hasCache) {
-      // 有缓存 → 立即展示，同时静默后台拉取最新数据
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        sc.loadCourses().then((_) => _syncCourseReminders(sc));
+    if (hasCache) {
+      // 有缓存 → 立即展示，后台静默更新
+      setState(() {
+        _hasCache = true;
+        _initializing = false;
       });
-      // 静默同步最新课表到缓存
+      sc.loadCourses().then((_) => _syncCourseReminders(sc));
       _silentSync(sc);
       return;
     }
 
-    // 无缓存 → 显示加载中，自动拉取课表
-    setState(() => _initializing = true);
+    // 无缓存 → 从服务器拉取
     await sc.loadCourses(forceRefresh: true);
     await _syncCourseReminders(sc);
     if (mounted) {
@@ -218,20 +215,11 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     if (user == null) return;
     final uid = user.id.toString();
     if (_preparedUserId == uid) return;
-
     _preparedUserId = uid;
     final edu = context.read<EduProvider>();
     final sc = context.read<CourseScheduleProvider>();
     edu.setUserId(uid);
     sc.setUserId(uid);
-    final hasCache = await sc.loadCachedCoursesIfAvailable();
-    if (!mounted) return;
-    setState(() {
-      _hasCache = hasCache || sc.courses.isNotEmpty;
-      if (_hasCache) {
-        _initializing = false;
-      }
-    });
   }
 
   // PageView 滑动切换周
@@ -259,18 +247,14 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
               builder: (context, edu, sc, _) {
                 _autoLoad(edu, sc);
 
-                if (!edu.isStatusLoaded && sc.courses.isEmpty) {
-                  return const Center(child: CircularProgressIndicator());
+                // 正在初始化 + 没有数据 → 显示课表框架 + 加载动画
+                if ((_initializing || !edu.isStatusLoaded || sc.isLoading) &&
+                    sc.courses.isEmpty) {
+                  return _buildLoadingOverlay(sc);
                 }
-
-                if (_initializing)
-                  return const Center(child: CircularProgressIndicator());
 
                 if (!edu.isBound)
                   return _buildBindView(context, edu, sc, isDark);
-
-                if (sc.isLoading && sc.courses.isEmpty)
-                  return const Center(child: CircularProgressIndicator());
 
                 // 无缓存时显示引导
                 if (!_hasCache && sc.courses.isEmpty)
@@ -295,6 +279,25 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
         ),
       ),
     );
+  }
+
+  // ====== 加载覆盖层 ======
+  Widget _buildLoadingOverlay(CourseScheduleProvider sc) {
+    return Column(children: [
+      _buildDateHeader(sc),
+      const Expanded(
+        child: Center(
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            SizedBox(
+              width: 36, height: 36,
+              child: CircularProgressIndicator(strokeWidth: 3),
+            ),
+            SizedBox(height: 16),
+            Text('正在加载课表…', style: TextStyle(fontSize: 13, color: Colors.white54)),
+          ]),
+        ),
+      ),
+    ]);
   }
 
   // ====== 顶部表头 ======
@@ -627,6 +630,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       await sc.loadCachedCoursesIfAvailable();
       await sc.loadCourses(forceRefresh: true);
       await _syncCourseReminders(sc);
+      setState(() => _hasCache = sc.courses.isNotEmpty);
     }
   }
 

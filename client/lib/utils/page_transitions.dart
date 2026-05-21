@@ -63,53 +63,24 @@ class _SlideFadeTransition extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // 预测性返回：用户手势拖拽时，secondaryAnimation 驱动前一页的缩放和位移
-    return AnimatedBuilder(
-      animation: animation,
-      builder: (context, _) {
-        return Stack(
-          children: [
-            // 前一页面（预测性返回时可见）
-            AnimatedBuilder(
-              animation: secondaryAnimation,
-              builder: (context, child) {
-                return SlideTransition(
-                  position: Tween<Offset>(
-                    begin: Offset.zero,
-                    end: const Offset(-0.25, 0),
-                  ).animate(
-                    CurvedAnimation(
-                      parent: ReverseAnimation(secondaryAnimation),
-                      curve: Curves.easeOutCubic,
-                    ),
-                  ),
-                  child: child,
-                );
-              },
-              child: const SizedBox.expand(),
-            ),
-            // 当前页面
-            SlideTransition(
-              position: Tween<Offset>(
-                begin: const Offset(0.35, 0),
-                end: Offset.zero,
-              ).animate(
-                CurvedAnimation(
-                  parent: animation,
-                  curve: Curves.easeOutCubic,
-                ),
-              ),
-              child: FadeTransition(
-                opacity: CurvedAnimation(
-                  parent: animation,
-                  curve: const Interval(0.0, 0.5, curve: Curves.easeOut),
-                ),
-                child: child,
-              ),
-            ),
-          ],
-        );
-      },
+    // animation: 推进 0→1，返回（含预测性手势）1→0
+    // secondaryAnimation: 由 Navigator 内部驱动前一页快照的渲染，这里不需要操作
+    // Navigator 会在手势返回时自动渲染前一页在下方，当前页滑出即可
+    return SlideTransition(
+      position: Tween<Offset>(
+        begin: const Offset(0.3, 0),  // 从右侧 30% 处滑入
+        end: Offset.zero,
+      ).animate(CurvedAnimation(
+        parent: animation,
+        curve: Curves.easeOutCubic,
+      )),
+      child: FadeTransition(
+        opacity: CurvedAnimation(
+          parent: animation,
+          curve: const Interval(0.0, 0.5, curve: Curves.easeOut),
+        ),
+        child: child,
+      ),
     );
   }
 }
@@ -163,7 +134,8 @@ class AppPageTransitionsBuilder extends PageTransitionsBuilder {
           .buildTransitions(route, context, animation, secondaryAnimation, child);
     }
 
-    // Android：自定义滑动 + 淡入，支持预测性返回预览
+    // Android：左右滑动 + 淡入，secondaryAnimation 由系统预测性返回手势驱动
+    // Navigator 内部已渲染前一页快照，我们只需处理当前页的滑出动画
     return _SlideFadeTransition(
       animation: animation,
       secondaryAnimation: secondaryAnimation,

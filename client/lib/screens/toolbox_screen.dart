@@ -7,12 +7,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:dio/dio.dart';
 import 'package:cookie_jar/cookie_jar.dart';
-import 'package:dio_cookie_manager/dio_cookie_manager.dart';
-import 'package:crypto/crypto.dart';
+import '../main.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
 import '../widgets/glass_container.dart';
-import '../utils/sign_utils.dart';
 import 'erke_score_screen.dart';
 import 'physical_test_screen.dart';
 
@@ -22,83 +20,66 @@ class ToolboxScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final themeProvider = context.watch<ThemeProvider>();
-    final is520 = _isMay20();
 
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        title: is520 ? null : const Text('工具箱'),
+    return GlobalBackgroundWrapper(
+      child: Scaffold(
         backgroundColor: Colors.transparent,
-        elevation: 0,
-        iconTheme: const IconThemeData(color: Colors.white),
-      ),
-      body: Stack(
-        children: [
-          Positioned.fill(
-            child: is520
-                ? _build520Background(isDark)
-                : _buildBackground(themeProvider, isDark),
-          ),
-          SafeArea(
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 1000),
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final wide = constraints.maxWidth > 600;
-                    final crossCount = wide ? 4 : 3;
-                    final aspect = wide ? 1.1 : 0.85;
-                    final topPadding = is520 ? (wide ? 320.0 : 255.0) : 20.0;
-                    return GridView.count(
-                      padding: EdgeInsets.fromLTRB(20, topPadding, 20, 20),
-                      crossAxisCount: crossCount,
-                      childAspectRatio: aspect,
-                      mainAxisSpacing: 16,
-                      crossAxisSpacing: 16,
-                      children: [
-                        _buildToolCard(
-                          context,
-                          icon: Icons.school_outlined,
-                          color: Colors.green,
-                          title: '二课分查询',
-                          subtitle: '支持 WebVPN 穿透',
-                          onTap: () => Navigator.push(context,
-                              MaterialPageRoute(builder: (_) => const ErkeScoreScreen())),
-                        ),
-                        _buildToolCard(
-                          context,
-                          icon: Icons.fitness_center,
-                          color: Colors.orange,
-                          title: '体测成绩',
-                          subtitle: '扫码核验 / 查询',
-                          onTap: () => _openPhysicalTest(context),
-                        ),
-                        _buildToolCard(
-                          context,
-                          icon: Icons.sports_esports,
-                          color: const Color(0xFF00BCD4),
-                          title: '云原神',
-                          subtitle: '点击即玩',
-                          onTap: () => _launchCloudGenshin(context),
-                        ),
-                        _buildToolCard(
-                          context,
-                          icon: Icons.auto_stories_outlined,
-                          color: Colors.blue,
-                          title: '更多工具',
-                          subtitle: '敬请期待',
-                          onTap: () {},
-                        ),
-                      ],
-                    );
-                  },
-                ),
+        extendBodyBehindAppBar: true,
+        appBar: AppBar(
+          title: const Text('工具箱'),
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          iconTheme: const IconThemeData(color: Colors.white),
+        ),
+        body: SafeArea(
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 1000),
+              child: GridView.count(
+                padding: const EdgeInsets.all(20),
+                crossAxisCount: 3,
+                childAspectRatio: 0.85,
+                mainAxisSpacing: 16,
+                crossAxisSpacing: 16,
+                children: [
+                  _buildToolCard(
+                    context,
+                    icon: Icons.school_outlined,
+                    color: Colors.green,
+                    title: '二课分查询',
+                    subtitle: '支持 WebVPN 穿透',
+                    onTap: () => Navigator.push(context,
+                        MaterialPageRoute(builder: (_) => const ErkeScoreScreen())),
+                  ),
+                  _buildToolCard(
+                    context,
+                    icon: Icons.fitness_center,
+                    color: Colors.orange,
+                    title: '体测成绩',
+                    subtitle: '扫码核验 / 查询',
+                    onTap: () => _openPhysicalTest(context),
+                  ),
+                  _buildToolCard(
+                    context,
+                    icon: Icons.sports_esports,
+                    color: const Color(0xFF00BCD4),
+                    title: '云原神',
+                    subtitle: '点击即玩',
+                    onTap: () => _launchCloudGenshin(context),
+                  ),
+                  _buildToolCard(
+                    context,
+                    icon: Icons.auto_stories_outlined,
+                    color: Colors.blue,
+                    title: '更多工具',
+                    subtitle: '敬请期待',
+                    onTap: () {},
+                  ),
+                ],
               ),
             ),
           ),
-        ],
+        ),
       ),
     );
   }

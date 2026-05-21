@@ -379,15 +379,12 @@ class AuthWrapper extends StatelessWidget {
       builder: (context, authProvider, child) {
         if (!authProvider.isInitialized) {
           return const Scaffold(
-            body: Center(
-              child: CircularProgressIndicator(),
-            ),
+            body: Center(child: CircularProgressIndicator()),
           );
         }
 
-        // 未登录用户也直接进入首页（游客模式）
-        // 登录状态由各需要认证的页面自行检查
-        return const HomeScreen();
+        final tp = context.watch<ThemeProvider>();
+        return HomeScreen(initialTab: tp.startOnTimetable ? 2 : 0);
       },
     );
   }

@@ -19,7 +19,6 @@ import '../config/api_constants.dart';
 import 'edu_screen.dart';
 import 'exam_extract_screen.dart';
 import 'login_screen.dart';
-import 'course_schedule_screen.dart';
 import 'my_content_screen.dart';
 import 'admin_panel_screen.dart';
 import 'super_admin_screen.dart';
@@ -38,7 +37,6 @@ class _ProfileScreenState extends State<ProfileScreen>
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
   int _unreadReplyCount = 0;
-  bool _eduGoToTimetable = false;
   bool _startOnTimetable = false;
 
   @override
@@ -61,9 +59,7 @@ class _ProfileScreenState extends State<ProfileScreen>
 
   void _loadPrefs() {
     final tp = context.read<ThemeProvider>();
-    setState(() {
-      _eduGoToTimetable = tp.startOnTimetable;
-    });
+    setState(() => _startOnTimetable = tp.startOnTimetable);
   }
 
   @override
@@ -647,29 +643,24 @@ class _ProfileScreenState extends State<ProfileScreen>
                 : '绑定后可查询课表、成绩',
             isDark: isDark,
             onTap: () {
-              if (_eduGoToTimetable) {
-                Navigator.push(context,
-                    MaterialPageRoute(builder: (_) => const CourseScheduleScreen()));
-              } else {
-                Navigator.push(context,
-                    MaterialPageRoute(builder: (_) => const EduScreen()));
-              }
+              Navigator.push(context,
+                  MaterialPageRoute(builder: (_) => const EduScreen()));
             },
           )),
           // 下次启动默认进入的版块
           _buildSettingsRow(
             child: _buildSettingsTile(
-              icon: _eduGoToTimetable ? Icons.calendar_today : Icons.home_rounded,
+              icon: _startOnTimetable ? Icons.calendar_today : Icons.home_rounded,
               iconColor: const Color(0xFF667EEA),
               title: '下次启动默认进入课表',
-              subtitle: _eduGoToTimetable ? '打开：下次直接进入课表版块' : '关闭：下次直接进入首页版块',
+              subtitle: _startOnTimetable ? '打开：下次直接进入课表版块' : '关闭：下次直接进入首页版块',
               isDark: isDark,
               trailing: Switch(
-                value: _eduGoToTimetable,
+                value: _startOnTimetable,
                 activeColor: const Color(0xFF6366F1),
                 onChanged: (v) {
                   context.read<ThemeProvider>().setStartOnTimetable(v);
-                  setState(() => _eduGoToTimetable = v);
+                  setState(() => _startOnTimetable = v);
                 },
               ),
             ),

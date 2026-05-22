@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
@@ -36,6 +37,7 @@ class _ProfileScreenState extends State<ProfileScreen>
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
   int _unreadReplyCount = 0;
+  bool _startOnTimetable = false;
 
   @override
   void initState() {
@@ -51,7 +53,13 @@ class _ProfileScreenState extends State<ProfileScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<AuthProvider>().refreshUser();
       _loadUnreadCount();
+      _loadPrefs();
     });
+  }
+
+  void _loadPrefs() {
+    final tp = context.read<ThemeProvider>();
+    setState(() => _startOnTimetable = tp.startOnTimetable);
   }
 
   @override
@@ -259,7 +267,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                   style: const TextStyle(
                       fontSize: 28,
                       fontWeight: FontWeight.bold,
-                      color: Colors.white),
+                       color: Colors.white),
                 ),
                 if (authProvider.isLoggedIn) ...[
                   const SizedBox(width: 6),
@@ -634,9 +642,29 @@ class _ProfileScreenState extends State<ProfileScreen>
                 ? '${eduProvider.studentId} | ${eduProvider.college}'
                 : '绑定后可查询课表、成绩',
             isDark: isDark,
-            onTap: () => Navigator.push(context,
-                MaterialPageRoute(builder: (_) => const EduScreen())),
+            onTap: () {
+              Navigator.push(context,
+                  MaterialPageRoute(builder: (_) => const EduScreen()));
+            },
           )),
+          // 下次启动默认进入的版块
+          _buildSettingsRow(
+            child: _buildSettingsTile(
+              icon: _startOnTimetable ? Icons.calendar_today : Icons.home_rounded,
+              iconColor: const Color(0xFF667EEA),
+              title: '下次启动默认进入课表',
+              subtitle: _startOnTimetable ? '打开：下次直接进入课表版块' : '关闭：下次直接进入首页版块',
+              isDark: isDark,
+              trailing: Switch(
+                value: _startOnTimetable,
+                activeColor: const Color(0xFF6366F1),
+                onChanged: (v) {
+                  context.read<ThemeProvider>().setStartOnTimetable(v);
+                  setState(() => _startOnTimetable = v);
+                },
+              ),
+            ),
+          ),
           _buildSettingsRow(child: _buildSettingsTile(
             icon: Icons.auto_stories,
             iconColor: const Color(0xFF667EEA),

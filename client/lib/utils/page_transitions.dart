@@ -63,53 +63,24 @@ class _SlideFadeTransition extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // 预测性返回：用户手势拖拽时，secondaryAnimation 驱动前一页的缩放和位移
-    return AnimatedBuilder(
-      animation: animation,
-      builder: (context, _) {
-        return Stack(
-          children: [
-            // 前一页面（预测性返回时可见）
-            AnimatedBuilder(
-              animation: secondaryAnimation,
-              builder: (context, child) {
-                return SlideTransition(
-                  position: Tween<Offset>(
-                    begin: Offset.zero,
-                    end: const Offset(-0.25, 0),
-                  ).animate(
-                    CurvedAnimation(
-                      parent: ReverseAnimation(secondaryAnimation),
-                      curve: Curves.easeOutCubic,
-                    ),
-                  ),
-                  child: child,
-                );
-              },
-              child: const SizedBox.expand(),
-            ),
-            // 当前页面
-            SlideTransition(
-              position: Tween<Offset>(
-                begin: const Offset(0.35, 0),
-                end: Offset.zero,
-              ).animate(
-                CurvedAnimation(
-                  parent: animation,
-                  curve: Curves.easeOutCubic,
-                ),
-              ),
-              child: FadeTransition(
-                opacity: CurvedAnimation(
-                  parent: animation,
-                  curve: const Interval(0.0, 0.5, curve: Curves.easeOut),
-                ),
-                child: child,
-              ),
-            ),
-          ],
-        );
-      },
+    // animation: 推进 0→1，返回（含预测性手势）1→0
+    // secondaryAnimation: 由 Navigator 内部驱动前一页快照的渲染，这里不需要操作
+    // Navigator 会在手势返回时自动渲染前一页在下方，当前页滑出即可
+    return SlideTransition(
+      position: Tween<Offset>(
+        begin: const Offset(0.3, 0),  // 从右侧 30% 处滑入
+        end: Offset.zero,
+      ).animate(CurvedAnimation(
+        parent: animation,
+        curve: Curves.easeOutCubic,
+      )),
+      child: FadeTransition(
+        opacity: CurvedAnimation(
+          parent: animation,
+          curve: const Interval(0.0, 0.5, curve: Curves.easeOut),
+        ),
+        child: child,
+      ),
     );
   }
 }
@@ -144,8 +115,7 @@ class BottomSheetRoute<T> extends PageRouteBuilder<T> {
         );
 }
 
-/// 为预测性返回提供全局过渡构建器
-/// 替换默认 MaterialPageRoute 的过渡动画
+/// 全局过渡构建器
 class AppPageTransitionsBuilder extends PageTransitionsBuilder {
   const AppPageTransitionsBuilder();
 
@@ -157,17 +127,10 @@ class AppPageTransitionsBuilder extends PageTransitionsBuilder {
     Animation<double> secondaryAnimation,
     Widget child,
   ) {
-    // iOS 保留原生边缘滑动返回
     if (Theme.of(context).platform == TargetPlatform.iOS) {
       return const CupertinoPageTransitionsBuilder()
           .buildTransitions(route, context, animation, secondaryAnimation, child);
     }
-
-    // Android：自定义滑动 + 淡入，支持预测性返回预览
-    return _SlideFadeTransition(
-      animation: animation,
-      secondaryAnimation: secondaryAnimation,
-      child: child,
-    );
+    return child;
   }
 }

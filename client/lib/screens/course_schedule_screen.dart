@@ -8,6 +8,7 @@ import '../providers/edu_provider.dart';
 import '../providers/course_schedule_provider.dart';
 import '../services/course_reminder_service.dart';
 import '../widgets/glass_container.dart';
+import '../utils/app_feedback.dart';
 import '../utils/app_navigator.dart' show appNavigatorKey;
 import 'edu_screen.dart';
 import 'login_screen.dart';

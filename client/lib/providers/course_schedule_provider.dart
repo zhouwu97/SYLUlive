@@ -194,6 +194,7 @@ class CourseScheduleProvider extends ChangeNotifier {
   CourseBlock _courseFromFetchedMap(Map<String, dynamic> map) {
     final name = map['name'] as String? ?? '';
     final time = map['time'] as int? ?? 1;
+    final endTime = map['end_time'] as int? ?? (time + 1);
     return CourseBlock(
       id: 0,
       courseCode: '',
@@ -203,7 +204,7 @@ class CourseScheduleProvider extends ChangeNotifier {
       color: _colorPool[name.hashCode.abs() % _colorPool.length],
       weekday: map['week_day'] as int? ?? 1,
       startSection: time,
-      endSection: time + 1,
+      endSection: endTime,
       weeks:
           (map['weeks'] as List<dynamic>?)?.map((e) => e as int).toList() ?? [],
     );

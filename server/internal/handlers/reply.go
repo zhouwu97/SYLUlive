@@ -173,7 +173,7 @@ func (h *ReplyHandler) Delete(c *gin.Context) {
 			AdminID: userID.(uint), AdminName: u.Nickname,
 			Action: "删除回复", Target: reply.Content,
 		})
-		h.db.Model(&models.User{}).Where("id = ?", userID).UpdateColumn("admin_exp", gorm.Expr("admin_exp + 1"))
+		h.db.Model(&models.User{}).Where("id = ?", userID).UpdateColumn("admin_exp", gorm.Expr("COALESCE(admin_exp, 0) + 1"))
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})

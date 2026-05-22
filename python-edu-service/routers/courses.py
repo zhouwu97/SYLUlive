@@ -14,7 +14,7 @@ from models.schemas import (
 )
 from services.crawler import (
     EduCrawler, CookieLapseError, CourseNotOpenError,
-    NetworkError, parse_weeks, time_to_section
+    NetworkError, parse_weeks, parse_time_sections
 )
 
 router = APIRouter(prefix="/api/edu/courses", tags=["课程"])
@@ -80,11 +80,13 @@ async def fetch_courses(
 
         courses = []
         for raw in raw_courses:
+            start_sec, end_sec = parse_time_sections(raw.time)
             courses.append(CourseInfo(
                 name=raw.name,
                 teacher=raw.teacher if raw.teacher else None,
                 location=raw.location if raw.location else None,
-                time=time_to_section(raw.time),
+                time=start_sec,
+                end_time=end_sec,
                 week_day=int(raw.week_day) if raw.week_day.isdigit() else 1,
                 weeks=parse_weeks(raw.week_str)
             ))
@@ -159,8 +161,8 @@ async def sync_courses(
             )
 
             weekday = int(weekday_str) if weekday_str.isdigit() else 1
-            start_section = time_to_section(time_str)
-            print(f"  [SYNC] jc={time_str!r} → section={start_section}, name={name}")
+            start_section, end_section = parse_time_sections(time_str)
+            print(f"  [SYNC] jc={time_str!r} → section={start_section}-{end_section}, name={name}")
 
             # 解析周数
             weeks = parse_weeks(week_str)
@@ -177,7 +179,7 @@ async def sync_courses(
                 break_duration=custom.break_duration if custom else 10,
                 weekday=weekday,
                 start_section=start_section,
-                end_section=start_section + 1,  # 默认两节课
+                end_section=end_section,
                 weeks=json.dumps(weeks),
                 original_name=name,
                 original_location=location,

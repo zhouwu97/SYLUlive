@@ -34,7 +34,7 @@ systemctl status shenliyuan --no-pager
 
 ### 超级管理员
 
-- 用 `20052403060128 / zhoukangwu` 登录
+- 用 `admin / admin123` 登录
 - “我”页显示“超级管理员”
 - 能进入“超级管理员”与“管理处”
 

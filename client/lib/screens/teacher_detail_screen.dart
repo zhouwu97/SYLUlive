@@ -84,7 +84,7 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
         Navigator.pop(context, _didChange);
       },
       child: Scaffold(
-        backgroundColor: isDark ? const Color(0xFF131720) : Colors.white,
+        backgroundColor: isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
         extendBodyBehindAppBar: false, // 修复重叠：不再将 body 延伸到 AppBar 后方
         appBar: AppBar(
           systemOverlayStyle: SystemUiOverlayStyle(
@@ -117,10 +117,7 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
               ),
           ],
         ),
-        body: Stack(
-          children: [
-            Positioned.fill(child: _buildBackground(themeProvider, isDark)),
-            Consumer<TeacherProvider>(
+        body: Consumer<TeacherProvider>(
               builder: (context, provider, _) {
                 if (provider.isLoading) {
                   return const Center(child: CircularProgressIndicator());
@@ -151,51 +148,7 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
                 );
               },
             ),
-          ],
-        ),
       ),
-    );
-  }
-
-  Widget _buildBackground(ThemeProvider themeProvider, bool isDark) {
-    if (themeProvider.hasBackground && themeProvider.backgroundImage != null) {
-      final bgPath = themeProvider.backgroundImage!;
-      final isAsset = !bgPath.startsWith('http') && !bgPath.startsWith('/');
-      return Stack(
-        fit: StackFit.expand,
-        children: [
-          isAsset
-              ? Image.asset('assets/images/$bgPath', fit: BoxFit.cover, errorBuilder: (_, __, ___) => _buildDefaultBackground(isDark))
-              : bgPath.startsWith('/')
-                  ? Image.file(File(bgPath), fit: BoxFit.cover, errorBuilder: (_, __, ___) => _buildDefaultBackground(isDark))
-                  : Image.network(bgPath, fit: BoxFit.cover, errorBuilder: (_, __, ___) => _buildDefaultBackground(isDark)),
-          Container(color: isDark ? Colors.black.withValues(alpha: 0.35) : Colors.white.withValues(alpha: 0.25)),
-        ],
-      );
-    }
-    return _buildDefaultBackground(isDark);
-  }
-
-  Widget _buildDefaultBackground(bool isDark) {
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        Image(
-          image: ResizeImage(
-            const AssetImage('assets/images/morenbeijing.jpeg'),
-            width: 1080,
-          ),
-          fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => Container(
-            color: isDark ? const Color(0xFF0F131A) : const Color(0xFFF5F7FB),
-          ),
-        ),
-        Container(
-          color: isDark
-              ? Colors.black.withValues(alpha: 0.35)
-              : Colors.white.withValues(alpha: 0.25),
-        ),
-      ],
     );
   }
 

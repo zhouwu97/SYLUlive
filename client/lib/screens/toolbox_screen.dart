@@ -285,11 +285,13 @@ class _PhysicalTestGate extends StatefulWidget {
 
 class _PhysicalTestGateState extends State<_PhysicalTestGate> {
   final _pwdCtrl = TextEditingController();
+  bool _obscurePwd = true;
+  String _realPwd = '';
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _checkAutoLogin());
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadSavedPassword());
   }
 
   @override
@@ -298,27 +300,32 @@ class _PhysicalTestGateState extends State<_PhysicalTestGate> {
     super.dispose();
   }
 
-  Future<void> _checkAutoLogin() async {
+  Future<void> _loadSavedPassword() async {
     final prefs = await SharedPreferences.getInstance();
     final pwd = prefs.getString('sylu_physical_test_pwd_${widget.username}');
     if (pwd != null && pwd.isNotEmpty) {
-      _pwdCtrl.text = pwd;
-      if (mounted) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (_) => PhysicalTestPage(
-              username: widget.username,
-              password: pwd,
-            ),
-          ),
-        );
-      }
+      _realPwd = pwd;
+      _pwdCtrl.text = '•' * pwd.length;
+      if (mounted) setState(() {});
+    }
+  }
+
+  void _onPwdChanged(String val) {
+    final placeholder = '•' * _realPwd.length;
+    if (_realPwd.isNotEmpty && val != placeholder) {
+      final newText = val.replaceAll('•', '');
+      _realPwd = '';
+      _pwdCtrl.value = TextEditingValue(
+        text: newText,
+        selection: TextSelection.collapsed(offset: newText.length),
+      );
     }
   }
 
   void _queryManual() {
-    final pwd = _pwdCtrl.text;
+    final inputPwd = _pwdCtrl.text;
+    final pwd = inputPwd == ('•' * _realPwd.length) ? _realPwd : inputPwd;
+    
     if (pwd.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('请输入体测密码')),
@@ -341,94 +348,88 @@ class _PhysicalTestGateState extends State<_PhysicalTestGate> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor: Colors.transparent,
-      extendBodyBehindAppBar: true,
+      backgroundColor: isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
       appBar: AppBar(
+        title: const Text('体测成绩查询'),
         backgroundColor: Colors.transparent,
         elevation: 0,
-        leading: const BackButton(color: Colors.white),
       ),
-      body: Stack(
-        children: [
-          Positioned.fill(
-            child: Image.asset('assets/images/morenbeijing.jpeg',
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => Container(
-                    color: isDark
-                        ? const Color(0xFF131720)
-                        : const Color(0xFFF4F6FB))),
-          ),
-          SafeArea(
-            child: Center(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(24),
-                child: GlassContainer(
-                  padding: const EdgeInsets.all(28),
-                  borderRadius: 24,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(14),
-                        decoration: BoxDecoration(
-                          color: Colors.orange.withValues(alpha: 0.15),
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(Icons.fitness_center,
-                            color: Colors.orange, size: 36),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+          child: Column(
+            children: [
+              GlassContainer(
+                padding: const EdgeInsets.all(16),
+                borderRadius: 16,
+                child: Row(
+                  children: [
+                    const Icon(Icons.info_outline, color: Colors.blue, size: 20),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        '学号 ${widget.username} 已自动识别，请输入体测密码查询',
+                        style: TextStyle(fontSize: 13, color: isDark ? Colors.white70 : Colors.black87),
                       ),
-                      const SizedBox(height: 16),
-                      const Text('体测查询',
-                          style: TextStyle(
-                              fontSize: 20, fontWeight: FontWeight.bold)),
-                      const SizedBox(height: 8),
-                      Text('学号：${widget.username}',
-                          style: TextStyle(
-                              fontSize: 14,
-                              color:
-                                  isDark ? Colors.white70 : Colors.grey[700])),
-                      const SizedBox(height: 24),
-                      TextField(
-                        controller: _pwdCtrl,
-                        obscureText: true,
-                        decoration: InputDecoration(
-                          labelText: '体测密码 (默认111111)',
-                          labelStyle: TextStyle(
-                              color: isDark ? Colors.white54 : Colors.grey[600]),
-                          filled: true,
-                          fillColor: isDark
-                              ? Colors.white.withValues(alpha: 0.05)
-                              : Colors.black.withValues(alpha: 0.03),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide.none,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 28),
-                      SizedBox(
-                        width: double.infinity,
-                        height: 50,
-                        child: ElevatedButton(
-                          onPressed: _queryManual,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.orange,
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14)),
-                          ),
-                          child: const Text('查询',
-                              style: TextStyle(
-                                  fontSize: 16, fontWeight: FontWeight.w600)),
-                        ),
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
-            ),
+              const SizedBox(height: 16),
+              GlassContainer(
+                padding: const EdgeInsets.all(20),
+                borderRadius: 20,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.fitness_center, color: Colors.blue, size: 22),
+                        const SizedBox(width: 10),
+                        const Text('体测密码', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                        const Spacer(),
+                        Text('初始密码默认为111111', style: TextStyle(fontSize: 10, color: isDark ? Colors.white38 : Colors.grey[500])),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: _pwdCtrl,
+                      onChanged: _onPwdChanged,
+                      obscureText: _obscurePwd,
+                      style: const TextStyle(fontSize: 14),
+                      decoration: InputDecoration(
+                        hintText: '输入体测系统密码',
+                        prefixIcon: const Icon(Icons.lock_outline, size: 18),
+                        suffixIcon: IconButton(
+                          icon: Icon(_obscurePwd ? Icons.visibility_off : Icons.visibility, size: 18),
+                          onPressed: () => setState(() => _obscurePwd = !_obscurePwd),
+                        ),
+                        filled: true,
+                        fillColor: isDark ? Colors.white.withValues(alpha: 0.05) : Colors.black.withValues(alpha: 0.03),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: ElevatedButton(
+                  onPressed: _queryManual,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Theme.of(context).primaryColor,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    elevation: 0,
+                  ),
+                  child: const Text('开始查询', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }

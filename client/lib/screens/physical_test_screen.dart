@@ -49,6 +49,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
 
   bool _showQr = false;
   String _testCode = ''; // 扫码核验码 (id=xxx&name=xxx)
+  bool _showScore = false; // Toggle to show score vs grade
 
   @override
   void initState() {
@@ -389,7 +390,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
                     const SizedBox(height: 16),
                   ],
                   if (scores.isNotEmpty)
-                    ...scores.map((s) => _buildScoreCard(s, isDark))
+                    ...scores.map((s) => _buildScoreCard(s, isDark, _showScore))
                   else if (data != null)
                     Padding(
                       padding: const EdgeInsets.all(40),
@@ -530,17 +531,37 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
                 color: Color(0xFF6366F1), size: 22),
           ),
           const SizedBox(width: 14),
-          Text(
-            '总评：${data.totalGrade}  |  ${data.totalScore}分',
-            style:
-                const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+          Expanded(
+            child: Text(
+              '总评：${data.totalGrade}  |  ${data.totalScore}分',
+              style:
+                  const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+            ),
+          ),
+          GestureDetector(
+            onTap: () => setState(() => _showScore = !_showScore),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+              decoration: BoxDecoration(
+                color: const Color(0xFF6366F1).withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: const Text(
+                '切换',
+                style: TextStyle(
+                  color: Color(0xFF6366F1),
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                ),
+              ),
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildScoreCard(_GymScoreItem item, bool isDark) {
+  Widget _buildScoreCard(_GymScoreItem item, bool isDark, bool showScore) {
     final statusColor = Color(item.statusColorValue);
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
@@ -574,7 +595,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
                 color: statusColor.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(16),
               ),
-              child: Text(item.statusLabel,
+              child: Text(showScore ? '${item.score}分' : item.statusLabel,
                   style: TextStyle(
                       color: statusColor,
                       fontWeight: FontWeight.w700,

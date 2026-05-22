@@ -75,6 +75,7 @@ func (h *InvitationHandler) DirectPromote(c *gin.Context) {
 	var admin models.User
 	h.db.Select("nickname").First(&admin, adminID)
 	h.db.Create(&models.AdminLog{AdminID: adminID.(uint), AdminName: admin.Nickname, Action: "直接提升管理员", Target: user.Nickname, Detail: user.StudentID})
+	h.db.Model(&models.User{}).Where("id = ?", adminID).UpdateColumn("admin_exp", gorm.Expr("COALESCE(admin_exp, 0) + 1"))
 
 	c.JSON(http.StatusOK, gin.H{"message": user.Nickname + " 已成为管理员"})
 }
@@ -141,6 +142,7 @@ func (h *InvitationHandler) Create(c *gin.Context) {
 	var admin models.User
 	h.db.Select("nickname").First(&admin, adminID)
 	h.db.Create(&models.AdminLog{AdminID: adminID.(uint), AdminName: admin.Nickname, Action: "邀请管理员", Target: user.Nickname, Detail: strings.TrimSpace(input.Reason)})
+	h.db.Model(&models.User{}).Where("id = ?", adminID).UpdateColumn("admin_exp", gorm.Expr("COALESCE(admin_exp, 0) + 1"))
 
 	c.JSON(http.StatusCreated, invitation)
 }

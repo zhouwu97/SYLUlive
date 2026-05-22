@@ -132,6 +132,16 @@ class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) => _checkDeepLink());
+    
+    // 监听原生端主动推送的深度链接（瞬间响应，避免打断动画）
+    _channel.setMethodCallHandler((call) async {
+      if (call.method == 'onDeepLink') {
+        final uri = call.arguments as String?;
+        if ((uri == 'widget_timetable' || uri == 'campus://timetable') && mounted) {
+          widgetTabSwitch.value++;
+        }
+      }
+    });
   }
 
   @override
@@ -193,6 +203,7 @@ class _AppContent extends StatelessWidget {
       ),
       themeMode: themeProvider.isDarkMode ? ThemeMode.dark : ThemeMode.light,
       navigatorKey: appNavigatorKey,
+      scaffoldMessengerKey: scaffoldMessengerKey,
       routes: {
         '/login': (context) => const LoginScreen(),
         '/timetable': (context) => const PredictiveBackGate(

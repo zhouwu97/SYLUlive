@@ -103,6 +103,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   bool _didLoad = false;
   bool _initializing = true;
   bool _hasCache = false;
+  bool _settingsLoaded = false;
   String? _preparedUserId;
   double _cardOpacity = 0.4;
   double _slotHeight = defaultSlotHeight;
@@ -237,6 +238,9 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (!_settingsLoaded) {
+      return const Scaffold(backgroundColor: Colors.transparent);
+    }
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
@@ -1046,6 +1050,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       _courseReminderEnabled = remindersEnabled;
       _scheduledReminderCount = reminderCount;
       _backgroundKeepAliveStatus = backgroundStatus;
+      _settingsLoaded = true;
     });
   }
 

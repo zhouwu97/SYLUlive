@@ -70,8 +70,8 @@ func main() {
 		log.Fatal("数据库迁移失败:", err)
 	}
 
-	// 创建唯一系统超级管理员；普通管理员后续通过邀请流程产生。
-	ensureSystemSuperAdmin(db)
+	// 确保默认超级管理员
+	ensureSystemSuperAdmin(db, cfg.SuperAdminID, cfg.SuperAdminPass)
 
 	r := gin.Default()
 
@@ -388,10 +388,7 @@ func main() {
 }
 
 // ensureSystemSuperAdmin 确保系统只有指定超级管理员种子账号。
-func ensureSystemSuperAdmin(db *gorm.DB) {
-	const studentID = "20052403060128"
-	const password = "zhoukangwu"
-
+func ensureSystemSuperAdmin(db *gorm.DB, studentID, password string) {
 	var existing models.User
 	if err := db.Where("student_id = ?", studentID).First(&existing).Error; err == nil {
 		hashedPassword, _ := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)

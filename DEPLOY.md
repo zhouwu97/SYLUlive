@@ -113,12 +113,12 @@ GIN_MODE=release
 
 ## 超级管理员账号
 
-当前系统超级管理员由代码在启动时强制确保，见 `server/cmd/main.go`。
+当前系统超级管理员账号可在启动时通过环境变量配置，否则将使用默认账号。
 
-当前基线账号：
+环境变量配置（推荐）：
+- `SUPER_ADMIN_ID` (默认: `admin`)
+- `SUPER_ADMIN_PASSWORD` (默认: `admin123`)
 
-- 学号：`20052403060128`
-- 密码：`zhoukangwu`
 
 注意：
 

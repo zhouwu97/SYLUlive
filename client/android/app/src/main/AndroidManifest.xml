@@ -77,17 +77,23 @@
                 <action android:name="com.htc.intent.action.QUICKBOOT_POWERON" />
             </intent-filter>
         </receiver>
-        <!-- 课表桌面小部件 -->
+        <!-- 课表桌面小部件 (AppWidgetProvider + RemoteViews + ListView) -->
         <receiver
-            android:name=".CourseScheduleWidgetProvider"
+            android:name=".TodayCourseWidgetProvider"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"
-                android:resource="@xml/course_schedule_widget_info" />
+                android:resource="@xml/today_course_widget_info" />
         </receiver>
+
+        <!-- RemoteViewsService: ListView 跨进程数据网关 -->
+        <service
+            android:name=".CourseWidgetService"
+            android:permission="android.permission.BIND_REMOTEVIEWS"
+            android:exported="false" />
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

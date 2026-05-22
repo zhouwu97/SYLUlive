@@ -484,24 +484,27 @@ def parse_weeks(week_str: str) -> List[int]:
     return sorted(list(set(weeks)))
 
 
-def time_to_section(time_str: str) -> int:
-    """将节次字符串转换为实际起始节次数字
+def parse_time_sections(time_str: str) -> Tuple[int, int]:
+    """将节次字符串转换为实际起始和结束节次数字
 
     支持格式：
-      - "1-2节" / "3-4节" → 1 / 3
-      - "0102" / "0304" → 1 / 3（4位数字，前2位是起始节）
+      - "1-2节" / "3-4节" → (1, 2) / (3, 4)
+      - "0102" / "0304" → (1, 2) / (3, 4)（4位数字，前2位是起始节，后2位是结束节）
     """
     if not time_str:
-        return 1
+        return (1, 2)
     # 格式1: "3-4节" 或 "3-4"
-    match = re.match(r'(\d+)[-~](\d+)', time_str)
+    match = re.search(r'(\d+)[-~](\d+)', time_str)
     if match:
-        return int(match.group(1))
-    # 格式2: "0304"（4位数字，取前2位）
+        return (int(match.group(1)), int(match.group(2)))
+    # 格式2: "0304"（4位数字，取前2位和后2位）
     if time_str.isdigit() and len(time_str) >= 4:
-        return int(time_str[:2])
-    # 格式3: 纯数字
+        return (int(time_str[:2]), int(time_str[2:4]))
+    # 格式3: 纯数字或逗号分隔
     nums = re.findall(r'\d+', time_str)
-    if nums:
-        return int(nums[0])
-    return 1
+    if len(nums) >= 2:
+        return (int(nums[0]), int(nums[-1]))
+    elif nums:
+        return (int(nums[0]), int(nums[0]))
+    return (1, 2)
+

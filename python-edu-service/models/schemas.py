@@ -80,7 +80,8 @@ class CourseInfo(BaseModel):
     name: str  # 课程名称
     teacher: Optional[str] = None  # 教师
     location: Optional[str] = None  # 上课地点
-    time: int  # 节次 (1-7)
+    time: int  # 起始节次
+    end_time: int = 0  # 结束节次
     week_day: int  # 周几 (1-7)
     weeks: List[int]  # 上课周数
 

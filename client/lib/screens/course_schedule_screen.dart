@@ -803,8 +803,11 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
       if (result == null || !result.success) {
         Navigator.pop(context); // 关闭加载弹窗
-        messenger.showSnackBar(
-          SnackBar(content: Text(result?.errorMessage ?? '获取课表失败')),
+        final errorMsg = result?.errorMessage ?? '未知错误';
+        AppFeedback.showErrorDialog(
+          context,
+          title: '获取课表失败',
+          message: '可能是由于网络不稳定或教务系统维护中。\n详细原因：$errorMsg\n\n如果提示登录失效，后台正在尝试为您重新登录，请稍后再试。',
         );
         return;
       }
@@ -835,16 +838,85 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
         _didLoad = true;
       });
       
-      Navigator.pop(context); // 确保课表加载进状态后再关闭弹窗
+      Navigator.pop(context); // 确保课表加载进状态后再关闭加载弹窗
       
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(synced
-              ? '✅ 导入成功！已更新 ${sc.courses.length} 门课程'
-              : '已获取课表，本地同步失败，已先缓存显示'),
-          backgroundColor: Colors.green.shade600,
+      // 成功动画反馈
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        barrierColor: Colors.black26,
+        builder: (ctx) => Center(
+          child: TweenAnimationBuilder<double>(
+            tween: Tween(begin: 0.0, end: 1.0),
+            duration: const Duration(milliseconds: 500),
+            curve: Curves.elasticOut,
+            builder: (context, value, child) {
+              return Transform.scale(
+                scale: value,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(24),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.1),
+                        blurRadius: 20,
+                        spreadRadius: 5,
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.green.shade50,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          synced ? Icons.check_circle : Icons.warning_amber_rounded,
+                          color: synced ? Colors.green : Colors.orange,
+                          size: 48,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        synced ? '导入成功！' : '部分同步失败',
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black87,
+                          decoration: TextDecoration.none,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        synced
+                            ? '已为您更新 ${sc.courses.length} 门课程'
+                            : '已获取课表并缓存显示',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey.shade600,
+                          decoration: TextDecoration.none,
+                          fontWeight: FontWeight.normal,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
         ),
       );
+
+      // 1.5秒后自动关闭成功弹窗
+      Future.delayed(const Duration(milliseconds: 1500), () {
+        if (mounted) Navigator.pop(context);
+      });
+      
     } catch (e) {
       if (mounted) {
         Navigator.pop(context);

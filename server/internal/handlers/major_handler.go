@@ -21,6 +21,8 @@ func logMajorAdmin(c *gin.Context, action, target string) {
 	var u models.User
 	majorLogDB.Select("nickname").First(&u, uid)
 	majorLogDB.Create(&models.AdminLog{AdminID: uid.(uint), AdminName: u.Nickname, Action: action, Target: target})
+	// 管理员操作经验+1
+	majorLogDB.Model(&models.User{}).Where("id = ?", uid).UpdateColumn("admin_exp", gorm.Expr("COALESCE(admin_exp, 0) + 1"))
 }
 
 type MajorHandler struct {

@@ -480,14 +480,17 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                 parent: _animationController,
                 curve: Curves.easeOut,
               ),
-              child: Consumer<PostProvider>(
-                builder: (context, postProvider, child) {
-                  var posts = postProvider.posts;
-                  if (posts.isEmpty && _cachedPosts.isNotEmpty) {
-                    posts = _cachedPosts;
-                  } else if (posts.isNotEmpty) {
-                    _cachedPosts = List.from(posts);
-                  }
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 680),
+                  child: Consumer<PostProvider>(
+                    builder: (context, postProvider, child) {
+                      var posts = postProvider.posts;
+                      if (posts.isEmpty && _cachedPosts.isNotEmpty) {
+                        posts = _cachedPosts;
+                      } else if (posts.isNotEmpty) {
+                        _cachedPosts = List.from(posts);
+                      }
 
                   final visiblePosts = _resolveVisiblePosts(posts);
                   final lostFoundPosts = postProvider
@@ -575,6 +578,8 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                     ),
                   );
                 },
+              ),
+                ),
               ),
             ),
           ),

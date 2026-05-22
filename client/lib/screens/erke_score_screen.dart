@@ -30,6 +30,9 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
   bool _obscureCas = true;
   bool _obscureErke = true;
   String? _filterCategory;
+  
+  String _realCasPwd = '';
+  String _realErkePwd = '';
 
   static const _loadingMessages = [
     '正在穿透学校内网，请稍候…',
@@ -53,18 +56,45 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
       final prefs = await SharedPreferences.getInstance();
       final casPwd = prefs.getString('erke_cas_pwd') ?? '';
       final erkePwd = prefs.getString('erke_erke_pwd') ?? '';
-      // 直接设 controller text，TextField 监听 controller 会自动更新，不依赖 setState
-      _casPwdCtrl.text = casPwd;
-      _erkePwdCtrl.text = erkePwd;
-      // 触发一次 rebuild 确保 UI 同步
+      
+      _realCasPwd = casPwd;
+      _realErkePwd = erkePwd;
+      
+      _casPwdCtrl.text = casPwd.isNotEmpty ? '•' * casPwd.length : '';
+      _erkePwdCtrl.text = erkePwd.isNotEmpty ? '•' * erkePwd.length : '';
+      
       if (mounted) setState(() {});
     } catch (_) {}
   }
 
-  Future<void> _savePasswords() async {
+  void _onCasPwdChanged(String val) {
+    final placeholder = '•' * _realCasPwd.length;
+    if (_realCasPwd.isNotEmpty && val != placeholder) {
+      final newText = val.replaceAll('•', '');
+      _realCasPwd = '';
+      _casPwdCtrl.value = TextEditingValue(
+        text: newText,
+        selection: TextSelection.collapsed(offset: newText.length),
+      );
+    }
+  }
+
+  void _onErkePwdChanged(String val) {
+    final placeholder = '•' * _realErkePwd.length;
+    if (_realErkePwd.isNotEmpty && val != placeholder) {
+      final newText = val.replaceAll('•', '');
+      _realErkePwd = '';
+      _erkePwdCtrl.value = TextEditingValue(
+        text: newText,
+        selection: TextSelection.collapsed(offset: newText.length),
+      );
+    }
+  }
+
+  Future<void> _savePasswords(String casPwd, String erkePwd) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('erke_cas_pwd', _casPwdCtrl.text);
-    await prefs.setString('erke_erke_pwd', _erkePwdCtrl.text);
+    await prefs.setString('erke_cas_pwd', casPwd);
+    await prefs.setString('erke_erke_pwd', erkePwd);
   }
 
   @override
@@ -83,8 +113,11 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
       return;
     }
 
-    final casPwd = _casPwdCtrl.text;
-    final erkePwd = _erkePwdCtrl.text;
+    final inputCasPwd = _casPwdCtrl.text;
+    final inputErkePwd = _erkePwdCtrl.text;
+    
+    final casPwd = inputCasPwd == ('•' * _realCasPwd.length) ? _realCasPwd : inputCasPwd;
+    final erkePwd = inputErkePwd == ('•' * _realErkePwd.length) ? _realErkePwd : inputErkePwd;
     final studentId = _studentIdCtrl.text.trim();
 
     if (casPwd.isEmpty || erkePwd.isEmpty || studentId.isEmpty) {
@@ -92,7 +125,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
       return;
     }
 
-    _savePasswords();
+    _savePasswords(casPwd, erkePwd);
 
     setState(() {
       _isLoading = true;
@@ -213,6 +246,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
                 const SizedBox(height: 16),
                 TextField(
                   controller: _casPwdCtrl,
+                  onChanged: _onCasPwdChanged,
                   obscureText: _obscureCas,
                   style: const TextStyle(fontSize: 14),
                   decoration: InputDecoration(
@@ -250,6 +284,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
                 const SizedBox(height: 16),
                 TextField(
                   controller: _erkePwdCtrl,
+                  onChanged: _onErkePwdChanged,
                   obscureText: _obscureErke,
                   style: const TextStyle(fontSize: 14),
                   decoration: InputDecoration(

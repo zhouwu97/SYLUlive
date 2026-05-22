@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -10,6 +11,7 @@ import '../widgets/glass_container.dart';
 import '../utils/app_navigator.dart' show appNavigatorKey;
 import 'edu_screen.dart';
 import 'login_screen.dart';
+import '../services/home_widget_service.dart';
 
 /// 每节课槽的默认高度
 const double defaultSlotHeight = 75.0;
@@ -103,6 +105,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   String? _preparedUserId;
   double _cardOpacity = 0.4;
   double _slotHeight = defaultSlotHeight;
+  String _widgetTextColor = '#333333';
   bool _courseReminderEnabled = false;
   bool _courseReminderBusy = false;
   int _scheduledReminderCount = 0;
@@ -966,6 +969,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     setState(() {
       _cardOpacity = prefs.getDouble(_opacityKey) ?? 0.55;
       _slotHeight = prefs.getDouble(_slotHeightKey) ?? defaultSlotHeight;
+      _widgetTextColor = prefs.getString('widget_text_color') ?? '#333333';
       _courseReminderEnabled = remindersEnabled;
       _scheduledReminderCount = reminderCount;
       _backgroundKeepAliveStatus = backgroundStatus;
@@ -980,6 +984,12 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   Future<void> _saveSlotHeight(double v) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setDouble(_slotHeightKey, v);
+  }
+
+  Future<void> _saveWidgetTextColor(String hexColor, CourseScheduleProvider sc) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('widget_text_color', hexColor);
+    HomeWidgetService.syncTodayCourses(sc);
   }
 
   String _backgroundKeepAliveSubtitle() {
@@ -1263,6 +1273,22 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                       },
                     ),
                   ),
+                  const SizedBox(height: 10),
+                  Container(
+                    decoration: tileDecoration(),
+                    child: ListTile(
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 6),
+                      leading: Icon(Icons.edit_outlined, color: primary),
+                      title: const Text('更名小组件'),
+                      subtitle: const Text('自定义桌面小组件上显示的名称'),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () {
+                        Navigator.pop(context);
+                        _showRenameWidgetDialog(context);
+                      },
+                    ),
+                  ),
                   const SizedBox(height: 14),
                   Container(
                     decoration: tileDecoration(),
@@ -1436,6 +1462,32 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                       ],
                     ),
                   ),
+                  const SizedBox(height: 10),
+                  Container(
+                    decoration: tileDecoration(),
+                    child: ListTile(
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 6),
+                      title: const Text('桌面小部件字体颜色'),
+                      subtitle: const Text('更改小部件上的文字颜色(深色/浅色)'),
+                      trailing: DropdownButton<String>(
+                        value: _widgetTextColor,
+                        underline: const SizedBox(),
+                        icon: const Icon(Icons.arrow_drop_down),
+                        items: const [
+                          DropdownMenuItem(value: '#333333', child: Text('深色')),
+                          DropdownMenuItem(value: '#888888', child: Text('浅灰')),
+                        ],
+                        onChanged: (v) {
+                          if (v != null) {
+                            setSheetState(() => _widgetTextColor = v);
+                            setState(() => _widgetTextColor = v);
+                            _saveWidgetTextColor(v, sc);
+                          }
+                        },
+                      ),
+                    ),
+                  ),
                   const SizedBox(height: 6),
                   Text('这些设置只影响本机显示和提醒，不会修改服务器接口地址。',
                       style: TextStyle(
@@ -1472,6 +1524,44 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     }
   }
 
+  /// 更名小组件弹窗
+  void _showRenameWidgetDialog(BuildContext context) async {
+    final prefs = await SharedPreferences.getInstance();
+    String title = prefs.getString('widget_title') ?? '我的课表';
+    final controller = TextEditingController(text: title);
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('更名小组件'),
+        content: TextField(
+          controller: controller,
+          maxLength: 8,
+          decoration: const InputDecoration(hintText: '输入新名称（最多8字）'),
+          onChanged: (v) => title = v.trim(),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final titleToSave = title.isNotEmpty ? title : '我的课表';
+              Navigator.pop(ctx, true); // 先关弹窗
+              // 弹窗关闭后再异步存数据 + 刷新
+              prefs.setString('widget_title', titleToSave);
+              const MethodChannel('shenliyuan/widget').invokeMethod('updateWidget');
+            },
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+
+    controller.dispose();
+  }
+
   // ====== 自定义课程 ======
 
   void _showAddCourseDialog(BuildContext context) {
@@ -1484,7 +1574,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     final sc = context.read<CourseScheduleProvider>();
     final wn = sc.getAcademicWeek(_weekStart) ?? 1;
     int startWeek = wn;
-    int endWeek = wn + 15;
+    int endWeek = (wn + 15).clamp(wn, 20);
 
     showDialog(
       context: context,
@@ -1563,7 +1653,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                   children: [
                     Expanded(
                       child: DropdownButtonFormField<int>(
-                        value: startWeek,
+                        value: startWeek.clamp(1, 20),
                         decoration: const InputDecoration(labelText: '开始周'),
                         items:
                             List.generate(20, (i) => i + 1).map((w) {
@@ -1583,7 +1673,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: DropdownButtonFormField<int>(
-                        value: endWeek,
+                        value: endWeek.clamp(startWeek, 20),
                         decoration: const InputDecoration(labelText: '结束周'),
                         items: List.generate(20, (i) => i + 1)
                             .where((w) => w >= startWeek)

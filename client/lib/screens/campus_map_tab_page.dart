@@ -1,10 +1,19 @@
 import 'package:flutter/material.dart';
 
-class CampusMapTabPage extends StatelessWidget {
+class CampusMapTabPage extends StatefulWidget {
   const CampusMapTabPage({Key? key}) : super(key: key);
 
   @override
+  State<CampusMapTabPage> createState() => _CampusMapTabPageState();
+}
+
+class _CampusMapTabPageState extends State<CampusMapTabPage> with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
   Widget build(BuildContext context) {
+    super.build(context);
     return SafeArea(
       // 💡 修复遮挡：Scaffold 的 body 内部用 SafeArea 包裹，确保绝不和底部导航栏重叠
       child: Column(

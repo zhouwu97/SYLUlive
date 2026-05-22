@@ -373,10 +373,15 @@ class EduCrawler:
                 timeout=10.0
             )
             print(f"  [DESK] status={resp.status_code}, len={len(resp.text)}")
+            # 901 = session expired; 302 = redirected to login page
+            if resp.status_code in (901, 302):
+                raise CookieLapseError("Cookie已过期 (DESK)")
             if resp.status_code == 200 and resp.text.strip() not in ("null", ""):
                 data = resp.json()
                 kb_list = data.get("kbList", [])
                 _add_from_kblist(kb_list, "DESK")
+        except EduError:
+            raise  # CookieLapseError 等需要向上传播
         except Exception as e:
             print(f"  [DESK] 失败: {e}")
 

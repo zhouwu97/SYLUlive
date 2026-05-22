@@ -10,6 +10,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../config/api_constants.dart';
 import '../main.dart';
 import '../providers/auth_provider.dart';
+import '../utils/app_navigator.dart';
 import '../utils/post_image_cache.dart';
 import '../widgets/bottom_nav.dart';
 import 'shuitie_screen.dart';
@@ -22,7 +23,8 @@ import 'login_screen.dart';
 import 'image_viewer_screen.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  final int initialTab;
+  const HomeScreen({super.key, this.initialTab = 0});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -41,12 +43,36 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    _currentIndex = widget.initialTab;
+    widgetTabSwitch.addListener(_onWidgetTabSwitch);
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _syncAnnouncementPolling(context.read<AuthProvider>());
       }
     });
+  }
+
+  void _onWidgetTabSwitch() {
+    if (mounted && _currentIndex != 2) {
+      setState(() => _currentIndex = 2);
+    }
+  }
+
+  @override
+  void dispose() {
+    widgetTabSwitch.removeListener(_onWidgetTabSwitch);
+    _announcementTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(HomeScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.initialTab != oldWidget.initialTab) {
+      _currentIndex = widget.initialTab;
+    }
   }
 
   @override
@@ -612,13 +638,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     } else {
       await _markAnnouncementsSeen(unread);
     }
-  }
-
-  @override
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    _announcementTimer?.cancel();
-    super.dispose();
   }
 
   void _onTabTapped(int index) {

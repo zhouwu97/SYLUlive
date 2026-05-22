@@ -99,13 +99,13 @@ class _SubjectRankingDetailScreenState
       });
 
     return PopScope(
-      canPop: !themeProvider.predictiveBack,
+      canPop: themeProvider.predictiveBack,
       onPopInvokedWithResult: (didPop, result) {
         if (didPop) return;
         Navigator.pop(context, _changed);
       },
       child: Scaffold(
-        backgroundColor: Colors.transparent,
+        backgroundColor: isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
         extendBodyBehindAppBar: false, // 关闭延伸，防止 AppBar 与 Body 重叠
         appBar: AppBar(
           title: Text(widget.subjectName),
@@ -131,11 +131,8 @@ class _SubjectRankingDetailScreenState
             onPressed: () => Navigator.pop(context, _changed),
           ),
         ),
-        body: Stack(
-          children: [
-            Positioned.fill(child: _buildBackground(themeProvider, isDark)),
-            ListView(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 24), // 顶部边距设为 0
+        body: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 24), // 顶部边距设为 0
               children: [
                 GlassContainer(
                   padding: const EdgeInsets.all(20),
@@ -291,70 +288,8 @@ class _SubjectRankingDetailScreenState
                   );
                 }),
               ],
-            ),
-          ],
         ),
       ),
-    );
-  }
-
-  Widget _buildBackground(ThemeProvider themeProvider, bool isDark) {
-    if (themeProvider.hasBackground && themeProvider.backgroundImage != null) {
-      final bgPath = themeProvider.backgroundImage!;
-      final isAsset = !bgPath.startsWith('http') && !bgPath.startsWith('/');
-      return Stack(
-        fit: StackFit.expand,
-        children: [
-          isAsset
-              ? Image.asset(
-                  'assets/images/$bgPath',
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => _buildDefaultBackground(isDark),
-                )
-              : bgPath.startsWith('/')
-                  ? Image.file(
-                      File(bgPath),
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) =>
-                          _buildDefaultBackground(isDark),
-                    )
-                  : Image.network(
-                      bgPath,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) =>
-                          _buildDefaultBackground(isDark),
-                    ),
-          Container(
-            color: isDark
-                ? Colors.black.withValues(alpha: 0.35)
-                : Colors.white.withValues(alpha: 0.25),
-          ),
-        ],
-      );
-    }
-    return _buildDefaultBackground(isDark);
-  }
-
-  Widget _buildDefaultBackground(bool isDark) {
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        Image(
-          image: ResizeImage(
-            const AssetImage('assets/images/morenbeijing.jpeg'),
-            width: 1080,
-          ),
-          fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => Container(
-            color: isDark ? const Color(0xFF0F131A) : const Color(0xFFF5F7FB),
-          ),
-        ),
-        Container(
-          color: isDark
-              ? Colors.black.withValues(alpha: 0.35)
-              : Colors.white.withValues(alpha: 0.25),
-        ),
-      ],
     );
   }
 

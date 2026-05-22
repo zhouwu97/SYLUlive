@@ -239,13 +239,14 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
         'delete_reason': deleteReasonController.text,
       });
       if (mounted) {
+        // 本地移除已处理的举报，不全局刷新
+        setState(() => _reports.removeWhere((r) => r['id'] == report['id']));
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(action == 'handled' ? '已处理并删除' : '已忽略'),
             backgroundColor: action == 'handled' ? Colors.green : Colors.grey,
           ),
         );
-        _loadData();
       }
     } on DioException catch (e) {
       String msg = '操作失败';
@@ -294,7 +295,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
         const SnackBar(
             content: Text('邀请已发送，用户同意后进入管理员代办'), backgroundColor: Colors.green),
       );
-      await _loadData();
+      // 本地移除该候选人，不全局刷新
+      setState(() => _candidates.removeWhere((c) => c['id'] == candidate['id']));
     } on DioException catch (e) {
       if (!mounted) return;
       messenger.showSnackBar(SnackBar(
@@ -669,8 +671,9 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
                         const SnackBar(
                             content: Text('已忽略'), backgroundColor: Colors.grey),
                       );
+                      // 本地移除该举报
+                      setState(() => _reports.removeWhere((r) => r['id'] == report['id']));
                     }
-                    _loadData();
                   } catch (_) {}
                 },
                 icon: const Icon(Icons.close, size: 16, color: Colors.grey),
@@ -919,7 +922,36 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
   Widget _buildTeachersTab(bool isDark) {
     final items = <Widget>[];
 
-    for (final inv in _pendingInvitations) {
+    // 去重：同一目标只保留最早一条（按列表顺序，先到先保留）
+    final seenInviteUsers = <int>{};
+    final dedupedInvitations = _pendingInvitations.where((i) {
+      final uid = (i['user'] as Map?)?['id'] ?? i['user_id'];
+      if (seenInviteUsers.contains(uid)) return false;
+      return seenInviteUsers.add(uid);
+    }).toList();
+
+    final seenRemovalAdmins = <int>{};
+    final dedupedRemovals = _pendingRemovals.where((r) {
+      final aid = (r['admin'] as Map?)?['id'] ?? r['admin_id'];
+      if (seenRemovalAdmins.contains(aid)) return false;
+      return seenRemovalAdmins.add(aid);
+    }).toList();
+
+    final seenTeacherNames = <String>{};
+    final dedupedTeachers = _pendingTeachers.where((t) {
+      final name = (t['name'] ?? '').toString();
+      if (seenTeacherNames.contains(name)) return false;
+      return seenTeacherNames.add(name);
+    }).toList();
+
+    final seenMajorNames = <String>{};
+    final dedupedMajors = _pendingMajors.where((m) {
+      final name = (m['name'] ?? '').toString();
+      if (seenMajorNames.contains(name)) return false;
+      return seenMajorNames.add(name);
+    }).toList();
+
+    for (final inv in dedupedInvitations) {
       final user = (inv['user'] as Map?) ?? {};
       final inviter = (inv['inviter'] as Map?) ?? {};
       final votes = inv['votes'] ?? 0;
@@ -956,7 +988,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
       ));
     }
 
-    for (final removal in _pendingRemovals) {
+    for (final removal in dedupedRemovals) {
       final admin = (removal['admin'] as Map?) ?? {};
       final initiator = (removal['initiator'] as Map?) ?? {};
       final votes = removal['votes'] ?? 0;
@@ -996,7 +1028,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
       ));
     }
 
-    for (final t in _pendingTeachers) {
+    for (final t in dedupedTeachers) {
       items.add(Card(
         color: isDark ? Colors.grey[850] : Colors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -1018,7 +1050,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
         ),
       ));
     }
-    for (final m in _pendingMajors) {
+    for (final m in dedupedMajors) {
       items.add(Card(
         color: isDark ? Colors.grey[850] : Colors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -1071,7 +1103,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
           : '已同意';
       messenger.showSnackBar(
           SnackBar(content: Text(message), backgroundColor: Colors.green));
-      await _loadData();
+      // 本地移除该代办
+      setState(() => _pendingInvitations.removeWhere((i) => i['id'] == inv['id']));
     } on DioException catch (e) {
       if (!mounted) return;
       messenger.showSnackBar(SnackBar(
@@ -1104,7 +1137,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
           : '已投票';
       messenger.showSnackBar(
           SnackBar(content: Text(message), backgroundColor: Colors.green));
-      await _loadData();
+      // 本地移除该罢免投票
+      setState(() => _pendingRemovals.removeWhere((r) => r['id'] == removal['id']));
     } on DioException catch (e) {
       if (!mounted) return;
       messenger.showSnackBar(SnackBar(
@@ -1121,10 +1155,11 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
       else
         await dio.delete('/majors/$id/reject');
       if (mounted) {
+        // 本地移除，不全局刷新
+        setState(() => _pendingMajors.removeWhere((m) => m['id'] == id));
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: Text(approve ? '已审核通过' : '已拒绝'),
             backgroundColor: Colors.green));
-        _loadData();
       }
     } catch (_) {
       if (mounted)
@@ -1142,10 +1177,11 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
         await dio.delete('/teachers/$id/reject');
       }
       if (mounted) {
+        // 本地移除，不全局刷新
+        setState(() => _pendingTeachers.removeWhere((t) => t['id'] == id));
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: Text(approve ? '已审核通过' : '已拒绝'),
             backgroundColor: Colors.green));
-        _loadData();
       }
     } catch (e) {
       if (mounted)

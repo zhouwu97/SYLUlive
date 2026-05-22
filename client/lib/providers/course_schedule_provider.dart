@@ -3,6 +3,7 @@ import 'package:dio/dio.dart';
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config/api_constants.dart';
+import '../services/home_widget_service.dart';
 
 /// 单个课程块，用于课表网格展示
 class CourseBlock {
@@ -113,8 +114,21 @@ class CourseScheduleProvider extends ChangeNotifier {
 
   void _initDefaults() {
     final now = DateTime.now();
-    _selectedYear = now.year.toString();
-    _selectedSemester = (now.month >= 2 && now.month <= 7) ? 3 : 12;
+    int currentYear = now.year;
+    
+    // 如果当前是 2月到7月（春季学期），则属于上一年的秋季入学的学年，正方系统通常用 12 表示春季(第二学期)
+    if (now.month >= 2 && now.month <= 7) {
+      _selectedYear = (currentYear - 1).toString();
+      _selectedSemester = 12; // 春季（第二学期）
+    } else if (now.month == 1) {
+      // 1月份还是秋季学期末，属于上一年的学年
+      _selectedYear = (currentYear - 1).toString();
+      _selectedSemester = 3; // 秋季（第一学期）
+    } else {
+      // 8月到12月，属于当前年份的秋季学期
+      _selectedYear = currentYear.toString();
+      _selectedSemester = 3; // 秋季（第一学期）
+    }
   }
 
   /// 设置当前用户，但不自动拉取数据（由调用方决定何时拉取）
@@ -156,6 +170,7 @@ class CourseScheduleProvider extends ChangeNotifier {
     _isLoading = false;
     _errorMessage = null;
     notifyListeners();
+    _syncWidget(); // 更新桌面小部件
     return true;
   }
 
@@ -173,6 +188,7 @@ class CourseScheduleProvider extends ChangeNotifier {
     }
 
     notifyListeners();
+    _syncWidget(); // 更新桌面小部件
   }
 
   CourseBlock _courseFromFetchedMap(Map<String, dynamic> map) {
@@ -214,6 +230,7 @@ class CourseScheduleProvider extends ChangeNotifier {
         }
         _isLoading = false;
         notifyListeners();
+        _syncWidget(); // 更新桌面小部件
         return; // 缓存命中，不请求网络
       }
     }
@@ -305,6 +322,14 @@ class CourseScheduleProvider extends ChangeNotifier {
 
     _isLoading = false;
     notifyListeners();
+    _syncWidget(); // 更新桌面小部件
+  }
+
+  /// 同步课程数据到桌面小部件（非阻塞）
+  void _syncWidget() {
+    if (_userId == null) return;
+    // 使用 microtask 避免阻塞 UI
+    Future.microtask(() => HomeWidgetService.syncTodayCourses(this));
   }
 
   /// 保存课程到 SharedPreferences

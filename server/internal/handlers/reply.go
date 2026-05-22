@@ -42,6 +42,27 @@ func (h *ReplyHandler) GetList(c *gin.Context) {
 		Preload("Author").Preload("Images").Preload("Images.File").
 		Order("created_at ASC").Find(&replies)
 
+	if userID, exists := c.Get("user_id"); exists {
+		uid := userID.(uint)
+		var replyIDs []uint
+		for _, r := range replies {
+			replyIDs = append(replyIDs, r.ID)
+		}
+		if len(replyIDs) > 0 {
+			var likedReplyIDs []uint
+			h.db.Model(&models.Like{}).Where("user_id = ? AND target_type = ? AND target_id IN ?", uid, "reply", replyIDs).Pluck("target_id", &likedReplyIDs)
+			likedMap := make(map[uint]bool)
+			for _, id := range likedReplyIDs {
+				likedMap[id] = true
+			}
+			for i := range replies {
+				if likedMap[replies[i].ID] {
+					replies[i].IsLiked = true
+				}
+			}
+		}
+	}
+
 	c.JSON(http.StatusOK, replies)
 }
 
@@ -97,6 +118,7 @@ func (h *ReplyHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建回复失败"})
 		return
 	}
+	h.db.Model(&models.Post{}).Where("id = ?", postID).UpdateColumn("reply_count", gorm.Expr("reply_count + 1"))
 
 	// 处理图片
 	fileIDs := c.PostForm("file_ids")
@@ -164,6 +186,7 @@ func (h *ReplyHandler) Delete(c *gin.Context) {
 	}
 
 	h.db.Model(&reply).Update("status", models.ReplyStatusDeleted)
+	h.db.Model(&models.Post{}).Where("id = ?", reply.PostID).UpdateColumn("reply_count", gorm.Expr("GREATEST(reply_count - 1, 0)"))
 
 	// 管理员删除他人回复时，记录日志并增加经验
 	if reply.AuthorID != userID.(uint) && (role == "admin" || role == "super_admin") {

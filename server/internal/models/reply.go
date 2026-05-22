@@ -20,6 +20,8 @@ type Reply struct {
 	AuthorID      uint         `gorm:"not null" json:"author_id"`
 	Content       string       `gorm:"type:text" json:"content"`
 	Status        ReplyStatus  `gorm:"default:normal" json:"status"`
+	LikeCount     int          `gorm:"default:0" json:"like_count"`
+	IsLiked       bool         `gorm:"-" json:"is_liked"`
 	Images        []ReplyImage `gorm:"foreignKey:ReplyID" json:"images"`
 	Author        User         `gorm:"foreignKey:AuthorID" json:"author"`
 	CreatedAt     time.Time    `json:"created_at"`

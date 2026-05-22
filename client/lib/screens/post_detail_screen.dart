@@ -97,6 +97,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           : fetchedPost;
       setState(() {
         _post = mergedPost;
+        _liked = mergedPost.isLiked;
+        _likeCount = mergedPost.likeCount;
         _replies = (repliesResponse.data as List)
             .map((e) => Reply.fromJson(e))
             .toList();
@@ -779,7 +781,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   Widget _buildActionBar(bool isDark) {
     return Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
       _buildActionButton(
-        icon: _liked ? Icons.favorite : Icons.favorite_border,
+        icon: _liked ? Icons.thumb_up : Icons.thumb_up_outlined,
         color: _liked
             ? const Color(0xFFFF6B6B)
             : (isDark ? Colors.white38 : Colors.grey.shade500),

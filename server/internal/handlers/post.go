@@ -107,6 +107,27 @@ func (h *PostHandler) GetList(c *gin.Context) {
 	query.Count(&total)
 	query.Offset((page - 1) * limit).Limit(limit).Find(&posts)
 
+	if userID, exists := c.Get("user_id"); exists {
+		uid := userID.(uint)
+		var postIDs []uint
+		for _, p := range posts {
+			postIDs = append(postIDs, p.ID)
+		}
+		if len(postIDs) > 0 {
+			var likedPostIDs []uint
+			h.db.Model(&models.Like{}).Where("user_id = ? AND target_type = ? AND target_id IN ?", uid, "post", postIDs).Pluck("target_id", &likedPostIDs)
+			likedMap := make(map[uint]bool)
+			for _, id := range likedPostIDs {
+				likedMap[id] = true
+			}
+			for i := range posts {
+				if likedMap[posts[i].ID] {
+					posts[i].IsLiked = true
+				}
+			}
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"posts": posts,
 		"total": total,
@@ -221,6 +242,12 @@ func (h *PostHandler) GetOne(c *gin.Context) {
 	// 增加观看次数
 	h.db.Model(&post).UpdateColumn("view_count", gorm.Expr("view_count + 1"))
 	post.ViewCount++
+
+	if userID, exists := c.Get("user_id"); exists {
+		var count int64
+		h.db.Model(&models.Like{}).Where("user_id = ? AND target_type = ? AND target_id = ?", userID.(uint), "post", post.ID).Count(&count)
+		post.IsLiked = count > 0
+	}
 
 	c.JSON(http.StatusOK, post)
 }

@@ -70,6 +70,8 @@ class Post {
   final String contact;
   final String status;
   final int viewCount;
+  final int replyCount;
+  final int likeCount;
   final List<PostImage> images;
   final User? author;
   final DateTime createdAt;
@@ -85,6 +87,8 @@ class Post {
     this.contact = '',
     this.status = 'normal',
     this.viewCount = 0,
+    this.replyCount = 0,
+    this.likeCount = 0,
     this.images = const [],
     this.author,
     required this.createdAt,
@@ -102,6 +106,8 @@ class Post {
       contact: json['contact'] ?? '',
       status: json['status'] ?? 'normal',
       viewCount: json['view_count'] ?? 0,
+      replyCount: json['reply_count'] ?? 0,
+      likeCount: json['like_count'] ?? 0,
       images: (json['images'] as List<dynamic>?)
           ?.map((e) => PostImage.fromJson(e))
           .toList() ?? [],

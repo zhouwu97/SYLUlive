@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  小部件加载态占位布局 (initialLayout)
+  
+  当用户添加小部件到桌面或手机重启时，Android 系统会先膨胀此布局。
+  此时 Flutter 尚未运行，SharedPreferences 中无数据，膨胀实际课表布局可能失败。
+  
+  此布局只包含不依赖任何运行时数据的纯静态内容，确保在任何情况下都能成功渲染。
+  onUpdate 回调触发时，Provider 会替换为 course_schedule_widget 真实布局。
+  
+  参考：《小米小部件技术规范》- 小部件加载态建议
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_background"
+    android:orientation="vertical"
+    android:gravity="center"
+    android:padding="16dp">
+
+    <!-- 标题：纯静态文本，不依赖任何数据源 -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="沈理校园"
+        android:textSize="16sp"
+        android:textColor="#1A1A2E"
+        android:textStyle="bold" />
+
+    <!-- 加载提示 -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="课表加载中…"
+        android:textSize="12sp"
+        android:textColor="#9CA3AF" />
+
+</LinearLayout>

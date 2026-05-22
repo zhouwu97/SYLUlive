@@ -48,6 +48,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   int _marketImageIndex = 0;
   int? _parentReplyId;
   String? _replyToName;
+  bool _isSending = false;
 
   @override
   void initState() {
@@ -101,6 +102,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             .toList();
         _isLoading = false;
       });
+      // 同步到外部列表以更新浏览量等数据
+      if (mounted) {
+        context.read<PostProvider>().updatePostInCache(mergedPost);
+      }
     } on DioException catch (e) {
       final msg = AppFeedback.dioErrorMessage(e, fallback: '加载帖子失败');
       setState(() {
@@ -136,28 +141,73 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   Future<void> _sendReply() async {
+    if (_isSending) return;
     final content = _replyController.text.trim();
     if (content.isEmpty) return;
+
+    setState(() => _isSending = true);
+
+    // 先保存 parentReplyId，后面 setState 会清空它
+    final parentId = _parentReplyId;
+    final replyTo = _replyToName;
+
+    // 乐观更新：立即在本地插入评论
+    final user = context.read<AuthProvider>().user;
+    if (user != null && _post != null) {
+      final tempId = -DateTime.now().millisecondsSinceEpoch;
+      final tempReply = Reply(
+        id: tempId,
+        postId: widget.postId,
+        authorId: user.id,
+        content: content,
+        createdAt: DateTime.now(),
+        author: User(
+          id: user.id,
+          studentId: user.studentId,
+          nickname: user.nickname,
+          avatar: user.avatar,
+          createdAt: DateTime.now(),
+        ),
+        parentReplyId: parentId,
+      );
+      _replies.insert(0, tempReply);
+    }
+    _replyController.clear();
+    _replyFocus.unfocus();
+    setState(() {
+      _isReplyComposerOpen = false;
+      _parentReplyId = null;
+      _replyToName = null;
+    });
+
+    // 后台静默发送
     try {
       final formData = FormData.fromMap({
         'content': content,
-        if (_parentReplyId != null) 'parent_reply_id': _parentReplyId.toString(),
+        if (parentId != null) 'parent_reply_id': parentId.toString(),
       });
-      await _dio
-          .post('/posts/${widget.postId}/replies', data: formData);
-      _replyController.clear();
-      _replyFocus.unfocus();
-      setState(() {
-        _isReplyComposerOpen = false;
-        _parentReplyId = null;
-        _replyToName = null;
-      });
-      _loadPost();
-    } on DioException catch (e) {
-      final msg = AppFeedback.dioErrorMessage(e, fallback: '发送失败');
-      if (mounted) {
-        AppFeedback.showSnackBar(context, msg, isError: true);
+      await _dio.post('/posts/${widget.postId}/replies', data: formData);
+      // 静默刷新获取真实 ID
+      final repliesResponse =
+          await _dio.get('/posts/${widget.postId}/replies');
+      if (mounted && repliesResponse.data is List) {
+        setState(() {
+          _replies = (repliesResponse.data as List)
+              .map((r) => Reply.fromJson(r))
+              .toList();
+        });
       }
+    } on DioException catch (e) {
+      if (mounted) {
+        setState(() {
+          _replies.removeWhere((r) => r.id < 0);
+        });
+        AppFeedback.showSnackBar(
+            context, AppFeedback.dioErrorMessage(e, fallback: '发送失败'),
+            isError: true);
+      }
+    } finally {
+      if (mounted) setState(() => _isSending = false);
     }
   }
 
@@ -1089,11 +1139,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                         color: isDark ? Colors.white30 : Colors.grey[400])),
               ]),
               const SizedBox(height: 4),
-              Text(r.content,
-                  style: TextStyle(
-                      fontSize: 14,
-                      height: 1.5,
-                      color: isDark ? Colors.white70 : Colors.grey[800])),
+              SelectionContainer.disabled(
+                child: Text(r.content,
+                    style: TextStyle(
+                        fontSize: 14,
+                        height: 1.5,
+                        color: isDark ? Colors.white70 : Colors.grey[800])),
+              ),
               const SizedBox(height: 6),
               Row(
                 children: [
@@ -1176,10 +1228,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final content = r.content;
     final atRegex = RegExp(r'^@(\S+)\s');
     final match = atRegex.firstMatch(content);
+    
+    Widget textWidget;
     if (match != null) {
       final atName = match.group(1)!;
       final rest = content.substring(match.end);
-      return Text.rich(
+      textWidget = Text.rich(
         TextSpan(children: [
           TextSpan(
             text: '@$atName ',
@@ -1200,12 +1254,15 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           ),
         ]),
       );
+    } else {
+      textWidget = Text(content,
+          style: TextStyle(
+              fontSize: 13,
+              height: 1.4,
+              color: isDark ? Colors.white60 : Colors.grey[700]));
     }
-    return Text(content,
-        style: TextStyle(
-            fontSize: 13,
-            height: 1.4,
-            color: isDark ? Colors.white60 : Colors.grey[700]));
+    // 禁用文字选择，让行级长按直接弹出操作菜单
+    return SelectionContainer.disabled(child: textWidget);
   }
 
   // ---- 回复输入 ----
@@ -1273,17 +1330,26 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             ),
             const SizedBox(width: 6),
             GestureDetector(
-              onTap: _sendReply,
+              onTap: _isSending ? null : _sendReply,
               child: Container(
                 width: 42,
                 height: 42,
                 decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                      colors: [Color(0xFF667EEA), Color(0xFF764BA2)]),
+                  gradient: _isSending
+                      ? const LinearGradient(
+                          colors: [Color(0xFF9CA3AF), Color(0xFF9CA3AF)])
+                      : const LinearGradient(
+                          colors: [Color(0xFF667EEA), Color(0xFF764BA2)]),
                   borderRadius: BorderRadius.circular(14),
                 ),
-                child: const Icon(Icons.send_rounded,
-                    color: Colors.white, size: 20),
+                child: _isSending
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2.5, color: Colors.white))
+                    : const Icon(Icons.send_rounded,
+                        color: Colors.white, size: 20),
               ),
             ),
           ]),

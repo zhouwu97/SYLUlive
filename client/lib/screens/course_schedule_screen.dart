@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -10,9 +11,10 @@ import '../widgets/glass_container.dart';
 import '../utils/app_navigator.dart' show appNavigatorKey;
 import 'edu_screen.dart';
 import 'login_screen.dart';
+import '../services/home_widget_service.dart';
 
 /// 每节课槽的默认高度
-const double defaultSlotHeight = 85.0;
+const double defaultSlotHeight = 75.0;
 
 /// 左侧时间轴宽度（必须与表头左侧留空一致）
 const double timeColumnWidth = 35.0;
@@ -47,7 +49,7 @@ Color getCourseColor(String name,
   final idx =
       getCourseColorIndex(name, courseCode: courseCode, location: location);
   final base = courseColors[idx];
-  return isActive ? base.withOpacity(0.55) : Colors.grey.withOpacity(0.4);
+  return isActive ? base.withOpacity(0.45) : Colors.grey.withOpacity(0.4);
 }
 
 /// 星期标签
@@ -103,6 +105,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   String? _preparedUserId;
   double _cardOpacity = 0.4;
   double _slotHeight = defaultSlotHeight;
+  String _widgetTextColor = '#333333';
   bool _courseReminderEnabled = false;
   bool _courseReminderBusy = false;
   int _scheduledReminderCount = 0;
@@ -149,35 +152,32 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
   void _autoLoad(EduProvider edu, CourseScheduleProvider sc) async {
     if (_didLoad) return;
-    // 未登录不做任何拉取
     final auth = context.read<AuthProvider>();
     if (!auth.isLoggedIn) return;
     if (!edu.isStatusLoaded) return;
     if (!edu.isBound) {
       _didLoad = true;
-      _initializing = false;
-      WidgetsBinding.instance.addPostFrameCallback((_) => setState(() {}));
+      setState(() => _initializing = false);
       return;
     }
     if (sc.isLoading) return;
     _didLoad = true;
-    _initializing = false;
 
     // 优先读手机本地缓存
-    _hasCache = sc.courses.isNotEmpty || await sc.hasCachedCourses();
+    final hasCache = sc.courses.isNotEmpty || await sc.hasCachedCourses();
 
-    if (_hasCache) {
-      // 有缓存 → 立即展示，同时静默后台拉取最新数据
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        sc.loadCourses().then((_) => _syncCourseReminders(sc));
+    if (hasCache) {
+      // 有缓存 → 立即展示，后台静默更新
+      setState(() {
+        _hasCache = true;
+        _initializing = false;
       });
-      // 静默同步最新课表到缓存
+      sc.loadCourses().then((_) => _syncCourseReminders(sc));
       _silentSync(sc);
       return;
     }
 
-    // 无缓存 → 显示加载中，自动拉取课表
-    setState(() => _initializing = true);
+    // 无缓存 → 从服务器拉取
     await sc.loadCourses(forceRefresh: true);
     await _syncCourseReminders(sc);
     if (mounted) {
@@ -218,20 +218,11 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     if (user == null) return;
     final uid = user.id.toString();
     if (_preparedUserId == uid) return;
-
     _preparedUserId = uid;
     final edu = context.read<EduProvider>();
     final sc = context.read<CourseScheduleProvider>();
     edu.setUserId(uid);
     sc.setUserId(uid);
-    final hasCache = await sc.loadCachedCoursesIfAvailable();
-    if (!mounted) return;
-    setState(() {
-      _hasCache = hasCache || sc.courses.isNotEmpty;
-      if (_hasCache) {
-        _initializing = false;
-      }
-    });
   }
 
   // PageView 滑动切换周
@@ -249,14 +240,6 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
     return Scaffold(
       backgroundColor: Colors.transparent,
-      floatingActionButton: _hasCache
-          ? FloatingActionButton.extended(
-              onPressed: () => _showAddCourseDialog(context),
-              icon: const Icon(Icons.add),
-              label: const Text('添加课程'),
-              backgroundColor: Theme.of(context).primaryColor,
-            )
-          : null,
       body: SafeArea(
         child: Consumer<AuthProvider>(
           builder: (context, auth, _) {
@@ -267,18 +250,14 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
               builder: (context, edu, sc, _) {
                 _autoLoad(edu, sc);
 
-                if (!edu.isStatusLoaded && sc.courses.isEmpty) {
-                  return const Center(child: CircularProgressIndicator());
+                // 正在初始化 + 没有数据 → 显示课表框架 + 加载动画
+                if ((_initializing || !edu.isStatusLoaded || sc.isLoading) &&
+                    sc.courses.isEmpty) {
+                  return _buildLoadingOverlay(sc);
                 }
-
-                if (_initializing)
-                  return const Center(child: CircularProgressIndicator());
 
                 if (!edu.isBound)
                   return _buildBindView(context, edu, sc, isDark);
-
-                if (sc.isLoading && sc.courses.isEmpty)
-                  return const Center(child: CircularProgressIndicator());
 
                 // 无缓存时显示引导
                 if (!_hasCache && sc.courses.isEmpty)
@@ -303,6 +282,25 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
         ),
       ),
     );
+  }
+
+  // ====== 加载覆盖层 ======
+  Widget _buildLoadingOverlay(CourseScheduleProvider sc) {
+    return Column(children: [
+      _buildDateHeader(sc),
+      const Expanded(
+        child: Center(
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            SizedBox(
+              width: 36, height: 36,
+              child: CircularProgressIndicator(strokeWidth: 3),
+            ),
+            SizedBox(height: 16),
+            Text('正在加载课表…', style: TextStyle(fontSize: 13, color: Colors.white54)),
+          ]),
+        ),
+      ),
+    ]);
   }
 
   // ====== 顶部表头 ======
@@ -635,6 +633,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       await sc.loadCachedCoursesIfAvailable();
       await sc.loadCourses(forceRefresh: true);
       await _syncCourseReminders(sc);
+      setState(() => _hasCache = sc.courses.isNotEmpty);
     }
   }
 
@@ -713,11 +712,97 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       _initializing = sc.courses.isEmpty;
     });
 
+    // 弹出精美加载动画，防止用户乱点
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      barrierColor: Colors.black54,
+      builder: (ctx) => PopScope(
+        canPop: false,
+        child: Center(
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 48),
+            padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 32),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(24),
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Colors.white.withValues(alpha: 0.15),
+                  Colors.white.withValues(alpha: 0.05),
+                ],
+              ),
+              border: Border.all(
+                color: Colors.white.withValues(alpha: 0.2),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.3),
+                  blurRadius: 30,
+                  spreadRadius: 2,
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // 渐变圆形进度指示器
+                Container(
+                  width: 56,
+                  height: 56,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: LinearGradient(
+                      colors: [
+                        const Color(0xFF6366F1).withValues(alpha: 0.2),
+                        const Color(0xFF8B5CF6).withValues(alpha: 0.1),
+                      ],
+                    ),
+                  ),
+                  child: const Padding(
+                    padding: EdgeInsets.all(14),
+                    child: CircularProgressIndicator(
+                      color: Color(0xFF818CF8),
+                      strokeWidth: 3,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                const Text(
+                  '正在从教务系统提取课表',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    decoration: TextDecoration.none,
+                    letterSpacing: 0.3,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '请耐心等待，数据量较大时可能需要几秒…',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.6),
+                    fontSize: 13,
+                    fontWeight: FontWeight.normal,
+                    decoration: TextDecoration.none,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
     try {
       final result = await edu.getCourses(sc.selectedYear, sc.selectedSemester);
       if (!mounted) return;
 
       if (result == null || !result.success) {
+        Navigator.pop(context); // 关闭加载弹窗
         messenger.showSnackBar(
           SnackBar(content: Text(result?.errorMessage ?? '获取课表失败')),
         );
@@ -726,6 +811,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
       final courses = result.data ?? const <Map<String, dynamic>>[];
       if (courses.isEmpty) {
+        Navigator.pop(context); // 关闭加载弹窗
         messenger.showSnackBar(
           const SnackBar(content: Text('教务系统暂无可导入课程')),
         );
@@ -748,13 +834,22 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
         _hasCache = sc.courses.isNotEmpty;
         _didLoad = true;
       });
+      
+      Navigator.pop(context); // 确保课表加载进状态后再关闭弹窗
+      
       messenger.showSnackBar(
         SnackBar(
           content: Text(synced
-              ? '已从教务获取 ${sc.courses.length} 门课'
+              ? '✅ 导入成功！已更新 ${sc.courses.length} 门课程'
               : '已获取课表，本地同步失败，已先缓存显示'),
+          backgroundColor: Colors.green.shade600,
         ),
       );
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context);
+        messenger.showSnackBar(const SnackBar(content: Text('导入过程出现异常，请重试')));
+      }
     } finally {
       if (mounted) {
         setState(() {
@@ -874,6 +969,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     setState(() {
       _cardOpacity = prefs.getDouble(_opacityKey) ?? 0.55;
       _slotHeight = prefs.getDouble(_slotHeightKey) ?? defaultSlotHeight;
+      _widgetTextColor = prefs.getString('widget_text_color') ?? '#333333';
       _courseReminderEnabled = remindersEnabled;
       _scheduledReminderCount = reminderCount;
       _backgroundKeepAliveStatus = backgroundStatus;
@@ -888,6 +984,12 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   Future<void> _saveSlotHeight(double v) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setDouble(_slotHeightKey, v);
+  }
+
+  Future<void> _saveWidgetTextColor(String hexColor, CourseScheduleProvider sc) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('widget_text_color', hexColor);
+    HomeWidgetService.syncTodayCourses(sc);
   }
 
   String _backgroundKeepAliveSubtitle() {
@@ -1155,6 +1257,38 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                       ],
                     ),
                   ),
+                  const SizedBox(height: 10),
+                  Container(
+                    decoration: tileDecoration(),
+                    child: ListTile(
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 6),
+                      leading: Icon(Icons.add_circle_outline, color: primary),
+                      title: const Text('添加自定义课程'),
+                      subtitle: const Text('手动添加不在教务系统中的课程或活动'),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () {
+                        Navigator.pop(context); // 关闭底部面板
+                        _showAddCourseDialog(context);
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Container(
+                    decoration: tileDecoration(),
+                    child: ListTile(
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 6),
+                      leading: Icon(Icons.edit_outlined, color: primary),
+                      title: const Text('更名小组件'),
+                      subtitle: const Text('自定义桌面小组件上显示的名称'),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () {
+                        Navigator.pop(context);
+                        _showRenameWidgetDialog(context);
+                      },
+                    ),
+                  ),
                   const SizedBox(height: 14),
                   Container(
                     decoration: tileDecoration(),
@@ -1328,6 +1462,32 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                       ],
                     ),
                   ),
+                  const SizedBox(height: 10),
+                  Container(
+                    decoration: tileDecoration(),
+                    child: ListTile(
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 6),
+                      title: const Text('桌面小部件字体颜色'),
+                      subtitle: const Text('更改小部件上的文字颜色(深色/浅色)'),
+                      trailing: DropdownButton<String>(
+                        value: _widgetTextColor,
+                        underline: const SizedBox(),
+                        icon: const Icon(Icons.arrow_drop_down),
+                        items: const [
+                          DropdownMenuItem(value: '#333333', child: Text('深色')),
+                          DropdownMenuItem(value: '#888888', child: Text('浅灰')),
+                        ],
+                        onChanged: (v) {
+                          if (v != null) {
+                            setSheetState(() => _widgetTextColor = v);
+                            setState(() => _widgetTextColor = v);
+                            _saveWidgetTextColor(v, sc);
+                          }
+                        },
+                      ),
+                    ),
+                  ),
                   const SizedBox(height: 6),
                   Text('这些设置只影响本机显示和提醒，不会修改服务器接口地址。',
                       style: TextStyle(
@@ -1364,6 +1524,44 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     }
   }
 
+  /// 更名小组件弹窗
+  void _showRenameWidgetDialog(BuildContext context) async {
+    final prefs = await SharedPreferences.getInstance();
+    String title = prefs.getString('widget_title') ?? '我的课表';
+    final controller = TextEditingController(text: title);
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('更名小组件'),
+        content: TextField(
+          controller: controller,
+          maxLength: 8,
+          decoration: const InputDecoration(hintText: '输入新名称（最多8字）'),
+          onChanged: (v) => title = v.trim(),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final titleToSave = title.isNotEmpty ? title : '我的课表';
+              Navigator.pop(ctx, true); // 先关弹窗
+              // 弹窗关闭后再异步存数据 + 刷新
+              prefs.setString('widget_title', titleToSave);
+              const MethodChannel('shenliyuan/widget').invokeMethod('updateWidget');
+            },
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+
+    controller.dispose();
+  }
+
   // ====== 自定义课程 ======
 
   void _showAddCourseDialog(BuildContext context) {
@@ -1376,7 +1574,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     final sc = context.read<CourseScheduleProvider>();
     final wn = sc.getAcademicWeek(_weekStart) ?? 1;
     int startWeek = wn;
-    int endWeek = wn + 15;
+    int endWeek = (wn + 15).clamp(wn, 20);
 
     showDialog(
       context: context,
@@ -1455,7 +1653,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                   children: [
                     Expanded(
                       child: DropdownButtonFormField<int>(
-                        value: startWeek,
+                        value: startWeek.clamp(1, 20),
                         decoration: const InputDecoration(labelText: '开始周'),
                         items:
                             List.generate(20, (i) => i + 1).map((w) {
@@ -1475,7 +1673,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: DropdownButtonFormField<int>(
-                        value: endWeek,
+                        value: endWeek.clamp(startWeek, 20),
                         decoration: const InputDecoration(labelText: '结束周'),
                         items: List.generate(20, (i) => i + 1)
                             .where((w) => w >= startWeek)
@@ -1583,9 +1781,12 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     }
 
     // 第二轮：非当前周课程，只在槽位未被活跃课程占用时才显示
+    // 已完全结课的课程（所有周数 < 当前周）不显示
     for (final c in sc.courses) {
       final key = '${c.weekday}_${c.startSection}';
       if (wn != null && c.weeks.isNotEmpty && !c.weeks.contains(wn)) {
+        // 跳过已完全结课的课程
+        if (c.weeks.every((w) => w < wn)) continue;
         if (!activeSlots.contains(key) && !inactiveSeen.contains(key)) {
           allInactive.add(c);
           inactiveSeen.add(key);

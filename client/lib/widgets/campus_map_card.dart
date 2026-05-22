@@ -182,7 +182,7 @@ class _MapControlFullscreenOverlayState extends State<MapControlFullscreenOverla
     final themeProvider = context.watch<ThemeProvider>();
 
     return PopScope(
-      canPop: !themeProvider.predictiveBack,
+      canPop: themeProvider.predictiveBack,
       onPopInvokedWithResult: (didPop, result) {
         if (didPop) return;
         Navigator.of(context).pop();

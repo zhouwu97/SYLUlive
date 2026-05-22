@@ -100,12 +100,13 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
         },
       );
       if (mounted) {
+        // 本地移除该代办
+        setState(() => _pendingInvitations.removeWhere((i) => i['id'] == inv['id']));
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
               content: Text(approve ? '已提交同意审批' : '已驳回'),
               backgroundColor: approve ? Colors.green : Colors.red),
         );
-        _loadInvitations();
       }
     } on DioException catch (e) {
       final data = e.response?.data;

@@ -436,10 +436,14 @@ class PostProvider extends ChangeNotifier {
   }
 
   void _replacePostInBoards(Post updated) {
-    for (final board in _boards.values) {
+    for (final entry in _boards.entries) {
+      final boardId = entry.key;
+      final board = entry.value;
       final index = board.posts.indexWhere((p) => p.id == updated.id);
       if (index >= 0) {
         board.posts[index] = updated;
+        // 同步持久化到本地缓存，防止杀后台后数据(如浏览量)倒退
+        PostCacheService.savePosts(boardId, board.posts);
       }
     }
   }

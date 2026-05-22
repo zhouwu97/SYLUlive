@@ -78,6 +78,14 @@ class EduProvider extends ChangeNotifier {
   Future<void> loadStatus() async {
     if (_userId == null) return;
 
+    // 极速上屏：先从本地缓存读取状态
+    final cached = await _loadBoundStatus();
+    if (!_statusLoaded) {
+      _isBound = cached;
+      _statusLoaded = true;
+      notifyListeners();
+    }
+
     try {
       final response = await _authDio.get('/edu/status');
 
@@ -95,8 +103,6 @@ class EduProvider extends ChangeNotifier {
         notifyListeners();
       }
     } on DioException catch (e) {
-      // 网络错误时使用本地缓存
-      final cached = await _loadBoundStatus();
       _isBound = cached;
       _errorMessage = _parseDioError(e);
       _statusLoaded = true;
@@ -229,6 +235,17 @@ class EduProvider extends ChangeNotifier {
     }
   }
 
+  // 尝试后台静默恢复教务登录
+  Future<bool> _trySilentRelogin() async {
+    final pwd = await _loadEduPassword(_studentId);
+    if (pwd != null && pwd.isNotEmpty) {
+      debugPrint('后台尝试静默恢复教务登录...');
+      AppFeedback.showGlobalToast('检测到教务登录已过期，自动为您重新登录中...');
+      return await bind(_studentId, pwd, isSilent: true);
+    }
+    return false;
+  }
+
   // 获取课表
   Future<OperationResult<List<Map<String, dynamic>>>?> getCourses(
       String year, int semester) async {
@@ -252,25 +269,10 @@ class EduProvider extends ChangeNotifier {
           return OperationResult.ok(
               List<Map<String, dynamic>>.from(data['courses']));
         }
-        // 错误信息可能在 error / message / detail 字段
         final errorMsg = (data['error'] ?? data['message'] ?? data['detail'] ?? '').toString();
         if (errorMsg.isNotEmpty) {
-          if (errorMsg.contains('未登录') || errorMsg.contains('过期') || errorMsg.contains('重新登录') || errorMsg.contains('会话') || errorMsg.contains('cookie') || errorMsg.contains('暂未开放') || errorMsg.contains('失效') || errorMsg.contains('Cookie')) {
-            final pwd = await _loadEduPassword(_studentId);
-            if (pwd != null && pwd.isNotEmpty) {
-              debugPrint('后台尝试静默恢复教务登录(课表)...');
-              final rebindSuccess = await bind(_studentId, pwd, isSilent: true);
-              if (rebindSuccess) {
-                final retryResp = await _authDio.post('/edu/courses', data: {'year': year, 'semester': semester});
-                if (retryResp.statusCode == 200 && retryResp.data['courses'] != null && (retryResp.data['courses'] as List).isNotEmpty) {
-                  return OperationResult.ok(List<Map<String, dynamic>>.from(retryResp.data['courses']));
-                }
-              }
-            }
-          }
           return OperationResult.fail(errorMsg);
         }
-        // success=false 但 courses 为空的静默情况（如真正的暂未开放）
         if (data['success'] == false) {
           return OperationResult.fail(data['message'] ?? '获取课表失败');
         }
@@ -278,6 +280,19 @@ class EduProvider extends ChangeNotifier {
       return OperationResult.fail('获取课表失败');
     } on DioException catch (e) {
       final errorMsg = _parseDioError(e);
+      if (errorMsg.contains('未登录') || errorMsg.contains('过期') || errorMsg.contains('重新登录') || errorMsg.contains('会话') || errorMsg.contains('cookie') || errorMsg.contains('暂未开放') || errorMsg.contains('失效') || errorMsg.contains('Cookie')) {
+        final rebindSuccess = await _trySilentRelogin();
+        if (rebindSuccess) {
+          try {
+            final retryResp = await _authDio.post('/edu/courses', data: {'year': year, 'semester': semester});
+            if (retryResp.statusCode == 200 && retryResp.data['courses'] != null && (retryResp.data['courses'] as List).isNotEmpty) {
+              return OperationResult.ok(List<Map<String, dynamic>>.from(retryResp.data['courses']));
+            }
+          } catch (_) {}
+        } else {
+          return OperationResult.fail('教务登录状态已失效，请重新绑定');
+        }
+      }
       debugPrint('获取课表失败: $errorMsg');
       return OperationResult.fail(errorMsg);
     }
@@ -307,27 +322,25 @@ class EduProvider extends ChangeNotifier {
               List<Map<String, dynamic>>.from(data['grades']));
         }
         if (data['error'] != null) {
-          final errorMsg = data['error'].toString();
-          if (errorMsg.contains('未登录') || errorMsg.contains('过期') || errorMsg.contains('重新登录') || errorMsg.contains('会话') || errorMsg.contains('cookie') || errorMsg.contains('暂未开放') || errorMsg.contains('失效')) {
-            final pwd = await _loadEduPassword(_studentId);
-            if (pwd != null && pwd.isNotEmpty) {
-              debugPrint('后台尝试静默恢复教务登录(成绩)...');
-              final rebindSuccess = await bind(_studentId, pwd, isSilent: true);
-              if (rebindSuccess) {
-                // 重试一次
-                final retryResp = await _authDio.post('/edu/grades', data: {'year': year, 'semester': semester});
-                if (retryResp.statusCode == 200 && retryResp.data['grades'] != null) {
-                  return OperationResult.ok(List<Map<String, dynamic>>.from(retryResp.data['grades']));
-                }
-              }
-            }
-          }
-          return OperationResult.fail(errorMsg);
+          return OperationResult.fail(data['error'].toString());
         }
       }
       return OperationResult.fail('获取成绩失败');
     } on DioException catch (e) {
       final errorMsg = _parseDioError(e);
+      if (errorMsg.contains('未登录') || errorMsg.contains('过期') || errorMsg.contains('重新登录') || errorMsg.contains('会话') || errorMsg.contains('cookie') || errorMsg.contains('暂未开放') || errorMsg.contains('失效') || errorMsg.contains('Cookie')) {
+        final rebindSuccess = await _trySilentRelogin();
+        if (rebindSuccess) {
+          try {
+            final retryResp = await _authDio.post('/edu/grades', data: {'year': year, 'semester': semester});
+            if (retryResp.statusCode == 200 && retryResp.data['grades'] != null) {
+              return OperationResult.ok(List<Map<String, dynamic>>.from(retryResp.data['grades']));
+            }
+          } catch (_) {}
+        } else {
+          return OperationResult.fail('教务登录状态已失效，请重新绑定');
+        }
+      }
       debugPrint('获取成绩失败: $errorMsg');
       return OperationResult.fail(errorMsg);
     }

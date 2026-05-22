@@ -348,7 +348,7 @@ func (h *PostHandler) Delete(c *gin.Context) {
 			Action: "删除帖子", Target: post.Title,
 		})
 		// 管理员每使用一次管理权限，经验+1
-		h.db.Model(&models.User{}).Where("id = ?", userID).UpdateColumn("admin_exp", gorm.Expr("admin_exp + 1"))
+		h.db.Model(&models.User{}).Where("id = ?", userID).UpdateColumn("admin_exp", gorm.Expr("COALESCE(admin_exp, 0) + 1"))
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})

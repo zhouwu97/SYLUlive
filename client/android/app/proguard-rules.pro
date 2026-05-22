@@ -1,5 +1,5 @@
-# Home Widget
--keep class com.example.shenliyuan.CourseScheduleWidgetProvider { *; }
+# Keep all custom app code to prevent release crashes
+-keep class com.example.shenliyuan.** { *; }
 
 # JPush
 -keep class cn.jpush.android.** { *; }
@@ -8,7 +8,4 @@
 # Flutter Local Notifications
 -keep class com.dexterous.flutterlocalnotifications.** { *; }
 
-# Any other receivers or providers mentioned in AndroidManifest
--keep class com.example.shenliyuan.CourseReminderLiveReceiver { *; }
--keep class com.example.shenliyuan.CourseReminderLiveBootReceiver { *; }
--keep class com.example.shenliyuan.MainActivity { *; }
+

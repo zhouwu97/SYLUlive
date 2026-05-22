@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:ui';
 import 'dart:io' show File;
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:jpush_flutter/jpush_flutter.dart';
 import 'package:provider/provider.dart';
@@ -16,6 +18,7 @@ import 'providers/major_provider.dart';
 import 'providers/teacher_provider.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
+import 'screens/course_schedule_screen.dart';
 import 'services/course_reminder_service.dart';
 import 'theme/AppTheme.dart';
 import 'config/api_constants.dart';
@@ -101,26 +104,107 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => TeacherProvider(dio)),
         ChangeNotifierProvider(create: (_) => MajorProvider(dio)),
       ],
-      child: Consumer<ThemeProvider>(
-        builder: (context, themeProvider, child) {
-          return MaterialApp(
-            title: '沈理校园',
-            debugShowCheckedModeBanner: false,
-            theme: AppTheme.lightTheme,
-            darkTheme: AppTheme.darkTheme,
-            themeMode:
-                themeProvider.isDarkMode ? ThemeMode.dark : ThemeMode.light,
-            navigatorKey: appNavigatorKey,
-            routes: {
-              '/login': (context) => const LoginScreen(),
-            },
-            home: const PredictiveBackGate(
+      child: const _WidgetDeepLinkHandler(
+        child: _AppContent(),
+      ),
+    );
+  }
+}
+
+/// 小组件深度链接处理器
+///
+/// 点击 widget → MainActivity → MethodChannel → 通知 HomeScreen 切到课表 tab
+/// 不 push 新路由，不盖住现有页面。
+class _WidgetDeepLinkHandler extends StatefulWidget {
+  final Widget child;
+  const _WidgetDeepLinkHandler({required this.child});
+
+  @override
+  State<_WidgetDeepLinkHandler> createState() => _WidgetDeepLinkHandlerState();
+}
+
+class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
+    with WidgetsBindingObserver {
+  static const _channel = MethodChannel('shenliyuan/deeplink');
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkDeepLink());
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _checkDeepLink();
+    }
+  }
+
+  Future<void> _checkDeepLink() async {
+    try {
+      final uri = await _channel.invokeMethod<String>('getPendingDeepLink');
+      if ((uri == 'widget_timetable' || uri == 'campus://timetable') && mounted) {
+        // 切换到底部导航的课程表 tab，不 push 新页面
+        widgetTabSwitch.value++;
+      }
+    } catch (e) {
+      debugPrint('深度链接检查失败: $e');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
+}
+
+/// 抽离 MaterialApp 构建，避免 Consumer 嵌套层级过深
+class _AppContent extends StatelessWidget {
+  const _AppContent();
+
+  @override
+  Widget build(BuildContext context) {
+    final themeProvider = context.watch<ThemeProvider>();
+    return MaterialApp(
+      title: '沈理校园',
+      debugShowCheckedModeBanner: false,
+      theme: AppTheme.lightTheme.copyWith(
+        pageTransitionsTheme: PageTransitionsTheme(
+          builders: {
+            TargetPlatform.android: themeProvider.predictiveBack
+                ? const PredictiveBackPageTransitionsBuilder()
+                : const FadeUpwardsPageTransitionsBuilder(),
+          },
+        ),
+      ),
+      darkTheme: AppTheme.darkTheme.copyWith(
+        pageTransitionsTheme: PageTransitionsTheme(
+          builders: {
+            TargetPlatform.android: themeProvider.predictiveBack
+                ? const PredictiveBackPageTransitionsBuilder()
+                : const FadeUpwardsPageTransitionsBuilder(),
+          },
+        ),
+      ),
+      themeMode: themeProvider.isDarkMode ? ThemeMode.dark : ThemeMode.light,
+      navigatorKey: appNavigatorKey,
+      routes: {
+        '/login': (context) => const LoginScreen(),
+        '/timetable': (context) => const PredictiveBackGate(
               child: GlobalBackgroundWrapper(
-                child: AuthWrapper(),
+                child: CourseScheduleScreen(),
               ),
             ),
-          );
-        },
+      },
+      home: const PredictiveBackGate(
+        child: GlobalBackgroundWrapper(
+          child: AuthWrapper(),
+        ),
       ),
     );
   }
@@ -279,15 +363,12 @@ class AuthWrapper extends StatelessWidget {
       builder: (context, authProvider, child) {
         if (!authProvider.isInitialized) {
           return const Scaffold(
-            body: Center(
-              child: CircularProgressIndicator(),
-            ),
+            body: Center(child: CircularProgressIndicator()),
           );
         }
 
-        // 未登录用户也直接进入首页（游客模式）
-        // 登录状态由各需要认证的页面自行检查
-        return const HomeScreen();
+        final tp = context.watch<ThemeProvider>();
+        return HomeScreen(initialTab: tp.startOnTimetable ? 2 : 0);
       },
     );
   }

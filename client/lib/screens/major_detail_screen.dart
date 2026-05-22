@@ -37,7 +37,7 @@ class _MajorDetailScreenState extends State<MajorDetailScreen> {
     final themeProvider = context.watch<ThemeProvider>();
 
     return Scaffold(
-      backgroundColor: isDark ? const Color(0xFF131720) : Colors.white,
+      backgroundColor: isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
       extendBodyBehindAppBar: false, // 修复重叠
       appBar: AppBar(
         systemOverlayStyle: SystemUiOverlayStyle(
@@ -58,10 +58,7 @@ class _MajorDetailScreenState extends State<MajorDetailScreen> {
         elevation: 0,
         scrolledUnderElevation: 0,
       ),
-      body: Stack(
-        children: [
-          Positioned.fill(child: _buildBackground(themeProvider, isDark)),
-          Consumer<MajorProvider>(
+      body: Consumer<MajorProvider>(
             builder: (_, m, __) {
               if (m.isLoading) return const Center(child: CircularProgressIndicator());
               if (m.selected == null) return const Center(child: Text('加载失败'));
@@ -115,31 +112,8 @@ class _MajorDetailScreenState extends State<MajorDetailScreen> {
                 );
             },
           ),
-        ],
-      ),
     );
   }
-
-  Widget _buildBackground(ThemeProvider themeProvider, bool isDark) {
-    if (themeProvider.hasBackground && themeProvider.backgroundImage != null) {
-      final bgPath = themeProvider.backgroundImage!;
-      final isAsset = !bgPath.startsWith('http') && !bgPath.startsWith('/');
-      return Stack(fit: StackFit.expand, children: [
-        isAsset
-            ? Image.asset('assets/images/$bgPath', fit: BoxFit.cover, errorBuilder: (_, __, ___) => _defaultBg(isDark))
-            : bgPath.startsWith('/')
-                ? Image.file(File(bgPath), fit: BoxFit.cover, errorBuilder: (_, __, ___) => _defaultBg(isDark))
-                : Image.network(bgPath, fit: BoxFit.cover, errorBuilder: (_, __, ___) => _defaultBg(isDark)),
-        Container(color: isDark ? Colors.black.withValues(alpha: 0.35) : Colors.white.withValues(alpha: 0.25)),
-      ]);
-    }
-    return _defaultBg(isDark);
-  }
-
-  Widget _defaultBg(bool isDark) => Stack(fit: StackFit.expand, children: [
-    Image.asset('assets/images/morenbeijing.jpeg', fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB))),
-    Container(color: isDark ? Colors.black.withValues(alpha: 0.35) : Colors.white.withValues(alpha: 0.22)),
-  ]);
 
   Widget _buildMyRating(MajorProvider m, bool isDark) {
     final auth = context.watch<AuthProvider>();

@@ -158,18 +158,20 @@ func main() {
 
 	// 帖子路由
 	posts := r.Group("/api/posts")
+	posts.Use(middleware.OptionalAuthMiddleware(cfg.JWTSecret))
 	{
 		posts.GET("", postHandler.GetList)
 		posts.GET("/:id", postHandler.GetOne)
 		posts.GET("/:id/replies", replyHandler.GetList)
 	}
-	posts.Use(middleware.AuthMiddleware(cfg.JWTSecret))
+	postsAuth := r.Group("/api/posts")
+	postsAuth.Use(middleware.AuthMiddleware(cfg.JWTSecret))
 	{
-		posts.POST("", postHandler.Create)
-		posts.PUT("/:id", postHandler.Update)
-		posts.DELETE("/:id", postHandler.Delete)
-		posts.POST("/:id/replies", replyHandler.Create)
-		posts.POST("/:id/appeal", appealHandler.Create)
+		postsAuth.POST("", postHandler.Create)
+		postsAuth.PUT("/:id", postHandler.Update)
+		postsAuth.DELETE("/:id", postHandler.Delete)
+		postsAuth.POST("/:id/replies", replyHandler.Create)
+		postsAuth.POST("/:id/appeal", appealHandler.Create)
 	}
 
 	// 回复路由（带认证）

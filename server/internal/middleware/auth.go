@@ -45,6 +45,25 @@ func AuthMiddleware(jwtSecret string) gin.HandlerFunc {
 	}
 }
 
+// OptionalAuthMiddleware 可选JWT认证中间件（解析用户信息但不拦截）
+func OptionalAuthMiddleware(jwtSecret string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		authHeader := c.GetHeader("Authorization")
+		if authHeader != "" {
+			tokenString := strings.TrimPrefix(authHeader, "Bearer ")
+			claims := &Claims{}
+			token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
+				return []byte(jwtSecret), nil
+			})
+			if err == nil && token.Valid {
+				c.Set("user_id", claims.UserID)
+				c.Set("role", claims.Role)
+			}
+		}
+		c.Next()
+	}
+}
+
 // AdminMiddleware 管理员权限中间件
 func AdminMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {

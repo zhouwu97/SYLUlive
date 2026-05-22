@@ -47,6 +47,7 @@ func (h *LikeHandler) LikePost(c *gin.Context) {
 		TargetID:   uint(postID),
 	}
 	h.db.Create(&like)
+	h.db.Model(&models.Post{}).Where("id = ?", postID).UpdateColumn("like_count", gorm.Expr("like_count + 1"))
 	c.JSON(http.StatusCreated, like)
 }
 
@@ -60,7 +61,9 @@ func (h *LikeHandler) UnlikePost(c *gin.Context) {
 		return
 	}
 
-	h.db.Where("user_id = ? AND target_type = ? AND target_id = ?", userID, "post", postID).Delete(&models.Like{})
+	if err := h.db.Where("user_id = ? AND target_type = ? AND target_id = ?", userID, "post", postID).Delete(&models.Like{}).Error; err == nil {
+		h.db.Model(&models.Post{}).Where("id = ?", postID).UpdateColumn("like_count", gorm.Expr("GREATEST(like_count - 1, 0)"))
+	}
 	c.JSON(http.StatusOK, gin.H{"message": "已取消点赞"})
 }
 
@@ -86,6 +89,7 @@ func (h *LikeHandler) LikeReply(c *gin.Context) {
 		TargetID:   uint(replyID),
 	}
 	h.db.Create(&like)
+	h.db.Model(&models.Reply{}).Where("id = ?", replyID).UpdateColumn("like_count", gorm.Expr("like_count + 1"))
 	c.JSON(http.StatusCreated, like)
 }
 
@@ -99,6 +103,8 @@ func (h *LikeHandler) UnlikeReply(c *gin.Context) {
 		return
 	}
 
-	h.db.Where("user_id = ? AND target_type = ? AND target_id = ?", userID, "reply", replyID).Delete(&models.Like{})
+	if err := h.db.Where("user_id = ? AND target_type = ? AND target_id = ?", userID, "reply", replyID).Delete(&models.Like{}).Error; err == nil {
+		h.db.Model(&models.Reply{}).Where("id = ?", replyID).UpdateColumn("like_count", gorm.Expr("GREATEST(like_count - 1, 0)"))
+	}
 	c.JSON(http.StatusOK, gin.H{"message": "已取消点赞"})
 }

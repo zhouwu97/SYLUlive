@@ -432,6 +432,28 @@ class PostCard extends StatelessWidget {
             color: isDark ? Colors.white30 : Colors.grey[400],
           ),
         ),
+        const SizedBox(width: 12),
+        Icon(post.isLiked ? Icons.thumb_up : Icons.thumb_up_outlined, size: 14,
+            color: post.isLiked ? const Color(0xFFFF6B6B) : (isDark ? Colors.white30 : Colors.grey[400])),
+        const SizedBox(width: 4),
+        Text(
+          '${post.likeCount}',
+          style: TextStyle(
+            fontSize: 11,
+            color: post.isLiked ? const Color(0xFFFF6B6B) : (isDark ? Colors.white30 : Colors.grey[400]),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Icon(Icons.chat_bubble_outline, size: 14,
+            color: isDark ? Colors.white30 : Colors.grey[400]),
+        const SizedBox(width: 4),
+        Text(
+          '${post.replyCount}',
+          style: TextStyle(
+            fontSize: 11,
+            color: isDark ? Colors.white30 : Colors.grey[400],
+          ),
+        ),
       ],
     );
   }

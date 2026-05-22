@@ -51,8 +51,16 @@ Future<void> setupJPush() async {
   );
   final rid = await jpush.getRegistrationID();
   debugPrint('🔥 JPush RegistrationID: $rid');
-  // 获取 auth provider 并更新 token
-  // 注意：需要在 AuthWrapper 完成初始化后调用
+  
+  if (rid != null && rid.isNotEmpty) {
+    try {
+      final dio = getSharedDio();
+      await dio.put('/user/device_token', data: {'device_token': rid});
+      debugPrint('✅ 成功上报 JPush Device Token: $rid');
+    } catch (e) {
+      debugPrint('❌ 上报 Device Token 失败: $e');
+    }
+  }
 }
 
 Dio? _sharedDio;
@@ -365,8 +373,15 @@ class _BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
   }
 }
 
-class AuthWrapper extends StatelessWidget {
+class AuthWrapper extends StatefulWidget {
   const AuthWrapper({super.key});
+
+  @override
+  State<AuthWrapper> createState() => _AuthWrapperState();
+}
+
+class _AuthWrapperState extends State<AuthWrapper> {
+  bool _jpushSetup = false;
 
   @override
   Widget build(BuildContext context) {
@@ -376,6 +391,11 @@ class AuthWrapper extends StatelessWidget {
           return const Scaffold(
             body: Center(child: CircularProgressIndicator()),
           );
+        }
+
+        if (authProvider.isLoggedIn && !_jpushSetup) {
+          _jpushSetup = true;
+          setupJPush();
         }
 
         final tp = context.watch<ThemeProvider>();

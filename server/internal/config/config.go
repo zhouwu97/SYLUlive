@@ -19,6 +19,8 @@ type Config struct {
 	SMTPFrom         string // 发件人邮箱
 	JPushAppKey      string // 极光推送 AppKey
 	JPushMasterSecret string // 极光推送 MasterSecret
+	SuperAdminID     string // 超级管理员账号
+	SuperAdminPass   string // 超级管理员密码
 }
 
 // Load 从环境变量加载配置
@@ -65,6 +67,16 @@ func Load() *Config {
 	jpushAppKey := os.Getenv("JPUSH_APP_KEY")
 	jpushMasterSecret := os.Getenv("JPUSH_MASTER_SECRET")
 
+	superAdminID := os.Getenv("SUPER_ADMIN_ID")
+	if superAdminID == "" {
+		superAdminID = "admin" // 默认超级管理员账号
+	}
+
+	superAdminPass := os.Getenv("SUPER_ADMIN_PASSWORD")
+	if superAdminPass == "" {
+		superAdminPass = "admin123" // 默认超级管理员密码
+	}
+
 	return &Config{
 		JWTSecret:         jwtSecret,
 		DSN:               dsn,
@@ -78,5 +90,7 @@ func Load() *Config {
 		SMTPFrom:          smtpFrom,
 		JPushAppKey:       jpushAppKey,
 		JPushMasterSecret: jpushMasterSecret,
+		SuperAdminID:      superAdminID,
+		SuperAdminPass:    superAdminPass,
 	}
 }

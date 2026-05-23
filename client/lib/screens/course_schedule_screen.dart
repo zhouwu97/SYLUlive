@@ -639,7 +639,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
         _initializing = true;
         _isFetchingCourses = true;
       });
-      await sc.loadCourses(forceRefresh: true);
+      await sc.loadCourses(forceRefresh: true, clearUi: true);
       await _syncCourseReminders(sc);
       setState(() {
         _hasCache = sc.courses.isNotEmpty;
@@ -842,7 +842,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       final synced =
           await edu.syncCourses(sc.selectedYear, sc.selectedSemester, courses);
       if (synced) {
-        await sc.loadCourses(forceRefresh: true);
+        await sc.loadCourses(forceRefresh: true, clearUi: true);
       }
       if (!synced || sc.courses.isEmpty || sc.errorMessage != null) {
         await sc.applyFetchedCourses(courses);

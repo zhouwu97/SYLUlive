@@ -178,7 +178,11 @@ class CourseScheduleProvider extends ChangeNotifier {
       List<Map<String, dynamic>> rawCourses) async {
     if (_userId == null) return;
 
+    final oldCustoms = _courses.where((c) => c.id < 0).toList();
     _courses = rawCourses.map(_courseFromFetchedMap).toList();
+    if (oldCustoms.isNotEmpty) {
+      _courses.addAll(oldCustoms);
+    }
     _buildGrid();
     _isLoading = false;
     _errorMessage = null;
@@ -213,7 +217,7 @@ class CourseScheduleProvider extends ChangeNotifier {
   /// 加载课程。默认先从手机缓存读取，[forceRefresh]=true 时跳过缓存从服务器拉取
   /// [onlyCache] 为 true 时，如果没有缓存则不自动拉取，直接返回
   Future<void> loadCourses(
-      {bool forceRefresh = false, bool onlyCache = false}) async {
+      {bool forceRefresh = false, bool onlyCache = false, bool clearUi = false}) async {
     if (_userId == null) return;
 
     final cacheKey = '$_cacheKeyPrefix$_userId';
@@ -253,6 +257,10 @@ class CourseScheduleProvider extends ChangeNotifier {
         oldCustoms = cached.where((c) => c.id < 0).toList();
       }
       await clearCache();
+      if (clearUi) {
+        _courses = [];
+        _gridData = {};
+      }
     }
     _isLoading = true;
     _errorMessage = null;
@@ -273,6 +281,9 @@ class CourseScheduleProvider extends ChangeNotifier {
           _courses = coursesJson
               .map((c) => CourseBlock.fromJson(c as Map<String, dynamic>))
               .toList();
+          if (oldCustoms.isNotEmpty) {
+            _courses.addAll(oldCustoms);
+          }
           _buildGrid();
           localSuccess = true;
           debugPrint('✅ 从服务器本地加载: ${_courses.length}门课');

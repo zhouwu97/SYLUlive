@@ -246,7 +246,12 @@ class CourseScheduleProvider extends ChangeNotifier {
     }
 
     // 缓存未命中或强制刷新 → 先清旧缓存，再请求网络
+    List<CourseBlock> oldCustoms = [];
     if (forceRefresh) {
+      final cached = await _loadFromCache(cacheKey);
+      if (cached != null) {
+        oldCustoms = cached.where((c) => c.id < 0).toList();
+      }
       await clearCache();
     }
     _isLoading = true;
@@ -300,6 +305,9 @@ class CourseScheduleProvider extends ChangeNotifier {
             _courses = rawCourses
                 .map((c) => _courseFromFetchedMap(c as Map<String, dynamic>))
                 .toList();
+            if (oldCustoms.isNotEmpty) {
+              _courses.addAll(oldCustoms);
+            }
             _buildGrid();
             debugPrint('🌐 从教务拉取原始数据: ${_courses.length}门课');
             for (final c in _courses) {

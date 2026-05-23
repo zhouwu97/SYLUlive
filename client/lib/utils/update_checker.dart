@@ -9,9 +9,10 @@ class UpdateChecker {
   static Future<void> check(BuildContext context, {bool showNoUpdateToast = false}) async {
     try {
       final dio = Dio();
-      // 请求 Gitee 的 Latest Release 接口
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      // 请求 Gitee 的 Latest Release 接口，附带时间戳防止 CDN 缓存
       final response = await dio.get(
-        'https://gitee.com/api/v5/repos/chunhezi/SYLUlive/releases/latest',
+        'https://gitee.com/api/v5/repos/chunhezi/SYLUlive/releases/latest?t=$timestamp',
         options: Options(
           receiveTimeout: const Duration(seconds: 5),
           sendTimeout: const Duration(seconds: 5),

@@ -818,7 +818,7 @@ class _ProfileScreenState extends State<ProfileScreen>
             child: SizedBox(
               width: double.infinity,
               child: OutlinedButton.icon(
-                onPressed: () => UpdateChecker.check(context),
+                onPressed: () => UpdateChecker.check(context, showNoUpdateToast: true),
                 icon: const Icon(Icons.system_update, size: 18),
                 label: const Text('检查更新'),
                 style: OutlinedButton.styleFrom(

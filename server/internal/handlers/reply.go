@@ -118,7 +118,7 @@ func (h *ReplyHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建回复失败"})
 		return
 	}
-	h.db.Model(&models.Post{}).Where("id = ?", postID).UpdateColumn("reply_count", gorm.Expr("reply_count + 1"))
+	h.db.Model(&models.Post{}).Where("id = ?", postID).Update("reply_count", gorm.Expr("reply_count + 1"))
 
 	// 处理图片
 	fileIDs := c.PostForm("file_ids")
@@ -186,7 +186,7 @@ func (h *ReplyHandler) Delete(c *gin.Context) {
 	}
 
 	h.db.Model(&reply).Update("status", models.ReplyStatusDeleted)
-	h.db.Model(&models.Post{}).Where("id = ?", reply.PostID).UpdateColumn("reply_count", gorm.Expr("GREATEST(reply_count - 1, 0)"))
+	h.db.Model(&models.Post{}).Where("id = ?", reply.PostID).Update("reply_count", gorm.Expr("GREATEST(reply_count - 1, 0)"))
 
 	// 管理员删除他人回复时，记录日志并增加经验
 	if reply.AuthorID != userID.(uint) && (role == "admin" || role == "super_admin") {

@@ -30,7 +30,7 @@ dependencies:
   flutter_local_notifications: 17.2.4
   timezone: 0.9.4
   share_plus: 10.1.4
-  path: 1.9.1
+  path: ^1.9.0
   package_info_plus: ^8.0.0
   jpush_flutter: ^3.4.5
   qr_flutter: ^4.1.0

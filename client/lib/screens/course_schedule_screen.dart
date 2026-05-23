@@ -1866,6 +1866,30 @@ $classFilterRule
                   ),
                 ] else ...[
                   // AI 导入视图
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.secondaryContainer.withOpacity(0.5),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(Icons.lightbulb_outline, size: 16, color: Theme.of(context).colorScheme.secondary),
+                            const SizedBox(width: 4),
+                            Text('使用步骤', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Theme.of(context).colorScheme.secondary)),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Text('1. 点击下方按钮复制提示词；', style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                        Text('2. 将提示词 + 课表数据 (图片或文字) 发送给任意 AI (如 Kimi、豆包)；', style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                        Text('3. 将 AI 回复的全部内容粘贴到下方输入框。', style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
                   ElevatedButton.icon(
                     icon: const Icon(Icons.copy, size: 18),
                     label: const Text('一键复制 AI 提示词'),

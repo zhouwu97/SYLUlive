@@ -349,7 +349,8 @@ class _EduScreenState extends State<EduScreen> {
           ),
         ],
       ),
-    );
+    ),
+  );
   }
 
   void _showCoursesResult(BuildContext context, List<Map<String, dynamic>> courses, String year, int semester, EduProvider eduProvider) {
@@ -536,7 +537,8 @@ class _EduScreenState extends State<EduScreen> {
           ),
         ],
       ),
-    );
+    ),
+  );
   }
 
   void _showGradesResult(BuildContext context, List<Map<String, dynamic>> grades, String year, int semester) {

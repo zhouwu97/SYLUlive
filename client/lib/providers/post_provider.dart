@@ -212,7 +212,6 @@ class PostProvider extends ChangeNotifier {
     board.currentPage = 1;
     board.hasMore = true;
 
-    final since = await PostCacheService.getLatestTimestamp(boardId);
     try {
       final params = <String, dynamic>{
         'board': boardId,
@@ -221,9 +220,6 @@ class PostProvider extends ChangeNotifier {
         'page': 1,
         'limit': 20,
       };
-      if (since != null) {
-        params['since'] = since;
-      }
 
       final response = await _dio.get('/posts', queryParameters: params);
       if (response.statusCode == 200) {

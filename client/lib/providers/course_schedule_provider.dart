@@ -51,19 +51,17 @@ class CourseBlock {
 
   factory CourseBlock.fromJson(Map<String, dynamic> json) {
     return CourseBlock(
-      id: json['id'] ?? 0,
-      courseCode: json['course_code'] ?? '',
-      name: (json['custom_name'] ?? json['original_name'] ?? json['name'] ?? '')
-          as String,
-      teacher: json['teacher'] as String?,
-      location: json['location'] as String?,
-      color: json['color'] ?? '#6366F1',
-      weekday: json['weekday'] ?? 1,
-      startSection: json['start_section'] ?? 1,
-      endSection: json['end_section'] ?? 1,
-      weeks: (json['weeks'] as List<dynamic>?)?.map((e) => e as int).toList() ??
-          [],
-      note: json['note'] as String?,
+      id: (json['id'] as num?)?.toInt() ?? 0,
+      courseCode: json['course_code']?.toString() ?? '',
+      name: (json['custom_name']?.toString() ?? json['original_name']?.toString() ?? json['name']?.toString() ?? ''),
+      teacher: json['teacher']?.toString(),
+      location: json['location']?.toString(),
+      color: json['color']?.toString() ?? '#6366F1',
+      weekday: (json['weekday'] as num?)?.toInt() ?? 1,
+      startSection: (json['start_section'] as num?)?.toInt() ?? 1,
+      endSection: (json['end_section'] as num?)?.toInt() ?? 1,
+      weeks: (json['weeks'] as List<dynamic>?)?.map((e) => (e as num).toInt()).toList() ?? [],
+      note: json['note']?.toString(),
     );
   }
 }
@@ -271,7 +269,11 @@ class CourseScheduleProvider extends ChangeNotifier {
     try {
       final localResp = await _eduDio.get(
         '/api/edu/courses/local',
-        queryParameters: {'user_id': _userId},
+        queryParameters: {
+          'user_id': _userId,
+          'year': _selectedYear,
+          'semester': _selectedSemester,
+        },
       );
 
       if (localResp.statusCode == 200) {
@@ -496,15 +498,15 @@ class CourseScheduleProvider extends ChangeNotifier {
 
     final course = CourseBlock(
       id: newId,
-      courseCode: 'custom_$newId',
+      courseCode: 'CUSTOM',
       name: name,
       teacher: teacher,
       location: location,
-      color: _colorPool[colorIdx],
       weekday: weekday,
       startSection: startSection,
       endSection: endSection,
       weeks: weeks,
+      color: _colorPool[colorIdx],
     );
 
     _courses.add(course);
@@ -514,6 +516,7 @@ class CourseScheduleProvider extends ChangeNotifier {
       await _saveToCache('$_cacheKeyPrefix$_userId', _courses);
     }
 
+    _syncWidget();
     notifyListeners();
     return course;
   }
@@ -525,6 +528,7 @@ class CourseScheduleProvider extends ChangeNotifier {
     if (_userId != null) {
       await _saveToCache('$_cacheKeyPrefix$_userId', _courses);
     }
+    _syncWidget();
     notifyListeners();
   }
 

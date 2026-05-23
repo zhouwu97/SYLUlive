@@ -1265,77 +1265,244 @@ class _ProfileScreenState extends State<ProfileScreen>
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF1A1A2E) : Colors.white,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        child: SafeArea(
-          top: false,
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-            child: Column(
-              children: [
-                // 拖拽条
-                Padding(
-                  padding: const EdgeInsets.only(top: 12, bottom: 16),
-                  child: Container(
-                    width: 40, height: 4,
-                    decoration: BoxDecoration(color: isDark ? Colors.white24 : Colors.grey[300], borderRadius: BorderRadius.circular(2)),
-                  ),
-                ),
-                // App 图标
-                Container(
-                  width: 80, height: 80,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [primary, primary.withValues(alpha: 0.6)]),
-                    borderRadius: BorderRadius.circular(22),
-                  ),
-                  child: const Icon(Icons.school, color: Colors.white, size: 38),
-                ),
-                const SizedBox(height: 16),
-                // 标题
-                Text('沈理校园', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800, letterSpacing: 0.5, color: isDark ? Colors.white : Colors.black87)),
-                const SizedBox(height: 4),
-                Text('一款为沈理人写的开源校园工具', style: TextStyle(fontSize: 13, color: isDark ? Colors.white54 : Colors.grey[500])),
-                const SizedBox(height: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
-                  decoration: BoxDecoration(color: primary.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(20)),
-                  child: Text('v$currentVersion', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: primary)),
-                ),
-                const SizedBox(height: 24),
+      barrierColor: Colors.black.withOpacity(0.4),
+      builder: (context) => TweenAnimationBuilder<double>(
+        tween: Tween(begin: 0.0, end: 1.0),
+        duration: const Duration(milliseconds: 400),
+        curve: Curves.easeOutCubic,
+        builder: (context, value, child) {
+          return Transform.translate(
+            offset: Offset(0, 50 * (1 - value)),
+            child: Opacity(
+              opacity: value,
+              child: child,
+            ),
+          );
+        },
+        child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF1E1E2E).withOpacity(0.8) : Colors.white.withOpacity(0.9),
+            borderRadius: BorderRadius.circular(32),
+            border: Border.all(
+              color: isDark ? Colors.white.withOpacity(0.1) : Colors.white.withOpacity(0.5),
+              width: 1.5,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: primary.withOpacity(isDark ? 0.2 : 0.1),
+                blurRadius: 40,
+                spreadRadius: 5,
+              ),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(32),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+              child: SafeArea(
+                top: false,
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(24, 0, 24, 32),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // 拖拽指示条
+                      Padding(
+                        padding: const EdgeInsets.only(top: 12, bottom: 24),
+                        child: Container(
+                          width: 48,
+                          height: 5,
+                          decoration: BoxDecoration(
+                            color: isDark ? Colors.white24 : Colors.grey[300],
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                      ),
+                      // 动态 App 图标
+                      TweenAnimationBuilder<double>(
+                        tween: Tween(begin: 0.8, end: 1.0),
+                        duration: const Duration(milliseconds: 800),
+                        curve: Curves.elasticOut,
+                        builder: (context, scale, child) {
+                          return Transform.scale(
+                            scale: scale,
+                            child: child,
+                          );
+                        },
+                        child: Container(
+                          width: 90,
+                          height: 90,
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [primary, primary.withOpacity(0.6)],
+                            ),
+                            borderRadius: BorderRadius.circular(28),
+                            boxShadow: [
+                              BoxShadow(
+                                color: primary.withOpacity(0.4),
+                                blurRadius: 20,
+                                offset: const Offset(0, 8),
+                              ),
+                            ],
+                          ),
+                          child: const Icon(Icons.school_rounded, color: Colors.white, size: 48),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      // 标题与版本号
+                      Text(
+                        '沈理校园',
+                        style: TextStyle(
+                          fontSize: 26,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 1.2,
+                          color: isDark ? Colors.white : const Color(0xFF2D3142),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        '一款为沈理人写的开源校园工具',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: isDark ? Colors.white54 : const Color(0xFF9094A6),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: primary.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: primary.withOpacity(0.2)),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.verified, size: 14, color: primary),
+                            const SizedBox(width: 6),
+                            Text(
+                              'Version $currentVersion',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.bold,
+                                color: primary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 32),
 
-                // 开发者卡片
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: isDark ? Colors.white.withValues(alpha: 0.04) : const Color(0xFFF5F7FB),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Row(children: [
-                      Icon(Icons.code_rounded, size: 18, color: primary),
-                      const SizedBox(width: 10),
-                      Text('开发者', style: TextStyle(fontSize: 13, color: isDark ? Colors.white54 : Colors.grey[500])),
-                      const Spacer(),
-                      Text('纯合子', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: isDark ? Colors.white : Colors.black87)),
-                    ]),
-                    const SizedBox(height: 12),
-                    Text('用爱发电，写个自己觉得好用的课表和论坛。', style: TextStyle(fontSize: 12, height: 1.5, color: isDark ? Colors.white38 : Colors.grey[500])),
-                  ]),
-                ),
-                const SizedBox(height: 24),
+                      // 开发者卡片 - 采用流光渐变设计
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: isDark
+                                ? [Colors.white.withOpacity(0.05), Colors.white.withOpacity(0.02)]
+                                : [const Color(0xFFF4F7FC), const Color(0xFFEEF2F9)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: BorderRadius.circular(24),
+                          border: Border.all(
+                            color: isDark ? Colors.white12 : Colors.black.withOpacity(0.05),
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: primary.withOpacity(0.15),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Icon(Icons.code_rounded, size: 20, color: primary),
+                                ),
+                                const SizedBox(width: 12),
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      '开发者',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: isDark ? Colors.white54 : const Color(0xFF9094A6),
+                                      ),
+                                    ),
+                                    Text(
+                                      '纯合子',
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
+                                        color: isDark ? Colors.white : const Color(0xFF2D3142),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              '用爱发电，写个自己觉得好用的课表和论坛。',
+                              style: TextStyle(
+                                fontSize: 13,
+                                height: 1.6,
+                                color: isDark ? Colors.white70 : const Color(0xFF4F5568),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 24),
 
-                // 联系方式
-                _aboutLink(context, Icons.code_rounded, '查看源码 / 提交 PR', 'https://github.com/zhouwu97/SYLUlive', isDark),
-                const SizedBox(height: 8),
-                _aboutLink(context, Icons.chat_rounded, '加入交流群', 'mqqapi://card/show_pslcard?src_type=internal&version=1&uin=3170305904&card_type=person', isDark),
-                const SizedBox(height: 8),
-                _aboutLink(context, Icons.email_outlined, '发送邮件', null, isDark, onTapOverride: () => _copyToClipboard(context, '3170305904@qq.com', '邮箱地址已复制')),
-                const SizedBox(height: 16),
-              ],
+                      // 联系与源码按钮组
+                      _aboutLink(
+                        context,
+                        Icons.device_hub_rounded,
+                        '开源仓库与源码',
+                        'https://github.com/zhouwu97/SYLUlive',
+                        isDark,
+                        primary,
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _aboutLink(
+                              context,
+                              Icons.group_rounded,
+                              '加入群聊',
+                              'mqqapi://card/show_pslcard?src_type=internal&version=1&uin=3170305904&card_type=person',
+                              isDark,
+                              Colors.blue,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _aboutLink(
+                              context,
+                              Icons.email_rounded,
+                              '联系作者',
+                              null,
+                              isDark,
+                              Colors.orange,
+                              onTapOverride: () => _copyToClipboard(context, '3170305904@qq.com', '邮箱已复制到剪贴板'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ),
           ),
         ),
@@ -1343,24 +1510,41 @@ class _ProfileScreenState extends State<ProfileScreen>
     );
   }
 
-  Widget _aboutLink(BuildContext context, IconData icon, String label, String? url, bool isDark, {VoidCallback? onTapOverride}) {
+  Widget _aboutLink(BuildContext context, IconData icon, String label, String? url, bool isDark, Color color, {VoidCallback? onTapOverride}) {
     return Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: onTapOverride ?? (url != null ? () => _launchUrl(url) : null),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
+        highlightColor: color.withOpacity(0.1),
+        splashColor: color.withOpacity(0.2),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           decoration: BoxDecoration(
-            color: isDark ? Colors.white.withValues(alpha: 0.04) : const Color(0xFFF5F7FB),
-            borderRadius: BorderRadius.circular(12),
+            color: isDark ? Colors.white.withOpacity(0.04) : Colors.black.withOpacity(0.03),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: isDark ? Colors.white.withOpacity(0.05) : Colors.black.withOpacity(0.05),
+            ),
           ),
-          child: Row(children: [
-            Icon(icon, size: 20, color: Theme.of(context).primaryColor),
-            const SizedBox(width: 12),
-            Expanded(child: Text(label, style: TextStyle(fontSize: 14, color: isDark ? Colors.white70 : Colors.black87))),
-            Icon(Icons.chevron_right, size: 18, color: isDark ? Colors.white24 : Colors.grey[400]),
-          ]),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 20, color: color),
+              const SizedBox(width: 10),
+              Flexible(
+                child: Text(
+                  label,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: isDark ? Colors.white.withOpacity(0.9) : const Color(0xFF2D3142),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

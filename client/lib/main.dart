@@ -34,7 +34,7 @@ Future<void> main() async {
 /// 极光推送初始化
 var jpush = JPush.newJPush();
 
-Future<void> setupJPush() async {
+Future<void> setupJPush(AuthProvider authProvider) async {
   jpush.setup(
     appKey: 'fbbd87f741e919f39519afe6',
     channel: 'developer-default',
@@ -53,13 +53,8 @@ Future<void> setupJPush() async {
   debugPrint('🔥 JPush RegistrationID: $rid');
   
   if (rid != null && rid.isNotEmpty) {
-    try {
-      final dio = getSharedDio();
-      await dio.put('/user/device_token', data: {'device_token': rid});
-      debugPrint('✅ 成功上报 JPush Device Token: $rid');
-    } catch (e) {
-      debugPrint('❌ 上报 Device Token 失败: $e');
-    }
+    await authProvider.updateDeviceToken(rid);
+    debugPrint('✅ 成功上报 JPush Device Token: $rid');
   }
 }
 
@@ -395,7 +390,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
 
         if (authProvider.isLoggedIn && !_jpushSetup) {
           _jpushSetup = true;
-          setupJPush();
+          setupJPush(authProvider);
         }
 
         final tp = context.watch<ThemeProvider>();

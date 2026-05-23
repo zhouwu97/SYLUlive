@@ -131,14 +131,37 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     setState(() {
       _liked = !_liked;
       _likeCount += _liked ? 1 : -1;
+      if (_post != null) {
+        _post = _post!.copyWith(
+          isLiked: _liked,
+          likeCount: _likeCount,
+        );
+      }
     });
+    if (_post != null) {
+      context.read<PostProvider>().updatePostInCache(_post!);
+    }
+
     try {
-      await _dio.post('/posts/${widget.postId}/like');
+      if (_liked) {
+        await _dio.post('/posts/${widget.postId}/like');
+      } else {
+        await _dio.delete('/posts/${widget.postId}/like');
+      }
     } catch (_) {
       setState(() {
         _liked = !_liked;
         _likeCount += _liked ? 1 : -1;
+        if (_post != null) {
+          _post = _post!.copyWith(
+            isLiked: _liked,
+            likeCount: _likeCount,
+          );
+        }
       });
+      if (_post != null) {
+        context.read<PostProvider>().updatePostInCache(_post!);
+      }
     }
   }
 
@@ -173,6 +196,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         parentReplyId: parentId,
       );
       _replies.insert(0, tempReply);
+      _post = _post!.copyWith(replyCount: _post!.replyCount + 1);
+      context.read<PostProvider>().updatePostInCache(_post!);
     }
     _replyController.clear();
     _replyFocus.unfocus();
@@ -203,7 +228,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       if (mounted) {
         setState(() {
           _replies.removeWhere((r) => r.id < 0);
+          if (_post != null) {
+            _post = _post!.copyWith(replyCount: _post!.replyCount - 1);
+          }
         });
+        if (_post != null) {
+          context.read<PostProvider>().updatePostInCache(_post!);
+        }
         AppFeedback.showSnackBar(
             context, AppFeedback.dioErrorMessage(e, fallback: '发送失败'),
             isError: true);
@@ -1538,6 +1569,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       await _dio.delete('/replies/${r.id}');
       if (mounted) {
         AppFeedback.showSnackBar(context, '已删除');
+        if (_post != null && _post!.replyCount > 0) {
+          setState(() {
+            _post = _post!.copyWith(replyCount: _post!.replyCount - 1);
+          });
+          context.read<PostProvider>().updatePostInCache(_post!);
+        }
         _loadReplies();
       }
     } on DioException catch (e) {

@@ -373,11 +373,12 @@ func main() {
 	r.GET("/api/version", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"version":             "1.4.0",
-			"force_update":        false,
+			"min_version":         "1.4.0", // 增加最低版本限制，低于此版本的客户端将被强制更新
+			"force_update":        false, // 保留兼容旧版逻辑
 			"download_url":        "https://github.com/zhouwu97/SYLUlive/releases",
 			"github_download_url": "https://github.com/zhouwu97/SYLUlive/releases",
 			"gitee_download_url":  "https://gitee.com/chunhezi/SYLUlive/releases",
-			"update_msg":          "新版本可用，建议选择网络较快的下载源。",
+			"update_msg":          "新版本可用，本次更新包含了重要功能，请务必更新。",
 		})
 	})
 

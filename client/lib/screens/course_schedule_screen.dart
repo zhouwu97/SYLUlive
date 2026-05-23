@@ -2064,26 +2064,45 @@ $classFilterRule
       final sc = context.read<CourseScheduleProvider>();
       List<CourseBlock> existingCourses = sc.courses;
 
-      bool hasConflict = _checkCourseConflict(validCourses, existingCourses);
+      List<CourseBlock> conflictingCourses = _checkCourseConflict(validCourses, existingCourses);
 
-      if (hasConflict) {
-        // 发现冲突，弹出二次确认框
+      if (conflictingCourses.isNotEmpty) {
+        // 提取冲突的老课名称，防止名称太长截断
+        String conflictNames = conflictingCourses
+            .map((c) => "《${c.name} (周${c.weekday} 第${c.startSection}-${c.endSection}节)》")
+            .join('、');
+
+        // 发现冲突，弹出三选一对话框
         showDialog(
           context: context,
           builder: (dialogContext) => AlertDialog(
             title: const Text("时间重叠提醒"),
-            content: const Text("检测到新导入的课程与已有课程在时间上存在重叠。您可以继续添加，它们将在课表上同时保存。"),
+            content: Text("检测到新导入的课程与已有课程\n\n$conflictNames\n\n存在时间重叠。请选择操作："),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(dialogContext), 
                 child: const Text("取消")
               ),
-              FilledButton(
+              FilledButton.tonal(
                 onPressed: () {
-                  Navigator.pop(dialogContext); // 关闭警告框
+                  Navigator.pop(dialogContext);
                   _executeImport(context, action, validCourses);
                 }, 
-                child: const Text("继续添加")
+                child: const Text("同时保留(置底)")
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.error),
+                onPressed: () async {
+                  Navigator.pop(dialogContext);
+                  // 遍历删除冲突的老课
+                  for (var oldCourse in conflictingCourses) {
+                    await sc.removeCustomCourse(oldCourse.id);
+                  }
+                  if (context.mounted) {
+                    _executeImport(context, action, validCourses);
+                  }
+                }, 
+                child: const Text("覆盖原有", style: TextStyle(color: Colors.white))
               ),
             ],
           )
@@ -2101,7 +2120,8 @@ $classFilterRule
     }
   }
 
-  bool _checkCourseConflict(List<Map<String, dynamic>> newCourses, List<CourseBlock> existingCourses) {
+  List<CourseBlock> _checkCourseConflict(List<Map<String, dynamic>> newCourses, List<CourseBlock> existingCourses) {
+    List<CourseBlock> conflicts = [];
     for (var newCourse in newCourses) {
       for (var existing in existingCourses) {
         if (newCourse['dayOfWeek'] != existing.weekday) continue;
@@ -2118,11 +2138,13 @@ $classFilterRule
 
         if (start1 <= end2 && end1 >= start2) {
           debugPrint("冲突拦截: ${newCourse['name']} vs ${existing.name}");
-          return true; 
+          if (!conflicts.contains(existing)) {
+            conflicts.add(existing);
+          }
         }
       }
     }
-    return false;
+    return conflicts;
   }
 
   void _executeImport(BuildContext context, String action, List<Map<String, dynamic>> courses) async {

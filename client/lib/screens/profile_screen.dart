@@ -14,6 +14,7 @@ import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/edu_provider.dart';
 import '../utils/app_feedback.dart';
+import '../utils/update_checker.dart';
 import '../widgets/glass_container.dart';
 import '../config/api_constants.dart';
 import 'edu_screen.dart';
@@ -817,7 +818,7 @@ class _ProfileScreenState extends State<ProfileScreen>
             child: SizedBox(
               width: double.infinity,
               child: OutlinedButton.icon(
-                onPressed: () => _checkUpdate(context),
+                onPressed: () => UpdateChecker.check(context),
                 icon: const Icon(Icons.system_update, size: 18),
                 label: const Text('检查更新'),
                 style: OutlinedButton.styleFrom(
@@ -849,122 +850,7 @@ class _ProfileScreenState extends State<ProfileScreen>
     );
   }
 
-  Future<void> _checkUpdate(BuildContext context) async {
-    const giteeUrl = 'https://gitee.com/chunhezi/SYLUlive/releases';
-    const githubUrl = 'https://github.com/zhouwu97/SYLUlive/releases';
-    try {
-      final dio = context.read<AuthProvider>().dio;
-      final packageInfo = await PackageInfo.fromPlatform();
-      final resp = await dio.get('/version');
-      if (resp.statusCode == 200) {
-        final data = resp.data is Map ? resp.data as Map : <String, dynamic>{};
-        final latestVersion = data['version']?.toString() ?? '';
-        final forceUpdate = data['force_update'] ?? false;
-        final giteeDownloadUrl =
-            data['gitee_download_url']?.toString().trim().isNotEmpty == true
-                ? data['gitee_download_url'].toString()
-                : giteeUrl;
-        final githubDownloadUrl =
-            data['github_download_url']?.toString().trim().isNotEmpty == true
-                ? data['github_download_url'].toString()
-                : (data['download_url']?.toString().trim().isNotEmpty == true
-                    ? data['download_url'].toString()
-                    : githubUrl);
-        final updateMsg = data['update_msg'] ?? '新版本可用';
-        final currentVersion = packageInfo.version;
-        final hasUpdate =
-            forceUpdate || _isRemoteVersionNewer(latestVersion, currentVersion);
-
-        if (!context.mounted) return;
-        showDialog(
-          context: context,
-          barrierDismissible: !forceUpdate,
-          builder: (ctx) => AlertDialog(
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-            title: Row(children: [
-              Icon(
-                hasUpdate ? Icons.system_update : Icons.verified_outlined,
-                color: hasUpdate ? Colors.blue : Colors.green,
-              ),
-              const SizedBox(width: 8),
-              Text(hasUpdate ? '发现新版本' : '已是最新版'),
-            ]),
-            content: Text(
-              hasUpdate
-                  ? '当前版本: $currentVersion\n最新版本: $latestVersion\n$updateMsg\n\n请选择下载来源。'
-                  : '当前版本: $currentVersion\n服务器版本: ${latestVersion.isEmpty ? '未知' : latestVersion}\n当前已是最新版本。',
-              style: const TextStyle(height: 1.5),
-            ),
-            actions: [
-              if (!hasUpdate || !forceUpdate)
-                TextButton(
-                    onPressed: () => Navigator.pop(ctx),
-                    child: Text(hasUpdate ? '稍后' : '关闭')),
-              if (hasUpdate)
-                OutlinedButton.icon(
-                  onPressed: () {
-                    Navigator.pop(ctx);
-                    launchUrl(Uri.parse(giteeDownloadUrl),
-                        mode: LaunchMode.externalApplication);
-                  },
-                  icon: const Icon(Icons.cloud_download_outlined, size: 18),
-                  label: const Text('Gitee下载'),
-                ),
-              if (hasUpdate)
-                ElevatedButton.icon(
-                  onPressed: () {
-                    Navigator.pop(ctx);
-                    launchUrl(Uri.parse(githubDownloadUrl),
-                        mode: LaunchMode.externalApplication);
-                  },
-                  icon: const Icon(Icons.download, size: 18),
-                  label: const Text('GitHub下载'),
-                  style: ElevatedButton.styleFrom(
-                      backgroundColor: Theme.of(context).primaryColor,
-                      foregroundColor: Colors.white),
-                ),
-            ],
-          ),
-        );
-      }
-    } on DioException catch (e) {
-      if (context.mounted) {
-        AppFeedback.showSnackBar(
-          context,
-          AppFeedback.dioErrorMessage(e, fallback: '检查更新失败'),
-          isError: true,
-        );
-      }
-    } catch (e) {
-      if (context.mounted) {
-        AppFeedback.showSnackBar(context, '检查更新失败: $e', isError: true);
-      }
-    }
-  }
-
-  bool _isRemoteVersionNewer(String remote, String current) {
-    final remoteParts = _parseVersion(remote);
-    final currentParts = _parseVersion(current);
-    final maxLength = remoteParts.length > currentParts.length
-        ? remoteParts.length
-        : currentParts.length;
-    for (var i = 0; i < maxLength; i++) {
-      final r = i < remoteParts.length ? remoteParts[i] : 0;
-      final c = i < currentParts.length ? currentParts[i] : 0;
-      if (r > c) return true;
-      if (r < c) return false;
-    }
-    return false;
-  }
-
-  List<int> _parseVersion(String version) {
-    final normalized = version.trim().replaceFirst(RegExp(r'^[vV]'), '');
-    return normalized
-        .split(RegExp(r'[.+-]'))
-        .map((part) => int.tryParse(part) ?? 0)
-        .toList();
-  }
+  // removed update checker methods
 
   Widget _buildSettingsCard(bool isDark, {required List<Widget> children}) {
     return GlassContainer(
@@ -1367,7 +1253,11 @@ class _ProfileScreenState extends State<ProfileScreen>
         ));
   }
 
-  void _showAboutDialog(BuildContext context) {
+  void _showAboutDialog(BuildContext context) async {
+    final packageInfo = await PackageInfo.fromPlatform();
+    final currentVersion = packageInfo.version;
+    if (!context.mounted) return;
+
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final primary = Theme.of(context).primaryColor;
 
@@ -1412,7 +1302,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
                   decoration: BoxDecoration(color: primary.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(20)),
-                  child: Text('v1.3.2', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: primary)),
+                  child: Text('v$currentVersion', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: primary)),
                 ),
                 const SizedBox(height: 24),
 

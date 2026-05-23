@@ -346,6 +346,7 @@ func main() {
 		majorAdmin.GET("/pending", majorHandler.GetPending)
 		majorAdmin.PUT("/:id/verify", majorHandler.Verify)
 		majorAdmin.DELETE("/:id/reject", majorHandler.Reject)
+		majorAdmin.DELETE("/:id", majorHandler.DeleteMajor)
 	}
 	majorAuth := major.Group("")
 	majorAuth.Use(middleware.AuthMiddleware(cfg.JWTSecret))

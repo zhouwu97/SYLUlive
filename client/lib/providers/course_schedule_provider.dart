@@ -521,6 +521,53 @@ class CourseScheduleProvider extends ChangeNotifier {
     return course;
   }
 
+  /// 编辑自定义课程
+  Future<CourseBlock> editCustomCourse({
+    required int id,
+    required String name,
+    required int weekday,
+    required int startSection,
+    required int endSection,
+    required int startWeek,
+    required int endWeek,
+    String? teacher,
+    String? location,
+  }) async {
+    final idx = _courses.indexWhere((c) => c.id == id);
+    if (idx < 0) throw Exception('课程不存在');
+
+    final weeks = List.generate(
+      endWeek - startWeek + 1,
+      (i) => startWeek + i,
+    );
+    final oldCourse = _courses[idx];
+
+    final course = CourseBlock(
+      id: oldCourse.id,
+      courseCode: oldCourse.courseCode,
+      name: name,
+      teacher: teacher,
+      location: location,
+      weekday: weekday,
+      startSection: startSection,
+      endSection: endSection,
+      weeks: weeks,
+      color: oldCourse.color,
+      note: oldCourse.note,
+    );
+
+    _courses[idx] = course;
+    _buildGrid();
+
+    if (_userId != null) {
+      await _saveToCache('$_cacheKeyPrefix$_userId', _courses);
+    }
+
+    _syncWidget();
+    notifyListeners();
+    return course;
+  }
+
   /// 删除自定义课程
   Future<void> removeCustomCourse(int courseId) async {
     _courses.removeWhere((c) => c.id == courseId);

@@ -439,11 +439,16 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
   Widget _buildSummaryHeader(bool isDark) {
     double totalScore = 0;
     double totalRequired = 0;
+    double totalGap = 0;
     for (final item in _summary!) {
-      totalScore += double.tryParse(item['score'] ?? '0') ?? 0;
-      totalRequired += double.tryParse(item['required'] ?? '0') ?? 0;
+      double score = double.tryParse(item['score'] ?? '0') ?? 0;
+      double required = double.tryParse(item['required'] ?? '0') ?? 0;
+      totalScore += score;
+      totalRequired += required;
+      if (required > score) {
+        totalGap += (required - score);
+      }
     }
-    final totalGap = totalRequired - totalScore;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),

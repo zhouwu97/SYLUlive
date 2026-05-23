@@ -1659,23 +1659,23 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
   // ====== 自定义课程 ======
 
-  void _showAddCourseDialog(BuildContext context) {
-    final nameCtrl = TextEditingController();
-    final teacherCtrl = TextEditingController();
-    final locationCtrl = TextEditingController();
-    int weekday = DateTime.now().weekday;
-    int startSection = 1;
-    int endSection = 2;
+  void _showAddCourseDialog(BuildContext context, {CourseBlock? editCourse}) {
+    final nameCtrl = TextEditingController(text: editCourse?.name ?? '');
+    final teacherCtrl = TextEditingController(text: editCourse?.teacher ?? '');
+    final locationCtrl = TextEditingController(text: editCourse?.location ?? '');
+    int weekday = editCourse?.weekday ?? DateTime.now().weekday;
+    int startSection = editCourse?.startSection ?? 1;
+    int endSection = editCourse?.endSection ?? 2;
     final sc = context.read<CourseScheduleProvider>();
     final wn = sc.getAcademicWeek(_weekStart) ?? 1;
-    int startWeek = wn;
-    int endWeek = (wn + 15).clamp(wn, 20);
+    int startWeek = editCourse?.weeks.isNotEmpty == true ? editCourse!.weeks.first : wn;
+    int endWeek = editCourse?.weeks.isNotEmpty == true ? editCourse!.weeks.last : (wn + 15).clamp(wn, 20);
 
     showDialog(
       context: context,
       builder: (dialogCtx) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(
-          title: const Text('添加自定义课程'),
+          title: Text(editCourse == null ? '添加自定义课程' : '编辑自定义课程'),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -1815,30 +1815,48 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                   );
                   return;
                 }
-                await sc.addCustomCourse(
-                  name: nameCtrl.text.trim(),
-                  weekday: weekday,
-                  startSection: startSection,
-                  endSection: endSection,
-                  startWeek: startWeek,
-                  endWeek: endWeek,
-                  teacher: teacherCtrl.text.trim().isEmpty
-                      ? null
-                      : teacherCtrl.text.trim(),
-                  location: locationCtrl.text.trim().isEmpty
-                      ? null
-                      : locationCtrl.text.trim(),
-                );
+                if (editCourse == null) {
+                  await sc.addCustomCourse(
+                    name: nameCtrl.text.trim(),
+                    weekday: weekday,
+                    startSection: startSection,
+                    endSection: endSection,
+                    startWeek: startWeek,
+                    endWeek: endWeek,
+                    teacher: teacherCtrl.text.trim().isEmpty
+                        ? null
+                        : teacherCtrl.text.trim(),
+                    location: locationCtrl.text.trim().isEmpty
+                        ? null
+                        : locationCtrl.text.trim(),
+                  );
+                } else {
+                  await sc.editCustomCourse(
+                    id: editCourse.id,
+                    name: nameCtrl.text.trim(),
+                    weekday: weekday,
+                    startSection: startSection,
+                    endSection: endSection,
+                    startWeek: startWeek,
+                    endWeek: endWeek,
+                    teacher: teacherCtrl.text.trim().isEmpty
+                        ? null
+                        : teacherCtrl.text.trim(),
+                    location: locationCtrl.text.trim().isEmpty
+                        ? null
+                        : locationCtrl.text.trim(),
+                  );
+                }
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('课程已添加')),
+                    SnackBar(content: Text(editCourse == null ? '课程已添加' : '课程已更新')),
                   );
                   await _syncCourseReminders(sc);
                   setState(() => _hasCache = true);
                 }
                 Navigator.pop(dialogCtx);
               },
-              child: const Text('添加'),
+              child: Text(editCourse == null ? '添加' : '保存'),
             ),
           ],
         ),
@@ -2088,6 +2106,48 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
             if (c.note != null && c.note!.isNotEmpty)
               _detailRow(Icons.note_outlined, '备注', c.note!),
             const SizedBox(height: 16),
+            if (c.id < 0) ...[
+              const Divider(),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  TextButton.icon(
+                    icon: const Icon(Icons.edit, color: Colors.blue),
+                    label: const Text('编辑', style: TextStyle(color: Colors.blue)),
+                    onPressed: () {
+                      Navigator.pop(appNavigatorKey.currentContext!);
+                      _showAddCourseDialog(context, editCourse: c);
+                    },
+                  ),
+                  TextButton.icon(
+                    icon: const Icon(Icons.delete, color: Colors.red),
+                    label: const Text('删除', style: TextStyle(color: Colors.red)),
+                    onPressed: () async {
+                      final confirmed = await showDialog<bool>(
+                        context: context,
+                        builder: (ctx) => AlertDialog(
+                          title: const Text('删除课程'),
+                          content: const Text('确定要删除这门自定义课程吗？'),
+                          actions: [
+                            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+                            TextButton(
+                              onPressed: () => Navigator.pop(ctx, true),
+                              child: const Text('删除', style: TextStyle(color: Colors.red)),
+                            ),
+                          ],
+                        ),
+                      );
+                      if (confirmed == true) {
+                        Navigator.pop(appNavigatorKey.currentContext!);
+                        await context.read<CourseScheduleProvider>().removeCustomCourse(c.id);
+                        if (mounted) setState(() {});
+                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('课程已删除')));
+                      }
+                    },
+                  ),
+                ],
+              ),
+            ],
           ],
         ),
       ),

@@ -1677,15 +1677,27 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     bool isAiMode = false;
     final TextEditingController jsonController = TextEditingController();
 
-    const String aiPromptTemplate = """你现在是一个专业的“教务数据提取引擎”。请读取我提供的教学日历/课表图片，提取其中的课程安排，并严格按照以下 JSON 格式输出数据。
+    // 获取并计算班级号 (学号去掉后两位)
+    final edu = context.read<EduProvider>();
+    String studentId = edu.studentId;
+    String classIdStr = '';
+    if (studentId.length > 2) {
+      classIdStr = studentId.substring(0, studentId.length - 2);
+    }
+    String classFilterRule = classIdStr.isNotEmpty 
+        ? '7. 班级过滤 (Class Filtering)：当前用户的班级号是“$classIdStr班”。如果图片中包含“班级”或类似列，请严格对比班级信息。只提取属于“$classIdStr”班级的课程行，完全忽略其他班级的行。'
+        : '7. 班级过滤 (Class Filtering)：如果我提供了我的班级号（例如：“我是 24030601 班”），并且图片中包含“班级”或类似列，请严格对比班级信息。只提取属于我班级的课程行，完全忽略其他班级的行。';
+
+    String aiPromptTemplate = """你现在是一个专业的“教务数据提取引擎”。请读取我提供的教学日历/课表图片或文字说明，提取其中的课程安排，并严格按照以下 JSON 格式输出数据。
 
 【数据提取规则】
 1. 操作类型 (action)：默认为 "add"。如果我额外说明了是删除，请改为 "delete"。
 2. 周次处理 (weeks) [极度重要]：请将所有上课的周次展开，提取为一个包含纯数字的数组。例如：“1-4周, 6周”应转换为 [1, 2, 3, 4, 6]；“1-9单周”应转换为 [1, 3, 5, 7, 9]。
 3. 数据类型：所有的星期、节次必须转化为纯数字 (int)。例如：“周三”转换为 3，“第5-6节”转换为 startNode: 5, endNode: 6。
-4. 处理缺失值：如果图片中没有写明教师或教室，对应的 teacher 或 location 字段请填入空字符串 ""。
+4. 处理缺失值：如果图片或文字中缺少关键信息（如未写明教师或教室），请先向我提问确认。如果我回复确实没有，对应的 teacher 或 location 字段再填入空字符串 ""，绝对不要生造数据。
 5. 拆分原则：如果一门课跨越了不同的星期或节次，请将其拆分为多个独立的 JSON 对象放入数组中。
-6. 输出限制：请只输出合法的 JSON 代码块，确保机器可以一键解析。
+6. 输出格式：请务必将 JSON 放在标准的 Markdown 代码块中（```json ... ```）。在输出 JSON 之后，请用中文简短地为我总结一下提取出的结果（“何时、何地、上什么课”），方便我进行核对。
+$classFilterRule
 
 【JSON 结构模板】
 ```json
@@ -1862,9 +1874,11 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                       foregroundColor: Theme.of(context).colorScheme.onPrimaryContainer,
                     ),
                     onPressed: () {
-                      Clipboard.setData(const ClipboardData(text: aiPromptTemplate));
+                      Clipboard.setData(ClipboardData(text: aiPromptTemplate));
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('提示词已复制！请前往 AI 助手处粘贴并发送图片。')),
+                        SnackBar(content: Text(classIdStr.isNotEmpty 
+                            ? '提示词已复制！（已自动为您填入班级号 $classIdStr）请前往 AI 助手处粘贴并发送图片或文字说明。'
+                            : '提示词已复制！粘贴给 AI 时，如果需要过滤班级，请在末尾加上您的班级号（如：我是xxx班）。')),
                       );
                     },
                   ),
@@ -1973,9 +1987,24 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     }
 
     try {
-      // 1. 防御性清理 Markdown 符号
-      String cleanJson = jsonStr.replaceAll('```json', '').replaceAll('```', '').trim();
+      // 1. 智能提取 JSON (支持 AI 输出带有中文总结的内容)
+      String cleanJson = jsonStr;
       
+      // 优先寻找 markdown 代码块中的内容
+      final RegExp jsonRegex = RegExp(r'```(?:json)?\s*(\{.*?\})\s*```', dotAll: true);
+      final match = jsonRegex.firstMatch(jsonStr);
+      
+      if (match != null) {
+        cleanJson = match.group(1)!;
+      } else {
+        // 兜底方案：寻找第一个 { 和最后一个 }
+        int start = jsonStr.indexOf('{');
+        int end = jsonStr.lastIndexOf('}');
+        if (start != -1 && end != -1 && end > start) {
+          cleanJson = jsonStr.substring(start, end + 1);
+        }
+      }
+
       // 2. 解析 JSON
       Map<String, dynamic> data = jsonDecode(cleanJson);
       String action = data['action'] ?? 'add';

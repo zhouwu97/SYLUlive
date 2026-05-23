@@ -635,10 +635,17 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
         .push(MaterialPageRoute(builder: (_) => const EduScreen()));
     if (mounted) {
       final sc = context.read<CourseScheduleProvider>();
-      await sc.loadCachedCoursesIfAvailable();
+      setState(() {
+        _initializing = true;
+        _isFetchingCourses = true;
+      });
       await sc.loadCourses(forceRefresh: true);
       await _syncCourseReminders(sc);
-      setState(() => _hasCache = sc.courses.isNotEmpty);
+      setState(() {
+        _hasCache = sc.courses.isNotEmpty;
+        _initializing = false;
+        _isFetchingCourses = false;
+      });
     }
   }
 
@@ -676,13 +683,19 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                   // 返回后强制刷新课表
                   if (mounted) {
                     final sc = context.read<CourseScheduleProvider>();
-                    await sc.loadCachedCoursesIfAvailable();
                     setState(() {
                       _didLoad = false;
                       _hasCache = false;
+                      _initializing = true;
+                      _isFetchingCourses = true;
                     });
                     await sc.loadCourses(forceRefresh: true);
                     await _syncCourseReminders(sc);
+                    setState(() {
+                      _hasCache = sc.courses.isNotEmpty;
+                      _initializing = false;
+                      _isFetchingCourses = false;
+                    });
                   }
                 },
                 icon: const Icon(Icons.school),
@@ -843,7 +856,11 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
         _didLoad = true;
       });
       
-      Navigator.pop(context); // 确保课表加载进状态后再关闭加载弹窗
+      // 给底层 Widget 预留微小的重绘时间，防止部分机型路由弹窗关闭时阻断下层 setState 渲染
+      await Future.delayed(const Duration(milliseconds: 100));
+      if (mounted) {
+        Navigator.pop(context); // 确保课表加载进状态后再关闭加载弹窗
+      }
       
       // 成功动画反馈
       showDialog(

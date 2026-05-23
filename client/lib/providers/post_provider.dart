@@ -99,15 +99,31 @@ class PostProvider extends ChangeNotifier {
             .map((e) => Post.fromJson(e))
             .toList();
 
-        // 第四步：增量合并 — 有新帖插入头部，无新帖保持原样
         if (newPosts.isNotEmpty) {
-          final existingIds = board.posts.map((p) => p.id).toSet();
-          final uniqueNew = newPosts.where((p) => !existingIds.contains(p.id)).toList();
+          // 第四步：增量合并 — 更新已有帖子，插入新帖子
+          bool changed = false;
+          final existingIndexMap = {for (var i = 0; i < board.posts.length; i++) board.posts[i].id: i};
+          final uniqueNew = <Post>[];
+          
+          for (final np in newPosts) {
+            final idx = existingIndexMap[np.id];
+            if (idx != null) {
+              board.posts[idx] = np; // 更新已有帖子
+              changed = true;
+            } else {
+              uniqueNew.add(np); // 全新帖子
+            }
+          }
+          
           if (uniqueNew.isNotEmpty) {
             board.posts = [...uniqueNew, ...board.posts];
+            changed = true;
           }
-          // 写回缓存
-          await PostCacheService.savePosts(boardId, board.posts);
+          
+          if (changed) {
+            // 写回缓存
+            await PostCacheService.savePosts(boardId, board.posts);
+          }
         }
 
         board.hasMore = newPosts.length >= 20;
@@ -162,9 +178,15 @@ class PostProvider extends ChangeNotifier {
         if (board.currentPage == 1) {
           board.posts = newPosts;
         } else {
-          final existingIds = board.posts.map((p) => p.id).toSet();
-          final uniqueNew = newPosts.where((p) => !existingIds.contains(p.id)).toList();
-          board.posts.addAll(uniqueNew);
+          final existingIndexMap = {for (var i = 0; i < board.posts.length; i++) board.posts[i].id: i};
+          for (final np in newPosts) {
+            final idx = existingIndexMap[np.id];
+            if (idx != null) {
+              board.posts[idx] = np; // 更新已存在的帖子（比如有评论数更新）
+            } else {
+              board.posts.add(np); // 尾部追加新帖子
+            }
+          }
         }
 
         board.hasMore = newPosts.length >= 20 && newPosts.isNotEmpty;
@@ -210,10 +232,26 @@ class PostProvider extends ChangeNotifier {
             .toList();
 
         if (newPosts.isNotEmpty) {
-          final existingIds = board.posts.map((p) => p.id).toSet();
-          final uniqueNew = newPosts.where((p) => !existingIds.contains(p.id)).toList();
+          bool changed = false;
+          final existingIndexMap = {for (var i = 0; i < board.posts.length; i++) board.posts[i].id: i};
+          final uniqueNew = <Post>[];
+
+          for (final np in newPosts) {
+            final idx = existingIndexMap[np.id];
+            if (idx != null) {
+              board.posts[idx] = np;
+              changed = true;
+            } else {
+              uniqueNew.add(np);
+            }
+          }
+
           if (uniqueNew.isNotEmpty) {
             board.posts = [...uniqueNew, ...board.posts];
+            changed = true;
+          }
+
+          if (changed) {
             await PostCacheService.savePosts(boardId, board.posts);
           }
         }

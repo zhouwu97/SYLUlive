@@ -399,6 +399,7 @@ class _EduScreenState extends State<EduScreen> {
                         if (navContext != null) {
                           final sc = Provider.of<CourseScheduleProvider>(navContext, listen: false);
                           sc.setSemester(year, semester);
+                          sc.loadCourses(forceRefresh: true, clearUi: true);
                         }
                       }
                       messenger.showSnackBar(

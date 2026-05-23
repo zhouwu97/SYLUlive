@@ -1,144 +1,129 @@
-import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:dio/dio.dart';
 import 'package:package_info_plus/package_info_plus.dart';
-import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
-import '../providers/auth_provider.dart';
-import 'app_feedback.dart';
 
 class UpdateChecker {
-  static Future<void> check(BuildContext context, {bool autoCheck = false}) async {
-    const giteeUrl = 'https://gitee.com/chunhezi/SYLUlive/releases';
-    const githubUrl = 'https://github.com/zhouwu97/SYLUlive/releases';
+  /// 检查更新的核心方法
+  /// [showNoUpdateToast] 设为 true 时，如果已经是最新版，可以给用户一个 Toast 提示（适合在“关于”页手动检查更新）
+  static Future<void> check(BuildContext context, {bool showNoUpdateToast = false}) async {
     try {
-      final dio = context.read<AuthProvider>().dio;
-      final packageInfo = await PackageInfo.fromPlatform();
-      final resp = await dio.get('/version');
-      if (resp.statusCode == 200) {
-        final data = resp.data is Map ? resp.data as Map : <String, dynamic>{};
-        final latestVersion = data['version']?.toString() ?? '';
-        final minVersion = data['min_version']?.toString() ?? '';
-        var forceUpdate = data['force_update'] ?? false;
-        final currentVersion = packageInfo.version;
+      final dio = Dio();
+      // 请求 Gitee 的 Latest Release 接口
+      final response = await dio.get(
+        'https://gitee.com/api/v5/repos/chunhezi/SYLUlive/releases/latest',
+        options: Options(
+          receiveTimeout: const Duration(seconds: 5),
+          sendTimeout: const Duration(seconds: 5),
+        ),
+      );
 
-        if (minVersion.isNotEmpty && _isRemoteVersionNewer(minVersion, currentVersion)) {
-          forceUpdate = true;
+      if (response.statusCode == 200) {
+        final data = response.data;
+        final String remoteVersion = data['tag_name'] ?? '';
+        final String releaseNotes = data['body'] ?? '暂无更新日志';
+        final String downloadUrl = data['html_url'] ?? ''; 
+
+        if (remoteVersion.isEmpty) return;
+
+        // 获取本地版本号
+        final packageInfo = await PackageInfo.fromPlatform();
+        final String localVersion = packageInfo.version;
+
+        // 对比版本号
+        if (_hasNewVersion(localVersion, remoteVersion)) {
+          // 检查是否包含强制更新标记
+          final bool isForceUpdate = releaseNotes.contains('[force_update]');
+          
+          // 在 UI 上展示时，把标记字符串抹掉，避免用户看着奇怪
+          final String displayNotes = releaseNotes.replaceAll('[force_update]', '').trim();
+
+          if (!context.mounted) return;
+          _showUpdateDialog(context, remoteVersion, displayNotes, downloadUrl, isForceUpdate);
+        } else {
+          if (showNoUpdateToast && context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text("当前已经是最新版本")),
+            );
+          }
         }
-
-        final giteeDownloadUrl =
-            data['gitee_download_url']?.toString().trim().isNotEmpty == true
-                ? data['gitee_download_url'].toString()
-                : giteeUrl;
-        final githubDownloadUrl =
-            data['github_download_url']?.toString().trim().isNotEmpty == true
-                ? data['github_download_url'].toString()
-                : (data['download_url']?.toString().trim().isNotEmpty == true
-                    ? data['download_url'].toString()
-                    : githubUrl);
-        final updateMsg = data['update_msg'] ?? '新版本可用';
-        final hasUpdate =
-            forceUpdate || _isRemoteVersionNewer(latestVersion, currentVersion);
-
-        if (!hasUpdate && autoCheck) return;
-
-        if (!context.mounted) return;
-        showDialog(
-          context: context,
-          barrierDismissible: !forceUpdate,
-          builder: (ctx) => PopScope(
-            canPop: !forceUpdate,
-            child: AlertDialog(
-              shape:
-                  RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-              title: Row(children: [
-                Icon(
-                  hasUpdate ? Icons.system_update : Icons.verified_outlined,
-                  color: hasUpdate ? Colors.blue : Colors.green,
-                ),
-                const SizedBox(width: 8),
-                Text(hasUpdate ? (forceUpdate ? '强制更新' : '发现新版本') : '已是最新版'),
-              ]),
-              content: Text(
-                hasUpdate
-                    ? '当前版本: $currentVersion\n最新版本: $latestVersion\n$updateMsg\n\n请选择下载来源。'
-                    : '当前版本: $currentVersion\n服务器版本: ${latestVersion.isEmpty ? '未知' : latestVersion}\n当前已是最新版本。',
-                style: const TextStyle(height: 1.5),
-              ),
-              actions: [
-                if (!hasUpdate || !forceUpdate)
-                  TextButton(
-                      onPressed: () => Navigator.pop(ctx),
-                      child: Text(hasUpdate ? '稍后' : '关闭')),
-                if (hasUpdate && forceUpdate)
-                  TextButton(
-                      onPressed: () {
-                        Navigator.pop(ctx);
-                        check(context, autoCheck: autoCheck); // 立马重新弹出
-                      },
-                      child: const Text('取消', style: TextStyle(color: Colors.grey))),
-                if (hasUpdate)
-                  OutlinedButton.icon(
-                    onPressed: () {
-                      if (!forceUpdate) Navigator.pop(ctx);
-                      launchUrl(Uri.parse(giteeDownloadUrl),
-                          mode: LaunchMode.externalApplication);
-                    },
-                    icon: const Icon(Icons.cloud_download_outlined, size: 18),
-                    label: const Text('Gitee'),
-                  ),
-                if (hasUpdate)
-                  ElevatedButton.icon(
-                    onPressed: () {
-                      if (!forceUpdate) Navigator.pop(ctx);
-                      launchUrl(Uri.parse(githubDownloadUrl),
-                          mode: LaunchMode.externalApplication);
-                    },
-                    icon: const Icon(Icons.download, size: 18),
-                    label: const Text('GitHub'),
-                    style: ElevatedButton.styleFrom(
-                        backgroundColor: Theme.of(context).primaryColor,
-                        foregroundColor: Colors.white),
-                  ),
-              ],
-            ),
-          ),
-        );
-      }
-    } on DioException catch (e) {
-      if (!autoCheck && context.mounted) {
-        AppFeedback.showSnackBar(
-          context,
-          AppFeedback.dioErrorMessage(e, fallback: '检查更新失败'),
-          isError: true,
-        );
       }
     } catch (e) {
-      if (!autoCheck && context.mounted) {
-        AppFeedback.showSnackBar(context, '检查更新失败: $e', isError: true);
-      }
+      debugPrint("检查更新失败: $e");
+      // 静默处理，不打扰用户正常使用
     }
   }
 
-  static bool _isRemoteVersionNewer(String remote, String current) {
-    final remoteParts = _parseVersion(remote);
-    final currentParts = _parseVersion(current);
-    final maxLength = remoteParts.length > currentParts.length
-        ? remoteParts.length
-        : currentParts.length;
-    for (var i = 0; i < maxLength; i++) {
-      final r = i < remoteParts.length ? remoteParts[i] : 0;
-      final c = i < currentParts.length ? currentParts[i] : 0;
-      if (r > c) return true;
-      if (r < c) return false;
+  /// 简单的版本号比对逻辑 (假设格式为 v1.2.0 或 1.2.0)
+  static bool _hasNewVersion(String local, String remote) {
+    // 移除可能带有的 'v' 前缀
+    String cleanLocal = local.replaceAll(RegExp(r'[^0-9.]'), '');
+    String cleanRemote = remote.replaceAll(RegExp(r'[^0-9.]'), '');
+
+    List<String> localParts = cleanLocal.split('.');
+    List<String> remoteParts = cleanRemote.split('.');
+
+    int length = localParts.length > remoteParts.length ? localParts.length : remoteParts.length;
+
+    for (int i = 0; i < length; i++) {
+      int l = i < localParts.length ? int.tryParse(localParts[i]) ?? 0 : 0;
+      int r = i < remoteParts.length ? int.tryParse(remoteParts[i]) ?? 0 : 0;
+      
+      if (r > l) return true;
+      if (r < l) return false;
     }
     return false;
   }
 
-  static List<int> _parseVersion(String version) {
-    final normalized = version.trim().replaceFirst(RegExp(r'^[vV]'), '');
-    return normalized
-        .split(RegExp(r'[.+-]'))
-        .map((part) => int.tryParse(part) ?? 0)
-        .toList();
+  /// 弹出更新对话框
+  static void _showUpdateDialog(
+    BuildContext context, 
+    String newVersion, 
+    String releaseNotes, 
+    String downloadUrl, 
+    bool isForceUpdate,
+  ) {
+    showDialog(
+      context: context,
+      // 如果是强制更新，点击背景不允许关闭
+      barrierDismissible: !isForceUpdate, 
+      builder: (BuildContext context) {
+        return PopScope(
+          // 如果是强制更新，拦截物理返回键
+          canPop: !isForceUpdate,
+          child: AlertDialog(
+            title: Text("发现新版本 $newVersion"),
+            content: SingleChildScrollView(
+              child: Text(releaseNotes),
+            ),
+            actions: <Widget>[
+              // 非强制更新才显示“暂不更新”按钮
+              if (!isForceUpdate)
+                TextButton(
+                  child: const Text("暂不更新"),
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                  },
+                ),
+              ElevatedButton(
+                child: const Text("立即更新"),
+                onPressed: () async {
+                  final Uri url = Uri.parse(downloadUrl);
+                  // 使用 externalApplication 模式，确保跳出 App 唤起系统浏览器
+                  if (await canLaunchUrl(url)) {
+                    await launchUrl(url, mode: LaunchMode.externalApplication);
+                  }
+                  
+                  // 如果不是强更，点击下载后关掉弹窗；如果是强更，弹窗就一直赖着不走
+                  if (!isForceUpdate && context.mounted) {
+                    Navigator.of(context).pop();
+                  }
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 }

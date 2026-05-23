@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -1660,6 +1661,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   // ====== 自定义课程 ======
 
   void _showAddCourseDialog(BuildContext context, {CourseBlock? editCourse}) {
+    // 原有的手动添加状态
     final nameCtrl = TextEditingController(text: editCourse?.name ?? '');
     final teacherCtrl = TextEditingController(text: editCourse?.teacher ?? '');
     final locationCtrl = TextEditingController(text: editCourse?.location ?? '');
@@ -1671,6 +1673,38 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     int startWeek = editCourse?.weeks.isNotEmpty == true ? editCourse!.weeks.first : wn;
     int endWeek = editCourse?.weeks.isNotEmpty == true ? editCourse!.weeks.last : (wn + 15).clamp(wn, 20);
 
+    // AI 导入模式状态
+    bool isAiMode = false;
+    final TextEditingController jsonController = TextEditingController();
+
+    const String aiPromptTemplate = """你现在是一个专业的“教务数据提取引擎”。请读取我提供的教学日历/课表图片，提取其中的课程安排，并严格按照以下 JSON 格式输出数据。
+
+【数据提取规则】
+1. 操作类型 (action)：默认为 "add"。如果我额外说明了是删除，请改为 "delete"。
+2. 周次处理 (weeks) [极度重要]：请将所有上课的周次展开，提取为一个包含纯数字的数组。例如：“1-4周, 6周”应转换为 [1, 2, 3, 4, 6]；“1-9单周”应转换为 [1, 3, 5, 7, 9]。
+3. 数据类型：所有的星期、节次必须转化为纯数字 (int)。例如：“周三”转换为 3，“第5-6节”转换为 startNode: 5, endNode: 6。
+4. 处理缺失值：如果图片中没有写明教师或教室，对应的 teacher 或 location 字段请填入空字符串 ""。
+5. 拆分原则：如果一门课跨越了不同的星期或节次，请将其拆分为多个独立的 JSON 对象放入数组中。
+6. 输出限制：请只输出合法的 JSON 代码块，确保机器可以一键解析。
+
+【JSON 结构模板】
+```json
+{
+  "action": "add",
+  "courses": [
+    {
+      "name": "大学物理",
+      "weeks": [1, 3, 5, 7, 9],
+      "dayOfWeek": 3,
+      "startNode": 5,
+      "endNode": 6,
+      "teacher": "张三",
+      "location": "A-101"
+    }
+  ]
+}
+```""";
+
     showDialog(
       context: context,
       builder: (dialogCtx) => StatefulBuilder(
@@ -1679,126 +1713,179 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                TextField(
-                  controller: nameCtrl,
-                  decoration: const InputDecoration(
-                    labelText: '课程名称',
-                    hintText: '如：高等数学',
+                if (editCourse == null) ...[
+                  SegmentedButton<bool>(
+                    segments: const [
+                      ButtonSegment(value: false, label: Text('手动添加')),
+                      ButtonSegment(value: true, label: Text('AI 导入')),
+                    ],
+                    selected: {isAiMode},
+                    onSelectionChanged: (Set<bool> newSelection) {
+                      setDialogState(() {
+                        isAiMode = newSelection.first;
+                      });
+                    },
                   ),
-                ),
-                const SizedBox(height: 12),
-                // 星期几
-                DropdownButtonFormField<int>(
-                  value: weekday,
-                  decoration: const InputDecoration(labelText: '星期'),
-                  items: List.generate(7, (i) => i + 1)
-                      .map((d) => DropdownMenuItem(
-                            value: d,
-                            child: Text('周${_wd[d - 1]}'),
-                          ))
-                      .toList(),
-                  onChanged: (v) => setDialogState(() => weekday = v ?? 1),
-                ),
-                const SizedBox(height: 12),
-                // 节次
-                Row(
-                  children: [
-                    Expanded(
-                      child: DropdownButtonFormField<int>(
-                        value: startSection,
-                        decoration: const InputDecoration(labelText: '开始节次'),
-                        items: List.generate(12, (i) => i + 1)
-                            .map((s) => DropdownMenuItem(
-                                  value: s,
-                                  child: Text('第$s节'),
-                                ))
-                            .toList(),
-                        onChanged: (v) {
-                          setDialogState(() {
-                            startSection = v ?? 1;
-                            if (endSection < startSection) {
-                              endSection = startSection;
-                            }
-                          });
-                        },
-                      ),
+                  const SizedBox(height: 20),
+                ],
+                
+                if (!isAiMode) ...[
+                  // 手动添加视图
+                  TextField(
+                    controller: nameCtrl,
+                    decoration: const InputDecoration(
+                      labelText: '课程名称',
+                      hintText: '如：高等数学',
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: DropdownButtonFormField<int>(
-                        value: endSection,
-                        decoration: const InputDecoration(labelText: '结束节次'),
-                        items: List.generate(12, (i) => i + 1)
-                            .where((s) => s >= startSection)
-                            .map((s) => DropdownMenuItem(
-                                  value: s,
-                                  child: Text('第$s节'),
-                                ))
-                            .toList(),
-                        onChanged: (v) =>
-                            setDialogState(() => endSection = v ?? startSection),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                // 周次范围
-                Row(
-                  children: [
-                    Expanded(
-                      child: DropdownButtonFormField<int>(
-                        value: startWeek.clamp(1, 20),
-                        decoration: const InputDecoration(labelText: '开始周'),
-                        items:
-                            List.generate(20, (i) => i + 1).map((w) {
-                          return DropdownMenuItem(
-                            value: w,
-                            child: Text('第$w周'),
-                          );
-                        }).toList(),
-                        onChanged: (v) {
-                          setDialogState(() {
-                            startWeek = v ?? 1;
-                            if (endWeek < startWeek) endWeek = startWeek;
-                          });
-                        },
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: DropdownButtonFormField<int>(
-                        value: endWeek.clamp(startWeek, 20),
-                        decoration: const InputDecoration(labelText: '结束周'),
-                        items: List.generate(20, (i) => i + 1)
-                            .where((w) => w >= startWeek)
-                            .map((w) => DropdownMenuItem(
-                                  value: w,
-                                  child: Text('第$w周'),
-                                ))
-                            .toList(),
-                        onChanged: (v) =>
-                            setDialogState(() => endWeek = v ?? startWeek),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: teacherCtrl,
-                  decoration: const InputDecoration(
-                    labelText: '教师（可选）',
-                    hintText: '如：张老师',
                   ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: locationCtrl,
-                  decoration: const InputDecoration(
-                    labelText: '教室（可选）',
-                    hintText: '如：综A101',
+                  const SizedBox(height: 12),
+                  // 星期几
+                  DropdownButtonFormField<int>(
+                    value: weekday,
+                    decoration: const InputDecoration(labelText: '星期'),
+                    items: List.generate(7, (i) => i + 1)
+                        .map((d) => DropdownMenuItem(
+                              value: d,
+                              child: Text('周${_wd[d - 1]}'),
+                            ))
+                        .toList(),
+                    onChanged: (v) => setDialogState(() => weekday = v ?? 1),
                   ),
-                ),
+                  const SizedBox(height: 12),
+                  // 节次
+                  Row(
+                    children: [
+                      Expanded(
+                        child: DropdownButtonFormField<int>(
+                          value: startSection,
+                          decoration: const InputDecoration(labelText: '开始节次'),
+                          items: List.generate(12, (i) => i + 1)
+                              .map((s) => DropdownMenuItem(
+                                    value: s,
+                                    child: Text('第$s节'),
+                                  ))
+                              .toList(),
+                          onChanged: (v) {
+                            setDialogState(() {
+                              startSection = v ?? 1;
+                              if (endSection < startSection) {
+                                endSection = startSection;
+                              }
+                            });
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: DropdownButtonFormField<int>(
+                          value: endSection,
+                          decoration: const InputDecoration(labelText: '结束节次'),
+                          items: List.generate(12, (i) => i + 1)
+                              .where((s) => s >= startSection)
+                              .map((s) => DropdownMenuItem(
+                                    value: s,
+                                    child: Text('第$s节'),
+                                  ))
+                              .toList(),
+                          onChanged: (v) =>
+                              setDialogState(() => endSection = v ?? startSection),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  // 周次范围
+                  Row(
+                    children: [
+                      Expanded(
+                        child: DropdownButtonFormField<int>(
+                          value: startWeek.clamp(1, 20),
+                          decoration: const InputDecoration(labelText: '开始周'),
+                          items:
+                              List.generate(20, (i) => i + 1).map((w) {
+                            return DropdownMenuItem(
+                              value: w,
+                              child: Text('第$w周'),
+                            );
+                          }).toList(),
+                          onChanged: (v) {
+                            setDialogState(() {
+                              startWeek = v ?? 1;
+                              if (endWeek < startWeek) endWeek = startWeek;
+                            });
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: DropdownButtonFormField<int>(
+                          value: endWeek.clamp(startWeek, 20),
+                          decoration: const InputDecoration(labelText: '结束周'),
+                          items: List.generate(20, (i) => i + 1)
+                              .where((w) => w >= startWeek)
+                              .map((w) => DropdownMenuItem(
+                                    value: w,
+                                    child: Text('第$w周'),
+                                  ))
+                              .toList(),
+                          onChanged: (v) =>
+                              setDialogState(() => endWeek = v ?? startWeek),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: teacherCtrl,
+                    decoration: const InputDecoration(
+                      labelText: '教师（可选）',
+                      hintText: '如：张老师',
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: locationCtrl,
+                    decoration: const InputDecoration(
+                      labelText: '教室（可选）',
+                      hintText: '如：综A101',
+                    ),
+                  ),
+                ] else ...[
+                  // AI 导入视图
+                  ElevatedButton.icon(
+                    icon: const Icon(Icons.copy, size: 18),
+                    label: const Text('一键复制 AI 提示词'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+                      foregroundColor: Theme.of(context).colorScheme.onPrimaryContainer,
+                    ),
+                    onPressed: () {
+                      Clipboard.setData(const ClipboardData(text: aiPromptTemplate));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('提示词已复制！请前往 AI 助手处粘贴并发送图片。')),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: jsonController,
+                    maxLines: 8,
+                    minLines: 5,
+                    decoration: InputDecoration(
+                      hintText: '在此粘贴 AI 生成的 JSON 代码...',
+                      border: const OutlineInputBorder(),
+                      filled: true,
+                      fillColor: Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.3),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '请确保粘贴的内容包含完整的 { } 结构',
+                    style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.outline),
+                  ),
+                ],
               ],
             ),
           ),
@@ -1807,57 +1894,65 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
               onPressed: () => Navigator.pop(dialogCtx),
               child: const Text('取消'),
             ),
-            FilledButton(
-              onPressed: () async {
-                if (nameCtrl.text.trim().isEmpty) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('请输入课程名称')),
-                  );
-                  return;
-                }
-                if (editCourse == null) {
-                  await sc.addCustomCourse(
-                    name: nameCtrl.text.trim(),
-                    weekday: weekday,
-                    startSection: startSection,
-                    endSection: endSection,
-                    startWeek: startWeek,
-                    endWeek: endWeek,
-                    teacher: teacherCtrl.text.trim().isEmpty
-                        ? null
-                        : teacherCtrl.text.trim(),
-                    location: locationCtrl.text.trim().isEmpty
-                        ? null
-                        : locationCtrl.text.trim(),
-                  );
-                } else {
-                  await sc.editCustomCourse(
-                    id: editCourse.id,
-                    name: nameCtrl.text.trim(),
-                    weekday: weekday,
-                    startSection: startSection,
-                    endSection: endSection,
-                    startWeek: startWeek,
-                    endWeek: endWeek,
-                    teacher: teacherCtrl.text.trim().isEmpty
-                        ? null
-                        : teacherCtrl.text.trim(),
-                    location: locationCtrl.text.trim().isEmpty
-                        ? null
-                        : locationCtrl.text.trim(),
-                  );
-                }
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(editCourse == null ? '课程已添加' : '课程已更新')),
-                  );
-                  await _syncCourseReminders(sc);
-                  setState(() => _hasCache = true);
-                }
-                Navigator.pop(dialogCtx);
-              },
-              child: Text(editCourse == null ? '添加' : '保存'),
-            ),
+            if (!isAiMode)
+              FilledButton(
+                onPressed: () async {
+                  if (nameCtrl.text.trim().isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('请输入课程名称')),
+                    );
+                    return;
+                  }
+                  if (editCourse == null) {
+                    await sc.addCustomCourse(
+                      name: nameCtrl.text.trim(),
+                      weekday: weekday,
+                      startSection: startSection,
+                      endSection: endSection,
+                      startWeek: startWeek,
+                      endWeek: endWeek,
+                      teacher: teacherCtrl.text.trim().isEmpty
+                          ? null
+                          : teacherCtrl.text.trim(),
+                      location: locationCtrl.text.trim().isEmpty
+                          ? null
+                          : locationCtrl.text.trim(),
+                    );
+                  } else {
+                    await sc.editCustomCourse(
+                      id: editCourse.id,
+                      name: nameCtrl.text.trim(),
+                      weekday: weekday,
+                      startSection: startSection,
+                      endSection: endSection,
+                      startWeek: startWeek,
+                      endWeek: endWeek,
+                      teacher: teacherCtrl.text.trim().isEmpty
+                          ? null
+                          : teacherCtrl.text.trim(),
+                      location: locationCtrl.text.trim().isEmpty
+                          ? null
+                          : locationCtrl.text.trim(),
+                    );
+                  }
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text(editCourse == null ? '课程已添加' : '课程已更新')),
+                    );
+                    await _syncCourseReminders(sc);
+                    setState(() => _hasCache = true);
+                  }
+                  Navigator.pop(dialogCtx);
+                },
+                child: Text(editCourse == null ? '添加' : '保存'),
+              ),
+            if (isAiMode)
+              FilledButton(
+                onPressed: () {
+                  _handleAiImport(context, jsonController.text);
+                },
+                child: const Text('解析并导入'),
+              ),
           ],
         ),
       ),
@@ -1865,7 +1960,155 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       nameCtrl.dispose();
       teacherCtrl.dispose();
       locationCtrl.dispose();
+      jsonController.dispose();
     });
+  }
+
+  // ====== AI 导入与冲突检测 ======
+
+  void _handleAiImport(BuildContext context, String jsonStr) {
+    if (jsonStr.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('请先粘贴 JSON 内容')));
+      return;
+    }
+
+    try {
+      // 1. 防御性清理 Markdown 符号
+      String cleanJson = jsonStr.replaceAll('```json', '').replaceAll('```', '').trim();
+      
+      // 2. 解析 JSON
+      Map<String, dynamic> data = jsonDecode(cleanJson);
+      String action = data['action'] ?? 'add';
+      List<dynamic> rawCourses = data['courses'] ?? [];
+
+      List<Map<String, dynamic>> validCourses = [];
+
+      // 3. 数据类型安全转换
+      for (var course in rawCourses) {
+        int dayOfWeek = int.tryParse(course['dayOfWeek'].toString()) ?? 1;
+        int startNode = int.tryParse(course['startNode'].toString()) ?? 1;
+        int endNode = int.tryParse(course['endNode'].toString()) ?? 1;
+        
+        List<int> weeks = [];
+        if (course['weeks'] != null) {
+          weeks = List<int>.from(course['weeks'].map((e) => int.tryParse(e.toString()) ?? 0));
+        }
+
+        validCourses.add({
+          'name': course['name']?.toString() ?? '未知课程',
+          'weeks': weeks,
+          'dayOfWeek': dayOfWeek,
+          'startNode': startNode,
+          'endNode': endNode,
+          'teacher': course['teacher']?.toString() ?? '',
+          'location': course['location']?.toString() ?? '',
+        });
+      }
+
+      // 4. 获取本地已有课程并进行冲突检测
+      final sc = context.read<CourseScheduleProvider>();
+      List<CourseBlock> existingCourses = sc.courses;
+
+      bool hasConflict = _checkCourseConflict(validCourses, existingCourses);
+
+      if (hasConflict) {
+        // 发现冲突，弹出二次确认框
+        showDialog(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text("发现时间冲突 ⚠️"),
+            content: const Text("检测到新导入的课程与已有课程在星期、节次和周次上存在重叠。是否继续强制添加？"),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext), 
+                child: const Text("取消导入")
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(backgroundColor: Colors.red),
+                onPressed: () {
+                  Navigator.pop(dialogContext); // 关闭警告框
+                  _executeImport(context, action, validCourses);
+                }, 
+                child: const Text("强制添加")
+              ),
+            ],
+          )
+        );
+      } else {
+        // 无冲突，直接执行
+        _executeImport(context, action, validCourses);
+      }
+
+    } catch (e) {
+      debugPrint("AI 导入解析失败: $e");
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('解析失败，请检查数据格式。\n错误信息: ${e.toString().split('\n').first}')),
+      );
+    }
+  }
+
+  bool _checkCourseConflict(List<Map<String, dynamic>> newCourses, List<CourseBlock> existingCourses) {
+    for (var newCourse in newCourses) {
+      for (var existing in existingCourses) {
+        if (newCourse['dayOfWeek'] != existing.weekday) continue;
+
+        Set<int> newWeeks = Set<int>.from(newCourse['weeks']);
+        Set<int> existingWeeks = Set<int>.from(existing.weeks); 
+        
+        if (newWeeks.intersection(existingWeeks).isEmpty) continue;
+
+        int start1 = newCourse['startNode'];
+        int end1 = newCourse['endNode'];
+        int start2 = existing.startSection;
+        int end2 = existing.endSection;
+
+        if (start1 <= end2 && end1 >= start2) {
+          debugPrint("冲突拦截: ${newCourse['name']} vs ${existing.name}");
+          return true; 
+        }
+      }
+    }
+    return false;
+  }
+
+  void _executeImport(BuildContext context, String action, List<Map<String, dynamic>> courses) async {
+    final sc = context.read<CourseScheduleProvider>();
+    
+    int addedCount = 0;
+    for (var course in courses) {
+      if (action == 'add') {
+        int startWeek = 1;
+        int endWeek = 16;
+        List<int> weeks = course['weeks'];
+        if (weeks.isNotEmpty) {
+           startWeek = weeks.first;
+           endWeek = weeks.last;
+        }
+
+        await sc.addCustomCourse(
+          name: course['name'],
+          weekday: course['dayOfWeek'],
+          startSection: course['startNode'],
+          endSection: course['endNode'],
+          startWeek: startWeek,
+          endWeek: endWeek,
+          teacher: course['teacher'].toString().isEmpty ? null : course['teacher'],
+          location: course['location'].toString().isEmpty ? null : course['location'],
+        );
+        addedCount++;
+      } else if (action == 'delete') {
+        // AI 目前仅按 action:add 处理，delete 未来可扩展根据名字删除等
+      }
+    }
+
+    if (context.mounted) {
+      Navigator.pop(context); // 关闭底层的大弹窗
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('成功导入 $addedCount 门课程！')),
+      );
+      await _syncCourseReminders(sc);
+      setState(() => _hasCache = true);
+    }
   }
 
   // ====== 课程网格（指定某一周） ======

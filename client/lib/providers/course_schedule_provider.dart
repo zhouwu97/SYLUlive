@@ -83,9 +83,11 @@ class CourseScheduleProvider extends ChangeNotifier {
   List<CourseBlock> _courses = [];
   Map<int, Map<int, List<CourseBlock>>> _gridData = {};
 
-  // 本地缓存 key 前缀
-  static const String _cacheKeyPrefix = 'course_cache_v3_';
-  static const int _cacheVersion = 3;
+  // 本地缓存 key
+  static const String _cacheKeyPrefix = 'course_cache_v4_';
+  static const int _cacheVersion = 4;
+
+  String get _currentCacheKey => '$_cacheKeyPrefix${_userId}_${_selectedYear}_$_selectedSemester';
 
   // 学期起始日期（用于推算教学周）
   DateTime? _semesterStart;
@@ -151,14 +153,14 @@ class CourseScheduleProvider extends ChangeNotifier {
   /// 检查是否有缓存的课程（不自动拉取）
   Future<bool> hasCachedCourses() async {
     if (_userId == null) return false;
-    final cacheKey = '$_cacheKeyPrefix$_userId';
+    final cacheKey = _currentCacheKey;
     final cached = await _loadFromCache(cacheKey);
     return cached != null && cached.isNotEmpty;
   }
 
   Future<bool> loadCachedCoursesIfAvailable() async {
     if (_userId == null) return false;
-    final cacheKey = '$_cacheKeyPrefix$_userId';
+    final cacheKey = _currentCacheKey;
     final cached = await _loadFromCache(cacheKey);
     if (cached == null || cached.isEmpty) {
       return false;
@@ -186,7 +188,7 @@ class CourseScheduleProvider extends ChangeNotifier {
     _errorMessage = null;
 
     if (_courses.isNotEmpty) {
-      await _saveToCache('$_cacheKeyPrefix$_userId', _courses);
+      await _saveToCache(_currentCacheKey, _courses);
     }
 
     notifyListeners();
@@ -218,7 +220,7 @@ class CourseScheduleProvider extends ChangeNotifier {
       {bool forceRefresh = false, bool onlyCache = false, bool clearUi = false}) async {
     if (_userId == null) return;
 
-    final cacheKey = '$_cacheKeyPrefix$_userId';
+    final cacheKey = _currentCacheKey;
 
     // 非强制刷新时，先尝试手机缓存
     if (!forceRefresh) {
@@ -394,7 +396,7 @@ class CourseScheduleProvider extends ChangeNotifier {
     if (_userId == null) return;
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.remove('$_cacheKeyPrefix$_userId');
+      await prefs.remove(_currentCacheKey);
     } catch (e) {
       debugPrint('清除缓存失败: $e');
     }
@@ -513,7 +515,7 @@ class CourseScheduleProvider extends ChangeNotifier {
     _buildGrid();
 
     if (_userId != null) {
-      await _saveToCache('$_cacheKeyPrefix$_userId', _courses);
+      await _saveToCache(_currentCacheKey, _courses);
     }
 
     _syncWidget();
@@ -560,7 +562,7 @@ class CourseScheduleProvider extends ChangeNotifier {
     _buildGrid();
 
     if (_userId != null) {
-      await _saveToCache('$_cacheKeyPrefix$_userId', _courses);
+      await _saveToCache(_currentCacheKey, _courses);
     }
 
     _syncWidget();
@@ -573,7 +575,7 @@ class CourseScheduleProvider extends ChangeNotifier {
     _courses.removeWhere((c) => c.id == courseId);
     _buildGrid();
     if (_userId != null) {
-      await _saveToCache('$_cacheKeyPrefix$_userId', _courses);
+      await _saveToCache(_currentCacheKey, _courses);
     }
     _syncWidget();
     notifyListeners();

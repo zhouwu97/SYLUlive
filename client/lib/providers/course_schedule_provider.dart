@@ -181,7 +181,7 @@ class CourseScheduleProvider extends ChangeNotifier {
     final oldCustoms = _courses.where((c) => c.id < 0).toList();
     _courses = rawCourses.map(_courseFromFetchedMap).toList();
     if (oldCustoms.isNotEmpty) {
-      _courses.addAll(oldCustoms);
+      _courses.insertAll(0, oldCustoms);
     }
     _buildGrid();
     _isLoading = false;
@@ -511,7 +511,7 @@ class CourseScheduleProvider extends ChangeNotifier {
       color: _colorPool[colorIdx],
     );
 
-    _courses.add(course);
+    _courses.insert(0, course);
     _buildGrid();
 
     if (_userId != null) {

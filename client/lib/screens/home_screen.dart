@@ -50,7 +50,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _syncAnnouncementPolling(context.read<AuthProvider>());
-        UpdateChecker.check(context, autoCheck: true);
+        Future.delayed(const Duration(seconds: 1), () {
+          if (mounted) {
+            UpdateChecker.check(context);
+          }
+        });
       }
     });
   }

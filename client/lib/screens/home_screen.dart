@@ -12,6 +12,7 @@ import '../main.dart';
 import '../providers/auth_provider.dart';
 import '../utils/app_navigator.dart';
 import '../utils/post_image_cache.dart';
+import '../utils/update_checker.dart';
 import '../widgets/bottom_nav.dart';
 import 'shuitie_screen.dart';
 import 'market_screen.dart';
@@ -49,6 +50,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _syncAnnouncementPolling(context.read<AuthProvider>());
+        UpdateChecker.check(context, autoCheck: true);
       }
     });
   }

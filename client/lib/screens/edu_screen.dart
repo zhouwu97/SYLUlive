@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/edu_provider.dart';
+import '../providers/course_schedule_provider.dart';
 import '../utils/app_navigator.dart' show appNavigatorKey;
 
 class EduScreen extends StatefulWidget {
@@ -393,6 +394,13 @@ class _EduScreenState extends State<EduScreen> {
                     Navigator.pop(ctx); // 关闭底部弹窗
                     try {
                       final success = await eduProvider.syncCourses(year, semester, courses);
+                      if (success) {
+                        final navContext = appNavigatorKey.currentContext;
+                        if (navContext != null) {
+                          final sc = Provider.of<CourseScheduleProvider>(navContext, listen: false);
+                          sc.setSemester(year, semester);
+                        }
+                      }
                       messenger.showSnackBar(
                         SnackBar(
                           content: Text(success ? '导入课表成功喵~' : '导入失败，请重试'),

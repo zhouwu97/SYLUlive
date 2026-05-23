@@ -36,17 +36,9 @@ jobs:
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
         run: |
-          echo "$KEYSTORE_BASE64" | base64 -d > client/android/app/key.jks
+          echo "$KEYSTORE_BASE64" | base64 -d > client/android/app/xiaoyuan.jks
 
-      - name: Set keystore properties
-        run: |
-          cd client/android/app
-          cat > key.properties << EOF
-          storePassword=${{ secrets.KEYSTORE_STORE_PASSWORD }}
-          keyPassword=${{ secrets.KEYSTORE_KEY_PASSWORD }}
-          keyAlias=${{ secrets.KEYSTORE_KEY_ALIAS }}
-          storeFile=key.jks
-          EOF
+
 
       - name: Build APK
         run: |

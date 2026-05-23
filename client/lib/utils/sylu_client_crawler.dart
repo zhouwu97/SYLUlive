@@ -371,9 +371,13 @@ class SyluClientCrawler {
           final itemName = columns[0].text.trim();
           final score = columns[7].text.trim(); // 活动分值
           final date = columns[2].text.trim();   // 活动时间
-          final category = columns[3].text.trim(); // 活动类型（思想成长/志愿公益/...)  columns[1]是申请单位
+          var category = columns[3].text.trim(); // 活动类型（思想成长/志愿公益/...)  columns[1]是申请单位
 
           if (itemName.isNotEmpty && !itemName.contains('活动名称') && !itemName.contains('序号')) {
+            // 合并分类，对齐教务系统的标准
+            if (category == '文体活动' || category == '技能特长') {
+              category = '文体活动和技能特长';
+            }
             scores.add({
               'item': itemName,
               'score': score,
@@ -397,9 +401,9 @@ class SyluClientCrawler {
         const requiredScores = <String, double>{
           '思想成长': 10.0,
           '实践实习': 10.0,
+          '创新创业': 5.0,
           '志愿公益': 10.0,
-          '创新创业': 10.0,
-          '文体活动': 10.0,
+          '文体活动和技能特长': 5.0,
         };
         
         final categoryTotals = <String, double>{};

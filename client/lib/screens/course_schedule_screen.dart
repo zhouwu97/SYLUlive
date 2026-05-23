@@ -1884,8 +1884,10 @@ $classFilterRule
                         ),
                         const SizedBox(height: 8),
                         Text('1. 点击下方按钮复制提示词；', style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant)),
-                        Text('2. 将提示词 + 课表数据 (图片或文字) 发送给任意 AI (如 Kimi、豆包)；', style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant)),
-                        Text('3. 将 AI 回复的全部内容粘贴到下方输入框。', style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                        Text('2. 发送提示词与课表(图/文)给 AI，建议关闭 AI 的“快速/极速模式”；', style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                        Text('3. 粘贴 AI 的全部回复。请务必利用 AI 的中文总结核对时间地点。', style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                        const SizedBox(height: 6),
+                        Text('*免责声明：AI 识别可能存在误差，请自行核对，因数据错误导致漏课等损失本软件概不负责。', style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.outline)),
                       ],
                     ),
                   ),
@@ -2069,20 +2071,19 @@ $classFilterRule
         showDialog(
           context: context,
           builder: (dialogContext) => AlertDialog(
-            title: const Text("发现时间冲突 ⚠️"),
-            content: const Text("检测到新导入的课程与已有课程在星期、节次和周次上存在重叠。是否继续强制添加？"),
+            title: const Text("时间重叠提醒"),
+            content: const Text("检测到新导入的课程与已有课程在时间上存在重叠。您可以继续添加，它们将在课表上同时保存。"),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(dialogContext), 
-                child: const Text("取消导入")
+                child: const Text("取消")
               ),
               FilledButton(
-                style: FilledButton.styleFrom(backgroundColor: Colors.red),
                 onPressed: () {
                   Navigator.pop(dialogContext); // 关闭警告框
                   _executeImport(context, action, validCourses);
                 }, 
-                child: const Text("强制添加")
+                child: const Text("继续添加")
               ),
             ],
           )

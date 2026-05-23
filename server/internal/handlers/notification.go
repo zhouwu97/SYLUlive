@@ -26,7 +26,7 @@ func (h *NotificationHandler) GetUnreadCount(c *gin.Context) {
 	uid := userID.(uint)
 
 	var count int64
-	h.db.Model(&models.Notification{}).Where("user_id = ? AND is_read = ?", uid, false).Count(&count)
+	h.db.Model(&models.Notification{}).Where("user_id = ? AND type = ? AND is_read = ?", uid, "reply", false).Count(&count)
 
 	c.JSON(http.StatusOK, gin.H{
 		"count": count,

@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"os"
 	"strings"
 	"time"
 
@@ -17,6 +18,22 @@ func main() {
 	cfg := config.Load()
 	var db *gorm.DB
 	var err error
+
+	// 强制尝试读取 .env 提取 DSN，避免 bash 传递环境变量失败
+	if cfg.DSN == "./shenliyuan.db" || cfg.DSN == "" {
+		content, err := os.ReadFile("/opt/shenliyuan/.env")
+		if err == nil {
+			lines := strings.Split(string(content), "\n")
+			for _, line := range lines {
+				line = strings.TrimSpace(line)
+				if strings.HasPrefix(line, "DSN=") {
+					cfg.DSN = strings.TrimPrefix(line, "DSN=")
+					log.Println("成功从 /opt/shenliyuan/.env 提取到 DSN")
+					break
+				}
+			}
+		}
+	}
 
 	if strings.Contains(cfg.DSN, "host=") || strings.Contains(cfg.DSN, "port=") {
 		db, err = gorm.Open(postgres.Open(cfg.DSN), &gorm.Config{})

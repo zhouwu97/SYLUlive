@@ -46,13 +46,11 @@ func Load() *Config {
 	}
 
 	dsn := os.Getenv("DSN")
-	if dsn == "" {
-		dsn = "./shenliyuan.db"
-		// 判断是否在 server 目录下运行脚本，是的话回退一层
-		if _, err := os.Stat("../shenliyuan.db"); err == nil {
-			dsn = "../shenliyuan.db"
-		} else if _, err := os.Stat("/opt/shenliyuan/shenliyuan.db"); err == nil {
-			dsn = "/opt/shenliyuan/shenliyuan.db"
+	if dsn == "" || dsn == "./shenliyuan.db" || dsn == "shenliyuan.db" {
+		dsn = "/opt/shenliyuan/shenliyuan.db"
+		// 兼容本地开发环境
+		if _, err := os.Stat(dsn); os.IsNotExist(err) {
+			dsn = "./shenliyuan.db"
 		}
 	}
 

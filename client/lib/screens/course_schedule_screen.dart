@@ -1,9 +1,11 @@
+import 'dart:io';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:file_picker/file_picker.dart';
 import '../providers/auth_provider.dart';
 import '../providers/edu_provider.dart';
 import '../providers/course_schedule_provider.dart';
@@ -1550,6 +1552,17 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                                 ),
                               ),
                             ),
+                            const Spacer(),
+                            TextButton.icon(
+                              onPressed: () => _importFromFile(ctx, sc, setSheetState),
+                              icon: const Icon(Icons.file_upload_outlined, size: 16),
+                              label: const Text('从文件导入'),
+                              style: TextButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(horizontal: 12),
+                                minimumSize: Size.zero,
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              ),
+                            ),
                           ],
                         ),
                         const SizedBox(height: 10),
@@ -1756,6 +1769,14 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                                                 ],
                                               ),
                                             ),
+                                            IconButton(
+                                              icon: const Icon(Icons.ios_share, size: 18),
+                                              color: primary,
+                                              tooltip: '导出此存档',
+                                              onPressed: () async {
+                                                await _exportArchive(ctx, archive.id, archive.name);
+                                              },
+                                            ),
                                             Text(
                                               '← 滑动删除',
                                               style: TextStyle(
@@ -1793,6 +1814,61 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
         ),
       ),
     );
+  }
+
+  /// 从文件导入课表存档
+  Future<void> _importFromFile(BuildContext sheetCtx, CourseScheduleProvider sc, StateSetter setSheetState) async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['json'],
+      );
+      if (result != null && result.files.single.path != null) {
+        final file = File(result.files.single.path!);
+        final jsonStr = await file.readAsString();
+        final fileName = result.files.single.name.replaceAll('.json', '');
+        
+        await sc.importArchiveFromJson(fileName, jsonStr);
+        setSheetState(() {});
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('已导入存档「$fileName」')),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('导入失败，文件可能已损坏: $e')),
+        );
+      }
+    }
+  }
+
+  /// 导出特定存档到文件 (使用分享/发送功能绕过安卓存储限制)
+  Future<void> _exportArchive(BuildContext context, String archiveId, String name) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      // 在 provider 中定义的常量：_archiveDataKeyPrefix = 'course_archive_data_v1_'
+      final jsonStr = prefs.getString('course_archive_data_v1_$archiveId');
+      if (jsonStr == null) throw Exception('存档数据不存在');
+
+      final safeName = name.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
+      final tempDir = Directory.systemTemp;
+      final file = File('${tempDir.path}/沈理校园课表_$safeName.json');
+      await file.writeAsString(jsonStr);
+
+      await Share.shareXFiles(
+        [XFile(file.path)], 
+        text: '这是我的沈理校园课表存档，可以在App的"从文件导入"功能中恢复。'
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('导出失败: $e')),
+        );
+      }
+    }
   }
 
   /// 弹出保存存档的命名对话框

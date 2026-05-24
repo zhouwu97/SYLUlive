@@ -246,30 +246,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
           isDark: isDark,
           onTap: () => _showAboutDialog(context),
         )),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+          child: SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () => UpdateChecker.check(context, showNoUpdateToast: true),
+              icon: const Icon(Icons.system_update, size: 18),
+              label: const Text('检查更新'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: isDark ? Colors.white70 : Colors.grey[700],
+                side: BorderSide(
+                    color: isDark ? Colors.white24 : Colors.grey[300]!),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16)),
+              ),
+            ),
+          ),
+        ),
 
         // 退出登录
         if (authProvider.isLoggedIn) ...[
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-            child: SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: () => UpdateChecker.check(context, showNoUpdateToast: true),
-                icon: const Icon(Icons.system_update, size: 18),
-                label: const Text('检查更新'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: isDark ? Colors.white70 : Colors.grey[700],
-                  side: BorderSide(
-                      color: isDark ? Colors.white24 : Colors.grey[300]!),
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16)),
-                ),
-              ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
             child: Container(
               width: double.infinity,
               decoration: BoxDecoration(

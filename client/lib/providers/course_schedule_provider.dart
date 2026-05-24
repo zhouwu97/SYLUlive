@@ -125,8 +125,10 @@ class CourseScheduleProvider extends ChangeNotifier {
   // 存档相关
   static const String _archiveListKeyPrefix = 'course_archives_v1_';
   static const String _archiveDataKeyPrefix = 'course_archive_data_v1_';
+  static const String _activeArchiveIdKeyPrefix = 'active_archive_v1_';
   List<CourseArchive> _archives = [];
   String get _archiveListKey => '$_archiveListKeyPrefix${_userId}_${_selectedYear}_$_selectedSemester';
+  String get _activeArchiveKey => '$_activeArchiveIdKeyPrefix${_userId}_${_selectedYear}_$_selectedSemester';
 
   // 学期起始日期（用于推算教学周）
   DateTime? _semesterStart;
@@ -306,13 +308,20 @@ class CourseScheduleProvider extends ChangeNotifier {
     }
   }
 
-  /// 加载课程。默认先从手机缓存读取，[forceRefresh]=true 时跳过缓存从服务器拉取
+  /// 拉取课程。默认优先缓存。
+  /// [forceRefresh] 强制拉取（用于静默同步或手动刷新）
   /// [onlyCache] 为 true 时，如果没有缓存则不自动拉取，直接返回
+  /// [isManualRefresh] 为 true 时，表示用户手动点击了“从教务刷新”，会清除当前存档状态
   Future<void> loadCourses(
-      {bool forceRefresh = false, bool onlyCache = false, bool clearUi = false}) async {
+      {bool forceRefresh = false, bool onlyCache = false, bool clearUi = false, bool isManualRefresh = false}) async {
     if (_userId == null) return;
 
     final cacheKey = _currentCacheKey;
+    final prefs = await SharedPreferences.getInstance();
+
+    if (isManualRefresh) {
+      await prefs.remove(_activeArchiveKey); // 手动刷新教务课表时，退出存档模式
+    }
 
     // 非强制刷新时，先尝试手机缓存
     if (!forceRefresh) {
@@ -338,6 +347,13 @@ class CourseScheduleProvider extends ChangeNotifier {
       _gridData = {};
       _isLoading = false;
       notifyListeners();
+      return;
+    }
+
+    final activeArchiveId = prefs.getString(_activeArchiveKey);
+    // 如果当前处于“查看存档”模式，且不是用户主动的手动刷新，则跳过后续的网络拉取，防止存档被覆盖
+    if (activeArchiveId != null && !isManualRefresh) {
+      debugPrint('目前正在使用存档 $activeArchiveId，跳过后台静默同步');
       return;
     }
 
@@ -728,7 +744,10 @@ class CourseScheduleProvider extends ChangeNotifier {
     _courses = list.map((e) => CourseBlock.fromJson(e as Map<String, dynamic>)).toList();
     _buildGrid();
 
-    // 保存到当前缓存 key，下次打开直接显示
+    // 保存当前使用的存档ID
+    await prefs.setString(_activeArchiveKey, archiveId);
+
+    // 覆盖到当前 cache key，让下次打开直接展示
     await _saveToCache(_currentCacheKey, _courses);
     notifyListeners();
     _syncWidget();

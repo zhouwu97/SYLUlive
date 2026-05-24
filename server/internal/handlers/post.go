@@ -185,7 +185,8 @@ func (h *PostHandler) Create(c *gin.Context) {
 	}
 
 	// 尝试增加每日首发经验
-	today := time.Now().Truncate(24 * time.Hour)
+	now := time.Now()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
 	expErr := h.db.Transaction(func(tx *gorm.DB) error {
 		expLog := models.ExpLog{
 			UserID:    userID.(uint),

@@ -570,7 +570,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                         ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(content: Text('绑定成功')));
                         _didLoad = false;
-                        sc.loadCourses(forceRefresh: true);
+                        sc.loadCourses(forceRefresh: true, isManualRefresh: true);
                       } else if (context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                             content: Text(edu.errorMessage ?? '绑定失败')));
@@ -843,7 +843,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       final synced =
           await edu.syncCourses(sc.selectedYear, sc.selectedSemester, courses);
       if (synced) {
-        await sc.loadCourses(forceRefresh: true, clearUi: true);
+        await sc.loadCourses(forceRefresh: true, clearUi: true, isManualRefresh: true);
       }
       if (!synced || sc.courses.isEmpty || sc.errorMessage != null) {
         await sc.applyFetchedCourses(courses);

@@ -15,6 +15,7 @@ import (
 	"shenliyuan/internal/handlers"
 	"shenliyuan/internal/middleware"
 	"shenliyuan/internal/models"
+	"shenliyuan/internal/tasks"
 )
 
 func main() {
@@ -67,6 +68,8 @@ func main() {
 		&models.Notification{},
 		&models.CheckIn{},
 		&models.ExpLog{},
+		&models.LotteryEvent{},
+		&models.LotteryParticipant{},
 	); err != nil {
 		log.Fatal("数据库迁移失败:", err)
 	}
@@ -110,6 +113,7 @@ func main() {
 	checkinHandler := handlers.NewCheckInHandler(db)
 	notificationHandler := handlers.NewNotificationHandler(db)
 	erkeHandler := handlers.NewErkeHandler(db)
+	lotteryHandler := handlers.NewLotteryHandler(db)
 
 	// 初始化教务服务配置
 	handlers.EduServiceConfig.BaseURL = cfg.EduServiceURL
@@ -119,6 +123,9 @@ func main() {
 	handlers.VerifyCodeConfig.SMTPPass = cfg.SMTPPass
 	handlers.VerifyCodeConfig.SMTPFrom = cfg.SMTPFrom
 	handlers.SetMajorLogDB(db)
+
+	// 启动后台定时任务
+	tasks.StartLotteryCron(db)
 
 	// 静态文件服务
 	r.Static("/uploads", cfg.UploadDir)
@@ -369,6 +376,19 @@ func main() {
 	{
 		violationAdmin.POST("", teacherHandler.AddViolation)
 		violationAdmin.PUT("/:id/appeal", teacherHandler.HandleAppeal)
+	}
+
+	// 抽奖路由
+	lotteryGroup := r.Group("/api/lottery")
+	{
+		// 获取当前抽奖活动（可以允许未登录用户看，所以不用统一拦截，或者用带用户信息的中间件）
+		lotteryGroup.GET("/current", middleware.AuthMiddleware(cfg.JWTSecret), lotteryHandler.GetCurrent)
+		lotteryGroup.POST("/:id/join", middleware.AuthMiddleware(cfg.JWTSecret), lotteryHandler.Join)
+	}
+	lotteryAdminGroup := r.Group("/api/admin/lottery")
+	lotteryAdminGroup.Use(middleware.AuthMiddleware(cfg.JWTSecret), middleware.AdminMiddleware())
+	{
+		lotteryAdminGroup.POST("/:id/draw", lotteryHandler.Draw)
 	}
 
 	// 版本信息

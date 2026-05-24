@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:flutter/services.dart';
 
 class UpdateChecker {
   /// 检查更新的核心方法
@@ -23,7 +24,16 @@ class UpdateChecker {
         final data = response.data;
         final String remoteVersion = data['tag_name'] ?? '';
         final String releaseNotes = data['body'] ?? '暂无更新日志';
-        final String downloadUrl = data['html_url'] ?? ''; 
+        String downloadUrl = data['html_url'] ?? ''; 
+        if (data['assets'] != null && data['assets'] is List) {
+          for (var asset in data['assets']) {
+            final name = asset['name']?.toString().toLowerCase() ?? '';
+            if (name.endsWith('.apk')) {
+              downloadUrl = asset['browser_download_url'] ?? downloadUrl;
+              break;
+            }
+          }
+        }
 
         if (remoteVersion.isEmpty) return;
 
@@ -111,19 +121,24 @@ class UpdateChecker {
                 onPressed: () async {
                   final Uri url = Uri.parse(downloadUrl);
                   try {
-                    // 直接尝试调用，避开 canLaunchUrl 的 Android 11 包可见性限制
-                    final launched = await launchUrl(url, mode: LaunchMode.externalApplication);
+                    bool launched = await launchUrl(url, mode: LaunchMode.externalApplication);
+                    if (!launched) {
+                      launched = await launchUrl(url, mode: LaunchMode.platformDefault);
+                    }
                     if (!launched && context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text("无法打开下载链接，请检查浏览器权限或设置")),
-                      );
+                      throw Exception("Could not launch url");
                     }
                   } catch (e) {
                     debugPrint("唤起浏览器失败: $e");
                     if (context.mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text("唤起浏览器失败，请手动前往官网下载")),
+                        SnackBar(
+                          content: const Text("唤起浏览器失败，已复制下载链接到剪贴板，请手动打开浏览器下载"),
+                          duration: const Duration(seconds: 4),
+                        ),
                       );
+                      // 复制到剪贴板
+                      await Clipboard.setData(ClipboardData(text: downloadUrl));
                     }
                   }
                   

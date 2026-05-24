@@ -184,6 +184,27 @@ func (h *PostHandler) Create(c *gin.Context) {
 		return
 	}
 
+	// 尝试增加每日首发经验
+	today := time.Now().Truncate(24 * time.Hour)
+	expErr := h.db.Transaction(func(tx *gorm.DB) error {
+		expLog := models.ExpLog{
+			UserID:    userID.(uint),
+			Action:    "post_daily",
+			Date:      today,
+			ExpEarned: 5,
+		}
+		if err := tx.Create(&expLog).Error; err != nil {
+			return err // 违反唯一约束等，直接回滚
+		}
+		if err := tx.Model(&models.User{}).Where("id = ?", userID.(uint)).UpdateColumn("exp", gorm.Expr("exp + ?", 5)).Error; err != nil {
+			return err
+		}
+		return nil
+	})
+	if expErr == nil {
+		log.Printf("用户 %v 获得每日首发经验 5 点", userID)
+	}
+
 	// 处理图片 - 从 multipart form 读取 file_ids
 	fileIDs := c.PostForm("file_ids")
 	if fileIDs == "" {

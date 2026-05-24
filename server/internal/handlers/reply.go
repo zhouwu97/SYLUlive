@@ -120,6 +120,27 @@ func (h *ReplyHandler) Create(c *gin.Context) {
 	}
 	h.db.Model(&models.Post{}).Where("id = ?", postID).Update("reply_count", gorm.Expr("reply_count + 1"))
 
+	// 尝试增加每日首回经验
+	today := time.Now().Truncate(24 * time.Hour)
+	expErr := h.db.Transaction(func(tx *gorm.DB) error {
+		expLog := models.ExpLog{
+			UserID:    userID.(uint),
+			Action:    "reply_daily",
+			Date:      today,
+			ExpEarned: 3,
+		}
+		if err := tx.Create(&expLog).Error; err != nil {
+			return err // 违反唯一约束等，直接回滚
+		}
+		if err := tx.Model(&models.User{}).Where("id = ?", userID.(uint)).UpdateColumn("exp", gorm.Expr("exp + ?", 3)).Error; err != nil {
+			return err
+		}
+		return nil
+	})
+	if expErr == nil {
+		// 这里虽然用 log，但在实际业务中这代表加分成功
+	}
+
 	// 处理图片
 	fileIDs := c.PostForm("file_ids")
 	if fileIDs != "" {

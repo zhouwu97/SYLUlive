@@ -66,6 +66,7 @@ func main() {
 		&models.AdminRemovalVote{},
 		&models.Notification{},
 		&models.CheckIn{},
+		&models.ExpLog{},
 	); err != nil {
 		log.Fatal("数据库迁移失败:", err)
 	}

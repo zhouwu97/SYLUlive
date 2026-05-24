@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
 import 'dart:convert';
@@ -727,11 +728,49 @@ class CourseScheduleProvider extends ChangeNotifier {
     final coursesJson = jsonEncode(_courses.map((c) => c.toJson()).toList());
     await prefs.setString('$_archiveDataKeyPrefix$id', coursesJson);
 
+    // 尝试备份到手机 Download 目录
+    try {
+      if (defaultTargetPlatform == TargetPlatform.android) {
+        final dir = Directory('/storage/emulated/0/Download');
+        if (await dir.exists()) {
+          final safeName = name.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
+          final file = File('${dir.path}/沈理校园课表_$safeName.json');
+          await file.writeAsString(coursesJson);
+          debugPrint('已自动备份到 Download 目录: ${file.path}');
+        }
+      }
+    } catch (e) {
+      debugPrint('备份到 Download 目录失败: $e');
+    }
+
     // 更新存档列表
     _archives.insert(0, archive);
     await _saveArchiveList();
     notifyListeners();
     return archive;
+  }
+
+  /// 从外部 JSON 导入为新存档
+  Future<void> importArchiveFromJson(String name, String jsonStr) async {
+    final List<dynamic> list = jsonDecode(jsonStr);
+    // 简单验证格式
+    final courses = list.map((e) => CourseBlock.fromJson(e as Map<String, dynamic>)).toList();
+    if (courses.isEmpty) throw Exception('课表数据为空或格式不正确');
+
+    final id = 'archive_${DateTime.now().millisecondsSinceEpoch}';
+    final archive = CourseArchive(
+      id: id,
+      name: name,
+      createdAt: DateTime.now(),
+      courseCount: courses.length,
+    );
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('$_archiveDataKeyPrefix$id', jsonEncode(courses.map((c) => c.toJson()).toList()));
+
+    _archives.insert(0, archive);
+    await _saveArchiveList();
+    notifyListeners();
   }
 
   /// 载入指定存档

@@ -121,7 +121,8 @@ func (h *ReplyHandler) Create(c *gin.Context) {
 	h.db.Model(&models.Post{}).Where("id = ?", postID).Update("reply_count", gorm.Expr("reply_count + 1"))
 
 	// 尝试增加每日首回经验
-	today := time.Now().Truncate(24 * time.Hour)
+	now := time.Now()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
 	expErr := h.db.Transaction(func(tx *gorm.DB) error {
 		expLog := models.ExpLog{
 			UserID:    userID.(uint),

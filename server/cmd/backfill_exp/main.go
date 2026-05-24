@@ -39,7 +39,7 @@ func main() {
 	var posts []models.Post
 	if err := db.Find(&posts).Error; err == nil {
 		for _, p := range posts {
-			date := p.CreatedAt.Truncate(24 * time.Hour)
+			date := time.Date(p.CreatedAt.Year(), p.CreatedAt.Month(), p.CreatedAt.Day(), 0, 0, 0, 0, time.Local)
 			txErr := db.Transaction(func(tx *gorm.DB) error {
 				expLog := models.ExpLog{
 					UserID:    p.AuthorID,
@@ -65,7 +65,7 @@ func main() {
 	var replies []models.Reply
 	if err := db.Find(&replies).Error; err == nil {
 		for _, r := range replies {
-			date := r.CreatedAt.Truncate(24 * time.Hour)
+			date := time.Date(r.CreatedAt.Year(), r.CreatedAt.Month(), r.CreatedAt.Day(), 0, 0, 0, 0, time.Local)
 			txErr := db.Transaction(func(tx *gorm.DB) error {
 				expLog := models.ExpLog{
 					UserID:    r.AuthorID,

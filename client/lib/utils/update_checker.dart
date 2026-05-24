@@ -110,9 +110,21 @@ class UpdateChecker {
                 child: const Text("立即更新"),
                 onPressed: () async {
                   final Uri url = Uri.parse(downloadUrl);
-                  // 使用 externalApplication 模式，确保跳出 App 唤起系统浏览器
-                  if (await canLaunchUrl(url)) {
-                    await launchUrl(url, mode: LaunchMode.externalApplication);
+                  try {
+                    // 直接尝试调用，避开 canLaunchUrl 的 Android 11 包可见性限制
+                    final launched = await launchUrl(url, mode: LaunchMode.externalApplication);
+                    if (!launched && context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text("无法打开下载链接，请检查浏览器权限或设置")),
+                      );
+                    }
+                  } catch (e) {
+                    debugPrint("唤起浏览器失败: $e");
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text("唤起浏览器失败，请手动前往官网下载")),
+                      );
+                    }
                   }
                   
                   // 如果不是强更，点击下载后关掉弹窗；如果是强更，弹窗就一直赖着不走

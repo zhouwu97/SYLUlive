@@ -13,6 +13,7 @@ import '../providers/theme_provider.dart';
 import '../widgets/glass_container.dart';
 import 'erke_score_screen.dart';
 import 'physical_test_screen.dart';
+import 'lottery_screen.dart';
 
 class ToolboxScreen extends StatelessWidget {
   const ToolboxScreen({super.key});
@@ -66,6 +67,15 @@ class ToolboxScreen extends StatelessWidget {
                     title: '云原神',
                     subtitle: '点击即玩',
                     onTap: () => _launchCloudGenshin(context),
+                  ),
+                  _buildToolCard(
+                    context,
+                    icon: Icons.card_giftcard,
+                    color: const Color(0xFFE91E63),
+                    title: '抽奖活动',
+                    subtitle: '公平福利派送',
+                    onTap: () => Navigator.push(context,
+                        MaterialPageRoute(builder: (_) => const LotteryScreen())),
                   ),
                   _buildToolCard(
                     context,

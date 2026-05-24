@@ -37,16 +37,19 @@ func main() {
 	loc, _ := time.LoadLocation("Asia/Shanghai")
 	targetTime := time.Date(2026, 6, 1, 19, 0, 0, 0, loc)
 
-	// 更新已有的测试抽奖活动 (ID: 1)
-	err = db.Model(&models.LotteryEvent{}).Where("id = ?", 1).Updates(map[string]interface{}{
-		"title":       "2026年度回馈大抽奖",
-		"description": "感谢大家一直以来对本应用的支持！为了回馈活跃用户，特此送出福利！",
-		"prize_name":  "B站大会员一个月",
-		"draw_time":   targetTime,
-	}).Error
+	// 创建或更新 B站大会员 抽奖活动
+	event := models.LotteryEvent{
+		Title:       "2026年度回馈大抽奖",
+		Description: "感谢大家一直以来对本应用的支持！为了回馈活跃用户，特此送出福利！",
+		PrizeName:   "B站大会员一个月",
+		DrawTime:    targetTime,
+		Status:      0,
+	}
+
+	err = db.Where("title = ?", "2026年度回馈大抽奖").FirstOrCreate(&event).Error
 
 	if err != nil {
-		log.Fatal("更新抽奖活动失败:", err)
+		log.Fatal("创建抽奖活动失败:", err)
 	}
 
 	log.Println("测试抽奖活动已更新为 B站大会员一个月！")

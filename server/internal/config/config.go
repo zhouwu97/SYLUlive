@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 )
 
 // Config 应用配置
@@ -25,6 +26,20 @@ type Config struct {
 
 // Load 从环境变量加载配置
 func Load() *Config {
+	// 强制读取 /opt/shenliyuan/.env
+	content, err := os.ReadFile("/opt/shenliyuan/.env")
+	if err == nil {
+		lines := strings.Split(string(content), "\n")
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if strings.HasPrefix(line, "DSN=") {
+				os.Setenv("DSN", strings.TrimPrefix(line, "DSN="))
+			} else if strings.HasPrefix(line, "JWT_SECRET=") {
+				os.Setenv("JWT_SECRET", strings.TrimPrefix(line, "JWT_SECRET="))
+			}
+		}
+	}
+
 	jwtSecret := os.Getenv("JWT_SECRET")
 	if jwtSecret == "" {
 		jwtSecret = "dev-only-secret-do-not-use-in-production"
@@ -33,6 +48,12 @@ func Load() *Config {
 	dsn := os.Getenv("DSN")
 	if dsn == "" {
 		dsn = "./shenliyuan.db"
+		// 判断是否在 server 目录下运行脚本，是的话回退一层
+		if _, err := os.Stat("../shenliyuan.db"); err == nil {
+			dsn = "../shenliyuan.db"
+		} else if _, err := os.Stat("/opt/shenliyuan/shenliyuan.db"); err == nil {
+			dsn = "/opt/shenliyuan/shenliyuan.db"
+		}
 	}
 
 	uploadDir := os.Getenv("UPLOAD_DIR")

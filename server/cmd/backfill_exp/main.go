@@ -35,14 +35,19 @@ func main() {
 		}
 	}
 
-	if strings.Contains(cfg.DSN, "host=") || strings.Contains(cfg.DSN, "port=") {
+	log.Printf("解析到的最终 DSN: [%s]\n", cfg.DSN)
+
+	if strings.Contains(cfg.DSN, "host=") || strings.Contains(cfg.DSN, "port=") || strings.Contains(cfg.DSN, "postgres") || strings.Contains(cfg.DSN, "user=") {
 		db, err = gorm.Open(postgres.Open(cfg.DSN), &gorm.Config{})
-		log.Println("使用 PostgreSQL 数据库")
+		log.Println("使用 PostgreSQL 数据库，DSN前缀: ", cfg.DSN[:10]+"...")
 	} else {
 		// adjust path since this script is inside cmd/backfill_exp but config uses relative DSN
-		// actually, it runs from server root if we run it like `go run cmd/backfill_exp/main.go`
-		db, err = gorm.Open(sqlite.Open(cfg.DSN), &gorm.Config{})
-		log.Println("使用 SQLite 数据库")
+		sqlitePath := cfg.DSN
+		if sqlitePath == "./shenliyuan.db" || sqlitePath == "" {
+			sqlitePath = "../shenliyuan.db" // 因为是在 server 目录下运行，回退一层
+		}
+		db, err = gorm.Open(sqlite.Open(sqlitePath), &gorm.Config{})
+		log.Println("使用 SQLite 数据库，路径:", sqlitePath)
 	}
 
 	if err != nil {

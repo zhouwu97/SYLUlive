@@ -23,12 +23,14 @@ class PostDetailScreen extends StatefulWidget {
   final int postId;
   final bool isMarket;
   final Post? initialPost;
+  final int? targetReplyId;
 
   const PostDetailScreen(
       {super.key,
       required this.postId,
       this.isMarket = false,
-      this.initialPost});
+      this.initialPost,
+      this.targetReplyId});
 
   @override
   State<PostDetailScreen> createState() => _PostDetailScreenState();
@@ -49,6 +51,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   int? _parentReplyId;
   String? _replyToName;
   bool _isSending = false;
+
+  final Map<int, GlobalKey> _replyKeys = {};
+  bool _hasScrolledToTarget = false;
 
   @override
   void initState() {
@@ -107,6 +112,20 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       // 同步到外部列表以更新浏览量等数据
       if (mounted) {
         context.read<PostProvider>().updatePostInCache(mergedPost);
+      }
+      if (widget.targetReplyId != null && !_hasScrolledToTarget) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          final key = _replyKeys[widget.targetReplyId];
+          if (key != null && key.currentContext != null) {
+            Scrollable.ensureVisible(
+              key.currentContext!,
+              duration: const Duration(milliseconds: 500),
+              curve: Curves.easeInOut,
+              alignment: 0.5,
+            );
+            _hasScrolledToTarget = true;
+          }
+        });
       }
     } on DioException catch (e) {
       final msg = AppFeedback.dioErrorMessage(e, fallback: '加载帖子失败');
@@ -1129,70 +1148,74 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   Widget _buildMainReply(Reply r, bool isDark) {
     final currentUser = context.read<AuthProvider>().user;
     final isOwn = currentUser?.id == r.authorId;
-    return GestureDetector(
-      onTap: () => _openReplyComposer(parentReplyId: r.id, replyToName: r.author?.nickname),
-      onLongPress: () => _showReplyActionSheet(r, isOwn, isDark),
-      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        CachedAvatar(
-          radius: 16,
-          imageUrl: r.author?.avatar.isNotEmpty == true
-              ? ApiConstants.fullUrl(r.author!.avatar)
-              : null,
-          fallbackText: r.author?.nickname,
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(children: [
-                Text(r.author?.nickname ?? '匿名',
-                    style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: isDark
-                            ? Colors.white.withValues(alpha: 0.80)
-                            : Colors.black87)),
-                if (r.author != null) ...[
-                  const SizedBox(width: 4),
-                  _buildLevelBadge(r.author!, isDark),
-                ],
-                const Spacer(),
-                GestureDetector(
-                  onTap: () => showReportSheet(context,
-                      targetId: r.id, targetType: 'reply'),
-                  child: Icon(Icons.report_outlined,
-                      size: 14,
-                      color: isDark ? Colors.white24 : Colors.grey[400]),
-                ),
-                const SizedBox(width: 8),
-                Text(_formatTime(r.createdAt),
-                    style: TextStyle(
-                        fontSize: 10,
-                        color: isDark ? Colors.white30 : Colors.grey[400])),
-              ]),
-              const SizedBox(height: 4),
-              SelectionContainer.disabled(
-                child: Text(r.content,
-                    style: TextStyle(
-                        fontSize: 14,
-                        height: 1.5,
-                        color: isDark ? Colors.white70 : Colors.grey[800])),
-              ),
-              const SizedBox(height: 6),
-              Row(
-                children: [
-                  Icon(Icons.reply, size: 14,
-                      color: isDark ? Colors.white30 : Colors.grey[400]),
-                  const SizedBox(width: 4),
-                  Text('回复', style: TextStyle(fontSize: 11,
-                      color: isDark ? Colors.white30 : Colors.grey[400])),
-                ],
-              ),
-            ],
+    return _buildHighlightWrapper(
+      r,
+      isDark,
+      GestureDetector(
+        onTap: () => _openReplyComposer(parentReplyId: r.id, replyToName: r.author?.nickname),
+        onLongPress: () => _showReplyActionSheet(r, isOwn, isDark),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          CachedAvatar(
+            radius: 16,
+            imageUrl: r.author?.avatar.isNotEmpty == true
+                ? ApiConstants.fullUrl(r.author!.avatar)
+                : null,
+            fallbackText: r.author?.nickname,
           ),
-        ),
-      ]),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(children: [
+                  Text(r.author?.nickname ?? '匿名',
+                      style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: isDark
+                              ? Colors.white.withValues(alpha: 0.80)
+                              : Colors.black87)),
+                  if (r.author != null) ...[
+                    const SizedBox(width: 4),
+                    _buildLevelBadge(r.author!, isDark),
+                  ],
+                  const Spacer(),
+                  GestureDetector(
+                    onTap: () => showReportSheet(context,
+                        targetId: r.id, targetType: 'reply'),
+                    child: Icon(Icons.report_outlined,
+                        size: 14,
+                        color: isDark ? Colors.white24 : Colors.grey[400]),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(_formatTime(r.createdAt),
+                      style: TextStyle(
+                          fontSize: 10,
+                          color: isDark ? Colors.white30 : Colors.grey[400])),
+                ]),
+                const SizedBox(height: 4),
+                SelectionContainer.disabled(
+                  child: Text(r.content,
+                      style: TextStyle(
+                          fontSize: 14,
+                          height: 1.5,
+                          color: isDark ? Colors.white70 : Colors.grey[800])),
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Icon(Icons.reply, size: 14,
+                        color: isDark ? Colors.white30 : Colors.grey[400]),
+                    const SizedBox(width: 4),
+                    Text('回复', style: TextStyle(fontSize: 11,
+                        color: isDark ? Colors.white30 : Colors.grey[400])),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ]),
+      ),
     );
   }
 
@@ -1204,55 +1227,83 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final threadParentId = _findTopLevelParentId(r);
     final currentUser = context.read<AuthProvider>().user;
     final isOwn = currentUser?.id == r.authorId;
-    return GestureDetector(
-      onTap: () => _openReplyComposer(parentReplyId: threadParentId, replyToName: r.author?.nickname),
-      onLongPress: () => _showReplyActionSheet(r, isOwn, isDark),
-      child: Padding(
-        padding: EdgeInsets.only(bottom: 8, left: depth * 4.0),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            CachedAvatar(
-              radius: 10,
-              imageUrl: r.author?.avatar.isNotEmpty == true
-                  ? ApiConstants.fullUrl(r.author!.avatar)
-                  : null,
-              fallbackText: r.author?.nickname,
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(children: [
-                    Text(r.author?.nickname ?? '匿名',
-                        style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: isDark
-                                ? Colors.white.withValues(alpha: 0.70)
-                                : Colors.black87)),
-                    if (r.author != null) ...[
-                      const SizedBox(width: 4),
-                      _buildLevelBadgeSmall(r.author!, isDark),
-                    ],
-                    const SizedBox(width: 8),
-                    Text(_formatTime(r.createdAt),
-                        style: TextStyle(
-                            fontSize: 10,
-                            color: isDark ? Colors.white24 : Colors.grey[400])),
-                    const Spacer(),
-                    Text('回复', style: TextStyle(fontSize: 10,
-                        color: isDark ? Colors.white24 : Colors.grey[400])),
-                  ]),
-                  const SizedBox(height: 2),
-                  contentWidget,
-                ],
+    return _buildHighlightWrapper(
+      r,
+      isDark,
+      GestureDetector(
+        onTap: () => _openReplyComposer(parentReplyId: threadParentId, replyToName: r.author?.nickname),
+        onLongPress: () => _showReplyActionSheet(r, isOwn, isDark),
+        child: Padding(
+          padding: EdgeInsets.only(bottom: 8, left: depth * 4.0),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              CachedAvatar(
+                radius: 10,
+                imageUrl: r.author?.avatar.isNotEmpty == true
+                    ? ApiConstants.fullUrl(r.author!.avatar)
+                    : null,
+                fallbackText: r.author?.nickname,
               ),
-            ),
-          ],
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(children: [
+                      Text(r.author?.nickname ?? '匿名',
+                          style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: isDark
+                                  ? Colors.white.withValues(alpha: 0.70)
+                                  : Colors.black87)),
+                      if (r.author != null) ...[
+                        const SizedBox(width: 4),
+                        _buildLevelBadgeSmall(r.author!, isDark),
+                      ],
+                      const SizedBox(width: 8),
+                      Text(_formatTime(r.createdAt),
+                          style: TextStyle(
+                              fontSize: 10,
+                              color: isDark ? Colors.white24 : Colors.grey[400])),
+                      const Spacer(),
+                      Text('回复', style: TextStyle(fontSize: 10,
+                          color: isDark ? Colors.white24 : Colors.grey[400])),
+                    ]),
+                    const SizedBox(height: 2),
+                    contentWidget,
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
+    );
+  }
+
+  Widget _buildHighlightWrapper(Reply r, bool isDark, Widget child) {
+    final key = _replyKeys.putIfAbsent(r.id, () => GlobalKey());
+    final isTarget = widget.targetReplyId == r.id;
+    return KeyedSubtree(
+      key: key,
+      child: isTarget
+          ? TweenAnimationBuilder<Color?>(
+              tween: ColorTween(
+                begin: Theme.of(context).primaryColor.withValues(alpha: 0.3),
+                end: Colors.transparent,
+              ),
+              duration: const Duration(milliseconds: 1500),
+              builder: (context, color, child) {
+                return Container(
+                  color: color,
+                  child: child,
+                );
+              },
+              child: child,
+            )
+          : child,
     );
   }
 

@@ -98,70 +98,84 @@ class _UserRepliesScreenState extends State<UserRepliesScreen> {
   }
 
   Widget _buildReplyCard(Reply reply, bool isDark) {
-    return GlassContainer(
-      padding: const EdgeInsets.all(12),
-      borderRadius: 12,
-      blur: 8,
-      opacity: isDark ? 0.15 : 0.3,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          CachedAvatar(
-            radius: 20,
-            imageUrl: reply.author?.avatar.isNotEmpty == true
-                ? ApiConstants.fullUrl(reply.author!.avatar)
-                : null,
-            fallbackText: reply.author?.nickname,
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      reply.author?.nickname ?? '匿名用户',
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                        color: isDark ? Colors.white : Colors.black87,
-                      ),
-                    ),
-                    Text(
-                      _formatTime(reply.createdAt),
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: isDark ? Colors.white30 : Colors.black54,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  '回复了您的帖子',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Theme.of(context).primaryColor,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  reply.content,
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: isDark ? Colors.white70 : Colors.black87,
-                    height: 1.4,
-                  ),
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
+    return InkWell(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => PostDetailScreen(
+              postId: reply.postId,
+              targetReplyId: reply.id,
             ),
           ),
-        ],
+        );
+      },
+      borderRadius: BorderRadius.circular(12),
+      child: GlassContainer(
+        padding: const EdgeInsets.all(12),
+        borderRadius: 12,
+        blur: 8,
+        opacity: isDark ? 0.15 : 0.3,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            CachedAvatar(
+              radius: 20,
+              imageUrl: reply.author?.avatar.isNotEmpty == true
+                  ? ApiConstants.fullUrl(reply.author!.avatar)
+                  : null,
+              fallbackText: reply.author?.nickname,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        reply.author?.nickname ?? '匿名用户',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                          color: isDark ? Colors.white : Colors.black87,
+                        ),
+                      ),
+                      Text(
+                        _formatTime(reply.createdAt),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: isDark ? Colors.white30 : Colors.black54,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    '回复了您的帖子',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(context).primaryColor,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    reply.content,
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: isDark ? Colors.white70 : Colors.black87,
+                      height: 1.4,
+                    ),
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

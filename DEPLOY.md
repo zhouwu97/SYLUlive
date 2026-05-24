@@ -68,8 +68,8 @@ systemctl restart shenliyuan
 cd /opt/shenliyuan
 git log -1 --oneline
 systemctl is-active shenliyuan
-readlink -f /proc/$(pgrep -o shenliyuan)/exe
-journalctl -u shenliyuan -n 30 --no-pager
+journalctl -u shenliyuan -n 50 --no-pager
+
 ```
 
 ## 开发阶段重建

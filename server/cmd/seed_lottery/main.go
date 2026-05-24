@@ -28,7 +28,7 @@ func main() {
 	}
 
 	// 自动迁移
-	err = db.AutoMigrate(&models.User{}, &models.LotteryEvent{}, &models.LotteryParticipant{})
+	err = db.AutoMigrate(&models.User{}, &models.LotteryEvent{}, &models.LotteryParticipant{}, &models.Announcement{})
 	if err != nil {
 		log.Fatal("迁移失败:", err)
 	}

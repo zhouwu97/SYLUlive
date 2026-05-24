@@ -361,14 +361,14 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                                   color: Colors.white,
                                 ),
                               )
-                            : const Icon(Icons.arrow_downward_outlined,
+                            : const Icon(Icons.collections_bookmark_outlined,
                                 size: 22),
                         color: Colors.white,
                         disabledColor: Colors.white54,
                         onPressed: _isFetchingCourses
                             ? null
-                            : () => _fetchCourses(context),
-                        tooltip: '从教务获取课表'),
+                            : () => _showArchiveSheet(context, sc),
+                        tooltip: '课表存档'),
                     IconButton(
                         icon: const Icon(Icons.share_outlined, size: 22),
                         color: Colors.white,
@@ -640,7 +640,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
         _initializing = true;
         _isFetchingCourses = true;
       });
-      await sc.loadCourses(forceRefresh: true, clearUi: true);
+      await sc.loadCourses(forceRefresh: false);
       await _syncCourseReminders(sc);
       setState(() {
         _hasCache = sc.courses.isNotEmpty;
@@ -690,7 +690,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                       _initializing = true;
                       _isFetchingCourses = true;
                     });
-                    await sc.loadCourses(forceRefresh: true);
+                    await sc.loadCourses(forceRefresh: false);
                     await _syncCourseReminders(sc);
                     setState(() {
                       _hasCache = sc.courses.isNotEmpty;
@@ -1227,6 +1227,615 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
         ),
       ],
     );
+  }
+
+  // ====== 课表存档面板 ======
+  void _showArchiveSheet(BuildContext context, CourseScheduleProvider sc) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final primary = Theme.of(context).primaryColor;
+    final panelColor = isDark ? const Color(0xFF111827) : Colors.white;
+    final tileColor =
+        isDark ? Colors.white.withValues(alpha: 0.06) : const Color(0xFFF8FAFC);
+    final borderColor =
+        isDark ? Colors.white.withValues(alpha: 0.08) : const Color(0xFFE5E7EB);
+    bool isRefreshing = false;
+    bool isLoadingArchive = false;
+    String? loadingArchiveId;
+
+    BoxDecoration tileDecoration() => BoxDecoration(
+          color: tileColor,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: borderColor),
+        );
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) => SafeArea(
+          top: false,
+          child: Container(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(ctx).size.height * 0.7,
+            ),
+            decoration: BoxDecoration(
+              color: panelColor,
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(24)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.18),
+                  blurRadius: 24,
+                  offset: const Offset(0, -8),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // 顶部拖拽条
+                Padding(
+                  padding: const EdgeInsets.only(top: 12, bottom: 6),
+                  child: Center(
+                    child: Container(
+                      width: 42,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: isDark ? Colors.white24 : const Color(0xFFD1D5DB),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                ),
+                // 标题栏
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 6, 20, 14),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: primary.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: Icon(Icons.collections_bookmark, color: primary),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('课表存档',
+                                style: TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.w800,
+                                  color: isDark ? Colors.white : Colors.black87,
+                                )),
+                            const SizedBox(height: 6),
+                            Text('管理存档、刷新课表',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: isDark ? Colors.white60 : Colors.grey[600],
+                                )),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                // 可滚动内容
+                Flexible(
+                  child: SingleChildScrollView(
+                    padding: EdgeInsets.fromLTRB(
+                      20, 0, 20,
+                      24 + MediaQuery.of(ctx).viewInsets.bottom,
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // 🔄 从教务系统刷新
+                        Container(
+                          width: double.infinity,
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [
+                                const Color(0xFF6366F1).withValues(alpha: isDark ? 0.25 : 0.12),
+                                const Color(0xFF8B5CF6).withValues(alpha: isDark ? 0.18 : 0.08),
+                              ],
+                            ),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: const Color(0xFF6366F1).withValues(alpha: 0.2),
+                            ),
+                          ),
+                          child: Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(16),
+                              onTap: isRefreshing
+                                  ? null
+                                  : () async {
+                                      setSheetState(() => isRefreshing = true);
+                                      Navigator.pop(ctx);
+                                      await _fetchCourses(context);
+                                      if (mounted) {
+                                        setState(() {});
+                                      }
+                                    },
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 16, vertical: 14),
+                                child: Row(
+                                  children: [
+                                    if (isRefreshing)
+                                      const SizedBox(
+                                        width: 22,
+                                        height: 22,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2.5,
+                                          color: Color(0xFF818CF8),
+                                        ),
+                                      )
+                                    else
+                                      Container(
+                                        padding: const EdgeInsets.all(6),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFF6366F1)
+                                              .withValues(alpha: 0.2),
+                                          shape: BoxShape.circle,
+                                        ),
+                                        child: const Icon(
+                                          Icons.cloud_download_outlined,
+                                          color: Color(0xFF818CF8),
+                                          size: 20,
+                                        ),
+                                      ),
+                                    const SizedBox(width: 14),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            isRefreshing
+                                                ? '正在从教务系统拉取…'
+                                                : '从教务系统刷新课表',
+                                            style: TextStyle(
+                                              fontSize: 15,
+                                              fontWeight: FontWeight.w600,
+                                              color: isDark
+                                                  ? Colors.white
+                                                  : Colors.black87,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            '拉取最新数据并覆盖当前课表',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: isDark
+                                                  ? Colors.white54
+                                                  : Colors.grey[600],
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    if (!isRefreshing)
+                                      Icon(Icons.chevron_right,
+                                          color: isDark
+                                              ? Colors.white38
+                                              : Colors.grey[400]),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+
+                        // 💾 保存当前为新存档
+                        Container(
+                          width: double.infinity,
+                          decoration: BoxDecoration(
+                            color: isDark
+                                ? primary.withValues(alpha: 0.08)
+                                : primary.withValues(alpha: 0.04),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: primary.withValues(alpha: isDark ? 0.16 : 0.10),
+                            ),
+                          ),
+                          child: Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(16),
+                              onTap: sc.courses.isEmpty
+                                  ? null
+                                  : () => _showSaveArchiveDialog(ctx, sc, setSheetState),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 16, vertical: 14),
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.all(6),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF10B981)
+                                            .withValues(alpha: 0.15),
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: const Icon(
+                                        Icons.save_outlined,
+                                        color: Color(0xFF10B981),
+                                        size: 20,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 14),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            '保存当前课表为新存档',
+                                            style: TextStyle(
+                                              fontSize: 15,
+                                              fontWeight: FontWeight.w600,
+                                              color: isDark
+                                                  ? Colors.white
+                                                  : Colors.black87,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            sc.courses.isEmpty
+                                                ? '当前无课程可保存'
+                                                : '当前 ${sc.courses.length} 门课',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: isDark
+                                                  ? Colors.white70
+                                                  : const Color(0xFF49454F),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    Icon(Icons.chevron_right,
+                                        color: isDark
+                                            ? Colors.white38
+                                            : Colors.grey[400]),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+
+                        // 存档列表标题
+                        Row(
+                          children: [
+                            Text(
+                              '我的存档',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                                color: isDark ? Colors.white : Colors.black87,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 9, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: isDark
+                                    ? primary.withValues(alpha: 0.22)
+                                    : primary.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Text(
+                                '${sc.archives.length}',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  color: isDark
+                                      ? Colors.white.withValues(alpha: 0.9)
+                                      : primary,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+
+                        // 存档列表
+                        if (sc.archives.isEmpty)
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(vertical: 36),
+                            decoration: tileDecoration(),
+                            child: Column(
+                              children: [
+                                Icon(Icons.folder_open_rounded,
+                                    size: 64,
+                                    color: isDark
+                                        ? primary.withValues(alpha: 0.18)
+                                        : primary.withValues(alpha: 0.15)),
+                                const SizedBox(height: 14),
+                                Text(
+                                  '暂无存档',
+                                  style: TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w500,
+                                    color: isDark
+                                        ? Colors.white38
+                                        : Colors.grey[500],
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  '点击上方按钮保存当前课表',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: isDark
+                                        ? Colors.white24
+                                        : Colors.grey[400],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )
+                        else
+                          ...sc.archives.asMap().entries.map((entry) {
+                            final archive = entry.value;
+                            final isLoading = isLoadingArchive &&
+                                loadingArchiveId == archive.id;
+                            final dateStr =
+                                '${archive.createdAt.month}/${archive.createdAt.day} ${archive.createdAt.hour.toString().padLeft(2, '0')}:${archive.createdAt.minute.toString().padLeft(2, '0')}';
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: Dismissible(
+                                key: Key(archive.id),
+                                direction: DismissDirection.endToStart,
+                                background: Container(
+                                  alignment: Alignment.centerRight,
+                                  padding: const EdgeInsets.only(right: 20),
+                                  decoration: BoxDecoration(
+                                    color: Colors.red.withValues(alpha: 0.15),
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                  child: const Icon(Icons.delete_outline,
+                                      color: Colors.red),
+                                ),
+                                confirmDismiss: (_) async {
+                                  return await showDialog<bool>(
+                                    context: ctx,
+                                    builder: (dialogCtx) => AlertDialog(
+                                      title: const Text('删除存档'),
+                                      content: Text('确定删除"${archive.name}"吗？'),
+                                      actions: [
+                                        TextButton(
+                                          onPressed: () =>
+                                              Navigator.pop(dialogCtx, false),
+                                          child: const Text('取消'),
+                                        ),
+                                        FilledButton(
+                                          style: FilledButton.styleFrom(
+                                              backgroundColor: Colors.red),
+                                          onPressed: () =>
+                                              Navigator.pop(dialogCtx, true),
+                                          child: const Text('删除',
+                                              style: TextStyle(
+                                                  color: Colors.white)),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                },
+                                onDismissed: (_) async {
+                                  await sc.deleteArchive(archive.id);
+                                  setSheetState(() {});
+                                },
+                                child: Container(
+                                  decoration: tileDecoration(),
+                                  child: Material(
+                                    color: Colors.transparent,
+                                    child: InkWell(
+                                      borderRadius: BorderRadius.circular(16),
+                                      onTap: isLoadingArchive
+                                          ? null
+                                          : () async {
+                                              setSheetState(() {
+                                                isLoadingArchive = true;
+                                                loadingArchiveId = archive.id;
+                                              });
+                                              try {
+                                                await sc
+                                                    .loadArchive(archive.id);
+                                                await _syncCourseReminders(sc);
+                                                if (mounted) {
+                                                  setState(() {
+                                                    _hasCache = true;
+                                                    _didLoad = true;
+                                                  });
+                                                }
+                                                if (ctx.mounted) {
+                                                  Navigator.pop(ctx);
+                                                }
+                                                if (mounted) {
+                                                  ScaffoldMessenger.of(context)
+                                                      .showSnackBar(
+                                                    SnackBar(
+                                                        content: Text(
+                                                            '已载入「${archive.name}」')),
+                                                  );
+                                                }
+                                              } catch (e) {
+                                                if (mounted) {
+                                                  ScaffoldMessenger.of(context)
+                                                      .showSnackBar(
+                                                    SnackBar(
+                                                        content: Text(
+                                                            '载入失败: $e')),
+                                                  );
+                                                }
+                                              } finally {
+                                                if (ctx.mounted) {
+                                                  setSheetState(() {
+                                                    isLoadingArchive = false;
+                                                    loadingArchiveId = null;
+                                                  });
+                                                }
+                                              }
+                                            },
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 14, vertical: 12),
+                                        child: Row(
+                                          children: [
+                                            Container(
+                                              width: 40,
+                                              height: 40,
+                                              decoration: BoxDecoration(
+                                                color: primary.withValues(
+                                                    alpha: 0.1),
+                                                borderRadius:
+                                                    BorderRadius.circular(12),
+                                              ),
+                                              child: isLoading
+                                                  ? Padding(
+                                                      padding:
+                                                          const EdgeInsets.all(
+                                                              10),
+                                                      child:
+                                                          CircularProgressIndicator(
+                                                        strokeWidth: 2,
+                                                        color: primary,
+                                                      ),
+                                                    )
+                                                  : Icon(Icons.bookmark,
+                                                      color: primary,
+                                                      size: 20),
+                                            ),
+                                            const SizedBox(width: 12),
+                                            Expanded(
+                                              child: Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: [
+                                                  Text(
+                                                    archive.name,
+                                                    style: TextStyle(
+                                                      fontSize: 15,
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                      color: isDark
+                                                          ? Colors.white
+                                                          : Colors.black87,
+                                                    ),
+                                                    maxLines: 1,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                  ),
+                                                  const SizedBox(height: 2),
+                                                  Text(
+                                                    '${archive.courseCount} 门课 · $dateStr',
+                                                    style: TextStyle(
+                                                      fontSize: 12,
+                                                      color: isDark
+                                                          ? Colors.white54
+                                                          : Colors.grey[600],
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                            Text(
+                                              '← 滑动删除',
+                                              style: TextStyle(
+                                                fontSize: 10,
+                                                color: isDark
+                                                    ? Colors.white24
+                                                    : Colors.grey[400],
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            );
+                          }),
+                        const SizedBox(height: 10),
+                        Text(
+                          '存档保存在本地，切换账号不会互相影响。',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: isDark ? Colors.white30 : Colors.grey[400],
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 弹出保存存档的命名对话框
+  void _showSaveArchiveDialog(
+      BuildContext sheetCtx, CourseScheduleProvider sc, StateSetter setSheetState) {
+    final nameCtrl = TextEditingController(
+        text: '课表 ${DateTime.now().month}/${DateTime.now().day}');
+    showDialog(
+      context: sheetCtx,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Text('保存为存档'),
+        content: TextField(
+          controller: nameCtrl,
+          maxLength: 20,
+          autofocus: true,
+          decoration: const InputDecoration(
+            hintText: '输入存档名称',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              final name = nameCtrl.text.trim();
+              if (name.isEmpty) return;
+              Navigator.pop(dialogCtx);
+              await sc.saveCurrentAsArchive(name);
+              setSheetState(() {});
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('已保存存档「$name」')),
+                );
+              }
+            },
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    ).then((_) => nameCtrl.dispose());
   }
 
   void _showOpacitySheet(BuildContext context, CourseScheduleProvider sc) {
@@ -2303,6 +2912,7 @@ $classFilterRule
     final bool isCompact = h < 70;
 
     return Positioned(
+      key: ValueKey('${c.id}_${c.weekday}_${c.startSection}'),
       left: timeColumnWidth + (c.weekday - 1) * exactW + 1.5,
       width: exactW - 3,
       top: top,

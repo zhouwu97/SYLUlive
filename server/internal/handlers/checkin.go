@@ -39,8 +39,10 @@ func (h *CheckInHandler) DoCheckIn(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 	uid := userID.(uint)
 
-	today := time.Now().Format("2006-01-02")
-	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
+	loc, _ := time.LoadLocation("Asia/Shanghai")
+	now := time.Now().In(loc)
+	today := now.Format("2006-01-02")
+	yesterday := now.AddDate(0, 0, -1).Format("2006-01-02")
 
 	// 检查今天是否已签到
 	var existing models.CheckIn
@@ -96,7 +98,9 @@ func (h *CheckInHandler) GetStatus(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 	uid := userID.(uint)
 
-	today := time.Now().Format("2006-01-02")
+	loc, _ := time.LoadLocation("Asia/Shanghai")
+	now := time.Now().In(loc)
+	today := now.Format("2006-01-02")
 
 	var todayRecord models.CheckIn
 	checkedIn := false
@@ -107,7 +111,7 @@ func (h *CheckInHandler) GetStatus(c *gin.Context) {
 		streakDays = todayRecord.StreakDays
 	} else {
 		// 没签到，查昨天记录看连续天数
-		yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
+		yesterday := now.AddDate(0, 0, -1).Format("2006-01-02")
 		var yesterdayRecord models.CheckIn
 		if err := h.db.Where("user_id = ? AND check_in_date = ?", uid, yesterday).First(&yesterdayRecord).Error; err == nil {
 			streakDays = yesterdayRecord.StreakDays

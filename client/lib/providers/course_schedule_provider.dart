@@ -460,6 +460,13 @@ class CourseScheduleProvider extends ChangeNotifier {
 
     // 网络请求成功后，保存或清理缓存
     if (networkSuccess) {
+      // 恢复所有本地的自定义课程 (包括 AI 导入的课程，其 id 均为负数)
+      final customCourses = backupCourses.where((c) => c.id < 0).toList();
+      if (customCourses.isNotEmpty) {
+        _courses.addAll(customCourses);
+        _buildGrid();
+      }
+
       if (_courses.isNotEmpty) {
         await _saveToCache(cacheKey, _courses);
       } else {

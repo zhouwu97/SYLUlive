@@ -177,7 +177,9 @@ class CourseScheduleProvider extends ChangeNotifier {
   /// 设置当前用户，但不自动拉取数据（由调用方决定何时拉取）
   /// 切换用户时自动清空内存中的旧数据，防止跨账号泄漏
   void setUserId(String userId) {
+    debugPrint('Schedule: setUserId called with $userId, current is $_userId at ${DateTime.now()}');
     if (_userId == userId) return;
+    debugPrint('Schedule: Wiping data because userId changed from $_userId to $userId at ${DateTime.now()}');
     // 切换到了不同用户 → 立刻清空旧数据
     _courses = [];
     _gridData = {};
@@ -324,6 +326,9 @@ class CourseScheduleProvider extends ChangeNotifier {
       await prefs.remove(_activeArchiveKey); // 手动刷新教务课表时，退出存档模式
     }
 
+    // 保留刷新前的课程数据作为备份
+    final backupCourses = List<CourseBlock>.from(_courses);
+
     // 非强制刷新时，先尝试手机缓存
     if (!forceRefresh) {
       final cached = await _loadFromCache(cacheKey);
@@ -338,6 +343,7 @@ class CourseScheduleProvider extends ChangeNotifier {
         _isLoading = false;
         notifyListeners();
         _syncWidget(); // 更新桌面小部件
+        debugPrint('Schedule: Cache Loaded. Course Count: ${_courses.length}, Archive Count: ${_archives.length} at ${DateTime.now()}');
         return; // 缓存命中，不请求网络
       }
     }
@@ -360,9 +366,8 @@ class CourseScheduleProvider extends ChangeNotifier {
 
     await _loadHiddenCourses();
 
-    // 缓存未命中或强制刷新 → 先清旧缓存，再请求网络
+    // 缓存未命中或强制刷新 → 准备网络请求
     if (forceRefresh) {
-      await clearCache();
       if (clearUi) {
         _courses = [];
         _gridData = {};
@@ -374,6 +379,7 @@ class CourseScheduleProvider extends ChangeNotifier {
 
     // Step 1: 尝试服务器本地数据（包含用户自定义颜色/名称）
     bool localSuccess = false;
+    bool networkSuccess = false;
     try {
       final localResp = await _eduDio.get(
         '/api/edu/courses/local',
@@ -394,6 +400,7 @@ class CourseScheduleProvider extends ChangeNotifier {
               .toList();
           _buildGrid();
           localSuccess = true;
+          networkSuccess = true;
           debugPrint('✅ 从服务器本地加载: ${_courses.length}门课');
           for (final c in _courses) {
             debugPrint(
@@ -421,11 +428,21 @@ class CourseScheduleProvider extends ChangeNotifier {
           final data = fetchResp.data;
           if (data['success'] == true) {
             final rawCourses = data['courses'] as List<dynamic>? ?? [];
-            _courses = rawCourses
-                .map((c) => _courseFromFetchedMap(c as Map<String, dynamic>))
-                .where((c) => !_hiddenCourseIds.contains(c.id))
-                .toList();
-            _buildGrid();
+            if (rawCourses.isEmpty && backupCourses.isNotEmpty && !isManualRefresh) {
+               // 自动刷新（_silentSync）拉取到了 0 门课，但本地明明有课，这极大概率是教务系统抽风。
+               // 忽略这次更新，保留本地课表！
+               debugPrint('🌐 教务系统返回0门课，但本地已有课程。忽略本次更新以防数据丢失。');
+               _courses = backupCourses;
+               _buildGrid();
+               networkSuccess = false; // 假装请求失败，防止后续清理缓存
+            } else {
+               _courses = rawCourses
+                   .map((c) => _courseFromFetchedMap(c as Map<String, dynamic>))
+                   .where((c) => !_hiddenCourseIds.contains(c.id))
+                   .toList();
+               _buildGrid();
+               networkSuccess = true;
+            }
             debugPrint('🌐 从教务拉取原始数据: ${_courses.length}门课');
             for (final c in _courses) {
               debugPrint(
@@ -441,14 +458,19 @@ class CourseScheduleProvider extends ChangeNotifier {
       }
     }
 
-    // 网络请求成功后，保存到手机缓存
-    if (_courses.isNotEmpty) {
-      await _saveToCache(cacheKey, _courses);
+    // 网络请求成功后，保存或清理缓存
+    if (networkSuccess) {
+      if (_courses.isNotEmpty) {
+        await _saveToCache(cacheKey, _courses);
+      } else {
+        await clearCache();
+      }
     }
 
     _isLoading = false;
     notifyListeners();
     _syncWidget(); // 更新桌面小部件
+    debugPrint('Schedule: Network Fetch Finished. Course Count: ${_courses.length}, Archive Count: ${_archives.length} at ${DateTime.now()}');
   }
 
   /// 同步课程数据到桌面小部件（非阻塞）
@@ -703,8 +725,10 @@ class CourseScheduleProvider extends ChangeNotifier {
       if (jsonStr != null) {
         final List<dynamic> list = jsonDecode(jsonStr);
         _archives = list.map((e) => CourseArchive.fromJson(e as Map<String, dynamic>)).toList();
+        debugPrint('Schedule: Archive List Loaded. Archive Count: ${_archives.length} at ${DateTime.now()}');
       } else {
         _archives = [];
+        debugPrint('Schedule: Archive List is empty at ${DateTime.now()}');
       }
       notifyListeners();
     } catch (e) {
@@ -731,13 +755,14 @@ class CourseScheduleProvider extends ChangeNotifier {
     // 尝试备份到手机 Download 目录
     try {
       if (defaultTargetPlatform == TargetPlatform.android) {
-        final dir = Directory('/storage/emulated/0/Download');
-        if (await dir.exists()) {
-          final safeName = name.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
-          final file = File('${dir.path}/沈理校园课表_$safeName.json');
-          await file.writeAsString(coursesJson);
-          debugPrint('已自动备份到 Download 目录: ${file.path}');
+        final baseDir = Directory('/storage/emulated/0/Download/沈理校园');
+        if (!await baseDir.exists()) {
+          await baseDir.create(recursive: true);
         }
+        final safeName = name.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
+        final file = File('${baseDir.path}/课表存档_$safeName.json');
+        await file.writeAsString(coursesJson);
+        debugPrint('已自动备份到 Download 目录: ${file.path}');
       }
     } catch (e) {
       debugPrint('备份到 Download 目录失败: $e');

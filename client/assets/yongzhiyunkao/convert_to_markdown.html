@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>练习题转换器 - JSON to Markdown</title>
+    <title>练习题 Word 导出助手</title>
     <style>
         * {
             margin: 0;
@@ -13,7 +13,7 @@
         
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
             min-height: 100vh;
             display: flex;
             align-items: center;
@@ -23,30 +23,30 @@
         
         .container {
             background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(10px);
-            border-radius: 20px;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            backdrop-filter: blur(20px);
+            border-radius: 24px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
             max-width: 1200px;
             width: 100%;
             overflow: hidden;
         }
         
         .header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(to right, #4facfe 0%, #00f2fe 100%);
             color: white;
             padding: 30px;
             text-align: center;
         }
         
         .header h1 {
-            font-size: 2.5em;
-            font-weight: 300;
+            font-size: 2.2em;
+            font-weight: 600;
             margin-bottom: 10px;
         }
         
         .header p {
             opacity: 0.9;
-            font-size: 1.1em;
+            font-size: 1.05em;
         }
         
         .main {
@@ -56,6 +56,10 @@
             gap: 30px;
         }
         
+        .left-panel, .right-panel {
+            min-width: 0;
+        }
+        
         @media (max-width: 768px) {
             .main {
                 grid-template-columns: 1fr;
@@ -63,44 +67,47 @@
         }
         
         .section {
-            background: #f8f9fa;
-            border-radius: 15px;
+            background: #ffffff;
+            border-radius: 16px;
             padding: 25px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+            border: 1px solid #f0f0f0;
         }
         
         .section-title {
-            font-size: 1.3em;
-            color: #333;
+            font-size: 1.25em;
+            color: #1a202c;
             margin-bottom: 20px;
             display: flex;
             align-items: center;
             gap: 10px;
+            font-weight: 600;
         }
         
         .upload-area {
-            border: 2px dashed #667eea;
-            border-radius: 10px;
+            border: 2px dashed #4facfe;
+            border-radius: 16px;
             padding: 40px;
             text-align: center;
             cursor: pointer;
-            transition: all 0.3s;
-            background: white;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            background: #f8fafc;
         }
         
         .upload-area:hover {
-            border-color: #764ba2;
-            background: #f8f9fa;
+            border-color: #00f2fe;
+            background: #f0f9ff;
+            transform: translateY(-2px);
         }
         
         .upload-area.dragover {
-            background: #e7e9ff;
-            border-color: #764ba2;
+            background: #e0f2fe;
+            border-color: #0284c7;
         }
         
         .upload-icon {
-            font-size: 3em;
-            color: #667eea;
-            margin-bottom: 10px;
+            font-size: 3.5em;
+            margin-bottom: 15px;
         }
         
         input[type="file"] {
@@ -110,9 +117,13 @@
         .file-info {
             margin-top: 20px;
             padding: 15px;
-            background: #e7e9ff;
-            border-radius: 10px;
+            background: #f0f9ff;
+            border-radius: 12px;
             display: none;
+            border: 1px solid #bae6fd;
+            color: #0369a1;
+            word-break: break-all;
+            overflow-wrap: break-word;
         }
         
         .options {
@@ -126,162 +137,170 @@
         label {
             display: flex;
             align-items: center;
-            gap: 10px;
+            gap: 12px;
             cursor: pointer;
             user-select: none;
+            color: #4a5568;
         }
         
         input[type="checkbox"] {
-            width: 20px;
-            height: 20px;
+            width: 18px;
+            height: 18px;
             cursor: pointer;
+            accent-color: #0ea5e9;
         }
         
         .convert-btn {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(to right, #4facfe 0%, #00f2fe 100%);
             color: white;
             border: none;
-            padding: 15px 30px;
-            border-radius: 10px;
+            padding: 16px 30px;
+            border-radius: 12px;
             font-size: 1.1em;
+            font-weight: 600;
             cursor: pointer;
             width: 100%;
-            margin-top: 20px;
-            transition: all 0.3s;
-            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+            margin-top: 25px;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 10px 15px -3px rgba(14, 165, 233, 0.3);
         }
         
-        .convert-btn:hover {
+        .convert-btn:hover:not(:disabled) {
             transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.5);
+            box-shadow: 0 15px 25px -5px rgba(14, 165, 233, 0.4);
         }
         
         .convert-btn:disabled {
-            background: #ccc;
+            background: #cbd5e1;
             cursor: not-allowed;
-            transform: none;
             box-shadow: none;
         }
         
         .preview-area {
-            background: white;
-            border-radius: 10px;
-            padding: 20px;
-            height: 500px;
+            background: #fafafa;
+            border-radius: 12px;
+            padding: 25px;
+            height: 480px;
             overflow-y: auto;
-            font-family: 'Courier New', monospace;
-            font-size: 0.9em;
-            line-height: 1.6;
-            white-space: pre-wrap;
-            word-wrap: break-word;
+            border: 1px solid #e2e8f0;
         }
         
         .preview-area::-webkit-scrollbar {
-            width: 8px;
+            width: 6px;
         }
         
         .preview-area::-webkit-scrollbar-track {
-            background: #f1f1f1;
-            border-radius: 10px;
+            background: transparent;
         }
         
         .preview-area::-webkit-scrollbar-thumb {
-            background: #888;
+            background: #cbd5e1;
             border-radius: 10px;
         }
         
         .preview-area::-webkit-scrollbar-thumb:hover {
-            background: #555;
+            background: #94a3b8;
         }
         
         .download-section {
-            margin-top: 20px;
+            margin-top: 25px;
             display: flex;
-            gap: 10px;
+            gap: 15px;
         }
         
         .download-btn, .copy-btn {
             flex: 1;
-            padding: 12px 20px;
-            border-radius: 10px;
+            padding: 14px 20px;
+            border-radius: 12px;
             border: none;
             font-size: 1em;
+            font-weight: 600;
             cursor: pointer;
-            transition: all 0.3s;
+            transition: all 0.2s;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 8px;
         }
         
         .download-btn {
-            background: #28a745;
+            background: #10b981;
             color: white;
+            box-shadow: 0 4px 6px -1px rgba(16, 185, 129, 0.2);
         }
         
         .download-btn:hover {
-            background: #218838;
-            transform: translateY(-2px);
+            background: #059669;
+            transform: translateY(-1px);
         }
         
         .copy-btn {
-            background: #6c757d;
+            background: #3b82f6;
             color: white;
+            box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.2);
         }
         
         .copy-btn:hover {
-            background: #5a6268;
-            transform: translateY(-2px);
+            background: #2563eb;
+            transform: translateY(-1px);
         }
         
         .stats {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
             gap: 15px;
             margin-top: 20px;
         }
         
         .stat-card {
-            background: white;
+            background: #f8fafc;
             padding: 15px;
-            border-radius: 10px;
+            border-radius: 12px;
             text-align: center;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            border: 1px solid #e2e8f0;
         }
         
         .stat-number {
-            font-size: 2em;
-            font-weight: bold;
-            color: #667eea;
+            font-size: 1.8em;
+            font-weight: 700;
+            color: #0284c7;
         }
         
         .stat-label {
-            color: #666;
-            font-size: 0.9em;
-            margin-top: 5px;
+            color: #64748b;
+            font-size: 0.85em;
+            margin-top: 4px;
         }
         
         .toast {
             position: fixed;
-            bottom: 30px;
+            bottom: 40px;
             left: 50%;
-            transform: translateX(-50%);
-            background: #333;
+            transform: translateX(-50%) translateY(20px);
+            background: #1e293b;
             color: white;
-            padding: 15px 30px;
+            padding: 16px 32px;
             border-radius: 50px;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04);
             opacity: 0;
-            transition: opacity 0.3s;
+            visibility: hidden;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
             z-index: 1000;
+            font-weight: 500;
         }
         
         .toast.show {
             opacity: 1;
+            visibility: visible;
+            transform: translateX(-50%) translateY(0);
         }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1>✨ 练习题转换器</h1>
-            <p>将JSON格式的题目转换为优美的Markdown文档</p>
+            <h1>✨ 练习题 Word 导出助手</h1>
+            <p>融智云考提取 JSON 转换为 Word 可用格式的富文本工具</p>
         </div>
         
         <div class="main">
@@ -289,19 +308,19 @@
                 <div class="section">
                     <h2 class="section-title">
                         <span>📤</span>
-                        上传文件
+                        上传 JSON 文件
                     </h2>
                     
                     <div class="upload-area" id="uploadArea">
-                        <div class="upload-icon">📁</div>
-                        <p><strong>点击选择文件</strong> 或 <strong>拖拽文件到此处</strong></p>
-                        <p style="margin-top: 10px; color: #666; font-size: 0.9em;">支持 .json 格式</p>
+                        <div class="upload-icon">📄</div>
+                        <p style="color: #334155; font-size: 1.1em; margin-bottom: 8px;"><strong>点击选择文件</strong> 或 <strong>拖拽至此</strong></p>
+                        <p style="color: #94a3b8; font-size: 0.9em;">仅支持 .json 格式文件</p>
                         <input type="file" id="fileInput" accept=".json">
                     </div>
                     
                     <div class="file-info" id="fileInfo">
-                        <p><strong>文件名：</strong><span id="fileName"></span></p>
-                        <p><strong>文件大小：</strong><span id="fileSize"></span></p>
+                        <p style="margin-bottom: 4px;"><strong>📄</strong> <span id="fileName"></span></p>
+                        <p style="font-size: 0.9em;">大小：<span id="fileSize"></span></p>
                     </div>
                     
                     <div class="stats" id="stats" style="display: none;">
@@ -320,41 +339,35 @@
                     </div>
                 </div>
                 
-                <div class="section" style="margin-top: 20px;">
+                <div class="section" style="margin-top: 25px;">
                     <h2 class="section-title">
                         <span>⚙️</span>
-                        转换选项
+                        输出选项
                     </h2>
                     
                     <div class="options">
                         <div class="option-group">
                             <label>
-                                <input type="checkbox" id="includeToc" checked>
-                                <span>生成目录（题目较多时推荐）</span>
-                            </label>
-                        </div>
-                        <div class="option-group">
-                            <label>
                                 <input type="checkbox" id="includeStats" checked>
-                                <span>生成统计信息</span>
+                                <span>生成统计信息表头</span>
                             </label>
                         </div>
                         <div class="option-group">
                             <label>
                                 <input type="checkbox" id="markCorrectAnswers" checked>
-                                <span>标记正确答案（✓）</span>
+                                <span>高亮标记正确答案</span>
                             </label>
                         </div>
                         <div class="option-group">
                             <label>
                                 <input type="checkbox" id="groupByChapter" checked>
-                                <span>按章节分组</span>
+                                <span>按章节分类排版</span>
                             </label>
                         </div>
                     </div>
                     
                     <button class="convert-btn" id="convertBtn" disabled>
-                        开始转换
+                        开始转换为 Word 格式
                     </button>
                 </div>
             </div>
@@ -363,19 +376,21 @@
                 <div class="section">
                     <h2 class="section-title">
                         <span>👁️</span>
-                        预览结果
+                        效果预览
                     </h2>
                     
                     <div class="preview-area" id="preview">
-                        请先上传JSON文件...
+                        <div style="color: #94a3b8; text-align: center; margin-top: 200px;">
+                            请先在左侧上传 JSON 题库文件
+                        </div>
                     </div>
                     
                     <div class="download-section" id="downloadSection" style="display: none;">
-                        <button class="download-btn" id="downloadBtn">
-                            📥 下载 Markdown
-                        </button>
                         <button class="copy-btn" id="copyBtn">
-                            📋 复制到剪贴板
+                            📋 一键复制（去 Word 粘贴）
+                        </button>
+                        <button class="download-btn" id="downloadBtn">
+                            📥 导出 .html 文件
                         </button>
                     </div>
                 </div>
@@ -387,9 +402,9 @@
     
     <script>
         let questionsData = null;
-        let markdownContent = '';
+        let htmlContent = '';
         
-        // DOM元素
+        // DOM 元素
         const uploadArea = document.getElementById('uploadArea');
         const fileInput = document.getElementById('fileInput');
         const fileInfo = document.getElementById('fileInfo');
@@ -403,6 +418,16 @@
         const toast = document.getElementById('toast');
         const stats = document.getElementById('stats');
         
+        // 阻止浏览器默认的拖拽行为，防止拖拽到非指定区域时浏览器直接打开文件
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            document.addEventListener(eventName, preventDefaults, false);
+        });
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
         // 文件上传处理
         uploadArea.addEventListener('click', () => fileInput.click());
         
@@ -430,10 +455,9 @@
             }
         });
         
-        // 处理文件
         function handleFile(file) {
             if (!file.name.endsWith('.json')) {
-                showToast('请上传JSON格式的文件！', 'error');
+                showToast('请上传 JSON 格式的文件！', 'error');
                 return;
             }
             
@@ -446,17 +470,16 @@
                 try {
                     questionsData = JSON.parse(e.target.result);
                     convertBtn.disabled = false;
-                    showToast('文件加载成功！');
+                    showToast('文件解析成功！');
                     updateStats();
                 } catch (error) {
-                    showToast('JSON格式错误！', 'error');
+                    showToast('JSON 格式解析错误！', 'error');
                     console.error(error);
                 }
             };
             reader.readAsText(file);
         }
         
-        // 更新统计信息
         function updateStats() {
             if (!questionsData) return;
             
@@ -475,48 +498,43 @@
             stats.style.display = 'grid';
         }
         
-        // 转换按钮点击
         convertBtn.addEventListener('click', () => {
             if (!questionsData) return;
             
-            const options = {
-                includeToc: document.getElementById('includeToc').checked,
-                includeStats: document.getElementById('includeStats').checked,
-                markCorrectAnswers: document.getElementById('markCorrectAnswers').checked,
-                groupByChapter: document.getElementById('groupByChapter').checked
-            };
-            
-            markdownContent = convertToMarkdown(questionsData, options);
-            preview.textContent = markdownContent;
-            downloadSection.style.display = 'flex';
-            showToast('转换成功！');
+            try {
+                const options = {
+                    includeStats: document.getElementById('includeStats').checked,
+                    markCorrectAnswers: document.getElementById('markCorrectAnswers').checked,
+                    groupByChapter: document.getElementById('groupByChapter').checked
+                };
+                
+                htmlContent = convertToHtml(questionsData, options);
+                preview.innerHTML = htmlContent;
+                downloadSection.style.display = 'flex';
+                showToast('转换完成！可以复制啦~');
+            } catch (err) {
+                console.error("转换失败:", err);
+                alert("转换时发生错误: " + err.message + "\n请按 F12 打开控制台查看详细报错。");
+            }
         });
         
-        // 转换函数
-        function convertToMarkdown(questions, options) {
-            let md = [];
+        function convertToHtml(questions, options) {
+            let html = ['<div style="font-family: \'Microsoft YaHei\', SimSun, sans-serif; line-height: 1.8; color: #000; font-size: 14pt;">'];
             
             // 标题
             const timestamp = new Date().toLocaleString('zh-CN');
-            md.push('# 练习题整理\n');
-            md.push(`> 生成时间：${timestamp}`);
-            md.push(`> 题目总数：${questions.length} 题\n`);
+            html.push(`<h1 style="text-align: center; font-size: 24pt; margin-bottom: 20px;">练习题整理</h1>`);
+            html.push(`<p style="color: #666; font-size: 12pt; text-align: center; margin-bottom: 30px;">生成时间：${timestamp} &nbsp;|&nbsp; 题目总数：${questions.length} 题</p>`);
             
             // 统计信息
             if (options.includeStats) {
-                md.push(generateStatistics(questions));
-            }
-            
-            // 目录
-            if (options.includeToc && questions.length > 10) {
-                md.push(generateToc(questions));
+                html.push(generateHtmlStatistics(questions));
             }
             
             // 题目内容
-            md.push('## 📝 题目详情\n');
+            html.push('<h2 style="font-size: 18pt; border-bottom: 2px solid #000; padding-bottom: 10px; margin-top: 30px; margin-bottom: 20px;">📝 题目详情</h2>');
             
             if (options.groupByChapter) {
-                // 按章节分组
                 const chapters = {};
                 questions.forEach(q => {
                     const chapter = q.chapter || '未分类';
@@ -526,88 +544,75 @@
                 
                 Object.keys(chapters).sort().forEach(chapter => {
                     if (Object.keys(chapters).length > 1) {
-                        md.push(`## 📚 ${chapter}\n`);
+                        html.push(`<h3 style="font-size: 16pt; color: #1f4e79; margin-top: 25px; margin-bottom: 15px; font-weight: bold;">📚 ${chapter}</h3>`);
                     }
                     chapters[chapter].forEach(q => {
-                        md.push(formatQuestion(q, options.markCorrectAnswers));
+                        html.push(formatHtmlQuestion(q, options.markCorrectAnswers));
                     });
                 });
             } else {
-                // 不分组
                 questions.forEach(q => {
-                    md.push(formatQuestion(q, options.markCorrectAnswers));
+                    html.push(formatHtmlQuestion(q, options.markCorrectAnswers));
                 });
             }
             
-            return md.join('\n');
+            html.push('</div>');
+            return html.join('\n');
         }
         
-        // 格式化单个题目
-        function formatQuestion(question, markCorrect) {
-            let md = [];
+        function formatHtmlQuestion(question, markCorrect) {
+            let html = ['<div style="margin-bottom: 30px; padding: 15px; border: 1px solid #d9d9d9; border-radius: 8px;">'];
             
             // 题目标题
-            let title = `### ${question.index || '?'}. `;
+            let title = `<b>${question.index || '?'}.</b> `;
             if (question.questionType) {
-                title += `【${question.questionType}】`;
+                title += `<span style="color: #2f5597;">【${question.questionType}】</span>`;
             }
             if (question.score) {
-                title += `（${question.score}分）`;
+                title += `<span style="color: #595959; font-size: 12pt;">（${question.score}分）</span>`;
             }
-            md.push(title);
-            md.push('');
+            html.push(`<div style="margin-bottom: 10px; font-size: 14pt;">${title}</div>`);
             
             // 章节
             if (question.chapter) {
-                md.push(`**章节：** ${question.chapter}`);
-                md.push('');
+                html.push(`<div style="font-size: 12pt; color: #595959; margin-bottom: 10px;"><b>章节：</b> ${question.chapter}</div>`);
             }
             
             // 题目内容
             if (question.question) {
-                md.push('**题目：**');
-                md.push(question.question);
-                md.push('');
+                html.push(`<div style="margin-bottom: 15px;"><b>题目：</b><br/>${question.question}</div>`);
             }
             
             // 选项
             if (question.options && question.options.length > 0) {
-                md.push('**选项：**');
+                html.push('<div style="margin-bottom: 15px;"><b>选项：</b>');
                 question.options.forEach(opt => {
                     const isCorrect = markCorrect && question.answer && question.answer.includes(opt.label);
-                    if (isCorrect) {
-                        md.push(`- **${opt.label}. ${opt.text}** ✓`);
-                    } else {
-                        md.push(`- ${opt.label}. ${opt.text}`);
-                    }
+                    const optStyle = isCorrect ? 'color: #38761d; font-weight: bold; background: #e8f5e9; padding: 5px; border-radius: 4px; display: inline-block; width: 100%; box-sizing: border-box;' : 'padding: 5px; display: inline-block; width: 100%; box-sizing: border-box;';
+                    const checkMark = isCorrect ? ' ✓' : '';
+                    html.push(`<div style="${optStyle}">${opt.label}. ${opt.text}${checkMark}</div>`);
                 });
-                md.push('');
+                html.push('</div>');
             }
             
             // 答案
             if (question.answer) {
-                md.push(`**答案：** ${question.answer}`);
-                md.push('');
+                html.push(`<div style="margin-bottom: 10px; color: #cc0000;"><b>答案：</b> ${question.answer}</div>`);
             }
             
             // 解析
             if (question.analysis && question.analysis.trim()) {
-                md.push('**解析：**');
-                md.push(question.analysis);
-                md.push('');
+                html.push(`<div style="padding: 10px; background: #fff2cc; border-left: 4px solid #f1c232; color: #7f6000; font-size: 12pt;"><b>解析：</b><br/>${question.analysis}</div>`);
             }
             
-            md.push('---\n');
-            return md.join('\n');
+            html.push('</div>');
+            return html.join('\n');
         }
         
-        // 生成统计信息
-        function generateStatistics(questions) {
-            let stats = ['## 📊 统计信息\n'];
+        function generateHtmlStatistics(questions) {
+            let html = ['<div style="margin-bottom: 30px; padding: 20px; background: #f2f2f2; border-radius: 8px;">'];
+            html.push('<h2 style="font-size: 16pt; margin-bottom: 15px; color: #000; border-bottom: 1px solid #bfbfbf; padding-bottom: 10px;">📊 统计信息</h2>');
             
-            stats.push(`- **总题数：** ${questions.length} 题`);
-            
-            // 题型统计
             const typeCount = {};
             const typeScore = {};
             questions.forEach(q => {
@@ -616,16 +621,15 @@
                 typeScore[type] = (typeScore[type] || 0) + parseFloat(q.score || 0);
             });
             
-            stats.push('\n### 题型分布：');
+            html.push('<p style="margin-bottom: 5px;"><b>题型分布：</b></p><ul style="list-style-type: disc; margin-left: 30px; margin-bottom: 15px;">');
             Object.keys(typeCount).sort().forEach(type => {
-                stats.push(`- **${type}：** ${typeCount[type]} 题（${typeScore[type]} 分）`);
+                html.push(`<li><b>${type}：</b> ${typeCount[type]} 题（${typeScore[type]} 分）</li>`);
             });
+            html.push('</ul>');
             
-            // 总分
             const totalScore = Object.values(typeScore).reduce((a, b) => a + b, 0);
-            stats.push(`\n- **总分值：** ${totalScore} 分`);
+            html.push(`<p style="margin-bottom: 15px;"><b>总分值：</b> ${totalScore} 分</p>`);
             
-            // 章节统计
             const chapterCount = {};
             questions.forEach(q => {
                 const chapter = q.chapter || '未分类';
@@ -633,76 +637,60 @@
             });
             
             if (Object.keys(chapterCount).length > 1) {
-                stats.push('\n### 章节分布：');
+                html.push('<p style="margin-bottom: 5px;"><b>章节分布：</b></p><ul style="list-style-type: disc; margin-left: 30px;">');
                 Object.keys(chapterCount).sort().forEach(chapter => {
-                    stats.push(`- **${chapter}：** ${chapterCount[chapter]} 题`);
+                    html.push(`<li><b>${chapter}：</b> ${chapterCount[chapter]} 题</li>`);
                 });
+                html.push('</ul>');
             }
             
-            stats.push('\n---\n');
-            return stats.join('\n');
+            html.push('</div>');
+            return html.join('\n');
         }
-        
-        // 生成目录
-        function generateToc(questions) {
-            let toc = ['## 📑 目录\n'];
-            
-            const chapters = {};
-            questions.forEach(q => {
-                const chapter = q.chapter || '未分类';
-                if (!chapters[chapter]) chapters[chapter] = [];
-                chapters[chapter].push(q);
-            });
-            
-            Object.keys(chapters).sort().forEach(chapter => {
-                if (chapter) {
-                    toc.push(`### 📂 ${chapter}`);
-                    chapters[chapter].forEach(q => {
-                        const index = q.index || '?';
-                        const type = q.questionType || '';
-                        let title = q.question || '';
-                        if (title.length > 50) {
-                            title = title.substring(0, 50) + '...';
-                        }
-                        toc.push(`- [${index}. 【${type}】 ${title}](#${index})`);
-                    });
-                    toc.push('');
-                }
-            });
-            
-            return toc.join('\n');
-        }
-        
-        // 下载按钮
-        downloadBtn.addEventListener('click', () => {
-            const blob = new Blob([markdownContent], { type: 'text/markdown' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `练习题_${new Date().getTime()}.md`;
-            a.click();
-            URL.revokeObjectURL(url);
-            showToast('文件已下载！');
-        });
         
         // 复制按钮
         copyBtn.addEventListener('click', async () => {
             try {
-                await navigator.clipboard.writeText(markdownContent);
-                showToast('已复制到剪贴板！');
+                const blobHtml = new Blob([htmlContent], { type: 'text/html' });
+                const blobText = new Blob([preview.innerText], { type: 'text/plain' });
+                const data = [new ClipboardItem({ 'text/html': blobHtml, 'text/plain': blobText })];
+                await navigator.clipboard.write(data);
+                showToast('✅ 已复制！可以直接去 Word 中粘贴啦~');
             } catch (err) {
-                // 备用方法
-                const textarea = document.createElement('textarea');
-                textarea.value = markdownContent;
-                document.body.appendChild(textarea);
-                textarea.select();
+                const range = document.createRange();
+                range.selectNodeContents(preview);
+                const selection = window.getSelection();
+                selection.removeAllRanges();
+                selection.addRange(range);
                 document.execCommand('copy');
-                document.body.removeChild(textarea);
-                showToast('已复制到剪贴板！');
+                selection.removeAllRanges();
+                showToast('✅ 已复制！可以直接去 Word 中粘贴啦~');
             }
         });
         
-        // 工具函数
+        // 导出为 HTML 文件
+        downloadBtn.addEventListener('click', () => {
+            const htmlExport = `
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>练习题整理</title>
+</head>
+<body>
+    ${htmlContent}
+</body>
+</html>`;
+            const blob = new Blob([htmlExport], { type: 'text/html' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `练习题_${new Date().getTime()}.html`;
+            a.click();
+            URL.revokeObjectURL(url);
+            showToast('✅ 导出成功！');
+        });
+        
         function formatFileSize(bytes) {
             if (bytes < 1024) return bytes + ' B';
             if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(2) + ' KB';
@@ -711,7 +699,11 @@
         
         function showToast(message, type = 'success') {
             toast.textContent = message;
-            toast.style.background = type === 'error' ? '#dc3545' : '#28a745';
+            if (type === 'error') {
+                toast.style.background = '#ef4444';
+            } else {
+                toast.style.background = '#1e293b';
+            }
             toast.classList.add('show');
             setTimeout(() => {
                 toast.classList.remove('show');
@@ -719,4 +711,4 @@
         }
     </script>
 </body>
-</html> 
+</html>

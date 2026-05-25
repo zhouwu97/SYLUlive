@@ -22,6 +22,8 @@ type Config struct {
 	JPushMasterSecret string // 极光推送 MasterSecret
 	SuperAdminID     string // 超级管理员账号
 	SuperAdminPass   string // 超级管理员密码
+	DeepSeekAPIKey   string // DeepSeek API 密钥
+	DeepSeekBaseURL  string // DeepSeek API 基础路径
 }
 
 // Load 从环境变量加载配置
@@ -96,12 +98,18 @@ func Load() *Config {
 		superAdminPass = "admin123" // 默认超级管理员密码
 	}
 
+	deepSeekAPIKey := os.Getenv("DEEPSEEK_API_KEY")
+	deepSeekBaseURL := os.Getenv("DEEPSEEK_BASE_URL")
+	if deepSeekBaseURL == "" {
+		deepSeekBaseURL = "https://api.deepseek.com/v1"
+	}
+
 	return &Config{
 		JWTSecret:         jwtSecret,
 		DSN:               dsn,
 		UploadDir:         uploadDir,
 		MaxFileSize:       2 * 1024 * 1024, // 2MB
-		EduServiceURL:      eduServiceURL,
+		EduServiceURL:     eduServiceURL,
 		SMTPHost:          smtpHost,
 		SMTPPort:          smtpPort,
 		SMTPUser:          smtpUser,
@@ -111,5 +119,7 @@ func Load() *Config {
 		JPushMasterSecret: jpushMasterSecret,
 		SuperAdminID:      superAdminID,
 		SuperAdminPass:    superAdminPass,
+		DeepSeekAPIKey:    deepSeekAPIKey,
+		DeepSeekBaseURL:   deepSeekBaseURL,
 	}
 }

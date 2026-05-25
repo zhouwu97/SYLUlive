@@ -22,6 +22,7 @@ type User struct {
 	Avatar       string    `gorm:"size:500" json:"avatar"`                         // 头像URL
 	Background   string    `gorm:"size:500" json:"background"`                     // 背景图URL
 	NightMode    bool      `gorm:"default:false" json:"night_mode"`                // 夜间模式
+	TokenVersion int       `gorm:"default:0" json:"-"`                             // 令牌版本号（用于改密码后强制下线）
 	CreditScore  int       `gorm:"default:100;index" json:"credit_score"`          // 诚信度 0-100
 	Role         Role      `gorm:"size:20;default:user;index" json:"role"`         // 角色
 	AdminExp     int       `gorm:"default:0" json:"admin_exp"`                     // 管理员经验

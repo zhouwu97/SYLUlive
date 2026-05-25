@@ -1,15 +1,17 @@
 // ==UserScript==
 // @name         融智云考练习题提取器
 // @namespace    http://tampermonkey.net/
-// @version      5.2
+// @version      5.3
 // @description  自动提取融智云考系统的练习题目
 // @author       Assistant
 // @match        https://kwk.ahau.edu.cn/practice/subject_practice.html*
+// @match        https://www.cctrcloud.net/practice/subject_practice.html*
+// @match        https://*.cctrcloud.net/practice/subject_practice.html*
 // @grant        none
 // @run-at       document-end
 // ==/UserScript==
 
-(function() {
+(function () {
     'use strict';
 
     // 创建样式
@@ -76,7 +78,7 @@
         backdrop-filter: blur(4px);
         border: 1px solid rgba(255, 255, 255, 0.18);
     `;
-    
+
     floatButton.onmouseover = () => {
         floatButton.style.transform = 'scale(1.1) rotate(5deg)';
         floatButton.style.boxShadow = '0 12px 40px rgba(102, 126, 234, 0.6)';
@@ -85,7 +87,7 @@
         floatButton.style.transform = 'scale(1) rotate(0deg)';
         floatButton.style.boxShadow = '0 8px 32px rgba(102, 126, 234, 0.4)';
     };
-    
+
     document.body.appendChild(floatButton);
 
     // 创建提取界面
@@ -112,13 +114,13 @@
     function getCurrentQuestionInfo() {
         const currentElement = document.querySelector('.on[data-questioncount]');
         const allQuestions = document.querySelectorAll('[data-questioncount]');
-        
+
         if (currentElement) {
             const current = parseInt(currentElement.getAttribute('data-questioncount'));
             const total = allQuestions.length;
             return { current, total };
         }
-        
+
         const urlParams = new URLSearchParams(window.location.search);
         const total = parseInt(urlParams.get('studentpractisequestioncount')) || 200;
         return { current: 1, total };
@@ -290,7 +292,6 @@
         if (extractPanel.style.display === 'none') {
             extractPanel.style.display = 'block';
             extractPanel.classList.add('extract-panel-show');
-            // 更新当前题目信息
             const info = getCurrentQuestionInfo();
             document.getElementById('current-question').textContent = info.current;
             document.getElementById('total-questions').textContent = info.total;
@@ -304,10 +305,107 @@
         extractPanel.style.display = 'none';
     };
 
+    // 辅助函数：把 SVG data URI 转换为 PNG data URI，彻底解决 Word 不支持复制 SVG 的问题
+    function svgToPngDataURL(svgUri) {
+        return new Promise((resolve) => {
+            const img = new Image();
+            
+            // 增加超时保护，防止某些特殊 SVG 导致加载挂起卡死提取进度
+            const timeoutId = setTimeout(() => {
+                resolve(svgUri);
+            }, 2000);
+
+            img.onload = () => {
+                clearTimeout(timeoutId);
+                try {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = img.width || 100;
+                    canvas.height = img.height || 30;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0);
+                    resolve(canvas.toDataURL('image/png'));
+                } catch(e) {
+                    resolve(svgUri);
+                }
+            };
+            img.onerror = () => {
+                clearTimeout(timeoutId);
+                resolve(svgUri);
+            };
+            img.src = svgUri;
+        });
+    }
+
     // 获取单个题目数据的函数
-    function extractCurrentQuestion() {
-        const slideContent = document.querySelector('.practice_slide_content.slide-con');
+    async function extractCurrentQuestion() {
+        // 【关键修复】必须优先获取带有 .swiper-slide-active 的当前活动页，否则会抓到被回收的空白占位页！
+        const slideContent = document.querySelector('.swiper-slide-active .practice_slide_content.slide-con') || 
+                             document.querySelector('.practice_slide_content.slide-con');
         if (!slideContent) return null;
+
+        async function getRichText(element) {
+            if (!element) return '';
+            const clone = element.cloneNode(true);
+            
+            clone.querySelectorAll('.MathJax, mjx-container, .katex').forEach(container => {
+                const mathML = container.querySelector('.MJX_Assistive_MathML math, mjx-assistive-mml math, .katex-mathml math, math');
+                if (mathML) {
+                    mathML.setAttribute('xmlns', 'http://www.w3.org/1998/Math/MathML');
+                    container.parentNode.insertBefore(mathML, container);
+                    container.remove();
+                } else {
+                    const texScript = container.parentNode.querySelector('script[type^="math/tex"]');
+                    if (texScript) {
+                        const textNode = document.createTextNode(' ' + texScript.textContent + ' ');
+                        container.parentNode.insertBefore(textNode, container);
+                        container.remove();
+                    }
+                }
+            });
+
+            clone.querySelectorAll('.MathJax_Preview').forEach(el => el.remove());
+
+            const imgPromises = Array.from(clone.querySelectorAll('img')).map(async (img) => {
+                const realSrc = img.getAttribute('data-src') || img.getAttribute('fr-original-src') || img.src;
+                if (realSrc) {
+                    let finalSrc = realSrc;
+                    if (finalSrc.startsWith('/')) {
+                        finalSrc = window.location.origin + finalSrc;
+                    } else if (!finalSrc.startsWith('http') && !finalSrc.startsWith('data:')) {
+                        const path = window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/') + 1);
+                        finalSrc = window.location.origin + path + finalSrc;
+                    }
+                    
+                    if (finalSrc.startsWith('http://')) {
+                        finalSrc = finalSrc.replace('http://', 'https://');
+                    }
+
+                    if (finalSrc.startsWith('data:image/svg+xml')) {
+                        try {
+                            const svgStr = finalSrc.includes('base64,') ? 
+                                atob(finalSrc.split('base64,')[1]) : 
+                                decodeURIComponent(finalSrc.split(',')[1]);
+                            const doc = new DOMParser().parseFromString(svgStr, 'image/svg+xml');
+                            const math = doc.querySelector('math');
+                            if (math) {
+                                math.setAttribute('xmlns', 'http://www.w3.org/1998/Math/MathML');
+                                img.parentNode.insertBefore(math, img);
+                                img.remove();
+                                return;
+                            }
+                        } catch(e) {}
+                        finalSrc = await svgToPngDataURL(finalSrc);
+                    }
+
+                    img.setAttribute('src', finalSrc);
+                }
+                img.style.verticalAlign = 'middle';
+                img.style.maxWidth = '100%';
+            });
+            
+            await Promise.all(imgPromises);
+            return clone.innerHTML.trim().replace(/[\u200B-\u200D\uFEFF]/g, '');
+        }
 
         const question = {
             id: '',
@@ -321,29 +419,24 @@
             score: ''
         };
 
-        // 获取题目ID和章节ID
         question.id = slideContent.getAttribute('data-id') || '';
         const chapterId = slideContent.getAttribute('data-chapterid') || '';
-        
-        // 获取题目编号
+
         const currentQuestionElement = document.querySelector('.on[data-questioncount]');
         if (currentQuestionElement) {
             question.index = parseInt(currentQuestionElement.getAttribute('data-questioncount'));
         }
 
-        // 获取题目内容
         const questionElement = slideContent.querySelector('.practice_slide_title .title');
         if (questionElement) {
-            question.question = questionElement.textContent.trim();
+            question.question = await getRichText(questionElement);
         }
 
-        // 获取题型
         const typeElement = slideContent.querySelector('.practice_slide_title .type');
         if (typeElement) {
             question.questionType = typeElement.textContent.trim();
         }
 
-        // 获取章节（从select选项中查找）
         if (chapterId) {
             const chapterOption = document.querySelector(`#chapter option[value="${chapterId}"]`);
             if (chapterOption) {
@@ -351,57 +444,53 @@
             }
         }
 
-        // 根据题型设置分值
         if (question.questionType === '单选题' || question.questionType === '判断题') {
             question.score = '1.0';
         } else if (question.questionType === '多选题') {
             question.score = '2.0';
+        } else if (question.questionType === '计算题' || question.questionType === '简答题') {
+            question.score = '10.0';
         }
 
-        // 提取选项和答案
         if (question.questionType === '单选题' || question.questionType === '多选题') {
             const optionElements = slideContent.querySelectorAll('.option_content li');
             const correctAnswers = [];
-            
-            optionElements.forEach((li) => {
+
+            for (const li of optionElements) {
                 const letterElement = li.querySelector('.letterArr');
                 const textElement = li.querySelector('.txt');
                 const inputElement = li.querySelector('input[data-isright]');
-                
+
                 if (letterElement && textElement) {
                     const optionLabel = letterElement.textContent.trim();
-                    const optionContent = textElement.textContent.trim();
+                    const optionContent = await getRichText(textElement);
                     question.options.push({
                         label: optionLabel,
                         text: optionContent
                     });
-                    
-                    // 检查是否为正确答案
+
                     if (inputElement && inputElement.getAttribute('data-isright') === '1') {
                         correctAnswers.push(optionLabel);
                     }
                 }
-            });
-            
+            }
+
             question.answer = correctAnswers.join('');
-            
-            // 如果没有找到正确答案，尝试从答案显示区域获取
+
             if (!question.answer) {
                 const answerText = slideContent.querySelector('.answer-text');
                 if (answerText) {
-                    question.answer = answerText.textContent.trim();
+                    question.answer = await getRichText(answerText);
                 }
             }
         } else if (question.questionType === '判断题') {
-            // 判断题的特殊处理
             const correctInput = slideContent.querySelector('input[data-isright="1"]');
             if (correctInput) {
                 const parentLi = correctInput.closest('li');
                 const index = Array.from(parentLi.parentElement.children).indexOf(parentLi);
                 question.answer = index === 0 ? '正确' : '错误';
             }
-            
-            // 备选方案：从答案显示区域获取
+
             if (!question.answer) {
                 const answerText = slideContent.querySelector('.answer-text');
                 if (answerText) {
@@ -410,24 +499,35 @@
                         question.answer = '正确';
                     } else if (answerValue === 'B' || answerValue === '错') {
                         question.answer = '错误';
+                    } else {
+                        question.answer = await getRichText(answerText);
                     }
                 }
             }
         } else if (question.questionType === '填空题') {
-            // 填空题答案提取
             const answerElements = slideContent.querySelectorAll('.answer-input-result');
             const answers = [];
-            answerElements.forEach(elem => {
-                const text = elem.textContent.trim();
+            for (const elem of answerElements) {
+                const text = await getRichText(elem);
                 if (text) answers.push(text);
-            });
+            }
             question.answer = answers.join('；');
-            
-            // 备选方案
+
             if (!question.answer) {
                 const answerText = slideContent.querySelector('.answer-text');
                 if (answerText) {
-                    question.answer = answerText.textContent.trim();
+                    question.answer = await getRichText(answerText);
+                }
+            }
+        } else {
+            const answerText = slideContent.querySelector('.answer-text, .subjective-answer, .answer-content');
+            if (answerText) {
+                question.answer = await getRichText(answerText);
+            } else {
+                // 如果是在特定DOM里
+                const answerSection = slideContent.querySelector('.answer-detail');
+                if (answerSection) {
+                    question.answer = await getRichText(answerSection);
                 }
             }
         }
@@ -435,7 +535,7 @@
         // 提取解析
         const analysisElement = slideContent.querySelector('.analysis-content .desc');
         if (analysisElement) {
-            question.analysis = analysisElement.textContent.trim();
+            question.analysis = await getRichText(analysisElement);
         }
 
         return question;
@@ -445,8 +545,8 @@
     function updateStatus(text, type = 'info') {
         const status = document.getElementById('extract-status');
         let icon = '';
-        
-        switch(type) {
+
+        switch (type) {
             case 'success':
                 icon = '✅ ';
                 break;
@@ -459,34 +559,34 @@
             default:
                 icon = 'ℹ️ ';
         }
-        
+
         status.textContent = icon + text;
     }
 
     // 开始提取
     document.getElementById('start-extract').onclick = async () => {
         if (isExtracting) return;
-        
+
         isExtracting = true;
         stopExtraction = false;
-        
+
         const startBtn = document.getElementById('start-extract');
         const stopBtn = document.getElementById('stop-extract');
         startBtn.style.display = 'none';
         stopBtn.style.display = 'block';
-        
+
         const progressBar = document.getElementById('progress-bar');
         const progressText = document.getElementById('progress-text');
-        
+
         const questions = [];
         const questionInfo = getCurrentQuestionInfo();
         const startIndex = questionInfo.current;
         const totalQuestions = questionInfo.total;
-        
+
         updateStatus(`正在提取题目...从第 ${startIndex} 题开始`, 'loading');
-        
+
         // 先提取当前题目
-        const currentQuestion = extractCurrentQuestion();
+        const currentQuestion = await extractCurrentQuestion();
         if (currentQuestion) {
             questions.push(currentQuestion);
             console.log(`提取第 ${startIndex} 题:`, currentQuestion);
@@ -494,24 +594,24 @@
             progressBar.style.width = progress + '%';
             progressText.textContent = `${startIndex} / ${totalQuestions}`;
         }
-        
+
         // 提取后续题目
         for (let i = startIndex + 1; i <= totalQuestions && !stopExtraction; i++) {
             // 点击下一题按钮
             const nextButton = document.querySelector('.swiper-button-next');
             if (nextButton && !nextButton.classList.contains('swiper-button-disabled')) {
                 nextButton.click();
-                
+
                 // 等待页面加载
                 await new Promise(resolve => setTimeout(resolve, 800));
-                
+
                 // 提取题目
-                const question = extractCurrentQuestion();
+                const question = await extractCurrentQuestion();
                 if (question) {
                     questions.push(question);
                     console.log(`提取第 ${i} 题:`, question);
                 }
-                
+
                 // 更新进度
                 const progress = ((i / totalQuestions) * 100).toFixed(1);
                 progressBar.style.width = progress + '%';
@@ -519,17 +619,17 @@
                 updateStatus(`正在提取第 ${i} 题...`, 'loading');
             }
         }
-        
+
         if (stopExtraction) {
             updateStatus(`已停止提取，共提取了 ${questions.length} 道题`, 'error');
         } else {
             updateStatus(`提取完成！共提取了 ${questions.length} 道题`, 'success');
         }
-        
+
         // 下载JSON文件
         if (questions.length > 0) {
             const dataStr = JSON.stringify(questions, null, 2);
-            const dataBlob = new Blob([dataStr], {type: 'application/json'});
+            const dataBlob = new Blob([dataStr], { type: 'application/json' });
             const url = URL.createObjectURL(dataBlob);
             const link = document.createElement('a');
             const courseName = new URLSearchParams(window.location.search).get('coursename') || 'practice';
@@ -537,12 +637,12 @@
             link.download = `exam_questions_${courseName}_从${startIndex}题开始_${new Date().getTime()}.json`;
             link.click();
             URL.revokeObjectURL(url);
-            
+
             setTimeout(() => {
                 updateStatus('文件已下载，可以关闭窗口了', 'success');
             }, 1000);
         }
-        
+
         isExtracting = false;
         startBtn.style.display = 'block';
         stopBtn.style.display = 'none';

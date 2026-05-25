@@ -126,7 +126,7 @@ class _ProfileScreenState extends State<ProfileScreen>
 
                 // 教务版块（绑定状态 + 题库入口）
                 SliverToBoxAdapter(
-                  child: _buildEduSection(context, isDark),
+                  child: _buildEduSection(context, authProvider, isDark),
                 ),
 
                 // 我的内容
@@ -618,7 +618,7 @@ class _ProfileScreenState extends State<ProfileScreen>
     );
   }
 
-  Widget _buildEduSection(BuildContext context, bool isDark) {
+  Widget _buildEduSection(BuildContext context, AuthProvider authProvider, bool isDark) {
     final eduProvider = context.watch<EduProvider>();
 
     return Padding(
@@ -676,6 +676,10 @@ class _ProfileScreenState extends State<ProfileScreen>
             subtitle: '提取练习题，导出 Markdown',
             isDark: isDark,
             onTap: () {
+              if (!authProvider.isLoggedIn) {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('请先登录')));
+                return;
+              }
               Navigator.push(
                 context,
                 MaterialPageRoute(

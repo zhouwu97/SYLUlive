@@ -7,17 +7,20 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
+	"gorm.io/gorm"
+	"shenliyuan/internal/models"
 )
 
 // Claims JWT声明
 type Claims struct {
-	UserID uint   `json:"user_id"`
-	Role   string `json:"role"`
+	UserID       uint   `json:"user_id"`
+	Role         string `json:"role"`
+	TokenVersion int    `json:"token_version"`
 	jwt.RegisteredClaims
 }
 
 // AuthMiddleware JWT认证中间件
-func AuthMiddleware(jwtSecret string) gin.HandlerFunc {
+func AuthMiddleware(db *gorm.DB, jwtSecret string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
@@ -39,6 +42,19 @@ func AuthMiddleware(jwtSecret string) gin.HandlerFunc {
 			return
 		}
 
+		// 检查数据库中用户的 TokenVersion 是否一致
+		var user models.User
+		if err := db.Select("token_version").First(&user, claims.UserID).Error; err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "用户不存在"})
+			c.Abort()
+			return
+		}
+		if user.TokenVersion != claims.TokenVersion {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "账号密码已修改，请重新登录"})
+			c.Abort()
+			return
+		}
+
 		c.Set("user_id", claims.UserID)
 		c.Set("role", claims.Role)
 		c.Next()
@@ -46,7 +62,7 @@ func AuthMiddleware(jwtSecret string) gin.HandlerFunc {
 }
 
 // OptionalAuthMiddleware 可选JWT认证中间件（解析用户信息但不拦截）
-func OptionalAuthMiddleware(jwtSecret string) gin.HandlerFunc {
+func OptionalAuthMiddleware(db *gorm.DB, jwtSecret string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
 		if authHeader != "" {
@@ -56,8 +72,14 @@ func OptionalAuthMiddleware(jwtSecret string) gin.HandlerFunc {
 				return []byte(jwtSecret), nil
 			})
 			if err == nil && token.Valid {
-				c.Set("user_id", claims.UserID)
-				c.Set("role", claims.Role)
+				// 检查 TokenVersion
+				var user models.User
+				if err := db.Select("token_version").First(&user, claims.UserID).Error; err == nil {
+					if user.TokenVersion == claims.TokenVersion {
+						c.Set("user_id", claims.UserID)
+						c.Set("role", claims.Role)
+					}
+				}
 			}
 		}
 		c.Next()
@@ -91,10 +113,11 @@ func SuperAdminMiddleware() gin.HandlerFunc {
 }
 
 // GenerateToken 生成JWT令牌
-func GenerateToken(userID uint, role string, jwtSecret string) (string, error) {
+func GenerateToken(userID uint, role string, tokenVersion int, jwtSecret string) (string, error) {
 	claims := &Claims{
-		UserID: userID,
-		Role:   role,
+		UserID:       userID,
+		Role:         role,
+		TokenVersion: tokenVersion,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(7 * 24 * time.Hour)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),

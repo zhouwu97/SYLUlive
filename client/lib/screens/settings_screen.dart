@@ -682,13 +682,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ],
           ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(32),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
-              child: SafeArea(
-                top: false,
-                child: SingleChildScrollView(
+          child: SafeArea(
+            top: false,
+            child: SingleChildScrollView(
                   padding: const EdgeInsets.fromLTRB(24, 0, 24, 32),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
@@ -866,9 +862,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               context,
                               Icons.group_rounded,
                               '加入群聊',
-                              'mqqapi://card/show_pslcard?src_type=internal&version=1&uin=3170305904&card_type=person',
+                              null,
                               isDark,
                               Colors.blue,
+                              onTapOverride: () => _copyToClipboard(context, '1076639620', '复制成功'),
                             ),
                           ),
                           const SizedBox(width: 12),
@@ -889,8 +886,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ),
               ),
-            ),
-          ),
         ),
       ),
     );

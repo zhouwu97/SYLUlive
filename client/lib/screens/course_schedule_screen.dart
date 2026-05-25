@@ -177,8 +177,10 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
         _hasCache = true;
         _initializing = false;
       });
-      sc.loadCourses().then((_) => _syncCourseReminders(sc));
-      _silentSync(sc);
+      sc.loadCourses().then((_) {
+        _syncCourseReminders(sc);
+        _silentSync(sc);
+      });
       return;
     }
 
@@ -594,6 +596,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
   // ====== 空状态视图 ======
   Widget _buildEmptyView(BuildContext context, bool isDark) {
+    debugPrint('Schedule UI: Building _buildEmptyView (暂无课表数据) at ${DateTime.now()}');
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
@@ -654,6 +657,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
   /// 无缓存时显示引导（用户刚注册或首次使用）
   Widget _buildNoCacheView(BuildContext context, bool isDark) {
+    debugPrint('Schedule UI: Building _buildNoCacheView (首次使用) at ${DateTime.now()}');
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
@@ -1903,7 +1907,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
               setSheetState(() {});
               if (mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('已保存存档「$name」')),
+                  SnackBar(content: Text('已保存存档「$name」(同时已备份至 Download/沈理校园)')),
                 );
               }
             },
@@ -2674,7 +2678,7 @@ $classFilterRule
             if (isAiMode)
               FilledButton(
                 onPressed: () {
-                  _handleAiImport(context, jsonController.text);
+                  _handleAiImport(dialogCtx, jsonController.text);
                 },
                 child: const Text('解析并导入'),
               ),
@@ -2691,7 +2695,7 @@ $classFilterRule
 
   // ====== AI 导入与冲突检测 ======
 
-  void _handleAiImport(BuildContext context, String jsonStr) {
+  void _handleAiImport(BuildContext dialogCtx, String jsonStr) {
     if (jsonStr.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('请先粘贴 JSON 内容')));
       return;
@@ -2771,7 +2775,7 @@ $classFilterRule
               FilledButton.tonal(
                 onPressed: () {
                   Navigator.pop(dialogContext);
-                  _executeImport(context, action, validCourses);
+                  _executeImport(dialogCtx, action, validCourses);
                 }, 
                 child: const Text("同时保留(置底)")
               ),
@@ -2783,8 +2787,8 @@ $classFilterRule
                   for (var oldCourse in conflictingCourses) {
                     await sc.removeCustomCourse(oldCourse.id);
                   }
-                  if (context.mounted) {
-                    _executeImport(context, action, validCourses);
+                  if (mounted) {
+                    _executeImport(dialogCtx, action, validCourses);
                   }
                 }, 
                 child: const Text("覆盖原有", style: TextStyle(color: Colors.white))
@@ -2794,7 +2798,7 @@ $classFilterRule
         );
       } else {
         // 无冲突，直接执行
-        _executeImport(context, action, validCourses);
+        _executeImport(dialogCtx, action, validCourses);
       }
 
     } catch (e) {
@@ -2832,7 +2836,7 @@ $classFilterRule
     return conflicts;
   }
 
-  void _executeImport(BuildContext context, String action, List<Map<String, dynamic>> courses) async {
+  void _executeImport(BuildContext dialogCtx, String action, List<Map<String, dynamic>> courses) async {
     final sc = context.read<CourseScheduleProvider>();
     
     int addedCount = 0;
@@ -2862,8 +2866,11 @@ $classFilterRule
       }
     }
 
-    if (context.mounted) {
-      Navigator.pop(context); // 关闭底层的大弹窗
+    if (dialogCtx.mounted) {
+      Navigator.pop(dialogCtx); // 关闭底层的大弹窗
+    }
+    
+    if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('成功导入 $addedCount 门课程！')),
       );

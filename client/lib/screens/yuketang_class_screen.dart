@@ -21,7 +21,7 @@ class YuketangClassScreen extends StatelessWidget {
       ),
       // 直接铺满主体内容，引入实装好的探针浏览器组件
       body: const YuketangWebViewWidget(
-        url: 'https://pro.yuketang.cn/v2/web/index', // 雨课堂入口地址
+        url: 'https://changjiang.yuketang.cn/v2/web/index', // 长江雨课堂入口地址
       ),
     );
   }

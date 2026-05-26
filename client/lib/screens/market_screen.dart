@@ -109,11 +109,17 @@ class _MarketScreenState extends State<MarketScreen> {
     }
   }
 
-  void _changeSort(String sort) {
+  void _changeSort(String sort) async {
     setState(() {
       _sortType = sort;
+      _isSearching = true;
     });
-    _refreshCurrent();
+    await _refreshCurrent();
+    if (mounted) {
+      setState(() {
+        _isSearching = false;
+      });
+    }
   }
 
   List<Post> _buildMarketPosts(List<Post> allPosts) {
@@ -189,15 +195,19 @@ class _MarketScreenState extends State<MarketScreen> {
         elevation: 0,
         title: Text(widget.titleOverride ?? '集市'),
         actions: [
-          PopupMenuButton<String>(
-            icon: const Icon(Icons.sort),
-            onSelected: _changeSort,
-            itemBuilder: (context) => [
-              const PopupMenuItem(value: 'time', child: Text('按时间排序')),
-              const PopupMenuItem(value: 'price', child: Text('价格从低到高')),
-              const PopupMenuItem(value: 'score', child: Text('综合排序')),
-            ],
-          ),
+          if (widget.titleOverride != '失物招领')
+            PopupMenuButton<String>(
+              icon: const Icon(Icons.sort),
+              onSelected: _changeSort,
+              itemBuilder: (context) => [
+                const PopupMenuItem(value: 'time', child: Text('按时间排序')),
+                PopupMenuItem(
+                  value: _sortType == 'price' ? 'price_desc' : 'price',
+                  child: Text(_sortType == 'price' ? '价格从高到低' : '价格从低到高'),
+                ),
+                const PopupMenuItem(value: 'score', child: Text('综合排序')),
+              ],
+            ),
         ],
       ),
       body: Stack(
@@ -286,6 +296,7 @@ class _MarketScreenState extends State<MarketScreen> {
                           widget.onlyPostTypes!.contains('lost')
                       ? 'lost'
                       : 'sell',
+                  allowedPostTypes: widget.onlyPostTypes,
                 ),
               ),
             );

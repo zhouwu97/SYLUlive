@@ -20,7 +20,7 @@ class ScriptService {
     }
 
     try {
-      final response = await _dio.get('${ApiConstants.baseUrl}/config/inject-script');
+      final response = await _dio.get('${ApiConstants.baseUrl}/v1/config/inject-script');
       
       if (response.statusCode == 200 && response.data['success'] == true) {
         _cachedScript = response.data['script'] as String?;

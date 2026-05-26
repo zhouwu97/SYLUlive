@@ -15,6 +15,7 @@ class _BoardState {
   bool hasLoaded = false;
   bool hasCacheLoaded = false;
   String currentSort = 'time';
+  String? sessionId;
 }
 
 /// 创建帖子的返回结果
@@ -82,12 +83,14 @@ class PostProvider extends ChangeNotifier {
     // 第二步 + 第三步：查找锚点，增量请求
     try {
       final since = await PostCacheService.getLatestTimestamp(boardId);
+      board.sessionId = null; // 清除老的会话快照
       final params = <String, dynamic>{
         'board': boardId,
         'type': type,
         'sort': sort,
         'page': 1,
         'limit': 20,
+        'scene': 'refresh',
       };
       if (since != null) {
         params['since'] = since;
@@ -96,6 +99,9 @@ class PostProvider extends ChangeNotifier {
       final response = await _dio.get('/posts', queryParameters: params);
       if (response.statusCode == 200) {
         final data = response.data;
+        if (data['session_id'] != null) {
+          board.sessionId = data['session_id'];
+        }
         final newPosts = (data['posts'] as List)
             .map((e) => Post.fromJson(e))
             .toList();
@@ -172,6 +178,9 @@ class PostProvider extends ChangeNotifier {
       final response = await _dio.get('/posts', queryParameters: params);
       if (response.statusCode == 200) {
         final data = response.data;
+        if (data['session_id'] != null) {
+          board.sessionId = data['session_id'];
+        }
         final newPosts = (data['posts'] as List)
             .map((e) => Post.fromJson(e))
             .toList();
@@ -216,12 +225,14 @@ class PostProvider extends ChangeNotifier {
     board.hasMore = true;
 
     try {
+      board.sessionId = null; // 清除老的会话快照
       final params = <String, dynamic>{
         'board': boardId,
         'type': type,
         'sort': sort,
         'page': 1,
         'limit': 20,
+        'scene': 'refresh',
       };
 
       final response = await _dio.get('/posts', queryParameters: params);

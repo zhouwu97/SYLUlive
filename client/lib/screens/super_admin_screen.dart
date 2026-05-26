@@ -21,7 +21,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
     _dio = context.read<AuthProvider>().dio;
     _loadAll();
   }
@@ -740,5 +740,100 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
     final dt = DateTime.tryParse(iso);
     if (dt == null) return iso;
     return '${dt.month}/${dt.day} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+  }
+
+
+  Widget _buildLotteryTab() {
+    return FutureBuilder(
+      future: _dio.get('/super/lottery/participants'),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError) {
+          if (snapshot.error.toString().contains('404')) {
+            return const Center(child: Text('暂无进行中的抽奖活动'));
+          }
+          return Center(child: Text('加载失败: ${snapshot.error}'));
+        }
+        if (snapshot.data?.statusCode == 404) {
+          return const Center(child: Text('暂无抽奖活动'));
+        }
+
+        final data = snapshot.data?.data;
+        if (data == null) return const Center(child: Text('暂无数据'));
+
+        final event = data['event'];
+        final participants = (data['participants'] as List).map((e) => e as Map<String, dynamic>).toList();
+
+        return Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Text(
+                '当前活动:  (奖品: )',
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+            ),
+            Expanded(
+              child: ListView.builder(
+                itemCount: participants.length,
+                itemBuilder: (context, index) {
+                  final p = participants[index];
+                  final user = p['user'];
+                  return ListTile(
+                    leading: CircleAvatar(
+                      backgroundImage: user['avatar'] != null && user['avatar'].isNotEmpty
+                          ? NetworkImage(user['avatar'].startsWith('http') 
+                              ? user['avatar'] 
+                              : 'https://sylu.zhouwu.ccwu.cc')
+                          : null,
+                      child: user['avatar'] == null || user['avatar'].isEmpty
+                          ? Text(user['nickname'][0])
+                          : null,
+                    ),
+                    title: Text(user['nickname'] ?? '未知用户'),
+                    subtitle: Text('学号:  | 权重: '),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.remove_circle, color: Colors.red),
+                      tooltip: '踢出',
+                      onPressed: () async {
+                        final confirm = await showDialog<bool>(
+                          context: context,
+                          builder: (context) => AlertDialog(
+                            title: const Text('踢出用户'),
+                            content: Text('确定要将  踢出本次抽奖吗？'),
+                            actions: [
+                              TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('取消')),
+                              TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('踢出', style: TextStyle(color: Colors.red))),
+                            ],
+                          ),
+                        );
+
+                        if (confirm == true) {
+                          try {
+                            final res = await _dio.delete('/super/lottery/participants//');
+                            if (res.statusCode == 200) {
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已踢出该用户')));
+                                setState(() {}); // 刷新列表
+                              }
+                            }
+                          } catch (e) {
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('踢出失败: ')));
+                            }
+                          }
+                        }
+                      },
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        );
+      },
+    );
   }
 }

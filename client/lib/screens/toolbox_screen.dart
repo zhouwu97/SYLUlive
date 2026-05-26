@@ -63,21 +63,6 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _buildToolCard(
-                    context,
-                    icon: Icons.school_outlined,
-                    color: Colors.blueAccent,
-                    title: '雨课堂助手',
-                    subtitle: _isCustomApiKeyMode ? '已启用 BYOK 模式' : '已启用懒人积分池',
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const YuketangClassScreen(),
-                        ),
-                      ).then((_) => _checkApiKeyStatus());
-                    },
-                  ),
 
                   const Text('⚙️ 答题模式', style: TextStyle(fontWeight: FontWeight.bold)),
                   const SizedBox(height: 8),
@@ -172,6 +157,15 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                     subtitle: '支持 WebVPN 穿透',
                     onTap: () => Navigator.push(context,
                         MaterialPageRoute(builder: (_) => const ErkeScoreScreen())),
+                  ),
+                  _buildToolCard(
+                    context,
+                    icon: Icons.school,
+                    color: Colors.blueAccent,
+                    title: '雨课堂',
+                    subtitle: '测验与课件',
+                    onTap: () => Navigator.push(context,
+                        MaterialPageRoute(builder: (_) => const YuketangClassScreen())),
                   ),
                   _buildToolCard(
                     context,

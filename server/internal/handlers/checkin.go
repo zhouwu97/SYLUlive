@@ -1,12 +1,14 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 	"shenliyuan/internal/models"
 )
 
@@ -34,41 +36,94 @@ func calcExpReward(streak int) int {
 	return 1
 }
 
-// DoCheckIn 执行签到 (高并发原子化防御)
+// DoCheckIn 执行签到 (事务 + 行锁，高并发原子化防御)
 func (h *CheckInHandler) DoCheckIn(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 	uid := userID.(uint)
 
-	loc, _ := time.LoadLocation("Asia/Shanghai")
-	todayStr := time.Now().In(loc).Format("2006-01-02")
+	// 统一时区锚点：强制使用 Asia/Shanghai
+	loc, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "系统时区配置错误"})
+		return
+	}
+	now := time.Now().In(loc)
+	todayStr := now.Format("2006-01-02")
+	yesterdayStr := now.AddDate(0, 0, -1).Format("2006-01-02")
 
-	// 核心原子化 SQL：只有当 last_check_in_date 不等于今天（或者为 NULL，对于空字符串是 =""）时，才允许更新
-	// 这里同时处理了 "" 和 正常的日期对比
-	result := h.db.Exec(`
-		UPDATE users 
-		SET credits = credits + 3, 
-			exp = exp + 10, 
-			last_check_in_date = ? 
-		WHERE id = ? AND (last_check_in_date IS NULL OR last_check_in_date = '' OR last_check_in_date != ?)
-	`, todayStr, uid, todayStr)
+	// 开启事务
+	tx := h.db.Begin()
+	if tx.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "开启事务失败"})
+		return
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
 
-	if result.Error != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "签到失败，数据库异常"})
+	// 查用户并加行锁 (FOR UPDATE)，防止极限并发下同一用户多个请求进入计算逻辑
+	var user models.User
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", uid).First(&user).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取用户状态失败"})
 		return
 	}
 
-	// 如果 RowsAffected == 0，说明该用户今天已经签过到，WHERE 条件不成立，直接拦截
-	if result.RowsAffected == 0 {
+	// 校验今天是否已签到
+	if user.LastCheckInDate == todayStr {
+		tx.Rollback()
 		c.JSON(http.StatusBadRequest, gin.H{"error": "您今天已经签过到了，明天再来吧！"})
 		return
 	}
 
-	// 签到成功
+	// 计算连续签到天数 (Streak)
+	streak := 1
+	var yesterdayRecord models.CheckIn
+	if err := tx.Where("user_id = ? AND check_in_date = ?", uid, yesterdayStr).First(&yesterdayRecord).Error; err == nil {
+		streak = yesterdayRecord.StreakDays + 1
+	}
+
+	// 调用之前被闲置的函数，动态计算经验值奖励
+	expEarned := calcExpReward(streak)
+
+	// 写入 check_ins 历史表
+	newCheckIn := models.CheckIn{
+		UserID:      uid,
+		CheckInDate: todayStr,
+		StreakDays:  streak,
+		ExpEarned:   expEarned,
+	}
+	if err := tx.Create(&newCheckIn).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "记录签到详情失败"})
+		return
+	}
+
+	// 同步更新 users 表的主状态
+	if err := tx.Model(&user).Updates(map[string]interface{}{
+		"credits":            gorm.Expr("credits + ?", 3),
+		"exp":                gorm.Expr("exp + ?", expEarned),
+		"last_check_in_date": todayStr,
+	}).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新用户资产失败"})
+		return
+	}
+
+	// 提交事务
+	if err := tx.Commit().Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "提交事务失败"})
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"success": true, 
-		"message": "签到成功！积分+3，经验+10",
+		"success":        true,
+		"message":        fmt.Sprintf("签到成功！积分+3，经验+%d", expEarned),
 		"credits_earned": 3,
-		"exp_earned": 10,
+		"streak_days":    streak,
+		"exp_earned":     expEarned,
 	})
 }
 

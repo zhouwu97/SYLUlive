@@ -188,25 +188,9 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     
     List<Post> sortedPosts = List.from(posts);
     
-    if (_feedMode == 'all') {
-      // 综合要看发帖者的经验和获赞评论数
-      sortedPosts.sort((a, b) {
-        int scoreA = (a.author?.exp ?? 0) + (a.likeCount * 2) + (a.replyCount * 3);
-        int scoreB = (b.author?.exp ?? 0) + (b.likeCount * 2) + (b.replyCount * 3);
-        if (scoreB != scoreA) return scoreB.compareTo(scoreA);
-        return b.createdAt.compareTo(a.createdAt);
-      });
-      return sortedPosts;
-    } else if (_feedMode == 'hot') {
-      // 热门看观看次数和评论点赞数
-      sortedPosts.sort((a, b) {
-        int scoreA = (a.viewCount * 2) + (a.likeCount * 3) + (a.replyCount * 4);
-        int scoreB = (b.viewCount * 2) + (b.likeCount * 3) + (b.replyCount * 4);
-        if (scoreB != scoreA) return scoreB.compareTo(scoreA);
-        return b.createdAt.compareTo(a.createdAt);
-      });
-      return sortedPosts;
-    } else if (_feedMode == 'new') {
+    // 排序逻辑已下沉至服务端，客户端只需原样返回
+    // 但对于新帖过滤可以保留部分逻辑（如果服务端未实现new模式的话）
+    if (_feedMode == 'new') {
       final now = DateTime.now();
       final recent = sortedPosts
           .where((post) => now.difference(post.createdAt).inDays < 3)

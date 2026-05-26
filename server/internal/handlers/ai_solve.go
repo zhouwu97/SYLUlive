@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-resty/resty/v2"
@@ -22,8 +24,17 @@ type AiSolveHandler struct {
 	db              *gorm.DB
 	requestGroup    singleflight.Group
 	restyClient     *resty.Client
-	deepSeekAPIKey  string
-	deepSeekBaseURL string
+	
+	// 默认配置 (兜底)
+	defaultAPIKey   string
+	defaultBaseURL  string
+	
+	// 动态配置缓存
+	configMutex     sync.RWMutex
+	cachedBaseURL   string
+	cachedAPIKey    string
+	cachedModel     string
+	lastConfigFetch time.Time
 }
 
 // NewAiSolveHandler 创建AI答题处理器
@@ -31,8 +42,8 @@ func NewAiSolveHandler(db *gorm.DB, apiKey, baseURL string) *AiSolveHandler {
 	return &AiSolveHandler{
 		db:              db,
 		restyClient:     resty.New(),
-		deepSeekAPIKey:  apiKey,
-		deepSeekBaseURL: baseURL,
+		defaultAPIKey:   apiKey,
+		defaultBaseURL:  baseURL,
 	}
 }
 
@@ -61,8 +72,55 @@ func generateHash(qType, content string) string {
 	return hex.EncodeToString(hash.Sum(nil))
 }
 
-// callDeepSeek 直接调用 DeepSeek (兼容 OpenAI API)
-func (h *AiSolveHandler) callDeepSeek(questionType, cleanedText string) (string, error) {
+// getAiConfig 获取全局AI配置（带缓存和读写锁）
+func (h *AiSolveHandler) getAiConfig() (baseURL, apiKey, modelName string) {
+	h.configMutex.RLock()
+	if time.Since(h.lastConfigFetch) < 1*time.Minute && h.cachedAPIKey != "" {
+		baseURL = h.cachedBaseURL
+		apiKey = h.cachedAPIKey
+		modelName = h.cachedModel
+		h.configMutex.RUnlock()
+		return
+	}
+	h.configMutex.RUnlock()
+
+	h.configMutex.Lock()
+	defer h.configMutex.Unlock()
+
+	if time.Since(h.lastConfigFetch) < 1*time.Minute && h.cachedAPIKey != "" {
+		return h.cachedBaseURL, h.cachedAPIKey, h.cachedModel
+	}
+
+	configKeys := []string{"ai_base_url", "ai_api_key", "ai_model_name"}
+	var configs []models.SystemConfig
+	h.db.Where("config_key IN ?", configKeys).Find(&configs)
+
+	configMap := make(map[string]string)
+	for _, conf := range configs {
+		configMap[conf.ConfigKey] = conf.ConfigValue
+	}
+
+	h.cachedBaseURL = configMap["ai_base_url"]
+	h.cachedAPIKey = configMap["ai_api_key"]
+	h.cachedModel = configMap["ai_model_name"]
+
+	// 兜底配置
+	if h.cachedBaseURL == "" {
+		h.cachedBaseURL = h.defaultBaseURL
+	}
+	if h.cachedAPIKey == "" {
+		h.cachedAPIKey = h.defaultAPIKey
+	}
+	if h.cachedModel == "" {
+		h.cachedModel = "deepseek-v4-flash" // 默认模型更新为v4
+	}
+	h.lastConfigFetch = time.Now()
+
+	return h.cachedBaseURL, h.cachedAPIKey, h.cachedModel
+}
+
+// callAI 直接调用大模型 (兼容 OpenAI API)
+func (h *AiSolveHandler) callAI(baseURL, apiKey, modelName, questionType, cleanedText string) (string, error) {
 	prompt := fmt.Sprintf(`你是一个专业的大学辅助答题助手。
 请直接输出正确选项的字母或简短答案，不要任何解析。
 题型：%s
@@ -70,7 +128,7 @@ func (h *AiSolveHandler) callDeepSeek(questionType, cleanedText string) (string,
 `, questionType, cleanedText)
 
 	reqBody := map[string]interface{}{
-		"model": "deepseek-chat",
+		"model": modelName,
 		"messages": []map[string]string{
 			{
 				"role":    "user",
@@ -80,10 +138,10 @@ func (h *AiSolveHandler) callDeepSeek(questionType, cleanedText string) (string,
 		"temperature": 0.1,
 	}
 
-	endpoint := strings.TrimRight(h.deepSeekBaseURL, "/") + "/chat/completions"
+	endpoint := strings.TrimRight(baseURL, "/") + "/chat/completions"
 	resp, err := h.restyClient.R().
 		SetHeader("Content-Type", "application/json").
-		SetHeader("Authorization", "Bearer "+h.deepSeekAPIKey).
+		SetHeader("Authorization", "Bearer "+apiKey).
 		SetBody(reqBody).
 		Post(endpoint)
 
@@ -165,7 +223,8 @@ func (h *AiSolveHandler) Solve(c *gin.Context) {
 		}
 
 		// 第四步：直连大模型
-		answer, err := h.callDeepSeek(req.QuestionType, cleanedText)
+		baseURL, apiKey, modelName := h.getAiConfig()
+		answer, err := h.callAI(baseURL, apiKey, modelName, req.QuestionType, cleanedText)
 		if err != nil {
 			return nil, err
 		}

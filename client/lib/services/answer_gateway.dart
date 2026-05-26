@@ -15,6 +15,7 @@ class AnswerGateway {
   /// 处理题目数据
   Future<String?> processQuestion(Map<String, dynamic> questionData) async {
     try {
+      final customProvider = await _secureStorage.read(key: 'custom_ai_provider') ?? 'default';
       final customKey = await _secureStorage.read(key: _customApiKeyStorageKey);
 
       // 提取题干信息用于 AI 计算 (这里假设通过解析 questionData 拿到文本)
@@ -22,7 +23,7 @@ class AnswerGateway {
       final questionType = questionData['type']?.toString() ?? '未知题型';
       final contentText = questionData['content']?.toString() ?? questionData.toString();
 
-      if (customKey != null && customKey.isNotEmpty) {
+      if (customProvider != 'default' && customKey != null && customKey.isNotEmpty) {
         debugPrint('发现自定义 API Key，采用分支 A：本地直连大模型');
         return await _askAiDirectly(customKey, questionType, contentText);
       } else {
@@ -52,9 +53,14 @@ class AnswerGateway {
   Future<String?> _askAiDirectly(String apiKey, String qType, String content) async {
     final prompt = '你是一个专业的大学辅助答题助手。\n请直接输出正确选项的字母或简短答案，不要任何解析。\n题型：$qType\n题目内容：$content';
     
+    final baseUrl = await _secureStorage.read(key: 'custom_base_url') ?? 'https://api.deepseek.com/v1';
+    final modelName = await _secureStorage.read(key: 'custom_model_name') ?? 'deepseek-chat';
+    
+    final endpoint = baseUrl.endsWith('/') ? '${baseUrl}chat/completions' : '$baseUrl/chat/completions';
+
     try {
       final response = await _dio.post(
-        'https://api.deepseek.com/v1/chat/completions',
+        endpoint,
         options: Options(
           headers: {
             'Authorization': 'Bearer $apiKey',
@@ -62,7 +68,7 @@ class AnswerGateway {
           },
         ),
         data: {
-          'model': 'deepseek-chat',
+          'model': modelName,
           'messages': [
             {'role': 'user', 'content': prompt}
           ],

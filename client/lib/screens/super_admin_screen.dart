@@ -146,6 +146,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
             Tab(text: '用户管理'),
             Tab(text: '管理员审批'),
             Tab(text: '管理日志'),
+            Tab(text: '抽奖管理'),
           ],
         ),
       ),
@@ -155,6 +156,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
           _buildUsersTab(),
           _buildApprovalsTab(),
           _buildAdminLogsTab(),
+          _buildLotteryTab(),
         ],
       ),
     );
@@ -771,7 +773,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
             Padding(
               padding: const EdgeInsets.all(16.0),
               child: Text(
-                '当前活动:  (奖品: )',
+                '当前活动: ${event['name'] ?? ''} (奖品: ${event['prize_name'] ?? ''})',
                 style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
               ),
             ),
@@ -793,7 +795,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
                           : null,
                     ),
                     title: Text(user['nickname'] ?? '未知用户'),
-                    subtitle: Text('学号:  | 权重: '),
+                    subtitle: Text('学号: ${user['student_id']} | 权重: ${p['weight']}'),
                     trailing: IconButton(
                       icon: const Icon(Icons.remove_circle, color: Colors.red),
                       tooltip: '踢出',
@@ -802,7 +804,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
                           context: context,
                           builder: (context) => AlertDialog(
                             title: const Text('踢出用户'),
-                            content: Text('确定要将  踢出本次抽奖吗？'),
+                            content: Text('确定要将 ${user['nickname'] ?? user['student_id']} 踢出本次抽奖吗？'),
                             actions: [
                               TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('取消')),
                               TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('踢出', style: TextStyle(color: Colors.red))),
@@ -812,7 +814,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
 
                         if (confirm == true) {
                           try {
-                            final res = await _dio.delete('/super/lottery/participants//');
+                            final res = await _dio.delete('/super/lottery/participants/${event['id']}/${user['id']}');
                             if (res.statusCode == 200) {
                               if (context.mounted) {
                                 ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已踢出该用户')));
@@ -821,7 +823,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
                             }
                           } catch (e) {
                             if (context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('踢出失败: ')));
+                              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('踢出失败: $e')));
                             }
                           }
                         }

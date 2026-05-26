@@ -114,20 +114,20 @@ func loginLockDurationForFailures(failures int) time.Duration {
 
 func formatRetryAfterCN(d time.Duration) string {
 	if d <= 0 {
-		return "绋嶅悗"
+		return "稍后"
 	}
 	if d < time.Minute {
 		seconds := int(d.Round(time.Second).Seconds())
 		if seconds < 1 {
 			seconds = 1
 		}
-		return fmt.Sprintf("%d绉", seconds)
+		return fmt.Sprintf("%d秒", seconds)
 	}
 	minutes := int((d + time.Minute - 1) / time.Minute)
 	if minutes < 1 {
 		minutes = 1
 	}
-	return fmt.Sprintf("%d鍒嗛挓", minutes)
+	return fmt.Sprintf("%d分钟", minutes)
 }
 
 func currentLoginLock(account string, now time.Time) (time.Duration, bool) {
@@ -203,22 +203,22 @@ func consumeQQVerified(qq string) {
 
 func sendMailCode(qq, code string) error {
 	if VerifyCodeConfig.SMTPHost == "" || VerifyCodeConfig.SMTPUser == "" || VerifyCodeConfig.SMTPPass == "" || VerifyCodeConfig.SMTPFrom == "" {
-		return errors.New("鏈嶅姟鍣ㄦ湭閰嶇疆楠岃瘉鐮侀偖绠憋紝璇疯仈绯荤＄悊鍛")
+		return errors.New("服务器未配置验证码邮箱，请联系管理员")
 	}
 	to := qq + "@qq.com"
 	addr := VerifyCodeConfig.SMTPHost + ":" + VerifyCodeConfig.SMTPPort
 	auth := smtp.PlainAuth("", VerifyCodeConfig.SMTPUser, VerifyCodeConfig.SMTPPass, VerifyCodeConfig.SMTPHost)
-	subject := "娌堢悊鏍″洯娉ㄥ唽楠岃瘉鐮"
+	subject := "沈理校园注册验证码"
 	body := fmt.Sprintf(`
 <html>
   <body style="font-family: Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif; line-height: 1.6; color: #222;">
-    <h2 style="margin: 0 0 12px;">娌堢悊鏍″洯娉ㄥ唽楠岃瘉鐮</h2>
-    <p style="margin: 0 0 8px;">鎮ㄧ殑楠岃瘉鐮佷负锛</p>
+    <h2 style="margin: 0 0 12px;">沈理校园注册验证码</h2>
+    <p style="margin: 0 0 8px;">您的验证码为：</p>
     <div style="display: inline-block; padding: 10px 16px; margin: 4px 0 12px; font-size: 28px; font-weight: 700; letter-spacing: 4px; color: #4F46E5; background: #F5F3FF; border-radius: 10px;">
       %s
     </div>
-    <p style="margin: 0 0 6px;"><strong>鏈夋晥鏈燂細</strong>10 鍒嗛挓</p>
-    <p style="margin: 0; color: #666;">濡傛灉涓嶆槸鏈浜烘搷浣滐紝璇峰拷鐣ユら偖浠躲</p>
+    <p style="margin: 0 0 6px;"><strong>有效期：</strong>10 鍒嗛挓</p>
+    <p style="margin: 0; color: #666;">如果不是本人操作，请忽略此邮件。</p>
   </body>
 </html>`, code)
 	message := []byte("To: " + to + "\r\n" +
@@ -239,14 +239,14 @@ func (h *AuthHandler) SendVerifyCode(c *gin.Context) {
 	}
 	qq := normalizeQQ(input.QQ)
 	if !validateQQ(qq) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "璇疯緭鍏ユｇ‘鐨凲Q鍙"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请输入正确的QQ号"})
 		return
 	}
 
 	var count int64
 	h.db.Model(&models.User{}).Where("student_id = ?", qq).Count(&count)
 	if count > 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "璇QQ鍙峰凡娉ㄥ唽锛岃风洿鎺ョ櫥褰"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "该QQ号已注册，请直接登录"})
 		return
 	}
 
@@ -263,7 +263,7 @@ func (h *AuthHandler) SendVerifyCode(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"success": true, "message": "楠岃瘉鐮佸凡鍙戦"})
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "验证码已发送"})
 }
 
 // VerifyCode 鏍￠獙姣曚笟鐢ㄦ埛閭绠遍獙璇佺爜
@@ -275,7 +275,7 @@ func (h *AuthHandler) VerifyCode(c *gin.Context) {
 	}
 	qq := normalizeQQ(input.QQ)
 	if !validateQQ(qq) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "璇疯緭鍏ユｇ‘鐨凲Q鍙"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请输入正确的QQ号"})
 		return
 	}
 
@@ -283,20 +283,20 @@ func (h *AuthHandler) VerifyCode(c *gin.Context) {
 	record, ok := verifyCodeStore.codes[qq]
 	verifyCodeStore.Unlock()
 	if !ok {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "璇峰厛鍙戦侀獙璇佺爜"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请先发送验证码"})
 		return
 	}
 	if time.Now().After(record.ExpiresAt) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "楠岃瘉鐮佸凡杩囨湡锛岃烽噸鏂板彂閫"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "验证码已过期，请重新发送"})
 		return
 	}
 	if strings.TrimSpace(input.Code) != record.Code {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "楠岃瘉鐮侀敊璇"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "验证码错误"})
 		return
 	}
 
 	markQQVerified(qq)
-	c.JSON(http.StatusOK, gin.H{"success": true, "message": "楠岃瘉閫氳繃"})
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "验证通过"})
 }
 
 // Register 姣曚笟浜哄憳鏅閫氳处鍙锋敞鍐岋紙QQ 楠岃瘉鐮侊級
@@ -308,14 +308,14 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	}
 	qq := normalizeQQ(input.QQ)
 	if !validateQQ(qq) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "璇疯緭鍏ユｇ‘鐨凲Q鍙"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请输入正确的QQ号"})
 		return
 	}
 
 	var count int64
 	h.db.Model(&models.User{}).Where("student_id = ?", qq).Count(&count)
 	if count > 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "璇QQ鍙峰凡娉ㄥ唽锛岃风洿鎺ョ櫥褰"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "该QQ号已注册，请直接登录"})
 		return
 	}
 
@@ -323,27 +323,27 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	record, ok := verifyCodeStore.codes[qq]
 	verifyCodeStore.Unlock()
 	if !ok {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "璇峰厛鍙戦侀獙璇佺爜"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请先发送验证码"})
 		return
 	}
 	if time.Now().After(record.ExpiresAt) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "楠岃瘉鐮佸凡杩囨湡锛岃烽噸鏂板彂閫"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "验证码已过期，请重新发送"})
 		return
 	}
 	if strings.TrimSpace(input.Code) != record.Code && !isQQVerified(qq) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "楠岃瘉鐮侀敊璇"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "验证码错误"})
 		return
 	}
 
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "瀵嗙爜鍔犲瘑澶辫触"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "密码加密失败"})
 		return
 	}
 
 	nickname := strings.TrimSpace(input.Nickname)
 	if nickname == "" {
-		nickname = "姣曚笟鐢ㄦ埛"
+		nickname = "毕业用户"
 	}
 
 	user := models.User{
@@ -356,12 +356,12 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		EduBound:     false,
 	}
 	if err := h.db.Create(&user).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "鍒涘缓鐢ㄦ埛澶辫触"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建用户失败"})
 		return
 	}
 
 	if strings.TrimSpace(input.Nickname) == "" {
-		user.Nickname = "姣曚笟鐢ㄦ埛" + strconv.FormatUint(uint64(user.ID), 10)
+		user.Nickname = "毕业用户" + strconv.FormatUint(uint64(user.ID), 10)
 		h.db.Model(&user).Update("nickname", user.Nickname)
 	}
 
@@ -393,7 +393,7 @@ func (h *AuthHandler) RegisterWithEdu(c *gin.Context) {
 	var count int64
 	h.db.Model(&models.User{}).Where("student_id = ?", input.StudentID).Count(&count)
 	if count > 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "璇ュ﹀彿宸叉敞鍐岋紝璇风洿鎺ョ櫥褰"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "该学号已注册，请直接登录"})
 		return
 	}
 
@@ -404,27 +404,27 @@ func (h *AuthHandler) RegisterWithEdu(c *gin.Context) {
 	}
 	if !verifyResult.Success {
 		if verifyResult.Message == "" {
-			verifyResult.Message = "鏁欏姟楠岃瘉澶辫触"
+			verifyResult.Message = "教务验证失败"
 		}
 		c.JSON(http.StatusUnauthorized, gin.H{"error": verifyResult.Message})
 		return
 	}
 	if verifyResult.StudentID != "" && verifyResult.StudentID != input.StudentID {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "鏁欏姟璐﹀彿涓庡綋鍓嶅﹀彿涓嶄竴鑷"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "教务账号与当前学号不一致"})
 		return
 	}
 
 	// 鍝堝笇App瀵嗙爜
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "瀵嗙爜鍔犲瘑澶辫触"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "密码加密失败"})
 		return
 	}
 
 	// 鍏堝垱寤虹敤鎴
 	nickname := input.Nickname
 	if nickname == "" {
-		nickname = "鏂扮敤鎴"
+		nickname = "新用户"
 	}
 	user := models.User{
 		StudentID:    input.StudentID,
@@ -441,14 +441,14 @@ func (h *AuthHandler) RegisterWithEdu(c *gin.Context) {
 	}
 
 	if err := h.db.Create(&user).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "鍒涘缓鐢ㄦ埛澶辫触"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建用户失败"})
 		return
 	}
 
 	// 鐢ㄦ埛娌″～鏄电О鏃舵墠鐢ㄩ粯璁ゅ
 	if input.Nickname == "" {
-		h.db.Model(&user).Update("nickname", "鏍″洯鐢ㄦ埛"+strconv.FormatUint(uint64(user.ID), 10))
-		user.Nickname = "鏍″洯鐢ㄦ埛" + strconv.FormatUint(uint64(user.ID), 10)
+		h.db.Model(&user).Update("nickname", "校园用户"+strconv.FormatUint(uint64(user.ID), 10))
+		user.Nickname = "校园用户" + strconv.FormatUint(uint64(user.ID), 10)
 	}
 
 	// 闈欓粯缁戝畾锛氳皟鐢≒ython鐨刡ind鎺ュ彛鑾峰彇cookie
@@ -569,13 +569,13 @@ func (h *AuthHandler) LoginEdu(c *gin.Context) {
 			Post(EduServiceConfig.BaseURL + "/api/edu/login_edu")
 
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "鏃犳硶杩炴帴鏁欏姟鏈嶅姟"})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "无法连接教务服务"})
 			return
 		}
 
 		var result eduVerifyResult
 		if err := json.Unmarshal(resp.Body(), &result); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "瑙ｆ瀽鍝嶅簲澶辫触"})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "解析响应失败"})
 			return
 		}
 
@@ -587,7 +587,7 @@ func (h *AuthHandler) LoginEdu(c *gin.Context) {
 		// 鍝堝笇APP瀵嗙爜
 		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "瀵嗙爜鍔犲瘑澶辫触"})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "密码加密失败"})
 			return
 		}
 
@@ -607,13 +607,13 @@ func (h *AuthHandler) LoginEdu(c *gin.Context) {
 		}
 
 		if err := h.db.Create(&user).Error; err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "鍒涘缓鐢ㄦ埛澶辫触"})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "创建用户失败"})
 			return
 		}
 	} else {
 		// 鑰佺敤鎴凤細楠岃瘉APP瀵嗙爜
 		if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(input.Password)); err != nil {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "APP瀵嗙爜閿欒"})
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "APP密码错误"})
 			return
 		}
 	}
@@ -642,7 +642,7 @@ func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 
 	var user models.User
 	if err := h.db.Where("student_id = ?", input.StudentID).First(&user).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "璇ュ﹀彿灏氭湭娉ㄥ唽锛岃峰厛娉ㄥ唽"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "该学号尚未注册，请先注册"})
 		return
 	}
 
@@ -653,19 +653,19 @@ func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 	}
 	if !result.Success {
 		if result.Message == "" {
-			result.Message = "鏁欏姟楠岃瘉澶辫触"
+			result.Message = "教务验证失败"
 		}
 		c.JSON(http.StatusUnauthorized, gin.H{"error": result.Message})
 		return
 	}
 	if result.StudentID != "" && result.StudentID != input.StudentID {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "鏁欏姟璐﹀彿涓庡綋鍓嶅﹀彿涓嶄竴鑷"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "教务账号与当前学号不一致"})
 		return
 	}
 
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(input.NewPassword), bcrypt.DefaultCost)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "瀵嗙爜鍔犲瘑澶辫触"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "密码加密失败"})
 		return
 	}
 
@@ -686,12 +686,12 @@ func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 	}
 
 	if err := h.db.Model(&user).Updates(updates).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "瀵嗙爜閲嶇疆澶辫触"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "密码重置失败"})
 		return
 	}
 
 	clearLoginFailures(normalizeLoginAccount(input.StudentID))
-	c.JSON(http.StatusOK, gin.H{"message": "瀵嗙爜宸查噸缃锛岃蜂娇鐢ㄦ柊瀵嗙爜鐧诲綍"})
+	c.JSON(http.StatusOK, gin.H{"message": "密码已重置，请使用新密码登录"})
 }
 
 func verifyEduWithPython(studentID, eduPassword, appPassword string) (*eduVerifyResult, error) {
@@ -721,12 +721,12 @@ func verifyEduWithPython(studentID, eduPassword, appPassword string) (*eduVerify
 		if errResp.Detail != "" {
 			return nil, errors.New(errResp.Detail)
 		}
-		return nil, errors.New("鏁欏姟鏈嶅姟楠岃瘉澶辫触")
+		return nil, errors.New("教务服务验证失败")
 	}
 
 	var result eduVerifyResult
 	if err := json.Unmarshal(resp.Body(), &result); err != nil {
-		return nil, errors.New("瑙ｆ瀽鏁欏姟鏈嶅姟鍝嶅簲澶辫触")
+		return nil, errors.New("解析教务服务响应失败")
 	}
 	return &result, nil
 }
@@ -744,7 +744,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	if remaining, locked := currentLoginLock(account, now); locked {
 		c.Header("Retry-After", strconv.Itoa(int(remaining.Round(time.Second).Seconds())))
 		c.JSON(http.StatusTooManyRequests, gin.H{
-			"error": fmt.Sprintf("杩炵画鐧诲綍澶辫触娆℃暟杩囧氾紝璇峰湪%s鍚庨噸璇曪紝鎴栦娇鐢ㄥ繕璁板瘑鐮", formatRetryAfterCN(remaining)),
+			"error": fmt.Sprintf("连续登录失败次数过多，请在%s后重试，或使用忘记密码", formatRetryAfterCN(remaining)),
 		})
 		return
 	}
@@ -752,10 +752,10 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	var user models.User
 	if err := h.db.Where("student_id = ?", input.StudentID).First(&user).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "璇ヨ处鍙峰皻鏈娉ㄥ唽锛岃峰厛娉ㄥ唽"})
+			c.JSON(http.StatusNotFound, gin.H{"error": "该账号尚未注册，请先注册"})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "鏌ヨ㈣处鍙峰け璐"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询账号失败"})
 		return
 	}
 
@@ -764,11 +764,11 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		if lockFor > 0 {
 			c.Header("Retry-After", strconv.Itoa(int(lockFor.Round(time.Second).Seconds())))
 			c.JSON(http.StatusTooManyRequests, gin.H{
-				"error": fmt.Sprintf("杩炵画鐧诲綍澶辫触娆℃暟杩囧氾紝璇峰湪%s鍚庨噸璇曪紝鎴栦娇鐢ㄥ繕璁板瘑鐮", formatRetryAfterCN(lockFor)),
+				"error": fmt.Sprintf("连续登录失败次数过多，请在%s后重试，或使用忘记密码", formatRetryAfterCN(lockFor)),
 			})
 			return
 		}
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "瀵嗙爜閿欒锛岃烽噸鏂拌緭鍏"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "密码错误，请重新输入"})
 		return
 	}
 
@@ -797,20 +797,20 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 
 	var user models.User
 	if err := h.db.First(&user, userID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "鐢ㄦ埛涓嶅瓨鍦"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
 		return
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(input.OldPassword)); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "鏃у瘑鐮侀敊璇"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "旧密码错误"})
 		return
 	}
 
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(input.NewPassword), bcrypt.DefaultCost)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "瀵嗙爜鍔犲瘑澶辫触"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "密码加密失败"})
 		return
 	}
 	h.db.Model(&user).Updates(map[string]interface{}{"password_hash": string(hashedPassword), "token_version": gorm.Expr("token_version + 1")})
-	c.JSON(http.StatusOK, gin.H{"message": "瀵嗙爜淇鏀规垚鍔"})
+	c.JSON(http.StatusOK, gin.H{"message": "密码修改成功"})
 }

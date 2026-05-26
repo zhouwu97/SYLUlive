@@ -14,6 +14,7 @@ class _BoardState {
   bool hasMore = true;
   bool hasLoaded = false;
   bool hasCacheLoaded = false;
+  String currentSort = 'time';
 }
 
 /// 创建帖子的返回结果
@@ -209,6 +210,8 @@ class PostProvider extends ChangeNotifier {
   Future<void> refresh(
       {int boardId = 1, String? type, String sort = 'time'}) async {
     final board = _ensureBoard(boardId);
+    bool isSortChanged = board.currentSort != sort;
+    board.currentSort = sort;
     board.currentPage = 1;
     board.hasMore = true;
 

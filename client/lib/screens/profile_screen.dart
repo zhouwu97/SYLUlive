@@ -307,27 +307,87 @@ class _ProfileScreenState extends State<ProfileScreen>
                 value: '${user?.creditScore ?? 100}%',
                 color: Colors.green,
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 8),
               _buildStatBadge(
                 icon: Icons.star,
                 label: '经验',
                 value: '${user?.exp ?? 0}',
                 color: Colors.amber,
               ),
+              const SizedBox(width: 8),
+              _buildStatBadge(
+                icon: Icons.monetization_on,
+                label: '代答积分',
+                value: '${user?.credits ?? 0}',
+                color: Colors.purpleAccent,
+              ),
               if (user?.isAdmin == true) ...[
-                const SizedBox(width: 12),
+                const SizedBox(width: 8),
                 _buildStatBadge(
                   icon: Icons.admin_panel_settings,
                   label: user?.isSuperAdmin == true ? '超级管理员' : '管理员',
-                  value: '经验 ${user?.adminExp ?? 0}',
+                  value: '${user?.adminExp ?? 0}',
                   color: Colors.orange,
                 ),
               ],
             ],
           ),
+
+          const SizedBox(height: 20),
+
+          // 签到按钮
+          if (authProvider.isLoggedIn)
+            _buildCheckInButton(context, user, authProvider, isDark),
         ],
       ),
     );
+  }
+
+  Widget _buildCheckInButton(BuildContext context, user, AuthProvider authProvider, bool isDark) {
+    final bool isCheckedIn = user?.isCheckedInToday ?? false;
+
+    return ElevatedButton.icon(
+      onPressed: isCheckedIn ? null : () => _doCheckIn(context, authProvider),
+      icon: Icon(isCheckedIn ? Icons.check_circle : Icons.calendar_today, size: 18),
+      label: Text(isCheckedIn ? '今日已签到' : '每日签到 (积分+3)'),
+      style: ElevatedButton.styleFrom(
+        foregroundColor: Colors.white,
+        backgroundColor: isCheckedIn ? Colors.grey : Colors.deepPurpleAccent,
+        disabledBackgroundColor: Colors.grey.withOpacity(0.5),
+        disabledForegroundColor: Colors.white70,
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(30),
+        ),
+        elevation: isCheckedIn ? 0 : 4,
+      ),
+    );
+  }
+
+  Future<void> _doCheckIn(BuildContext context, AuthProvider authProvider) async {
+    try {
+      final response = await authProvider.dio.post('/user/checkin');
+      if (response.statusCode == 200) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(response.data['message'] ?? '签到成功！'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+        authProvider.refreshUser(); // 重新加载用户信息，自动刷新 UI
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('签到失败，请稍后再试'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   Widget _buildAvatarPlaceholder(user) {

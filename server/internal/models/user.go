@@ -42,4 +42,7 @@ type User struct {
 	EduGrade     string `gorm:"size:20" json:"edu_grade"`       // 年级
 	EduCollege   string `gorm:"size:100" json:"edu_college"`    // 学院
 	EduMajor     string `gorm:"size:100" json:"edu_major"`      // 专业
+
+	LastCheckInDate string `gorm:"size:10" json:"last_check_in_date"` // 最后签到日期
+	IsCheckedInToday bool  `gorm:"-" json:"is_checked_in_today"`      // 动态字段，不在数据库映射
 }

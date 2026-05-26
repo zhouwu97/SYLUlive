@@ -147,7 +147,8 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
         backgroundColor: Colors.transparent,
         extendBodyBehindAppBar: true,
         appBar: AppBar(
-          title: const Text('工具箱', actions: [IconButton(icon: const Icon(Icons.settings), onPressed: _showSettingsDialog)]),
+          title: const Text('工具箱'),
+          actions: [IconButton(icon: const Icon(Icons.settings), onPressed: _showSettingsDialog)],
           backgroundColor: Colors.transparent,
           elevation: 0,
           iconTheme: const IconThemeData(color: Colors.white),

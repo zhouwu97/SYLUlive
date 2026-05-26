@@ -16,6 +16,7 @@ import 'physical_test_screen.dart';
 import 'lottery_screen.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'yuketang_class_screen.dart';
+import 'exam_schedule_screen.dart';
 
 class ToolboxScreen extends StatefulWidget {
   const ToolboxScreen({super.key});
@@ -102,6 +103,15 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                     subtitle: '公平福利派送',
                     onTap: () => Navigator.push(context,
                         MaterialPageRoute(builder: (_) => const LotteryScreen())),
+                  ),
+                  _buildToolCard(
+                    context,
+                    icon: Icons.event_note,
+                    color: Colors.deepPurpleAccent,
+                    title: '考试日程',
+                    subtitle: 'AI一键提取',
+                    onTap: () => Navigator.push(context,
+                        MaterialPageRoute(builder: (_) => const ExamScheduleScreen())),
                   ),
                   _buildToolCard(
                     context,

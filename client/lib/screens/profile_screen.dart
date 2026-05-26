@@ -380,12 +380,11 @@ class _ProfileScreenState extends State<ProfileScreen>
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('签到失败，请稍后再试'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        String msg = '签到失败，请稍后再试';
+        if (e is DioException) {
+          msg = AppFeedback.dioErrorMessage(e, fallback: msg);
+        }
+        AppFeedback.showSnackBar(context, msg, isError: true);
       }
     }
   }

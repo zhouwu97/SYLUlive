@@ -133,6 +133,13 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
       appBar: AppBar(
         title: const Text('超级管理员面板'),
         leading: const BackButton(),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.smart_toy),
+            tooltip: '全局 AI 配置',
+            onPressed: _showGlobalAiConfigDialog,
+          ),
+        ],
         bottom: TabBar(
           controller: _tabController,
           tabs: const [
@@ -353,6 +360,142 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
     }
   }
 
+
+  Future<void> _showGlobalAiConfigDialog() async {
+    final keyCtrl = TextEditingController();
+    final urlCtrl = TextEditingController();
+    final modelCtrl = TextEditingController();
+    String currentProvider = 'custom';
+
+    // 先加载当前的配置
+    try {
+      final res = await _dio.get('/super/ai_config');
+      urlCtrl.text = res.data['base_url'] ?? '';
+      keyCtrl.text = res.data['api_key'] ?? '';
+      modelCtrl.text = res.data['model_name'] ?? '';
+    } catch (_) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('加载配置失败')));
+    }
+
+    void applyProviderDefaults(String provider) {
+      if (provider == 'deepseek') {
+        urlCtrl.text = 'https://api.deepseek.com/v1';
+        modelCtrl.text = 'deepseek-v4-flash';
+      } else if (provider == 'kimi') {
+        urlCtrl.text = 'https://api.moonshot.cn/v1';
+        modelCtrl.text = 'moonshot-v1-8k';
+      } else if (provider == 'zhipu') {
+        urlCtrl.text = 'https://open.bigmodel.cn/api/paas/v4';
+        modelCtrl.text = 'glm-4-flash';
+      } else if (provider == 'qwen') {
+        urlCtrl.text = 'https://dashscope.aliyuncs.com/compatible-mode/v1';
+        modelCtrl.text = 'qwen-turbo';
+      } else if (provider == 'openai') {
+        urlCtrl.text = 'https://api.openai.com/v1';
+        modelCtrl.text = 'gpt-3.5-turbo';
+      }
+    }
+
+    if (!mounted) return;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          final isCustom = currentProvider == 'custom';
+          return AlertDialog(
+            title: const Text('系统全局 AI 兜底配置'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('此配置为系统默认的大模型（积分池）。\n当用户未填写自定义 API Key 时，会走此配置并扣减积分。', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<String>(
+                    value: currentProvider,
+                    decoration: const InputDecoration(
+                      labelText: '快速预设提供商',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: 'deepseek', child: Text('DeepSeek')),
+                      DropdownMenuItem(value: 'kimi', child: Text('Kimi (月之暗面)')),
+                      DropdownMenuItem(value: 'zhipu', child: Text('智谱清言')),
+                      DropdownMenuItem(value: 'qwen', child: Text('通义千问')),
+                      DropdownMenuItem(value: 'openai', child: Text('OpenAI')),
+                      DropdownMenuItem(value: 'custom', child: Text('自定义 (Custom)')),
+                    ],
+                    onChanged: (val) {
+                      setDialogState(() {
+                        currentProvider = val!;
+                        applyProviderDefaults(currentProvider);
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: keyCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'API Key (必填)',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    obscureText: true,
+                  ),
+                  if (isCustom) ...[
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: urlCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Base URL',
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: modelCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Model Name',
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                    ),
+                  ]
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('取消'),
+              ),
+              ElevatedButton(
+                onPressed: () async {
+                  try {
+                    await _dio.put('/super/ai_config', data: {
+                      'base_url': urlCtrl.text.trim(),
+                      'api_key': keyCtrl.text.trim(),
+                      'model_name': modelCtrl.text.trim(),
+                    });
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('系统 AI 配置已更新')));
+                    }
+                    Navigator.pop(ctx);
+                  } catch (_) {
+                    if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('更新失败')));
+                  }
+                },
+                child: const Text('保存全局配置'),
+              ),
+            ],
+          );
+        }
+      ),
+    );
+  }
   // ====== 管理员日志 Tab ======
 
   Widget _buildAdminLogsTab() {

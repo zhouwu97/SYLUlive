@@ -614,6 +614,10 @@ func main() {
 
 		superAdmin.POST("/admin_logs/revoke_exp", superAdminHandler.RevokeAdminExp)
 
+		superAdmin.GET("/ai_config", superAdminHandler.GetAiConfig)
+
+		superAdmin.PUT("/ai_config", superAdminHandler.UpdateAiConfig)
+
 		superAdmin.GET("/invitations/pending", invitationHandler.GetApprovalList)
 
 		superAdmin.POST("/invitations/:id/approve", invitationHandler.Approve)
@@ -965,7 +969,7 @@ func ensureInjectScript(db *gorm.DB) {
         } else {
             // 半自动模式：仅在页面顶部弹个小提示，等待用户手动点提交
             let toast = document.createElement('div');
-            toast.innerText = `💡 AI 推荐答案: ${answerStr} (请确认后手动提交)`;
+            toast.innerText = '💡 AI 推荐答案: ' + answerStr + ' (请确认后手动提交)';
             toast.style.cssText = "position:fixed; top:20px; left:50%; transform:translateX(-50%); background:rgba(0,0,0,0.7); color:white; padding:10px 20px; border-radius:20px; z-index:9999;";
             document.body.appendChild(toast);
             setTimeout(() => toast.remove(), 5000);

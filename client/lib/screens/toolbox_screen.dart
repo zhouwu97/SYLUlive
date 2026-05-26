@@ -26,102 +26,13 @@ class ToolboxScreen extends StatefulWidget {
 
 class _ToolboxScreenState extends State<ToolboxScreen> {
   final _storage = const FlutterSecureStorage();
-  bool _isCustomApiKeyMode = false;
 
   @override
   void initState() {
     super.initState();
-    _checkApiKeyStatus();
   }
 
-  Future<void> _checkApiKeyStatus() async {
-    final key = await _storage.read(key: 'custom_api_key');
-    if (mounted) {
-      setState(() {
-        _isCustomApiKeyMode = key != null && key.isNotEmpty;
-      });
-    }
-  }
 
-  Future<void> _showSettingsDialog() async {
-    final controller = TextEditingController();
-    final currentKey = await _storage.read(key: 'custom_api_key');
-    controller.text = currentKey ?? '';
-    
-    // 默认半自动
-    String currentMode = await _storage.read(key: 'auto_submit_mode') ?? 'semi';
-    
-    // 使用 StatefulBuilder 让弹窗内的状态可以独立刷新
-    showDialog(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) {
-          return AlertDialog(
-            title: const Text('助手核心设置'),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-
-                  const Text('⚙️ 答题模式', style: TextStyle(fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 8),
-                  RadioListTile<String>(
-                    title: const Text('半自动 (辅助选填)'),
-                    subtitle: const Text('自动选择选项，需手动点击提交'),
-                    value: 'semi',
-                    groupValue: currentMode,
-                    onChanged: (val) {
-                      setDialogState(() => currentMode = val!);
-                    },
-                  ),
-                  RadioListTile<String>(
-                    title: const Text('全自动 (托管摸鱼)'),
-                    subtitle: const Text('自动选择并延时提交，彻底解放双手'),
-                    value: 'full',
-                    groupValue: currentMode,
-                    onChanged: (val) {
-                      setDialogState(() => currentMode = val!);
-                    },
-                  ),
-                  const Divider(height: 32),
-                  const Text('🔑 BYOK 配置', style: TextStyle(fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 8),
-                  const Text('填入 DeepSeek API Key 开启免积分直连模式。',
-                      style: TextStyle(fontSize: 12, color: Colors.grey)),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: controller,
-                    decoration: const InputDecoration(
-                      labelText: 'API Key (选填)',
-                      border: OutlineInputBorder(),
-                      isDense: true,
-                    ),
-                    obscureText: true,
-                  ),
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('取消'),
-              ),
-              ElevatedButton(
-                onPressed: () async {
-                  await _storage.write(key: 'custom_api_key', value: controller.text.trim());
-                  await _storage.write(key: 'auto_submit_mode', value: currentMode);
-                  Navigator.pop(context);
-                  _checkApiKeyStatus(); // 刷新外层 UI
-                },
-                child: const Text('保存配置'),
-              ),
-            ],
-          );
-        }
-      ),
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -133,7 +44,7 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
         extendBodyBehindAppBar: true,
         appBar: AppBar(
           title: const Text('工具箱'),
-          actions: [IconButton(icon: const Icon(Icons.settings), onPressed: _showSettingsDialog)],
+          actions: [],
           backgroundColor: Colors.transparent,
           elevation: 0,
           iconTheme: const IconThemeData(color: Colors.white),

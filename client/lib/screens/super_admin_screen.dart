@@ -373,8 +373,68 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
       urlCtrl.text = res.data['base_url'] ?? '';
       keyCtrl.text = res.data['api_key'] ?? '';
       modelCtrl.text = res.data['model_name'] ?? '';
+
+      final url = urlCtrl.text.toLowerCase();
+      if (url.contains('deepseek')) currentProvider = 'deepseek';
+      else if (url.contains('moonshot')) currentProvider = 'kimi';
+      else if (url.contains('bigmodel.cn')) currentProvider = 'zhipu';
+      else if (url.contains('dashscope')) currentProvider = 'qwen';
+      else if (url.contains('openai.com')) currentProvider = 'openai';
+
     } catch (_) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('加载配置失败')));
+    }
+
+    
+    bool isFetchingModels = false;
+    Future<void> fetchModels(StateSetter setDialogState) async {
+      if (urlCtrl.text.isEmpty || keyCtrl.text.isEmpty) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('请先填写 Base URL 和 API Key')));
+        return;
+      }
+      setDialogState(() => isFetchingModels = true);
+      try {
+        final dio = Dio();
+        String url = urlCtrl.text.trim();
+        if (!url.endsWith('/models')) {
+          url = url.endsWith('/') ? '${url}models' : '$url/models';
+        }
+        final res = await dio.get(
+          url,
+          options: Options(headers: {'Authorization': 'Bearer ${keyCtrl.text.trim()}'}),
+        );
+        if (res.statusCode == 200 && res.data['data'] != null) {
+          final List data = res.data['data'];
+          final availableModels = data.map((e) => e['id'].toString()).toList();
+          if (availableModels.isNotEmpty) {
+            if (mounted) {
+              showModalBottomSheet(
+                context: context,
+                builder: (ctx) => ListView.builder(
+                  itemCount: availableModels.length,
+                  itemBuilder: (ctx, index) => ListTile(
+                    title: Text(availableModels[index]),
+                    onTap: () {
+                      setDialogState(() {
+                        modelCtrl.text = availableModels[index];
+                      });
+                      Navigator.pop(ctx);
+                    },
+                  ),
+                ),
+              );
+            }
+          } else {
+            if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('未获取到模型列表')));
+          }
+        } else {
+          if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('获取失败')));
+        }
+      } catch (e) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('请求失败: $e')));
+      } finally {
+        setDialogState(() => isFetchingModels = false);
+      }
     }
 
     void applyProviderDefaults(String provider) {
@@ -444,26 +504,40 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
                     ),
                     obscureText: true,
                   ),
-                  if (isCustom) ...[
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: urlCtrl,
-                      decoration: const InputDecoration(
-                        labelText: 'Base URL',
-                        border: OutlineInputBorder(),
-                        isDense: true,
-                      ),
+
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: urlCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Base URL',
+                      border: OutlineInputBorder(),
+                      isDense: true,
                     ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: modelCtrl,
-                      decoration: const InputDecoration(
-                        labelText: 'Model Name',
-                        border: OutlineInputBorder(),
-                        isDense: true,
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: modelCtrl,
+                          decoration: const InputDecoration(
+                            labelText: 'Model Name',
+                            border: OutlineInputBorder(),
+                            isDense: true,
+                          ),
+                        ),
                       ),
-                    ),
-                  ]
+                      const SizedBox(width: 8),
+                      isFetchingModels 
+                          ? const CircularProgressIndicator()
+                          : IconButton(
+                              icon: const Icon(Icons.sync),
+                              onPressed: () => fetchModels(setDialogState),
+                              tooltip: '获取可用模型',
+                            ),
+                    ],
+                  ),
+
                 ],
               ),
             ),

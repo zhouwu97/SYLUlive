@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:dio/dio.dart';
 import '../widgets/yuketang_webview_widget.dart';
 
 class YuketangClassScreen extends StatefulWidget {
@@ -33,11 +34,73 @@ class _YuketangClassScreenState extends State<YuketangClassScreen> {
     String currentProvider = await _storage.read(key: 'custom_ai_provider') ?? 'default';
     String currentMode = await _storage.read(key: 'auto_submit_mode') ?? 'semi';
 
+    
+    if (currentProvider == 'custom') {
+      final url = currentUrl?.toLowerCase() ?? '';
+      if (url.contains('deepseek')) currentProvider = 'deepseek';
+      else if (url.contains('moonshot')) currentProvider = 'kimi';
+      else if (url.contains('bigmodel.cn')) currentProvider = 'zhipu';
+      else if (url.contains('dashscope')) currentProvider = 'qwen';
+      else if (url.contains('openai.com')) currentProvider = 'openai';
+    }
+
     keyCtrl.text = currentKey ?? '';
     urlCtrl.text = currentUrl ?? '';
     modelCtrl.text = currentModel ?? '';
 
     // 如果选了自带，并且是预设提供商，则锁定URL和模型输入
+    
+    bool isFetchingModels = false;
+    Future<void> fetchModels(StateSetter setDialogState) async {
+      if (urlCtrl.text.isEmpty || keyCtrl.text.isEmpty) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('请先填写 Base URL 和 API Key')));
+        return;
+      }
+      setDialogState(() => isFetchingModels = true);
+      try {
+        final dio = Dio();
+        String url = urlCtrl.text.trim();
+        if (!url.endsWith('/models')) {
+          url = url.endsWith('/') ? '${url}models' : '$url/models';
+        }
+        final res = await dio.get(
+          url,
+          options: Options(headers: {'Authorization': 'Bearer ${keyCtrl.text.trim()}'}),
+        );
+        if (res.statusCode == 200 && res.data['data'] != null) {
+          final List data = res.data['data'];
+          final availableModels = data.map((e) => e['id'].toString()).toList();
+          if (availableModels.isNotEmpty) {
+            if (mounted) {
+              showModalBottomSheet(
+                context: context,
+                builder: (ctx) => ListView.builder(
+                  itemCount: availableModels.length,
+                  itemBuilder: (ctx, index) => ListTile(
+                    title: Text(availableModels[index]),
+                    onTap: () {
+                      setDialogState(() {
+                        modelCtrl.text = availableModels[index];
+                      });
+                      Navigator.pop(ctx);
+                    },
+                  ),
+                ),
+              );
+            }
+          } else {
+            if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('未获取到模型列表')));
+          }
+        } else {
+          if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('获取失败')));
+        }
+      } catch (e) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('请求失败: $e')));
+      } finally {
+        setDialogState(() => isFetchingModels = false);
+      }
+    }
+
     void applyProviderDefaults(String provider) {
       if (provider == 'deepseek') {
         urlCtrl.text = 'https://api.deepseek.com/v1';
@@ -150,7 +213,7 @@ class _YuketangClassScreenState extends State<YuketangClassScreen> {
                       ),
                       obscureText: true,
                     ),
-                    if (isCustomByok) ...[
+
                       const SizedBox(height: 12),
                       TextField(
                         controller: urlCtrl,
@@ -161,15 +224,29 @@ class _YuketangClassScreenState extends State<YuketangClassScreen> {
                         ),
                       ),
                       const SizedBox(height: 12),
-                      TextField(
-                        controller: modelCtrl,
-                        decoration: const InputDecoration(
-                          labelText: 'Model Name',
-                          border: OutlineInputBorder(),
-                          isDense: true,
-                        ),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: modelCtrl,
+                              decoration: const InputDecoration(
+                                labelText: 'Model Name',
+                                border: OutlineInputBorder(),
+                                isDense: true,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          isFetchingModels 
+                              ? const CircularProgressIndicator()
+                              : IconButton(
+                                  icon: const Icon(Icons.sync),
+                                  onPressed: () => fetchModels(setDialogState),
+                                  tooltip: '获取可用模型',
+                                ),
+                        ],
                       ),
-                    ]
+
                   ],
                 ],
               ),

@@ -34,62 +34,41 @@ func calcExpReward(streak int) int {
 	return 1
 }
 
-// DoCheckIn 执行签到
+// DoCheckIn 执行签到 (高并发原子化防御)
 func (h *CheckInHandler) DoCheckIn(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 	uid := userID.(uint)
 
 	loc, _ := time.LoadLocation("Asia/Shanghai")
-	now := time.Now().In(loc)
-	today := now.Format("2006-01-02")
-	yesterday := now.AddDate(0, 0, -1).Format("2006-01-02")
+	todayStr := time.Now().In(loc).Format("2006-01-02")
 
-	// 检查今天是否已签到
-	var existing models.CheckIn
-	if err := h.db.Where("user_id = ? AND check_in_date = ?", uid, today).First(&existing).Error; err == nil {
-		c.JSON(http.StatusOK, gin.H{
-			"already":     true,
-			"streak_days": existing.StreakDays,
-			"exp_earned":  existing.ExpEarned,
-			"message":     "今天已经签过到了",
-		})
+	// 核心原子化 SQL：只有当 last_check_in_date 不等于今天（或者为 NULL，对于空字符串是 =""）时，才允许更新
+	// 这里同时处理了 "" 和 正常的日期对比
+	result := h.db.Exec(`
+		UPDATE users 
+		SET credits = credits + 3, 
+			exp = exp + 10, 
+			last_check_in_date = ? 
+		WHERE id = ? AND (last_check_in_date IS NULL OR last_check_in_date = '' OR last_check_in_date != ?)
+	`, todayStr, uid, todayStr)
+
+	if result.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "签到失败，数据库异常"})
 		return
 	}
 
-	// 查询昨天的签到记录以计算连续天数
-	var yesterdayRecord models.CheckIn
-	streakDays := 1
-	if err := h.db.Where("user_id = ? AND check_in_date = ?", uid, yesterday).First(&yesterdayRecord).Error; err == nil {
-		streakDays = yesterdayRecord.StreakDays + 1
-	}
-
-	expEarned := calcExpReward(streakDays)
-
-	// 创建签到记录
-	record := models.CheckIn{
-		UserID:      uid,
-		CheckInDate: today,
-		StreakDays:   streakDays,
-		ExpEarned:   expEarned,
-	}
-	if err := h.db.Create(&record).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "签到失败"})
+	// 如果 RowsAffected == 0，说明该用户今天已经签过到，WHERE 条件不成立，直接拦截
+	if result.RowsAffected == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "您今天已经签过到了，明天再来吧！"})
 		return
 	}
 
-	// 更新用户经验
-	h.db.Model(&models.User{}).Where("id = ?", uid).Update("exp", gorm.Expr("exp + ?", expEarned))
-
-	// 查询用户最新经验
-	var user models.User
-	h.db.Select("exp").First(&user, uid)
-
+	// 签到成功
 	c.JSON(http.StatusOK, gin.H{
-		"already":     false,
-		"streak_days": streakDays,
-		"exp_earned":  expEarned,
-		"total_exp":   user.Exp,
-		"message":     "签到成功",
+		"success": true, 
+		"message": "签到成功！积分+3，经验+10",
+		"credits_earned": 3,
+		"exp_earned": 10,
 	})
 }
 

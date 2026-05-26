@@ -169,7 +169,7 @@ class _YuketangClassScreenState extends State<YuketangClassScreen> {
                     contentPadding: EdgeInsets.zero,
                   ),
                   RadioListTile<String>(
-                    title: const Text('自定义模型 (BYOK, 免费)'),
+                    title: const Text('自定义模型 (BYOK, 自带)'),
                     value: 'byok',
                     groupValue: currentProvider == 'default' ? 'default' : 'byok',
                     onChanged: (val) => setDialogState(() {

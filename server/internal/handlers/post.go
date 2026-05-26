@@ -95,8 +95,10 @@ func (h *PostHandler) GetList(c *gin.Context) {
 	switch sort {
 	case "price":
 		query = query.Order("price ASC").Order("created_at DESC")
+	case "price_desc":
+		query = query.Order("price DESC").Order("created_at DESC")
 	case "score":
-		query = query.Order("created_at DESC")
+		query = query.Order("created_at DESC") // 以后可替换为综合算法
 	default:
 		query = query.Order("created_at DESC")
 	}

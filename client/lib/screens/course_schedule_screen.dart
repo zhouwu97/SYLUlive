@@ -112,6 +112,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   double _slotHeight = defaultSlotHeight;
   String _widgetTextColor = '#333333';
   bool _courseReminderEnabled = false;
+  int _reminderAdvanceMinutes = 5;
   bool _courseReminderBusy = false;
   int _scheduledReminderCount = 0;
   bool _isFetchingCourses = false;
@@ -281,9 +282,13 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                           : PageView.builder(
                               controller: _weekPageController,
                               onPageChanged: _onWeekPageChanged,
-                              itemBuilder: (_, __) => SingleChildScrollView(
-                                  child:
-                                      _buildCourseGridForWeek(sc, _weekStart)),
+                              itemBuilder: (_, index) {
+                                final currentMonday = _mondayOf(DateTime.now());
+                                final targetMonday = currentMonday.add(Duration(days: (index - 500) * 7));
+                                return SingleChildScrollView(
+                                  child: _buildCourseGridForWeek(sc, targetMonday)
+                                );
+                              },
                             )),
                 ]);
               },
@@ -1072,6 +1077,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       _slotHeight = prefs.getDouble(_slotHeightKey) ?? defaultSlotHeight;
       _widgetTextColor = prefs.getString('widget_text_color') ?? '#333333';
       _courseReminderEnabled = remindersEnabled;
+      _reminderAdvanceMinutes = prefs.getInt('course_reminder_advance_minutes') ?? 5;
       _scheduledReminderCount = reminderCount;
       _backgroundKeepAliveStatus = backgroundStatus;
       _settingsLoaded = true;
@@ -1173,7 +1179,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              '开启后，系统会根据当前课表在每节课开始前 5 分钟发送静音提醒。',
+              '开启后，系统会根据当前课表在每节课开始前提前发送静音提醒。',
             ),
             const SizedBox(height: 12),
             _permissionHint(
@@ -1822,6 +1828,26 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
   /// 从文件导入课表存档
   Future<void> _importFromFile(BuildContext sheetCtx, CourseScheduleProvider sc, StateSetter setSheetState) async {
+    final shouldProceed = await showDialog<bool>(
+      context: sheetCtx,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Text('从文件导入'),
+        content: const Text('请在接下来的文件选择器中选择你之前导出的课表 .json 文件。\n如果是通过微信/QQ等软件收发的，请前往对应软件的下载目录寻找。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogCtx, true),
+            child: const Text('去选择文件'),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldProceed != true) return;
+
     try {
       final result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
@@ -1861,6 +1887,12 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       final tempDir = Directory.systemTemp;
       final file = File('${tempDir.path}/沈理校园课表_$safeName.json');
       await file.writeAsString(jsonStr);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('正在唤起系统菜单，请选择“发送给朋友”或“保存到手机”以导出文件。')),
+        );
+      }
 
       await Share.shareXFiles(
         [XFile(file.path)], 
@@ -1907,7 +1939,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
               setSheetState(() {});
               if (mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('已保存存档「$name」(同时已备份至 Download/沈理校园)')),
+                  SnackBar(content: Text('已保存存档「$name」\n如需提取文件，请点击该存档的分享按钮。')),
                 );
               }
             },
@@ -2029,7 +2061,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                         const SizedBox(width: 10),
                         Expanded(
                           child: Text(
-                            '课程提醒会在上课前 5 分钟以静音系统通知提示课程、教师和教室。'
+                            '课程提醒会在上课前 $_reminderAdvanceMinutes 分钟以静音系统通知提示课程、教师和教室。'
                             '开启后需要通知权限；Android 设备建议继续授权后台保活，'
                             '这样清除任务卡片后仍能按时提醒。',
                             style: TextStyle(
@@ -2085,7 +2117,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                       title: const Text('课程提醒'),
                       subtitle: Text(_courseReminderEnabled
                           ? '已安排 $_scheduledReminderCount 个提醒，课表更新后会自动重排'
-                          : '上课前 5 分钟静音提醒，通知内容包含课程教师'),
+                          : '上课前 $_reminderAdvanceMinutes 分钟静音提醒，通知内容包含课程教师'),
                       value: _courseReminderEnabled,
                       onChanged: _courseReminderBusy
                           ? null
@@ -2143,6 +2175,59 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                             },
                     ),
                   ),
+                  if (_courseReminderEnabled) ...[
+                    const SizedBox(height: 10),
+                    Container(
+                      decoration: tileDecoration(),
+                      child: ListTile(
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 6),
+                        leading: Icon(Icons.timer_outlined, color: primary),
+                        title: const Text('提醒提前时间'),
+                        subtitle: const Text('上课前提前几分钟发送通知'),
+                        trailing: DropdownButton<int>(
+                          value: _reminderAdvanceMinutes,
+                          underline: const SizedBox(),
+                          icon: const Icon(Icons.arrow_drop_down),
+                          items: const [
+                            DropdownMenuItem(value: 5, child: Text('5 分钟')),
+                            DropdownMenuItem(value: 10, child: Text('10 分钟')),
+                            DropdownMenuItem(value: 15, child: Text('15 分钟')),
+                            DropdownMenuItem(value: 20, child: Text('20 分钟')),
+                            DropdownMenuItem(value: 30, child: Text('30 分钟')),
+                          ],
+                          onChanged: _courseReminderBusy
+                              ? null
+                              : (v) async {
+                                  if (v != null) {
+                                    setSheetState(() => _courseReminderBusy = true);
+                                    if (mounted) setState(() => _courseReminderBusy = true);
+                                    
+                                    await CourseReminderService.instance.setAdvanceMinutes(
+                                      v,
+                                      courses: sc.courses,
+                                      semesterStart: sc.semesterStart,
+                                    );
+                                    final count = await CourseReminderService.instance.pendingCourseReminderCount();
+                                    
+                                    setSheetState(() {
+                                      _reminderAdvanceMinutes = v;
+                                      _scheduledReminderCount = count;
+                                      _courseReminderBusy = false;
+                                    });
+                                    if (mounted) {
+                                      setState(() {
+                                        _reminderAdvanceMinutes = v;
+                                        _scheduledReminderCount = count;
+                                        _courseReminderBusy = false;
+                                      });
+                                    }
+                                  }
+                                },
+                        ),
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 10),
                   Container(
                     decoration: tileDecoration(),

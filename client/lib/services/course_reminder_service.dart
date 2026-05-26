@@ -67,6 +67,7 @@ class CourseReminderService {
   static final CourseReminderService instance = CourseReminderService._();
 
   static const String _enabledKey = 'course_reminder_enabled';
+  static const String _advanceMinutesKey = 'course_reminder_advance_minutes';
   static const String _notificationIdsKey = 'course_reminder_notification_ids';
   static const String _channelId = 'course_reminders_silent';
   static const String _channelName = '课程提醒';
@@ -136,6 +137,22 @@ class CourseReminderService {
   Future<bool> isEnabled() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getBool(_enabledKey) ?? false;
+  }
+
+  Future<int> getAdvanceMinutes() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getInt(_advanceMinutesKey) ?? 5;
+  }
+
+  Future<void> setAdvanceMinutes(int minutes, {
+    required List<CourseBlock> courses,
+    required DateTime? semesterStart,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_advanceMinutesKey, minutes);
+    if (await isEnabled()) {
+      await reschedule(courses: courses, semesterStart: semesterStart);
+    }
   }
 
   Future<int> pendingCourseReminderCount() async {
@@ -213,8 +230,9 @@ class CourseReminderService {
 
     await cancelCourseReminders();
 
+    final advanceMinutes = await getAdvanceMinutes();
     final now = DateTime.now();
-    final reminders = _buildReminderEntries(courses, semesterStart, now);
+    final reminders = _buildReminderEntries(courses, semesterStart, now, advanceMinutes);
     final pendingReminders =
         reminders.take(_maxPendingNotifications).toList(growable: false);
     final ids = <String>[];
@@ -422,6 +440,7 @@ class CourseReminderService {
     List<CourseBlock> courses,
     DateTime semesterStart,
     DateTime now,
+    int advanceMinutes,
   ) {
     final start = DateTime(
       semesterStart.year,
@@ -448,7 +467,7 @@ class CourseReminderService {
           int.parse(timeParts[0]),
           int.parse(timeParts[1]),
         );
-        final reminderAt = classStart.subtract(const Duration(minutes: 5));
+        final reminderAt = classStart.subtract(Duration(minutes: advanceMinutes));
         if (!reminderAt.isAfter(now)) continue;
 
         entries.add(_CourseReminderEntry(

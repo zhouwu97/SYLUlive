@@ -74,15 +74,27 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         maxHeight: 1920,
         imageQuality: 85,
       );
-      if (image != null && _selectedImages.length < 9) {
-        setState(() {
-          _selectedImages.add(image);
-        });
-      } else if (_selectedImages.length >= 9 && image != null) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('最多只能添加9张图片')),
-          );
+      if (image != null) {
+        final length = await image.length();
+        if (length > 10 * 1024 * 1024) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('图片大小不能超过 10MB'), backgroundColor: Colors.red),
+            );
+          }
+          return;
+        }
+
+        if (_selectedImages.length < 9) {
+          setState(() {
+            _selectedImages.add(image);
+          });
+        } else {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('最多只能添加9张图片')),
+            );
+          }
         }
       }
     } catch (e) {

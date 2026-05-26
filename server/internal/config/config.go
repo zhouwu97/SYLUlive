@@ -108,7 +108,7 @@ func Load() *Config {
 		JWTSecret:         jwtSecret,
 		DSN:               dsn,
 		UploadDir:         uploadDir,
-		MaxFileSize:       2 * 1024 * 1024, // 2MB
+		MaxFileSize:       10 * 1024 * 1024, // 10MB
 		EduServiceURL:     eduServiceURL,
 		SMTPHost:          smtpHost,
 		SMTPPort:          smtpPort,

@@ -878,6 +878,16 @@ class _ProfileScreenState extends State<ProfileScreen>
       final image = await ImagePicker().pickImage(source: source);
       if (image == null) return;
 
+      final length = await image.length();
+      if (length > 10 * 1024 * 1024) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('头像大小不能超过 10MB'), backgroundColor: Colors.red),
+          );
+        }
+        return;
+      }
+
       final appDir = await getApplicationDocumentsDirectory();
       final fileName =
           'avatar_${DateTime.now().millisecondsSinceEpoch}${path.extension(image.path)}';

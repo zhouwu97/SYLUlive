@@ -9,6 +9,8 @@ class User {
   final String role;
   final int adminExp;
   final int exp;
+  final int credits;
+  final bool isCheckedInToday;
   final int reportCount;
   final DateTime createdAt;
 
@@ -29,6 +31,8 @@ class User {
     this.role = 'user',
     this.adminExp = 0,
     this.exp = 0,
+    this.credits = 0,
+    this.isCheckedInToday = false,
     this.reportCount = 0,
     required this.createdAt,
     this.eduStudentId = '',
@@ -49,6 +53,8 @@ class User {
       role: json['role'] ?? 'user',
       adminExp: json['admin_exp'] ?? 0,
       exp: json['exp'] ?? 0,
+      credits: json['credits'] ?? 0,
+      isCheckedInToday: json['is_checked_in_today'] ?? false,
       reportCount: json['report_count'] ?? 0,
       createdAt: DateTime.tryParse(json['created_at'] ?? '') ?? DateTime.now(),
       eduStudentId: json['edu_student_id'] ?? '',
@@ -70,6 +76,8 @@ class User {
       'role': role,
       'admin_exp': adminExp,
       'exp': exp,
+      'credits': credits,
+      'is_checked_in_today': isCheckedInToday,
       'report_count': reportCount,
       'created_at': createdAt.toIso8601String(),
       'edu_student_id': eduStudentId,

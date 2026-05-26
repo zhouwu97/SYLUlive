@@ -241,30 +241,12 @@ class PostProvider extends ChangeNotifier {
             .map((e) => Post.fromJson(e))
             .toList();
 
-        if (newPosts.isNotEmpty) {
-          bool changed = false;
-          final existingIndexMap = {for (var i = 0; i < board.posts.length; i++) board.posts[i].id: i};
-          final uniqueNew = <Post>[];
-
-          for (final np in newPosts) {
-            final idx = existingIndexMap[np.id];
-            if (idx != null) {
-              board.posts[idx] = np;
-              changed = true;
-            } else {
-              uniqueNew.add(np);
-            }
-          }
-
-          if (uniqueNew.isNotEmpty) {
-            board.posts = [...uniqueNew, ...board.posts];
-            changed = true;
-          }
-
-          if (changed) {
-            await PostCacheService.savePosts(boardId, board.posts);
-          }
-        }
+        // 当用户主动刷新或切换排序时，由于后端返回的是全新的一页完整数据，
+        // 我们必须完全覆写当前列表，绝不能执行在原地更新旧帖的合并逻辑，
+        // 否则将导致已存在的帖子依然呆在旧的索引位置，造成视觉上排序无效。
+        board.posts = newPosts;
+        await PostCacheService.savePosts(boardId, board.posts);
+        
         board.hasMore = newPosts.length >= 20;
       }
     } on DioException catch (e) {

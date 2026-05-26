@@ -263,6 +263,8 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
     return GestureDetector(
       onTap: onTap,
       child: GlassContainer(
+        width: double.infinity,
+        height: double.infinity,
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
         borderRadius: 20,
         borderColor: is520 ? const Color(0x668BE197) : null,

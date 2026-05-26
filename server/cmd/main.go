@@ -599,6 +599,8 @@ func main() {
 	{
 
 		superAdmin.GET("/users", superAdminHandler.GetUsers)
+		superAdmin.GET("/lottery/participants", superAdminHandler.GetLotteryParticipants)
+		superAdmin.DELETE("/lottery/participants/:event_id/:user_id", superAdminHandler.KickLotteryParticipant)
 
 		superAdmin.PUT("/users/:id/role", superAdminHandler.UpdateUserRole)
 

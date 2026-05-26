@@ -43,6 +43,7 @@ dependencies:
   fast_gbk: ^1.0.0
   asn1lib: ^1.6.5
   flutter_inappwebview: ^6.1.5
+  add_2_calendar: ^3.0.1
 
 dev_dependencies:
   flutter_test:

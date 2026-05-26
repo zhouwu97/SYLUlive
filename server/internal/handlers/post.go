@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -24,6 +25,15 @@ func NewPostHandler(db *gorm.DB) *PostHandler {
 	return &PostHandler{db: db}
 }
 
+
+// Snapshot 帖子快照
+type Snapshot struct {
+	PostIDs   []uint
+	ExpiredAt time.Time
+}
+
+var ActiveSnapshots sync.Map // key: session_id (string), value: Snapshot
+
 // GetList 获取帖子列表
 func (h *PostHandler) GetList(c *gin.Context) {
 	boardIDStr := c.Query("board")
@@ -32,17 +42,77 @@ func (h *PostHandler) GetList(c *gin.Context) {
 	sort := c.DefaultQuery("sort", "time")
 	pageStr := c.DefaultQuery("page", "1")
 	limitStr := c.DefaultQuery("limit", "20")
-	sinceStr := c.Query("since") // 增量拉取：只返回此时间之后更新的帖子
+	sinceStr := c.Query("since")
+	
+	scene := c.Query("scene") // refresh 或 loadmore
+	sessionID := c.Query("session_id")
+	offsetStr := c.Query("offset")
 
 	page, _ := strconv.Atoi(pageStr)
 	limit, _ := strconv.Atoi(limitStr)
+	offset, _ := strconv.Atoi(offsetStr)
 	if page < 1 {
 		page = 1
 	}
 	if limit < 1 || limit > 50 {
 		limit = 20
 	}
+	
+	// 如果是常规分页（没有传入scene或者只是普通请求），默认使用 offset
+	if scene == "" && offset == 0 {
+		offset = (page - 1) * limit
+	}
 
+	var posts []models.Post
+	var total int64
+
+	// 如果是加载更多，并且带有有效的 session_id，尝试走快照
+	if scene == "loadmore" && sessionID != "" {
+		if val, ok := ActiveSnapshots.Load(sessionID); ok {
+			snapshot := val.(Snapshot)
+			if time.Now().Before(snapshot.ExpiredAt) {
+				// 计算切片边界
+				end := offset + limit
+				if offset < len(snapshot.PostIDs) {
+					if end > len(snapshot.PostIDs) {
+						end = len(snapshot.PostIDs)
+					}
+					targetIDs := snapshot.PostIDs[offset:end]
+					
+					if len(targetIDs) > 0 {
+						var rawPosts []models.Post
+						h.db.Model(&models.Post{}).Where("id IN ?", targetIDs).Preload("Author").Preload("Images").Preload("Images.File").Find(&rawPosts)
+						
+						// 重组排序
+						postMap := make(map[uint]models.Post)
+						for _, p := range rawPosts {
+							postMap[p.ID] = p
+						}
+						for _, id := range targetIDs {
+							if p, exists := postMap[id]; exists {
+								posts = append(posts, p)
+							}
+						}
+					}
+					
+					// 直接返回，不再走正常查询
+					h.fillLikes(c, posts)
+					c.JSON(http.StatusOK, gin.H{
+						"posts": posts,
+						"total": len(snapshot.PostIDs),
+						"page":  page,
+						"limit": limit,
+						"session_id": sessionID,
+					})
+					return
+				}
+			} else {
+				ActiveSnapshots.Delete(sessionID)
+			}
+		}
+	}
+
+	// 走正常的查询（或 refresh 阶段）
 	query := h.db.Model(&models.Post{}).Where("status != ?", models.PostStatusDeleted).Preload("Author").Preload("Images").Preload("Images.File")
 
 	if boardIDStr != "" {
@@ -56,7 +126,6 @@ func (h *PostHandler) GetList(c *gin.Context) {
 		query = query.Where("post_type = ?", postType)
 	}
 
-	// 增量查询：只返回 since 时间之后更新的帖子
 	if sinceStr != "" {
 		sinceTime, err := time.Parse(time.RFC3339, sinceStr)
 		if err == nil {
@@ -91,24 +160,98 @@ func (h *PostHandler) GetList(c *gin.Context) {
 		})
 	}
 
-	// 排序
-	switch sort {
-	case "price":
-		query = query.Order("price ASC").Order("created_at DESC")
-	case "price_desc":
-		query = query.Order("price DESC").Order("created_at DESC")
-	case "score":
-		query = query.Order("created_at DESC") // 以后可替换为综合算法
-	default:
-		query = query.Order("created_at DESC")
+	// 动态算法拦截
+	isSnapshotting := false
+	if scene == "refresh" && (sort == "all" || sort == "hot") && searchQuery == "" && sinceStr == "" {
+		isSnapshotting = true
+		if sort == "all" {
+			query = query.Order("(like_count*5 + reply_count*10 + view_count*0.2) / (((strftime('%s','now') - strftime('%s',created_at))/3600.0 + 2) * ((strftime('%s','now') - strftime('%s',created_at))/3600.0 + 2)) DESC")
+		} else if sort == "hot" {
+			query = query.Order("(view_count*1 + like_count*20 + reply_count*50) DESC")
+		}
+	} else {
+		// 常规排序
+		switch sort {
+		case "price":
+			query = query.Order("price ASC").Order("created_at DESC")
+		case "price_desc":
+			query = query.Order("price DESC").Order("created_at DESC")
+		default:
+			query = query.Order("created_at DESC")
+		}
 	}
 
-	var posts []models.Post
-	var total int64
-
 	query.Count(&total)
-	query.Offset((page - 1) * limit).Limit(limit).Find(&posts)
 
+	if isSnapshotting {
+		var allIDs []uint
+		// 这里必须清除Preload等，单纯Pluck
+		snapshotQuery := h.db.Model(&models.Post{}).Where("status != ?", models.PostStatusDeleted)
+		if boardIDStr != "" {
+			boardID, err := strconv.Atoi(boardIDStr)
+			if err == nil {
+				snapshotQuery = snapshotQuery.Where("board_id = ?", boardID)
+			}
+		}
+		if postType != "" {
+			snapshotQuery = snapshotQuery.Where("post_type = ?", postType)
+		}
+		if sort == "all" {
+			snapshotQuery = snapshotQuery.Order("(like_count*5 + reply_count*10 + view_count*0.2) / (((strftime('%s','now') - strftime('%s',created_at))/3600.0 + 2) * ((strftime('%s','now') - strftime('%s',created_at))/3600.0 + 2)) DESC")
+		} else if sort == "hot" {
+			snapshotQuery = snapshotQuery.Order("(view_count*1 + like_count*20 + reply_count*50) DESC")
+		}
+		snapshotQuery.Limit(500).Pluck("id", &allIDs)
+
+		sessionID = fmt.Sprintf("%d", time.Now().UnixNano())
+		ActiveSnapshots.Store(sessionID, Snapshot{
+			PostIDs:   allIDs,
+			ExpiredAt: time.Now().Add(10 * time.Minute),
+		})
+		
+		// 自动销毁
+		time.AfterFunc(10*time.Minute, func() {
+			ActiveSnapshots.Delete(sessionID)
+		})
+
+		// 取出第一页
+		end := limit
+		if end > len(allIDs) {
+			end = len(allIDs)
+		}
+		if len(allIDs) > 0 {
+			targetIDs := allIDs[:end]
+			var rawPosts []models.Post
+			h.db.Model(&models.Post{}).Where("id IN ?", targetIDs).Preload("Author").Preload("Images").Preload("Images.File").Find(&rawPosts)
+			
+			postMap := make(map[uint]models.Post)
+			for _, p := range rawPosts {
+				postMap[p.ID] = p
+			}
+			for _, id := range targetIDs {
+				if p, exists := postMap[id]; exists {
+					posts = append(posts, p)
+				}
+			}
+		}
+	} else {
+		// 普通查询分页
+		query.Offset(offset).Limit(limit).Find(&posts)
+	}
+
+	h.fillLikes(c, posts)
+
+	c.JSON(http.StatusOK, gin.H{
+		"posts": posts,
+		"total": total,
+		"page":  page,
+		"limit": limit,
+		"session_id": sessionID,
+	})
+}
+
+// 提取共用方法
+func (h *PostHandler) fillLikes(c *gin.Context, posts []models.Post) {
 	if userID, exists := c.Get("user_id"); exists {
 		uid := userID.(uint)
 		var postIDs []uint
@@ -129,13 +272,6 @@ func (h *PostHandler) GetList(c *gin.Context) {
 			}
 		}
 	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"posts": posts,
-		"total": total,
-		"page":  page,
-		"limit": limit,
-	})
 }
 
 // CreatePostInput 创建帖子输入

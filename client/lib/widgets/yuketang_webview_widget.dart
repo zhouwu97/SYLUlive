@@ -13,10 +13,10 @@ class YuketangWebViewWidget extends StatefulWidget {
   }) : super(key: key);
 
   @override
-  State<YuketangWebViewWidget> createState() => _YuketangWebViewWidgetState();
+  State<YuketangWebViewWidget> createState() => YuketangWebViewWidgetState();
 }
 
-class _YuketangWebViewWidgetState extends State<YuketangWebViewWidget> {
+class YuketangWebViewWidgetState extends State<YuketangWebViewWidget> {
   InAppWebViewController? webViewController;
   final ScriptService _scriptService = ScriptService();
   final AnswerGateway _answerGateway = AnswerGateway();

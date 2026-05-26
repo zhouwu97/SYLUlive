@@ -1,27 +1,53 @@
 import 'package:flutter/material.dart';
 import '../widgets/yuketang_webview_widget.dart';
 
-class YuketangClassScreen extends StatelessWidget {
+class YuketangClassScreen extends StatefulWidget {
   const YuketangClassScreen({Key? key}) : super(key: key);
 
   @override
+  State<YuketangClassScreen> createState() => _YuketangClassScreenState();
+}
+
+class _YuketangClassScreenState extends State<YuketangClassScreen> {
+  final GlobalKey<YuketangWebViewWidgetState> _webViewKey = GlobalKey();
+
+  Future<void> _handleBack() async {
+    final controller = _webViewKey.currentState?.webViewController;
+    if (controller != null && await controller.canGoBack()) {
+      controller.goBack();
+    } else {
+      if (mounted) Navigator.pop(context);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('长江雨课堂'),
-        // 允许用户刷新 WebView
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: () {
-              // 如果需要在这里控制全局 WebView 刷新，可以通过 GlobalKey 或别的方式通知组件
-            },
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        await _handleBack();
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('长江雨课堂'),
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: _handleBack,
           ),
-        ],
-      ),
-      // 直接铺满主体内容，引入实装好的探针浏览器组件
-      body: const YuketangWebViewWidget(
-        url: 'https://changjiang.yuketang.cn/v2/web/index', // 长江雨课堂入口地址
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.refresh),
+              onPressed: () {
+                _webViewKey.currentState?.webViewController?.reload();
+              },
+            ),
+          ],
+        ),
+        body: YuketangWebViewWidget(
+          key: _webViewKey,
+          url: 'https://changjiang.yuketang.cn/v2/web/index',
+        ),
       ),
     );
   }

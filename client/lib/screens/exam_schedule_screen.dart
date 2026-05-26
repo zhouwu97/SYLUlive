@@ -83,17 +83,17 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
     final String encoded = jsonEncode(_exams.map((e) => e.toJson()).toList());
     await prefs.setString('local_exams', encoded);
 
-    // 保存到 Download 文件夹下的 SYLUlive 子目录
+    // 保存到专属外部存储目录 (避免 Android 13+ 的 WRITE_EXTERNAL_STORAGE 权限拦截)
     try {
-      Directory? downloadDir;
+      Directory? backupDir;
       if (Platform.isAndroid) {
-        downloadDir = Directory('/storage/emulated/0/Download');
+        backupDir = await getExternalStorageDirectory();
       } else {
-        downloadDir = await getDownloadsDirectory();
+        backupDir = await getApplicationDocumentsDirectory();
       }
 
-      if (downloadDir != null) {
-        final folder = Directory('${downloadDir.path}/SYLUlive');
+      if (backupDir != null) {
+        final folder = Directory('${backupDir.path}/SYLUlive_Exams');
         if (!await folder.exists()) {
           await folder.create(recursive: true);
         }

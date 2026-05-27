@@ -345,12 +345,18 @@ func (h *PostHandler) Create(c *gin.Context) {
 	}
 
 	// 处理图片 - 从 multipart form 读取 file_ids
+	// 处理图片 - 从 multipart form 读取 file_ids
 	fileIDs := c.PostForm("file_ids")
 	if fileIDs == "" {
-		// 降级：直接从 Request.MultipartForm 读取
-		if c.Request.MultipartForm != nil {
-			if vals, ok := c.Request.MultipartForm.Value["file_ids"]; ok && len(vals) > 0 {
+		// 降级1：尝试读取带中括号的形式 (有些客户端会发 file_ids[] )
+		fileIDs = c.PostForm("file_ids[]")
+	}
+	if fileIDs == "" && c.Request.MultipartForm != nil {
+		// 降级2：遍历所有 Multipart 键，查找包含 file_ids 的
+		for k, vals := range c.Request.MultipartForm.Value {
+			if strings.Contains(k, "file_ids") && len(vals) > 0 {
 				fileIDs = vals[0]
+				break
 			}
 		}
 	}

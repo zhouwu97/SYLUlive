@@ -49,7 +49,13 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   
   static const _autoRefreshInterval = Duration(seconds: 60);
 
-  String get _currentSort => _feedMode == 'hot' ? 'score' : 'time';
+  String get _currentSort {
+    switch (_feedMode) {
+      case 'hot': return 'hot';
+      case 'all': return 'all';
+      default:    return 'time';
+    }
+  }
 
   @override
   void initState() {

@@ -334,60 +334,12 @@ class _ProfileScreenState extends State<ProfileScreen>
           ),
 
           const SizedBox(height: 20),
-
-          // 签到按钮
-          if (authProvider.isLoggedIn)
-            _buildCheckInButton(context, user, authProvider, isDark),
         ],
       ),
     );
   }
 
-  Widget _buildCheckInButton(BuildContext context, user, AuthProvider authProvider, bool isDark) {
-    final bool isCheckedIn = user?.isCheckedInToday ?? false;
 
-    return ElevatedButton.icon(
-      onPressed: isCheckedIn ? null : () => _doCheckIn(context, authProvider),
-      icon: Icon(isCheckedIn ? Icons.check_circle : Icons.calendar_today, size: 18),
-      label: Text(isCheckedIn ? '今日已签到' : '每日签到 (积分+3)'),
-      style: ElevatedButton.styleFrom(
-        foregroundColor: Colors.white,
-        backgroundColor: isCheckedIn ? Colors.grey : Colors.deepPurpleAccent,
-        disabledBackgroundColor: Colors.grey.withOpacity(0.5),
-        disabledForegroundColor: Colors.white70,
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(30),
-        ),
-        elevation: isCheckedIn ? 0 : 4,
-      ),
-    );
-  }
-
-  Future<void> _doCheckIn(BuildContext context, AuthProvider authProvider) async {
-    try {
-      final response = await authProvider.dio.post('/user/checkin');
-      if (response.statusCode == 200) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(response.data['message'] ?? '签到成功！'),
-              backgroundColor: Colors.green,
-            ),
-          );
-        }
-        authProvider.refreshUser(); // 重新加载用户信息，自动刷新 UI
-      }
-    } catch (e) {
-      if (mounted) {
-        String msg = '签到失败，请稍后再试';
-        if (e is DioException) {
-          msg = AppFeedback.dioErrorMessage(e, fallback: msg);
-        }
-        AppFeedback.showSnackBar(context, msg, isError: true);
-      }
-    }
-  }
 
   Widget _buildAvatarPlaceholder(user) {
     return Center(

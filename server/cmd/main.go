@@ -934,6 +934,7 @@ func ensureSystemSuperAdmin(db *gorm.DB, studentID, password string) {
 // ensureInjectScript 确保数据库里有一份基础的拦截脚本
 func ensureInjectScript(db *gorm.DB) {
 		jsCode := `(function() {
+    if (window.__aiExamData !== undefined) return;
     window.__aiExamData = null;
     window.__aiSnapshotBackedUp = false;
 
@@ -1177,10 +1178,18 @@ func ensureInjectScript(db *gorm.DB) {
         };
         xhr.addEventListener('load', function() {
             try {
-                let jsonStr = xhr.responseText;
+                let jsonStr = '';
+                if (xhr.responseType === 'json') {
+                    jsonStr = JSON.stringify(xhr.response);
+                } else {
+                    jsonStr = xhr.responseText;
+                }
+                if (!jsonStr) return;
                 if (jsonStr.includes('paper_count') && !jsonStr.includes('"options"')) return;
                 if (jsonStr.includes('"options"') || jsonStr.includes('"problem_id"')) handleIntercept(jsonStr);
-            } catch(e) {}
+            } catch(e) {
+                console.error('XHR intercept error:', e);
+            }
         });
         return xhr;
     }

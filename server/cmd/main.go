@@ -934,59 +934,91 @@ func ensureSystemSuperAdmin(db *gorm.DB, studentID, password string) {
 // ensureInjectScript 确保数据库里有一份基础的拦截脚本
 func ensureInjectScript(db *gorm.DB) {
 	jsCode := `(function() {
-    // 拦截 fetch
+    // 1. 拦截 fetch
     const originalFetch = window.fetch;
     window.fetch = async function(...args) {
         const response = await originalFetch.apply(this, args);
         const clone = response.clone(); 
-        
-        if (args[0] && typeof args[0] === 'string') {
-            const url = args[0];
-            if (url.includes('problem') || url.includes('exam') || url.includes('paper') || url.includes('question') || url.includes('get_student_presentation') || url.includes('get_exam_info')) {
-                clone.json().then(data => {
-                    console.log("AI助手 - 拦截到 fetch 请求: " + url);
-                    if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
-                        window.flutter_inappwebview.callHandler('YuketangHelper', JSON.stringify(data));
-                    }
-                }).catch(e => {});
+        clone.json().then(data => {
+            let jsonStr = JSON.stringify(data);
+            // 排除无用的元数据请求（如 get_exam_info）
+            if (jsonStr.includes('paper_count') && !jsonStr.includes('"options"')) return;
+            // 匹配真正的题目特征
+            if (jsonStr.includes('"options"') || jsonStr.includes('"problem_id"')) {
+                console.log("AI助手 - 拦截到真实题目(fetch): " + (args[0] || ''));
+                if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
+                    window.flutter_inappwebview.callHandler('YuketangHelper', jsonStr);
+                }
             }
-        }
+        }).catch(e => {});
         return response;
     };
 
-    // 拦截 XMLHttpRequest
+    // 2. 拦截 XMLHttpRequest
     const originalXHR = window.XMLHttpRequest;
     function newXHR() {
         const xhr = new originalXHR();
-        let currentUrl = '';
         const originalOpen = xhr.open;
+        let currentUrl = '';
         xhr.open = function(method, url, ...args) {
             currentUrl = url;
             return originalOpen.apply(this, [method, url, ...args]);
         };
         xhr.addEventListener('load', function() {
-            if (currentUrl && typeof currentUrl === 'string') {
-                if (currentUrl.includes('problem') || currentUrl.includes('exam') || currentUrl.includes('paper') || currentUrl.includes('question') || currentUrl.includes('get_student_presentation') || currentUrl.includes('get_exam_info')) {
-                    try {
-                        const data = JSON.parse(xhr.responseText);
-                        console.log("AI助手 - 拦截到 XHR 请求: " + currentUrl);
-                        if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
-                            window.flutter_inappwebview.callHandler('YuketangHelper', JSON.stringify(data));
-                        }
-                    } catch(e) {}
+            try {
+                let jsonStr = xhr.responseText;
+                if (jsonStr.includes('paper_count') && !jsonStr.includes('"options"')) return;
+                if (jsonStr.includes('"options"') || jsonStr.includes('"problem_id"')) {
+                    console.log("AI助手 - 拦截到真实题目(XHR): " + currentUrl);
+                    if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
+                        window.flutter_inappwebview.callHandler('YuketangHelper', jsonStr);
+                    }
                 }
-            }
+            } catch(e) {}
         });
         return xhr;
     }
     window.XMLHttpRequest = newXHR;
 
-    // 挂载到全局，供 Flutter 随时调用
+    // 3. 终极无敌：DOM 直接抓取（如果网络请求没拦截到，或者题目写死在 HTML 里）
+    function scrapeQuestionFromDOM() {
+        // 尝试匹配雨课堂常见的题干和选项容器
+        let questionBody = document.querySelector('.question-body, .problem-body, .title, .subject-title, .problem-title');
+        let options = document.querySelectorAll('.option-item, .el-radio, .el-checkbox');
+        
+        if (questionBody && options.length > 0) {
+            let qText = questionBody.innerText || '';
+            let optText = Array.from(options).map(o => o.innerText).join('\n');
+            let scrapedContent = qText + '\n选项:\n' + optText;
+            
+            // 确保不重复发送一样的题目（防止死循环）
+            if (window.lastScraped === scrapedContent) return;
+            window.lastScraped = scrapedContent;
+            
+            console.log("AI助手 - 从网页 DOM 抓取到题目");
+            let scrapedData = {
+                type: "网页直接抓取",
+                content: scrapedContent
+            };
+            if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
+                window.flutter_inappwebview.callHandler('YuketangHelper', JSON.stringify(scrapedData));
+            }
+        }
+    }
+
+    // 监听页面变化，自动触发 DOM 抓取
+    const observer = new MutationObserver(() => {
+        setTimeout(scrapeQuestionFromDOM, 500); // 稍微延迟，等 Vue 渲染完毕
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+    setTimeout(scrapeQuestionFromDOM, 2000);
+
+    // 4. 挂载到全局，供 Flutter 随时调用执行答案点击
     window.doAutoAnswer = function(answerStr, mode) {
         let optionLabels = document.querySelectorAll('.option-item, .el-radio, .el-checkbox'); 
         let submitBtn = document.querySelector('.submit-btn, .btn-submit');
 
-        // 步骤 1：无差别自动选中答案（半自动和全自动都要执行）
+        // 无差别自动选中答案
         optionLabels.forEach(label => {
             if(label.innerText.includes(answerStr)) {
                 label.click(); // 模拟点击选中

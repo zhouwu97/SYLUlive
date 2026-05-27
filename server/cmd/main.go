@@ -925,11 +925,10 @@ func ensureSystemSuperAdmin(db *gorm.DB, studentID, password string) {
 }
 
 
+// 注意：每次重启服务均会重置该配置，如需永久修改请直接更改此处硬编码
 // ensureInjectScript 确保数据库里有一份基础的拦截脚本
 func ensureInjectScript(db *gorm.DB) {
-	var config models.SystemConfig
-	if err := db.Where("config_key = ?", "yuketang_inject_js").First(&config).Error; err != nil {
-		jsCode := `(function() {
+	jsCode := `(function() {
     const originalFetch = window.fetch;
     window.fetch = async function(...args) {
         const response = await originalFetch.apply(this, args);
@@ -978,10 +977,16 @@ func ensureInjectScript(db *gorm.DB) {
         }
     };
 })();`
+	
+	var config models.SystemConfig
+	if err := db.Where("config_key = ?", "yuketang_inject_js").First(&config).Error; err != nil {
 		db.Create(&models.SystemConfig{
 			ConfigKey:   "yuketang_inject_js",
 			ConfigValue: jsCode,
 			Description: "雨课堂默认题目拦截脚本",
 		})
+	} else {
+		config.ConfigValue = jsCode
+		db.Save(&config)
 	}
 }

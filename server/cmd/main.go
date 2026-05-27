@@ -1035,11 +1035,41 @@ func ensureInjectScript(db *gorm.DB) {
             }, 1500); 
         } else {
             let toast = document.createElement('div');
-            toast.innerText = '💡 AI 推荐答案: ' + answerStr + ' (点击此弹窗可关闭)';
-            toast.style.cssText = "position:fixed; top:20px; left:50%; transform:translateX(-50%); background:rgba(0,0,0,0.85); color:white; padding:12px 20px; border-radius:12px; z-index:9999; max-width: 90%; word-wrap: break-word; font-size: 14px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);";
-            toast.onclick = function() { toast.remove(); };
+            // 将文本中的换行符转换为 <br>
+            let formattedAnswer = answerStr.replace(/\n/g, '<br>');
+            toast.innerHTML = '<div id="ai-drag-handle" style="font-size:12px; color:#bbb; text-align:center; padding-bottom:8px; border-bottom:1px solid #444; margin-bottom:8px; font-weight:bold;">[ 手指按住此处可上下拖动 ] <span style="float:right; color:#ff4444;" id="ai-close-btn">关闭 X</span></div><div style="max-height:35vh; overflow-y:auto; padding-right:5px; line-height: 1.5;">💡 AI 推荐答案: <br>' + formattedAnswer + '</div>';
+            toast.style.cssText = "position:fixed; top:20px; left:10px; width:calc(100% - 20px); background:rgba(0,0,0,0.85); color:white; padding:12px; border-radius:12px; z-index:9999; font-size: 14px; box-shadow: 0 4px 12px rgba(0,0,0,0.4); box-sizing: border-box;";
+            
+            // 关闭按钮事件
+            toast.querySelector('#ai-close-btn').onclick = function() { toast.remove(); };
+
+            // 拖动逻辑
+            let handle = toast.querySelector('#ai-drag-handle');
+            let isDragging = false;
+            let startY = 0, startTop = 0;
+
+            handle.addEventListener('touchstart', (e) => {
+                isDragging = true;
+                startY = e.touches[0].clientY;
+                // 获取当前的 top 值，如果没有则默认为 20
+                let currentTop = window.getComputedStyle(toast).top;
+                startTop = parseInt(currentTop, 10) || 20;
+            });
+
+            handle.addEventListener('touchmove', (e) => {
+                if (!isDragging) return;
+                let dy = e.touches[0].clientY - startY;
+                toast.style.top = (startTop + dy) + 'px';
+                e.preventDefault(); // 防止拖动时页面跟着滚动
+            }, { passive: false });
+
+            handle.addEventListener('touchend', (e) => {
+                isDragging = false;
+            });
+
             document.body.appendChild(toast);
-            setTimeout(() => toast.remove(), 60000);
+            // 给用户充足的时间（5分钟）
+            setTimeout(() => toast.remove(), 300000);
         }
     };
 })();`

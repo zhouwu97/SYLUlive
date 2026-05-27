@@ -13,6 +13,7 @@ class YuketangClassScreen extends StatefulWidget {
 class _YuketangClassScreenState extends State<YuketangClassScreen> {
   final GlobalKey<YuketangWebViewWidgetState> _webViewKey = GlobalKey();
   final _storage = const FlutterSecureStorage();
+  String? _lastInterceptedExamData;
 
   Future<void> _handleBack() async {
     final controller = _webViewKey.currentState?.webViewController;
@@ -27,12 +28,10 @@ class _YuketangClassScreenState extends State<YuketangClassScreen> {
     final keyCtrl = TextEditingController();
     final urlCtrl = TextEditingController();
     final modelCtrl = TextEditingController();
-    final rangeCtrl = TextEditingController();
 
     final currentKey = await _storage.read(key: 'custom_api_key');
     final currentUrl = await _storage.read(key: 'custom_base_url');
     final currentModel = await _storage.read(key: 'custom_model_name');
-    final currentRange = await _storage.read(key: 'auto_question_range');
     String currentProvider = await _storage.read(key: 'custom_ai_provider') ?? 'default';
     String currentMode = await _storage.read(key: 'auto_submit_mode') ?? 'semi';
 
@@ -49,7 +48,6 @@ class _YuketangClassScreenState extends State<YuketangClassScreen> {
     keyCtrl.text = currentKey ?? '';
     urlCtrl.text = currentUrl ?? '';
     modelCtrl.text = currentModel ?? '';
-    rangeCtrl.text = currentRange ?? '';
 
     // 如果选了自带，并且是预设提供商，则锁定URL和模型输入
     
@@ -160,17 +158,6 @@ class _YuketangClassScreenState extends State<YuketangClassScreen> {
                     contentPadding: EdgeInsets.zero,
                   ),
                   const Divider(height: 32),
-                  const Text('🎯 答题范围', style: TextStyle(fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: rangeCtrl,
-                    decoration: const InputDecoration(
-                      labelText: '例如: 1-10 (留空则回答所有题目)',
-                      border: OutlineInputBorder(),
-                      isDense: true,
-                    ),
-                  ),
-                  const Divider(height: 32),
                   const Text('🤖 AI 接口来源', style: TextStyle(fontWeight: FontWeight.bold)),
                   const SizedBox(height: 8),
                   RadioListTile<String>(
@@ -274,7 +261,6 @@ class _YuketangClassScreenState extends State<YuketangClassScreen> {
                 onPressed: () async {
                   await _storage.write(key: 'auto_submit_mode', value: currentMode);
                   await _storage.write(key: 'custom_ai_provider', value: currentProvider);
-                  await _storage.write(key: 'auto_question_range', value: rangeCtrl.text.trim());
                   if (currentProvider != 'default') {
                     await _storage.write(key: 'custom_api_key', value: keyCtrl.text.trim());
                     await _storage.write(key: 'custom_base_url', value: urlCtrl.text.trim());

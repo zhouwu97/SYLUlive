@@ -70,9 +70,9 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     try {
       final XFile? image = await _imagePicker.pickImage(
         source: source,
-        maxWidth: 1920,
-        maxHeight: 1920,
-        imageQuality: 85,
+        maxWidth: 1080,
+        maxHeight: 1080,
+        imageQuality: 60,
       );
       if (image != null) {
         final length = await image.length();
@@ -176,11 +176,30 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
 
     // 先上传图片
     List<int> fileIds = [];
+    bool hasUploadError = false;
     for (final image in _selectedImages) {
       final fileId = await postProvider.uploadImage(image.path);
       if (fileId != null) {
         fileIds.add(fileId);
+      } else {
+        hasUploadError = true;
+        break;
       }
+    }
+
+    if (hasUploadError) {
+      setState(() {
+        _isLoading = false;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('图片上传失败，请检查网络或图片是否过大'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
     }
 
     final mergedFileIds = [

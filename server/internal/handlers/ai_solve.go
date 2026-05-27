@@ -122,7 +122,7 @@ func (h *AiSolveHandler) getAiConfig() (baseURL, apiKey, modelName string) {
 // callAI 直接调用大模型 (兼容 OpenAI API)
 func (h *AiSolveHandler) callAI(baseURL, apiKey, modelName, questionType, cleanedText string) (string, error) {
 	prompt := fmt.Sprintf(`你是一个专业的大学辅助答题助手。
-请直接输出正确选项的字母或简短答案，不要任何解析。
+【重点警告】如果是选择题，千万不要只输出 ABCD 字母（因为系统的选项字母顺序通常会随机打乱）！你必须直接输出正确选项的【完整文字内容】！多道题请按顺序标号输出文本。绝对不要包含任何解析或废话。
 题型：%s
 题目内容：%s
 `, questionType, cleanedText)
@@ -231,6 +231,7 @@ func (h *AiSolveHandler) Solve(c *gin.Context) {
 
 		// 第四步：直连大模型
 		baseURL, apiKey, modelName := h.getAiConfig()
+		
 		answer, err := h.callAI(baseURL, apiKey, modelName, req.QuestionType, cleanedText)
 		if err != nil {
 			return nil, err

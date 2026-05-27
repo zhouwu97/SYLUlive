@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:collection';
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import '../services/script_service.dart';
@@ -21,15 +22,44 @@ class YuketangWebViewWidgetState extends State<YuketangWebViewWidget> {
   final ScriptService _scriptService = ScriptService();
   final AnswerGateway _answerGateway = AnswerGateway();
   String? _lastInterceptedExamData;
+  String? _injectScript;
+  bool _isInitializing = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _initScript();
+  }
+
+  Future<void> _initScript() async {
+    _injectScript = await _scriptService.getInjectScript();
+    if (mounted) {
+      setState(() {
+        _isInitializing = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    if (_isInitializing) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
     return InAppWebView(
       initialUrlRequest: URLRequest(url: WebUri(widget.url)),
       initialSettings: InAppWebViewSettings(
         javaScriptEnabled: true,
         userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
       ),
+      initialUserScripts: _injectScript != null && _injectScript!.isNotEmpty
+          ? UnmodifiableListView<UserScript>([
+              UserScript(
+                source: _injectScript!,
+                injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
+              ),
+            ])
+          : null,
       onWebViewCreated: (controller) {
         webViewController = controller;
 
@@ -82,14 +112,7 @@ class YuketangWebViewWidgetState extends State<YuketangWebViewWidget> {
         );
       },
       onLoadStop: (controller, url) async {
-        // 加载停止时，强制注入拦截脚本
-        final scriptStr = await _scriptService.getInjectScript();
-        if (scriptStr != null && scriptStr.isNotEmpty) {
-          await controller.evaluateJavascript(source: scriptStr);
-          debugPrint('注入脚本执行成功');
-        } else {
-          debugPrint('未能获取到注入脚本，未注入');
-        }
+        debugPrint('页面加载完成: $url');
       },
     );
   }

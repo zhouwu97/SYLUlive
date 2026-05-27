@@ -69,7 +69,7 @@ class AnswerGateway {
 
   /// 分支 A：用户自带 Key，本地直连大模型，不消耗积分
   Future<String?> _askAiDirectly(String apiKey, String qType, String content, void Function(String)? onProgress) async {
-    final prompt = '你是一个专业的大学辅助答题助手。\n请直接输出正确选项的字母或简短答案，不要任何解析。\n题型：$qType\n题目内容：$content';
+    final prompt = '你是一个专业的大学辅助答题助手。\n【重点警告】如果是选择题，千万不要只输出 ABCD 字母（因为题目字母顺序通常会随机打乱）！你必须直接输出正确选项的【完整文字内容】！多道题请标号输出文本。绝对不要包含任何解析或废话。\n题型：$qType\n题目内容：$content';
     
     final baseUrl = await _secureStorage.read(key: 'custom_base_url') ?? 'https://api.deepseek.com/v1';
     final modelName = await _secureStorage.read(key: 'custom_model_name') ?? 'deepseek-chat';

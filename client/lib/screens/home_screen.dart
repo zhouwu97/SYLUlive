@@ -10,6 +10,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../config/api_constants.dart';
 import '../main.dart';
 import '../providers/auth_provider.dart';
+import '../providers/post_provider.dart';
 import '../utils/app_navigator.dart';
 import '../utils/post_image_cache.dart';
 import '../utils/update_checker.dart';
@@ -669,7 +670,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       MaterialPageRoute(
         builder: (_) => const CreatePostScreen(boardId: 1),
       ),
-    );
+    ).then((_) {
+      if (mounted) {
+        context.read<PostProvider>().refresh(boardId: 1, sort: 'time');
+      }
+    });
   }
 
   @override

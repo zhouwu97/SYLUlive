@@ -101,17 +101,17 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             )
           : fetchedPost;
       setState(() {
-        _post = mergedPost;
-        _liked = mergedPost.isLiked;
-        _likeCount = mergedPost.likeCount;
         _replies = (repliesResponse.data as List)
             .map((e) => Reply.fromJson(e))
             .toList();
+        _post = mergedPost.copyWith(replyCount: _replies.length);
+        _liked = mergedPost.isLiked;
+        _likeCount = mergedPost.likeCount;
         _isLoading = false;
       });
       // 同步到外部列表以更新浏览量等数据
       if (mounted) {
-        context.read<PostProvider>().updatePostInCache(mergedPost);
+        context.read<PostProvider>().updatePostInCache(_post!);
       }
       if (widget.targetReplyId != null && !_hasScrolledToTarget) {
         WidgetsBinding.instance.addPostFrameCallback((_) {

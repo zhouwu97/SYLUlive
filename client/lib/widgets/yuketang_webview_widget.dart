@@ -41,14 +41,21 @@ class YuketangWebViewWidgetState extends State<YuketangWebViewWidget> {
               try {
                 final Map<String, dynamic> data = jsonDecode(jsonString);
                 
+                final progressNotifier = ValueNotifier<String>('正在初始化拦截请求...');
                 // 为了防止频繁调用，可在 Gateway 中做 debounce 保护，或者 UI 弹窗
-                _showThinkingDialog();
+                _showThinkingDialog(progressNotifier);
                 
                 // 提交给智能网关处理
-                final answer = await _answerGateway.processQuestion(data);
+                final answer = await _answerGateway.processQuestion(
+                  data,
+                  onProgress: (status) {
+                    if (mounted) progressNotifier.value = status;
+                  },
+                );
                 
                 if (mounted) {
                   Navigator.of(context).pop(); // 关闭 thinking dialog
+                  progressNotifier.dispose();
                   
                   if (answer != null && !answer.startsWith('错误:') && !answer.startsWith('请求后端失败')) {
                     // 执行 JS 注入答案并根据模式自动点击或提示
@@ -77,17 +84,24 @@ class YuketangWebViewWidgetState extends State<YuketangWebViewWidget> {
     );
   }
 
-  void _showThinkingDialog() {
+  void _showThinkingDialog(ValueNotifier<String> notifier) {
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (context) {
-        return const AlertDialog(
+        return AlertDialog(
           content: Row(
             children: [
-              CircularProgressIndicator(),
-              SizedBox(width: 16),
-              Text('AI 正在思考...'),
+              const CircularProgressIndicator(),
+              const SizedBox(width: 16),
+              Expanded(
+                child: ValueListenableBuilder<String>(
+                  valueListenable: notifier,
+                  builder: (context, value, child) {
+                    return Text(value);
+                  },
+                ),
+              ),
             ],
           ),
         );

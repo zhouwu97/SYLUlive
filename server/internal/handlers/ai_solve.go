@@ -187,19 +187,26 @@ func (h *AiSolveHandler) Solve(c *gin.Context) {
 		return
 	}
 
+	// 白名单：特定用户不扣费
+	var user models.User
+	h.db.First(&user, uid)
+	isFreeUser := user.StudentID == "2403060128" || user.Role == "admin" || user.Role == "super_admin"
+
 	// 1. 文本预处理与 Hash 计算
 	cleanedText := cleanText(req.ContentText)
 	questionHash := generateHash(req.QuestionType, cleanedText)
 
-	// 第一步：无差别原子扣费（最优先）
-	result := h.db.Exec("UPDATE users SET credits = credits - 1 WHERE id = ? AND credits > 0", uid)
-	if result.Error != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "扣费失败"})
-		return
-	}
-	if result.RowsAffected == 0 {
-		c.JSON(http.StatusForbidden, gin.H{"error": "积分不足"})
-		return
+	// 第一步：扣费
+	if !isFreeUser {
+		result := h.db.Exec("UPDATE users SET credits = credits - 1 WHERE id = ? AND credits > 0", uid)
+		if result.Error != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "扣费失败"})
+			return
+		}
+		if result.RowsAffected == 0 {
+			c.JSON(http.StatusForbidden, gin.H{"error": "积分不足"})
+			return
+		}
 	}
 
 	// 第二步：查本地题库 (CachedQuestion)
@@ -248,7 +255,9 @@ func (h *AiSolveHandler) Solve(c *gin.Context) {
 
 	if err != nil {
 		// 第五步：失败补偿
-		h.db.Exec("UPDATE users SET credits = credits + 1 WHERE id = ?", uid)
+		if !isFreeUser {
+			h.db.Exec("UPDATE users SET credits = credits + 1 WHERE id = ?", uid)
+		}
 
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error":  "AI处理失败，积分已退还",

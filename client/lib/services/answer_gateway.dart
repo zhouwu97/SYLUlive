@@ -99,42 +99,71 @@ class AnswerGateway {
       return '未登录，无法使用积分池';
     }
 
-    try {
-      onProgress?.call('请求已发送到服务器，等待解析与扣费...');
-      // 修正接口路径：因为 baseUrl 是 /api，而后端接口在 /api/v1/question/solve
-      final rootUrl = ApiConstants.baseUrl.replaceAll('/api', '');
-      final endpoint = '$rootUrl/api/v1/question/solve';
-      
-      final response = await _dio.post(
-        endpoint,
-        options: Options(
-          headers: {
-            'Authorization': 'Bearer $token',
-            'Content-Type': 'application/json',
-          },
-        ),
-        data: {
-          'question_type': qType,
-          'raw_content': rawContent,
-          'content_text': contentText,
-        },
-      );
-
-      if (response.statusCode == 200 && response.data['success'] == true) {
-        return response.data['answer']?.toString();
-      } else {
-        return response.data['error']?.toString() ?? '未知错误';
-      }
-    } on DioException catch (e) {
-      if (e.response?.statusCode == 403) {
-        return '积分不足，请充值或配置自定义 Key';
-      }
-      if (e.response?.data != null && e.response?.data['error'] != null) {
-        return e.response?.data['error'].toString();
-      }
-      return '请求后端失败: ${e.message}';
-    } catch (e) {
-      return '系统错误: $e';
+    if (contentText.length > 3000) {
+      contentText = contentText.substring(0, 3000) + '...[截断]';
     }
+
+    int maxRetries = 2;
+    int retryCount = 0;
+
+    while (retryCount <= maxRetries) {
+      try {
+        if (retryCount > 0) {
+          onProgress?.call('服务器AI正在深度思考中，正在继续等待 ($retryCount/$maxRetries)...');
+          await Future.delayed(const Duration(seconds: 2));
+        } else {
+          onProgress?.call('请求已发送到云端，等待AI回答...');
+        }
+        
+        final rootUrl = ApiConstants.baseUrl.replaceAll('/api', '');
+        final endpoint = '$rootUrl/api/v1/question/solve';
+        
+        final response = await _dio.post(
+          endpoint,
+          options: Options(
+            headers: {
+              'Authorization': 'Bearer $token',
+              'Content-Type': 'application/json',
+            },
+          ),
+          data: {
+            'question_type': qType,
+            'raw_content': rawContent.toString().length > 1000 ? {"msg": "too large"} : rawContent,
+            'content_text': contentText,
+          },
+        );
+
+        if (response.statusCode == 200 && response.data != null && response.data is Map && response.data['success'] == true) {
+          return response.data['answer']?.toString();
+        } else {
+          if (response.data is Map) {
+            return response.data['error']?.toString() ?? '未知错误';
+          }
+          return '服务器返回异常: ${response.statusCode}';
+        }
+      } on DioException catch (e) {
+        final statusCode = e.response?.statusCode;
+        // 如果是网关超时，说明后端AI还在转圈圈，我们重试去接结果
+        if (statusCode == 504 || statusCode == 502 || statusCode == 524) {
+          retryCount++;
+          if (retryCount <= maxRetries) continue;
+        }
+
+        if (statusCode == 403) {
+          return '积分不足，请充值或配置自定义 Key';
+        }
+        
+        if (e.response?.data != null && e.response!.data is Map) {
+          final errMap = e.response!.data as Map;
+          if (errMap['error'] != null) {
+            return errMap['error'].toString();
+          }
+        }
+        return '请求后端失败: ${e.message} (Status: $statusCode)';
+      } catch (e) {
+        return '系统错误: $e';
+      }
+    }
+    return '请求超时，请稍后再试';
   }
 }

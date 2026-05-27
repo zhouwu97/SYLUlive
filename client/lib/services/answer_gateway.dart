@@ -115,17 +115,17 @@ class AnswerGateway {
       return '未登录，无法使用积分池';
     }
 
-    if (contentText.length > 3000) {
-      contentText = contentText.substring(0, 3000) + '...[截断]';
+    if (contentText.length > 25000) {
+      contentText = contentText.substring(0, 25000) + '...[截断]';
     }
 
-    int maxRetries = 2;
+    int maxRetries = 5;
     int retryCount = 0;
 
     while (retryCount <= maxRetries) {
       try {
         if (retryCount > 0) {
-          onProgress?.call('服务器AI正在深度思考中，正在继续等待 ($retryCount/$maxRetries)...');
+          onProgress?.call('题目较多，服务器AI正在深度思考中，正在继续等待 ($retryCount/$maxRetries)...');
           await Future.delayed(const Duration(seconds: 2));
         } else {
           onProgress?.call('请求已发送到云端，等待AI回答...');

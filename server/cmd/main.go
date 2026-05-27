@@ -1035,10 +1035,11 @@ func ensureInjectScript(db *gorm.DB) {
             }, 1500); 
         } else {
             let toast = document.createElement('div');
-            toast.innerText = '💡 AI 推荐答案: ' + answerStr + ' (请确认后手动提交)';
-            toast.style.cssText = "position:fixed; top:20px; left:50%; transform:translateX(-50%); background:rgba(0,0,0,0.7); color:white; padding:10px 20px; border-radius:20px; z-index:9999;";
+            toast.innerText = '💡 AI 推荐答案: ' + answerStr + ' (点击此弹窗可关闭)';
+            toast.style.cssText = "position:fixed; top:20px; left:50%; transform:translateX(-50%); background:rgba(0,0,0,0.85); color:white; padding:12px 20px; border-radius:12px; z-index:9999; max-width: 90%; word-wrap: break-word; font-size: 14px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);";
+            toast.onclick = function() { toast.remove(); };
             document.body.appendChild(toast);
-            setTimeout(() => toast.remove(), 5000);
+            setTimeout(() => toast.remove(), 60000);
         }
     };
 })();`

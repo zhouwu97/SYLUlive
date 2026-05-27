@@ -136,24 +136,28 @@ func (h *CheckInHandler) GetStatus(c *gin.Context) {
 	now := time.Now().In(loc)
 	today := now.Format("2006-01-02")
 
-	var todayRecord models.CheckIn
-	checkedIn := false
+	var user models.User
+	h.db.Select("exp, last_check_in_date").First(&user, uid)
+
+	checkedIn := user.LastCheckInDate == today
 	streakDays := 0
 
+	var todayRecord models.CheckIn
 	if err := h.db.Where("user_id = ? AND check_in_date = ?", uid, today).First(&todayRecord).Error; err == nil {
-		checkedIn = true
 		streakDays = todayRecord.StreakDays
 	} else {
-		// 没签到，查昨天记录看连续天数
-		yesterday := now.AddDate(0, 0, -1).Format("2006-01-02")
-		var yesterdayRecord models.CheckIn
-		if err := h.db.Where("user_id = ? AND check_in_date = ?", uid, yesterday).First(&yesterdayRecord).Error; err == nil {
-			streakDays = yesterdayRecord.StreakDays
+		if checkedIn {
+			// 旧系统今天签过到，但新表里没有，默认按 1 算
+			streakDays = 1
+		} else {
+			// 没签到，查昨天记录看连续天数
+			yesterday := now.AddDate(0, 0, -1).Format("2006-01-02")
+			var yesterdayRecord models.CheckIn
+			if err := h.db.Where("user_id = ? AND check_in_date = ?", uid, yesterday).First(&yesterdayRecord).Error; err == nil {
+				streakDays = yesterdayRecord.StreakDays
+			}
 		}
 	}
-
-	var user models.User
-	h.db.Select("exp").First(&user, uid)
 
 	// 计算下次签到可获得的经验
 	nextStreak := streakDays + 1

@@ -122,10 +122,11 @@ func (h *AiSolveHandler) getAiConfig() (baseURL, apiKey, modelName string) {
 // callAI 直接调用大模型 (兼容 OpenAI API)
 func (h *AiSolveHandler) callAI(baseURL, apiKey, modelName, questionType, cleanedText string) (string, error) {
 	prompt := fmt.Sprintf(`你是一个专业的大学辅助答题助手。
-【重点警告】如果是选择题，千万不要只输出 ABCD 字母（因为系统的选项字母顺序通常会随机打乱）！你必须直接输出正确选项的【完整文字内容】！多道题请按顺序标号输出文本。绝对不要包含任何解析或废话。
+【重点警告】如果是选择题，千万不要只输出 ABCD 字母！你必须直接输出正确选项的【完整文字内容】！
+【关键：题号匹配】我传给你的题目 JSON 中可能带有一个 "__originalIndex" 字段。在输出多道题的答案时，你的编号必须严格等于该题目的 "__originalIndex" 的值（例如："17. 选项文字"，"18. 选项文字"），绝对不能自己从 1 开始顺延编号！
+绝对不要包含任何解析或废话。
 题型：%s
-题目内容：%s
-`, questionType, cleanedText)
+题目内容：%s`, questionType, cleanedText)
 
 	reqBody := map[string]interface{}{
 		"model": modelName,

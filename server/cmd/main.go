@@ -161,7 +161,8 @@ func main() {
 
 	ensureSystemSuperAdmin(db, cfg.SuperAdminID, cfg.SuperAdminPass)
 
-
+	// 确保雨课堂 JS 注入脚本存在
+	ensureInjectScript(db)
 
 	r := gin.Default()
 

@@ -15,10 +15,7 @@ class ScriptService {
 
   /// 获取缓存的注入脚本。如果内存中没有，则向后端请求。
   Future<String?> getInjectScript() async {
-    if (_cachedScript != null && _cachedScript!.isNotEmpty) {
-      return _cachedScript;
-    }
-
+    // 强制每次获取最新脚本，避免热重载时缓存导致不生效
     try {
       final response = await _dio.get('${ApiConstants.baseUrl}/v1/config/inject-script');
       

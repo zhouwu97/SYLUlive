@@ -12,27 +12,42 @@ class AnswerGateway {
 
   static const String _customApiKeyStorageKey = 'custom_api_key';
 
+  String _cleanAiAnswer(String answer) {
+    int startIdx = answer.indexOf('<think>');
+    int endIdx = answer.indexOf('</think>');
+    if (startIdx != -1 && endIdx != -1 && endIdx > startIdx) {
+      answer = answer.substring(0, startIdx) + answer.substring(endIdx + '</think>'.length);
+    }
+    // 有时候 AI 可能会给出类似于 "答案是：D" 或 "选项: D" 的废话
+    // 前端自动点击只做简单的 includes 匹配，所以只要保留核心内容即可
+    return answer.trim();
+  }
+
   /// 处理题目数据
   Future<String?> processQuestion(Map<String, dynamic> questionData, {void Function(String)? onProgress}) async {
     try {
       final customProvider = await _secureStorage.read(key: 'custom_ai_provider') ?? 'default';
       final customKey = await _secureStorage.read(key: _customApiKeyStorageKey);
 
-      // 提取题干信息用于 AI 计算 (这里假设通过解析 questionData 拿到文本)
-      // 实际情况下需要根据雨课堂具体返回的 JSON 结构进行解析
       onProgress?.call('正在解析雨课堂题目结构...');
       final questionType = questionData['type']?.toString() ?? '未知题型';
       final contentText = questionData['content']?.toString() ?? questionData.toString();
 
+      String? rawAnswer;
       if (customProvider != 'default' && customKey != null && customKey.isNotEmpty) {
         debugPrint('发现自定义 API Key，采用分支 A：本地直连大模型');
         onProgress?.call('正在连接本地配置的大模型进行推理...');
-        return await _askAiDirectly(customKey, questionType, contentText, onProgress);
+        rawAnswer = await _askAiDirectly(customKey, questionType, contentText, onProgress);
       } else {
         debugPrint('未配置自定义 API Key，采用分支 B：请求 Go 后端扣费');
         onProgress?.call('正在连接云端积分池大模型进行推理...');
-        return await _askBackend(questionType, questionData, contentText, onProgress);
+        rawAnswer = await _askBackend(questionType, questionData, contentText, onProgress);
       }
+      
+      if (rawAnswer != null && !rawAnswer.startsWith('错误') && !rawAnswer.startsWith('请求后端失败') && !rawAnswer.startsWith('系统错误') && !rawAnswer.startsWith('请求超时')) {
+        return _cleanAiAnswer(rawAnswer);
+      }
+      return rawAnswer;
     } catch (e) {
       debugPrint('网关处理失败: $e');
       return '错误: $e';

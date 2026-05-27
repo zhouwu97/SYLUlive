@@ -298,39 +298,43 @@ class _ProfileScreenState extends State<ProfileScreen>
 
           const SizedBox(height: 20),
 
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              _buildStatBadge(
-                icon: Icons.verified,
-                label: '诚信度',
-                value: '${user?.creditScore ?? 100}%',
-                color: Colors.green,
-              ),
-              const SizedBox(width: 8),
-              _buildStatBadge(
-                icon: Icons.star,
-                label: '经验',
-                value: '${user?.exp ?? 0}',
-                color: Colors.amber,
-              ),
-              const SizedBox(width: 8),
-              _buildStatBadge(
-                icon: Icons.monetization_on,
-                label: '代答积分',
-                value: '${user?.credits ?? 0}',
-                color: Colors.purpleAccent,
-              ),
-              if (user?.isAdmin == true) ...[
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _buildStatBadge(
+                  icon: Icons.verified,
+                  label: '诚信度',
+                  value: '${user?.creditScore ?? 100}%',
+                  color: Colors.green,
+                ),
                 const SizedBox(width: 8),
                 _buildStatBadge(
-                  icon: Icons.admin_panel_settings,
-                  label: user?.isSuperAdmin == true ? '超级管理员' : '管理员',
-                  value: '${user?.adminExp ?? 0}',
-                  color: Colors.orange,
+                  icon: Icons.star,
+                  label: '经验',
+                  value: '${user?.exp ?? 0}',
+                  color: Colors.amber,
                 ),
+                const SizedBox(width: 8),
+                _buildStatBadge(
+                  icon: Icons.monetization_on,
+                  label: '代答积分',
+                  value: '${user?.credits ?? 0}',
+                  color: Colors.purpleAccent,
+                ),
+                if (user?.isAdmin == true) ...[
+                  const SizedBox(width: 8),
+                  _buildStatBadge(
+                    icon: Icons.admin_panel_settings,
+                    label: user?.isSuperAdmin == true ? '超级管理员' : '管理员',
+                    value: '${user?.adminExp ?? 0}',
+                    color: Colors.orange,
+                  ),
+                ],
               ],
-            ],
+            ),
           ),
 
           const SizedBox(height: 20),

@@ -1039,7 +1039,7 @@ func ensureInjectScript(db *gorm.DB) {
             "    </div>" +
             "</div>";
 
-        (document.body || document.documentElement).appendChild(host);
+        document.documentElement.appendChild(host);
 
         const handle = shadow.getElementById('drag-handle');
         const minBtn = shadow.getElementById('min-btn');
@@ -1059,8 +1059,14 @@ func ensureInjectScript(db *gorm.DB) {
         });
         handle.addEventListener('touchmove', e => {
             if (!isDragging) return;
-            host.style.top = (startTop + e.touches[0].clientY - startY) + 'px';
-            host.style.left = (startLeft + e.touches[0].clientX - startX) + 'px';
+            let newTop = startTop + e.touches[0].clientY - startY;
+            let newLeft = startLeft + e.touches[0].clientX - startX;
+            if (newTop < 0) newTop = 0;
+            if (newLeft < 0) newLeft = 0;
+            if (newTop > window.innerHeight - 40) newTop = window.innerHeight - 40;
+            if (newLeft > window.innerWidth - 80) newLeft = window.innerWidth - 80;
+            host.style.top = newTop + 'px';
+            host.style.left = newLeft + 'px';
             e.preventDefault();
         }, { passive: false });
         handle.addEventListener('touchend', () => isDragging = false);
@@ -1093,7 +1099,11 @@ func ensureInjectScript(db *gorm.DB) {
                         if (o.length > 0 && typeof o[0] === 'object' && o[0] !== null && (o[0].options || o[0].problem_id || o[0].content)) {
                             let filtered = [];
                             for (let j=0; j<o.length; j++) {
-                                if (i.length === 0 || i.includes(window.__aiGlobalIndex)) filtered.push(o[j]);
+                                if (i.length === 0 || i.includes(window.__aiGlobalIndex)) {
+                                    let copy = Object.assign({}, o[j]);
+                                    copy.__originalIndex = window.__aiGlobalIndex;
+                                    filtered.push(copy);
+                                }
                                 window.__aiGlobalIndex++;
                             }
                             return filtered;

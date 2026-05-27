@@ -964,75 +964,74 @@ func ensureInjectScript(db *gorm.DB) {
         host.style.cssText = 'position: fixed; top: 20px; left: 10px; width: calc(100% - 20px); max-width: 400px; z-index: 999999; pointer-events: none;';
         const shadow = host.attachShadow({mode: 'closed'});
         
-        shadow.innerHTML = \`
-            <style>
-                :host { all: initial; }
-                * { box-sizing: border-box; }
-                .dashboard {
-                    pointer-events: auto;
-                    font-family: system-ui, -apple-system, sans-serif;
-                    background: rgba(20, 20, 25, 0.95);
-                    border: 1px solid rgba(255,255,255,0.15);
-                    backdrop-filter: blur(12px);
-                    color: white;
-                    border-radius: 12px;
-                    box-shadow: 0 10px 40px rgba(0,0,0,0.6);
-                    display: flex;
-                    flex-direction: column;
-                    overflow: hidden;
-                }
-                .header {
-                    padding: 12px 15px;
-                    background: rgba(255,255,255,0.08);
-                    border-bottom: 1px solid rgba(255,255,255,0.1);
-                    display: flex;
-                    justify-content: space-between;
-                    align-items: center;
-                    cursor: move;
-                    touch-action: none;
-                }
-                .header-title { font-size: 14px; font-weight: 600; color: #4CAF50; letter-spacing: 0.5px; }
-                .header-actions span { margin-left: 15px; font-size: 12px; cursor: pointer; color: #aaa; transition: color 0.2s; }
-                .header-actions span:hover { color: white; }
-                .content { padding: 15px; display: block; }
-                .status { font-size: 12px; color: #bbb; margin-bottom: 12px; }
-                .input-group { display: flex; gap: 8px; margin-bottom: 15px; }
-                .input-group input {
-                    flex: 1; background: rgba(0,0,0,0.4); border: 1px solid #444;
-                    border-radius: 6px; color: white; padding: 8px 12px; font-size: 13px;
-                    outline: none; transition: border-color 0.2s;
-                }
-                .input-group input:focus { border-color: #4CAF50; }
-                .input-group button {
-                    background: #4CAF50; color: white; border: none; border-radius: 6px;
-                    padding: 0 16px; font-weight: 600; cursor: pointer; font-size: 13px;
-                    transition: background 0.2s;
-                }
-                .input-group button:active { background: #45a049; }
-                .answer-area {
-                    max-height: 40vh; overflow-y: auto; font-size: 13px; line-height: 1.6;
-                    color: #eee; padding-right: 5px;
-                }
-                .answer-area::-webkit-scrollbar { width: 4px; }
-                .answer-area::-webkit-scrollbar-thumb { background: #666; border-radius: 2px; }
-            </style>
-            <div class="dashboard" id="dashboard">
-                <div class="header" id="drag-handle">
-                    <div class="header-title">🤖 AI 外挂控制台</div>
-                    <div class="header-actions">
-                        <span id="min-btn">最小化 _</span>
-                    </div>
-                </div>
-                <div class="content" id="main-content">
-                    <div class="status" id="status-text">状态: 正在等待拦截试卷数据...</div>
-                    <div class="input-group">
-                        <input type="text" id="range-input" placeholder="范围如 1-10, 留空全做">
-                        <button id="upload-btn">上传获取</button>
-                    </div>
-                    <div class="answer-area" id="answer-area">等待操作...</div>
-                </div>
-            </div>
-        \`;
+        shadow.innerHTML = "" +
+            "<style>" +
+            "    :host { all: initial; }" +
+            "    * { box-sizing: border-box; }" +
+            "    .dashboard {" +
+            "        pointer-events: auto;" +
+            "        font-family: system-ui, -apple-system, sans-serif;" +
+            "        background: rgba(20, 20, 25, 0.95);" +
+            "        border: 1px solid rgba(255,255,255,0.15);" +
+            "        backdrop-filter: blur(12px);" +
+            "        color: white;" +
+            "        border-radius: 12px;" +
+            "        box-shadow: 0 10px 40px rgba(0,0,0,0.6);" +
+            "        display: flex;" +
+            "        flex-direction: column;" +
+            "        overflow: hidden;" +
+            "    }" +
+            "    .header {" +
+            "        padding: 12px 15px;" +
+            "        background: rgba(255,255,255,0.08);" +
+            "        border-bottom: 1px solid rgba(255,255,255,0.1);" +
+            "        display: flex;" +
+            "        justify-content: space-between;" +
+            "        align-items: center;" +
+            "        cursor: move;" +
+            "        touch-action: none;" +
+            "    }" +
+            "    .header-title { font-size: 14px; font-weight: 600; color: #4CAF50; letter-spacing: 0.5px; }" +
+            "    .header-actions span { margin-left: 15px; font-size: 12px; cursor: pointer; color: #aaa; transition: color 0.2s; }" +
+            "    .header-actions span:hover { color: white; }" +
+            "    .content { padding: 15px; display: block; }" +
+            "    .status { font-size: 12px; color: #bbb; margin-bottom: 12px; }" +
+            "    .input-group { display: flex; gap: 8px; margin-bottom: 15px; }" +
+            "    .input-group input {" +
+            "        flex: 1; background: rgba(0,0,0,0.4); border: 1px solid #444;" +
+            "        border-radius: 6px; color: white; padding: 8px 12px; font-size: 13px;" +
+            "        outline: none; transition: border-color 0.2s;" +
+            "    }" +
+            "    .input-group input:focus { border-color: #4CAF50; }" +
+            "    .input-group button {" +
+            "        background: #4CAF50; color: white; border: none; border-radius: 6px;" +
+            "        padding: 0 16px; font-weight: 600; cursor: pointer; font-size: 13px;" +
+            "        transition: background 0.2s;" +
+            "    }" +
+            "    .input-group button:active { background: #45a049; }" +
+            "    .answer-area {" +
+            "        max-height: 40vh; overflow-y: auto; font-size: 13px; line-height: 1.6;" +
+            "        color: #eee; padding-right: 5px;" +
+            "    }" +
+            "    .answer-area::-webkit-scrollbar { width: 4px; }" +
+            "    .answer-area::-webkit-scrollbar-thumb { background: #666; border-radius: 2px; }" +
+            "</style>" +
+            "<div class=\"dashboard\" id=\"dashboard\">" +
+            "    <div class=\"header\" id=\"drag-handle\">" +
+            "        <div class=\"header-title\">🤖 AI 外挂控制台</div>" +
+            "        <div class=\"header-actions\">" +
+            "            <span id=\"min-btn\">最小化 _</span>" +
+            "        </div>" +
+            "    </div>" +
+            "    <div class=\"content\" id=\"main-content\">" +
+            "        <div class=\"status\" id=\"status-text\">状态: 正在等待拦截试卷数据...</div>" +
+            "        <div class=\"input-group\">" +
+            "            <input type=\"text\" id=\"range-input\" placeholder=\"范围如 1-10, 留空全做\">" +
+            "            <button id=\"upload-btn\">上传获取</button>" +
+            "        </div>" +
+            "        <div class=\"answer-area\" id=\"answer-area\">等待操作...</div>" +
+            "    </div>" +
+            "</div>";
 
         document.body.appendChild(host);
 

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -60,9 +61,9 @@ class AnswerGateway {
     String autoMode = await _secureStorage.read(key: 'auto_submit_mode') ?? 'semi';
     
     // 扣动扳机：将答案和模式注入给前端网页
-    // 注意转义处理，防止答案内容含有引号等破坏 js 语法
-    String escapedAnswer = aiAnswer.replaceAll("'", "\\'").replaceAll('\n', ' ');
-    String jsCommand = "if(window.doAutoAnswer) window.doAutoAnswer('$escapedAnswer', '$autoMode');";
+    // 使用 jsonEncode 确保包含特殊字符(如回车、双引号)的文本能被转义成合法的 JS 字符串字面量
+    String safeAnswer = jsonEncode(aiAnswer);
+    String jsCommand = "if(window.doAutoAnswer) window.doAutoAnswer($safeAnswer, '$autoMode');";
     
     await controller.evaluateJavascript(source: jsCommand);
   }

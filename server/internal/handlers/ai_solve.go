@@ -68,7 +68,7 @@ func cleanText(text string) string {
 // generateHash 计算 SHA256
 func generateHash(qType, content string) string {
 	hash := sha256.New()
-	hash.Write([]byte(qType + "|" + content))
+	hash.Write([]byte(qType + "|" + content + "|v2")) // 强制更新缓存
 	return hex.EncodeToString(hash.Sum(nil))
 }
 

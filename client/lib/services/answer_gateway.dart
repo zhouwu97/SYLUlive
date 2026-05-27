@@ -32,10 +32,6 @@ class AnswerGateway {
 
       onProgress?.call('正在解析雨课堂题目结构...');
       String questionType = questionData['type']?.toString() ?? '未知题型';
-      final range = await _secureStorage.read(key: 'auto_question_range');
-      if (range != null && range.trim().isNotEmpty) {
-        questionType += '\n【重要指令：用户要求你仅提取并回答题号范围为 $range 的题目！！请彻底忽略其他不在该范围内的题目，也不要输出多余的废话。】';
-      }
       final contentText = questionData['content']?.toString() ?? questionData.toString();
 
       String? rawAnswer;

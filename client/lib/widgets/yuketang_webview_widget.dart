@@ -20,6 +20,7 @@ class YuketangWebViewWidgetState extends State<YuketangWebViewWidget> {
   InAppWebViewController? webViewController;
   final ScriptService _scriptService = ScriptService();
   final AnswerGateway _answerGateway = AnswerGateway();
+  String? _lastInterceptedExamData;
 
   @override
   Widget build(BuildContext context) {
@@ -32,40 +33,49 @@ class YuketangWebViewWidgetState extends State<YuketangWebViewWidget> {
       onWebViewCreated: (controller) {
         webViewController = controller;
 
-        // 注册通信桥梁 YuketangHelper
+        // 注册全量快照备份信道
         controller.addJavaScriptHandler(
-          handlerName: 'YuketangHelper',
+          handlerName: 'YuketangBackup',
+          callback: (args) async {
+            if (args.isNotEmpty) {
+              // 内存暂存
+              _lastInterceptedExamData = args[0] as String;
+              debugPrint('已在本地建立全量试卷快照备用');
+            }
+          }
+        );
+
+        // 注册手动上传信道
+        controller.addJavaScriptHandler(
+          handlerName: 'YuketangManualUpload',
           callback: (args) async {
             if (args.isNotEmpty) {
               final String jsonString = args[0] as String;
               try {
                 final Map<String, dynamic> data = jsonDecode(jsonString);
                 
-                final progressNotifier = ValueNotifier<String>('正在初始化拦截请求...');
-                // 为了防止频繁调用，可在 Gateway 中做 debounce 保护，或者 UI 弹窗
-                _showThinkingDialog(progressNotifier);
+                await controller.evaluateJavascript(source: "window.updateAiStatus && window.updateAiStatus('已接收到请求，开始处理...');");
                 
-                // 提交给智能网关处理
                 final answer = await _answerGateway.processQuestion(
                   data,
-                  onProgress: (status) {
-                    if (mounted) progressNotifier.value = status;
+                  onProgress: (status) async {
+                    if (mounted) {
+                      final safeStatus = status.replaceAll("'", "\\'").replaceAll("\n", " ");
+                      await controller.evaluateJavascript(source: "window.updateAiStatus && window.updateAiStatus('$safeStatus');");
+                    }
                   },
                 );
                 
                 if (mounted) {
-                  Navigator.of(context).pop(); // 关闭 thinking dialog
-                  progressNotifier.dispose();
-                  
                   if (answer != null && !answer.startsWith('错误:') && !answer.startsWith('请求后端失败')) {
-                    // 执行 JS 注入答案并根据模式自动点击或提示
                     await _answerGateway.executeAnswer(controller, answer);
                   } else {
-                    _showAnswerDialog(answer); // 如果失败，展示弹窗提示错误
+                    final safeError = answer?.replaceAll("'", "\\'").replaceAll("\n", " ") ?? '未知错误';
+                    await controller.evaluateJavascript(source: "window.updateAiStatus && window.updateAiStatus('错误: $safeError');");
                   }
                 }
               } catch (e) {
-                debugPrint('解析拦截数据失败: $e');
+                debugPrint('解析手动上传数据失败: $e');
               }
             }
           },
@@ -84,51 +94,5 @@ class YuketangWebViewWidgetState extends State<YuketangWebViewWidget> {
     );
   }
 
-  void _showThinkingDialog(ValueNotifier<String> notifier) {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) {
-        return AlertDialog(
-          content: Row(
-            children: [
-              const CircularProgressIndicator(),
-              const SizedBox(width: 16),
-              Expanded(
-                child: ValueListenableBuilder<String>(
-                  valueListenable: notifier,
-                  builder: (context, value, child) {
-                    return Text(value);
-                  },
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
 
-  void _showAnswerDialog(String? answer) {
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('AI 提示'),
-          content: Text(
-            answer != null && answer.isNotEmpty 
-                ? answer 
-                : '未能获取到答案，或处理失败',
-            style: const TextStyle(fontSize: 16),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('我知道了'),
-            )
-          ],
-        );
-      },
-    );
-  }
 }

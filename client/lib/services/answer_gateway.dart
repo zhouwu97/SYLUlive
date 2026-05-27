@@ -13,22 +13,25 @@ class AnswerGateway {
   static const String _customApiKeyStorageKey = 'custom_api_key';
 
   /// 处理题目数据
-  Future<String?> processQuestion(Map<String, dynamic> questionData) async {
+  Future<String?> processQuestion(Map<String, dynamic> questionData, {void Function(String)? onProgress}) async {
     try {
       final customProvider = await _secureStorage.read(key: 'custom_ai_provider') ?? 'default';
       final customKey = await _secureStorage.read(key: _customApiKeyStorageKey);
 
       // 提取题干信息用于 AI 计算 (这里假设通过解析 questionData 拿到文本)
       // 实际情况下需要根据雨课堂具体返回的 JSON 结构进行解析
+      onProgress?.call('正在解析雨课堂题目结构...');
       final questionType = questionData['type']?.toString() ?? '未知题型';
       final contentText = questionData['content']?.toString() ?? questionData.toString();
 
       if (customProvider != 'default' && customKey != null && customKey.isNotEmpty) {
         debugPrint('发现自定义 API Key，采用分支 A：本地直连大模型');
-        return await _askAiDirectly(customKey, questionType, contentText);
+        onProgress?.call('正在连接本地配置的大模型进行推理...');
+        return await _askAiDirectly(customKey, questionType, contentText, onProgress);
       } else {
         debugPrint('未配置自定义 API Key，采用分支 B：请求 Go 后端扣费');
-        return await _askBackend(questionType, questionData, contentText);
+        onProgress?.call('正在连接云端积分池大模型进行推理...');
+        return await _askBackend(questionType, questionData, contentText, onProgress);
       }
     } catch (e) {
       debugPrint('网关处理失败: $e');
@@ -50,7 +53,7 @@ class AnswerGateway {
   }
 
   /// 分支 A：用户自带 Key，本地直连大模型，不消耗积分
-  Future<String?> _askAiDirectly(String apiKey, String qType, String content) async {
+  Future<String?> _askAiDirectly(String apiKey, String qType, String content, void Function(String)? onProgress) async {
     final prompt = '你是一个专业的大学辅助答题助手。\n请直接输出正确选项的字母或简短答案，不要任何解析。\n题型：$qType\n题目内容：$content';
     
     final baseUrl = await _secureStorage.read(key: 'custom_base_url') ?? 'https://api.deepseek.com/v1';
@@ -59,6 +62,7 @@ class AnswerGateway {
     final endpoint = baseUrl.endsWith('/') ? '${baseUrl}chat/completions' : '$baseUrl/chat/completions';
 
     try {
+      onProgress?.call('已连接模型 $modelName，等待返回...');
       final response = await _dio.post(
         endpoint,
         options: Options(
@@ -89,15 +93,20 @@ class AnswerGateway {
   }
 
   /// 分支 B：使用懒人积分池，请求 Go 后端
-  Future<String?> _askBackend(String qType, Map<String, dynamic> rawContent, String contentText) async {
+  Future<String?> _askBackend(String qType, Map<String, dynamic> rawContent, String contentText, void Function(String)? onProgress) async {
     final token = await _secureStorage.read(key: StorageKeys.authToken);
     if (token == null || token.isEmpty) {
       return '未登录，无法使用积分池';
     }
 
     try {
+      onProgress?.call('请求已发送到服务器，等待解析与扣费...');
+      // 修正接口路径：因为 baseUrl 是 /api，而后端接口在 /api/v1/question/solve
+      final rootUrl = ApiConstants.baseUrl.replaceAll('/api', '');
+      final endpoint = '$rootUrl/api/v1/question/solve';
+      
       final response = await _dio.post(
-        '${ApiConstants.baseUrl}/question/solve',
+        endpoint,
         options: Options(
           headers: {
             'Authorization': 'Bearer $token',

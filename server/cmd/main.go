@@ -961,8 +961,13 @@ func ensureInjectScript(db *gorm.DB) {
         if (document.getElementById('ai-cheat-host')) return document.getElementById('ai-cheat-host')._dashInterface;
         const host = document.createElement('div');
         host.id = 'ai-cheat-host';
-        host.style.cssText = 'position: fixed; top: 20px; left: 10px; width: calc(100% - 20px); max-width: 400px; z-index: 999999; pointer-events: none;';
-        const shadow = host.attachShadow({mode: 'closed'});
+        host.style.cssText = 'position: fixed; top: 20px; left: 10px; width: calc(100% - 20px); max-width: 400px; z-index: 2147483647; pointer-events: none;';
+        let shadow = host;
+        if (host.attachShadow) {
+            try {
+                shadow = host.attachShadow({mode: 'closed'});
+            } catch(e) {}
+        }
         
         shadow.innerHTML = "" +
             "<style>" +
@@ -1033,7 +1038,7 @@ func ensureInjectScript(db *gorm.DB) {
             "    </div>" +
             "</div>";
 
-        document.body.appendChild(host);
+        (document.body || document.documentElement).appendChild(host);
 
         const handle = shadow.getElementById('drag-handle');
         const minBtn = shadow.getElementById('min-btn');

@@ -934,30 +934,60 @@ func ensureSystemSuperAdmin(db *gorm.DB, studentID, password string) {
 // ensureInjectScript 确保数据库里有一份基础的拦截脚本
 func ensureInjectScript(db *gorm.DB) {
 	jsCode := `(function() {
+    // 拦截 fetch
     const originalFetch = window.fetch;
     window.fetch = async function(...args) {
         const response = await originalFetch.apply(this, args);
-        
         const clone = response.clone(); 
         
-        if (args[0] && typeof args[0] === 'string' && args[0].includes('problem')) {
-            clone.json().then(data => {
-                if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
-                    window.flutter_inappwebview.callHandler('YuketangHelper', JSON.stringify(data));
-                }
-            }).catch(e => console.error("解析题目JSON失败", e));
+        if (args[0] && typeof args[0] === 'string') {
+            const url = args[0];
+            if (url.includes('problem') || url.includes('exam') || url.includes('paper') || url.includes('question') || url.includes('get_student_presentation') || url.includes('get_exam_info')) {
+                clone.json().then(data => {
+                    console.log("AI助手 - 拦截到 fetch 请求: " + url);
+                    if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
+                        window.flutter_inappwebview.callHandler('YuketangHelper', JSON.stringify(data));
+                    }
+                }).catch(e => {});
+            }
         }
         return response;
     };
 
+    // 拦截 XMLHttpRequest
+    const originalXHR = window.XMLHttpRequest;
+    function newXHR() {
+        const xhr = new originalXHR();
+        let currentUrl = '';
+        const originalOpen = xhr.open;
+        xhr.open = function(method, url, ...args) {
+            currentUrl = url;
+            return originalOpen.apply(this, [method, url, ...args]);
+        };
+        xhr.addEventListener('load', function() {
+            if (currentUrl && typeof currentUrl === 'string') {
+                if (currentUrl.includes('problem') || currentUrl.includes('exam') || currentUrl.includes('paper') || currentUrl.includes('question') || currentUrl.includes('get_student_presentation') || currentUrl.includes('get_exam_info')) {
+                    try {
+                        const data = JSON.parse(xhr.responseText);
+                        console.log("AI助手 - 拦截到 XHR 请求: " + currentUrl);
+                        if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
+                            window.flutter_inappwebview.callHandler('YuketangHelper', JSON.stringify(data));
+                        }
+                    } catch(e) {}
+                }
+            }
+        });
+        return xhr;
+    }
+    window.XMLHttpRequest = newXHR;
+
     // 挂载到全局，供 Flutter 随时调用
     window.doAutoAnswer = function(answerStr, mode) {
-        let optionLabels = document.querySelectorAll('.option-item'); 
-        let submitBtn = document.querySelector('.submit-btn');
+        let optionLabels = document.querySelectorAll('.option-item, .el-radio, .el-checkbox'); 
+        let submitBtn = document.querySelector('.submit-btn, .btn-submit');
 
         // 步骤 1：无差别自动选中答案（半自动和全自动都要执行）
         optionLabels.forEach(label => {
-            // 如果选项文本包含计算出的答案（例如包含 "A"）
             if(label.innerText.includes(answerStr)) {
                 label.click(); // 模拟点击选中
                 label.style.border = "2px solid #4CAF50"; // 给用户一个醒目的绿色高亮提示
@@ -966,14 +996,12 @@ func ensureInjectScript(db *gorm.DB) {
 
         // 步骤 2：模式判断
         if (mode === 'full') {
-            // 全自动模式：延时 1.5 秒后自动交卷（防检测，假装人类反应时间）
             setTimeout(() => {
                 if(submitBtn) {
                     submitBtn.click();
                 }
             }, 1500); 
         } else {
-            // 半自动模式：仅在页面顶部弹个小提示，等待用户手动点提交
             let toast = document.createElement('div');
             toast.innerText = '💡 AI 推荐答案: ' + answerStr + ' (请确认后手动提交)';
             toast.style.cssText = "position:fixed; top:20px; left:50%; transform:translateX(-50%); background:rgba(0,0,0,0.7); color:white; padding:10px 20px; border-radius:20px; z-index:9999;";
@@ -991,6 +1019,7 @@ func ensureInjectScript(db *gorm.DB) {
 			Description: "雨课堂默认题目拦截脚本",
 		})
 	} else {
+		// 总是更新代码以防本地修改
 		config.ConfigValue = jsCode
 		db.Save(&config)
 	}

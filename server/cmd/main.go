@@ -1037,11 +1037,25 @@ func ensureInjectScript(db *gorm.DB) {
             let toast = document.createElement('div');
             // 将文本中的换行符转换为 <br>
             let formattedAnswer = answerStr.replace(/\n/g, '<br>');
-            toast.innerHTML = '<div id="ai-drag-handle" style="font-size:12px; color:#bbb; text-align:center; padding-bottom:8px; border-bottom:1px solid #444; margin-bottom:8px; font-weight:bold;">[ 手指按住此处可上下拖动 ] <span style="float:right; color:#ff4444;" id="ai-close-btn">关闭 X</span></div><div style="max-height:35vh; overflow-y:auto; padding-right:5px; line-height: 1.5;">💡 AI 推荐答案: <br>' + formattedAnswer + '</div>';
+            toast.innerHTML = '<div id="ai-drag-handle" style="font-size:12px; color:#bbb; text-align:center; padding-bottom:8px; border-bottom:1px solid #444; margin-bottom:8px; font-weight:bold;">[ 手指按住此处可上下拖动 ] <span style="float:right; color:#ff4444;" id="ai-close-btn">关闭 X</span><span style="float:right; color:#4CAF50; margin-right: 15px;" id="ai-min-btn">最小化 _</span></div><div id="ai-content-area" style="max-height:35vh; overflow-y:auto; padding-right:5px; line-height: 1.5;">💡 AI 推荐答案: <br>' + formattedAnswer + '</div>';
             toast.style.cssText = "position:fixed; top:20px; left:10px; width:calc(100% - 20px); background:rgba(0,0,0,0.85); color:white; padding:12px; border-radius:12px; z-index:9999; font-size: 14px; box-shadow: 0 4px 12px rgba(0,0,0,0.4); box-sizing: border-box;";
             
             // 关闭按钮事件
             toast.querySelector('#ai-close-btn').onclick = function() { toast.remove(); };
+
+            // 最小化按钮事件
+            let isMinimized = false;
+            toast.querySelector('#ai-min-btn').onclick = function() {
+                isMinimized = !isMinimized;
+                let contentArea = toast.querySelector('#ai-content-area');
+                if (isMinimized) {
+                    contentArea.style.display = 'none';
+                    this.innerText = '展开 ⬜';
+                } else {
+                    contentArea.style.display = 'block';
+                    this.innerText = '最小化 _';
+                }
+            };
 
             // 拖动逻辑
             let handle = toast.querySelector('#ai-drag-handle');

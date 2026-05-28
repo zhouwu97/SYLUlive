@@ -48,6 +48,7 @@
         android:layout_height="wrap_content"
         android:textColor="#333333"
         android:textSize="14sp"
+        android:fontFeatureSettings="tnum"
         android:layout_marginStart="8dp" />
 
 </LinearLayout>

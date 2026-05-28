@@ -128,15 +128,57 @@ func (h *AiSolveHandler) callAI(baseURL, apiKey, modelName, questionType, cleane
 题型：%s
 题目内容：%s`, questionType, cleanedText)
 
-	reqBody := map[string]interface{}{
-		"model": modelName,
-		"messages": []map[string]string{
+	// 提取图片 URL
+	var imageUrls []string
+	re := regexp.MustCompile(`<img[^>]+src=["'](https?://[^"']+)["']`)
+	matches := re.FindAllStringSubmatch(cleanedText, -1)
+	for _, m := range matches {
+		if len(m) > 1 {
+			imageUrls = append(imageUrls, m[1])
+		}
+	}
+
+	var reqBody map[string]interface{}
+
+	if len(imageUrls) > 0 {
+		// 多模态 Vision 格式
+		contentArray := []map[string]interface{}{
 			{
-				"role":    "user",
-				"content": prompt,
+				"type": "text",
+				"text": prompt,
 			},
-		},
-		"temperature": 0.1,
+		}
+		for _, url := range imageUrls {
+			contentArray = append(contentArray, map[string]interface{}{
+				"type": "image_url",
+				"image_url": map[string]string{
+					"url": url,
+				},
+			})
+		}
+		
+		reqBody = map[string]interface{}{
+			"model": modelName,
+			"messages": []map[string]interface{}{
+				{
+					"role":    "user",
+					"content": contentArray,
+				},
+			},
+			"temperature": 0.1,
+		}
+	} else {
+		// 纯文本格式
+		reqBody = map[string]interface{}{
+			"model": modelName,
+			"messages": []map[string]string{
+				{
+					"role":    "user",
+					"content": prompt,
+				},
+			},
+			"temperature": 0.1,
+		}
 	}
 
 	endpoint := strings.TrimRight(baseURL, "/") + "/chat/completions"

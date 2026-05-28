@@ -959,61 +959,56 @@ func ensureInjectScript(db *gorm.DB) {
             return Array.from(indices).sort((a,b)=>a-b);
         },
         
-        getTotalQuestions: function() {
-            if (!window.__aiExamData) return 0;
+        _extractProblems: function() {
+            if (!window.__aiExamData) return [];
             let rawObj = JSON.parse(window.__aiExamData);
-            let count = 0;
+            let problems = [];
             let recurse = (o, depth) => {
-                if (depth > 15) return;
-                if (Array.isArray(o)) {
-                    if (o.length > 0 && typeof o[0] === 'object' && o[0] !== null && (o[0].options || o[0].problem_id || o[0].content)) {
-                        count += o.length;
+                if (depth > 20 || !o) return;
+                
+                if (typeof o === 'object' && !Array.isArray(o)) {
+                    // 情况1: 直接是题目对象 (常见于课后作业)
+                    if (('problem_id' in o || 'problemId' in o) && ('content' in o || 'body' in o || 'options' in o || 'problemType' in o || 'problem_type' in o)) {
+                        problems.push(o);
                         return;
                     }
+                    // 情况2: 是包含 problem 字段的幻灯片对象 (常见于直播课 presentation/fetch)
+                    if ('problem' in o && typeof o.problem === 'object' && o.problem !== null && ('problemId' in o.problem || 'problem_id' in o.problem)) {
+                        problems.push(o.problem);
+                        return;
+                    }
+                }
+                
+                if (Array.isArray(o)) {
                     o.forEach(v => recurse(v, depth+1));
-                } else if (typeof o === 'object' && o !== null) {
+                } else if (typeof o === 'object') {
                     for (let k in o) recurse(o[k], depth+1);
                 }
             };
             recurse(rawObj, 0);
-            return count;
+            return problems;
+        },
+        
+        getTotalQuestions: function() {
+            return this._extractProblems().length;
         },
         
         sliceExamData: function(rangeStr) {
-            if (!window.__aiExamData) return null;
+            let problems = this._extractProblems();
+            if (problems.length === 0) return null;
+            
             let indices = this.parseRange(rangeStr);
-            let rawObj = JSON.parse(window.__aiExamData);
+            let sliced = [];
             
-            let safeSlice = (obj, idx) => {
-                let recurse = (o, i, depth) => {
-                    if (depth > 15) return o;
-                    if (Array.isArray(o)) {
-                        if (o.length > 0 && typeof o[0] === 'object' && o[0] !== null && (o[0].options || o[0].problem_id || o[0].content)) {
-                            let filtered = [];
-                            for (let j=0; j<o.length; j++) {
-                                if (i.length === 0 || i.includes(window.__aiGlobalIndex)) {
-                                    let copy = Object.assign({}, o[j]);
-                                    copy.__originalIndex = window.__aiGlobalIndex;
-                                    filtered.push(copy);
-                                }
-                                window.__aiGlobalIndex++;
-                            }
-                            return filtered;
-                        }
-                        return o.map(v => recurse(v, i, depth+1));
-                    } else if (typeof o === 'object' && o !== null) {
-                        let res = {};
-                        for (let k in o) res[k] = recurse(o[k], i, depth+1);
-                        return res;
-                    }
-                    return o;
-                };
-                window.__aiGlobalIndex = 1;
-                return recurse(obj, idx, 0);
-            };
-            
-            let slicedObj = safeSlice(rawObj, indices);
-            return JSON.stringify(slicedObj);
+            for (let i = 0; i < problems.length; i++) {
+                let globalIndex = i + 1;
+                if (indices.length === 0 || indices.includes(globalIndex)) {
+                    let copy = Object.assign({}, problems[i]);
+                    copy.__originalIndex = globalIndex;
+                    sliced.push(copy);
+                }
+            }
+            return JSON.stringify(sliced);
         },
         
         doAutoAnswer: function(answerStr, mode) {
@@ -1076,10 +1071,29 @@ func ensureInjectScript(db *gorm.DB) {
                         alert('❌ 提交失败: ' + data.msg);
                     }
                 });
-                return;
+                
+                // 直播课专属的视觉反馈渲染（因为直播课 DOM 按钮通常只有 A B C D 字母）
+                if (matches) {
+                    let optionLabels = document.querySelectorAll('.option-item, .el-radio, .el-checkbox, .live-option-btn, span, div'); 
+                    optionLabels.forEach(label => {
+                        let text = label.innerText.trim().toUpperCase();
+                        // 如果按钮文本恰好是单个字母，且在答案字母中
+                        if (text.length === 1 && /^[A-F]$/.test(text) && result.includes(text)) {
+                            label.click();
+                            label.style.border = "4px solid #4CAF50";
+                            label.style.backgroundColor = "rgba(76, 175, 80, 0.2)";
+                        }
+                    });
+                }
+                
+                let submitBtn = document.querySelector('.submit-btn, .btn-submit, .live-submit-btn');
+                if(submitBtn) setTimeout(() => submitBtn.click(), 1500);
+                
+                return; // 直播课处理完毕，直接返回
             }
 
             if (mode === 'full') {
+                 // 课后作业的物理 DOM 渲染（通过选项文字模糊匹配，无视乱序）
                  let lines = answerStr.split('\\n');
                  let optionLabels = document.querySelectorAll('.option-item, .el-radio, .el-checkbox, .live-option-btn'); 
                  

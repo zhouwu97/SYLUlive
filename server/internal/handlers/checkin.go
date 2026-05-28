@@ -83,6 +83,9 @@ func (h *CheckInHandler) DoCheckIn(c *gin.Context) {
 	var yesterdayRecord models.CheckIn
 	if err := tx.Where("user_id = ? AND check_in_date = ?", uid, yesterdayStr).First(&yesterdayRecord).Error; err == nil {
 		streak = yesterdayRecord.StreakDays + 1
+	} else if user.LastCheckInDate == yesterdayStr {
+		// 兼容旧系统：昨天签到了但没在 check_ins 留档，算是连续第二天
+		streak = 2
 	}
 
 	// 调用之前被闲置的函数，动态计算经验值奖励
@@ -155,6 +158,9 @@ func (h *CheckInHandler) GetStatus(c *gin.Context) {
 			var yesterdayRecord models.CheckIn
 			if err := h.db.Where("user_id = ? AND check_in_date = ?", uid, yesterday).First(&yesterdayRecord).Error; err == nil {
 				streakDays = yesterdayRecord.StreakDays
+			} else if user.LastCheckInDate == yesterday {
+				// 兼容旧系统，如果没在新表查到但最后一次签到是昨天，说明昨天签了，连签天数是 1
+				streakDays = 1
 			}
 		}
 	}

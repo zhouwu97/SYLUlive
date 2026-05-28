@@ -133,16 +133,7 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
                     const SizedBox(height: 16),
                     _buildMyRating(provider, isDark),
                     const SizedBox(height: 20),
-                    if (provider.ratings.isNotEmpty) ...[
-                      Text('${provider.ratingCount}人评价',
-                          style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: isDark ? Colors.white : Colors.black87)),
-                      const SizedBox(height: 8),
-                      ...provider.ratings
-                          .map((r) => _buildRatingCard(r, isDark)),
-                    ],
+                    // 取消显示具体评价列表，只在顶层 _buildHeader 显示总打分数
                     const SizedBox(height: 80),
                   ],
                 );
@@ -287,118 +278,7 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
     );
   }
 
-  Widget _buildRatingCard(TeacherRating r, bool isDark) {
-    final auth = context.watch<AuthProvider>();
-    final isOwn = auth.user?.id == r.userId;
 
-    return GlassContainer(
-      margin: const EdgeInsets.only(bottom: 8),
-      borderRadius: 10,
-      blur: 10,
-      opacity: 0.14,
-      backgroundColor:
-          isDark ? const Color(0x99171B24) : const Color(0xCCFFFFFF),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(children: [
-              CircleAvatar(
-                  radius: 14,
-                  backgroundColor: const Color(0xFF6366F1),
-                  child: Text(r.userName.isNotEmpty ? r.userName[0] : '?',
-                      style:
-                          const TextStyle(color: Colors.white, fontSize: 12))),
-              const SizedBox(width: 8),
-              Expanded(
-                  child: Text(r.userName,
-                      style: const TextStyle(
-                          fontWeight: FontWeight.w600, fontSize: 14))),
-              _buildStarRowSmall(r.star.toDouble()),
-              if (isOwn)
-                GestureDetector(
-                  onTap: () => _confirmDelete(r.id),
-                  child: const Padding(
-                      padding: EdgeInsets.only(left: 8),
-                      child: Icon(Icons.delete_outline,
-                          size: 18, color: Colors.red)),
-                )
-              else
-                GestureDetector(
-                  onTap: () => _reportRating(r.id),
-                  child: const Padding(
-                      padding: EdgeInsets.only(left: 8),
-                      child: Icon(Icons.flag_outlined,
-                          size: 18, color: Colors.grey)),
-                ),
-            ]),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _confirmDelete(int ratingId) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('删除评价'),
-        content: const Text('确定要删除你的评价吗？'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () async {
-              Navigator.pop(ctx);
-              final ok = await context
-                  .read<TeacherProvider>()
-                  .deleteRating(ratingId, widget.teacherId);
-              if (mounted) {
-                if (ok) _didChange = true;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                      content: Text(ok ? '已删除' : '删除失败'),
-                      backgroundColor: ok ? Colors.green : Colors.red),
-                );
-              }
-            },
-            child: const Text('删除'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _reportRating(int ratingId) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('举报评价'),
-        content: const Text('确定要举报这条评价吗？管理员将审核处理。'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
-          ElevatedButton(
-            onPressed: () async {
-              Navigator.pop(ctx);
-              final ok =
-                  await context.read<TeacherProvider>().reportRating(ratingId);
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                      content: Text(ok ? '举报已提交' : '举报失败'),
-                      backgroundColor: ok ? Colors.green : Colors.red),
-                );
-              }
-            },
-            child: const Text('确认举报'),
-          ),
-        ],
-      ),
-    );
-  }
 
   Widget _buildStarRowLarge(double avg) {
     return Row(

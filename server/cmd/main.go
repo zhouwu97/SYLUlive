@@ -1017,18 +1017,100 @@ func ensureInjectScript(db *gorm.DB) {
         },
         
         doAutoAnswer: function(answerStr, mode) {
+            let isLiveClass = window.location.pathname.includes('/lesson/fullscreen/');
+            if (isLiveClass && window.__activeLiveProblem) {
+                let problem = window.__activeLiveProblem;
+                let result = [];
+                let matches = answerStr.match(/[A-F]/g);
+                if (matches) {
+                    result = Array.from(new Set(matches));
+                } else {
+                    result = [answerStr];
+                }
+                
+                let pType = 1;
+                if (window.__aiExamData) {
+                    let typeMatch = window.__aiExamData.match(new RegExp('"problem_id":"?' + problem.prob + '"?.*?"problemType":(\\\\d+)'));
+                    if (typeMatch) pType = parseInt(typeMatch[1]);
+                }
+                
+                fetch('/api/v3/lesson/problem/answer', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + localStorage.getItem('Authorization'),
+                        'xtbz': 'ykt',
+                        'X-Client': 'h5'
+                    },
+                    body: JSON.stringify({
+                        problemId: problem.prob,
+                        problemType: pType,
+                        dt: Date.now(),
+                        result: result
+                    })
+                }).then(res => res.json()).then(data => {
+                    if (data.code === 0) {
+                        alert('✅ 混合双擎: API极速提交成功！(免疫前端变化)');
+                    } else if (data.code === 4) {
+                        fetch('/api/v3/lesson/problem/retry', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Authorization': 'Bearer ' + localStorage.getItem('Authorization'),
+                                'xtbz': 'ykt',
+                                'X-Client': 'h5'
+                            },
+                            body: JSON.stringify({
+                                problems: [{
+                                    problemId: problem.prob,
+                                    problemType: pType,
+                                    dt: problem.dt + 2000,
+                                    result: result
+                                }]
+                            })
+                        }).then(r=>r.json()).then(d => {
+                            if (d.code === 0) alert('🚀 混合双擎: 超时补救提交成功！(利用协议漏洞)');
+                            else alert('❌ 提交失败: ' + d.msg);
+                        });
+                    } else {
+                        alert('❌ 提交失败: ' + data.msg);
+                    }
+                });
+                return;
+            }
+
             if (mode === 'full') {
-                 let optionLabels = document.querySelectorAll('.option-item, .el-radio, .el-checkbox'); 
+                 let optionLabels = document.querySelectorAll('.option-item, .el-radio, .el-checkbox, .live-option-btn'); 
                  optionLabels.forEach(label => {
                      if(label.innerText.includes(answerStr)) {
                          label.click(); label.style.border = "2px solid #4CAF50";
                      }
                  });
-                 let submitBtn = document.querySelector('.submit-btn, .btn-submit');
+                 let submitBtn = document.querySelector('.submit-btn, .btn-submit, .live-submit-btn');
                  if(submitBtn) setTimeout(() => submitBtn.click(), 1500);
             }
         }
     };
+
+    window.__activeLiveProblem = null;
+    const originalWebSocket = window.WebSocket;
+    class MyWebSocket extends originalWebSocket {
+        constructor(url, protocols) {
+            super(url, protocols);
+            this.addEventListener('message', (evt) => {
+                try {
+                    let msg = JSON.parse(evt.data);
+                    if (msg.op === 'unlockproblem') {
+                        window.__activeLiveProblem = msg.problem;
+                        if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
+                            window.flutter_inappwebview.callHandler('YuketangLiveProblem', msg.problem.prob);
+                        }
+                    }
+                } catch(e) {}
+            });
+        }
+    }
+    window.WebSocket = MyWebSocket;
 
     function handleIntercept(jsonStr) {
         window.__aiExamData = jsonStr;

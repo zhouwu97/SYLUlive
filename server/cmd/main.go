@@ -1080,12 +1080,26 @@ func ensureInjectScript(db *gorm.DB) {
             }
 
             if (mode === 'full') {
+                 let lines = answerStr.split('\\n');
                  let optionLabels = document.querySelectorAll('.option-item, .el-radio, .el-checkbox, .live-option-btn'); 
-                 optionLabels.forEach(label => {
-                     if(label.innerText.includes(answerStr)) {
-                         label.click(); label.style.border = "2px solid #4CAF50";
-                     }
+                 
+                 lines.forEach(line => {
+                     // 剔除所有题号、选项前缀 (如 "1. ", "17. ", "A. ", "A、", "A: " 等)
+                     // 正则解释：匹配开头的数字或单个字母，后面跟着点、顿号、冒号或空格
+                     let cleanAnswer = line.replace(/^(?:\\d+|[A-Z])[\\.\\:、\\s]+/, '').trim();
+                     if (!cleanAnswer) return;
+                     
+                     optionLabels.forEach(label => {
+                         // 在对比时，也将网页上 DOM 的文本稍微清理一下前缀再比对，防止网页里的 "C. " 干扰
+                         let cleanLabel = label.innerText.replace(/^(?:\\d+|[A-Z])[\\.\\:、\\s]+/, '').trim();
+                         // 只要包含核心文字就点击！彻底无视 A/B/C/D 的乱序错位
+                         if(cleanLabel.includes(cleanAnswer) || cleanAnswer.includes(cleanLabel)) {
+                             label.click(); 
+                             label.style.border = "2px solid #4CAF50";
+                         }
+                     });
                  });
+                 
                  let submitBtn = document.querySelector('.submit-btn, .btn-submit, .live-submit-btn');
                  if(submitBtn) setTimeout(() => submitBtn.click(), 1500);
             }

@@ -232,6 +232,9 @@ class YuketangWebViewWidgetState extends State<YuketangWebViewWidget> {
                                                 onPressed: (idx) => setState(() => _isBlockMode = idx == 0),
                                                 borderRadius: BorderRadius.circular(6),
                                                 selectedColor: Colors.white,
+                                                color: Colors.white54, // 修复“单题”文字不可见问题
+                                                borderColor: Colors.grey.withOpacity(0.3),
+                                                selectedBorderColor: Colors.blueAccent,
                                                 fillColor: Colors.blueAccent.withOpacity(0.5),
                                                 children: const [
                                                   Padding(padding: EdgeInsets.symmetric(horizontal: 8), child: Text('5题连抽', style: TextStyle(fontSize: 12))),

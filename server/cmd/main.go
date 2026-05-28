@@ -966,27 +966,46 @@ func ensureInjectScript(db *gorm.DB) {
             let recurse = (o, depth) => {
                 if (depth > 20 || !o) return;
                 
-                if (typeof o === 'object' && !Array.isArray(o)) {
-                    // 情况1: 直接是题目对象 (常见于课后作业)
-                    if (('problem_id' in o || 'problemId' in o) && ('content' in o || 'body' in o || 'options' in o || 'problemType' in o || 'problem_type' in o)) {
+                if (Array.isArray(o)) {
+                    // 兼容旧版：经典课后作业的连续题目数组
+                    if (o.length > 0 && typeof o[0] === 'object' && o[0] !== null && (o[0].options !== undefined || o[0].problem_id !== undefined || o[0].content !== undefined)) {
+                        // 避免误判 options 内部的数组
+                        if (o[0].key !== undefined && o[0].value !== undefined) {
+                            o.forEach(v => recurse(v, depth+1));
+                        } else {
+                            problems.push(...o);
+                            return; 
+                        }
+                    } else {
+                        o.forEach(v => recurse(v, depth+1));
+                    }
+                } else if (typeof o === 'object') {
+                    // 兼容新版直播课：深埋在幻灯片里的 problem 对象
+                    if ('problem' in o && typeof o.problem === 'object' && o.problem !== null && ('problemId' in o.problem || 'problem_id' in o.problem || 'options' in o.problem)) {
+                        problems.push(o.problem);
+                        return; 
+                    }
+                    // 游离的单题对象
+                    if (('problem_id' in o || 'problemId' in o) && ('content' in o || 'body' in o || 'options' in o)) {
                         problems.push(o);
                         return;
                     }
-                    // 情况2: 是包含 problem 字段的幻灯片对象 (常见于直播课 presentation/fetch)
-                    if ('problem' in o && typeof o.problem === 'object' && o.problem !== null && ('problemId' in o.problem || 'problem_id' in o.problem)) {
-                        problems.push(o.problem);
-                        return;
-                    }
-                }
-                
-                if (Array.isArray(o)) {
-                    o.forEach(v => recurse(v, depth+1));
-                } else if (typeof o === 'object') {
                     for (let k in o) recurse(o[k], depth+1);
                 }
             };
             recurse(rawObj, 0);
-            return problems;
+            
+            // 去重
+            let uniqueProblems = [];
+            let seen = new Set();
+            problems.forEach(p => {
+                let id = p.problem_id || p.problemId || JSON.stringify(p);
+                if (!seen.has(id)) {
+                    seen.add(id);
+                    uniqueProblems.push(p);
+                }
+            });
+            return uniqueProblems;
         },
         
         getTotalQuestions: function() {

@@ -77,6 +77,30 @@ class AnswerGateway {
     
     final endpoint = baseUrl.endsWith('/') ? '${baseUrl}chat/completions' : '$baseUrl/chat/completions';
 
+    // 提取图片 URL，支持多模态 Vision
+    final imageRegex = RegExp(r'<img[^>]+src=["\u0027](https?://[^"\u0027]+)["\u0027]');
+    final matches = imageRegex.allMatches(content);
+    List<String> imageUrls = [];
+    for (var match in matches) {
+      if (match.groupCount >= 1) imageUrls.add(match.group(1)!);
+    }
+
+    dynamic messagesContent;
+    if (imageUrls.isNotEmpty) {
+      List<Map<String, dynamic>> contentArray = [
+        {'type': 'text', 'text': prompt}
+      ];
+      for (var url in imageUrls) {
+        contentArray.add({
+          'type': 'image_url',
+          'image_url': {'url': url}
+        });
+      }
+      messagesContent = contentArray;
+    } else {
+      messagesContent = prompt;
+    }
+
     try {
       onProgress?.call('已连接模型 $modelName，等待返回...');
       final response = await _dio.post(
@@ -90,7 +114,7 @@ class AnswerGateway {
         data: {
           'model': modelName,
           'messages': [
-            {'role': 'user', 'content': prompt}
+            {'role': 'user', 'content': messagesContent}
           ],
           'temperature': 0.1,
         },

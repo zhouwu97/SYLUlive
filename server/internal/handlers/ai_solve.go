@@ -172,6 +172,32 @@ func (h *AiSolveHandler) callAI(baseURL, apiKey, modelName, questionType, cleane
 	return strings.TrimSpace(result.Choices[0].Message.Content), nil
 }
 
+// countQuestions 递归统计 JSON 中的题目数量
+func countQuestions(data interface{}) int {
+	count := 0
+	switch v := data.(type) {
+	case []interface{}:
+		if len(v) > 0 {
+			if obj, ok := v[0].(map[string]interface{}); ok {
+				_, hasOptions := obj["options"]
+				_, hasProblemID := obj["problem_id"]
+				_, hasContent := obj["content"]
+				if hasOptions || hasProblemID || hasContent {
+					return len(v)
+				}
+			}
+		}
+		for _, item := range v {
+			count += countQuestions(item)
+		}
+	case map[string]interface{}:
+		for _, item := range v {
+			count += countQuestions(item)
+		}
+	}
+	return count
+}
+
 // Solve 处理答题请求
 func (h *AiSolveHandler) Solve(c *gin.Context) {
 	// 获取当前登录用户
@@ -197,29 +223,44 @@ func (h *AiSolveHandler) Solve(c *gin.Context) {
 	cleanedText := cleanText(req.ContentText)
 	questionHash := generateHash(req.QuestionType, cleanedText)
 
-	// 第一步：扣费
-	if !isFreeUser {
-		result := h.db.Exec("UPDATE users SET credits = credits - 1 WHERE id = ? AND credits > 0", uid)
-		if result.Error != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "扣费失败"})
-			return
-		}
-		if result.RowsAffected == 0 {
-			c.JSON(http.StatusForbidden, gin.H{"error": "积分不足"})
-			return
-		}
+	// 计算题目数量并动态定价
+	qCount := countQuestions(req.RawContent)
+	cost := 0
+	if qCount == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "未检测到有效题目"})
+		return
+	} else if qCount == 1 {
+		cost = 1
+	} else if qCount <= 5 {
+		cost = 3
+	} else {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "一次最多只能请求5道题，请分批提交"})
+		return
 	}
 
-	// 第二步：查本地题库 (CachedQuestion)
+	// 第一步：查本地题库 (CachedQuestion) - 优先查缓存，命中则免费
 	var cached models.CachedQuestion
 	if err := h.db.Where("question_hash = ?", questionHash).First(&cached).Error; err == nil {
-		// 查到答案，直接返回（流程结束，钱已扣）
+		// 查到答案，直接返回（不扣除积分）
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
 			"source":  "cache",
 			"answer":  cached.AiAnswer,
 		})
 		return
+	}
+
+	// 第二步：扣费 (只在需要真正调用大模型时扣费)
+	if !isFreeUser {
+		result := h.db.Exec("UPDATE users SET credits = credits - ? WHERE id = ? AND credits >= ?", cost, uid, cost)
+		if result.Error != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "扣费失败"})
+			return
+		}
+		if result.RowsAffected == 0 {
+			c.JSON(http.StatusForbidden, gin.H{"error": fmt.Sprintf("积分不足，本次请求需要 %d 积分", cost)})
+			return
+		}
 	}
 
 	// 第三步：进入并发控制 (singleflight)
@@ -258,7 +299,7 @@ func (h *AiSolveHandler) Solve(c *gin.Context) {
 	if err != nil {
 		// 第五步：失败补偿
 		if !isFreeUser {
-			h.db.Exec("UPDATE users SET credits = credits + 1 WHERE id = ?", uid)
+			h.db.Exec("UPDATE users SET credits = credits + ? WHERE id = ?", cost, uid)
 		}
 
 		c.JSON(http.StatusInternalServerError, gin.H{

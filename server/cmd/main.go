@@ -959,6 +959,26 @@ func ensureInjectScript(db *gorm.DB) {
             return Array.from(indices).sort((a,b)=>a-b);
         },
         
+        getTotalQuestions: function() {
+            if (!window.__aiExamData) return 0;
+            let rawObj = JSON.parse(window.__aiExamData);
+            let count = 0;
+            let recurse = (o, depth) => {
+                if (depth > 15) return;
+                if (Array.isArray(o)) {
+                    if (o.length > 0 && typeof o[0] === 'object' && o[0] !== null && (o[0].options || o[0].problem_id || o[0].content)) {
+                        count += o.length;
+                        return;
+                    }
+                    o.forEach(v => recurse(v, depth+1));
+                } else if (typeof o === 'object' && o !== null) {
+                    for (let k in o) recurse(o[k], depth+1);
+                }
+            };
+            recurse(rawObj, 0);
+            return count;
+        },
+        
         sliceExamData: function(rangeStr) {
             if (!window.__aiExamData) return null;
             let indices = this.parseRange(rangeStr);

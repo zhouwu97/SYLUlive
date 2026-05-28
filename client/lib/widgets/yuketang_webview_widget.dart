@@ -31,8 +31,14 @@ class YuketangWebViewWidgetState extends State<YuketangWebViewWidget> {
   String _answerText = '等待操作...';
   bool _isMin = false;
   Offset _dashboardPos = const Offset(0, 40); // 默认位置
-  final TextEditingController _rangeCtrl = TextEditingController();
   
+  // 新的按块/单题模式状态
+  bool _isLoadingTotal = false;
+  int _totalQuestions = 0;
+  bool _isBlockMode = true;
+  String? _selectedBlock;
+  int? _selectedSingle;
+
   // 防重发与防刷分拦截记忆
   final Set<int> _uploadedIndices = {};
   bool _uploadedAll = false;
@@ -85,8 +91,10 @@ class YuketangWebViewWidgetState extends State<YuketangWebViewWidget> {
             if (mounted) {
               setState(() {
                 _isIntercepted = true;
-                _statusText = '🎯 拦截成功！请设置范围并上传';
+                _statusText = '🎯 拦截成功！正在分析试卷...';
+                _isLoadingTotal = true;
               });
+              _fetchTotalQuestions(controller);
             }
           }
         );
@@ -173,25 +181,73 @@ class YuketangWebViewWidgetState extends State<YuketangWebViewWidget> {
                       Row(
                         children: [
                           Expanded(
-                            child: TextField(
-                              controller: _rangeCtrl,
-                              style: const TextStyle(color: Colors.white, fontSize: 13),
-                              decoration: InputDecoration(
-                                hintText: '范围如 1-10, 留空全做',
-                                hintStyle: TextStyle(color: Colors.white.withOpacity(0.4)),
-                                filled: true,
-                                fillColor: Colors.black45,
-                                isDense: true,
-                                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(6),
-                                  borderSide: const BorderSide(color: Colors.grey),
-                                ),
-                                focusedBorder: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(6),
-                                  borderSide: const BorderSide(color: Colors.green),
-                                ),
-                              ),
+                            child: AnimatedSwitcher(
+                              duration: const Duration(milliseconds: 300),
+                              child: _isLoadingTotal
+                                  ? const SizedBox(
+                                      height: 40,
+                                      child: Row(
+                                        children: [
+                                          SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.blueAccent)),
+                                          SizedBox(width: 8),
+                                          Text('正在分析试卷结构...', style: TextStyle(color: Colors.grey, fontSize: 12)),
+                                        ],
+                                      ),
+                                    )
+                                  : _totalQuestions == 0
+                                      ? const SizedBox(height: 40, child: Align(alignment: Alignment.centerLeft, child: Text('未能获取到题目', style: TextStyle(color: Colors.red))))
+                                      : SizedBox(
+                                          height: 40,
+                                          child: Row(
+                                            children: [
+                                              // 模式切换
+                                              ToggleButtons(
+                                                constraints: const BoxConstraints(minHeight: 36, minWidth: 40),
+                                                isSelected: [_isBlockMode, !_isBlockMode],
+                                                onPressed: (idx) => setState(() => _isBlockMode = idx == 0),
+                                                borderRadius: BorderRadius.circular(6),
+                                                selectedColor: Colors.white,
+                                                fillColor: Colors.blueAccent.withOpacity(0.5),
+                                                children: const [
+                                                  Padding(padding: EdgeInsets.symmetric(horizontal: 8), child: Text('5题连抽', style: TextStyle(fontSize: 12))),
+                                                  Padding(padding: EdgeInsets.symmetric(horizontal: 8), child: Text('单题', style: TextStyle(fontSize: 12))),
+                                                ],
+                                              ),
+                                              const SizedBox(width: 8),
+                                              // 下拉选择
+                                              Expanded(
+                                                child: Container(
+                                                  height: 36,
+                                                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                                                  decoration: BoxDecoration(
+                                                    color: Colors.black45,
+                                                    borderRadius: BorderRadius.circular(6),
+                                                    border: Border.all(color: Colors.grey.withOpacity(0.5)),
+                                                  ),
+                                                  child: DropdownButtonHideUnderline(
+                                                    child: _isBlockMode
+                                                        ? DropdownButton<String>(
+                                                            value: _selectedBlock,
+                                                            isExpanded: true,
+                                                            dropdownColor: Colors.grey[850],
+                                                            style: const TextStyle(color: Colors.white, fontSize: 13),
+                                                            onChanged: (val) => setState(() => _selectedBlock = val),
+                                                            items: _generateBlocks(_totalQuestions).map((b) => DropdownMenuItem(value: b, child: Text(b))).toList(),
+                                                          )
+                                                        : DropdownButton<int>(
+                                                            value: _selectedSingle,
+                                                            isExpanded: true,
+                                                            dropdownColor: Colors.grey[850],
+                                                            style: const TextStyle(color: Colors.white, fontSize: 13),
+                                                            onChanged: (val) => setState(() => _selectedSingle = val),
+                                                            items: List.generate(_totalQuestions, (i) => i + 1).map((n) => DropdownMenuItem(value: n, child: Text('第 $n 题'))).toList(),
+                                                          ),
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
                             ),
                           ),
                           const SizedBox(width: 8),
@@ -199,11 +255,12 @@ class YuketangWebViewWidgetState extends State<YuketangWebViewWidget> {
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Colors.green,
                               foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(horizontal: 16),
+                              padding: const EdgeInsets.symmetric(horizontal: 12),
+                              minimumSize: const Size(60, 40),
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
                             ),
-                            onPressed: _handleUpload,
-                            child: const Text('上传获取', style: TextStyle(fontWeight: FontWeight.bold)),
+                            onPressed: _isLoadingTotal || _totalQuestions == 0 ? null : _handleUpload,
+                            child: const Text('上传', style: TextStyle(fontWeight: FontWeight.bold)),
                           )
                         ],
                       ),
@@ -225,6 +282,49 @@ class YuketangWebViewWidgetState extends State<YuketangWebViewWidget> {
     ),
   ],
 );
+  }
+
+  List<String> _generateBlocks(int total) {
+    List<String> blocks = [];
+    for (int i = 1; i <= total; i += 5) {
+      int end = i + 4;
+      if (end > total) end = total;
+      if (i == end) {
+        blocks.add("$i");
+      } else {
+        blocks.add("$i-$end");
+      }
+    }
+    return blocks;
+  }
+
+  Future<void> _fetchTotalQuestions(InAppWebViewController controller) async {
+    try {
+      final res = await controller.evaluateJavascript(source: "window.AiHelper ? window.AiHelper.getTotalQuestions() : 0;");
+      int total = 0;
+      if (res is int) total = res;
+      if (res is String) total = int.tryParse(res) ?? 0;
+      
+      if (mounted) {
+        setState(() {
+          _totalQuestions = total;
+          _isLoadingTotal = false;
+          _statusText = '🎯 拦截成功！共检测到 $total 道题';
+          
+          if (total > 0) {
+            _selectedBlock = _generateBlocks(total).first;
+            _selectedSingle = 1;
+          }
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoadingTotal = false;
+          _statusText = '⚠️ 分析失败，请重试';
+        });
+      }
+    }
   }
 
   Set<int> _parseRange(String str) {
@@ -268,7 +368,9 @@ class YuketangWebViewWidgetState extends State<YuketangWebViewWidget> {
       _uploadedAll = false;
     }
     
-    final rangeStr = _rangeCtrl.text.trim();
+    String rangeStr = _isBlockMode ? (_selectedBlock ?? '') : (_selectedSingle?.toString() ?? '');
+    if (rangeStr.isEmpty) return;
+    
     final requestedIndices = _parseRange(rangeStr);
     
     bool isDuplicate = false;

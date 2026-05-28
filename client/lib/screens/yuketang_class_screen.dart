@@ -280,13 +280,16 @@ class _YuketangClassScreenState extends State<YuketangClassScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return PopScope(
-      canPop: false,
-      onPopInvokedWithResult: (didPop, _) async {
-        if (didPop) return;
-        await _handleBack();
-      },
-      child: Scaffold(
+    return GestureDetector(
+      onTap: () => FocusScope.of(context).unfocus(),
+      child: PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, _) async {
+          if (didPop) return;
+          await _handleBack();
+        },
+        child: Scaffold(
+          resizeToAvoidBottomInset: false,
         appBar: AppBar(
           title: const Text('长江雨课堂'),
           leading: IconButton(
@@ -312,6 +315,6 @@ class _YuketangClassScreenState extends State<YuketangClassScreen> {
           url: 'https://changjiang.yuketang.cn/v2/web/index',
         ),
       ),
-    );
+    ));
   }
 }

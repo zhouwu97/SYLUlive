@@ -682,7 +682,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final authProvider = context.watch<AuthProvider>();
     final bottomSafe = MediaQuery.of(context).padding.bottom;
     final screenWidth = MediaQuery.of(context).size.width;
-    final isWideScreen = screenWidth > 800;
+    final isWideScreen = screenWidth > 600;
+    final isExtended = screenWidth > 840;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
@@ -695,7 +696,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       extendBody: true,
       extendBodyBehindAppBar: true,
       body: isWideScreen
-          ? _buildWideLayout(bottomSafe, authProvider)
+          ? _buildWideLayout(bottomSafe, authProvider, isExtended)
           : _buildNarrowLayout(bottomSafe, authProvider),
       bottomNavigationBar: isWideScreen
           ? null
@@ -720,17 +721,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
-  Widget _buildWideLayout(double bottomSafe, AuthProvider authProvider) {
+  Widget _buildWideLayout(double bottomSafe, AuthProvider authProvider, bool isExtended) {
     return Row(
       children: [
         NavigationRail(
+          extended: isExtended,
           selectedIndex: _currentIndex,
           onDestinationSelected: (index) {
             setState(() => _currentIndex = index);
             final screenNames = ['shuitie', 'market', 'schedule', 'campus', 'profile'];
             backgroundWrapperKey.currentState?.updateScreen(screenNames[index]);
           },
-          labelType: NavigationRailLabelType.all,
+          labelType: isExtended ? NavigationRailLabelType.none : NavigationRailLabelType.all,
           backgroundColor: Theme.of(context).brightness == Brightness.dark
               ? const Color(0xFF1A1A2E).withValues(alpha: 0.9)
               : Colors.white.withValues(alpha: 0.9),

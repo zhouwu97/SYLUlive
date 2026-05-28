@@ -115,14 +115,8 @@ class _TeacherRatingScreenState extends State<TeacherRatingScreen>
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text('评价 ${teacher['name']}'),
-        content: Column(mainAxisSize: MainAxisSize.min, children: [
-          TextField(
-              controller: commentCtrl,
-              maxLines: 3,
-              decoration: const InputDecoration(
-                  labelText: '评语（选填）', hintText: '请文明发言')),
-        ]),
+        title: Text('打分 ${teacher['name']}'),
+        content: const Text('请选择推荐或不推荐。'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, 'negative'),
@@ -140,8 +134,8 @@ class _TeacherRatingScreenState extends State<TeacherRatingScreen>
     try {
       final dio = context.read<AuthProvider>().dio;
       await dio.post('/teachers/${teacher['id']}/rate', data: {
-        'rating': rating,
-        'comment': commentCtrl.text.trim(),
+        'star': rating == 'positive' ? 5 : 1,
+        'comment': '',
       });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

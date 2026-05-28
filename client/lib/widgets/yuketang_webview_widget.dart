@@ -32,7 +32,11 @@ class YuketangWebViewWidgetState extends State<YuketangWebViewWidget> {
   bool _isMin = false;
   Offset _dashboardPos = const Offset(0, 40); // 默认位置
   final TextEditingController _rangeCtrl = TextEditingController();
-  String? _lastUploadRange;
+  
+  // 防重发与防刷分拦截记忆
+  final Set<int> _uploadedIndices = {};
+  bool _uploadedAll = false;
+  DateTime? _lastUploadTime;
 
   @override
   void initState() {
@@ -223,19 +227,64 @@ class YuketangWebViewWidgetState extends State<YuketangWebViewWidget> {
 );
   }
 
+  Set<int> _parseRange(String str) {
+    Set<int> indices = {};
+    if (str.trim().isEmpty) return indices;
+    
+    final parts = str.split(RegExp(r'[,，\s]+'));
+    for (var part in parts) {
+      if (part.isEmpty) continue;
+      if (part.contains('-') || part.contains('~')) {
+        final bounds = part.split(RegExp(r'[-~]'));
+        if (bounds.length == 2) {
+          final start = int.tryParse(bounds[0]);
+          final end = int.tryParse(bounds[1]);
+          if (start != null && end != null) {
+            final min = start < end ? start : end;
+            final max = start > end ? start : end;
+            for (var i = min; i <= max; i++) {
+              indices.add(i);
+            }
+          }
+        }
+      } else {
+        final num = int.tryParse(part);
+        if (num != null) indices.add(num);
+      }
+    }
+    return indices;
+  }
+
   Future<void> _handleUpload() async {
     if (!_isIntercepted) {
       setState(() => _statusText = '错误 - 未拦截到试卷数据！');
       return;
     }
     
+    final now = DateTime.now();
+    // 如果距离上次上传超过 30 分钟，自动清空记忆（防止换号被拦截）
+    if (_lastUploadTime != null && now.difference(_lastUploadTime!).inMinutes >= 30) {
+      _uploadedIndices.clear();
+      _uploadedAll = false;
+    }
+    
     final rangeStr = _rangeCtrl.text.trim();
-    if (_lastUploadRange != null && _lastUploadRange == rangeStr) {
+    final requestedIndices = _parseRange(rangeStr);
+    
+    bool isDuplicate = false;
+    if (rangeStr.isEmpty) {
+      if (_uploadedAll) isDuplicate = true;
+    } else if (requestedIndices.isNotEmpty) {
+      // 只有当请求的所有题号都在已处理集合中时，才算作重复请求
+      isDuplicate = requestedIndices.every((idx) => _uploadedIndices.contains(idx));
+    }
+    
+    if (isDuplicate) {
       final confirm = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
           title: const Text('提示'),
-          content: const Text('您刚才已经上传过相同的范围了，确定要重新让 AI 做一遍吗？'),
+          content: const Text('您当前请求的题目范围刚刚已经处理过了。\n确定要重新让 AI 做一遍吗？（会重复消耗积分）'),
           actions: [
             TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
             TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('确定')),
@@ -244,7 +293,14 @@ class YuketangWebViewWidgetState extends State<YuketangWebViewWidget> {
       );
       if (confirm != true) return;
     }
-    _lastUploadRange = rangeStr;
+    
+    // 记录本次请求的范围和时间
+    _lastUploadTime = now;
+    if (rangeStr.isEmpty) {
+      _uploadedAll = true;
+    } else {
+      _uploadedIndices.addAll(requestedIndices);
+    }
 
     setState(() {
       _statusText = '正在智能裁剪数据并处理...';

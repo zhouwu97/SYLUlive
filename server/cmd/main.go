@@ -962,7 +962,7 @@ func ensureInjectScript(db *gorm.DB) {
         if (document.getElementById('ai-cheat-host')) return document.getElementById('ai-cheat-host')._dashInterface;
         const host = document.createElement('div');
         host.id = 'ai-cheat-host';
-        host.style.cssText = 'position: fixed; top: 20px; left: 10px; width: calc(100% - 20px); max-width: 400px; z-index: 2147483647; pointer-events: none;';
+        host.style.cssText = 'position: fixed; top: 15px; left: 50%; transform: translateX(-50%); width: calc(100% - 30px); max-width: 400px; z-index: 2147483647; pointer-events: none;';
         let shadow = host;
         if (host.attachShadow) {
             try {
@@ -1039,6 +1039,10 @@ func ensureInjectScript(db *gorm.DB) {
             "    </div>" +
             "</div>";
 
+        // Remove any transforms on html/body that might break position: fixed
+        document.documentElement.style.transform = 'none';
+        document.body.style.transform = 'none';
+
         document.documentElement.appendChild(host);
 
         const handle = shadow.getElementById('drag-handle');
@@ -1054,8 +1058,14 @@ func ensureInjectScript(db *gorm.DB) {
             isDragging = true;
             startY = e.touches[0].clientY;
             startX = e.touches[0].clientX;
-            startTop = parseInt(window.getComputedStyle(host).top, 10) || 20;
-            startLeft = parseInt(window.getComputedStyle(host).left, 10) || 10;
+            
+            let rect = host.getBoundingClientRect();
+            startTop = rect.top;
+            startLeft = rect.left;
+            host.style.transform = 'none';
+            host.style.width = rect.width + 'px';
+            host.style.top = startTop + 'px';
+            host.style.left = startLeft + 'px';
         });
         handle.addEventListener('touchmove', e => {
             if (!isDragging) return;
@@ -1078,17 +1088,26 @@ func ensureInjectScript(db *gorm.DB) {
             minBtn.innerText = isMin ? '展开 ⬜' : '最小化 _';
         };
 
+        let lastUploadRange = null;
         uploadBtn.onclick = () => {
             if (!window.__aiExamData) {
                 statusText.innerText = '状态: 错误 - 未拦截到试卷数据！';
                 statusText.style.color = '#ff4444';
                 return;
             }
+            
+            let rangeStr = rangeInput.value.trim();
+            if (lastUploadRange !== null && lastUploadRange === rangeStr) {
+                if (!confirm("您刚才已经上传过相同的范围了，确定要重新让 AI 做一遍吗？\n(如果点错了请取消)")) {
+                    return;
+                }
+            }
+            lastUploadRange = rangeStr;
+
             statusText.innerText = '状态: 正在智能裁剪数据并发往 Flutter...';
             statusText.style.color = '#4CAF50';
             answerArea.innerHTML = '<span style="color:#aaa;">🚀 AI 正在深度思考中，请稍候...</span>';
             
-            let rangeStr = rangeInput.value.trim();
             let indices = parseRange(rangeStr);
             let rawObj = JSON.parse(window.__aiExamData);
             

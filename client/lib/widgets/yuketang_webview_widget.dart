@@ -99,6 +99,31 @@ class YuketangWebViewWidgetState extends State<YuketangWebViewWidget> {
           }
         );
 
+        // 直播课实时发题通知信道
+        controller.addJavaScriptHandler(
+          handlerName: 'YuketangLiveProblem',
+          callback: (args) {
+            if (mounted && args.isNotEmpty) {
+              String probId = args[0].toString();
+              setState(() {
+                _isIntercepted = true;
+                _isBlockMode = false; // 强行切到单题模式
+                _statusText = '🚨 老师刚发布了一道直播题！';
+                
+                // 如果 _totalQuestions == 0，可能需要重新计算一遍
+                if (_totalQuestions == 0) {
+                  _isLoadingTotal = true;
+                  _fetchTotalQuestions(controller);
+                } else {
+                  // 这里我们粗略地认为最新的一题是最后一题，或者只是提示用户。
+                  // 最完美的是前端根据 probId 去选择对应的序号，但现在我们就提示用户手动点上传。
+                  _selectedSingle = _totalQuestions; 
+                }
+              });
+            }
+          }
+        );
+
         // 注册全量快照备份信道
         controller.addJavaScriptHandler(
           handlerName: 'YuketangBackup',

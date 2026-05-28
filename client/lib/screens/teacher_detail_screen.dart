@@ -239,12 +239,6 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
             const SizedBox(height: 8),
             if (!_isEditing && provider.myRating != null) ...[
               _buildStarRowLarge(provider.myRating!.star.toDouble()),
-              if (provider.myRating!.comment.isNotEmpty) ...[
-                const SizedBox(height: 4),
-                Text(provider.myRating!.comment,
-                    style: TextStyle(
-                        color: isDark ? Colors.grey[300] : Colors.grey[700])),
-              ],
             ] else ...[
               // 评分星星
               Row(
@@ -259,18 +253,6 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
                                     ? Colors.amber
                                     : Colors.grey[400]),
                           ))),
-              const SizedBox(height: 8),
-              // 评论输入
-              TextField(
-                controller: _commentCtrl,
-                maxLength: 500,
-                decoration: const InputDecoration(
-                  hintText: '说说你的感受...',
-                  border: OutlineInputBorder(),
-                  contentPadding: EdgeInsets.all(12),
-                ),
-                maxLines: 3,
-              ),
               const SizedBox(height: 12),
               // 提交按钮
               Row(mainAxisAlignment: MainAxisAlignment.end, children: [
@@ -284,7 +266,7 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
                       ? null
                       : () async {
                           final ok = await provider.rateTeacher(
-                              widget.teacherId, _star, _commentCtrl.text);
+                              widget.teacherId, _star, "");
                           if (ok && mounted) {
                             _didChange = true;
                             setState(() => _isEditing = false);
@@ -351,13 +333,6 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
                           size: 18, color: Colors.grey)),
                 ),
             ]),
-            if (r.comment.isNotEmpty) ...[
-              const SizedBox(height: 6),
-              Text(r.comment,
-                  style: TextStyle(
-                      color: isDark ? Colors.grey[300] : Colors.grey[700],
-                      fontSize: 14)),
-            ],
           ],
         ),
       ),

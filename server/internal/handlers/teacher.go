@@ -142,6 +142,12 @@ func (h *TeacherHandler) Rate(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	
+	// 取消文字评价，只保留打分系统。拦截旧版本带文字的请求
+	if strings.TrimSpace(input.Comment) != "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "系统已取消教师文字评价功能，请清空文字后重新打分，或更新至最新版App。"})
+		return
+	}
 	// 教师存在？
 	var teacher models.Teacher
 	if err := h.db.First(&teacher, tid).Error; err != nil {

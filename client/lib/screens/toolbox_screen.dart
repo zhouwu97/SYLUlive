@@ -54,9 +54,9 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
           child: Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 1000),
-              child: GridView.count(
+              child: GridView.extent(
                 padding: const EdgeInsets.all(20),
-                crossAxisCount: 3,
+                maxCrossAxisExtent: 130, // 手机上正好排3列，Pad上排更多列，防止卡片变巨无霸
                 childAspectRatio: 0.85,
                 mainAxisSpacing: 16,
                 crossAxisSpacing: 16,

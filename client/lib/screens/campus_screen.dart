@@ -99,8 +99,7 @@ class _CampusScreenState extends State<CampusScreen>
             ],
           ),
         ),
-      ),
-    );
+      );
   }
 
   Widget _buildGlassTabBar(bool isDark, Color primaryColor) {

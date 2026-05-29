@@ -1215,8 +1215,7 @@ func ensureInjectScript(db *gorm.DB) {
         const clone = response.clone(); 
         clone.json().then(data => {
             let jsonStr = JSON.stringify(data);
-            if (jsonStr.includes('paper_count') && !jsonStr.includes('"options"')) return;
-            if (jsonStr.includes('"options"') || jsonStr.includes('"problem_id"')) handleIntercept(jsonStr);
+            if (jsonStr.includes('"options"') || jsonStr.includes('"problem_id"') || jsonStr.includes('"problemId"')) handleIntercept(jsonStr);
         }).catch(e => {});
         return response;
     };
@@ -1237,8 +1236,7 @@ func ensureInjectScript(db *gorm.DB) {
                     jsonStr = xhr.responseText;
                 }
                 if (!jsonStr) return;
-                if (jsonStr.includes('paper_count') && !jsonStr.includes('"options"')) return;
-                if (jsonStr.includes('"options"') || jsonStr.includes('"problem_id"')) handleIntercept(jsonStr);
+                if (jsonStr.includes('"options"') || jsonStr.includes('"problem_id"') || jsonStr.includes('"problemId"')) handleIntercept(jsonStr);
             } catch(e) {
                 console.error('XHR intercept error:', e);
             }

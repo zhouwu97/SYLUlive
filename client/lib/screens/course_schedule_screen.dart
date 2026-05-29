@@ -227,10 +227,14 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     final uid = user.id.toString();
     if (_preparedUserId == uid) return;
     _preparedUserId = uid;
-    final edu = context.read<EduProvider>();
-    final sc = context.read<CourseScheduleProvider>();
-    edu.setUserId(uid);
-    sc.setUserId(uid);
+    
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final edu = context.read<EduProvider>();
+      final sc = context.read<CourseScheduleProvider>();
+      edu.setUserId(uid);
+      sc.setUserId(uid);
+    });
   }
 
   // PageView 滑动切换周

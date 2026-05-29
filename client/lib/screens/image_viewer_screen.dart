@@ -72,6 +72,7 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
       final AssetEntity? result = await PhotoManager.editor.saveImage(
         bytes,
         title: filename,
+        filename: filename,
       );
 
       if (!mounted) return;

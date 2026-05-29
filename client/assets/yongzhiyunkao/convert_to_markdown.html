@@ -519,6 +519,9 @@
         });
         
         function convertToHtml(questions, options) {
+            // 首先按题号排序，防止提取时出现顺序错乱
+            questions.sort((a, b) => (a.index || 0) - (b.index || 0));
+            
             let html = ['<div style="font-family: \'Microsoft YaHei\', SimSun, sans-serif; line-height: 1.8; color: #000; font-size: 14pt;">'];
             
             // 标题

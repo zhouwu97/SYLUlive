@@ -133,7 +133,32 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
                     const SizedBox(height: 16),
                     _buildMyRating(provider, isDark),
                     const SizedBox(height: 20),
-                    // 取消显示具体评价列表，只在顶层 _buildHeader 显示总打分数
+                    if (provider.ratings.isNotEmpty) ...[
+                      Text('${provider.ratingCount}人评价', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: isDark ? Colors.white : Colors.black87)),
+                      const SizedBox(height: 8),
+                      GlassContainer(
+                        padding: const EdgeInsets.all(12),
+                        borderRadius: 12,
+                        blur: 10,
+                        opacity: 0.1,
+                        backgroundColor: isDark ? const Color(0x99171B24) : const Color(0xCCFFFFFF),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Icon(Icons.warning_amber_rounded, color: Colors.orange[700], size: 20),
+                            const SizedBox(width: 8),
+                            const Expanded(
+                              child: Text(
+                                '禁止对老师造成人格侮辱，只准对课堂行为评价。',
+                                style: TextStyle(fontSize: 13, color: Colors.grey),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      ...provider.ratings.map((r) => _buildRatingCard(r, isDark)),
+                    ],
                     const SizedBox(height: 80),
                   ],
                 );
@@ -279,6 +304,27 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
   }
 
 
+
+  Widget _buildRatingCard(TeacherRating r, bool isDark) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      color: isDark ? Colors.grey[800] : Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            CircleAvatar(radius: 14, backgroundColor: const Color(0xFF6366F1), child: Text(r.userName.isNotEmpty ? r.userName[0] : '?', style: const TextStyle(color: Colors.white, fontSize: 12))),
+            const SizedBox(width: 8),
+            Expanded(child: Text(r.userName.isNotEmpty ? r.userName : '匿名', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14))),
+            _buildStarRowSmall(r.star.toDouble()),
+          ]),
+          if (r.comment.isNotEmpty)
+            Padding(padding: const EdgeInsets.only(top: 6), child: Text(r.comment, style: TextStyle(color: isDark ? Colors.grey[300] : Colors.grey[700], fontSize: 14))),
+        ]),
+      ),
+    );
+  }
 
   Widget _buildStarRowLarge(double avg) {
     return Row(

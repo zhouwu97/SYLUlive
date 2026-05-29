@@ -112,51 +112,54 @@ class _ImageUploadWidgetState extends State<ImageUploadWidget> {
         if (_uploadedUrls.isNotEmpty) ...[
           SizedBox(
             height: 80,
-            child: ListView.builder(
+            child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
-              itemCount: _uploadedUrls.length,
-              itemBuilder: (context, index) {
-                return Stack(
-                  children: [
-                    Container(
-                      width: 80,
-                      height: 80,
-                      margin: const EdgeInsets.only(right: 8),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.grey[300]!),
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: Image.network(
-                          ApiConstants.fullUrl(_uploadedUrls[index]),
-                          fit: BoxFit.cover,
+              child: Wrap(
+                spacing: 8,
+                children: _uploadedUrls.asMap().entries.map((entry) {
+                  final index = entry.key;
+                  final url = entry.value;
+                  return Stack(
+                    children: [
+                      Container(
+                        width: 80,
+                        height: 80,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.grey[300]!),
                         ),
-                      ),
-                    ),
-                    Positioned(
-                      top: 4,
-                      right: 12,
-                      child: GestureDetector(
-                        onTap: () {
-                          setState(() {
-                            _uploadedUrls.removeAt(index);
-                          });
-                          widget.onImagesUploaded(_uploadedUrls);
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.all(2),
-                          decoration: const BoxDecoration(
-                            color: Colors.black54,
-                            shape: BoxShape.circle,
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: Image.network(
+                            ApiConstants.fullUrl(url),
+                            fit: BoxFit.cover,
                           ),
-                          child: const Icon(Icons.close, color: Colors.white, size: 14),
                         ),
                       ),
-                    ),
-                  ],
-                );
-              },
+                      Positioned(
+                        top: 4,
+                        right: 4,
+                        child: GestureDetector(
+                          onTap: () {
+                            setState(() {
+                              _uploadedUrls.removeAt(index);
+                            });
+                            widget.onImagesUploaded(_uploadedUrls);
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.all(2),
+                            decoration: const BoxDecoration(
+                              color: Colors.black54,
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(Icons.close, color: Colors.white, size: 14),
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                }).toList(),
+              ),
             ),
           ),
           const SizedBox(height: 8),

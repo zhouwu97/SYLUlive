@@ -452,6 +452,7 @@ class YuketangWebViewWidgetState extends State<YuketangWebViewWidget> {
         data = {
           'type': '批量题目',
           'content': jsonString,
+          'raw_list': decoded,
         };
       } else if (decoded is Map) {
         data = Map<String, dynamic>.from(decoded);

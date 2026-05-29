@@ -223,8 +223,10 @@ func countQuestions(data interface{}) int {
 			if obj, ok := v[0].(map[string]interface{}); ok {
 				_, hasOptions := obj["options"]
 				_, hasProblemID := obj["problem_id"]
+				_, hasProblemID2 := obj["problemId"]
 				_, hasContent := obj["content"]
-				if hasOptions || hasProblemID || hasContent {
+				_, hasBody := obj["body"]
+				if hasOptions || hasProblemID || hasProblemID2 || hasContent || hasBody {
 					return len(v)
 				}
 			}

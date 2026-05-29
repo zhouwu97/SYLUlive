@@ -733,9 +733,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             backgroundWrapperKey.currentState?.updateScreen(screenNames[index]);
           },
           labelType: isExtended ? NavigationRailLabelType.none : NavigationRailLabelType.all,
-          backgroundColor: Theme.of(context).brightness == Brightness.dark
-              ? const Color(0xFF1A1A2E).withValues(alpha: 0.9)
-              : Colors.white.withValues(alpha: 0.9),
+          backgroundColor: Colors.transparent,
           destinations: const [
             NavigationRailDestination(
               icon: Icon(Icons.home_rounded),

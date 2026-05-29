@@ -1,7 +1,7 @@
-// ==UserScript==
+﻿// ==UserScript==
 // @name         融智云考练习题提取器
 // @namespace    http://tampermonkey.net/
-// @version      6.0
+// @version      6.1
 // @description  自动提取融智云考系统的练习题目
 // @author       Assistant
 // @match        https://www.cctrcloud.net/practice/subject_practice.html*
@@ -434,7 +434,101 @@
     };
 
     // 获取单个题目数据的函数
-    function extractCurrentQuestion() {
+        // 辅助函数：把 SVG data URI 转换为 PNG data URI，彻底解决 Word 不支持复制 SVG 的问题
+    function svgToPngDataURL(svgUri) {
+        return new Promise((resolve) => {
+            const img = new Image();
+            
+            const timeoutId = setTimeout(() => {
+                resolve(svgUri);
+            }, 2000);
+
+            img.onload = () => {
+                clearTimeout(timeoutId);
+                try {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = img.width || 100;
+                    canvas.height = img.height || 30;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0);
+                    resolve(canvas.toDataURL('image/png'));
+                } catch(e) {
+                    resolve(svgUri);
+                }
+            };
+            img.onerror = () => {
+                clearTimeout(timeoutId);
+                resolve(svgUri);
+            };
+            img.src = svgUri;
+        });
+    }
+
+    async function getRichText(element) {
+        if (!element) return '';
+        const clone = element.cloneNode(true);
+        
+        clone.querySelectorAll('.MathJax, mjx-container, .katex').forEach(container => {
+            const mathML = container.querySelector('.MJX_Assistive_MathML math, mjx-assistive-mml math, .katex-mathml math, math');
+            if (mathML) {
+                mathML.setAttribute('xmlns', 'http://www.w3.org/1998/Math/MathML');
+                container.parentNode.insertBefore(mathML, container);
+                container.remove();
+            } else {
+                const texScript = container.parentNode.querySelector('script[type^=\'math/tex\']');
+                if (texScript) {
+                    const textNode = document.createTextNode(' ' + texScript.textContent + ' ');
+                    container.parentNode.insertBefore(textNode, container);
+                    container.remove();
+                }
+            }
+        });
+
+        clone.querySelectorAll('.MathJax_Preview').forEach(el => el.remove());
+
+        const imgPromises = Array.from(clone.querySelectorAll('img')).map(async (img) => {
+            const realSrc = img.getAttribute('data-src') || img.getAttribute('fr-original-src') || img.src;
+            if (realSrc) {
+                let finalSrc = realSrc;
+                if (finalSrc.startsWith('/')) {
+                    finalSrc = window.location.origin + finalSrc;
+                } else if (!finalSrc.startsWith('http') && !finalSrc.startsWith('data:')) {
+                    const path = window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/') + 1);
+                    finalSrc = window.location.origin + path + finalSrc;
+                }
+                
+                if (finalSrc.startsWith('http://')) {
+                    finalSrc = finalSrc.replace('http://', 'https://');
+                }
+
+                if (finalSrc.startsWith('data:image/svg+xml')) {
+                    try {
+                        const svgStr = finalSrc.includes('base64,') ? 
+                            atob(finalSrc.split('base64,')[1]) : 
+                            decodeURIComponent(finalSrc.split(',')[1]);
+                        const doc = new DOMParser().parseFromString(svgStr, 'image/svg+xml');
+                        const math = doc.querySelector('math');
+                        if (math) {
+                            math.setAttribute('xmlns', 'http://www.w3.org/1998/Math/MathML');
+                            img.parentNode.insertBefore(math, img);
+                            img.remove();
+                            return;
+                        }
+                    } catch(e) {}
+                    finalSrc = await svgToPngDataURL(finalSrc);
+                }
+
+                img.setAttribute('src', finalSrc);
+            }
+            img.style.verticalAlign = 'middle';
+            img.style.maxWidth = '100%';
+        });
+        
+        await Promise.all(imgPromises);
+        return clone.innerHTML.trim().replace(/[\u200B-\u200D\uFEFF]/g, '');
+    }
+
+    async function extractCurrentQuestion() {
         const slideContent = queryWithFallback([
             '.practice_slide_content.slide-con',
             '.practice_slide_content',
@@ -494,7 +588,7 @@
             '[class*="title"]'
         ], slideContent);
         if (questionElement) {
-            question.question = questionElement.textContent.trim();
+            question.question = await getRichText(questionElement);
         }
 
         // 获取题型
@@ -549,7 +643,7 @@
 
                 if (letterElement && textElement) {
                     const optionLabel = letterElement.textContent.trim();
-                    const optionContent = textElement.textContent.trim();
+                    const optionContent = await getRichText(textElement);
                     question.options.push({
                         label: optionLabel,
                         text: optionContent
@@ -578,7 +672,7 @@
                     '[class*="answer"]'
                 ], slideContent);
                 if (answerText) {
-                    question.answer = answerText.textContent.trim().replace(/^答案：?/, '');
+                    question.answer = await getRichText(answerText); question.answer = question.answer.replace(/^答案：?/, '');
                 }
             }
         } else if (question.questionType === '判断题') {
@@ -623,7 +717,7 @@
             ], slideContent);
             const answers = [];
             answerElements.forEach(elem => {
-                const text = elem.textContent.trim();
+                const text = await getRichText(elem);
                 if (text && text !== '?' && text !== '空') answers.push(text);
             });
             question.answer = answers.join('；');
@@ -635,7 +729,7 @@
                     '.answer-show'
                 ], slideContent);
                 if (answerText) {
-                    question.answer = answerText.textContent.trim();
+                    question.answer = await getRichText(answerText);
                 }
             }
         }
@@ -649,7 +743,7 @@
             '[class*="analysis"]'
         ], slideContent);
         if (analysisElement) {
-            question.analysis = analysisElement.textContent.trim();
+            question.analysis = await getRichText(analysisElement);
         }
 
         // 调试日志
@@ -755,7 +849,7 @@
         updateStatus(`正在提取题目...从第 ${startIndex} 题开始`, 'loading');
 
         // 先提取当前题目
-        const currentQuestion = extractCurrentQuestion();
+        const currentQuestion = await extractCurrentQuestion();
         if (currentQuestion) {
             questions.push(currentQuestion);
             log(`提取第 ${startIndex} 题:`, currentQuestion);
@@ -810,7 +904,7 @@
             await new Promise(r => setTimeout(r, 300));
 
             // 提取题目
-            const question = extractCurrentQuestion();
+            const question = await extractCurrentQuestion();
             if (question) {
                 questions.push(question);
                 log(`提取第 ${i} 题成功:`, question.questionType);
@@ -879,7 +973,7 @@
     `;
     document.head.appendChild(spinStyle);
 
-    console.log('✨ 融智云考练习题提取器 v6.0 已加载！');
+    console.log('✨ 融智云考练习题提取器 v6.1 已加载！');
     console.log('按 Ctrl+Shift+E 可快速打开/关闭界面');
     console.log('在控制台运行 window.runExtractionDiagnostic() 可诊断问题');
 })(); 

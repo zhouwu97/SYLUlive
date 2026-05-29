@@ -65,6 +65,9 @@ func SendJPushNotification(jpushAppKey, jpushMasterSecret string, db *gorm.DB, t
 	if jpushAppKey == "" || jpushMasterSecret == "" {
 		return
 	}
+	if toUserID == fromUserID {
+		return
+	}
 
 	var user models.User
 	if err := db.Where("id = ?", toUserID).Select("id, nickname, device_token").First(&user).Error; err != nil {

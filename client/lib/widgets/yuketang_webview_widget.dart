@@ -445,7 +445,19 @@ class YuketangWebViewWidgetState extends State<YuketangWebViewWidget> {
       }
       
       final String jsonString = result as String;
-      final Map<String, dynamic> data = jsonDecode(jsonString);
+      final dynamic decoded = jsonDecode(jsonString);
+      
+      Map<String, dynamic> data;
+      if (decoded is List) {
+        data = {
+          'type': '批量题目',
+          'content': jsonString,
+        };
+      } else if (decoded is Map) {
+        data = Map<String, dynamic>.from(decoded);
+      } else {
+        data = {'type': '未知', 'content': jsonString};
+      }
       
       final answer = await _answerGateway.processQuestion(
         data,

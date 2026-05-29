@@ -70,9 +70,6 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     try {
       final XFile? image = await _imagePicker.pickImage(
         source: source,
-        maxWidth: 1080,
-        maxHeight: 1080,
-        imageQuality: 60,
       );
       if (image != null) {
         final length = await image.length();

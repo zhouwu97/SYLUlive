@@ -2,8 +2,9 @@ import 'dart:io';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:dio/dio.dart';
+import 'package:provider/provider.dart';
+import '../providers/auth_provider.dart';
 import '../config/api_constants.dart';
 
 class ImageUploadWidget extends StatefulWidget {
@@ -46,23 +47,18 @@ class _ImageUploadWidgetState extends State<ImageUploadWidget> {
           _isUploading = true;
         });
 
-        final prefs = await SharedPreferences.getInstance();
-        final token = prefs.getString('token') ?? '';
+        final dio = context.read<AuthProvider>().dio;
+        final formData = FormData.fromMap({
+          'file': await MultipartFile.fromFile(image.path),
+        });
 
-        var request = http.MultipartRequest('POST', Uri.parse('${ApiConstants.baseUrl}/upload'));
-        request.headers['Authorization'] = 'Bearer $token';
-        request.files.add(await http.MultipartFile.fromPath('file', image.path));
+        final response = await dio.post('/upload', data: formData);
 
-        var response = await request.send();
-        if (response.statusCode == 200) {
-          var responseData = await response.stream.bytesToString();
-          var data = json.decode(responseData);
-          if (data['url'] != null) {
-            setState(() {
-              _uploadedUrls.add(data['url']);
-            });
-            widget.onImagesUploaded(_uploadedUrls);
-          }
+        if (response.statusCode == 200 && response.data != null && response.data['url'] != null) {
+          setState(() {
+            _uploadedUrls.add(response.data['url']);
+          });
+          widget.onImagesUploaded(_uploadedUrls);
         } else {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(

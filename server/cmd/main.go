@@ -1025,9 +1025,15 @@ func ensureInjectScript(db *gorm.DB) {
                         return; 
                     }
                     // 游离的单题对象
-                    if ('problem_id' in o || 'problemId' in o || ('body' in o && 'id' in o) || ('content' in o && 'id' in o) || ('title' in o && 'id' in o)) {
+                    if ('problem_id' in o || 'problemId' in o) {
                         problems.push(o);
                         return;
+                    }
+                    if (('body' in o && 'id' in o) || ('content' in o && 'id' in o) || ('title' in o && 'id' in o)) {
+                        if ('options' in o || 'ProblemType' in o || 'problemType' in o || 'type' in o || 'user_answer' in o || 'answer' in o || 'score' in o) {
+                            problems.push(o);
+                            return;
+                        }
                     }
                     for (let k in o) recurse(o[k], depth+1);
                 }
@@ -1211,11 +1217,14 @@ func ensureInjectScript(db *gorm.DB) {
 
     const originalFetch = window.fetch;
     window.fetch = async function(...args) {
+        const url = typeof args[0] === 'string' ? args[0] : args[0].url;
         const response = await originalFetch.apply(this, args);
         const clone = response.clone(); 
         clone.json().then(data => {
             let jsonStr = JSON.stringify(data);
-            if (jsonStr.includes('"options"') || jsonStr.includes('"problem_id"') || jsonStr.includes('"problemId"') || jsonStr.includes('"body"') || jsonStr.includes('"content"')) handleIntercept(jsonStr);
+            let isProb = jsonStr.includes('"options"') || jsonStr.includes('"problem_id"') || jsonStr.includes('"problemId"') || jsonStr.includes('"ProblemType"') || jsonStr.includes('"problemType"');
+            let isGenericProb = (jsonStr.includes('"body"') || jsonStr.includes('"content"')) && url && (url.includes('exam') || url.includes('exercise') || url.includes('test') || url.includes('homework') || url.includes('problem'));
+            if (isProb || isGenericProb) handleIntercept(jsonStr);
         }).catch(e => {});
         return response;
     };
@@ -1225,6 +1234,7 @@ func ensureInjectScript(db *gorm.DB) {
         const xhr = new originalXHR();
         const originalOpen = xhr.open;
         xhr.open = function(method, url, ...args) {
+            this._url = url;
             return originalOpen.apply(this, [method, url, ...args]);
         };
         xhr.addEventListener('load', function() {
@@ -1236,7 +1246,9 @@ func ensureInjectScript(db *gorm.DB) {
                     jsonStr = xhr.responseText;
                 }
                 if (!jsonStr) return;
-                if (jsonStr.includes('"options"') || jsonStr.includes('"problem_id"') || jsonStr.includes('"problemId"') || jsonStr.includes('"body"') || jsonStr.includes('"content"')) handleIntercept(jsonStr);
+                let isProb = jsonStr.includes('"options"') || jsonStr.includes('"problem_id"') || jsonStr.includes('"problemId"') || jsonStr.includes('"ProblemType"') || jsonStr.includes('"problemType"');
+                let isGenericProb = (jsonStr.includes('"body"') || jsonStr.includes('"content"')) && xhr._url && (xhr._url.includes('exam') || xhr._url.includes('exercise') || xhr._url.includes('test') || xhr._url.includes('homework') || xhr._url.includes('problem'));
+                if (isProb || isGenericProb) handleIntercept(jsonStr);
             } catch(e) {
                 console.error('XHR intercept error:', e);
             }

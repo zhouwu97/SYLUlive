@@ -118,8 +118,8 @@ func (h *TeacherHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "添加失败"})
 		return
 	}
-	h.logAdmin(c, "添加教师", teacher.Name, "")
 	if verified {
+		h.logAdmin(c, "添加教师", teacher.Name, "")
 		c.JSON(http.StatusCreated, teacher)
 	} else {
 		c.JSON(http.StatusCreated, gin.H{"message": "已提交，等待管理员审核", "teacher": teacher})

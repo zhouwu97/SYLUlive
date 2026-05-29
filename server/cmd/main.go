@@ -144,7 +144,8 @@ func main() {
 		&models.LotteryParticipant{},
 		&models.CachedQuestion{},
 		&models.SystemConfig{},
-
+		&models.Canteen{},
+		&models.CanteenRating{},
 	); err != nil {
 
 		log.Fatal("数据库迁移失败:", err)
@@ -229,6 +230,8 @@ func main() {
 	teacherHandler := handlers.NewTeacherHandler(db)
 
 	majorHandler := handlers.NewMajorHandler(db)
+
+	canteenHandler := handlers.NewCanteenHandler(db)
 
 	feedbackHandler := handlers.NewFeedbackHandler(db)
 
@@ -754,6 +757,42 @@ func main() {
 		majorAuth.POST("", majorHandler.Create)
 
 		majorAuth.POST("/:id/rate", majorHandler.Rate)
+
+	}
+
+
+
+	// 食堂榜路由
+
+	canteen := r.Group("/api/canteens")
+
+	{
+
+		canteen.GET("", canteenHandler.GetList)
+
+	}
+
+	canteenAdmin := canteen.Group("")
+
+	canteenAdmin.Use(middleware.AuthMiddleware(db, cfg.JWTSecret), middleware.AdminMiddleware())
+
+	{
+
+		canteenAdmin.DELETE("/:id", canteenHandler.DeleteCanteen)
+
+	}
+
+	canteenAuth := canteen.Group("")
+
+	canteenAuth.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
+
+	{
+
+		canteenAuth.GET("/:id", canteenHandler.GetDetail)
+
+		canteenAuth.POST("", canteenHandler.Create)
+
+		canteenAuth.POST("/:id/rate", canteenHandler.Rate)
 
 	}
 

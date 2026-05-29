@@ -168,7 +168,7 @@ class AnswerGateway {
           ),
           data: {
             'question_type': qType,
-            'raw_content': rawContent.toString().length > 1000 ? {"msg": "too large"} : rawContent,
+            'raw_content': rawContent,
             'content_text': contentText,
           },
         );

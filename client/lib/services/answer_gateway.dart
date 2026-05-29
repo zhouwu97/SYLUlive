@@ -78,7 +78,7 @@ class AnswerGateway {
     final endpoint = baseUrl.endsWith('/') ? '${baseUrl}chat/completions' : '$baseUrl/chat/completions';
 
     // 提取图片 URL，支持多模态 Vision
-    final imageRegex = RegExp(r'<img[^>]+src=["\u0027](https?://[^"\u0027]+)["\u0027]');
+    final imageRegex = RegExp(r'<img[^>]+src=\\?["\u0027](https?://[^"\u0027\\]+)\\?["\u0027]');
     final matches = imageRegex.allMatches(content);
     List<String> imageUrls = [];
     for (var match in matches) {

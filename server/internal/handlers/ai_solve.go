@@ -130,7 +130,7 @@ func (h *AiSolveHandler) callAI(baseURL, apiKey, modelName, questionType, cleane
 
 	// 提取图片 URL
 	var imageUrls []string
-	re := regexp.MustCompile(`<img[^>]+src=["'](https?://[^"']+)["']`)
+	re := regexp.MustCompile(`<img[^>]+src=\\?["'](https?://[^"'\\]+)\\?["']`)
 	matches := re.FindAllStringSubmatch(cleanedText, -1)
 	for _, m := range matches {
 		if len(m) > 1 {

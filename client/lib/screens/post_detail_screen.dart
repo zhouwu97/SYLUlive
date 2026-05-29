@@ -50,6 +50,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   int _marketImageIndex = 0;
   int? _parentReplyId;
   String? _replyToName;
+  int? _replyToUserId;
   bool _isSending = false;
 
   final Map<int, GlobalKey> _replyKeys = {};
@@ -194,6 +195,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     // 先保存 parentReplyId，后面 setState 会清空它
     final parentId = _parentReplyId;
     final replyTo = _replyToName;
+    final replyToUserId = _replyToUserId;
 
     // 乐观更新：立即在本地插入评论
     final user = context.read<AuthProvider>().user;
@@ -224,6 +226,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       _isReplyComposerOpen = false;
       _parentReplyId = null;
       _replyToName = null;
+      _replyToUserId = null;
     });
 
     // 后台静默发送
@@ -231,6 +234,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       final formData = FormData.fromMap({
         'content': content,
         if (parentId != null) 'parent_reply_id': parentId.toString(),
+        if (replyToUserId != null) 'reply_to_user_id': replyToUserId.toString(),
       });
       await _dio.post('/posts/${widget.postId}/replies', data: formData);
       // 静默刷新获取真实 ID
@@ -1152,7 +1156,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       r,
       isDark,
       GestureDetector(
-        onTap: () => _openReplyComposer(parentReplyId: r.id, replyToName: r.author?.nickname),
+        onTap: () => _openReplyComposer(parentReplyId: r.id, replyToName: r.author?.nickname, replyToUserId: r.authorId),
         onLongPress: () => _showReplyActionSheet(r, isOwn, isDark),
         child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
           CachedAvatar(
@@ -1231,7 +1235,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       r,
       isDark,
       GestureDetector(
-        onTap: () => _openReplyComposer(parentReplyId: threadParentId, replyToName: r.author?.nickname),
+        onTap: () => _openReplyComposer(parentReplyId: threadParentId, replyToName: r.author?.nickname, replyToUserId: r.authorId),
         onLongPress: () => _showReplyActionSheet(r, isOwn, isDark),
         child: Padding(
           padding: EdgeInsets.only(bottom: 8, left: depth * 4.0),
@@ -1546,11 +1550,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
-  void _openReplyComposer({int? parentReplyId, String? replyToName}) {
+  void _openReplyComposer({int? parentReplyId, String? replyToName, int? replyToUserId}) {
     setState(() {
       _isReplyComposerOpen = true;
       _parentReplyId = parentReplyId;
       _replyToName = replyToName;
+      _replyToUserId = replyToUserId;
       if (replyToName != null && replyToName.isNotEmpty) {
         _replyController.text = '@$replyToName ';
         _replyController.selection = TextSelection.fromPosition(

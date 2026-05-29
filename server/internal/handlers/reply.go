@@ -70,6 +70,7 @@ func (h *ReplyHandler) GetList(c *gin.Context) {
 type CreateReplyInput struct {
 	Content       string `form:"content" binding:"required"`
 	ParentReplyID *uint  `form:"parent_reply_id"`
+	ReplyToUserID *uint  `form:"reply_to_user_id"`
 }
 
 // Create 创建回复
@@ -166,8 +167,12 @@ func (h *ReplyHandler) Create(c *gin.Context) {
 		// 回复别人的评论 → 通知被回复的评论作者
 		var parentReply models.Reply
 		if err := h.db.First(&parentReply, *input.ParentReplyID).Error; err == nil {
-			CreateReplyNotification(h.db, parentReply.AuthorID, userID.(uint), reply.ID, uint(postID), contentPreview)
-			SendJPushNotification(h.jpushAppKey, h.jpushMasterSecret, h.db, parentReply.AuthorID, userID.(uint), reply.ID, uint(postID), contentPreview)
+			notifyUserID := parentReply.AuthorID
+			if input.ReplyToUserID != nil {
+				notifyUserID = *input.ReplyToUserID
+			}
+			CreateReplyNotification(h.db, notifyUserID, userID.(uint), reply.ID, uint(postID), contentPreview)
+			SendJPushNotification(h.jpushAppKey, h.jpushMasterSecret, h.db, notifyUserID, userID.(uint), reply.ID, uint(postID), contentPreview)
 		}
 	} else {
 		// 直接回复帖子 → 通知帖子作者

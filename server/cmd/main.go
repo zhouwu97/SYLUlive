@@ -1020,12 +1020,12 @@ func ensureInjectScript(db *gorm.DB) {
                     }
                 } else if (typeof o === 'object') {
                     // 兼容新版直播课：深埋在幻灯片里的 problem 对象
-                    if ('problem' in o && typeof o.problem === 'object' && o.problem !== null && ('problemId' in o.problem || 'problem_id' in o.problem)) {
+                    if ('problem' in o && typeof o.problem === 'object' && o.problem !== null && ('problemId' in o.problem || 'problem_id' in o.problem || 'body' in o.problem)) {
                         problems.push(o.problem);
                         return; 
                     }
-                    // 游离的单题对象，只要有 problem_id 或 problemId 就认定为题目
-                    if ('problem_id' in o || 'problemId' in o) {
+                    // 游离的单题对象
+                    if ('problem_id' in o || 'problemId' in o || ('body' in o && 'id' in o) || ('content' in o && 'id' in o) || ('title' in o && 'id' in o)) {
                         problems.push(o);
                         return;
                     }
@@ -1215,7 +1215,7 @@ func ensureInjectScript(db *gorm.DB) {
         const clone = response.clone(); 
         clone.json().then(data => {
             let jsonStr = JSON.stringify(data);
-            if (jsonStr.includes('"options"') || jsonStr.includes('"problem_id"') || jsonStr.includes('"problemId"')) handleIntercept(jsonStr);
+            if (jsonStr.includes('"options"') || jsonStr.includes('"problem_id"') || jsonStr.includes('"problemId"') || jsonStr.includes('"body"') || jsonStr.includes('"content"')) handleIntercept(jsonStr);
         }).catch(e => {});
         return response;
     };
@@ -1236,7 +1236,7 @@ func ensureInjectScript(db *gorm.DB) {
                     jsonStr = xhr.responseText;
                 }
                 if (!jsonStr) return;
-                if (jsonStr.includes('"options"') || jsonStr.includes('"problem_id"') || jsonStr.includes('"problemId"')) handleIntercept(jsonStr);
+                if (jsonStr.includes('"options"') || jsonStr.includes('"problem_id"') || jsonStr.includes('"problemId"') || jsonStr.includes('"body"') || jsonStr.includes('"content"')) handleIntercept(jsonStr);
             } catch(e) {
                 console.error('XHR intercept error:', e);
             }

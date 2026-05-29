@@ -1,3 +1,4 @@
+import 'dart:io' show File;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -124,7 +125,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
     );
   }
 
-  Widget _buildBackground(ThemeProvider themeProvider, bool isDark) {
+  Widget _buildDefaultBg(bool isDark) {
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -142,6 +143,41 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
         ),
       ],
     );
+  }
+
+  Widget _buildBackground(ThemeProvider themeProvider, bool isDark) {
+    final path = themeProvider.backgroundImage;
+    if (themeProvider.hasBackground && path != null && path.isNotEmpty) {
+      final isAsset = !path.startsWith('http') && !path.startsWith('/');
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          isAsset
+              ? Image.asset(
+                  'assets/images/$path',
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => _buildDefaultBg(isDark),
+                )
+              : path.startsWith('/')
+                  ? Image.file(
+                      File(path),
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => _buildDefaultBg(isDark),
+                    )
+                  : Image.network(
+                      path,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => _buildDefaultBg(isDark),
+                    ),
+          Container(
+            color: isDark
+                ? Colors.black.withValues(alpha: 0.32)
+                : Colors.white.withValues(alpha: 0.22),
+          ),
+        ],
+      );
+    }
+    return _buildDefaultBg(isDark);
   }
 
   Widget _buildErrorView(bool isDark) {

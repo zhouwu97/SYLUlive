@@ -16,9 +16,11 @@ import 'providers/edu_provider.dart';
 import 'providers/course_schedule_provider.dart';
 import 'providers/major_provider.dart';
 import 'providers/teacher_provider.dart';
+import 'providers/canteen_provider.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/course_schedule_screen.dart';
+import 'screens/user_replies_screen.dart';
 import 'services/course_reminder_service.dart';
 import 'theme/AppTheme.dart';
 import 'config/api_constants.dart';
@@ -47,6 +49,12 @@ Future<void> setupJPush(AuthProvider authProvider) async {
     },
     onOpenNotification: (Map<String, dynamic> message) async {
       debugPrint('👆 用户点击通知: $message');
+      if (appNavigatorKey.currentState != null) {
+        appNavigatorKey.currentState!.popUntil((route) => route.isFirst);
+        appNavigatorKey.currentState!.push(
+          MaterialPageRoute(builder: (_) => const UserRepliesScreen()),
+        );
+      }
     },
   );
   final rid = await jpush.getRegistrationID();
@@ -106,6 +114,7 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => CourseScheduleProvider()),
         ChangeNotifierProvider(create: (_) => TeacherProvider(dio)),
         ChangeNotifierProvider(create: (_) => MajorProvider(dio)),
+        ChangeNotifierProvider(create: (_) => CanteenProvider()),
       ],
       child: const _WidgetDeepLinkHandler(
         child: _AppContent(),
@@ -141,6 +150,7 @@ class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
       if (call.method == 'onDeepLink') {
         final uri = call.arguments as String?;
         if ((uri == 'widget_timetable' || uri == 'campus://timetable') && mounted) {
+          appNavigatorKey.currentState?.popUntil((route) => route.isFirst);
           widgetTabSwitch.value++;
         }
       }
@@ -164,6 +174,7 @@ class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
     try {
       final uri = await _channel.invokeMethod<String>('getPendingDeepLink');
       if ((uri == 'widget_timetable' || uri == 'campus://timetable') && mounted) {
+        appNavigatorKey.currentState?.popUntil((route) => route.isFirst);
         // 切换到底部导航的课程表 tab，不 push 新页面
         widgetTabSwitch.value++;
       }

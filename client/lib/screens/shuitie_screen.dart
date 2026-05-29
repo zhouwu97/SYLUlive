@@ -459,7 +459,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       extendBodyBehindAppBar: true,
       body: Stack(
         children: [
-          Positioned.fill(child: _buildBackground(themeProvider, isDark)),
+
           RefreshIndicator(
             onRefresh: () async {
               await _refresh();

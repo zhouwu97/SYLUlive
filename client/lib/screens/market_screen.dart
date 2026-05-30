@@ -35,6 +35,7 @@ class _MarketScreenState extends State<MarketScreen> {
   String _sortType = 'time';
   String _searchQuery = '';
   bool _isSearching = false;
+  bool _isListView = false;
   List<Post> _searchResults = [];
 
   static const _marketPostTypes = ['sell', 'buy', 'proxy', 'lost', 'found'];
@@ -195,6 +196,14 @@ class _MarketScreenState extends State<MarketScreen> {
         elevation: 0,
         title: Text(widget.titleOverride ?? '集市'),
         actions: [
+          IconButton(
+            icon: Icon(_isListView ? Icons.grid_view : Icons.view_list),
+            onPressed: () {
+              setState(() {
+                _isListView = !_isListView;
+              });
+            },
+          ),
           if (widget.titleOverride != '失物招领')
             PopupMenuButton<String>(
               icon: const Icon(Icons.sort),
@@ -268,6 +277,16 @@ class _MarketScreenState extends State<MarketScreen> {
                           ),
                         ),
                       )
+                    else if (_isListView)
+                      SliverPadding(
+                        padding: const EdgeInsets.fromLTRB(12, 0, 12, 80),
+                        sliver: SliverList(
+                          delegate: SliverChildBuilderDelegate(
+                            (context, index) => _buildMarketCard(marketPosts[index], false),
+                            childCount: marketPosts.length,
+                          ),
+                        ),
+                      )
                     else
                       SliverPadding(
                         padding: const EdgeInsets.fromLTRB(12, 0, 12, 80),
@@ -276,7 +295,7 @@ class _MarketScreenState extends State<MarketScreen> {
                             maxCrossAxisExtent: 300,
                             mainAxisSpacing: 12,
                             crossAxisSpacing: 12,
-                            mainAxisExtent: 360, // Fixed height for market cards
+                            mainAxisExtent: 420, // Increased to fix overflow
                           ),
                           delegate: SliverChildBuilderDelegate(
                             (context, index) => _buildMarketCard(marketPosts[index], true),

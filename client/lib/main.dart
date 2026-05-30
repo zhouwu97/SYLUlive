@@ -71,8 +71,7 @@ Dio? _sharedDio;
 Dio getSharedDio() {
   if (_sharedDio == null) {
     final dio = Dio(BaseOptions(
-      baseUrl:
-          kDebugMode ? ApiConstants.baseUrl : 'https://sylu.zhouwu.ccwu.cc/api',
+      baseUrl: ApiConstants.baseUrl,
       connectTimeout: ApiConstants.connectTimeout,
       receiveTimeout: ApiConstants.receiveTimeout,
     ));

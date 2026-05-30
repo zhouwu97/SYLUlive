@@ -2,12 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-
 import '../models/teacher.dart';
+import '../providers/auth_provider.dart';
 import '../providers/major_provider.dart';
 import '../providers/teacher_provider.dart';
 import '../widgets/glass_container.dart';
 import '../providers/canteen_provider.dart';
+import '../config/api_constants.dart';
 import 'major_detail_screen.dart';
 import 'subject_ranking_detail_screen.dart';
 import 'canteen_detail_screen.dart';

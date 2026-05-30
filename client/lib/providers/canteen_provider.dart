@@ -1,34 +1,33 @@
-import 'dart:convert';
+﻿import 'dart:convert';
 import 'package:flutter/foundation.dart';
-import 'package:http/http.dart' as http;
+import 'package:dio/dio.dart';
 import '../models/canteen.dart';
-import '../config/api_constants.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 class CanteenProvider with ChangeNotifier {
+  final Dio _dio;
+  
   List<Canteen> _canteens = [];
   bool _isLoading = false;
+  String? _errorMessage;
 
   List<Canteen> get canteens => _canteens;
   bool get isLoading => _isLoading;
+  String? get errorMessage => _errorMessage;
+
+  CanteenProvider(this._dio);
 
   Future<void> loadCanteens() async {
     _isLoading = true;
     notifyListeners();
 
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('token');
-      final response = await http.get(
-        Uri.parse('${ApiConstants.baseUrl}/canteens'),
-        headers: token != null ? {'Authorization': 'Bearer $token'} : {},
-      );
-
+      final response = await _dio.get('/canteens');
       if (response.statusCode == 200) {
-        final List<dynamic> data = json.decode(response.body);
+        final List<dynamic> data = response.data;
         _canteens = data.map((json) => Canteen.fromJson(json)).toList();
       }
-    } catch (e) {
+    } on DioException catch (e) {
+      _errorMessage = _parseError(e);
       debugPrint('Error loading canteens: $e');
     } finally {
       _isLoading = false;
@@ -38,22 +37,16 @@ class CanteenProvider with ChangeNotifier {
 
   Future<bool> addCanteen(String name, String image) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('token');
-      final response = await http.post(
-        Uri.parse('${ApiConstants.baseUrl}/canteens'),
-        headers: {
-          'Content-Type': 'application/json',
-          if (token != null) 'Authorization': 'Bearer $token',
-        },
-        body: json.encode({
+      final response = await _dio.post(
+        '/canteens',
+        data: {
           'name': name,
           'image': image,
-        }),
+        },
       );
-
       return response.statusCode == 201;
-    } catch (e) {
+    } on DioException catch (e) {
+      _errorMessage = _parseError(e);
       debugPrint('Error adding canteen: $e');
       return false;
     }
@@ -61,17 +54,12 @@ class CanteenProvider with ChangeNotifier {
 
   Future<Map<String, dynamic>> loadCanteenDetail(int id) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('token');
-      final response = await http.get(
-        Uri.parse('${ApiConstants.baseUrl}/canteens/$id'),
-        headers: token != null ? {'Authorization': 'Bearer $token'} : {},
-      );
-
+      final response = await _dio.get('/canteens/$id');
       if (response.statusCode == 200) {
-        return json.decode(response.body);
+        return response.data as Map<String, dynamic>;
       }
-    } catch (e) {
+    } on DioException catch (e) {
+      _errorMessage = _parseError(e);
       debugPrint('Error loading canteen detail: $e');
     }
     return {};
@@ -79,26 +67,27 @@ class CanteenProvider with ChangeNotifier {
 
   Future<bool> rateCanteen(int id, int star, String comment, List<String> images) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('token');
       final imagesJson = json.encode(images);
-      final response = await http.post(
-        Uri.parse('${ApiConstants.baseUrl}/canteens/$id/rate'),
-        headers: {
-          'Content-Type': 'application/json',
-          if (token != null) 'Authorization': 'Bearer $token',
-        },
-        body: json.encode({
+      final response = await _dio.post(
+        '/canteens/$id/rate',
+        data: {
           'star': star,
           'comment': comment,
           'images': imagesJson,
-        }),
+        },
       );
-
       return response.statusCode == 200 || response.statusCode == 201;
-    } catch (e) {
+    } on DioException catch (e) {
+      _errorMessage = _parseError(e);
       debugPrint('Error rating canteen: $e');
       return false;
     }
+  }
+
+  String _parseError(DioException e) {
+    if (e.response?.data is Map && e.response?.data['error'] != null) {
+      return e.response!.data['error'];
+    }
+    return '网络异常';
   }
 }

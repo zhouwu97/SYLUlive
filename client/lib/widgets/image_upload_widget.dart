@@ -37,10 +37,19 @@ class _ImageUploadWidgetState extends State<ImageUploadWidget> {
     try {
       final XFile? image = await _imagePicker.pickImage(
         source: source,
-        imageQuality: 70, // compress slightly to avoid huge files
       );
 
       if (image != null) {
+        final length = await image.length();
+        if (length > 10 * 1024 * 1024) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('图片大小不能超过 10MB'), backgroundColor: Colors.red),
+            );
+          }
+          return;
+        }
+
         setState(() {
           _isUploading = true;
         });

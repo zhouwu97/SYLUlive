@@ -92,6 +92,12 @@ func (h *CanteenHandler) GetDetail(c *gin.Context) {
 	if userID, exists := c.Get("user_id"); exists {
 		var rating models.CanteenRating
 		if err := h.db.Where("canteen_id = ? AND user_id = ?", id, userID).First(&rating).Error; err == nil {
+			var user models.User
+			if err := h.db.Select("nickname, student_id, avatar").First(&user, rating.UserID).Error; err == nil {
+				rating.UserName = user.Nickname
+				rating.UserStudentID = user.StudentID
+				rating.UserAvatar = user.Avatar
+			}
 			myRating = &rating
 		}
 	}

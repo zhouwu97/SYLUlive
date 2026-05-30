@@ -214,6 +214,14 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
     if (!auth.isLoggedIn) return const Card(child: Padding(padding: EdgeInsets.all(16), child: Center(child: Text('请先登录后评价'))));
     
     final myRating = _canteenData!['my_rating'];
+    if (myRating != null) {
+      if (myRating['user_name'] == null || myRating['user_name'].toString().isEmpty) {
+        myRating['user_name'] = auth.user?.nickname ?? '我';
+      }
+      if (myRating['user_avatar'] == null || myRating['user_avatar'].toString().isEmpty) {
+        myRating['user_avatar'] = auth.user?.avatar ?? '';
+      }
+    }
     
     return Card(color: isDark ? Colors.grey[850] : Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(padding: const EdgeInsets.all(16), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

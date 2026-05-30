@@ -37,7 +37,7 @@ class _CampusScreenState extends State<CampusScreen>
     final themeProvider = context.watch<ThemeProvider>();
 
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: NestedScrollView(
           headerSliverBuilder: (context, innerBoxIsScrolled) {
             return [

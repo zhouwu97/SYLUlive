@@ -53,6 +53,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
 
     return Scaffold(
       backgroundColor: isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
         systemOverlayStyle: SystemUiOverlayStyle(
           statusBarColor: Colors.transparent,
@@ -77,43 +78,48 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
           : _canteenData == null || _canteenData!['canteen'] == null
               ? const Center(child: Text('加载失败'))
               : ListView(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 80),
+                  padding: const EdgeInsets.only(bottom: 80),
                   children: [
-                    Card(
-                      color: isDark ? Colors.grey[850] : Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                      child: Padding(
-                        padding: const EdgeInsets.all(20),
-                        child: Column(children: [
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(12),
-                            child: Image.network(
-                              ApiConstants.fullUrl(_canteenData!['canteen']['image']),
-                              width: 100,
-                              height: 100,
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) => Container(width: 100, height: 100, color: Colors.grey[300], child: const Icon(Icons.broken_image)),
+                    Image.network(
+                      ApiConstants.fullUrl(_canteenData!['canteen']['image']),
+                      width: double.infinity,
+                      height: 240,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Container(width: double.infinity, height: 240, color: Colors.grey[300], child: const Icon(Icons.broken_image, size: 50, color: Colors.grey)),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Card(
+                            margin: EdgeInsets.zero,
+                            color: isDark ? Colors.grey[850] : Colors.white,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                            child: Padding(
+                              padding: const EdgeInsets.all(20),
+                              child: Column(children: [
+                                Text(_canteenData!['canteen']['name'], style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+                                const SizedBox(height: 12),
+                                Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                                  _stars((_canteenData!['average_star'] as num).toDouble(), 28), 
+                                  const SizedBox(width: 8),
+                                  Text('${(_canteenData!['average_star'] as num).toStringAsFixed(1)} (${_canteenData!['rating_count']}人)', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                                ]),
+                              ]),
                             ),
                           ),
-                          const SizedBox(height: 12),
-                          Text(_canteenData!['canteen']['name'], style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-                          const SizedBox(height: 12),
-                          Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                            _stars((_canteenData!['average_star'] as num).toDouble(), 28), 
-                            const SizedBox(width: 8),
-                            Text('${(_canteenData!['average_star'] as num).toStringAsFixed(1)} (${_canteenData!['rating_count']}人)', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-                          ]),
-                        ]),
+                          const SizedBox(height: 16),
+                          _buildMyRating(isDark),
+                          const SizedBox(height: 20),
+                          if (_canteenData!['ratings'] != null && (_canteenData!['ratings'] as List).isNotEmpty) ...[
+                            Text('${_canteenData!['rating_count']}人评价', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: isDark ? Colors.white : Colors.black87)),
+                            const SizedBox(height: 8),
+                            ...(_canteenData!['ratings'] as List).map((r) => _buildRatingCard(r, isDark)),
+                          ],
+                        ],
                       ),
                     ),
-                    const SizedBox(height: 16),
-                    _buildMyRating(isDark),
-                    const SizedBox(height: 20),
-                    if (_canteenData!['ratings'] != null && (_canteenData!['ratings'] as List).isNotEmpty) ...[
-                      Text('${_canteenData!['rating_count']}人评价', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: isDark ? Colors.white : Colors.black87)),
-                      const SizedBox(height: 8),
-                      ...(_canteenData!['ratings'] as List).map((r) => _buildRatingCard(r, isDark)),
-                    ],
                   ],
                 ),
     );

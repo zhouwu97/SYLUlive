@@ -42,6 +42,27 @@ func (h *ReplyHandler) GetList(c *gin.Context) {
 		Preload("Author").Preload("Images").Preload("Images.File").
 		Order("created_at ASC").Find(&replies)
 
+	if userID, exists := c.Get("user_id"); exists {
+		uid := userID.(uint)
+		var replyIDs []uint
+		for _, r := range replies {
+			replyIDs = append(replyIDs, r.ID)
+		}
+		if len(replyIDs) > 0 {
+			var likedReplyIDs []uint
+			h.db.Model(&models.Like{}).Where("user_id = ? AND target_type = ? AND target_id IN ?", uid, "reply", replyIDs).Pluck("target_id", &likedReplyIDs)
+			likedMap := make(map[uint]bool)
+			for _, id := range likedReplyIDs {
+				likedMap[id] = true
+			}
+			for i := range replies {
+				if likedMap[replies[i].ID] {
+					replies[i].IsLiked = true
+				}
+			}
+		}
+	}
+
 	c.JSON(http.StatusOK, replies)
 }
 
@@ -49,6 +70,7 @@ func (h *ReplyHandler) GetList(c *gin.Context) {
 type CreateReplyInput struct {
 	Content       string `form:"content" binding:"required"`
 	ParentReplyID *uint  `form:"parent_reply_id"`
+	ReplyToUserID *uint  `form:"reply_to_user_id"`
 }
 
 // Create 创建回复
@@ -97,6 +119,29 @@ func (h *ReplyHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建回复失败"})
 		return
 	}
+	h.db.Model(&models.Post{}).Where("id = ?", postID).Update("reply_count", gorm.Expr("reply_count + 1"))
+
+	// 尝试增加每日首回经验
+	now := time.Now()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
+	expErr := h.db.Transaction(func(tx *gorm.DB) error {
+		expLog := models.ExpLog{
+			UserID:    userID.(uint),
+			Action:    "reply_daily",
+			Date:      today,
+			ExpEarned: 3,
+		}
+		if err := tx.Create(&expLog).Error; err != nil {
+			return err // 违反唯一约束等，直接回滚
+		}
+		if err := tx.Model(&models.User{}).Where("id = ?", userID.(uint)).UpdateColumn("exp", gorm.Expr("exp + ?", 3)).Error; err != nil {
+			return err
+		}
+		return nil
+	})
+	if expErr == nil {
+		// 这里虽然用 log，但在实际业务中这代表加分成功
+	}
 
 	// 处理图片
 	fileIDs := c.PostForm("file_ids")
@@ -122,8 +167,12 @@ func (h *ReplyHandler) Create(c *gin.Context) {
 		// 回复别人的评论 → 通知被回复的评论作者
 		var parentReply models.Reply
 		if err := h.db.First(&parentReply, *input.ParentReplyID).Error; err == nil {
-			CreateReplyNotification(h.db, parentReply.AuthorID, userID.(uint), reply.ID, uint(postID), contentPreview)
-			SendJPushNotification(h.jpushAppKey, h.jpushMasterSecret, h.db, parentReply.AuthorID, userID.(uint), reply.ID, uint(postID), contentPreview)
+			notifyUserID := parentReply.AuthorID
+			if input.ReplyToUserID != nil {
+				notifyUserID = *input.ReplyToUserID
+			}
+			CreateReplyNotification(h.db, notifyUserID, userID.(uint), reply.ID, uint(postID), contentPreview)
+			SendJPushNotification(h.jpushAppKey, h.jpushMasterSecret, h.db, notifyUserID, userID.(uint), reply.ID, uint(postID), contentPreview)
 		}
 	} else {
 		// 直接回复帖子 → 通知帖子作者
@@ -164,6 +213,7 @@ func (h *ReplyHandler) Delete(c *gin.Context) {
 	}
 
 	h.db.Model(&reply).Update("status", models.ReplyStatusDeleted)
+	h.db.Model(&models.Post{}).Where("id = ?", reply.PostID).Update("reply_count", gorm.Expr("GREATEST(reply_count - 1, 0)"))
 
 	// 管理员删除他人回复时，记录日志并增加经验
 	if reply.AuthorID != userID.(uint) && (role == "admin" || role == "super_admin") {
@@ -173,7 +223,7 @@ func (h *ReplyHandler) Delete(c *gin.Context) {
 			AdminID: userID.(uint), AdminName: u.Nickname,
 			Action: "删除回复", Target: reply.Content,
 		})
-		h.db.Model(&models.User{}).Where("id = ?", userID).UpdateColumn("admin_exp", gorm.Expr("admin_exp + 1"))
+		h.db.Model(&models.User{}).Where("id = ?", userID).UpdateColumn("admin_exp", gorm.Expr("COALESCE(admin_exp, 0) + 1"))
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})

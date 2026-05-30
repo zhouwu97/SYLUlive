@@ -14,6 +14,8 @@ class _BoardState {
   bool hasMore = true;
   bool hasLoaded = false;
   bool hasCacheLoaded = false;
+  String currentSort = 'time';
+  String? sessionId;
 }
 
 /// 创建帖子的返回结果
@@ -81,12 +83,14 @@ class PostProvider extends ChangeNotifier {
     // 第二步 + 第三步：查找锚点，增量请求
     try {
       final since = await PostCacheService.getLatestTimestamp(boardId);
+      board.sessionId = null; // 清除老的会话快照
       final params = <String, dynamic>{
         'board': boardId,
         'type': type,
         'sort': sort,
         'page': 1,
         'limit': 20,
+        'scene': 'refresh',
       };
       if (since != null) {
         params['since'] = since;
@@ -95,19 +99,38 @@ class PostProvider extends ChangeNotifier {
       final response = await _dio.get('/posts', queryParameters: params);
       if (response.statusCode == 200) {
         final data = response.data;
+        if (data['session_id'] != null) {
+          board.sessionId = data['session_id'];
+        }
         final newPosts = (data['posts'] as List)
             .map((e) => Post.fromJson(e))
             .toList();
 
-        // 第四步：增量合并 — 有新帖插入头部，无新帖保持原样
         if (newPosts.isNotEmpty) {
-          final existingIds = board.posts.map((p) => p.id).toSet();
-          final uniqueNew = newPosts.where((p) => !existingIds.contains(p.id)).toList();
+          // 第四步：增量合并 — 更新已有帖子，插入新帖子
+          bool changed = false;
+          final existingIndexMap = {for (var i = 0; i < board.posts.length; i++) board.posts[i].id: i};
+          final uniqueNew = <Post>[];
+          
+          for (final np in newPosts) {
+            final idx = existingIndexMap[np.id];
+            if (idx != null) {
+              board.posts[idx] = np; // 更新已有帖子
+              changed = true;
+            } else {
+              uniqueNew.add(np); // 全新帖子
+            }
+          }
+          
           if (uniqueNew.isNotEmpty) {
             board.posts = [...uniqueNew, ...board.posts];
+            changed = true;
           }
-          // 写回缓存
-          await PostCacheService.savePosts(boardId, board.posts);
+          
+          if (changed) {
+            // 写回缓存
+            await PostCacheService.savePosts(boardId, board.posts);
+          }
         }
 
         board.hasMore = newPosts.length >= 20;
@@ -155,6 +178,9 @@ class PostProvider extends ChangeNotifier {
       final response = await _dio.get('/posts', queryParameters: params);
       if (response.statusCode == 200) {
         final data = response.data;
+        if (data['session_id'] != null) {
+          board.sessionId = data['session_id'];
+        }
         final newPosts = (data['posts'] as List)
             .map((e) => Post.fromJson(e))
             .toList();
@@ -162,9 +188,15 @@ class PostProvider extends ChangeNotifier {
         if (board.currentPage == 1) {
           board.posts = newPosts;
         } else {
-          final existingIds = board.posts.map((p) => p.id).toSet();
-          final uniqueNew = newPosts.where((p) => !existingIds.contains(p.id)).toList();
-          board.posts.addAll(uniqueNew);
+          final existingIndexMap = {for (var i = 0; i < board.posts.length; i++) board.posts[i].id: i};
+          for (final np in newPosts) {
+            final idx = existingIndexMap[np.id];
+            if (idx != null) {
+              board.posts[idx] = np; // 更新已存在的帖子（比如有评论数更新）
+            } else {
+              board.posts.add(np); // 尾部追加新帖子
+            }
+          }
         }
 
         board.hasMore = newPosts.length >= 20 && newPosts.isNotEmpty;
@@ -187,21 +219,21 @@ class PostProvider extends ChangeNotifier {
   Future<void> refresh(
       {int boardId = 1, String? type, String sort = 'time'}) async {
     final board = _ensureBoard(boardId);
+    bool isSortChanged = board.currentSort != sort;
+    board.currentSort = sort;
     board.currentPage = 1;
     board.hasMore = true;
 
-    final since = await PostCacheService.getLatestTimestamp(boardId);
     try {
+      board.sessionId = null; // 清除老的会话快照
       final params = <String, dynamic>{
         'board': boardId,
         'type': type,
         'sort': sort,
         'page': 1,
         'limit': 20,
+        'scene': 'refresh',
       };
-      if (since != null) {
-        params['since'] = since;
-      }
 
       final response = await _dio.get('/posts', queryParameters: params);
       if (response.statusCode == 200) {
@@ -209,14 +241,12 @@ class PostProvider extends ChangeNotifier {
             .map((e) => Post.fromJson(e))
             .toList();
 
-        if (newPosts.isNotEmpty) {
-          final existingIds = board.posts.map((p) => p.id).toSet();
-          final uniqueNew = newPosts.where((p) => !existingIds.contains(p.id)).toList();
-          if (uniqueNew.isNotEmpty) {
-            board.posts = [...uniqueNew, ...board.posts];
-            await PostCacheService.savePosts(boardId, board.posts);
-          }
-        }
+        // 当用户主动刷新或切换排序时，由于后端返回的是全新的一页完整数据，
+        // 我们必须完全覆写当前列表，绝不能执行在原地更新旧帖的合并逻辑，
+        // 否则将导致已存在的帖子依然呆在旧的索引位置，造成视觉上排序无效。
+        board.posts = newPosts;
+        await PostCacheService.savePosts(boardId, board.posts);
+        
         board.hasMore = newPosts.length >= 20;
       }
     } on DioException catch (e) {
@@ -436,10 +466,14 @@ class PostProvider extends ChangeNotifier {
   }
 
   void _replacePostInBoards(Post updated) {
-    for (final board in _boards.values) {
+    for (final entry in _boards.entries) {
+      final boardId = entry.key;
+      final board = entry.value;
       final index = board.posts.indexWhere((p) => p.id == updated.id);
       if (index >= 0) {
         board.posts[index] = updated;
+        // 同步持久化到本地缓存，防止杀后台后数据(如浏览量)倒退
+        PostCacheService.savePosts(boardId, board.posts);
       }
     }
   }

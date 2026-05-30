@@ -1,21 +1,18 @@
 // ==UserScript==
 // @name         融智云考练习题提取器
 // @namespace    http://tampermonkey.net/
-// @version      6.0
+// @version      5.3
 // @description  自动提取融智云考系统的练习题目
 // @author       Assistant
-// @match        https://www.cctrcloud.net/practice/subject_practice.html*
 // @match        https://kwk.ahau.edu.cn/practice/subject_practice.html*
+// @match        https://www.cctrcloud.net/practice/subject_practice.html*
+// @match        https://*.cctrcloud.net/practice/subject_practice.html*
 // @grant        none
 // @run-at       document-end
 // ==/UserScript==
 
-(function() {
+(function () {
     'use strict';
-
-    // ========== 调试开关 ==========
-    const DEBUG = true;
-    function log(...args) { if (DEBUG) console.log('[提取器]', ...args); }
 
     // 创建样式
     const style = document.createElement('style');
@@ -25,7 +22,7 @@
             50% { transform: scale(1.05); }
             100% { transform: scale(1); }
         }
-
+        
         @keyframes slideIn {
             from {
                 opacity: 0;
@@ -36,17 +33,17 @@
                 transform: translate(-50%, -50%);
             }
         }
-
+        
         @keyframes gradient {
             0% { background-position: 0% 50%; }
             50% { background-position: 100% 50%; }
             100% { background-position: 0% 50%; }
         }
-
+        
         .extract-button-float {
             animation: pulse 2s infinite;
         }
-
+        
         .extract-panel-show {
             animation: slideIn 0.3s ease-out;
         }
@@ -113,83 +110,32 @@
         border: 1px solid rgba(255, 255, 255, 0.3);
     `;
 
-    // ========== 多重选择器工具函数 ==========
-    function $(selector, context = document) {
-        return context.querySelector(selector);
-    }
-
-    function $$(selector, context = document) {
-        return Array.from(context.querySelectorAll(selector));
-    }
-
-    // 尝试多个选择器，返回第一个匹配的元素
-    function queryWithFallback(selectors, context = document) {
-        const list = Array.isArray(selectors) ? selectors : [selectors];
-        for (const sel of list) {
-            try {
-                const el = context.querySelector(sel);
-                if (el) return el;
-            } catch (e) { /* invalid selector, skip */ }
-        }
-        return null;
-    }
-
-    // 尝试多个选择器，返回所有匹配的元素
-    function queryAllWithFallback(selectors, context = document) {
-        const list = Array.isArray(selectors) ? selectors : [selectors];
-        let results = [];
-        for (const sel of list) {
-            try {
-                results = results.concat(Array.from(context.querySelectorAll(sel)));
-            } catch (e) { /* invalid selector, skip */ }
-        }
-        // 去重
-        return [...new Set(results)];
-    }
-
     // 获取当前题目信息
     function getCurrentQuestionInfo() {
-        // 尝试多种可能的选择器
-        const currentElement = queryWithFallback([
-            '.on[data-questioncount]',
-            '.active[data-questioncount]',
-            '[data-questioncount].on',
-            '.swiper-slide.active [data-questioncount]',
-            '.question-item.active'
-        ]);
-
-        const allQuestions = queryWithFallback([
-            '[data-questioncount]',
-            '.question-item',
-            '.swiper-slide'
-        ]);
-
-        const totalFromDOM = allQuestions ? (queryWithFallback(['[data-questioncount]', '.question-item'], allQuestions.parentElement) ?
-            allQuestions.parentElement.querySelectorAll('[data-questioncount]').length :
-            (allQuestions.length || 0)) : 0;
+        const currentElement = document.querySelector('.on[data-questioncount]');
+        const allQuestions = document.querySelectorAll('[data-questioncount]');
 
         if (currentElement) {
-            const current = parseInt(currentElement.getAttribute('data-questioncount')) ||
-                           parseInt(currentElement.dataset.questioncount);
-            const total = totalFromDOM || $$('[data-questioncount]').length;
-            log(`当前题目: ${current}, 总数: ${total}`);
-            return { current, total: total || 200 };
+            const current = parseInt(currentElement.getAttribute('data-questioncount'));
+            const total = allQuestions.length;
+            return { current, total };
         }
 
         const urlParams = new URLSearchParams(window.location.search);
-        const total = parseInt(urlParams.get('studentpractisequestioncount')) ||
-                     parseInt(urlParams.get('total')) || 200;
-        log(`无法从DOM获取，使用URL参数: ${total}`);
+        const total = parseInt(urlParams.get('studentpractisequestioncount')) || 200;
         return { current: 1, total };
     }
 
     const questionInfo = getCurrentQuestionInfo();
 
     extractPanel.innerHTML = `
-        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 25px; color: white;">
+        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 25px; color: white; position: relative;">
             <h2 style="margin: 0; font-size: 24px; font-weight: 300;">
                 ✨ 练习题智能提取器
             </h2>
+            <a href="https://github.com/zhouwu97/SYLUlive" target="_blank" style="display: inline-block; margin-top: 12px; font-size: 13px; color: rgba(255,255,255,0.9); text-decoration: none; border: 1px solid rgba(255,255,255,0.4); padding: 4px 10px; border-radius: 15px; background: rgba(255,255,255,0.1);">
+                🚀 开源项目：zhouwu97/SYLUlive
+            </a>
         </div>
         
         <div style="padding: 30px;">
@@ -349,7 +295,6 @@
         if (extractPanel.style.display === 'none') {
             extractPanel.style.display = 'block';
             extractPanel.classList.add('extract-panel-show');
-            // 更新当前题目信息
             const info = getCurrentQuestionInfo();
             document.getElementById('current-question').textContent = info.current;
             document.getElementById('total-questions').textContent = info.total;
@@ -363,91 +308,172 @@
         extractPanel.style.display = 'none';
     };
 
-    // ========== 智能等待函数 ==========
-    function waitForElement(selectors, timeout = 5000) {
+    // 辅助函数：把 SVG data URI 转换为 PNG data URI，彻底解决 Word 不支持复制 SVG 的问题
+    function svgToPngDataURL(svgUri) {
         return new Promise((resolve) => {
-            const list = Array.isArray(selectors) ? selectors : [selectors];
+            const img = new Image();
+            
+            // 增加超时保护，防止某些特殊 SVG 导致加载挂起卡死提取进度
+            const timeoutId = setTimeout(() => {
+                resolve(svgUri);
+            }, 2000);
 
-            // 先检查是否已经存在
-            for (const sel of list) {
+            img.onload = () => {
+                clearTimeout(timeoutId);
                 try {
-                    const el = document.querySelector(sel);
-                    if (el) {
-                        log(`元素已存在: ${sel}`);
-                        resolve(el);
-                        return;
-                    }
-                } catch (e) {}
-            }
-
-            // 使用 MutationObserver 监听变化
-            const observer = new MutationObserver(() => {
-                for (const sel of list) {
-                    try {
-                        const el = document.querySelector(sel);
-                        if (el) {
-                            observer.disconnect();
-                            log(`元素已出现: ${sel}`);
-                            resolve(el);
-                            return;
-                        }
-                    } catch (e) {}
+                    const canvas = document.createElement('canvas');
+                    canvas.width = img.width || 100;
+                    canvas.height = img.height || 30;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0);
+                    resolve(canvas.toDataURL('image/png'));
+                } catch(e) {
+                    resolve(svgUri);
                 }
-            });
-
-            observer.observe(document.body, { childList: true, subtree: true });
-
-            // 超时处理
-            setTimeout(() => {
-                observer.disconnect();
-                log(`等待元素超时: ${list.join(', ')}`);
-                resolve(null);
-            }, timeout);
+            };
+            img.onerror = () => {
+                clearTimeout(timeoutId);
+                resolve(svgUri);
+            };
+            img.src = svgUri;
         });
     }
 
-    // ========== 诊断函数 ==========
-    window.runExtractionDiagnostic = async function() {
-        console.log('========== 提取器诊断 ==========');
-        console.log('URL:', window.location.href);
-
-        const tests = [
-            { name: '题目容器', selectors: ['.practice_slide_content.slide-con', '.practice_slide_content', '.slide-con', '.question-container', '.exam-question'] },
-            { name: '当前题目标记', selectors: ['.on[data-questioncount]', '.active[data-questioncount]', '[data-questioncount].on', '.current-question'] },
-            { name: '下一题按钮', selectors: ['.swiper-button-next', '.next-btn', '.btn-next', '[data-action="next"]', '.slick-next'] },
-            { name: '题目标题', selectors: ['.practice_slide_title .title', '.question-title', '.title', 'h3.title'] },
-            { name: '题型标签', selectors: ['.practice_slide_title .type', '.question-type', '.type', '.tag-type'] },
-            { name: '选项列表', selectors: ['.option_content li', '.options li', '.answer-list li', '.choice-item'] },
-            { name: '正确答案标记', selectors: ['input[data-isright="1"]', '[data-isright="1"]', '.correct-input', '.is-right'] },
-            { name: '答案显示区', selectors: ['.answer-text', '.answer-show', '.correct-answer', '.result-answer'] },
-            { name: '解析内容', selectors: ['.analysis-content .desc', '.analysis', '.answer-analysis', '.analysis-desc'] }
-        ];
-
-        for (const test of tests) {
-            const result = queryWithFallback(test.selectors);
-            console.log(`${test.name}: ${result ? '✓ 找到' : '✗ 未找到'}`,
-                result ? `(${test.selectors.find(s => document.querySelector(s) === result)})` : '');
-        }
-
-        console.log('================================');
-        return tests.map(t => ({ name: t.name, found: !!queryWithFallback(t.selectors) }));
-    };
+    // 动态加载 html2canvas 库
+    async function loadHtml2Canvas() {
+        if (window.html2canvas) return window.html2canvas;
+        return new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = 'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js';
+            script.onload = () => resolve(window.html2canvas);
+            script.onerror = () => reject(new Error('Failed to load html2canvas'));
+            document.head.appendChild(script);
+        });
+    }
 
     // 获取单个题目数据的函数
-    function extractCurrentQuestion() {
-        const slideContent = queryWithFallback([
-            '.practice_slide_content.slide-con',
-            '.practice_slide_content',
-            '.slide-con',
-            '.question-content',
-            '.practice-slide',
-            '[class*="question"]',
-            '[class*="slide"]'
-        ]);
+    async function extractCurrentQuestion() {
+        // 【关键修复】必须优先获取带有 .swiper-slide-active 的当前活动页，否则会抓到被回收的空白占位页！
+        const slideContent = document.querySelector('.swiper-slide-active .practice_slide_content.slide-con') || 
+                             document.querySelector('.practice_slide_content.slide-con');
+        if (!slideContent) return null;
 
-        if (!slideContent) {
-            log('未找到题目容器');
-            return null;
+        async function getRichText(element) {
+            if (!element) return '';
+            
+            // 【新增特性】检测复杂排版（例如连续3个以上的空格，这通常是化学方程式对齐），直接截图保留完美排版
+            if (element.innerHTML.includes('&nbsp;&nbsp;&nbsp;') || element.innerHTML.includes('    ')) {
+                try {
+                    await loadHtml2Canvas();
+                    
+                    // 确保元素可见，如果祖先元素 display:none 则临时显示
+                    const hiddenParents = [];
+                    let curr = element;
+                    while (curr && curr.nodeType === 1 && curr !== document.body) {
+                        const style = window.getComputedStyle(curr);
+                        if (style.display === 'none') {
+                            hiddenParents.push({ el: curr, origDisplay: curr.style.display });
+                            curr.style.display = 'block';
+                        }
+                        curr = curr.parentElement;
+                    }
+
+                    // 如果是行内元素，转为 inline-block 防止截图大小为0
+                    const origDisplay = element.style.display;
+                    if (window.getComputedStyle(element).display === 'inline') {
+                        element.style.display = 'inline-block';
+                    }
+
+                    // 临时设置白色背景防止透明背景导致的黑色截图
+                    const originalBg = element.style.background;
+                    element.style.background = '#ffffff';
+                    
+                    // 短暂延时确保DOM渲染完成
+                    await new Promise(r => setTimeout(r, 100));
+                    
+                    const canvas = await window.html2canvas(element, { 
+                        backgroundColor: '#ffffff',
+                        scale: 2 // 提高清晰度
+                    });
+                    
+                    element.style.background = originalBg;
+                    element.style.display = origDisplay;
+                    
+                    // 恢复隐藏状态
+                    hiddenParents.forEach(p => p.el.style.display = p.origDisplay);
+
+                    // 只有截图成功且非空白(宽高>5)时才使用图片，否则继续执行下方的普通提取逻辑
+                    if (canvas.width > 5 && canvas.height > 5) {
+                        const dataUrl = canvas.toDataURL('image/png');
+                        return `<img src="${dataUrl}" style="max-width: 100%; vertical-align: middle;">`;
+                    } else {
+                        console.log('html2canvas截图为空(元素可能未完全渲染)，已降级为普通提取');
+                    }
+                } catch(e) {
+                    console.error('html2canvas截图失败，降级为普通提取', e);
+                }
+            }
+
+            const clone = element.cloneNode(true);
+            
+            clone.querySelectorAll('.MathJax, mjx-container, .katex').forEach(container => {
+                const mathML = container.querySelector('.MJX_Assistive_MathML math, mjx-assistive-mml math, .katex-mathml math, math');
+                if (mathML) {
+                    mathML.setAttribute('xmlns', 'http://www.w3.org/1998/Math/MathML');
+                    container.parentNode.insertBefore(mathML, container);
+                    container.remove();
+                } else {
+                    const texScript = container.parentNode.querySelector('script[type^="math/tex"]');
+                    if (texScript) {
+                        const textNode = document.createTextNode(' ' + texScript.textContent + ' ');
+                        container.parentNode.insertBefore(textNode, container);
+                        container.remove();
+                    }
+                }
+            });
+
+            clone.querySelectorAll('.MathJax_Preview').forEach(el => el.remove());
+
+            const imgPromises = Array.from(clone.querySelectorAll('img')).map(async (img) => {
+                const realSrc = img.getAttribute('data-src') || img.getAttribute('fr-original-src') || img.src;
+                if (realSrc) {
+                    let finalSrc = realSrc;
+                    if (finalSrc.startsWith('/')) {
+                        finalSrc = window.location.origin + finalSrc;
+                    } else if (!finalSrc.startsWith('http') && !finalSrc.startsWith('data:')) {
+                        const path = window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/') + 1);
+                        finalSrc = window.location.origin + path + finalSrc;
+                    }
+                    
+                    if (finalSrc.startsWith('http://')) {
+                        finalSrc = finalSrc.replace('http://', 'https://');
+                    }
+
+                    if (finalSrc.startsWith('data:image/svg+xml')) {
+                        try {
+                            const svgStr = finalSrc.includes('base64,') ? 
+                                atob(finalSrc.split('base64,')[1]) : 
+                                decodeURIComponent(finalSrc.split(',')[1]);
+                            const doc = new DOMParser().parseFromString(svgStr, 'image/svg+xml');
+                            const math = doc.querySelector('math');
+                            if (math) {
+                                math.setAttribute('xmlns', 'http://www.w3.org/1998/Math/MathML');
+                                img.parentNode.insertBefore(math, img);
+                                img.remove();
+                                return;
+                            }
+                        } catch(e) {}
+                        finalSrc = await svgToPngDataURL(finalSrc);
+                    }
+
+                    img.setAttribute('src', finalSrc);
+                }
+                img.style.verticalAlign = 'middle';
+                img.style.maxWidth = '100%';
+            });
+            
+            await Promise.all(imgPromises);
+            return clone.innerHTML.trim().replace(/[\u200B-\u200D\uFEFF]/g, '');
         }
 
         const question = {
@@ -462,198 +488,132 @@
             score: ''
         };
 
-        // 获取题目ID和章节ID
-        question.id = slideContent.getAttribute('data-id') ||
-                     slideContent.getAttribute('data-question-id') || '';
+        question.id = slideContent.getAttribute('data-id') || '';
+        const chapterId = slideContent.getAttribute('data-chapterid') || '';
 
-        const chapterId = slideContent.getAttribute('data-chapterid') ||
-                         slideContent.getAttribute('data-chapter-id') || '';
-
-        // 获取题目编号 - 多种方式
-        const currentQuestionElement = queryWithFallback([
-            '.on[data-questioncount]',
-            '.active[data-questioncount]',
-            '[data-questioncount].on',
-            '.current',
-            '.active'
-        ]);
-
+        const currentQuestionElement = document.querySelector('.on[data-questioncount]');
         if (currentQuestionElement) {
-            question.index = parseInt(currentQuestionElement.getAttribute('data-questioncount')) ||
-                           parseInt(currentQuestionElement.dataset.questioncount) ||
-                           parseInt(currentQuestionElement.textContent.match(/\d+/)?.[0]) || 0;
+            question.index = parseInt(currentQuestionElement.getAttribute('data-questioncount'));
         }
 
-        // 获取题目内容 - 多种选择器
-        const questionElement = queryWithFallback([
-            '.practice_slide_title .title',
-            '.question-title',
-            '.title',
-            'h3.title',
-            '.question-text',
-            '[class*="title"]'
-        ], slideContent);
+        const questionElement = slideContent.querySelector('.practice_slide_title .title');
         if (questionElement) {
-            question.question = questionElement.textContent.trim();
+            question.question = await getRichText(questionElement);
         }
 
-        // 获取题型
-        const typeElement = queryWithFallback([
-            '.practice_slide_title .type',
-            '.question-type',
-            '.type',
-            '.tag-type',
-            '[class*="type"]'
-        ], slideContent);
+        const typeElement = slideContent.querySelector('.practice_slide_title .type');
         if (typeElement) {
             question.questionType = typeElement.textContent.trim();
         }
 
-        // 获取章节（从select选项中查找）
         if (chapterId) {
-            const chapterOption = queryWithFallback(['#chapter', '.chapter-select', 'select[name*="chapter"]'])
-                .querySelector(`option[value="${chapterId}"]`);
+            const chapterOption = document.querySelector(`#chapter option[value="${chapterId}"]`);
             if (chapterOption) {
                 question.chapter = chapterOption.textContent.trim();
             }
         }
 
-        // 根据题型设置分值
         if (question.questionType === '单选题' || question.questionType === '判断题') {
             question.score = '1.0';
         } else if (question.questionType === '多选题') {
             question.score = '2.0';
+        } else if (question.questionType === '计算题' || question.questionType === '简答题') {
+            question.score = '10.0';
         }
 
-        // 提取选项和答案
         if (question.questionType === '单选题' || question.questionType === '多选题') {
-            const optionElements = queryAllWithFallback([
-                '.option_content li',
-                '.options li',
-                '.answer-list li',
-                '.choice-item',
-                'li[class*="option"]'
-            ], slideContent);
-
+            const optionElements = slideContent.querySelectorAll('.option_content li');
             const correctAnswers = [];
 
-            optionElements.forEach((li) => {
-                const letterElement = queryWithFallback(['.letterArr', '.letter', '.option-letter', 'span:first-child'], li);
-                const textElement = queryWithFallback(['.txt', '.text', '.option-text', '.content'], li);
-                const inputElement = queryWithFallback([
-                    'input[data-isright="1"]',
-                    'input[data-correct]',
-                    '[data-isright="1"]',
-                    '.correct'
-                ], li);
+            for (const li of optionElements) {
+                const letterElement = li.querySelector('.letterArr');
+                const textElement = li.querySelector('.txt');
+                const inputElement = li.querySelector('input[data-isright]');
 
                 if (letterElement && textElement) {
                     const optionLabel = letterElement.textContent.trim();
-                    const optionContent = textElement.textContent.trim();
+                    const optionContent = await getRichText(textElement);
                     question.options.push({
                         label: optionLabel,
                         text: optionContent
                     });
 
-                    // 检查是否为正确答案
-                    if (inputElement) {
-                        const isRight = inputElement.getAttribute('data-isright') ||
-                                       inputElement.getAttribute('data-correct');
-                        if (isRight === '1' || isRight === 'true') {
-                            correctAnswers.push(optionLabel);
-                        }
+                    if (inputElement && inputElement.getAttribute('data-isright') === '1') {
+                        correctAnswers.push(optionLabel);
                     }
                 }
-            });
+            }
 
             question.answer = correctAnswers.join('');
 
-            // 如果没有找到正确答案，尝试从答案显示区域获取
             if (!question.answer) {
-                const answerText = queryWithFallback([
-                    '.answer-text',
-                    '.answer-show',
-                    '.correct-answer',
-                    '.result-answer',
-                    '[class*="answer"]'
-                ], slideContent);
+                const answerText = slideContent.querySelector('.answer-text');
                 if (answerText) {
-                    question.answer = answerText.textContent.trim().replace(/^答案：?/, '');
+                    question.answer = await getRichText(answerText);
                 }
             }
         } else if (question.questionType === '判断题') {
-            // 判断题的特殊处理
-            const correctInput = queryWithFallback([
-                'input[data-isright="1"]',
-                '[data-correct="1"]',
-                '.correct'
-            ], slideContent);
-
+            const correctInput = slideContent.querySelector('input[data-isright="1"]');
             if (correctInput) {
                 const parentLi = correctInput.closest('li');
-                if (parentLi) {
-                    const index = Array.from(parentLi.parentElement.children).indexOf(parentLi);
-                    question.answer = index === 0 ? '正确' : '错误';
-                }
+                const index = Array.from(parentLi.parentElement.children).indexOf(parentLi);
+                question.answer = index === 0 ? '正确' : '错误';
             }
 
-            // 备选方案：从答案显示区域获取
             if (!question.answer) {
-                const answerText = queryWithFallback([
-                    '.answer-text',
-                    '.answer-show',
-                    '.correct-answer'
-                ], slideContent);
+                const answerText = slideContent.querySelector('.answer-text');
                 if (answerText) {
                     const answerValue = answerText.textContent.trim();
-                    if (answerValue === 'A' || answerValue === '对' || answerValue === '正确') {
+                    if (answerValue === 'A' || answerValue === '对') {
                         question.answer = '正确';
-                    } else if (answerValue === 'B' || answerValue === '错' || answerValue === '错误') {
+                    } else if (answerValue === 'B' || answerValue === '错') {
                         question.answer = '错误';
+                    } else {
+                        question.answer = await getRichText(answerText);
                     }
                 }
             }
         } else if (question.questionType === '填空题') {
-            // 填空题答案提取
-            const answerElements = queryAllWithFallback([
-                '.answer-input-result',
-                '.fill-answer',
-                '.blank-answer',
-                '[class*="answer"]'
-            ], slideContent);
             const answers = [];
-            answerElements.forEach(elem => {
-                const text = elem.textContent.trim();
-                if (text && text !== '?' && text !== '空') answers.push(text);
-            });
+            const fillOptions = slideContent.querySelectorAll('.fill_option li .txt');
+            if (fillOptions.length > 0) {
+                for (const elem of fillOptions) {
+                    const text = await getRichText(elem);
+                    if (text) answers.push(text);
+                }
+            } else {
+                const answerElements = slideContent.querySelectorAll('.answer-input-result');
+                for (const elem of answerElements) {
+                    const text = await getRichText(elem);
+                    if (text) answers.push(text);
+                }
+            }
             question.answer = answers.join('；');
 
-            // 备选方案
             if (!question.answer) {
-                const answerText = queryWithFallback([
-                    '.answer-text',
-                    '.answer-show'
-                ], slideContent);
+                const answerText = slideContent.querySelector('.answer-text');
                 if (answerText) {
-                    question.answer = answerText.textContent.trim();
+                    question.answer = await getRichText(answerText);
+                }
+            }
+        } else {
+            const answerText = slideContent.querySelector('.answer-text, .subjective-answer, .answer-content');
+            if (answerText) {
+                question.answer = await getRichText(answerText);
+            } else {
+                // 如果是在特定DOM里
+                const answerSection = slideContent.querySelector('.answer-detail');
+                if (answerSection) {
+                    question.answer = await getRichText(answerSection);
                 }
             }
         }
 
         // 提取解析
-        const analysisElement = queryWithFallback([
-            '.analysis-content .desc',
-            '.analysis .desc',
-            '.answer-analysis',
-            '.analysis',
-            '[class*="analysis"]'
-        ], slideContent);
+        const analysisElement = slideContent.querySelector('.analysis-content .desc');
         if (analysisElement) {
-            question.analysis = analysisElement.textContent.trim();
+            question.analysis = await getRichText(analysisElement);
         }
-
-        // 调试日志
-        log(`提取题目 #${question.index}:`, question.questionType, question.question.substring(0, 30) + '...');
 
         return question;
     }
@@ -662,8 +622,8 @@
     function updateStatus(text, type = 'info') {
         const status = document.getElementById('extract-status');
         let icon = '';
-        
-        switch(type) {
+
+        switch (type) {
             case 'success':
                 icon = '✅ ';
                 break;
@@ -676,63 +636,13 @@
             default:
                 icon = 'ℹ️ ';
         }
-        
+
         status.textContent = icon + text;
-    }
-
-    // ========== 智能等待内容加载 ==========
-    let lastQuestionIndex = 0;
-    const observerCallback = (mutations) => {
-        // 检测题目是否切换
-        const currentQ = queryWithFallback(['.on[data-questioncount]', '.active[data-questioncount]']);
-        if (currentQ) {
-            const idx = parseInt(currentQ.getAttribute('data-questioncount'));
-            if (idx !== lastQuestionIndex) {
-                lastQuestionIndex = idx;
-                log(`题目切换到: ${idx}`);
-            }
-        }
-    };
-    const contentObserver = new MutationObserver(observerCallback);
-
-    async function waitForContentChange(timeout = 3000) {
-        return new Promise((resolve) => {
-            const startTime = Date.now();
-            const originalIndex = lastQuestionIndex;
-
-            // 轮询方式检测变化
-            const checkInterval = setInterval(() => {
-                if (stopExtraction) {
-                    clearInterval(checkInterval);
-                    resolve(false);
-                    return;
-                }
-
-                if (Date.now() - startTime > timeout) {
-                    clearInterval(checkInterval);
-                    resolve(false);
-                    return;
-                }
-
-                // 检测是否切换到新题目
-                const currentQ = queryWithFallback(['.on[data-questioncount]', '.active[data-questioncount]']);
-                if (currentQ) {
-                    const idx = parseInt(currentQ.getAttribute('data-questioncount'));
-                    if (idx !== originalIndex) {
-                        clearInterval(checkInterval);
-                        resolve(true);
-                    }
-                }
-            }, 100);
-        });
     }
 
     // 开始提取
     document.getElementById('start-extract').onclick = async () => {
         if (isExtracting) return;
-
-        // 启动内容观察器
-        contentObserver.observe(document.body, { childList: true, subtree: true });
 
         isExtracting = true;
         stopExtraction = false;
@@ -750,83 +660,42 @@
         const startIndex = questionInfo.current;
         const totalQuestions = questionInfo.total;
 
-        log(`开始提取: 从${startIndex}题到${totalQuestions}题`);
-
         updateStatus(`正在提取题目...从第 ${startIndex} 题开始`, 'loading');
 
         // 先提取当前题目
-        const currentQuestion = extractCurrentQuestion();
+        const currentQuestion = await extractCurrentQuestion();
         if (currentQuestion) {
             questions.push(currentQuestion);
-            log(`提取第 ${startIndex} 题:`, currentQuestion);
+            console.log(`提取第 ${startIndex} 题:`, currentQuestion);
             const progress = ((startIndex / totalQuestions) * 100).toFixed(1);
             progressBar.style.width = progress + '%';
             progressText.textContent = `${startIndex} / ${totalQuestions}`;
-        } else {
-            log('警告: 无法提取当前题目');
-            updateStatus('无法提取当前题目，请检查诊断 (Ctrl+Shift+E 打开面板)', 'error');
         }
 
         // 提取后续题目
         for (let i = startIndex + 1; i <= totalQuestions && !stopExtraction; i++) {
-            // 尝试多种下一题按钮选择器
-            const nextButton = queryWithFallback([
-                '.swiper-button-next',
-                '.next-btn',
-                '.btn-next',
-                '[data-action="next"]',
-                '.slick-next',
-                '[class*="next"]',
-                'button.next'
-            ]);
+            // 点击下一题按钮
+            const nextButton = document.querySelector('.swiper-button-next');
+            if (nextButton && !nextButton.classList.contains('swiper-button-disabled')) {
+                nextButton.click();
 
-            if (!nextButton) {
-                log('未找到下一题按钮');
-                updateStatus('未找到下一题按钮，尝试手动切换', 'error');
-                break;
+                // 等待页面加载
+                await new Promise(resolve => setTimeout(resolve, 800));
+
+                // 提取题目
+                const question = await extractCurrentQuestion();
+                if (question) {
+                    questions.push(question);
+                    console.log(`提取第 ${i} 题:`, question);
+                }
+
+                // 更新进度
+                const progress = ((i / totalQuestions) * 100).toFixed(1);
+                progressBar.style.width = progress + '%';
+                progressText.textContent = `${i} / ${totalQuestions}`;
+                updateStatus(`正在提取第 ${i} 题...`, 'loading');
             }
-
-            if (nextButton.classList.contains('swiper-button-disabled') ||
-                nextButton.disabled ||
-                nextButton.getAttribute('aria-disabled') === 'true') {
-                log('下一题按钮禁用');
-                break;
-            }
-
-            // 记录点击前的题目索引
-            const beforeClick = lastQuestionIndex || (startIndex);
-
-            // 点击下一题
-            log(`点击下一题按钮 (${i}/${totalQuestions})`);
-            nextButton.click();
-
-            // 智能等待内容变化，最多等3秒
-            const changed = await waitForContentChange(3000);
-            if (!changed && i > startIndex + 1) {
-                log('等待内容变化超时，尝试继续...');
-            }
-
-            // 额外等待动画/渲染完成
-            await new Promise(r => setTimeout(r, 300));
-
-            // 提取题目
-            const question = extractCurrentQuestion();
-            if (question) {
-                questions.push(question);
-                log(`提取第 ${i} 题成功:`, question.questionType);
-            } else {
-                log(`提取第 ${i} 题失败`);
-            }
-
-            // 更新进度
-            const progress = ((i / totalQuestions) * 100).toFixed(1);
-            progressBar.style.width = progress + '%';
-            progressText.textContent = `${i} / ${totalQuestions}`;
-            updateStatus(`正在提取第 ${i} 题... (${questions.length}已提取)`, 'loading');
         }
-
-        // 停止观察器
-        contentObserver.disconnect();
 
         if (stopExtraction) {
             updateStatus(`已停止提取，共提取了 ${questions.length} 道题`, 'error');
@@ -837,7 +706,7 @@
         // 下载JSON文件
         if (questions.length > 0) {
             const dataStr = JSON.stringify(questions, null, 2);
-            const dataBlob = new Blob([dataStr], {type: 'application/json'});
+            const dataBlob = new Blob([dataStr], { type: 'application/json' });
             const url = URL.createObjectURL(dataBlob);
             const link = document.createElement('a');
             const courseName = new URLSearchParams(window.location.search).get('coursename') || 'practice';
@@ -879,7 +748,6 @@
     `;
     document.head.appendChild(spinStyle);
 
-    console.log('✨ 融智云考练习题提取器 v6.0 已加载！');
-    console.log('按 Ctrl+Shift+E 可快速打开/关闭界面');
-    console.log('在控制台运行 window.runExtractionDiagnostic() 可诊断问题');
+    console.log('✨ 融智云考练习题提取器已加载！按 Ctrl+Shift+E 可快速打开/关闭界面');
+    console.log('🚀 开源项目：https://github.com/zhouwu97/SYLUlive - 此工具完全免费，禁止倒卖！');
 })(); 

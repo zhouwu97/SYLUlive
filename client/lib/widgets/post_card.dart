@@ -8,6 +8,8 @@ import '../screens/image_viewer_screen.dart';
 import '../utils/post_image_cache.dart';
 import 'cached_avatar.dart';
 import 'glass_container.dart';
+import 'package:provider/provider.dart';
+import '../providers/auth_provider.dart';
 
 class PostCard extends StatelessWidget {
   final Post post;
@@ -26,10 +28,18 @@ class PostCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isDesktop = screenWidth > 600;
+
+    // 优先使用当前登录用户的最新资料
+    final authUser = context.watch<AuthProvider>().user;
+    final isMyPost = authUser != null && post.author?.id == authUser.id;
+    final displayAvatar = isMyPost ? authUser.avatar : (post.author?.avatar ?? '');
+    final displayNickname = isMyPost ? authUser.nickname : (post.author?.nickname ?? '匿名');
 
     return GlassContainer(
-      margin: const EdgeInsets.only(bottom: 8),
-      borderRadius: 12,
+      margin: EdgeInsets.only(bottom: isDesktop ? 16 : 8),
+      borderRadius: isDesktop ? 16 : 12,
       blur: 12,
       opacity: 0.85,
       backgroundColor:
@@ -39,7 +49,7 @@ class PostCard extends StatelessWidget {
           : Colors.white.withValues(alpha: 0.85),
       onTap: onTap,
       child: Padding(
-        padding: const EdgeInsets.all(12),
+        padding: EdgeInsets.all(isDesktop ? 16 : 12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -57,14 +67,14 @@ class PostCard extends StatelessWidget {
                     ),
                   ),
                   child: CachedAvatar(
-                    radius: 18,
-                    imageUrl: post.author?.avatar.isNotEmpty == true
-                        ? ApiConstants.fullUrl(post.author!.avatar)
+                    radius: isDesktop ? 20 : 18,
+                    imageUrl: displayAvatar.isNotEmpty == true
+                        ? ApiConstants.fullUrl(displayAvatar)
                         : null,
-                    fallbackText: post.author?.nickname,
+                    fallbackText: displayNickname,
                   ),
                 ),
-                const SizedBox(width: 10),
+                SizedBox(width: isDesktop ? 12 : 10),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -73,8 +83,10 @@ class PostCard extends StatelessWidget {
                         children: [
                           Flexible(
                             child: Text(
-                              post.author?.nickname ?? '匿名',
-                              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                              displayNickname,
+                              style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: isDesktop ? 15 : 13),
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
@@ -84,11 +96,11 @@ class PostCard extends StatelessWidget {
                           ],
                         ],
                       ),
-                      const SizedBox(height: 1),
+                      const SizedBox(height: 2),
                       Text(
                         _formatTime(post.createdAt),
                         style: TextStyle(
-                          fontSize: 11,
+                          fontSize: isDesktop ? 12 : 11,
                           color: isDark ? Colors.white54 : Colors.grey[700],
                         ),
                       ),
@@ -111,7 +123,7 @@ class PostCard extends StatelessWidget {
                     children: [
                       Icon(
                         Icons.verified,
-                        size: 12,
+                        size: isDesktop ? 14 : 12,
                         color: _getCreditColor(post.author!.creditScore),
                       ),
                       const SizedBox(width: 4),
@@ -119,7 +131,7 @@ class PostCard extends StatelessWidget {
                         '${post.author!.creditScore}%',
                         style: TextStyle(
                           color: _getCreditColor(post.author!.creditScore),
-                          fontSize: 11,
+                          fontSize: isDesktop ? 12 : 11,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
@@ -129,30 +141,30 @@ class PostCard extends StatelessWidget {
               ],
             ),
             if (post.title.isNotEmpty) ...[
-              const SizedBox(height: 8),
+              SizedBox(height: isDesktop ? 12 : 8),
               Text(
                 post.title,
-                style: const TextStyle(
-                  fontSize: 15,
+                style: TextStyle(
+                  fontSize: isDesktop ? 17 : 15,
                   fontWeight: FontWeight.bold,
                 ),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
             ],
-            const SizedBox(height: 6),
+            SizedBox(height: isDesktop ? 8 : 6),
             Text(
               post.content,
-              maxLines: 3,
+              maxLines: 4,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 color: isDark ? Colors.white70 : Colors.black87,
-                height: 1.3,
-                fontSize: 13,
+                height: 1.4,
+                fontSize: isDesktop ? 15 : 13,
               ),
             ),
             if (post.images.isNotEmpty) ...[
-              const SizedBox(height: 8),
+              SizedBox(height: isDesktop ? 12 : 8),
               _buildImageGrid(context, post.images),
             ],
             if ((showPrice && post.price > 0) || showWarning) ...[
@@ -415,6 +427,28 @@ class PostCard extends StatelessWidget {
         const SizedBox(width: 4),
         Text(
           '${post.viewCount}',
+          style: TextStyle(
+            fontSize: 11,
+            color: isDark ? Colors.white30 : Colors.grey[400],
+          ),
+        ),
+        const SizedBox(width: 12),
+        Icon(post.isLiked ? Icons.thumb_up : Icons.thumb_up_outlined, size: 14,
+            color: post.isLiked ? const Color(0xFFFF6B6B) : (isDark ? Colors.white30 : Colors.grey[400])),
+        const SizedBox(width: 4),
+        Text(
+          '${post.likeCount}',
+          style: TextStyle(
+            fontSize: 11,
+            color: post.isLiked ? const Color(0xFFFF6B6B) : (isDark ? Colors.white30 : Colors.grey[400]),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Icon(Icons.chat_bubble_outline, size: 14,
+            color: isDark ? Colors.white30 : Colors.grey[400]),
+        const SizedBox(width: 4),
+        Text(
+          '${post.replyCount}',
           style: TextStyle(
             fontSize: 11,
             color: isDark ? Colors.white30 : Colors.grey[400],

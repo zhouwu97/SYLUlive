@@ -23,12 +23,14 @@ class PostDetailScreen extends StatefulWidget {
   final int postId;
   final bool isMarket;
   final Post? initialPost;
+  final int? targetReplyId;
 
   const PostDetailScreen(
       {super.key,
       required this.postId,
       this.isMarket = false,
-      this.initialPost});
+      this.initialPost,
+      this.targetReplyId});
 
   @override
   State<PostDetailScreen> createState() => _PostDetailScreenState();
@@ -48,7 +50,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   int _marketImageIndex = 0;
   int? _parentReplyId;
   String? _replyToName;
+  int? _replyToUserId;
   bool _isSending = false;
+
+  final Map<int, GlobalKey> _replyKeys = {};
+  bool _hasScrolledToTarget = false;
 
   @override
   void initState() {
@@ -96,15 +102,31 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             )
           : fetchedPost;
       setState(() {
-        _post = mergedPost;
         _replies = (repliesResponse.data as List)
             .map((e) => Reply.fromJson(e))
             .toList();
+        _post = mergedPost.copyWith(replyCount: _replies.length);
+        _liked = mergedPost.isLiked;
+        _likeCount = mergedPost.likeCount;
         _isLoading = false;
       });
       // 同步到外部列表以更新浏览量等数据
       if (mounted) {
-        context.read<PostProvider>().updatePostInCache(mergedPost);
+        context.read<PostProvider>().updatePostInCache(_post!);
+      }
+      if (widget.targetReplyId != null && !_hasScrolledToTarget) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          final key = _replyKeys[widget.targetReplyId];
+          if (key != null && key.currentContext != null) {
+            Scrollable.ensureVisible(
+              key.currentContext!,
+              duration: const Duration(milliseconds: 500),
+              curve: Curves.easeInOut,
+              alignment: 0.5,
+            );
+            _hasScrolledToTarget = true;
+          }
+        });
       }
     } on DioException catch (e) {
       final msg = AppFeedback.dioErrorMessage(e, fallback: '加载帖子失败');
@@ -129,14 +151,37 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     setState(() {
       _liked = !_liked;
       _likeCount += _liked ? 1 : -1;
+      if (_post != null) {
+        _post = _post!.copyWith(
+          isLiked: _liked,
+          likeCount: _likeCount,
+        );
+      }
     });
+    if (_post != null) {
+      context.read<PostProvider>().updatePostInCache(_post!);
+    }
+
     try {
-      await _dio.post('/posts/${widget.postId}/like');
+      if (_liked) {
+        await _dio.post('/posts/${widget.postId}/like');
+      } else {
+        await _dio.delete('/posts/${widget.postId}/like');
+      }
     } catch (_) {
       setState(() {
         _liked = !_liked;
         _likeCount += _liked ? 1 : -1;
+        if (_post != null) {
+          _post = _post!.copyWith(
+            isLiked: _liked,
+            likeCount: _likeCount,
+          );
+        }
       });
+      if (_post != null) {
+        context.read<PostProvider>().updatePostInCache(_post!);
+      }
     }
   }
 
@@ -150,6 +195,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     // 先保存 parentReplyId，后面 setState 会清空它
     final parentId = _parentReplyId;
     final replyTo = _replyToName;
+    final replyToUserId = _replyToUserId;
 
     // 乐观更新：立即在本地插入评论
     final user = context.read<AuthProvider>().user;
@@ -171,6 +217,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         parentReplyId: parentId,
       );
       _replies.insert(0, tempReply);
+      _post = _post!.copyWith(replyCount: _post!.replyCount + 1);
+      context.read<PostProvider>().updatePostInCache(_post!);
     }
     _replyController.clear();
     _replyFocus.unfocus();
@@ -178,6 +226,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       _isReplyComposerOpen = false;
       _parentReplyId = null;
       _replyToName = null;
+      _replyToUserId = null;
     });
 
     // 后台静默发送
@@ -185,6 +234,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       final formData = FormData.fromMap({
         'content': content,
         if (parentId != null) 'parent_reply_id': parentId.toString(),
+        if (replyToUserId != null) 'reply_to_user_id': replyToUserId.toString(),
       });
       await _dio.post('/posts/${widget.postId}/replies', data: formData);
       // 静默刷新获取真实 ID
@@ -201,7 +251,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       if (mounted) {
         setState(() {
           _replies.removeWhere((r) => r.id < 0);
+          if (_post != null) {
+            _post = _post!.copyWith(replyCount: _post!.replyCount - 1);
+          }
         });
+        if (_post != null) {
+          context.read<PostProvider>().updatePostInCache(_post!);
+        }
         AppFeedback.showSnackBar(
             context, AppFeedback.dioErrorMessage(e, fallback: '发送失败'),
             isError: true);
@@ -779,7 +835,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   Widget _buildActionBar(bool isDark) {
     return Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
       _buildActionButton(
-        icon: _liked ? Icons.favorite : Icons.favorite_border,
+        icon: _liked ? Icons.thumb_up : Icons.thumb_up_outlined,
         color: _liked
             ? const Color(0xFFFF6B6B)
             : (isDark ? Colors.white38 : Colors.grey.shade500),
@@ -1096,70 +1152,74 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   Widget _buildMainReply(Reply r, bool isDark) {
     final currentUser = context.read<AuthProvider>().user;
     final isOwn = currentUser?.id == r.authorId;
-    return GestureDetector(
-      onTap: () => _openReplyComposer(parentReplyId: r.id, replyToName: r.author?.nickname),
-      onLongPress: () => _showReplyActionSheet(r, isOwn, isDark),
-      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        CachedAvatar(
-          radius: 16,
-          imageUrl: r.author?.avatar.isNotEmpty == true
-              ? ApiConstants.fullUrl(r.author!.avatar)
-              : null,
-          fallbackText: r.author?.nickname,
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(children: [
-                Text(r.author?.nickname ?? '匿名',
-                    style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: isDark
-                            ? Colors.white.withValues(alpha: 0.80)
-                            : Colors.black87)),
-                if (r.author != null) ...[
-                  const SizedBox(width: 4),
-                  _buildLevelBadge(r.author!, isDark),
-                ],
-                const Spacer(),
-                GestureDetector(
-                  onTap: () => showReportSheet(context,
-                      targetId: r.id, targetType: 'reply'),
-                  child: Icon(Icons.report_outlined,
-                      size: 14,
-                      color: isDark ? Colors.white24 : Colors.grey[400]),
-                ),
-                const SizedBox(width: 8),
-                Text(_formatTime(r.createdAt),
-                    style: TextStyle(
-                        fontSize: 10,
-                        color: isDark ? Colors.white30 : Colors.grey[400])),
-              ]),
-              const SizedBox(height: 4),
-              SelectionContainer.disabled(
-                child: Text(r.content,
-                    style: TextStyle(
-                        fontSize: 14,
-                        height: 1.5,
-                        color: isDark ? Colors.white70 : Colors.grey[800])),
-              ),
-              const SizedBox(height: 6),
-              Row(
-                children: [
-                  Icon(Icons.reply, size: 14,
-                      color: isDark ? Colors.white30 : Colors.grey[400]),
-                  const SizedBox(width: 4),
-                  Text('回复', style: TextStyle(fontSize: 11,
-                      color: isDark ? Colors.white30 : Colors.grey[400])),
-                ],
-              ),
-            ],
+    return _buildHighlightWrapper(
+      r,
+      isDark,
+      GestureDetector(
+        onTap: () => _openReplyComposer(parentReplyId: r.id, replyToName: r.author?.nickname, replyToUserId: r.authorId),
+        onLongPress: () => _showReplyActionSheet(r, isOwn, isDark),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          CachedAvatar(
+            radius: 16,
+            imageUrl: r.author?.avatar.isNotEmpty == true
+                ? ApiConstants.fullUrl(r.author!.avatar)
+                : null,
+            fallbackText: r.author?.nickname,
           ),
-        ),
-      ]),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(children: [
+                  Text(r.author?.nickname ?? '匿名',
+                      style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: isDark
+                              ? Colors.white.withValues(alpha: 0.80)
+                              : Colors.black87)),
+                  if (r.author != null) ...[
+                    const SizedBox(width: 4),
+                    _buildLevelBadge(r.author!, isDark),
+                  ],
+                  const Spacer(),
+                  GestureDetector(
+                    onTap: () => showReportSheet(context,
+                        targetId: r.id, targetType: 'reply'),
+                    child: Icon(Icons.report_outlined,
+                        size: 14,
+                        color: isDark ? Colors.white24 : Colors.grey[400]),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(_formatTime(r.createdAt),
+                      style: TextStyle(
+                          fontSize: 10,
+                          color: isDark ? Colors.white30 : Colors.grey[400])),
+                ]),
+                const SizedBox(height: 4),
+                SelectionContainer.disabled(
+                  child: Text(r.content,
+                      style: TextStyle(
+                          fontSize: 14,
+                          height: 1.5,
+                          color: isDark ? Colors.white70 : Colors.grey[800])),
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Icon(Icons.reply, size: 14,
+                        color: isDark ? Colors.white30 : Colors.grey[400]),
+                    const SizedBox(width: 4),
+                    Text('回复', style: TextStyle(fontSize: 11,
+                        color: isDark ? Colors.white30 : Colors.grey[400])),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ]),
+      ),
     );
   }
 
@@ -1171,55 +1231,83 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final threadParentId = _findTopLevelParentId(r);
     final currentUser = context.read<AuthProvider>().user;
     final isOwn = currentUser?.id == r.authorId;
-    return GestureDetector(
-      onTap: () => _openReplyComposer(parentReplyId: threadParentId, replyToName: r.author?.nickname),
-      onLongPress: () => _showReplyActionSheet(r, isOwn, isDark),
-      child: Padding(
-        padding: EdgeInsets.only(bottom: 8, left: depth * 4.0),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            CachedAvatar(
-              radius: 10,
-              imageUrl: r.author?.avatar.isNotEmpty == true
-                  ? ApiConstants.fullUrl(r.author!.avatar)
-                  : null,
-              fallbackText: r.author?.nickname,
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(children: [
-                    Text(r.author?.nickname ?? '匿名',
-                        style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: isDark
-                                ? Colors.white.withValues(alpha: 0.70)
-                                : Colors.black87)),
-                    if (r.author != null) ...[
-                      const SizedBox(width: 4),
-                      _buildLevelBadgeSmall(r.author!, isDark),
-                    ],
-                    const SizedBox(width: 8),
-                    Text(_formatTime(r.createdAt),
-                        style: TextStyle(
-                            fontSize: 10,
-                            color: isDark ? Colors.white24 : Colors.grey[400])),
-                    const Spacer(),
-                    Text('回复', style: TextStyle(fontSize: 10,
-                        color: isDark ? Colors.white24 : Colors.grey[400])),
-                  ]),
-                  const SizedBox(height: 2),
-                  contentWidget,
-                ],
+    return _buildHighlightWrapper(
+      r,
+      isDark,
+      GestureDetector(
+        onTap: () => _openReplyComposer(parentReplyId: threadParentId, replyToName: r.author?.nickname, replyToUserId: r.authorId),
+        onLongPress: () => _showReplyActionSheet(r, isOwn, isDark),
+        child: Padding(
+          padding: EdgeInsets.only(bottom: 8, left: depth * 4.0),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              CachedAvatar(
+                radius: 10,
+                imageUrl: r.author?.avatar.isNotEmpty == true
+                    ? ApiConstants.fullUrl(r.author!.avatar)
+                    : null,
+                fallbackText: r.author?.nickname,
               ),
-            ),
-          ],
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(children: [
+                      Text(r.author?.nickname ?? '匿名',
+                          style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: isDark
+                                  ? Colors.white.withValues(alpha: 0.70)
+                                  : Colors.black87)),
+                      if (r.author != null) ...[
+                        const SizedBox(width: 4),
+                        _buildLevelBadgeSmall(r.author!, isDark),
+                      ],
+                      const SizedBox(width: 8),
+                      Text(_formatTime(r.createdAt),
+                          style: TextStyle(
+                              fontSize: 10,
+                              color: isDark ? Colors.white24 : Colors.grey[400])),
+                      const Spacer(),
+                      Text('回复', style: TextStyle(fontSize: 10,
+                          color: isDark ? Colors.white24 : Colors.grey[400])),
+                    ]),
+                    const SizedBox(height: 2),
+                    contentWidget,
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
+    );
+  }
+
+  Widget _buildHighlightWrapper(Reply r, bool isDark, Widget child) {
+    final key = _replyKeys.putIfAbsent(r.id, () => GlobalKey());
+    final isTarget = widget.targetReplyId == r.id;
+    return KeyedSubtree(
+      key: key,
+      child: isTarget
+          ? TweenAnimationBuilder<Color?>(
+              tween: ColorTween(
+                begin: Theme.of(context).primaryColor.withValues(alpha: 0.3),
+                end: Colors.transparent,
+              ),
+              duration: const Duration(milliseconds: 1500),
+              builder: (context, color, child) {
+                return Container(
+                  color: color,
+                  child: child,
+                );
+              },
+              child: child,
+            )
+          : child,
     );
   }
 
@@ -1462,11 +1550,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
-  void _openReplyComposer({int? parentReplyId, String? replyToName}) {
+  void _openReplyComposer({int? parentReplyId, String? replyToName, int? replyToUserId}) {
     setState(() {
       _isReplyComposerOpen = true;
       _parentReplyId = parentReplyId;
       _replyToName = replyToName;
+      _replyToUserId = replyToUserId;
       if (replyToName != null && replyToName.isNotEmpty) {
         _replyController.text = '@$replyToName ';
         _replyController.selection = TextSelection.fromPosition(
@@ -1536,6 +1625,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       await _dio.delete('/replies/${r.id}');
       if (mounted) {
         AppFeedback.showSnackBar(context, '已删除');
+        if (_post != null && _post!.replyCount > 0) {
+          setState(() {
+            _post = _post!.copyWith(replyCount: _post!.replyCount - 1);
+          });
+          context.read<PostProvider>().updatePostInCache(_post!);
+        }
         _loadReplies();
       }
     } on DioException catch (e) {

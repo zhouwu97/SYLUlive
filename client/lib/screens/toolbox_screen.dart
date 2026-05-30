@@ -13,9 +13,27 @@ import '../providers/theme_provider.dart';
 import '../widgets/glass_container.dart';
 import 'erke_score_screen.dart';
 import 'physical_test_screen.dart';
+import 'lottery_screen.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'yuketang_class_screen.dart';
+import 'exam_schedule_screen.dart';
 
-class ToolboxScreen extends StatelessWidget {
+class ToolboxScreen extends StatefulWidget {
   const ToolboxScreen({super.key});
+
+  @override
+  State<ToolboxScreen> createState() => _ToolboxScreenState();
+}
+
+class _ToolboxScreenState extends State<ToolboxScreen> {
+  final _storage = const FlutterSecureStorage();
+
+  @override
+  void initState() {
+    super.initState();
+  }
+
+
 
   @override
   Widget build(BuildContext context) {
@@ -27,6 +45,7 @@ class ToolboxScreen extends StatelessWidget {
         extendBodyBehindAppBar: true,
         appBar: AppBar(
           title: const Text('工具箱'),
+          actions: [],
           backgroundColor: Colors.transparent,
           elevation: 0,
           iconTheme: const IconThemeData(color: Colors.white),
@@ -35,9 +54,9 @@ class ToolboxScreen extends StatelessWidget {
           child: Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 1000),
-              child: GridView.count(
+              child: GridView.extent(
                 padding: const EdgeInsets.all(20),
-                crossAxisCount: 3,
+                maxCrossAxisExtent: 130, // 手机上正好排3列，Pad上排更多列，防止卡片变巨无霸
                 childAspectRatio: 0.85,
                 mainAxisSpacing: 16,
                 crossAxisSpacing: 16,
@@ -50,6 +69,15 @@ class ToolboxScreen extends StatelessWidget {
                     subtitle: '支持 WebVPN 穿透',
                     onTap: () => Navigator.push(context,
                         MaterialPageRoute(builder: (_) => const ErkeScoreScreen())),
+                  ),
+                  _buildToolCard(
+                    context,
+                    icon: Icons.school,
+                    color: Colors.blueAccent,
+                    title: '雨课堂',
+                    subtitle: '测验与课件',
+                    onTap: () => Navigator.push(context,
+                        MaterialPageRoute(builder: (_) => const YuketangClassScreen())),
                   ),
                   _buildToolCard(
                     context,
@@ -66,6 +94,24 @@ class ToolboxScreen extends StatelessWidget {
                     title: '云原神',
                     subtitle: '点击即玩',
                     onTap: () => _launchCloudGenshin(context),
+                  ),
+                  _buildToolCard(
+                    context,
+                    icon: Icons.card_giftcard,
+                    color: const Color(0xFFE91E63),
+                    title: '抽奖活动',
+                    subtitle: '公平福利派送',
+                    onTap: () => Navigator.push(context,
+                        MaterialPageRoute(builder: (_) => const LotteryScreen())),
+                  ),
+                  _buildToolCard(
+                    context,
+                    icon: Icons.event_note,
+                    color: Colors.deepPurpleAccent,
+                    title: '考试日程',
+                    subtitle: 'AI一键提取',
+                    onTap: () => Navigator.push(context,
+                        MaterialPageRoute(builder: (_) => const ExamScheduleScreen())),
                   ),
                   _buildToolCard(
                     context,
@@ -227,6 +273,8 @@ class ToolboxScreen extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: GlassContainer(
+        width: double.infinity,
+        height: double.infinity,
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
         borderRadius: 20,
         borderColor: is520 ? const Color(0x668BE197) : null,

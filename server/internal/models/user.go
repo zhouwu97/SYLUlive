@@ -22,6 +22,7 @@ type User struct {
 	Avatar       string    `gorm:"size:500" json:"avatar"`                         // 头像URL
 	Background   string    `gorm:"size:500" json:"background"`                     // 背景图URL
 	NightMode    bool      `gorm:"default:false" json:"night_mode"`                // 夜间模式
+	TokenVersion int       `gorm:"default:0" json:"-"`                             // 令牌版本号（用于改密码后强制下线）
 	CreditScore  int       `gorm:"default:100;index" json:"credit_score"`          // 诚信度 0-100
 	Role         Role      `gorm:"size:20;default:user;index" json:"role"`         // 角色
 	AdminExp     int       `gorm:"default:0" json:"admin_exp"`                     // 管理员经验
@@ -29,6 +30,7 @@ type User struct {
 	ReportCount  int       `gorm:"default:0;index" json:"report_count"`            // 90天内举报数
 	QQ           string    `gorm:"size:20" json:"qq"`                              // QQ号
 	DeviceToken  string    `gorm:"size:255" json:"device_token"`                   // 极光 RegistrationID
+	Credits      int       `gorm:"default:0" json:"credits"`                       // 代答积分
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
 
@@ -40,4 +42,7 @@ type User struct {
 	EduGrade     string `gorm:"size:20" json:"edu_grade"`       // 年级
 	EduCollege   string `gorm:"size:100" json:"edu_college"`    // 学院
 	EduMajor     string `gorm:"size:100" json:"edu_major"`      // 专业
+
+	LastCheckInDate string `gorm:"size:10" json:"last_check_in_date"` // 最后签到日期
+	IsCheckedInToday bool  `gorm:"-" json:"is_checked_in_today"`      // 动态字段，不在数据库映射
 }

@@ -109,11 +109,17 @@ class _MarketScreenState extends State<MarketScreen> {
     }
   }
 
-  void _changeSort(String sort) {
+  void _changeSort(String sort) async {
     setState(() {
       _sortType = sort;
+      _isSearching = true;
     });
-    _refreshCurrent();
+    await _refreshCurrent();
+    if (mounted) {
+      setState(() {
+        _isSearching = false;
+      });
+    }
   }
 
   List<Post> _buildMarketPosts(List<Post> allPosts) {
@@ -189,20 +195,24 @@ class _MarketScreenState extends State<MarketScreen> {
         elevation: 0,
         title: Text(widget.titleOverride ?? '集市'),
         actions: [
-          PopupMenuButton<String>(
-            icon: const Icon(Icons.sort),
-            onSelected: _changeSort,
-            itemBuilder: (context) => [
-              const PopupMenuItem(value: 'time', child: Text('按时间排序')),
-              const PopupMenuItem(value: 'price', child: Text('价格从低到高')),
-              const PopupMenuItem(value: 'score', child: Text('综合排序')),
-            ],
-          ),
+          if (widget.titleOverride != '失物招领')
+            PopupMenuButton<String>(
+              icon: const Icon(Icons.sort),
+              onSelected: _changeSort,
+              itemBuilder: (context) => [
+                const PopupMenuItem(value: 'time', child: Text('按时间排序')),
+                PopupMenuItem(
+                  value: _sortType == 'price' ? 'price_desc' : 'price',
+                  child: Text(_sortType == 'price' ? '价格从高到低' : '价格从低到高'),
+                ),
+                const PopupMenuItem(value: 'score', child: Text('综合排序')),
+              ],
+            ),
         ],
       ),
       body: Stack(
         children: [
-          Positioned.fill(child: _buildBackground(themeProvider, isDark)),
+
           Consumer<PostProvider>(
             builder: (context, postProvider, child) {
               final allPosts = postProvider.postsFor(2);
@@ -219,38 +229,61 @@ class _MarketScreenState extends State<MarketScreen> {
 
               return RefreshIndicator(
                 onRefresh: _refreshCurrent,
-                child: ListView(
+                child: CustomScrollView(
                   physics: const AlwaysScrollableScrollPhysics(
                     parent: BouncingScrollPhysics(),
                   ),
-                  padding: EdgeInsets.fromLTRB(12, topInset, 12, 80),
-                  children: [
-                    _buildSearchBar(isDark),
-                    if (widget.onlyPostTypes == null) ...[
-                      const SizedBox(height: 12),
-                      _buildExposureEntry(isDark, exposurePosts),
-                      const SizedBox(height: 16),
-                    ] else
-                      const SizedBox(height: 16),
-                    _buildSectionHeader(isDark, marketPosts.length),
-                    const SizedBox(height: 12),
+                  slivers: [
+                    SliverPadding(
+                      padding: EdgeInsets.fromLTRB(12, topInset, 12, 12),
+                      sliver: SliverList(
+                        delegate: SliverChildListDelegate([
+                          _buildSearchBar(isDark),
+                          if (widget.onlyPostTypes == null) ...[
+                            const SizedBox(height: 12),
+                            _buildExposureEntry(isDark, exposurePosts),
+                            const SizedBox(height: 16),
+                          ] else
+                            const SizedBox(height: 16),
+                          _buildSectionHeader(isDark, marketPosts.length),
+                        ]),
+                      ),
+                    ),
                     if (_isSearching)
-                      const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 40),
+                      const SliverFillRemaining(
                         child: Center(child: CircularProgressIndicator()),
                       )
                     else if (marketPosts.isEmpty)
-                      _buildEmptyState(
-                        isDark,
-                        _searchQuery.isNotEmpty ? '没有找到匹配内容' : '暂无内容',
-                        _searchQuery.isNotEmpty
-                            ? '换个关键词试试'
-                            : (widget.titleOverride == '失物招领'
-                                ? '发布一条失物或招领信息吧'
-                                : '发布你的第一条商品吧'),
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          child: _buildEmptyState(
+                            isDark,
+                            _searchQuery.isNotEmpty ? '没有找到匹配内容' : '暂无内容',
+                            _searchQuery.isNotEmpty
+                                ? '换个关键词试试'
+                                : (widget.titleOverride == '失物招领'
+                                    ? '发布一条失物或招领信息吧'
+                                    : '发布你的第一条商品吧'),
+                          ),
+                        ),
                       )
                     else
-                      ...marketPosts.map(_buildMarketCard),
+                      SliverPadding(
+                        padding: const EdgeInsets.fromLTRB(12, 0, 12, 80),
+                        sliver: SliverGrid(
+                          gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                            maxCrossAxisExtent: 300,
+                            mainAxisSpacing: 12,
+                            crossAxisSpacing: 12,
+                            mainAxisExtent: 360, // Fixed height for market cards
+                          ),
+                          delegate: SliverChildBuilderDelegate(
+                            (context, index) => _buildMarketCard(marketPosts[index], true),
+                            childCount: marketPosts.length,
+                          ),
+                        ),
+                      ),
                   ],
                 ),
               );
@@ -286,6 +319,7 @@ class _MarketScreenState extends State<MarketScreen> {
                           widget.onlyPostTypes!.contains('lost')
                       ? 'lost'
                       : 'sell',
+                  allowedPostTypes: widget.onlyPostTypes,
                 ),
               ),
             );
@@ -455,9 +489,9 @@ class _MarketScreenState extends State<MarketScreen> {
     );
   }
 
-  Widget _buildMarketCard(Post post) {
+  Widget _buildMarketCard(Post post, [bool inGrid = false]) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+      padding: EdgeInsets.only(bottom: inGrid ? 0 : 12),
       child: PostCard(
         post: post,
         showPrice: true,

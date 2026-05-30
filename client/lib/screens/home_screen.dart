@@ -10,8 +10,10 @@ import 'package:url_launcher/url_launcher.dart';
 import '../config/api_constants.dart';
 import '../main.dart';
 import '../providers/auth_provider.dart';
+import '../providers/post_provider.dart';
 import '../utils/app_navigator.dart';
 import '../utils/post_image_cache.dart';
+import '../utils/update_checker.dart';
 import '../widgets/bottom_nav.dart';
 import 'shuitie_screen.dart';
 import 'market_screen.dart';
@@ -49,6 +51,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _syncAnnouncementPolling(context.read<AuthProvider>());
+        Future.delayed(const Duration(seconds: 1), () {
+          if (mounted) {
+            UpdateChecker.check(context);
+          }
+        });
       }
     });
   }
@@ -663,7 +670,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       MaterialPageRoute(
         builder: (_) => const CreatePostScreen(boardId: 1),
       ),
-    );
+    ).then((_) {
+      if (mounted) {
+        context.read<PostProvider>().refresh(boardId: 1, sort: 'time');
+      }
+    });
   }
 
   @override
@@ -671,7 +682,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final authProvider = context.watch<AuthProvider>();
     final bottomSafe = MediaQuery.of(context).padding.bottom;
     final screenWidth = MediaQuery.of(context).size.width;
-    final isWideScreen = screenWidth > 800;
+    final isWideScreen = screenWidth > 600;
+    final isExtended = screenWidth > 840;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
@@ -684,7 +696,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       extendBody: true,
       extendBodyBehindAppBar: true,
       body: isWideScreen
-          ? _buildWideLayout(bottomSafe, authProvider)
+          ? _buildWideLayout(bottomSafe, authProvider, isExtended)
           : _buildNarrowLayout(bottomSafe, authProvider),
       bottomNavigationBar: isWideScreen
           ? null
@@ -709,20 +721,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
-  Widget _buildWideLayout(double bottomSafe, AuthProvider authProvider) {
+  Widget _buildWideLayout(double bottomSafe, AuthProvider authProvider, bool isExtended) {
     return Row(
       children: [
         NavigationRail(
+          extended: isExtended,
           selectedIndex: _currentIndex,
           onDestinationSelected: (index) {
             setState(() => _currentIndex = index);
             final screenNames = ['shuitie', 'market', 'schedule', 'campus', 'profile'];
             backgroundWrapperKey.currentState?.updateScreen(screenNames[index]);
           },
-          labelType: NavigationRailLabelType.all,
-          backgroundColor: Theme.of(context).brightness == Brightness.dark
-              ? const Color(0xFF1A1A2E).withValues(alpha: 0.9)
-              : Colors.white.withValues(alpha: 0.9),
+          labelType: isExtended ? NavigationRailLabelType.none : NavigationRailLabelType.all,
+          backgroundColor: Colors.transparent,
           destinations: const [
             NavigationRailDestination(
               icon: Icon(Icons.home_rounded),

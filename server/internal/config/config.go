@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 )
 
 // Config 应用配置
@@ -19,18 +20,40 @@ type Config struct {
 	SMTPFrom         string // 发件人邮箱
 	JPushAppKey      string // 极光推送 AppKey
 	JPushMasterSecret string // 极光推送 MasterSecret
+	SuperAdminID     string // 超级管理员账号
+	SuperAdminPass   string // 超级管理员密码
+	DeepSeekAPIKey   string // DeepSeek API 密钥
+	DeepSeekBaseURL  string // DeepSeek API 基础路径
 }
 
 // Load 从环境变量加载配置
 func Load() *Config {
+	// 强制读取 /opt/shenliyuan/.env
+	content, err := os.ReadFile("/opt/shenliyuan/.env")
+	if err == nil {
+		lines := strings.Split(string(content), "\n")
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if strings.HasPrefix(line, "DSN=") {
+				os.Setenv("DSN", strings.TrimPrefix(line, "DSN="))
+			} else if strings.HasPrefix(line, "JWT_SECRET=") {
+				os.Setenv("JWT_SECRET", strings.TrimPrefix(line, "JWT_SECRET="))
+			}
+		}
+	}
+
 	jwtSecret := os.Getenv("JWT_SECRET")
 	if jwtSecret == "" {
 		jwtSecret = "dev-only-secret-do-not-use-in-production"
 	}
 
 	dsn := os.Getenv("DSN")
-	if dsn == "" {
-		dsn = "./shenliyuan.db"
+	if dsn == "" || dsn == "./shenliyuan.db" || dsn == "shenliyuan.db" {
+		dsn = "/opt/shenliyuan/shenliyuan.db"
+		// 兼容本地开发环境
+		if _, err := os.Stat(dsn); os.IsNotExist(err) {
+			dsn = "./shenliyuan.db"
+		}
 	}
 
 	uploadDir := os.Getenv("UPLOAD_DIR")
@@ -65,12 +88,28 @@ func Load() *Config {
 	jpushAppKey := os.Getenv("JPUSH_APP_KEY")
 	jpushMasterSecret := os.Getenv("JPUSH_MASTER_SECRET")
 
+	superAdminID := os.Getenv("SUPER_ADMIN_ID")
+	if superAdminID == "" {
+		superAdminID = "admin" // 默认超级管理员账号
+	}
+
+	superAdminPass := os.Getenv("SUPER_ADMIN_PASSWORD")
+	if superAdminPass == "" {
+		superAdminPass = "admin123" // 默认超级管理员密码
+	}
+
+	deepSeekAPIKey := os.Getenv("DEEPSEEK_API_KEY")
+	deepSeekBaseURL := os.Getenv("DEEPSEEK_BASE_URL")
+	if deepSeekBaseURL == "" {
+		deepSeekBaseURL = "https://api.deepseek.com/v1"
+	}
+
 	return &Config{
 		JWTSecret:         jwtSecret,
 		DSN:               dsn,
 		UploadDir:         uploadDir,
-		MaxFileSize:       2 * 1024 * 1024, // 2MB
-		EduServiceURL:      eduServiceURL,
+		MaxFileSize:       10 * 1024 * 1024, // 10MB
+		EduServiceURL:     eduServiceURL,
 		SMTPHost:          smtpHost,
 		SMTPPort:          smtpPort,
 		SMTPUser:          smtpUser,
@@ -78,5 +117,9 @@ func Load() *Config {
 		SMTPFrom:          smtpFrom,
 		JPushAppKey:       jpushAppKey,
 		JPushMasterSecret: jpushMasterSecret,
+		SuperAdminID:      superAdminID,
+		SuperAdminPass:    superAdminPass,
+		DeepSeekAPIKey:    deepSeekAPIKey,
+		DeepSeekBaseURL:   deepSeekBaseURL,
 	}
 }

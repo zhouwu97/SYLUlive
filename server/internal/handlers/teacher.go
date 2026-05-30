@@ -118,8 +118,8 @@ func (h *TeacherHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "添加失败"})
 		return
 	}
-	h.logAdmin(c, "添加教师", teacher.Name, "")
 	if verified {
+		h.logAdmin(c, "添加教师", teacher.Name, "")
 		c.JSON(http.StatusCreated, teacher)
 	} else {
 		c.JSON(http.StatusCreated, gin.H{"message": "已提交，等待管理员审核", "teacher": teacher})
@@ -140,6 +140,12 @@ func (h *TeacherHandler) Rate(c *gin.Context) {
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	
+	// 取消文字评价，只保留打分系统。拦截旧版本带文字的请求
+	if strings.TrimSpace(input.Comment) != "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "系统已取消教师文字评价功能，请清空文字后重新打分，或更新至最新版App。"})
 		return
 	}
 	// 教师存在？
@@ -213,7 +219,7 @@ func (h *TeacherHandler) logAdmin(c *gin.Context, action, target, detail string)
 		Action: action, Target: target, Detail: detail,
 	})
 	// 管理员操作经验+1
-	h.db.Model(&models.User{}).Where("id = ?", userID).UpdateColumn("admin_exp", gorm.Expr("admin_exp + 1"))
+	h.db.Model(&models.User{}).Where("id = ?", userID).UpdateColumn("admin_exp", gorm.Expr("COALESCE(admin_exp, 0) + 1"))
 }
 
 // DeleteRating 删除自己的评价

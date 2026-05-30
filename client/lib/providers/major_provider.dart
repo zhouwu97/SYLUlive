@@ -69,6 +69,10 @@ class MajorProvider extends ChangeNotifier {
     try { await _dio.post('/majors', data: {'name': name, 'level': level}); await loadMajors(); return true; } catch (_) { return false; }
   }
 
+  Future<bool> deleteMajor(int id) async {
+    try { await _dio.delete('/majors/$id'); await loadMajors(); return true; } catch (_) { return false; }
+  }
+
   Future<bool> rate(int id, int star, String comment) async {
     try { await _dio.post('/majors/$id/rate', data: {'star': star, 'comment': comment}); await loadDetail(id); return true; } catch (_) { return false; }
   }

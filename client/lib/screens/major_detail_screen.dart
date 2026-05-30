@@ -57,6 +57,34 @@ class _MajorDetailScreenState extends State<MajorDetailScreen> {
         backgroundColor: Colors.transparent,
         elevation: 0,
         scrolledUnderElevation: 0,
+        actions: [
+          if (context.watch<AuthProvider>().user?.isAdmin == true)
+            IconButton(
+              icon: const Icon(Icons.delete_outline, color: Colors.red),
+              onPressed: () async {
+                final confirm = await showDialog<bool>(
+                  context: context,
+                  builder: (ctx) => AlertDialog(
+                    title: const Text('删除专业'),
+                    content: const Text('确定要删除这个专业吗？删除后该专业下的所有评分也将一并清除。'),
+                    actions: [
+                      TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+                      TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('删除', style: TextStyle(color: Colors.red))),
+                    ],
+                  ),
+                );
+                if (confirm == true) {
+                  final success = await context.read<MajorProvider>().deleteMajor(widget.majorId);
+                  if (success && mounted) {
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已删除专业')));
+                  } else if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('删除失败')));
+                  }
+                }
+              },
+            ),
+        ],
       ),
       body: Consumer<MajorProvider>(
             builder: (_, m, __) {

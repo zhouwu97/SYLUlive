@@ -21,7 +21,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
     _dio = context.read<AuthProvider>().dio;
     _loadAll();
   }
@@ -133,12 +133,20 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
       appBar: AppBar(
         title: const Text('超级管理员面板'),
         leading: const BackButton(),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.smart_toy),
+            tooltip: '全局 AI 配置',
+            onPressed: _showGlobalAiConfigDialog,
+          ),
+        ],
         bottom: TabBar(
           controller: _tabController,
           tabs: const [
             Tab(text: '用户管理'),
             Tab(text: '管理员审批'),
             Tab(text: '管理日志'),
+            Tab(text: '抽奖管理'),
           ],
         ),
       ),
@@ -148,6 +156,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
           _buildUsersTab(),
           _buildApprovalsTab(),
           _buildAdminLogsTab(),
+          _buildLotteryTab(),
         ],
       ),
     );
@@ -353,6 +362,216 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
     }
   }
 
+
+  Future<void> _showGlobalAiConfigDialog() async {
+    final keyCtrl = TextEditingController();
+    final urlCtrl = TextEditingController();
+    final modelCtrl = TextEditingController();
+    String currentProvider = 'custom';
+
+    // 先加载当前的配置
+    try {
+      final res = await _dio.get('/super/ai_config');
+      urlCtrl.text = res.data['base_url'] ?? '';
+      keyCtrl.text = res.data['api_key'] ?? '';
+      modelCtrl.text = res.data['model_name'] ?? '';
+
+      final url = urlCtrl.text.toLowerCase();
+      if (url.contains('deepseek')) currentProvider = 'deepseek';
+      else if (url.contains('moonshot')) currentProvider = 'kimi';
+      else if (url.contains('bigmodel.cn')) currentProvider = 'zhipu';
+      else if (url.contains('dashscope')) currentProvider = 'qwen';
+      else if (url.contains('openai.com')) currentProvider = 'openai';
+
+    } catch (_) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('加载配置失败')));
+    }
+
+    
+    bool isFetchingModels = false;
+    Future<void> fetchModels(StateSetter setDialogState) async {
+      if (urlCtrl.text.isEmpty || keyCtrl.text.isEmpty) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('请先填写 Base URL 和 API Key')));
+        return;
+      }
+      setDialogState(() => isFetchingModels = true);
+      try {
+        final dio = Dio();
+        String url = urlCtrl.text.trim();
+        if (!url.endsWith('/models')) {
+          url = url.endsWith('/') ? '${url}models' : '$url/models';
+        }
+        final res = await dio.get(
+          url,
+          options: Options(headers: {'Authorization': 'Bearer ${keyCtrl.text.trim()}'}),
+        );
+        if (res.statusCode == 200 && res.data['data'] != null) {
+          final List data = res.data['data'];
+          final availableModels = data.map((e) => e['id'].toString()).toList();
+          if (availableModels.isNotEmpty) {
+            if (mounted) {
+              showModalBottomSheet(
+                context: context,
+                builder: (ctx) => ListView.builder(
+                  itemCount: availableModels.length,
+                  itemBuilder: (ctx, index) => ListTile(
+                    title: Text(availableModels[index]),
+                    onTap: () {
+                      setDialogState(() {
+                        modelCtrl.text = availableModels[index];
+                      });
+                      Navigator.pop(ctx);
+                    },
+                  ),
+                ),
+              );
+            }
+          } else {
+            if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('未获取到模型列表')));
+          }
+        } else {
+          if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('获取失败')));
+        }
+      } catch (e) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('请求失败: $e')));
+      } finally {
+        setDialogState(() => isFetchingModels = false);
+      }
+    }
+
+    void applyProviderDefaults(String provider) {
+      if (provider == 'deepseek') {
+        urlCtrl.text = 'https://api.deepseek.com/v1';
+        modelCtrl.text = 'deepseek-v4-flash';
+      } else if (provider == 'kimi') {
+        urlCtrl.text = 'https://api.moonshot.cn/v1';
+        modelCtrl.text = 'moonshot-v1-8k';
+      } else if (provider == 'zhipu') {
+        urlCtrl.text = 'https://open.bigmodel.cn/api/paas/v4';
+        modelCtrl.text = 'glm-4-flash';
+      } else if (provider == 'qwen') {
+        urlCtrl.text = 'https://dashscope.aliyuncs.com/compatible-mode/v1';
+        modelCtrl.text = 'qwen-turbo';
+      } else if (provider == 'openai') {
+        urlCtrl.text = 'https://api.openai.com/v1';
+        modelCtrl.text = 'gpt-3.5-turbo';
+      }
+    }
+
+    if (!mounted) return;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          final isCustom = currentProvider == 'custom';
+          return AlertDialog(
+            title: const Text('系统全局 AI 兜底配置'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('此配置为系统默认的大模型（积分池）。\n当用户未填写自定义 API Key 时，会走此配置并扣减积分。', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<String>(
+                    value: currentProvider,
+                    decoration: const InputDecoration(
+                      labelText: '快速预设提供商',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: 'deepseek', child: Text('DeepSeek')),
+                      DropdownMenuItem(value: 'kimi', child: Text('Kimi (月之暗面)')),
+                      DropdownMenuItem(value: 'zhipu', child: Text('智谱清言')),
+                      DropdownMenuItem(value: 'qwen', child: Text('通义千问')),
+                      DropdownMenuItem(value: 'openai', child: Text('OpenAI')),
+                      DropdownMenuItem(value: 'custom', child: Text('自定义 (Custom)')),
+                    ],
+                    onChanged: (val) {
+                      setDialogState(() {
+                        currentProvider = val!;
+                        applyProviderDefaults(currentProvider);
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: keyCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'API Key (必填)',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    obscureText: true,
+                  ),
+
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: urlCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Base URL',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: modelCtrl,
+                          decoration: const InputDecoration(
+                            labelText: 'Model Name',
+                            border: OutlineInputBorder(),
+                            isDense: true,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      isFetchingModels 
+                          ? const CircularProgressIndicator()
+                          : IconButton(
+                              icon: const Icon(Icons.sync),
+                              onPressed: () => fetchModels(setDialogState),
+                              tooltip: '获取可用模型',
+                            ),
+                    ],
+                  ),
+
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('取消'),
+              ),
+              ElevatedButton(
+                onPressed: () async {
+                  try {
+                    await _dio.put('/super/ai_config', data: {
+                      'base_url': urlCtrl.text.trim(),
+                      'api_key': keyCtrl.text.trim(),
+                      'model_name': modelCtrl.text.trim(),
+                    });
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('系统 AI 配置已更新')));
+                    }
+                    Navigator.pop(ctx);
+                  } catch (_) {
+                    if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('更新失败')));
+                  }
+                },
+                child: const Text('保存全局配置'),
+              ),
+            ],
+          );
+        }
+      ),
+    );
+  }
   // ====== 管理员日志 Tab ======
 
   Widget _buildAdminLogsTab() {
@@ -523,5 +742,100 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
     final dt = DateTime.tryParse(iso);
     if (dt == null) return iso;
     return '${dt.month}/${dt.day} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+  }
+
+
+  Widget _buildLotteryTab() {
+    return FutureBuilder(
+      future: _dio.get('/super/lottery/participants'),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError) {
+          if (snapshot.error.toString().contains('404')) {
+            return const Center(child: Text('暂无进行中的抽奖活动'));
+          }
+          return Center(child: Text('加载失败: ${snapshot.error}'));
+        }
+        if (snapshot.data?.statusCode == 404) {
+          return const Center(child: Text('暂无抽奖活动'));
+        }
+
+        final data = snapshot.data?.data;
+        if (data == null) return const Center(child: Text('暂无数据'));
+
+        final event = data['event'];
+        final participants = (data['participants'] as List).map((e) => e as Map<String, dynamic>).toList();
+
+        return Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Text(
+                '当前活动: ${event['name'] ?? ''} (奖品: ${event['prize_name'] ?? ''})',
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+            ),
+            Expanded(
+              child: ListView.builder(
+                itemCount: participants.length,
+                itemBuilder: (context, index) {
+                  final p = participants[index];
+                  final user = p['user'];
+                  return ListTile(
+                    leading: CircleAvatar(
+                      backgroundImage: user['avatar'] != null && user['avatar'].isNotEmpty
+                          ? NetworkImage(user['avatar'].startsWith('http') 
+                              ? user['avatar'] 
+                              : 'https://sylu.zhouwu.ccwu.cc')
+                          : null,
+                      child: user['avatar'] == null || user['avatar'].isEmpty
+                          ? Text(user['nickname'][0])
+                          : null,
+                    ),
+                    title: Text(user['nickname'] ?? '未知用户'),
+                    subtitle: Text('学号: ${user['student_id']} | 权重: ${p['weight']}'),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.remove_circle, color: Colors.red),
+                      tooltip: '踢出',
+                      onPressed: () async {
+                        final confirm = await showDialog<bool>(
+                          context: context,
+                          builder: (context) => AlertDialog(
+                            title: const Text('踢出用户'),
+                            content: Text('确定要将 ${user['nickname'] ?? user['student_id']} 踢出本次抽奖吗？'),
+                            actions: [
+                              TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('取消')),
+                              TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('踢出', style: TextStyle(color: Colors.red))),
+                            ],
+                          ),
+                        );
+
+                        if (confirm == true) {
+                          try {
+                            final res = await _dio.delete('/super/lottery/participants/${event['id']}/${user['id']}');
+                            if (res.statusCode == 200) {
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已踢出该用户')));
+                                setState(() {}); // 刷新列表
+                              }
+                            }
+                          } catch (e) {
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('踢出失败: $e')));
+                            }
+                          }
+                        }
+                      },
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        );
+      },
+    );
   }
 }

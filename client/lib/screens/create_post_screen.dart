@@ -13,12 +13,14 @@ class CreatePostScreen extends StatefulWidget {
   final int boardId;
   final String? defaultPostType;
   final Post? editingPost;
+  final List<String>? allowedPostTypes;
 
   const CreatePostScreen({
     super.key,
     required this.boardId,
     this.defaultPostType,
     this.editingPost,
+    this.allowedPostTypes,
   });
 
   @override
@@ -68,19 +70,28 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     try {
       final XFile? image = await _imagePicker.pickImage(
         source: source,
-        maxWidth: 1920,
-        maxHeight: 1920,
-        imageQuality: 85,
       );
-      if (image != null && _selectedImages.length < 9) {
-        setState(() {
-          _selectedImages.add(image);
-        });
-      } else if (_selectedImages.length >= 9 && image != null) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('最多只能添加9张图片')),
-          );
+      if (image != null) {
+        final length = await image.length();
+        if (length > 10 * 1024 * 1024) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('图片大小不能超过 10MB'), backgroundColor: Colors.red),
+            );
+          }
+          return;
+        }
+
+        if (_selectedImages.length < 9) {
+          setState(() {
+            _selectedImages.add(image);
+          });
+        } else {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('最多只能添加9张图片')),
+            );
+          }
         }
       }
     } catch (e) {
@@ -162,11 +173,30 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
 
     // 先上传图片
     List<int> fileIds = [];
+    bool hasUploadError = false;
     for (final image in _selectedImages) {
       final fileId = await postProvider.uploadImage(image.path);
       if (fileId != null) {
         fileIds.add(fileId);
+      } else {
+        hasUploadError = true;
+        break;
       }
+    }
+
+    if (hasUploadError) {
+      setState(() {
+        _isLoading = false;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('图片上传失败，请检查网络或图片是否过大'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
     }
 
     final mergedFileIds = [
@@ -253,9 +283,9 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                 TextField(
                   controller: _titleController,
                   decoration: InputDecoration(
-                    labelText: _postType == 'exposure' ? '被曝光人信息' : '商品名称',
-                    hintText: _postType == 'exposure'
-                        ? '请输入骗子信息（姓名/QQ/微信等）'
+                    labelText: (_postType == 'lost' || _postType == 'found') ? '物品名称' : '商品名称',
+                    hintText: (_postType == 'lost' || _postType == 'found')
+                        ? '请输入物品名称'
                         : '请输入商品名称',
                   ),
                 ),
@@ -263,19 +293,21 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
               ],
               Row(
                 children: [
-                  Expanded(
-                    flex: 2,
-                    child: TextField(
-                      controller: _priceController,
-                      decoration: InputDecoration(
-                        labelText: _postType == 'exposure' ? '涉及金额' : '价格',
-                        prefixText: _postType == 'exposure' ? '¥ ' : '¥ ',
-                        hintText: _postType == 'exposure' ? '预估损失金额' : '0',
+                  if (_postType != 'lost' && _postType != 'found') ...[
+                    Expanded(
+                      flex: 2,
+                      child: TextField(
+                        controller: _priceController,
+                        decoration: InputDecoration(
+                          labelText: _postType == 'exposure' ? '涉及金额' : '价格',
+                          prefixText: _postType == 'exposure' ? '¥ ' : '¥ ',
+                          hintText: _postType == 'exposure' ? '预估损失金额' : '0',
+                        ),
+                        keyboardType: TextInputType.number,
                       ),
-                      keyboardType: TextInputType.number,
                     ),
-                  ),
-                  const SizedBox(width: 12),
+                    const SizedBox(width: 12),
+                  ],
                   Expanded(
                     flex: 3,
                     child: DropdownButtonFormField<String>(
@@ -283,13 +315,19 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                         labelText: '类型',
                       ),
                       initialValue: _postType.isEmpty ? null : _postType,
-                      items: const [
-                        DropdownMenuItem(value: 'sell', child: Text('出售')),
-                        DropdownMenuItem(value: 'buy', child: Text('求购')),
-                        DropdownMenuItem(value: 'proxy', child: Text('代课')),
-                        DropdownMenuItem(value: 'lost', child: Text('失物')),
-                        DropdownMenuItem(value: 'found', child: Text('招领')),
-                        DropdownMenuItem(value: 'exposure', child: Text('曝光')),
+                      items: [
+                        if (widget.allowedPostTypes == null || widget.allowedPostTypes!.contains('sell'))
+                          const DropdownMenuItem(value: 'sell', child: Text('出售')),
+                        if (widget.allowedPostTypes == null || widget.allowedPostTypes!.contains('buy'))
+                          const DropdownMenuItem(value: 'buy', child: Text('求购')),
+                        if (widget.allowedPostTypes == null || widget.allowedPostTypes!.contains('proxy'))
+                          const DropdownMenuItem(value: 'proxy', child: Text('代课')),
+                        if (widget.allowedPostTypes == null || widget.allowedPostTypes!.contains('lost'))
+                          const DropdownMenuItem(value: 'lost', child: Text('求问失物')),
+                        if (widget.allowedPostTypes == null || widget.allowedPostTypes!.contains('found'))
+                          const DropdownMenuItem(value: 'found', child: Text('寻找失主')),
+                        if (widget.allowedPostTypes == null || widget.allowedPostTypes!.contains('exposure'))
+                          const DropdownMenuItem(value: 'exposure', child: Text('曝光')),
                       ],
                       onChanged: (value) {
                         setState(() {
@@ -323,8 +361,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
               if (_postType == 'exposure') const SizedBox(height: 16),
               TextField(
                 controller: _contactController,
-                decoration: const InputDecoration(
-                  labelText: '联系方式（选填）',
+                decoration: InputDecoration(
+                  labelText: (_postType == 'lost' || _postType == 'found') ? '联系方式及地点（选填）' : '联系方式（选填）',
                   hintText: '您的联系方式，方便他人核实',
                 ),
               ),

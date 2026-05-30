@@ -114,7 +114,7 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => CourseScheduleProvider()),
         ChangeNotifierProvider(create: (_) => TeacherProvider(dio)),
         ChangeNotifierProvider(create: (_) => MajorProvider(dio)),
-        ChangeNotifierProvider(create: (_) => CanteenProvider()),
+        ChangeNotifierProvider(create: (_) => CanteenProvider(dio)),
       ],
       child: const _WidgetDeepLinkHandler(
         child: _AppContent(),

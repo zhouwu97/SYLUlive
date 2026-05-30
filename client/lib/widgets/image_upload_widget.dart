@@ -37,6 +37,7 @@ class _ImageUploadWidgetState extends State<ImageUploadWidget> {
     try {
       final XFile? image = await _imagePicker.pickImage(
         source: source,
+        imageQuality: 70, // compress slightly to avoid huge files
       );
 
       if (image != null) {
@@ -45,11 +46,26 @@ class _ImageUploadWidgetState extends State<ImageUploadWidget> {
         });
 
         final dio = context.read<AuthProvider>().dio;
+        
+        final bytes = await image.readAsBytes();
+        final fileName = image.name.isNotEmpty ? image.name : 'upload.jpg';
+        
         final formData = FormData.fromMap({
-          'file': await MultipartFile.fromFile(image.path),
+          'file': MultipartFile.fromBytes(
+            bytes,
+            filename: fileName,
+          ),
         });
 
-        final response = await dio.post('/upload', data: formData);
+        final response = await dio.post(
+          '/upload', 
+          data: formData,
+          options: Options(
+            // Increase timeout for file upload if needed, or keep default
+            sendTimeout: const Duration(seconds: 60),
+            receiveTimeout: const Duration(seconds: 60),
+          )
+        );
 
         if (response.statusCode == 200 && response.data != null && response.data['url'] != null) {
           setState(() {
@@ -64,8 +80,28 @@ class _ImageUploadWidgetState extends State<ImageUploadWidget> {
           }
         }
       }
+    } on DioException catch (e) {
+      debugPrint('Dio上传图片出错: ${e.message} ${e.response?.data}');
+      if (mounted) {
+        String errMsg = '网络异常或超时';
+        if (e.response != null && e.response?.data != null) {
+           if (e.response?.data is Map && e.response?.data['error'] != null) {
+               errMsg = e.response?.data['error'];
+           } else {
+               errMsg = '服务器错误 ${e.response?.statusCode}';
+           }
+        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('上传失败: $errMsg'), backgroundColor: Colors.red),
+        );
+      }
     } catch (e) {
       debugPrint('上传图片出错: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('处理图片出错: $e'), backgroundColor: Colors.red),
+        );
+      }
     } finally {
       setState(() {
         _isUploading = false;

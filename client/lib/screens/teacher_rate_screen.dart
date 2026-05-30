@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 import '../models/teacher.dart';
 import '../providers/major_provider.dart';
@@ -22,11 +24,12 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabCtrl;
   final _searchCtrl = TextEditingController();
-  bool _showDisclaimer = true;
+  bool _showDisclaimer = false;
 
   @override
   void initState() {
     super.initState();
+    _checkDisclaimer();
     _tabCtrl = TabController(length: 3, vsync: this);
     _tabCtrl.addListener(() {
       if (!_tabCtrl.indexIsChanging) {
@@ -34,6 +37,14 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
       }
     });
     WidgetsBinding.instance.addPostFrameCallback((_) => _refreshAll());
+  }
+
+  Future<void> _checkDisclaimer() async {
+    final prefs = await SharedPreferences.getInstance();
+    final hasShown = prefs.getBool('has_shown_teacher_disclaimer') ?? false;
+    if (!hasShown) {
+      setState(() => _showDisclaimer = true);
+    }
   }
 
   @override
@@ -182,7 +193,11 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
               ),
             ),
             GestureDetector(
-              onTap: () => setState(() => _showDisclaimer = false),
+              onTap: () async {
+                setState(() => _showDisclaimer = false);
+                final prefs = await SharedPreferences.getInstance();
+                await prefs.setBool('has_shown_teacher_disclaimer', true);
+              },
               child: const Icon(Icons.close, size: 16, color: Colors.grey),
             ),
           ],
@@ -351,6 +366,8 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
     required String extraLabel,
     required IconData icon,
     required VoidCallback onTap,
+    VoidCallback? onLongPress,
+    String? imageUrl,
   }) {
     final accent = _rankColor(rank - 1);
     return GlassContainer(
@@ -364,6 +381,7 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
           ? Colors.white.withValues(alpha: 0.08)
           : Colors.white.withValues(alpha: 0.72),
       onTap: onTap,
+      onLongPress: onLongPress,
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Row(
@@ -374,22 +392,30 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
               decoration: BoxDecoration(
                 color: accent.withValues(alpha: 0.14),
                 borderRadius: BorderRadius.circular(16),
+                image: imageUrl != null && imageUrl.isNotEmpty
+                    ? DecorationImage(
+                        image: CachedNetworkImageProvider(imageUrl),
+                        fit: BoxFit.cover,
+                      )
+                    : null,
               ),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(icon, color: accent, size: 18),
-                  const SizedBox(height: 2),
-                  Text(
-                    '#$rank',
-                    style: TextStyle(
-                      color: accent,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w800,
+              child: imageUrl != null && imageUrl.isNotEmpty
+                  ? null
+                  : Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(icon, color: accent, size: 18),
+                        const SizedBox(height: 2),
+                        Text(
+                          '#$rank',
+                          style: TextStyle(
+                            color: accent,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                ],
-              ),
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -514,8 +540,11 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
     return groups;
   }
 
-  Widget _buildCanteenList(bool isDark) =>
-      Consumer<CanteenProvider>(builder: (_, provider, __) {
+  Widget _buildCanteenList(bool isDark) {
+      final user = context.watch<AuthProvider>().user;
+      final isAdmin = user?.role == 'admin' || user?.role == 'super_admin';
+      
+      return Consumer<CanteenProvider>(builder: (_, provider, __) {
         final query = _currentQuery?.toLowerCase();
         final canteens = query == null
             ? provider.canteens
@@ -553,6 +582,30 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
                 count: canteen.ratingCount,
                 extraLabel: '食堂评分',
                 icon: Icons.restaurant,
+                imageUrl: canteen.image != null && canteen.image.isNotEmpty ? ApiConstants.fullUrl(canteen.image) : null,
+                onLongPress: isAdmin ? () {
+                  showDialog(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      title: const Text('删除店铺'),
+                      content: Text('确定要删除食堂/店铺 "${canteen.name}" 吗？'),
+                      actions: [
+                        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+                        TextButton(
+                          onPressed: () async {
+                            Navigator.pop(ctx);
+                            final success = await context.read<CanteenProvider>().deleteCanteen(canteen.id);
+                            if (success && mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('删除成功')));
+                              context.read<CanteenProvider>().loadCanteens();
+                            }
+                          },
+                          child: const Text('删除', style: TextStyle(color: Colors.red)),
+                        ),
+                      ],
+                    ),
+                  );
+                } : null,
                 onTap: () => Navigator.push(
                   context,
                   MaterialPageRoute(
@@ -570,6 +623,7 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
           ),
         );
       });
+  }
 
   void _showAddDialog() {
     final nameCtrl = TextEditingController();

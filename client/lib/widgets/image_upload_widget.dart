@@ -37,6 +37,9 @@ class _ImageUploadWidgetState extends State<ImageUploadWidget> {
     try {
       final XFile? image = await _imagePicker.pickImage(
         source: source,
+        maxWidth: 1920,
+        maxHeight: 1920,
+        imageQuality: 85,
       );
 
       if (image != null) {

@@ -1,4 +1,4 @@
-﻿import 'dart:convert';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
 import '../models/canteen.dart';
@@ -63,6 +63,17 @@ class CanteenProvider with ChangeNotifier {
       debugPrint('Error loading canteen detail: $e');
     }
     return {};
+  }
+
+  Future<bool> deleteCanteen(int id) async {
+    try {
+      final response = await _dio.delete('/canteens/$id');
+      return response.statusCode == 200;
+    } on DioException catch (e) {
+      _errorMessage = _parseError(e);
+      debugPrint('Error deleting canteen: $e');
+      return false;
+    }
   }
 
   Future<bool> rateCanteen(int id, int star, String comment, List<String> images) async {

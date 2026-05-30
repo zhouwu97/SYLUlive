@@ -37,24 +37,8 @@ class _CampusScreenState extends State<CampusScreen>
     final themeProvider = context.watch<ThemeProvider>();
 
     return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: isDark
-                ? [
-                    const Color(0xFF0F1219),
-                    const Color(0xFF161B24),
-                  ]
-                : [
-                    const Color(0xFFF4F6FB),
-                    const Color(0xFFE8ECF4),
-                  ],
-          ),
-        ),
-        child: NestedScrollView(
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      body: NestedScrollView(
           headerSliverBuilder: (context, innerBoxIsScrolled) {
             return [
               SliverAppBar(
@@ -115,8 +99,7 @@ class _CampusScreenState extends State<CampusScreen>
             ],
           ),
         ),
-      ),
-    );
+      );
   }
 
   Widget _buildGlassTabBar(bool isDark, Color primaryColor) {

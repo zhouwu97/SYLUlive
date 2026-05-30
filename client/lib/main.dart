@@ -16,9 +16,11 @@ import 'providers/edu_provider.dart';
 import 'providers/course_schedule_provider.dart';
 import 'providers/major_provider.dart';
 import 'providers/teacher_provider.dart';
+import 'providers/canteen_provider.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/course_schedule_screen.dart';
+import 'screens/user_replies_screen.dart';
 import 'services/course_reminder_service.dart';
 import 'theme/AppTheme.dart';
 import 'config/api_constants.dart';
@@ -34,7 +36,7 @@ Future<void> main() async {
 /// 极光推送初始化
 var jpush = JPush.newJPush();
 
-Future<void> setupJPush() async {
+Future<void> setupJPush(AuthProvider authProvider) async {
   jpush.setup(
     appKey: 'fbbd87f741e919f39519afe6',
     channel: 'developer-default',
@@ -47,12 +49,21 @@ Future<void> setupJPush() async {
     },
     onOpenNotification: (Map<String, dynamic> message) async {
       debugPrint('👆 用户点击通知: $message');
+      if (appNavigatorKey.currentState != null) {
+        appNavigatorKey.currentState!.popUntil((route) => route.isFirst);
+        appNavigatorKey.currentState!.push(
+          MaterialPageRoute(builder: (_) => const UserRepliesScreen()),
+        );
+      }
     },
   );
   final rid = await jpush.getRegistrationID();
   debugPrint('🔥 JPush RegistrationID: $rid');
-  // 获取 auth provider 并更新 token
-  // 注意：需要在 AuthWrapper 完成初始化后调用
+  
+  if (rid != null && rid.isNotEmpty) {
+    await authProvider.updateDeviceToken(rid);
+    debugPrint('✅ 成功上报 JPush Device Token: $rid');
+  }
 }
 
 Dio? _sharedDio;
@@ -103,6 +114,7 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => CourseScheduleProvider()),
         ChangeNotifierProvider(create: (_) => TeacherProvider(dio)),
         ChangeNotifierProvider(create: (_) => MajorProvider(dio)),
+        ChangeNotifierProvider(create: (_) => CanteenProvider(dio)),
       ],
       child: const _WidgetDeepLinkHandler(
         child: _AppContent(),
@@ -132,6 +144,17 @@ class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) => _checkDeepLink());
+    
+    // 监听原生端主动推送的深度链接（瞬间响应，避免打断动画）
+    _channel.setMethodCallHandler((call) async {
+      if (call.method == 'onDeepLink') {
+        final uri = call.arguments as String?;
+        if ((uri == 'widget_timetable' || uri == 'campus://timetable') && mounted) {
+          appNavigatorKey.currentState?.popUntil((route) => route.isFirst);
+          widgetTabSwitch.value++;
+        }
+      }
+    });
   }
 
   @override
@@ -151,6 +174,7 @@ class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
     try {
       final uri = await _channel.invokeMethod<String>('getPendingDeepLink');
       if ((uri == 'widget_timetable' || uri == 'campus://timetable') && mounted) {
+        appNavigatorKey.currentState?.popUntil((route) => route.isFirst);
         // 切换到底部导航的课程表 tab，不 push 新页面
         widgetTabSwitch.value++;
       }
@@ -193,6 +217,7 @@ class _AppContent extends StatelessWidget {
       ),
       themeMode: themeProvider.isDarkMode ? ThemeMode.dark : ThemeMode.light,
       navigatorKey: appNavigatorKey,
+      scaffoldMessengerKey: scaffoldMessengerKey,
       routes: {
         '/login': (context) => const LoginScreen(),
         '/timetable': (context) => const PredictiveBackGate(
@@ -354,8 +379,15 @@ class _BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
   }
 }
 
-class AuthWrapper extends StatelessWidget {
+class AuthWrapper extends StatefulWidget {
   const AuthWrapper({super.key});
+
+  @override
+  State<AuthWrapper> createState() => _AuthWrapperState();
+}
+
+class _AuthWrapperState extends State<AuthWrapper> {
+  bool _jpushSetup = false;
 
   @override
   Widget build(BuildContext context) {
@@ -365,6 +397,11 @@ class AuthWrapper extends StatelessWidget {
           return const Scaffold(
             body: Center(child: CircularProgressIndicator()),
           );
+        }
+
+        if (authProvider.isLoggedIn && !_jpushSetup) {
+          _jpushSetup = true;
+          setupJPush(authProvider);
         }
 
         final tp = context.watch<ThemeProvider>();

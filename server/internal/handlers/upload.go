@@ -40,7 +40,7 @@ func (h *UploadHandler) Upload(c *gin.Context) {
 
 	// 检查文件大小
 	if file.Size > h.maxSize {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "文件大小不能超过2MB"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "文件大小不能超过10MB"})
 		return
 	}
 

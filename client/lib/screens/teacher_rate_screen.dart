@@ -5,8 +5,11 @@ import '../models/teacher.dart';
 import '../providers/major_provider.dart';
 import '../providers/teacher_provider.dart';
 import '../widgets/glass_container.dart';
+import '../providers/canteen_provider.dart';
 import 'major_detail_screen.dart';
 import 'subject_ranking_detail_screen.dart';
+import 'canteen_detail_screen.dart';
+import '../widgets/image_upload_widget.dart';
 
 class TeacherRateScreen extends StatefulWidget {
   const TeacherRateScreen({super.key});
@@ -24,7 +27,7 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
   @override
   void initState() {
     super.initState();
-    _tabCtrl = TabController(length: 2, vsync: this);
+    _tabCtrl = TabController(length: 3, vsync: this);
     _tabCtrl.addListener(() {
       if (!_tabCtrl.indexIsChanging) {
         setState(() {}); // 确保切换 segment 时重建
@@ -44,6 +47,7 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
     await Future.wait([
       context.read<TeacherProvider>().loadTeachers(query: _currentQuery),
       context.read<MajorProvider>().loadMajors(),
+      context.read<CanteenProvider>().loadCanteens(),
     ]);
   }
 
@@ -64,8 +68,8 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
             _buildSegmentedControl(isDark),
             Expanded(
               child: _tabCtrl.index == 0
-                  ? _buildSubjectList(isDark)
-                  : _buildMajorList(isDark),
+                  ? _buildCanteenList(isDark)
+                  : (_tabCtrl.index == 1 ? _buildSubjectList(isDark) : _buildMajorList(isDark)),
             ),
           ],
         ),
@@ -92,10 +96,13 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
         child: Row(
           children: [
             Expanded(
-              child: _buildSegmentItem(0, '学科榜', isDark),
+              child: _buildSegmentItem(0, '食堂榜', isDark),
             ),
             Expanded(
-              child: _buildSegmentItem(1, '专业榜', isDark),
+              child: _buildSegmentItem(1, '学科榜', isDark),
+            ),
+            Expanded(
+              child: _buildSegmentItem(2, '专业榜', isDark),
             ),
           ],
         ),
@@ -196,7 +203,7 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
           child: TextField(
             controller: _searchCtrl,
             decoration: InputDecoration(
-              hintText: _tabCtrl.index == 0 ? '搜索学科或教师...' : '搜索专业...',
+              hintText: _tabCtrl.index == 0 ? '搜索食堂...' : (_tabCtrl.index == 1 ? '搜索学科或教师...' : '搜索专业...'),
               prefixIcon: const Icon(Icons.search, size: 20),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
@@ -205,7 +212,7 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
               contentPadding: const EdgeInsets.symmetric(vertical: 10),
             ),
             onChanged: (value) {
-              if (_tabCtrl.index == 0) {
+              if (_tabCtrl.index == 1) {
                 context
                     .read<TeacherProvider>()
                     .loadTeachers(query: value.trim().isEmpty ? null : value);
@@ -507,23 +514,83 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
     return groups;
   }
 
+  Widget _buildCanteenList(bool isDark) =>
+      Consumer<CanteenProvider>(builder: (_, provider, __) {
+        final query = _currentQuery?.toLowerCase();
+        final canteens = query == null
+            ? provider.canteens
+            : provider.canteens
+                .where((m) => m.name.toLowerCase().contains(query))
+                .toList();
+
+        if (provider.isLoading && provider.canteens.isEmpty) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (canteens.isEmpty) {
+          return Center(
+            child: Text(
+              '暂无食堂',
+              style: TextStyle(
+                color: isDark ? Colors.white54 : Colors.grey[600],
+              ),
+            ),
+          );
+        }
+
+        return RefreshIndicator(
+          onRefresh: () => context.read<CanteenProvider>().loadCanteens(),
+          child: ListView.builder(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 80),
+            itemCount: canteens.length,
+            itemBuilder: (_, index) {
+              final canteen = canteens[index];
+              return _buildLeaderboardCard(
+                isDark: isDark,
+                rank: index + 1,
+                title: canteen.name,
+                subtitle: '评分: ${canteen.averageStar.toStringAsFixed(1)}',
+                average: canteen.averageStar,
+                count: canteen.ratingCount,
+                extraLabel: '食堂评分',
+                icon: Icons.restaurant,
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => CanteenDetailScreen(
+                      canteenId: canteen.id,
+                      canteenName: canteen.name,
+                    ),
+                  ),
+                ).then((_) {
+                  if (!mounted) return;
+                  context.read<CanteenProvider>().loadCanteens();
+                }),
+              );
+            },
+          ),
+        );
+      });
+
   void _showAddDialog() {
     final nameCtrl = TextEditingController();
     final courseCtrl = TextEditingController();
     final levelCtrl = TextEditingController(text: '本科');
-    final isTeacher = _tabCtrl.index == 0;
+    List<String> uploadedImageUrls = [];
+    final isCanteen = _tabCtrl.index == 0;
+    final isTeacher = _tabCtrl.index == 1;
+    final isMajor = _tabCtrl.index == 2;
 
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(isTeacher ? '添加教师' : '添加专业'),
+        title: Text(isTeacher ? '添加教师' : (isMajor ? '添加专业' : '添加食堂')),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
               controller: nameCtrl,
               decoration: InputDecoration(
-                labelText: isTeacher ? '教师姓名' : '专业名',
+                labelText: isTeacher ? '教师姓名' : (isMajor ? '专业名' : '食堂/店铺名'),
               ),
             ),
             const SizedBox(height: 8),
@@ -535,7 +602,7 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
                   helperText: '请填写完整课程名称，学科榜会按这里的文字聚合',
                 ),
               )
-            else
+            else if (isMajor)
               DropdownButtonFormField(
                 initialValue: '本科',
                 items: const [
@@ -543,6 +610,13 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
                   DropdownMenuItem(value: '研究生', child: Text('研究生')),
                 ],
                 onChanged: (v) => levelCtrl.text = v!,
+              )
+            else if (isCanteen)
+              ImageUploadWidget(
+                maxImages: 1,
+                onImagesUploaded: (urls) {
+                  uploadedImageUrls = urls;
+                },
               ),
           ],
         ),
@@ -556,25 +630,41 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
               final name = nameCtrl.text.trim();
               final course = courseCtrl.text.trim();
               if (name.isEmpty) return;
+              
               if (isTeacher && course.length < 2) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('请填写完整课程名称')),
                 );
                 return;
               }
+              if (isCanteen && uploadedImageUrls.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('请上传一张食堂封面图片')),
+                );
+                return;
+              }
+              
               Navigator.pop(ctx);
+              
               if (isTeacher) {
                 await context.read<TeacherProvider>().addTeacher(name, course);
                 if (!mounted) return;
                 await context
                     .read<TeacherProvider>()
                     .loadTeachers(query: _currentQuery);
-              } else {
+              } else if (isMajor) {
                 await context
                     .read<MajorProvider>()
                     .addMajor(name, levelCtrl.text);
                 if (!mounted) return;
                 await context.read<MajorProvider>().loadMajors();
+              } else if (isCanteen) {
+                final success = await context.read<CanteenProvider>().addCanteen(name, uploadedImageUrls.first);
+                if (success) {
+                   ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('添加成功，经验+10')));
+                }
+                if (!mounted) return;
+                await context.read<CanteenProvider>().loadCanteens();
               }
             },
             child: const Text('提交'),

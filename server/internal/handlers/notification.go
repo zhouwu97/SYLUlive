@@ -26,7 +26,7 @@ func (h *NotificationHandler) GetUnreadCount(c *gin.Context) {
 	uid := userID.(uint)
 
 	var count int64
-	h.db.Model(&models.Notification{}).Where("user_id = ? AND is_read = ?", uid, false).Count(&count)
+	h.db.Model(&models.Notification{}).Where("user_id = ? AND type = ? AND is_read = ?", uid, "reply", false).Count(&count)
 
 	c.JSON(http.StatusOK, gin.H{
 		"count": count,
@@ -63,6 +63,9 @@ func CreateReplyNotification(db *gorm.DB, toUserID, fromUserID, replyID, postID 
 // SendJPushNotification 异步发送极光推送（不阻塞主请求）
 func SendJPushNotification(jpushAppKey, jpushMasterSecret string, db *gorm.DB, toUserID, fromUserID uint, replyID, postID uint, content string) {
 	if jpushAppKey == "" || jpushMasterSecret == "" {
+		return
+	}
+	if toUserID == fromUserID {
 		return
 	}
 

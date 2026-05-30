@@ -100,6 +100,11 @@ func (h *AppealHandler) selectJury(appealID uint, excludeUserID uint) {
 		h.db.Where("id != ?", excludeUserID).Limit(10).Find(&candidates)
 	}
 
+	// 如果还是没有候选人（系统里只有发帖人和超级管理员等情况），则自动分配超级管理员
+	if len(candidates) == 0 {
+		h.db.Where("role = ?", models.RoleSuperAdmin).First(&candidates)
+	}
+
 	// 随机选择最多10人
 	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 	rng.Shuffle(len(candidates), func(i, j int) { candidates[i], candidates[j] = candidates[j], candidates[i] })
@@ -193,66 +198,51 @@ func (h *AppealHandler) Vote(c *gin.Context) {
 		return
 	}
 
-	// 验证投票选项
 	if input.Vote != "support" && input.Vote != "oppose" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的投票选项，请选择 support 或 oppose"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的投票选项"})
 		return
 	}
 
-	// 检查是否是有效的陪审员
-	var vote models.AppealVote
-	if err := h.db.Where("appeal_id = ? AND voter_id = ?", appealID, userID).First(&vote).Error; err != nil {
-		c.JSON(http.StatusForbidden, gin.H{"error": "您不是此申诉的陪审员"})
-		return
-	}
+	err = h.db.Transaction(func(tx *gorm.DB) error {
+		// 检查申诉是否存在并锁定
+		var appeal models.Appeal
+		if err := tx.First(&appeal, appealID).Error; err != nil {
+			return err
+		}
 
-	if vote.Vote != "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "您已经投过票了"})
-		return
-	}
+		if appeal.Status != models.AppealStatusPending {
+			return fmt.Errorf("申诉已处理完毕，不能再投票")
+		}
 
-	h.db.Model(&vote).Updates(map[string]interface{}{
-		"vote":    input.Vote,
-		"comment": input.Comment,
-	})
+		// 检查是否是有效的陪审员
+		var vote models.AppealVote
+		if err := tx.Where("appeal_id = ? AND voter_id = ?", appealID, userID).First(&vote).Error; err != nil {
+			return fmt.Errorf("您不是此申诉的陪审员")
+		}
 
-	// 检查是否所有陪审员都已投票
-	h.checkAndCloseAppeal(uint(appealID))
+		if vote.Vote != "" {
+			return fmt.Errorf("您已经投过票了")
+		}
 
-	c.JSON(http.StatusOK, gin.H{"message": "投票成功"})
-}
+		if err := tx.Model(&vote).Updates(map[string]interface{}{
+			"vote":    input.Vote,
+			"comment": input.Comment,
+		}).Error; err != nil {
+			return err
+		}
 
-// checkAndCloseAppeal 检查并关闭申诉（事务保护防止并发裁决）
-func (h *AppealHandler) checkAndCloseAppeal(appealID uint) {
-	h.db.Transaction(func(tx *gorm.DB) error {
+		// 检查是否所有陪审员都已投票
 		var votes []models.AppealVote
 		tx.Where("appeal_id = ?", appealID).Find(&votes)
 
 		allVoted := true
+		supportCount := 0
+		opposeCount := 0
 		for _, v := range votes {
 			if v.Vote == "" {
 				allVoted = false
 				break
 			}
-		}
-
-		if !allVoted {
-			return nil
-		}
-
-		// 二次确认申诉仍为pending状态，防止重复裁决
-		var appeal models.Appeal
-		if err := tx.First(&appeal, appealID).Error; err != nil {
-			return err
-		}
-		if appeal.Status != models.AppealStatusPending {
-			return nil // 已经被其他请求处理
-		}
-
-		// 统计票数
-		supportCount := 0
-		opposeCount := 0
-		for _, v := range votes {
 			if v.Vote == "support" {
 				supportCount++
 			} else if v.Vote == "oppose" {
@@ -260,18 +250,26 @@ func (h *AppealHandler) checkAndCloseAppeal(appealID uint) {
 			}
 		}
 
-		now := time.Now()
+		if !allVoted {
+			return nil
+		}
 
+		now := time.Now()
 		if supportCount > opposeCount {
-			// 申诉成功，恢复帖子
 			appeal.Status = models.AppealStatusPass
 			appeal.Result = fmt.Sprintf("支持票: %d, 反对票: %d, 申诉成功", supportCount, opposeCount)
 			tx.Model(&models.Post{}).Where("id = ?", appeal.PostID).Update("status", models.PostStatusNormal)
 
 			// 管理员经验-3（不低于0）
-			tx.Model(&models.User{}).Where("id = ? AND admin_exp >= 3", appeal.AdminID).Update("admin_exp", gorm.Expr("admin_exp - 3"))
+			var admin models.User
+			if err := tx.First(&admin, appeal.AdminID).Error; err == nil {
+				newExp := admin.AdminExp - 3
+				if newExp < 0 {
+					newExp = 0
+				}
+				tx.Model(&admin).Update("admin_exp", newExp)
+			}
 		} else {
-			// 申诉失败
 			appeal.Status = models.AppealStatusReject
 			appeal.Result = fmt.Sprintf("支持票: %d, 反对票: %d, 申诉失败", supportCount, opposeCount)
 
@@ -282,4 +280,11 @@ func (h *AppealHandler) checkAndCloseAppeal(appealID uint) {
 		appeal.ClosedAt = &now
 		return tx.Save(&appeal).Error
 	})
+
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "投票成功"})
 }

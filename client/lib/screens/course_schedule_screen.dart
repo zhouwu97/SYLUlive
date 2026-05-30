@@ -1,13 +1,17 @@
+import 'dart:io';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:file_picker/file_picker.dart';
 import '../providers/auth_provider.dart';
 import '../providers/edu_provider.dart';
 import '../providers/course_schedule_provider.dart';
 import '../services/course_reminder_service.dart';
 import '../widgets/glass_container.dart';
+import '../utils/app_feedback.dart';
 import '../utils/app_navigator.dart' show appNavigatorKey;
 import 'edu_screen.dart';
 import 'login_screen.dart';
@@ -102,11 +106,13 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   bool _didLoad = false;
   bool _initializing = true;
   bool _hasCache = false;
+  bool _settingsLoaded = false;
   String? _preparedUserId;
   double _cardOpacity = 0.4;
   double _slotHeight = defaultSlotHeight;
   String _widgetTextColor = '#333333';
   bool _courseReminderEnabled = false;
+  int _reminderAdvanceMinutes = 5;
   bool _courseReminderBusy = false;
   int _scheduledReminderCount = 0;
   bool _isFetchingCourses = false;
@@ -172,8 +178,10 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
         _hasCache = true;
         _initializing = false;
       });
-      sc.loadCourses().then((_) => _syncCourseReminders(sc));
-      _silentSync(sc);
+      sc.loadCourses().then((_) {
+        _syncCourseReminders(sc);
+        _silentSync(sc);
+      });
       return;
     }
 
@@ -219,10 +227,14 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     final uid = user.id.toString();
     if (_preparedUserId == uid) return;
     _preparedUserId = uid;
-    final edu = context.read<EduProvider>();
-    final sc = context.read<CourseScheduleProvider>();
-    edu.setUserId(uid);
-    sc.setUserId(uid);
+    
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final edu = context.read<EduProvider>();
+      final sc = context.read<CourseScheduleProvider>();
+      edu.setUserId(uid);
+      sc.setUserId(uid);
+    });
   }
 
   // PageView 滑动切换周
@@ -236,6 +248,9 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (!_settingsLoaded) {
+      return const Scaffold(backgroundColor: Colors.transparent);
+    }
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
@@ -271,9 +286,13 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                           : PageView.builder(
                               controller: _weekPageController,
                               onPageChanged: _onWeekPageChanged,
-                              itemBuilder: (_, __) => SingleChildScrollView(
-                                  child:
-                                      _buildCourseGridForWeek(sc, _weekStart)),
+                              itemBuilder: (_, index) {
+                                final currentMonday = _mondayOf(DateTime.now());
+                                final targetMonday = currentMonday.add(Duration(days: (index - 500) * 7));
+                                return SingleChildScrollView(
+                                  child: _buildCourseGridForWeek(sc, targetMonday)
+                                );
+                              },
                             )),
                 ]);
               },
@@ -355,14 +374,14 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                                   color: Colors.white,
                                 ),
                               )
-                            : const Icon(Icons.arrow_downward_outlined,
+                            : const Icon(Icons.collections_bookmark_outlined,
                                 size: 22),
                         color: Colors.white,
                         disabledColor: Colors.white54,
                         onPressed: _isFetchingCourses
                             ? null
-                            : () => _fetchCourses(context),
-                        tooltip: '从教务获取课表'),
+                            : () => _showArchiveSheet(context, sc),
+                        tooltip: '课表存档'),
                     IconButton(
                         icon: const Icon(Icons.share_outlined, size: 22),
                         color: Colors.white,
@@ -564,7 +583,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                         ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(content: Text('绑定成功')));
                         _didLoad = false;
-                        sc.loadCourses(forceRefresh: true);
+                        sc.loadCourses(forceRefresh: true, isManualRefresh: true);
                       } else if (context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                             content: Text(edu.errorMessage ?? '绑定失败')));
@@ -586,6 +605,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
   // ====== 空状态视图 ======
   Widget _buildEmptyView(BuildContext context, bool isDark) {
+    debugPrint('Schedule UI: Building _buildEmptyView (暂无课表数据) at ${DateTime.now()}');
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
@@ -630,15 +650,23 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
         .push(MaterialPageRoute(builder: (_) => const EduScreen()));
     if (mounted) {
       final sc = context.read<CourseScheduleProvider>();
-      await sc.loadCachedCoursesIfAvailable();
-      await sc.loadCourses(forceRefresh: true);
+      setState(() {
+        _initializing = true;
+        _isFetchingCourses = true;
+      });
+      await sc.loadCourses(forceRefresh: false);
       await _syncCourseReminders(sc);
-      setState(() => _hasCache = sc.courses.isNotEmpty);
+      setState(() {
+        _hasCache = sc.courses.isNotEmpty;
+        _initializing = false;
+        _isFetchingCourses = false;
+      });
     }
   }
 
   /// 无缓存时显示引导（用户刚注册或首次使用）
   Widget _buildNoCacheView(BuildContext context, bool isDark) {
+    debugPrint('Schedule UI: Building _buildNoCacheView (首次使用) at ${DateTime.now()}');
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
@@ -671,13 +699,19 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                   // 返回后强制刷新课表
                   if (mounted) {
                     final sc = context.read<CourseScheduleProvider>();
-                    await sc.loadCachedCoursesIfAvailable();
                     setState(() {
                       _didLoad = false;
                       _hasCache = false;
+                      _initializing = true;
+                      _isFetchingCourses = true;
                     });
-                    await sc.loadCourses(forceRefresh: true);
+                    await sc.loadCourses(forceRefresh: false);
                     await _syncCourseReminders(sc);
+                    setState(() {
+                      _hasCache = sc.courses.isNotEmpty;
+                      _initializing = false;
+                      _isFetchingCourses = false;
+                    });
                   }
                 },
                 icon: const Icon(Icons.school),
@@ -803,8 +837,11 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
       if (result == null || !result.success) {
         Navigator.pop(context); // 关闭加载弹窗
-        messenger.showSnackBar(
-          SnackBar(content: Text(result?.errorMessage ?? '获取课表失败')),
+        final errorMsg = result?.errorMessage ?? '未知错误';
+        AppFeedback.showErrorDialog(
+          context,
+          title: '获取课表失败',
+          message: '可能是由于网络不稳定或教务系统维护中。\n详细原因：$errorMsg\n\n如果提示登录失效，后台正在尝试为您重新登录，请稍后再试。',
         );
         return;
       }
@@ -821,7 +858,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       final synced =
           await edu.syncCourses(sc.selectedYear, sc.selectedSemester, courses);
       if (synced) {
-        await sc.loadCourses(forceRefresh: true);
+        await sc.loadCourses(forceRefresh: true, clearUi: true, isManualRefresh: true);
       }
       if (!synced || sc.courses.isEmpty || sc.errorMessage != null) {
         await sc.applyFetchedCourses(courses);
@@ -835,16 +872,89 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
         _didLoad = true;
       });
       
-      Navigator.pop(context); // 确保课表加载进状态后再关闭弹窗
+      // 给底层 Widget 预留微小的重绘时间，防止部分机型路由弹窗关闭时阻断下层 setState 渲染
+      await Future.delayed(const Duration(milliseconds: 100));
+      if (mounted) {
+        Navigator.pop(context); // 确保课表加载进状态后再关闭加载弹窗
+      }
       
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(synced
-              ? '✅ 导入成功！已更新 ${sc.courses.length} 门课程'
-              : '已获取课表，本地同步失败，已先缓存显示'),
-          backgroundColor: Colors.green.shade600,
+      // 成功动画反馈
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        barrierColor: Colors.black26,
+        builder: (ctx) => Center(
+          child: TweenAnimationBuilder<double>(
+            tween: Tween(begin: 0.0, end: 1.0),
+            duration: const Duration(milliseconds: 500),
+            curve: Curves.elasticOut,
+            builder: (context, value, child) {
+              return Transform.scale(
+                scale: value,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(24),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.1),
+                        blurRadius: 20,
+                        spreadRadius: 5,
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.green.shade50,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          synced ? Icons.check_circle : Icons.warning_amber_rounded,
+                          color: synced ? Colors.green : Colors.orange,
+                          size: 48,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        synced ? '导入成功！' : '部分同步失败',
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black87,
+                          decoration: TextDecoration.none,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        synced
+                            ? '已为您更新 ${sc.courses.length} 门课程'
+                            : '已获取课表并缓存显示',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey.shade600,
+                          decoration: TextDecoration.none,
+                          fontWeight: FontWeight.normal,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
         ),
       );
+
+      // 1.5秒后自动关闭成功弹窗
+      Future.delayed(const Duration(milliseconds: 1500), () {
+        if (mounted) Navigator.pop(context);
+      });
+      
     } catch (e) {
       if (mounted) {
         Navigator.pop(context);
@@ -971,8 +1081,10 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       _slotHeight = prefs.getDouble(_slotHeightKey) ?? defaultSlotHeight;
       _widgetTextColor = prefs.getString('widget_text_color') ?? '#333333';
       _courseReminderEnabled = remindersEnabled;
+      _reminderAdvanceMinutes = prefs.getInt('course_reminder_advance_minutes') ?? 5;
       _scheduledReminderCount = reminderCount;
       _backgroundKeepAliveStatus = backgroundStatus;
+      _settingsLoaded = true;
     });
   }
 
@@ -1071,7 +1183,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              '开启后，系统会根据当前课表在每节课开始前 5 分钟发送静音提醒。',
+              '开启后，系统会根据当前课表在每节课开始前提前发送静音提醒。',
             ),
             const SizedBox(height: 12),
             _permissionHint(
@@ -1131,6 +1243,715 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
         ),
       ],
     );
+  }
+
+  // ====== 课表存档面板 ======
+  void _showArchiveSheet(BuildContext context, CourseScheduleProvider sc) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final primary = Theme.of(context).primaryColor;
+    final panelColor = isDark ? const Color(0xFF111827) : Colors.white;
+    final tileColor =
+        isDark ? Colors.white.withValues(alpha: 0.06) : const Color(0xFFF8FAFC);
+    final borderColor =
+        isDark ? Colors.white.withValues(alpha: 0.08) : const Color(0xFFE5E7EB);
+    bool isRefreshing = false;
+    bool isLoadingArchive = false;
+    String? loadingArchiveId;
+
+    BoxDecoration tileDecoration() => BoxDecoration(
+          color: tileColor,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: borderColor),
+        );
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) => SafeArea(
+          top: false,
+          child: Container(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(ctx).size.height * 0.7,
+            ),
+            decoration: BoxDecoration(
+              color: panelColor,
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(24)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.18),
+                  blurRadius: 24,
+                  offset: const Offset(0, -8),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // 顶部拖拽条
+                Padding(
+                  padding: const EdgeInsets.only(top: 12, bottom: 6),
+                  child: Center(
+                    child: Container(
+                      width: 42,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: isDark ? Colors.white24 : const Color(0xFFD1D5DB),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                ),
+                // 标题栏
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 6, 20, 14),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: primary.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: Icon(Icons.collections_bookmark, color: primary),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('课表存档',
+                                style: TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.w800,
+                                  color: isDark ? Colors.white : Colors.black87,
+                                )),
+                            const SizedBox(height: 6),
+                            Text('管理存档、刷新课表',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: isDark ? Colors.white60 : Colors.grey[600],
+                                )),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                // 可滚动内容
+                Flexible(
+                  child: SingleChildScrollView(
+                    padding: EdgeInsets.fromLTRB(
+                      20, 0, 20,
+                      24 + MediaQuery.of(ctx).viewInsets.bottom,
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // 🔄 从教务系统刷新
+                        Container(
+                          width: double.infinity,
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [
+                                const Color(0xFF6366F1).withValues(alpha: isDark ? 0.25 : 0.12),
+                                const Color(0xFF8B5CF6).withValues(alpha: isDark ? 0.18 : 0.08),
+                              ],
+                            ),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: const Color(0xFF6366F1).withValues(alpha: 0.2),
+                            ),
+                          ),
+                          child: Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(16),
+                              onTap: isRefreshing
+                                  ? null
+                                  : () async {
+                                      setSheetState(() => isRefreshing = true);
+                                      Navigator.pop(ctx);
+                                      await _fetchCourses(context);
+                                      if (mounted) {
+                                        setState(() {});
+                                      }
+                                    },
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 16, vertical: 14),
+                                child: Row(
+                                  children: [
+                                    if (isRefreshing)
+                                      const SizedBox(
+                                        width: 22,
+                                        height: 22,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2.5,
+                                          color: Color(0xFF818CF8),
+                                        ),
+                                      )
+                                    else
+                                      Container(
+                                        padding: const EdgeInsets.all(6),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFF6366F1)
+                                              .withValues(alpha: 0.2),
+                                          shape: BoxShape.circle,
+                                        ),
+                                        child: const Icon(
+                                          Icons.cloud_download_outlined,
+                                          color: Color(0xFF818CF8),
+                                          size: 20,
+                                        ),
+                                      ),
+                                    const SizedBox(width: 14),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            isRefreshing
+                                                ? '正在从教务系统拉取…'
+                                                : '从教务系统刷新课表',
+                                            style: TextStyle(
+                                              fontSize: 15,
+                                              fontWeight: FontWeight.w600,
+                                              color: isDark
+                                                  ? Colors.white
+                                                  : Colors.black87,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            '拉取最新数据并覆盖当前课表',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: isDark
+                                                  ? Colors.white54
+                                                  : Colors.grey[600],
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    if (!isRefreshing)
+                                      Icon(Icons.chevron_right,
+                                          color: isDark
+                                              ? Colors.white38
+                                              : Colors.grey[400]),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+
+                        // 💾 保存当前为新存档
+                        Container(
+                          width: double.infinity,
+                          decoration: BoxDecoration(
+                            color: isDark
+                                ? primary.withValues(alpha: 0.08)
+                                : primary.withValues(alpha: 0.04),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: primary.withValues(alpha: isDark ? 0.16 : 0.10),
+                            ),
+                          ),
+                          child: Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(16),
+                              onTap: sc.courses.isEmpty
+                                  ? null
+                                  : () => _showSaveArchiveDialog(ctx, sc, setSheetState),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 16, vertical: 14),
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.all(6),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF10B981)
+                                            .withValues(alpha: 0.15),
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: const Icon(
+                                        Icons.save_outlined,
+                                        color: Color(0xFF10B981),
+                                        size: 20,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 14),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            '保存当前课表为新存档',
+                                            style: TextStyle(
+                                              fontSize: 15,
+                                              fontWeight: FontWeight.w600,
+                                              color: isDark
+                                                  ? Colors.white
+                                                  : Colors.black87,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            sc.courses.isEmpty
+                                                ? '当前无课程可保存'
+                                                : '当前 ${sc.courses.length} 门课',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: isDark
+                                                  ? Colors.white70
+                                                  : const Color(0xFF49454F),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    Icon(Icons.chevron_right,
+                                        color: isDark
+                                            ? Colors.white38
+                                            : Colors.grey[400]),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+
+                        // 存档列表标题
+                        Row(
+                          children: [
+                            Text(
+                              '我的存档',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                                color: isDark ? Colors.white : Colors.black87,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 9, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: isDark
+                                    ? primary.withValues(alpha: 0.22)
+                                    : primary.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Text(
+                                '${sc.archives.length}',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  color: isDark
+                                      ? Colors.white.withValues(alpha: 0.9)
+                                      : primary,
+                                ),
+                              ),
+                            ),
+                            const Spacer(),
+                            TextButton.icon(
+                              onPressed: () => _importFromFile(ctx, sc, setSheetState),
+                              icon: const Icon(Icons.file_upload_outlined, size: 16),
+                              label: const Text('从文件导入'),
+                              style: TextButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(horizontal: 12),
+                                minimumSize: Size.zero,
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+
+                        // 存档列表
+                        if (sc.archives.isEmpty)
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(vertical: 36),
+                            decoration: tileDecoration(),
+                            child: Column(
+                              children: [
+                                Icon(Icons.folder_open_rounded,
+                                    size: 64,
+                                    color: isDark
+                                        ? primary.withValues(alpha: 0.18)
+                                        : primary.withValues(alpha: 0.15)),
+                                const SizedBox(height: 14),
+                                Text(
+                                  '暂无存档',
+                                  style: TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w500,
+                                    color: isDark
+                                        ? Colors.white38
+                                        : Colors.grey[500],
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  '点击上方按钮保存当前课表',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: isDark
+                                        ? Colors.white24
+                                        : Colors.grey[400],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )
+                        else
+                          ...sc.archives.asMap().entries.map((entry) {
+                            final archive = entry.value;
+                            final isLoading = isLoadingArchive &&
+                                loadingArchiveId == archive.id;
+                            final dateStr =
+                                '${archive.createdAt.month}/${archive.createdAt.day} ${archive.createdAt.hour.toString().padLeft(2, '0')}:${archive.createdAt.minute.toString().padLeft(2, '0')}';
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: Dismissible(
+                                key: Key(archive.id),
+                                direction: DismissDirection.endToStart,
+                                background: Container(
+                                  alignment: Alignment.centerRight,
+                                  padding: const EdgeInsets.only(right: 20),
+                                  decoration: BoxDecoration(
+                                    color: Colors.red.withValues(alpha: 0.15),
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                  child: const Icon(Icons.delete_outline,
+                                      color: Colors.red),
+                                ),
+                                confirmDismiss: (_) async {
+                                  return await showDialog<bool>(
+                                    context: ctx,
+                                    builder: (dialogCtx) => AlertDialog(
+                                      title: const Text('删除存档'),
+                                      content: Text('确定删除"${archive.name}"吗？'),
+                                      actions: [
+                                        TextButton(
+                                          onPressed: () =>
+                                              Navigator.pop(dialogCtx, false),
+                                          child: const Text('取消'),
+                                        ),
+                                        FilledButton(
+                                          style: FilledButton.styleFrom(
+                                              backgroundColor: Colors.red),
+                                          onPressed: () =>
+                                              Navigator.pop(dialogCtx, true),
+                                          child: const Text('删除',
+                                              style: TextStyle(
+                                                  color: Colors.white)),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                },
+                                onDismissed: (_) async {
+                                  await sc.deleteArchive(archive.id);
+                                  setSheetState(() {});
+                                },
+                                child: Container(
+                                  decoration: tileDecoration(),
+                                  child: Material(
+                                    color: Colors.transparent,
+                                    child: InkWell(
+                                      borderRadius: BorderRadius.circular(16),
+                                      onTap: isLoadingArchive
+                                          ? null
+                                          : () async {
+                                              setSheetState(() {
+                                                isLoadingArchive = true;
+                                                loadingArchiveId = archive.id;
+                                              });
+                                              try {
+                                                await sc
+                                                    .loadArchive(archive.id);
+                                                await _syncCourseReminders(sc);
+                                                if (mounted) {
+                                                  setState(() {
+                                                    _hasCache = true;
+                                                    _didLoad = true;
+                                                  });
+                                                }
+                                                if (ctx.mounted) {
+                                                  Navigator.pop(ctx);
+                                                }
+                                                if (mounted) {
+                                                  ScaffoldMessenger.of(context)
+                                                      .showSnackBar(
+                                                    SnackBar(
+                                                        content: Text(
+                                                            '已载入「${archive.name}」')),
+                                                  );
+                                                }
+                                              } catch (e) {
+                                                if (mounted) {
+                                                  ScaffoldMessenger.of(context)
+                                                      .showSnackBar(
+                                                    SnackBar(
+                                                        content: Text(
+                                                            '载入失败: $e')),
+                                                  );
+                                                }
+                                              } finally {
+                                                if (ctx.mounted) {
+                                                  setSheetState(() {
+                                                    isLoadingArchive = false;
+                                                    loadingArchiveId = null;
+                                                  });
+                                                }
+                                              }
+                                            },
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 14, vertical: 12),
+                                        child: Row(
+                                          children: [
+                                            Container(
+                                              width: 40,
+                                              height: 40,
+                                              decoration: BoxDecoration(
+                                                color: primary.withValues(
+                                                    alpha: 0.1),
+                                                borderRadius:
+                                                    BorderRadius.circular(12),
+                                              ),
+                                              child: isLoading
+                                                  ? Padding(
+                                                      padding:
+                                                          const EdgeInsets.all(
+                                                              10),
+                                                      child:
+                                                          CircularProgressIndicator(
+                                                        strokeWidth: 2,
+                                                        color: primary,
+                                                      ),
+                                                    )
+                                                  : Icon(Icons.bookmark,
+                                                      color: primary,
+                                                      size: 20),
+                                            ),
+                                            const SizedBox(width: 12),
+                                            Expanded(
+                                              child: Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: [
+                                                  Text(
+                                                    archive.name,
+                                                    style: TextStyle(
+                                                      fontSize: 15,
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                      color: isDark
+                                                          ? Colors.white
+                                                          : Colors.black87,
+                                                    ),
+                                                    maxLines: 1,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                  ),
+                                                  const SizedBox(height: 2),
+                                                  Text(
+                                                    '${archive.courseCount} 门课 · $dateStr',
+                                                    style: TextStyle(
+                                                      fontSize: 12,
+                                                      color: isDark
+                                                          ? Colors.white54
+                                                          : Colors.grey[600],
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                            IconButton(
+                                              icon: const Icon(Icons.ios_share, size: 18),
+                                              color: primary,
+                                              tooltip: '导出此存档',
+                                              onPressed: () async {
+                                                await _exportArchive(ctx, archive.id, archive.name);
+                                              },
+                                            ),
+                                            Text(
+                                              '← 滑动删除',
+                                              style: TextStyle(
+                                                fontSize: 10,
+                                                color: isDark
+                                                    ? Colors.white24
+                                                    : Colors.grey[400],
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            );
+                          }),
+                        const SizedBox(height: 10),
+                        Text(
+                          '存档保存在本地，切换账号不会互相影响。',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: isDark ? Colors.white30 : Colors.grey[400],
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 从文件导入课表存档
+  Future<void> _importFromFile(BuildContext sheetCtx, CourseScheduleProvider sc, StateSetter setSheetState) async {
+    final shouldProceed = await showDialog<bool>(
+      context: sheetCtx,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Text('从文件导入'),
+        content: const Text('请在接下来的文件选择器中选择你之前导出的课表 .json 文件。\n如果是通过微信/QQ等软件收发的，请前往对应软件的下载目录寻找。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogCtx, true),
+            child: const Text('去选择文件'),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldProceed != true) return;
+
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['json'],
+      );
+      if (result != null && result.files.single.path != null) {
+        final file = File(result.files.single.path!);
+        final jsonStr = await file.readAsString();
+        final fileName = result.files.single.name.replaceAll('.json', '');
+        
+        await sc.importArchiveFromJson(fileName, jsonStr);
+        setSheetState(() {});
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('已导入存档「$fileName」')),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('导入失败，文件可能已损坏: $e')),
+        );
+      }
+    }
+  }
+
+  /// 导出特定存档到文件 (使用分享/发送功能绕过安卓存储限制)
+  Future<void> _exportArchive(BuildContext context, String archiveId, String name) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      // 在 provider 中定义的常量：_archiveDataKeyPrefix = 'course_archive_data_v1_'
+      final jsonStr = prefs.getString('course_archive_data_v1_$archiveId');
+      if (jsonStr == null) throw Exception('存档数据不存在');
+
+      final safeName = name.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
+      final tempDir = Directory.systemTemp;
+      final file = File('${tempDir.path}/沈理校园课表_$safeName.json');
+      await file.writeAsString(jsonStr);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('正在唤起系统菜单，请选择“发送给朋友”或“保存到手机”以导出文件。')),
+        );
+      }
+
+      await Share.shareXFiles(
+        [XFile(file.path)], 
+        text: '这是我的沈理校园课表存档，可以在App的"从文件导入"功能中恢复。'
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('导出失败: $e')),
+        );
+      }
+    }
+  }
+
+  /// 弹出保存存档的命名对话框
+  void _showSaveArchiveDialog(
+      BuildContext sheetCtx, CourseScheduleProvider sc, StateSetter setSheetState) {
+    final nameCtrl = TextEditingController(
+        text: '课表 ${DateTime.now().month}/${DateTime.now().day}');
+    showDialog(
+      context: sheetCtx,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Text('保存为存档'),
+        content: TextField(
+          controller: nameCtrl,
+          maxLength: 20,
+          autofocus: true,
+          decoration: const InputDecoration(
+            hintText: '输入存档名称',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              final name = nameCtrl.text.trim();
+              if (name.isEmpty) return;
+              Navigator.pop(dialogCtx);
+              await sc.saveCurrentAsArchive(name);
+              setSheetState(() {});
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('已保存存档「$name」\n如需提取文件，请点击该存档的分享按钮。')),
+                );
+              }
+            },
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    ).then((_) => nameCtrl.dispose());
   }
 
   void _showOpacitySheet(BuildContext context, CourseScheduleProvider sc) {
@@ -1244,7 +2065,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                         const SizedBox(width: 10),
                         Expanded(
                           child: Text(
-                            '课程提醒会在上课前 5 分钟以静音系统通知提示课程、教师和教室。'
+                            '课程提醒会在上课前 $_reminderAdvanceMinutes 分钟以静音系统通知提示课程、教师和教室。'
                             '开启后需要通知权限；Android 设备建议继续授权后台保活，'
                             '这样清除任务卡片后仍能按时提醒。',
                             style: TextStyle(
@@ -1300,7 +2121,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                       title: const Text('课程提醒'),
                       subtitle: Text(_courseReminderEnabled
                           ? '已安排 $_scheduledReminderCount 个提醒，课表更新后会自动重排'
-                          : '上课前 5 分钟静音提醒，通知内容包含课程教师'),
+                          : '上课前 $_reminderAdvanceMinutes 分钟静音提醒，通知内容包含课程教师'),
                       value: _courseReminderEnabled,
                       onChanged: _courseReminderBusy
                           ? null
@@ -1358,6 +2179,59 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                             },
                     ),
                   ),
+                  if (_courseReminderEnabled) ...[
+                    const SizedBox(height: 10),
+                    Container(
+                      decoration: tileDecoration(),
+                      child: ListTile(
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 6),
+                        leading: Icon(Icons.timer_outlined, color: primary),
+                        title: const Text('提醒提前时间'),
+                        subtitle: const Text('上课前提前几分钟发送通知'),
+                        trailing: DropdownButton<int>(
+                          value: _reminderAdvanceMinutes,
+                          underline: const SizedBox(),
+                          icon: const Icon(Icons.arrow_drop_down),
+                          items: const [
+                            DropdownMenuItem(value: 5, child: Text('5 分钟')),
+                            DropdownMenuItem(value: 10, child: Text('10 分钟')),
+                            DropdownMenuItem(value: 15, child: Text('15 分钟')),
+                            DropdownMenuItem(value: 20, child: Text('20 分钟')),
+                            DropdownMenuItem(value: 30, child: Text('30 分钟')),
+                          ],
+                          onChanged: _courseReminderBusy
+                              ? null
+                              : (v) async {
+                                  if (v != null) {
+                                    setSheetState(() => _courseReminderBusy = true);
+                                    if (mounted) setState(() => _courseReminderBusy = true);
+                                    
+                                    await CourseReminderService.instance.setAdvanceMinutes(
+                                      v,
+                                      courses: sc.courses,
+                                      semesterStart: sc.semesterStart,
+                                    );
+                                    final count = await CourseReminderService.instance.pendingCourseReminderCount();
+                                    
+                                    setSheetState(() {
+                                      _reminderAdvanceMinutes = v;
+                                      _scheduledReminderCount = count;
+                                      _courseReminderBusy = false;
+                                    });
+                                    if (mounted) {
+                                      setState(() {
+                                        _reminderAdvanceMinutes = v;
+                                        _scheduledReminderCount = count;
+                                        _courseReminderBusy = false;
+                                      });
+                                    }
+                                  }
+                                },
+                        ),
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 10),
                   Container(
                     decoration: tileDecoration(),
@@ -1564,146 +2438,272 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
   // ====== 自定义课程 ======
 
-  void _showAddCourseDialog(BuildContext context) {
-    final nameCtrl = TextEditingController();
-    final teacherCtrl = TextEditingController();
-    final locationCtrl = TextEditingController();
-    int weekday = DateTime.now().weekday;
-    int startSection = 1;
-    int endSection = 2;
+  void _showAddCourseDialog(BuildContext context, {CourseBlock? editCourse}) {
+    // 原有的手动添加状态
+    final nameCtrl = TextEditingController(text: editCourse?.name ?? '');
+    final teacherCtrl = TextEditingController(text: editCourse?.teacher ?? '');
+    final locationCtrl = TextEditingController(text: editCourse?.location ?? '');
+    int weekday = editCourse?.weekday ?? DateTime.now().weekday;
+    int startSection = editCourse?.startSection ?? 1;
+    int endSection = editCourse?.endSection ?? 2;
     final sc = context.read<CourseScheduleProvider>();
     final wn = sc.getAcademicWeek(_weekStart) ?? 1;
-    int startWeek = wn;
-    int endWeek = (wn + 15).clamp(wn, 20);
+    int startWeek = editCourse?.weeks.isNotEmpty == true ? editCourse!.weeks.first : wn;
+    int endWeek = editCourse?.weeks.isNotEmpty == true ? editCourse!.weeks.last : (wn + 15).clamp(wn, 20);
+
+    // AI 导入模式状态
+    bool isAiMode = false;
+    final TextEditingController jsonController = TextEditingController();
+
+    // 获取并计算班级号 (学号去掉后两位)
+    final edu = context.read<EduProvider>();
+    String studentId = edu.studentId;
+    String classIdStr = '';
+    if (studentId.length > 2) {
+      classIdStr = studentId.substring(0, studentId.length - 2);
+    }
+    String classFilterRule = classIdStr.isNotEmpty 
+        ? '7. 班级过滤 (Class Filtering)：当前用户的班级号是“$classIdStr班”。如果图片中包含“班级”或类似列，请严格对比班级信息。只提取属于“$classIdStr”班级的课程行，完全忽略其他班级的行。'
+        : '7. 班级过滤 (Class Filtering)：如果我提供了我的班级号（例如：“我是 24030601 班”），并且图片中包含“班级”或类似列，请严格对比班级信息。只提取属于我班级的课程行，完全忽略其他班级的行。';
+
+    String aiPromptTemplate = """你现在是一个专业的“教务数据提取引擎”。请读取我提供的教学日历/课表图片或文字说明，提取其中的课程安排，并严格按照以下 JSON 格式输出数据。
+
+【数据提取规则】
+1. 操作类型 (action)：默认为 "add"。如果我额外说明了是删除，请改为 "delete"。
+2. 周次处理 (weeks) [极度重要]：请将所有上课的周次展开，提取为一个包含纯数字的数组。例如：“1-4周, 6周”应转换为 [1, 2, 3, 4, 6]；“1-9单周”应转换为 [1, 3, 5, 7, 9]。
+3. 数据类型：所有的星期、节次必须转化为纯数字 (int)。例如：“周三”转换为 3，“第5-6节”转换为 startNode: 5, endNode: 6。
+4. 处理缺失值：如果图片或文字中缺少关键信息（如未写明教师或教室），请先向我提问确认。如果我回复确实没有，对应的 teacher 或 location 字段再填入空字符串 ""，绝对不要生造数据。
+5. 拆分原则：如果一门课跨越了不同的星期或节次，请将其拆分为多个独立的 JSON 对象放入数组中。
+6. 输出格式：请务必将 JSON 放在标准的 Markdown 代码块中（```json ... ```）。在输出 JSON 之后，请用中文简短地为我总结一下提取出的结果（“何时、何地、上什么课”），方便我进行核对。
+$classFilterRule
+
+【JSON 结构模板】
+```json
+{
+  "action": "add",
+  "courses": [
+    {
+      "name": "大学物理",
+      "weeks": [1, 3, 5, 7, 9],
+      "dayOfWeek": 3,
+      "startNode": 5,
+      "endNode": 6,
+      "teacher": "张三",
+      "location": "A-101"
+    }
+  ]
+}
+```""";
 
     showDialog(
       context: context,
       builder: (dialogCtx) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(
-          title: const Text('添加自定义课程'),
+          title: Text(editCourse == null ? '添加自定义课程' : '编辑自定义课程'),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                TextField(
-                  controller: nameCtrl,
-                  decoration: const InputDecoration(
-                    labelText: '课程名称',
-                    hintText: '如：高等数学',
+                if (editCourse == null) ...[
+                  SegmentedButton<bool>(
+                    segments: const [
+                      ButtonSegment(value: false, label: Text('手动添加')),
+                      ButtonSegment(value: true, label: Text('AI 导入')),
+                    ],
+                    selected: {isAiMode},
+                    onSelectionChanged: (Set<bool> newSelection) {
+                      setDialogState(() {
+                        isAiMode = newSelection.first;
+                      });
+                    },
                   ),
-                ),
-                const SizedBox(height: 12),
-                // 星期几
-                DropdownButtonFormField<int>(
-                  value: weekday,
-                  decoration: const InputDecoration(labelText: '星期'),
-                  items: List.generate(7, (i) => i + 1)
-                      .map((d) => DropdownMenuItem(
-                            value: d,
-                            child: Text('周${_wd[d - 1]}'),
-                          ))
-                      .toList(),
-                  onChanged: (v) => setDialogState(() => weekday = v ?? 1),
-                ),
-                const SizedBox(height: 12),
-                // 节次
-                Row(
-                  children: [
-                    Expanded(
-                      child: DropdownButtonFormField<int>(
-                        value: startSection,
-                        decoration: const InputDecoration(labelText: '开始节次'),
-                        items: List.generate(12, (i) => i + 1)
-                            .map((s) => DropdownMenuItem(
-                                  value: s,
-                                  child: Text('第$s节'),
-                                ))
-                            .toList(),
-                        onChanged: (v) {
-                          setDialogState(() {
-                            startSection = v ?? 1;
-                            if (endSection < startSection) {
-                              endSection = startSection;
-                            }
-                          });
-                        },
-                      ),
+                  const SizedBox(height: 20),
+                ],
+                
+                if (!isAiMode) ...[
+                  // 手动添加视图
+                  TextField(
+                    controller: nameCtrl,
+                    decoration: const InputDecoration(
+                      labelText: '课程名称',
+                      hintText: '如：高等数学',
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: DropdownButtonFormField<int>(
-                        value: endSection,
-                        decoration: const InputDecoration(labelText: '结束节次'),
-                        items: List.generate(12, (i) => i + 1)
-                            .where((s) => s >= startSection)
-                            .map((s) => DropdownMenuItem(
-                                  value: s,
-                                  child: Text('第$s节'),
-                                ))
-                            .toList(),
-                        onChanged: (v) =>
-                            setDialogState(() => endSection = v ?? startSection),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                // 周次范围
-                Row(
-                  children: [
-                    Expanded(
-                      child: DropdownButtonFormField<int>(
-                        value: startWeek.clamp(1, 20),
-                        decoration: const InputDecoration(labelText: '开始周'),
-                        items:
-                            List.generate(20, (i) => i + 1).map((w) {
-                          return DropdownMenuItem(
-                            value: w,
-                            child: Text('第$w周'),
-                          );
-                        }).toList(),
-                        onChanged: (v) {
-                          setDialogState(() {
-                            startWeek = v ?? 1;
-                            if (endWeek < startWeek) endWeek = startWeek;
-                          });
-                        },
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: DropdownButtonFormField<int>(
-                        value: endWeek.clamp(startWeek, 20),
-                        decoration: const InputDecoration(labelText: '结束周'),
-                        items: List.generate(20, (i) => i + 1)
-                            .where((w) => w >= startWeek)
-                            .map((w) => DropdownMenuItem(
-                                  value: w,
-                                  child: Text('第$w周'),
-                                ))
-                            .toList(),
-                        onChanged: (v) =>
-                            setDialogState(() => endWeek = v ?? startWeek),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: teacherCtrl,
-                  decoration: const InputDecoration(
-                    labelText: '教师（可选）',
-                    hintText: '如：张老师',
                   ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: locationCtrl,
-                  decoration: const InputDecoration(
-                    labelText: '教室（可选）',
-                    hintText: '如：综A101',
+                  const SizedBox(height: 12),
+                  // 星期几
+                  DropdownButtonFormField<int>(
+                    value: weekday,
+                    decoration: const InputDecoration(labelText: '星期'),
+                    items: List.generate(7, (i) => i + 1)
+                        .map((d) => DropdownMenuItem(
+                              value: d,
+                              child: Text('周${_wd[d - 1]}'),
+                            ))
+                        .toList(),
+                    onChanged: (v) => setDialogState(() => weekday = v ?? 1),
                   ),
-                ),
+                  const SizedBox(height: 12),
+                  // 节次
+                  Row(
+                    children: [
+                      Expanded(
+                        child: DropdownButtonFormField<int>(
+                          value: startSection,
+                          decoration: const InputDecoration(labelText: '开始节次'),
+                          items: List.generate(12, (i) => i + 1)
+                              .map((s) => DropdownMenuItem(
+                                    value: s,
+                                    child: Text('第$s节'),
+                                  ))
+                              .toList(),
+                          onChanged: (v) {
+                            setDialogState(() {
+                              startSection = v ?? 1;
+                              if (endSection < startSection) {
+                                endSection = startSection;
+                              }
+                            });
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: DropdownButtonFormField<int>(
+                          value: endSection,
+                          decoration: const InputDecoration(labelText: '结束节次'),
+                          items: List.generate(12, (i) => i + 1)
+                              .where((s) => s >= startSection)
+                              .map((s) => DropdownMenuItem(
+                                    value: s,
+                                    child: Text('第$s节'),
+                                  ))
+                              .toList(),
+                          onChanged: (v) =>
+                              setDialogState(() => endSection = v ?? startSection),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  // 周次范围
+                  Row(
+                    children: [
+                      Expanded(
+                        child: DropdownButtonFormField<int>(
+                          value: startWeek.clamp(1, 20),
+                          decoration: const InputDecoration(labelText: '开始周'),
+                          items:
+                              List.generate(20, (i) => i + 1).map((w) {
+                            return DropdownMenuItem(
+                              value: w,
+                              child: Text('第$w周'),
+                            );
+                          }).toList(),
+                          onChanged: (v) {
+                            setDialogState(() {
+                              startWeek = v ?? 1;
+                              if (endWeek < startWeek) endWeek = startWeek;
+                            });
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: DropdownButtonFormField<int>(
+                          value: endWeek.clamp(startWeek, 20),
+                          decoration: const InputDecoration(labelText: '结束周'),
+                          items: List.generate(20, (i) => i + 1)
+                              .where((w) => w >= startWeek)
+                              .map((w) => DropdownMenuItem(
+                                    value: w,
+                                    child: Text('第$w周'),
+                                  ))
+                              .toList(),
+                          onChanged: (v) =>
+                              setDialogState(() => endWeek = v ?? startWeek),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: teacherCtrl,
+                    decoration: const InputDecoration(
+                      labelText: '教师（可选）',
+                      hintText: '如：张老师',
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: locationCtrl,
+                    decoration: const InputDecoration(
+                      labelText: '教室（可选）',
+                      hintText: '如：综A101',
+                    ),
+                  ),
+                ] else ...[
+                  // AI 导入视图
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.secondaryContainer.withOpacity(0.5),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(Icons.lightbulb_outline, size: 16, color: Theme.of(context).colorScheme.secondary),
+                            const SizedBox(width: 4),
+                            Text('使用步骤', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Theme.of(context).colorScheme.secondary)),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Text('1. 点击下方按钮复制提示词；', style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                        Text('2. 发送提示词与课表(图/文)给 AI，建议关闭 AI 的“快速/极速模式”；', style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                        Text('3. 粘贴 AI 的全部回复。请务必利用 AI 的中文总结核对时间地点。', style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                        const SizedBox(height: 6),
+                        Text('*免责声明：AI 识别可能存在误差，请自行核对，因数据错误导致漏课等损失本软件概不负责。', style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.outline)),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  ElevatedButton.icon(
+                    icon: const Icon(Icons.copy, size: 18),
+                    label: const Text('一键复制 AI 提示词'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+                      foregroundColor: Theme.of(context).colorScheme.onPrimaryContainer,
+                    ),
+                    onPressed: () {
+                      Clipboard.setData(ClipboardData(text: aiPromptTemplate));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text(classIdStr.isNotEmpty 
+                            ? '提示词已复制！（已自动为您填入班级号 $classIdStr）请前往 AI 助手处粘贴并发送图片或文字说明。'
+                            : '提示词已复制！粘贴给 AI 时，如果需要过滤班级，请在末尾加上您的班级号（如：我是xxx班）。')),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: jsonController,
+                    maxLines: 8,
+                    minLines: 5,
+                    decoration: InputDecoration(
+                      hintText: '在此粘贴 AI 生成的 JSON 代码...',
+                      border: const OutlineInputBorder(),
+                      filled: true,
+                      fillColor: Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.3),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '请确保粘贴的内容包含完整的 { } 结构',
+                    style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.outline),
+                  ),
+                ],
               ],
             ),
           ),
@@ -1712,39 +2712,65 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
               onPressed: () => Navigator.pop(dialogCtx),
               child: const Text('取消'),
             ),
-            FilledButton(
-              onPressed: () async {
-                if (nameCtrl.text.trim().isEmpty) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('请输入课程名称')),
-                  );
-                  return;
-                }
-                await sc.addCustomCourse(
-                  name: nameCtrl.text.trim(),
-                  weekday: weekday,
-                  startSection: startSection,
-                  endSection: endSection,
-                  startWeek: startWeek,
-                  endWeek: endWeek,
-                  teacher: teacherCtrl.text.trim().isEmpty
-                      ? null
-                      : teacherCtrl.text.trim(),
-                  location: locationCtrl.text.trim().isEmpty
-                      ? null
-                      : locationCtrl.text.trim(),
-                );
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('课程已添加')),
-                  );
-                  await _syncCourseReminders(sc);
-                  setState(() => _hasCache = true);
-                }
-                Navigator.pop(dialogCtx);
-              },
-              child: const Text('添加'),
-            ),
+            if (!isAiMode)
+              FilledButton(
+                onPressed: () async {
+                  if (nameCtrl.text.trim().isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('请输入课程名称')),
+                    );
+                    return;
+                  }
+                  if (editCourse == null) {
+                    await sc.addCustomCourse(
+                      name: nameCtrl.text.trim(),
+                      weekday: weekday,
+                      startSection: startSection,
+                      endSection: endSection,
+                      startWeek: startWeek,
+                      endWeek: endWeek,
+                      teacher: teacherCtrl.text.trim().isEmpty
+                          ? null
+                          : teacherCtrl.text.trim(),
+                      location: locationCtrl.text.trim().isEmpty
+                          ? null
+                          : locationCtrl.text.trim(),
+                    );
+                  } else {
+                    await sc.editCustomCourse(
+                      id: editCourse.id,
+                      name: nameCtrl.text.trim(),
+                      weekday: weekday,
+                      startSection: startSection,
+                      endSection: endSection,
+                      startWeek: startWeek,
+                      endWeek: endWeek,
+                      teacher: teacherCtrl.text.trim().isEmpty
+                          ? null
+                          : teacherCtrl.text.trim(),
+                      location: locationCtrl.text.trim().isEmpty
+                          ? null
+                          : locationCtrl.text.trim(),
+                    );
+                  }
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text(editCourse == null ? '课程已添加' : '课程已更新')),
+                    );
+                    await _syncCourseReminders(sc);
+                    setState(() => _hasCache = true);
+                  }
+                  Navigator.pop(dialogCtx);
+                },
+                child: Text(editCourse == null ? '添加' : '保存'),
+              ),
+            if (isAiMode)
+              FilledButton(
+                onPressed: () {
+                  _handleAiImport(dialogCtx, jsonController.text);
+                },
+                child: const Text('解析并导入'),
+              ),
           ],
         ),
       ),
@@ -1752,7 +2778,194 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       nameCtrl.dispose();
       teacherCtrl.dispose();
       locationCtrl.dispose();
+      jsonController.dispose();
     });
+  }
+
+  // ====== AI 导入与冲突检测 ======
+
+  void _handleAiImport(BuildContext dialogCtx, String jsonStr) {
+    if (jsonStr.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('请先粘贴 JSON 内容')));
+      return;
+    }
+
+    try {
+      // 1. 智能提取 JSON (支持 AI 输出带有中文总结的内容)
+      String cleanJson = jsonStr;
+      
+      // 优先寻找 markdown 代码块中的内容
+      final RegExp jsonRegex = RegExp(r'```(?:json)?\s*(\{.*?\})\s*```', dotAll: true);
+      final match = jsonRegex.firstMatch(jsonStr);
+      
+      if (match != null) {
+        cleanJson = match.group(1)!;
+      } else {
+        // 兜底方案：寻找第一个 { 和最后一个 }
+        int start = jsonStr.indexOf('{');
+        int end = jsonStr.lastIndexOf('}');
+        if (start != -1 && end != -1 && end > start) {
+          cleanJson = jsonStr.substring(start, end + 1);
+        }
+      }
+
+      // 2. 解析 JSON
+      Map<String, dynamic> data = jsonDecode(cleanJson);
+      String action = data['action'] ?? 'add';
+      List<dynamic> rawCourses = data['courses'] ?? [];
+
+      List<Map<String, dynamic>> validCourses = [];
+
+      // 3. 数据类型安全转换
+      for (var course in rawCourses) {
+        int dayOfWeek = int.tryParse(course['dayOfWeek'].toString()) ?? 1;
+        int startNode = int.tryParse(course['startNode'].toString()) ?? 1;
+        int endNode = int.tryParse(course['endNode'].toString()) ?? 1;
+        
+        List<int> weeks = [];
+        if (course['weeks'] != null) {
+          weeks = List<int>.from(course['weeks'].map((e) => int.tryParse(e.toString()) ?? 0));
+        }
+
+        validCourses.add({
+          'name': course['name']?.toString() ?? '未知课程',
+          'weeks': weeks,
+          'dayOfWeek': dayOfWeek,
+          'startNode': startNode,
+          'endNode': endNode,
+          'teacher': course['teacher']?.toString() ?? '',
+          'location': course['location']?.toString() ?? '',
+        });
+      }
+
+      // 4. 获取本地已有课程并进行冲突检测
+      final sc = context.read<CourseScheduleProvider>();
+      List<CourseBlock> existingCourses = sc.courses;
+
+      List<CourseBlock> conflictingCourses = _checkCourseConflict(validCourses, existingCourses);
+
+      if (conflictingCourses.isNotEmpty) {
+        // 提取冲突的老课名称，防止名称太长截断
+        String conflictNames = conflictingCourses
+            .map((c) => "《${c.name} (周${c.weekday} 第${c.startSection}-${c.endSection}节)》")
+            .join('、');
+
+        // 发现冲突，弹出三选一对话框
+        showDialog(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text("时间重叠提醒"),
+            content: Text("检测到新导入的课程与已有课程\n\n$conflictNames\n\n存在时间重叠。请选择操作："),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext), 
+                child: const Text("取消")
+              ),
+              FilledButton.tonal(
+                onPressed: () {
+                  Navigator.pop(dialogContext);
+                  _executeImport(dialogCtx, action, validCourses);
+                }, 
+                child: const Text("同时保留(置底)")
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.error),
+                onPressed: () async {
+                  Navigator.pop(dialogContext);
+                  // 遍历删除冲突的老课
+                  for (var oldCourse in conflictingCourses) {
+                    await sc.removeCustomCourse(oldCourse.id);
+                  }
+                  if (mounted) {
+                    _executeImport(dialogCtx, action, validCourses);
+                  }
+                }, 
+                child: const Text("覆盖原有", style: TextStyle(color: Colors.white))
+              ),
+            ],
+          )
+        );
+      } else {
+        // 无冲突，直接执行
+        _executeImport(dialogCtx, action, validCourses);
+      }
+
+    } catch (e) {
+      debugPrint("AI 导入解析失败: $e");
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('解析失败，请检查数据格式。\n错误信息: ${e.toString().split('\n').first}')),
+      );
+    }
+  }
+
+  List<CourseBlock> _checkCourseConflict(List<Map<String, dynamic>> newCourses, List<CourseBlock> existingCourses) {
+    List<CourseBlock> conflicts = [];
+    for (var newCourse in newCourses) {
+      for (var existing in existingCourses) {
+        if (newCourse['dayOfWeek'] != existing.weekday) continue;
+
+        Set<int> newWeeks = Set<int>.from(newCourse['weeks']);
+        Set<int> existingWeeks = Set<int>.from(existing.weeks); 
+        
+        if (newWeeks.intersection(existingWeeks).isEmpty) continue;
+
+        int start1 = newCourse['startNode'];
+        int end1 = newCourse['endNode'];
+        int start2 = existing.startSection;
+        int end2 = existing.endSection;
+
+        if (start1 <= end2 && end1 >= start2) {
+          debugPrint("冲突拦截: ${newCourse['name']} vs ${existing.name}");
+          if (!conflicts.contains(existing)) {
+            conflicts.add(existing);
+          }
+        }
+      }
+    }
+    return conflicts;
+  }
+
+  void _executeImport(BuildContext dialogCtx, String action, List<Map<String, dynamic>> courses) async {
+    final sc = context.read<CourseScheduleProvider>();
+    
+    int addedCount = 0;
+    for (var course in courses) {
+      if (action == 'add') {
+        int startWeek = 1;
+        int endWeek = 16;
+        List<int> weeks = course['weeks'];
+        if (weeks.isNotEmpty) {
+           startWeek = weeks.first;
+           endWeek = weeks.last;
+        }
+
+        await sc.addCustomCourse(
+          name: course['name'],
+          weekday: course['dayOfWeek'],
+          startSection: course['startNode'],
+          endSection: course['endNode'],
+          startWeek: startWeek,
+          endWeek: endWeek,
+          teacher: course['teacher'].toString().isEmpty ? null : course['teacher'],
+          location: course['location'].toString().isEmpty ? null : course['location'],
+        );
+        addedCount++;
+      } else if (action == 'delete') {
+        // AI 目前仅按 action:add 处理，delete 未来可扩展根据名字删除等
+      }
+    }
+
+    if (dialogCtx.mounted) {
+      Navigator.pop(dialogCtx); // 关闭底层的大弹窗
+    }
+    
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('成功导入 $addedCount 门课程！')),
+      );
+      await _syncCourseReminders(sc);
+      setState(() => _hasCache = true);
+    }
   }
 
   // ====== 课程网格（指定某一周） ======
@@ -1871,6 +3084,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     final bool isCompact = h < 70;
 
     return Positioned(
+      key: ValueKey('${c.id}_${c.weekday}_${c.startSection}'),
       left: timeColumnWidth + (c.weekday - 1) * exactW + 1.5,
       width: exactW - 3,
       top: top,
@@ -1993,6 +3207,48 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
             if (c.note != null && c.note!.isNotEmpty)
               _detailRow(Icons.note_outlined, '备注', c.note!),
             const SizedBox(height: 16),
+            if (c.id < 0) ...[
+              const Divider(),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  TextButton.icon(
+                    icon: const Icon(Icons.edit, color: Colors.blue),
+                    label: const Text('编辑', style: TextStyle(color: Colors.blue)),
+                    onPressed: () {
+                      Navigator.pop(appNavigatorKey.currentContext!);
+                      _showAddCourseDialog(context, editCourse: c);
+                    },
+                  ),
+                  TextButton.icon(
+                    icon: const Icon(Icons.delete, color: Colors.red),
+                    label: const Text('删除', style: TextStyle(color: Colors.red)),
+                    onPressed: () async {
+                      final confirmed = await showDialog<bool>(
+                        context: context,
+                        builder: (ctx) => AlertDialog(
+                          title: const Text('删除课程'),
+                          content: const Text('确定要删除这门自定义课程吗？'),
+                          actions: [
+                            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+                            TextButton(
+                              onPressed: () => Navigator.pop(ctx, true),
+                              child: const Text('删除', style: TextStyle(color: Colors.red)),
+                            ),
+                          ],
+                        ),
+                      );
+                      if (confirmed == true) {
+                        Navigator.pop(appNavigatorKey.currentContext!);
+                        await context.read<CourseScheduleProvider>().removeCustomCourse(c.id);
+                        if (mounted) setState(() {});
+                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('课程已删除')));
+                      }
+                    },
+                  ),
+                ],
+              ),
+            ],
           ],
         ),
       ),

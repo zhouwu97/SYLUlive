@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../providers/auth_provider.dart';
 import '../providers/canteen_provider.dart';
 import '../providers/theme_provider.dart';
@@ -80,12 +81,12 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
               : ListView(
                   padding: const EdgeInsets.only(bottom: 80),
                   children: [
-                    Image.network(
-                      ApiConstants.fullUrl(_canteenData!['canteen']['image']),
+                    CachedNetworkImage(
+                      imageUrl: ApiConstants.fullUrl(_canteenData!['canteen']['image']),
                       width: double.infinity,
-                      height: 240,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Container(width: double.infinity, height: 240, color: Colors.grey[300], child: const Icon(Icons.broken_image, size: 50, color: Colors.grey)),
+                      fit: BoxFit.fitWidth,
+                      placeholder: (context, url) => Container(width: double.infinity, height: 240, color: Colors.grey[200], child: const Center(child: CircularProgressIndicator())),
+                      errorWidget: (context, url, error) => Container(width: double.infinity, height: 240, color: Colors.grey[300], child: const Icon(Icons.broken_image, size: 50, color: Colors.grey)),
                     ),
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
@@ -172,7 +173,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
               radius: 14, 
               backgroundColor: const Color(0xFF6366F1), 
               backgroundImage: r['user_avatar'] != null && r['user_avatar'].toString().isNotEmpty
-                ? NetworkImage(ApiConstants.fullUrl(r['user_avatar']))
+                ? CachedNetworkImageProvider(ApiConstants.fullUrl(r['user_avatar']))
                 : null,
               child: r['user_avatar'] == null || r['user_avatar'].toString().isEmpty
                 ? Text(r['user_name'] != null && r['user_name'].toString().isNotEmpty ? r['user_name'][0] : '?', style: const TextStyle(color: Colors.white, fontSize: 12))
@@ -192,11 +193,13 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
                 runSpacing: 8,
                 children: imgList.map((url) => ClipRRect(
                   borderRadius: BorderRadius.circular(8),
-                  child: Image.network(
-                    ApiConstants.fullUrl(url),
+                  child: CachedNetworkImage(
+                    imageUrl: ApiConstants.fullUrl(url),
                     width: 80,
                     height: 80,
                     fit: BoxFit.cover,
+                    placeholder: (context, url) => Container(color: Colors.grey[200]),
+                    errorWidget: (context, url, error) => const Icon(Icons.broken_image, color: Colors.grey),
                   ),
                 )).toList(),
               ),

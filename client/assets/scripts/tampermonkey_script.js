@@ -129,10 +129,13 @@
     const questionInfo = getCurrentQuestionInfo();
 
     extractPanel.innerHTML = `
-        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 25px; color: white;">
+        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 25px; color: white; position: relative;">
             <h2 style="margin: 0; font-size: 24px; font-weight: 300;">
                 ✨ 练习题智能提取器
             </h2>
+            <a href="https://github.com/zhouwu97/SYLUlive" target="_blank" style="display: inline-block; margin-top: 12px; font-size: 13px; color: rgba(255,255,255,0.9); text-decoration: none; border: 1px solid rgba(255,255,255,0.4); padding: 4px 10px; border-radius: 15px; background: rgba(255,255,255,0.1);">
+                🚀 开源项目：zhouwu97/SYLUlive
+            </a>
         </div>
         
         <div style="padding: 30px;">
@@ -336,6 +339,18 @@
         });
     }
 
+    // 动态加载 html2canvas 库
+    async function loadHtml2Canvas() {
+        if (window.html2canvas) return window.html2canvas;
+        return new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = 'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js';
+            script.onload = () => resolve(window.html2canvas);
+            script.onerror = () => reject(new Error('Failed to load html2canvas'));
+            document.head.appendChild(script);
+        });
+    }
+
     // 获取单个题目数据的函数
     async function extractCurrentQuestion() {
         // 【关键修复】必须优先获取带有 .swiper-slide-active 的当前活动页，否则会抓到被回收的空白占位页！
@@ -345,6 +360,60 @@
 
         async function getRichText(element) {
             if (!element) return '';
+            
+            // 【新增特性】检测复杂排版（例如连续3个以上的空格，这通常是化学方程式对齐），直接截图保留完美排版
+            if (element.innerHTML.includes('&nbsp;&nbsp;&nbsp;') || element.innerHTML.includes('    ')) {
+                try {
+                    await loadHtml2Canvas();
+                    
+                    // 确保元素可见，如果祖先元素 display:none 则临时显示
+                    const hiddenParents = [];
+                    let curr = element;
+                    while (curr && curr.nodeType === 1 && curr !== document.body) {
+                        const style = window.getComputedStyle(curr);
+                        if (style.display === 'none') {
+                            hiddenParents.push({ el: curr, origDisplay: curr.style.display });
+                            curr.style.display = 'block';
+                        }
+                        curr = curr.parentElement;
+                    }
+
+                    // 如果是行内元素，转为 inline-block 防止截图大小为0
+                    const origDisplay = element.style.display;
+                    if (window.getComputedStyle(element).display === 'inline') {
+                        element.style.display = 'inline-block';
+                    }
+
+                    // 临时设置白色背景防止透明背景导致的黑色截图
+                    const originalBg = element.style.background;
+                    element.style.background = '#ffffff';
+                    
+                    // 短暂延时确保DOM渲染完成
+                    await new Promise(r => setTimeout(r, 100));
+                    
+                    const canvas = await window.html2canvas(element, { 
+                        backgroundColor: '#ffffff',
+                        scale: 2 // 提高清晰度
+                    });
+                    
+                    element.style.background = originalBg;
+                    element.style.display = origDisplay;
+                    
+                    // 恢复隐藏状态
+                    hiddenParents.forEach(p => p.el.style.display = p.origDisplay);
+
+                    // 只有截图成功且非空白(宽高>5)时才使用图片，否则继续执行下方的普通提取逻辑
+                    if (canvas.width > 5 && canvas.height > 5) {
+                        const dataUrl = canvas.toDataURL('image/png');
+                        return `<img src="${dataUrl}" style="max-width: 100%; vertical-align: middle;">`;
+                    } else {
+                        console.log('html2canvas截图为空(元素可能未完全渲染)，已降级为普通提取');
+                    }
+                } catch(e) {
+                    console.error('html2canvas截图失败，降级为普通提取', e);
+                }
+            }
+
             const clone = element.cloneNode(true);
             
             clone.querySelectorAll('.MathJax, mjx-container, .katex').forEach(container => {
@@ -505,11 +574,19 @@
                 }
             }
         } else if (question.questionType === '填空题') {
-            const answerElements = slideContent.querySelectorAll('.answer-input-result');
             const answers = [];
-            for (const elem of answerElements) {
-                const text = await getRichText(elem);
-                if (text) answers.push(text);
+            const fillOptions = slideContent.querySelectorAll('.fill_option li .txt');
+            if (fillOptions.length > 0) {
+                for (const elem of fillOptions) {
+                    const text = await getRichText(elem);
+                    if (text) answers.push(text);
+                }
+            } else {
+                const answerElements = slideContent.querySelectorAll('.answer-input-result');
+                for (const elem of answerElements) {
+                    const text = await getRichText(elem);
+                    if (text) answers.push(text);
+                }
             }
             question.answer = answers.join('；');
 
@@ -672,4 +749,5 @@
     document.head.appendChild(spinStyle);
 
     console.log('✨ 融智云考练习题提取器已加载！按 Ctrl+Shift+E 可快速打开/关闭界面');
+    console.log('🚀 开源项目：https://github.com/zhouwu97/SYLUlive - 此工具完全免费，禁止倒卖！');
 })(); 

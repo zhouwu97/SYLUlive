@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/edu_provider.dart';
+import '../providers/course_schedule_provider.dart';
 import '../utils/app_navigator.dart' show appNavigatorKey;
 
 class EduScreen extends StatefulWidget {
@@ -263,6 +264,7 @@ class _EduScreenState extends State<EduScreen> {
     int currentYear = now.year;
     String selectedYear;
     int selectedSemester;
+    bool isFetching = false;
     
     if (now.month >= 2 && now.month <= 7) {
       selectedYear = (currentYear - 1).toString();
@@ -277,7 +279,8 @@ class _EduScreenState extends State<EduScreen> {
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
         title: const Text('选择学期'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -312,30 +315,42 @@ class _EduScreenState extends State<EduScreen> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: isFetching ? null : () => Navigator.pop(context),
             child: const Text('取消'),
           ),
           ElevatedButton(
-            onPressed: () async {
-              final scaffoldMessenger = ScaffoldMessenger.of(context);
-              Navigator.pop(context); // 先关闭对话框
-              final result = await eduProvider.getCourses(selectedYear, selectedSemester);
-              if (result != null && result.success && result.data != null) {
-                _showCoursesResult(context, result.data!, selectedYear, selectedSemester, eduProvider);
-              } else {
-                scaffoldMessenger.showSnackBar(
-                  SnackBar(
-                    content: Text(result?.errorMessage ?? '获取课表失败'),
-                    backgroundColor: Colors.red,
-                  ),
-                );
-              }
-            },
-            child: const Text('查询'),
+            onPressed: isFetching
+                ? null
+                : () async {
+                    setDialogState(() => isFetching = true);
+                    final scaffoldMessenger = ScaffoldMessenger.of(context);
+                    final result = await eduProvider.getCourses(selectedYear, selectedSemester);
+                    if (context.mounted) {
+                      Navigator.pop(context); // 请求结束后关闭对话框
+                      if (result != null && result.success && result.data != null) {
+                        _showCoursesResult(context, result.data!, selectedYear, selectedSemester, eduProvider);
+                      } else {
+                        scaffoldMessenger.showSnackBar(
+                          SnackBar(
+                            content: Text(result?.errorMessage ?? '获取课表失败'),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                      }
+                    }
+                  },
+            child: isFetching
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                  )
+                : const Text('查询'),
           ),
         ],
       ),
-    );
+    ),
+  );
   }
 
   void _showCoursesResult(BuildContext context, List<Map<String, dynamic>> courses, String year, int semester, EduProvider eduProvider) {
@@ -393,6 +408,14 @@ class _EduScreenState extends State<EduScreen> {
                     Navigator.pop(ctx); // 关闭底部弹窗
                     try {
                       final success = await eduProvider.syncCourses(year, semester, courses);
+                      if (success) {
+                        final navContext = appNavigatorKey.currentContext;
+                        if (navContext != null) {
+                          final sc = Provider.of<CourseScheduleProvider>(navContext, listen: false);
+                          sc.setSemester(year, semester);
+                          sc.applyFetchedCourses(courses);
+                        }
+                      }
                       messenger.showSnackBar(
                         SnackBar(
                           content: Text(success ? '导入课表成功喵~' : '导入失败，请重试'),
@@ -429,6 +452,7 @@ class _EduScreenState extends State<EduScreen> {
     int currentYear = now.year;
     String selectedYear;
     int selectedSemester;
+    bool isFetching = false;
     
     if (now.month >= 2 && now.month <= 7) {
       selectedYear = (currentYear - 1).toString();
@@ -443,7 +467,8 @@ class _EduScreenState extends State<EduScreen> {
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
         title: const Text('选择学期'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -478,30 +503,42 @@ class _EduScreenState extends State<EduScreen> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: isFetching ? null : () => Navigator.pop(context),
             child: const Text('取消'),
           ),
           ElevatedButton(
-            onPressed: () async {
-              final scaffoldMessenger = ScaffoldMessenger.of(context);
-              Navigator.pop(context); // 先关闭对话框
-              final result = await eduProvider.getGrades(selectedYear, selectedSemester);
-              if (result != null && result.success && result.data != null) {
-                _showGradesResult(context, result.data!, selectedYear, selectedSemester);
-              } else {
-                scaffoldMessenger.showSnackBar(
-                  SnackBar(
-                    content: Text(result?.errorMessage ?? '获取成绩失败'),
-                    backgroundColor: Colors.red,
-                  ),
-                );
-              }
-            },
-            child: const Text('查询'),
+            onPressed: isFetching
+                ? null
+                : () async {
+                    setDialogState(() => isFetching = true);
+                    final scaffoldMessenger = ScaffoldMessenger.of(context);
+                    final result = await eduProvider.getGrades(selectedYear, selectedSemester);
+                    if (context.mounted) {
+                      Navigator.pop(context); // 请求结束后关闭对话框
+                      if (result != null && result.success && result.data != null) {
+                        _showGradesResult(context, result.data!, selectedYear, selectedSemester);
+                      } else {
+                        scaffoldMessenger.showSnackBar(
+                          SnackBar(
+                            content: Text(result?.errorMessage ?? '获取成绩失败'),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                      }
+                    }
+                  },
+            child: isFetching
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                  )
+                : const Text('查询'),
           ),
         ],
       ),
-    );
+    ),
+  );
   }
 
   void _showGradesResult(BuildContext context, List<Map<String, dynamic>> grades, String year, int semester) {

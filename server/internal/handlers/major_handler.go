@@ -21,6 +21,8 @@ func logMajorAdmin(c *gin.Context, action, target string) {
 	var u models.User
 	majorLogDB.Select("nickname").First(&u, uid)
 	majorLogDB.Create(&models.AdminLog{AdminID: uid.(uint), AdminName: u.Nickname, Action: action, Target: target})
+	// 管理员操作经验+1
+	majorLogDB.Model(&models.User{}).Where("id = ?", uid).UpdateColumn("admin_exp", gorm.Expr("COALESCE(admin_exp, 0) + 1"))
 }
 
 type MajorHandler struct {
@@ -110,6 +112,13 @@ func (h *MajorHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+
+	var existing models.Major
+	if err := h.db.Where("name = ? AND level = ?", input.Name, input.Level).First(&existing).Error; err == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "该专业已存在"})
+		return
+	}
+
 	verified := role == "admin" || role == "super_admin"
 	major := models.Major{Name: input.Name, Level: input.Level, Verified: verified, CreatedBy: userID.(uint)}
 	if err := h.db.Create(&major).Error; err != nil {
@@ -167,6 +176,19 @@ func (h *MajorHandler) Reject(c *gin.Context) {
 	h.db.Delete(&models.Major{}, id)
 	logMajorAdmin(c, "拒绝专业", m.Name)
 	c.JSON(http.StatusOK, gin.H{"message": "已拒绝"})
+}
+
+func (h *MajorHandler) DeleteMajor(c *gin.Context) {
+	id, _ := strconv.Atoi(c.Param("id"))
+	var m models.Major
+	if err := h.db.First(&m, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "专业不存在"})
+		return
+	}
+	h.db.Where("major_id = ?", id).Delete(&models.MajorRating{})
+	h.db.Delete(&models.Major{}, id)
+	logMajorAdmin(c, "删除专业", m.Name)
+	c.JSON(http.StatusOK, gin.H{"message": "已删除"})
 }
 
 func (h *MajorHandler) GetPending(c *gin.Context) {

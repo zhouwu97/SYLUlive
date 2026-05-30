@@ -159,7 +159,7 @@ func (h *ReportHandler) Handle(c *gin.Context) {
 	h.db.Create(&log)
 
 	// 管理员处理举报，经验+1
-	h.db.Model(&models.User{}).Where("id = ?", userID).UpdateColumn("admin_exp", gorm.Expr("admin_exp + 1"))
+	h.db.Model(&models.User{}).Where("id = ?", userID).UpdateColumn("admin_exp", gorm.Expr("COALESCE(admin_exp, 0) + 1"))
 
 	c.JSON(http.StatusOK, report)
 }

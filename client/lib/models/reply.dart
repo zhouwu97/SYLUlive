@@ -9,6 +9,8 @@ class Reply {
   final int authorId;
   final String content;
   final String status;
+  final int likeCount;
+  final bool isLiked;
   final List<ReplyImage> images;
   final User? author;
   final DateTime createdAt;
@@ -20,6 +22,8 @@ class Reply {
     required this.authorId,
     required this.content,
     this.status = 'normal',
+    this.likeCount = 0,
+    this.isLiked = false,
     this.images = const [],
     this.author,
     required this.createdAt,
@@ -33,6 +37,8 @@ class Reply {
       authorId: json['author_id'] ?? 0,
       content: json['content'] ?? '',
       status: json['status'] ?? 'normal',
+      likeCount: json['like_count'] ?? 0,
+      isLiked: json['is_liked'] == true,
       images: (json['images'] as List<dynamic>?)
           ?.map((e) => ReplyImage.fromJson(e))
           .toList() ?? [],

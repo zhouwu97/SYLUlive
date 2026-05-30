@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'app_navigator.dart';
 
 class AppFeedback {
   const AppFeedback._();
@@ -64,6 +65,16 @@ class AppFeedback {
     bool isError = false,
   }) {
     ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: isError ? Colors.red.shade600 : null,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  static void showGlobalToast(String message, {bool isError = false}) {
+    scaffoldMessengerKey.currentState?.showSnackBar(
       SnackBar(
         content: Text(message),
         backgroundColor: isError ? Colors.red.shade600 : null,

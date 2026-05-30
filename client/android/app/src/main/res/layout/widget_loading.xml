@@ -11,6 +11,7 @@
   参考：《小米小部件技术规范》- 小部件加载态建议
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@android:id/background"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@drawable/widget_background"

@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:ui';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
@@ -13,7 +14,9 @@ import 'package:url_launcher/url_launcher.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/edu_provider.dart';
+import '../providers/course_schedule_provider.dart';
 import '../utils/app_feedback.dart';
+import '../utils/update_checker.dart';
 import '../widgets/glass_container.dart';
 import '../config/api_constants.dart';
 import 'edu_screen.dart';
@@ -24,6 +27,7 @@ import 'admin_panel_screen.dart';
 import 'super_admin_screen.dart';
 import 'admin_members_screen.dart';
 import 'user_replies_screen.dart';
+import 'settings_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -122,7 +126,7 @@ class _ProfileScreenState extends State<ProfileScreen>
 
                 // 教务版块（绑定状态 + 题库入口）
                 SliverToBoxAdapter(
-                  child: _buildEduSection(context, isDark),
+                  child: _buildEduSection(context, authProvider, isDark),
                 ),
 
                 // 我的内容
@@ -294,37 +298,52 @@ class _ProfileScreenState extends State<ProfileScreen>
 
           const SizedBox(height: 20),
 
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              _buildStatBadge(
-                icon: Icons.verified,
-                label: '诚信度',
-                value: '${user?.creditScore ?? 100}%',
-                color: Colors.green,
-              ),
-              const SizedBox(width: 12),
-              _buildStatBadge(
-                icon: Icons.star,
-                label: '经验',
-                value: '${user?.exp ?? 0}',
-                color: Colors.amber,
-              ),
-              if (user?.isAdmin == true) ...[
-                const SizedBox(width: 12),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
                 _buildStatBadge(
-                  icon: Icons.admin_panel_settings,
-                  label: user?.isSuperAdmin == true ? '超级管理员' : '管理员',
-                  value: '经验 ${user?.adminExp ?? 0}',
-                  color: Colors.orange,
+                  icon: Icons.verified,
+                  label: '诚信度',
+                  value: '${user?.creditScore ?? 100}%',
+                  color: Colors.green,
                 ),
+                const SizedBox(width: 8),
+                _buildStatBadge(
+                  icon: Icons.star,
+                  label: '经验',
+                  value: '${user?.exp ?? 0}',
+                  color: Colors.amber,
+                ),
+                const SizedBox(width: 8),
+                _buildStatBadge(
+                  icon: Icons.monetization_on,
+                  label: '代答积分',
+                  value: '${user?.credits ?? 0}',
+                  color: Colors.purpleAccent,
+                ),
+                if (user?.isAdmin == true) ...[
+                  const SizedBox(width: 8),
+                  _buildStatBadge(
+                    icon: Icons.admin_panel_settings,
+                    label: user?.isSuperAdmin == true ? '超级管理员' : '管理员',
+                    value: '${user?.adminExp ?? 0}',
+                    color: Colors.orange,
+                  ),
+                ],
               ],
-            ],
+            ),
           ),
+
+          const SizedBox(height: 20),
         ],
       ),
     );
   }
+
+
 
   Widget _buildAvatarPlaceholder(user) {
     return Center(
@@ -614,7 +633,7 @@ class _ProfileScreenState extends State<ProfileScreen>
     );
   }
 
-  Widget _buildEduSection(BuildContext context, bool isDark) {
+  Widget _buildEduSection(BuildContext context, AuthProvider authProvider, bool isDark) {
     final eduProvider = context.watch<EduProvider>();
 
     return Padding(
@@ -672,6 +691,10 @@ class _ProfileScreenState extends State<ProfileScreen>
             subtitle: '提取练习题，导出 Markdown',
             isDark: isDark,
             onTap: () {
+              if (!authProvider.isLoggedIn) {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('请先登录')));
+                return;
+              }
               Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -687,284 +710,46 @@ class _ProfileScreenState extends State<ProfileScreen>
 
   Widget _buildSettingsSection(BuildContext context,
       ThemeProvider themeProvider, AuthProvider authProvider, bool isDark) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // 背景设置 — 独立卡片
-        _buildSettingsRow(child: _buildSettingsTile(
-          icon: Icons.wallpaper,
-          iconColor: Colors.purple,
-          title: '自定义背景',
-          isDark: isDark,
-          onTap: () => _showBackgroundPicker(context, themeProvider),
-        )),
-        _buildSettingsRow(child: _buildSettingsTile(
-          icon: Icons.opacity,
-          iconColor: Colors.teal,
-          title: '组件透明度',
-          trailing: SizedBox(
-            width: 120,
-            height: 32,
-            child: Slider(
-              value: themeProvider.componentOpacity,
-              min: 0.0,
-              max: 1.0,
-              onChanged: (v) => themeProvider.setComponentOpacity(v),
-              activeColor: Theme.of(context).primaryColor,
-            ),
-          ),
-          isDark: isDark,
-        )),
-        _buildSettingsRow(child: _buildSettingsTile(
-          icon: Icons.restore,
-          iconColor: Colors.orange,
-          title: '默认壁纸',
-          subtitle: '恢复为系统默认背景',
-          isDark: isDark,
-          onTap: () => _showRestoreDefaultDialog(context, themeProvider),
-        )),
-
-        const SizedBox(height: 8),
-
-        // 视觉效果 — 独立卡片
-        _buildSettingsRow(child: _buildSettingsTile(
-          icon: Icons.blur_on,
-          iconColor: Colors.indigo,
-          title: '液态玻璃效果',
-          trailing: Transform.scale(
-            scale: 0.8,
-            child: Switch(
-              value: themeProvider.liquidGlass,
-              onChanged: (v) => _showLiquidGlassWarningDialog(context, themeProvider, v),
-              activeColor: Theme.of(context).primaryColor,
-            ),
-          ),
-          isDark: isDark,
-        )),
-        _buildSettingsRow(child: _buildSettingsTile(
-          icon: Icons.navigation,
-          iconColor: Colors.orange,
-          title: '悬浮底栏',
-          trailing: Transform.scale(
-            scale: 0.8,
-            child: Switch(
-              value: themeProvider.floatingNavBar,
-              onChanged: (v) => themeProvider.setFloatingNavBar(v),
-              activeColor: Theme.of(context).primaryColor,
-            ),
-          ),
-          isDark: isDark,
-        )),
-        _buildSettingsRow(child: _buildSettingsTile(
-          icon: Icons.swipe,
-          iconColor: Colors.blue,
-          title: '预测性返回手势',
-          subtitle: 'Android 侧滑返回时预览上一页，关闭后仅顶部返回按钮可用',
-          trailing: Transform.scale(
-            scale: 0.8,
-            child: Switch(
-              value: themeProvider.predictiveBack,
-              onChanged: (v) => themeProvider.setPredictiveBack(v),
-              activeColor: Theme.of(context).primaryColor,
-            ),
-          ),
-          isDark: isDark,
-        )),
-        _buildSettingsRow(child: _buildSettingsTile(
-          icon: Icons.dark_mode,
-          iconColor: isDark ? Colors.indigo : Colors.indigo,
-          title: '夜间模式',
-          trailing: Transform.scale(
-            scale: 0.8,
-            child: Switch(
-              value: themeProvider.isDarkMode,
-              onChanged: (v) => themeProvider.setDarkMode(v),
-              activeColor: Theme.of(context).primaryColor,
-            ),
-          ),
-          isDark: isDark,
-        )),
-
-        const SizedBox(height: 8),
-
-        // 账号 — 独立卡片
-        _buildSettingsRow(child: _buildSettingsTile(
-          icon: Icons.person,
-          iconColor: Colors.blue,
-          title: '编辑资料',
-          isDark: isDark,
-          onTap: () => _showEditProfileDialog(context, authProvider),
-        )),
-        _buildSettingsRow(child: _buildSettingsTile(
-          icon: Icons.lock,
-          iconColor: Colors.orange,
-          title: '修改密码',
-          isDark: isDark,
-          onTap: () => _showChangePasswordDialog(context, authProvider),
-        )),
-        _buildSettingsRow(child: _buildSettingsTile(
-          icon: Icons.info,
-          iconColor: Colors.blue,
-          title: '关于',
-          isDark: isDark,
-          onTap: () => _showAboutDialog(context),
-        )),
-
-        // 退出登录
-        if (authProvider.isLoggedIn) ...[
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 标题
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-            child: SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: () => _checkUpdate(context),
-                icon: const Icon(Icons.system_update, size: 18),
-                label: const Text('检查更新'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: isDark ? Colors.white70 : Colors.grey[700],
-                  side: BorderSide(
-                      color: isDark ? Colors.white24 : Colors.grey[300]!),
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16)),
-                ),
+            padding: const EdgeInsets.only(left: 4, bottom: 10),
+            child: Text(
+              '设置',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: isDark ? Colors.white54 : Colors.grey[600],
               ),
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: GradientButton(
-              text: '退出登录',
-              gradientColors: [Colors.red[400]!, Colors.red[600]!],
-              onPressed: () async {
-                await authProvider.logout();
-                if (context.mounted) {
-                  Navigator.of(context).popUntil((route) => route.isFirst);
-                }
+          _buildSettingsRow(
+            child: _buildSettingsTile(
+              icon: Icons.settings,
+              iconColor: Colors.blueGrey,
+              title: '设置',
+              subtitle: '主题外观、关于应用、账号设置等',
+              isDark: isDark,
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const SettingsScreen(),
+                  ),
+                );
               },
             ),
           ),
         ],
-      ],
+      ),
     );
   }
 
-  Future<void> _checkUpdate(BuildContext context) async {
-    const giteeUrl = 'https://gitee.com/chunhezi/SYLUlive/releases';
-    const githubUrl = 'https://github.com/zhouwu97/SYLUlive/releases';
-    try {
-      final dio = context.read<AuthProvider>().dio;
-      final packageInfo = await PackageInfo.fromPlatform();
-      final resp = await dio.get('/version');
-      if (resp.statusCode == 200) {
-        final data = resp.data is Map ? resp.data as Map : <String, dynamic>{};
-        final latestVersion = data['version']?.toString() ?? '';
-        final forceUpdate = data['force_update'] ?? false;
-        final giteeDownloadUrl =
-            data['gitee_download_url']?.toString().trim().isNotEmpty == true
-                ? data['gitee_download_url'].toString()
-                : giteeUrl;
-        final githubDownloadUrl =
-            data['github_download_url']?.toString().trim().isNotEmpty == true
-                ? data['github_download_url'].toString()
-                : (data['download_url']?.toString().trim().isNotEmpty == true
-                    ? data['download_url'].toString()
-                    : githubUrl);
-        final updateMsg = data['update_msg'] ?? '新版本可用';
-        final currentVersion = packageInfo.version;
-        final hasUpdate =
-            forceUpdate || _isRemoteVersionNewer(latestVersion, currentVersion);
-
-        if (!context.mounted) return;
-        showDialog(
-          context: context,
-          barrierDismissible: !forceUpdate,
-          builder: (ctx) => AlertDialog(
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-            title: Row(children: [
-              Icon(
-                hasUpdate ? Icons.system_update : Icons.verified_outlined,
-                color: hasUpdate ? Colors.blue : Colors.green,
-              ),
-              const SizedBox(width: 8),
-              Text(hasUpdate ? '发现新版本' : '已是最新版'),
-            ]),
-            content: Text(
-              hasUpdate
-                  ? '当前版本: $currentVersion\n最新版本: $latestVersion\n$updateMsg\n\n请选择下载来源。'
-                  : '当前版本: $currentVersion\n服务器版本: ${latestVersion.isEmpty ? '未知' : latestVersion}\n当前已是最新版本。',
-              style: const TextStyle(height: 1.5),
-            ),
-            actions: [
-              if (!hasUpdate || !forceUpdate)
-                TextButton(
-                    onPressed: () => Navigator.pop(ctx),
-                    child: Text(hasUpdate ? '稍后' : '关闭')),
-              if (hasUpdate)
-                OutlinedButton.icon(
-                  onPressed: () {
-                    Navigator.pop(ctx);
-                    launchUrl(Uri.parse(giteeDownloadUrl),
-                        mode: LaunchMode.externalApplication);
-                  },
-                  icon: const Icon(Icons.cloud_download_outlined, size: 18),
-                  label: const Text('Gitee下载'),
-                ),
-              if (hasUpdate)
-                ElevatedButton.icon(
-                  onPressed: () {
-                    Navigator.pop(ctx);
-                    launchUrl(Uri.parse(githubDownloadUrl),
-                        mode: LaunchMode.externalApplication);
-                  },
-                  icon: const Icon(Icons.download, size: 18),
-                  label: const Text('GitHub下载'),
-                  style: ElevatedButton.styleFrom(
-                      backgroundColor: Theme.of(context).primaryColor,
-                      foregroundColor: Colors.white),
-                ),
-            ],
-          ),
-        );
-      }
-    } on DioException catch (e) {
-      if (context.mounted) {
-        AppFeedback.showSnackBar(
-          context,
-          AppFeedback.dioErrorMessage(e, fallback: '检查更新失败'),
-          isError: true,
-        );
-      }
-    } catch (e) {
-      if (context.mounted) {
-        AppFeedback.showSnackBar(context, '检查更新失败: $e', isError: true);
-      }
-    }
-  }
-
-  bool _isRemoteVersionNewer(String remote, String current) {
-    final remoteParts = _parseVersion(remote);
-    final currentParts = _parseVersion(current);
-    final maxLength = remoteParts.length > currentParts.length
-        ? remoteParts.length
-        : currentParts.length;
-    for (var i = 0; i < maxLength; i++) {
-      final r = i < remoteParts.length ? remoteParts[i] : 0;
-      final c = i < currentParts.length ? currentParts[i] : 0;
-      if (r > c) return true;
-      if (r < c) return false;
-    }
-    return false;
-  }
-
-  List<int> _parseVersion(String version) {
-    final normalized = version.trim().replaceFirst(RegExp(r'^[vV]'), '');
-    return normalized
-        .split(RegExp(r'[.+-]'))
-        .map((part) => int.tryParse(part) ?? 0)
-        .toList();
-  }
+  // removed update checker methods
 
   Widget _buildSettingsCard(bool isDark, {required List<Widget> children}) {
     return GlassContainer(
@@ -1052,172 +837,8 @@ class _ProfileScreenState extends State<ProfileScreen>
     );
   }
 
-  void _showBackgroundPicker(
-      BuildContext context, ThemeProvider themeProvider) {
-    final backgrounds = [
-      'bg-mobile.png',
-      'https://images.unsplash.com/photo-1579546929518-9e396f3cc809?w=800',
-      'https://images.unsplash.com/photo-1557682250-33bd709cbe85?w=800',
-      'https://images.unsplash.com/photo-1519681393784-d120267933ba?w=800',
-      'https://images.unsplash.com/photo-1507400492013-162706c8c05e?w=800',
-      'https://images.unsplash.com/photo-1518837695005-2083093ee35b?w=800',
-    ];
 
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: Theme.of(context).scaffoldBackgroundColor,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('选择背景',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: SizedBox(
-                    height: 120,
-                    child: ListView.builder(
-                      scrollDirection: Axis.horizontal,
-                      itemCount: backgrounds.length,
-                      itemBuilder: (context, index) {
-                        final isAsset = !backgrounds[index].startsWith('http');
-                        final imagePath = isAsset
-                            ? 'assets/images/${backgrounds[index]}'
-                            : backgrounds[index];
-                        return GestureDetector(
-                          onTap: () {
-                            themeProvider
-                                .setBackgroundImage(backgrounds[index]);
-                            Navigator.pop(context);
-                          },
-                          child: Container(
-                            width: 160,
-                            margin: const EdgeInsets.only(right: 12),
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(12),
-                              image: DecorationImage(
-                                image: isAsset
-                                    ? AssetImage(imagePath) as ImageProvider
-                                    : NetworkImage(backgrounds[index])
-                                        as ImageProvider,
-                                fit: BoxFit.cover,
-                              ),
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: () async {
-                  final picker = ImagePicker();
-                  final image =
-                      await picker.pickImage(source: ImageSource.gallery);
-                  if (image != null) {
-                    final appDir = await getApplicationDocumentsDirectory();
-                    final fileName =
-                        'background_${DateTime.now().millisecondsSinceEpoch}${path.extension(image.path)}';
-                    final savedPath = path.join(appDir.path, fileName);
-                    await File(image.path).copy(savedPath);
-                    themeProvider.setBackgroundImage(savedPath);
-                    if (context.mounted) Navigator.pop(context);
-                  }
-                },
-                icon: const Icon(Icons.photo_library),
-                label: const Text('从相册选择'),
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                ),
-              ),
-            ),
-            const SizedBox(height: 20),
-          ],
-        ),
-      ),
-    );
-  }
 
-  void _showRestoreDefaultDialog(
-      BuildContext context, ThemeProvider themeProvider) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('恢复默认壁纸'),
-        content: const Text('将清除当前自定义背景，所有页面恢复为系统默认壁纸。'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
-          TextButton(
-            onPressed: () {
-              themeProvider.clearBackground();
-              Navigator.pop(ctx);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                    content: Text('已恢复默认壁纸'), backgroundColor: Colors.green),
-              );
-            },
-            child: const Text('确认恢复', style: TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showLiquidGlassWarningDialog(
-      BuildContext context, ThemeProvider themeProvider, bool enable) {
-    if (!enable) {
-      themeProvider.setLiquidGlass(false);
-      return;
-    }
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Row(children: [
-          Icon(Icons.warning_amber_rounded,
-              color: Colors.orange.shade400, size: 28),
-          const SizedBox(width: 12),
-          const Text('性能警告'),
-        ]),
-        content: const Text('液态玻璃效果基于模糊算法实现，在部分设备上可能会造成卡顿。',
-            style: TextStyle(height: 1.5)),
-        actions: [
-          TextButton(
-              onPressed: () {
-                Navigator.pop(ctx);
-              },
-              child: const Text('了解，但继续开启')),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              themeProvider.setLiquidGlass(true);
-            },
-            style: ElevatedButton.styleFrom(
-                backgroundColor: Theme.of(context).primaryColor,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12))),
-            child: const Text('开启'),
-          ),
-        ],
-      ),
-    );
-  }
 
   void _showAvatarPreview(BuildContext context, String url) {
     showDialog(
@@ -1265,54 +886,22 @@ class _ProfileScreenState extends State<ProfileScreen>
     );
   }
 
-  void _showChangePasswordDialog(
-      BuildContext context, AuthProvider authProvider) {
-    final oldController = TextEditingController();
-    final newController = TextEditingController();
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('修改密码'),
-        content: Column(mainAxisSize: MainAxisSize.min, children: [
-          TextField(
-              controller: oldController,
-              decoration: const InputDecoration(labelText: '旧密码'),
-              obscureText: true),
-          const SizedBox(height: 16),
-          TextField(
-              controller: newController,
-              decoration: const InputDecoration(labelText: '新密码'),
-              obscureText: true),
-        ]),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context), child: const Text('取消')),
-          ElevatedButton(
-            onPressed: () async {
-              final result = await authProvider.changePassword(
-                  oldController.text, newController.text);
-              if (context.mounted) {
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                  content: Text(result.success
-                      ? '修改成功'
-                      : (result.errorMessage ?? '修改失败')),
-                  backgroundColor: result.success ? Colors.green : Colors.red,
-                ));
-              }
-            },
-            child: const Text('确认'),
-          ),
-        ],
-      ),
-    );
-  }
 
   void _showAvatarOptions(BuildContext context, AuthProvider authProvider) {
     Future<void> pickAndUpload(ImageSource source) async {
       Navigator.pop(context);
       final image = await ImagePicker().pickImage(source: source);
       if (image == null) return;
+
+      final length = await image.length();
+      if (length > 10 * 1024 * 1024) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('头像大小不能超过 10MB'), backgroundColor: Colors.red),
+          );
+        }
+        return;
+      }
 
       final appDir = await getApplicationDocumentsDirectory();
       final fileName =
@@ -1367,137 +956,6 @@ class _ProfileScreenState extends State<ProfileScreen>
         ));
   }
 
-  void _showAboutDialog(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final primary = Theme.of(context).primaryColor;
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF1A1A2E) : Colors.white,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        child: SafeArea(
-          top: false,
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-            child: Column(
-              children: [
-                // 拖拽条
-                Padding(
-                  padding: const EdgeInsets.only(top: 12, bottom: 16),
-                  child: Container(
-                    width: 40, height: 4,
-                    decoration: BoxDecoration(color: isDark ? Colors.white24 : Colors.grey[300], borderRadius: BorderRadius.circular(2)),
-                  ),
-                ),
-                // App 图标
-                Container(
-                  width: 80, height: 80,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [primary, primary.withValues(alpha: 0.6)]),
-                    borderRadius: BorderRadius.circular(22),
-                  ),
-                  child: const Icon(Icons.school, color: Colors.white, size: 38),
-                ),
-                const SizedBox(height: 16),
-                // 标题
-                Text('沈理校园', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800, letterSpacing: 0.5, color: isDark ? Colors.white : Colors.black87)),
-                const SizedBox(height: 4),
-                Text('一款为沈理人写的开源校园工具', style: TextStyle(fontSize: 13, color: isDark ? Colors.white54 : Colors.grey[500])),
-                const SizedBox(height: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
-                  decoration: BoxDecoration(color: primary.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(20)),
-                  child: Text('v1.3.2', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: primary)),
-                ),
-                const SizedBox(height: 24),
-
-                // 开发者卡片
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: isDark ? Colors.white.withValues(alpha: 0.04) : const Color(0xFFF5F7FB),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Row(children: [
-                      Icon(Icons.code_rounded, size: 18, color: primary),
-                      const SizedBox(width: 10),
-                      Text('开发者', style: TextStyle(fontSize: 13, color: isDark ? Colors.white54 : Colors.grey[500])),
-                      const Spacer(),
-                      Text('纯合子', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: isDark ? Colors.white : Colors.black87)),
-                    ]),
-                    const SizedBox(height: 12),
-                    Text('用爱发电，写个自己觉得好用的课表和论坛。', style: TextStyle(fontSize: 12, height: 1.5, color: isDark ? Colors.white38 : Colors.grey[500])),
-                  ]),
-                ),
-                const SizedBox(height: 24),
-
-                // 联系方式
-                _aboutLink(context, Icons.code_rounded, '查看源码 / 提交 PR', 'https://github.com/zhouwu97/SYLUlive', isDark),
-                const SizedBox(height: 8),
-                _aboutLink(context, Icons.chat_rounded, '加入交流群', 'mqqapi://card/show_pslcard?src_type=internal&version=1&uin=3170305904&card_type=person', isDark),
-                const SizedBox(height: 8),
-                _aboutLink(context, Icons.email_outlined, '发送邮件', null, isDark, onTapOverride: () => _copyToClipboard(context, '3170305904@qq.com', '邮箱地址已复制')),
-                const SizedBox(height: 16),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _aboutLink(BuildContext context, IconData icon, String label, String? url, bool isDark, {VoidCallback? onTapOverride}) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTapOverride ?? (url != null ? () => _launchUrl(url) : null),
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          decoration: BoxDecoration(
-            color: isDark ? Colors.white.withValues(alpha: 0.04) : const Color(0xFFF5F7FB),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Row(children: [
-            Icon(icon, size: 20, color: Theme.of(context).primaryColor),
-            const SizedBox(width: 12),
-            Expanded(child: Text(label, style: TextStyle(fontSize: 14, color: isDark ? Colors.white70 : Colors.black87))),
-            Icon(Icons.chevron_right, size: 18, color: isDark ? Colors.white24 : Colors.grey[400]),
-          ]),
-        ),
-      ),
-    );
-  }
-
-  void _copyToClipboard(
-      BuildContext context, String text, String successMessage) {
-    Clipboard.setData(ClipboardData(text: text));
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(successMessage),
-        behavior: SnackBarBehavior.floating,
-        margin: const EdgeInsets.all(16),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        duration: const Duration(seconds: 2),
-      ),
-    );
-  }
-
-  Future<void> _launchUrl(String url) async {
-    final uri = Uri.parse(url);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } else {
-      debugPrint('Could not launch URL: $url');
-    }
-  }
 
   // ---- 邀请版块 ----
   Widget _buildInvitationSection(

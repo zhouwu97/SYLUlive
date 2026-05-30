@@ -72,6 +72,7 @@ class Post {
   final int viewCount;
   final int replyCount;
   final int likeCount;
+  final bool isLiked;
   final List<PostImage> images;
   final User? author;
   final DateTime createdAt;
@@ -89,6 +90,7 @@ class Post {
     this.viewCount = 0,
     this.replyCount = 0,
     this.likeCount = 0,
+    this.isLiked = false,
     this.images = const [],
     this.author,
     required this.createdAt,
@@ -108,6 +110,7 @@ class Post {
       viewCount: json['view_count'] ?? 0,
       replyCount: json['reply_count'] ?? 0,
       likeCount: json['like_count'] ?? 0,
+      isLiked: json['is_liked'] == true,
       images: (json['images'] as List<dynamic>?)
           ?.map((e) => PostImage.fromJson(e))
           .toList() ?? [],
@@ -117,4 +120,42 @@ class Post {
   }
 
   String get firstImageUrl => images.isNotEmpty ? images.first.url : '';
+
+  Post copyWith({
+    int? id,
+    String? title,
+    String? content,
+    int? boardId,
+    int? authorId,
+    String? postType,
+    double? price,
+    String? contact,
+    String? status,
+    int? viewCount,
+    int? replyCount,
+    int? likeCount,
+    bool? isLiked,
+    List<PostImage>? images,
+    User? author,
+    DateTime? createdAt,
+  }) {
+    return Post(
+      id: id ?? this.id,
+      title: title ?? this.title,
+      content: content ?? this.content,
+      boardId: boardId ?? this.boardId,
+      authorId: authorId ?? this.authorId,
+      postType: postType ?? this.postType,
+      price: price ?? this.price,
+      contact: contact ?? this.contact,
+      status: status ?? this.status,
+      viewCount: viewCount ?? this.viewCount,
+      replyCount: replyCount ?? this.replyCount,
+      likeCount: likeCount ?? this.likeCount,
+      isLiked: isLiked ?? this.isLiked,
+      images: images ?? this.images,
+      author: author ?? this.author,
+      createdAt: createdAt ?? this.createdAt,
+    );
+  }
 }

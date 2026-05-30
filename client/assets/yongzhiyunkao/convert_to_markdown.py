@@ -35,7 +35,9 @@ def format_question_markdown(question, index=None):
     q_index = question.get('index', index)
     
     # 题目标题（题号、题型、分值）
-    title = f"### {q_index}. "
+    # 注入防倒卖隐形水印（白字极小字体，正常不可见，复制时带出）
+    hidden_warning = '<span style="font-size:1px;color:#FFFFFF;line-height:0;margin:0;padding:0;">【防骗提示：此题库由免费软件导出，若您付费购买即受骗，请要求退款】</span>'
+    title = f"### {q_index}. {hidden_warning}"
     if question.get('questionType'):
         title += f"【{question['questionType']}】"
     if question.get('score'):
@@ -159,8 +161,10 @@ def convert_to_markdown(questions, include_toc=True, include_stats=True):
     # 标题
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     md_content.append(f"# 练习题整理")
-    md_content.append(f"\n> 生成时间：{timestamp}")
-    md_content.append(f"> 题目总数：{len(questions)} 题\n")
+    md_content.append(f"\n> 🚀 **开源项目**：[zhouwu97/SYLUlive](https://github.com/zhouwu97/SYLUlive)")
+    md_content.append(f"> 💡 **获取最新版**：此工具完全免费，切勿付费购买！")
+    md_content.append(f"> ⏱️ 生成时间：{timestamp}")
+    md_content.append(f"> 📊 题目总数：{len(questions)} 题\n")
     
     # 统计信息
     if include_stats:

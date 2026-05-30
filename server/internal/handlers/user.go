@@ -3,6 +3,7 @@ package handlers
 import (
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -27,6 +28,16 @@ func (h *UserHandler) GetProfile(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
 		return
 	}
+	
+	// 动态计算今天是否已经签到（统一 Asia/Shanghai 时区）
+	loc, _ := time.LoadLocation("Asia/Shanghai")
+	todayStr := time.Now().In(loc).Format("2006-01-02")
+	if user.LastCheckInDate == todayStr {
+		user.IsCheckedInToday = true
+	} else {
+		user.IsCheckedInToday = false
+	}
+
 	c.JSON(http.StatusOK, user)
 }
 

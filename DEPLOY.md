@@ -55,11 +55,11 @@ journalctl -u shenliyuan -n 50 --no-pager
 以后线上更新统一使用下面这套命令：
 
 ```bash
-cd /opt/shenliyuan
-git pull origin fwqtest
-cd /opt/shenliyuan/server
-go build -o /opt/shenliyuan/shenliyuan ./cmd/main.go
-systemctl restart shenliyuan
+    cd /opt/shenliyuan
+    git pull origin fwqtest
+    cd /opt/shenliyuan/server
+    go build -o /opt/shenliyuan/shenliyuan ./cmd/main.go
+    systemctl restart shenliyuan
 ```
 
 更新后立即验证：

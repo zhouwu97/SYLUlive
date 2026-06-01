@@ -165,7 +165,7 @@ func (h *PostHandler) GetList(c *gin.Context) {
 	if scene == "refresh" && (sort == "all" || sort == "hot") && searchQuery == "" && sinceStr == "" {
 		isSnapshotting = true
 		if sort == "all" {
-			query = query.Order("(like_count*5 + reply_count*10 + view_count*0.2) / (((strftime('%s','now') - strftime('%s',created_at))/3600.0 + 2) * ((strftime('%s','now') - strftime('%s',created_at))/3600.0 + 2)) DESC")
+			query = query.Order("(10.0 + like_count*5 + reply_count*10 + view_count*0.2) / (((strftime('%s','now') - strftime('%s',created_at))/3600.0 + 2) * ((strftime('%s','now') - strftime('%s',created_at))/3600.0 + 2)) DESC")
 		} else if sort == "hot" {
 			query = query.Order("(view_count*1 + like_count*20 + reply_count*50) DESC")
 		}
@@ -197,7 +197,7 @@ func (h *PostHandler) GetList(c *gin.Context) {
 			snapshotQuery = snapshotQuery.Where("post_type = ?", postType)
 		}
 		if sort == "all" {
-			snapshotQuery = snapshotQuery.Order("(like_count*5 + reply_count*10 + view_count*0.2) / (((strftime('%s','now') - strftime('%s',created_at))/3600.0 + 2) * ((strftime('%s','now') - strftime('%s',created_at))/3600.0 + 2)) DESC")
+			snapshotQuery = snapshotQuery.Order("(10.0 + like_count*5 + reply_count*10 + view_count*0.2) / (((strftime('%s','now') - strftime('%s',created_at))/3600.0 + 2) * ((strftime('%s','now') - strftime('%s',created_at))/3600.0 + 2)) DESC")
 		} else if sort == "hot" {
 			snapshotQuery = snapshotQuery.Order("(view_count*1 + like_count*20 + reply_count*50) DESC")
 		}

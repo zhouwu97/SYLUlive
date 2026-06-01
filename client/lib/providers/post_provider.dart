@@ -224,6 +224,12 @@ class PostProvider extends ChangeNotifier {
     board.currentPage = 1;
     board.hasMore = true;
 
+    if (isSortChanged) {
+      board.posts = [];
+      board.isLoading = true;
+      notifyListeners();
+    }
+
     try {
       board.sessionId = null; // 清除老的会话快照
       final params = <String, dynamic>{

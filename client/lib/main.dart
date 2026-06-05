@@ -20,6 +20,7 @@ import 'providers/canteen_provider.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/course_schedule_screen.dart';
+import 'screens/exam_schedule_screen.dart';
 import 'screens/user_replies_screen.dart';
 import 'services/course_reminder_service.dart';
 import 'theme/AppTheme.dart';
@@ -151,6 +152,9 @@ class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
         if ((uri == 'widget_timetable' || uri == 'campus://timetable') && mounted) {
           appNavigatorKey.currentState?.popUntil((route) => route.isFirst);
           widgetTabSwitch.value++;
+        } else if (uri != null && uri.startsWith('widget_exam') && mounted) {
+          appNavigatorKey.currentState?.popUntil((route) => route.isFirst);
+          appNavigatorKey.currentState?.push(MaterialPageRoute(builder: (_) => const ExamScheduleScreen()));
         }
       }
     });
@@ -176,6 +180,9 @@ class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
         appNavigatorKey.currentState?.popUntil((route) => route.isFirst);
         // 切换到底部导航的课程表 tab，不 push 新页面
         widgetTabSwitch.value++;
+      } else if (uri != null && uri.startsWith('widget_exam') && mounted) {
+        appNavigatorKey.currentState?.popUntil((route) => route.isFirst);
+        appNavigatorKey.currentState?.push(MaterialPageRoute(builder: (_) => const ExamScheduleScreen()));
       }
     } catch (e) {
       debugPrint('深度链接检查失败: $e');

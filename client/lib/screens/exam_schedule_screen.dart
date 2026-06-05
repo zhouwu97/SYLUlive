@@ -106,7 +106,6 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
     if (examsJson != null) {
       try {
         final List<dynamic> decoded = jsonDecode(examsJson);
-        final now = DateTime.now();
 
         setState(() {
           _exams = decoded
@@ -682,6 +681,15 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
 
     final displayExams =
         _exams.where((e) => e.semester == _currentSemester).toList();
+    
+    final now = DateTime.now();
+    displayExams.sort((a, b) {
+      final aPast = a.endTime.isBefore(now);
+      final bPast = b.endTime.isBefore(now);
+      if (aPast && !bPast) return 1;
+      if (!aPast && bPast) return -1;
+      return a.startTime.compareTo(b.startTime);
+    });
     final availableSemesters = _availableSemesters;
 
     return Scaffold(
@@ -822,10 +830,12 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
                     child: InkWell(
                       borderRadius: BorderRadius.circular(16),
                       onTap: () => _showEditDialog(exam, originalIndex),
-                      child: GlassContainer(
-                        padding: const EdgeInsets.all(16),
-                        borderRadius: 16,
-                        child: Row(
+                      child: Opacity(
+                        opacity: exam.endTime.isBefore(now) ? 0.5 : 1.0,
+                        child: GlassContainer(
+                          padding: const EdgeInsets.all(16),
+                          borderRadius: 16,
+                          child: Row(
                           children: [
                             Expanded(
                               child: Column(
@@ -904,6 +914,7 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
                             ),
                           ],
                         ),
+                      ),
                       ),
                     ),
                   ),

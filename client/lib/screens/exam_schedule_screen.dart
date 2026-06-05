@@ -341,13 +341,10 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setModalState) {
           final isDark = Theme.of(context).brightness == Brightness.dark;
-          return Padding(
-            padding:
-                EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
-            child: AlertDialog(
-              backgroundColor: isDark ? const Color(0xFF1E2235) : Colors.white,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(20)),
+          return AlertDialog(
+            backgroundColor: isDark ? const Color(0xFF1E2235) : Colors.white,
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20)),
               contentPadding: const EdgeInsets.all(24),
               content: SingleChildScrollView(
                 child: Column(
@@ -675,8 +672,7 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
                   ],
                 ),
               ),
-            ),
-          );
+            );
         },
       ),
     );

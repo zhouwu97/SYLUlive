@@ -259,6 +259,7 @@ class PostProvider extends ChangeNotifier {
       debugPrint('刷新失败(board=$boardId): ${e.message}');
     }
 
+    board.isLoading = false;
     if (boardId == _activeBoardId) {
       _boards[_activeBoardId] = board;
     }

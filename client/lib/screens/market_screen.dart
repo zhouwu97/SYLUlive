@@ -3,6 +3,7 @@ import 'dart:io' show File;
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/post.dart';
 import '../providers/auth_provider.dart';
@@ -35,7 +36,6 @@ class _MarketScreenState extends State<MarketScreen> {
   String _sortType = 'time';
   String _searchQuery = '';
   bool _isSearching = false;
-  bool _isListView = false;
   List<Post> _searchResults = [];
 
   static const _marketPostTypes = ['sell', 'buy', 'proxy', 'lost', 'found'];
@@ -197,11 +197,9 @@ class _MarketScreenState extends State<MarketScreen> {
         title: Text(widget.titleOverride ?? '集市'),
         actions: [
           IconButton(
-            icon: Icon(_isListView ? Icons.grid_view : Icons.view_list),
+            icon: Icon(themeProvider.marketIsListView ? Icons.grid_view : Icons.view_list),
             onPressed: () {
-              setState(() {
-                _isListView = !_isListView;
-              });
+              themeProvider.setMarketIsListView(!themeProvider.marketIsListView);
             },
           ),
           if (widget.titleOverride != '失物招领')
@@ -221,7 +219,7 @@ class _MarketScreenState extends State<MarketScreen> {
       ),
       body: Stack(
         children: [
-
+          _buildBackground(themeProvider, isDark),
           Consumer<PostProvider>(
             builder: (context, postProvider, child) {
               final allPosts = postProvider.postsFor(2);
@@ -277,7 +275,7 @@ class _MarketScreenState extends State<MarketScreen> {
                           ),
                         ),
                       )
-                    else if (_isListView)
+                    else if (themeProvider.marketIsListView)
                       SliverPadding(
                         padding: const EdgeInsets.fromLTRB(12, 0, 12, 80),
                         sliver: SliverList(

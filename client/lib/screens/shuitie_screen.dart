@@ -39,7 +39,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   Timer? _searchDebounce;
   List<model.Announcement> _announcements = [];
   bool _wasLoggedIn = false;
-  List<Post> _cachedPosts = [];
+  final Map<String, List<Post>> _modeCaches = {};
   String _feedMode = 'all';
   String _searchQuery = '';
   List<Post> _searchResults = [];
@@ -185,7 +185,9 @@ class _ShuitieScreenState extends State<ShuitieScreen>
 
   Future<void> _changeFeedMode(String mode) async {
     if (_feedMode == mode) return;
-    setState(() => _feedMode = mode);
+    setState(() {
+      _feedMode = mode;
+    });
     await _refresh();
   }
 
@@ -219,7 +221,9 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     if (!mounted) return;
     final posts = postProvider.posts;
     setState(() {
-      _cachedPosts = List.from(posts);
+      if (posts.isNotEmpty) {
+        _modeCaches[_feedMode] = List.from(posts);
+      }
     });
     if (_searchQuery.isNotEmpty) {
       await _runSearch(_searchQuery);
@@ -476,10 +480,11 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                   child: Consumer<PostProvider>(
                     builder: (context, postProvider, child) {
                       var posts = postProvider.posts;
-                      if (posts.isEmpty && _cachedPosts.isNotEmpty) {
-                        posts = _cachedPosts;
+                      final currentCache = _modeCaches[_feedMode] ?? [];
+                      if (posts.isEmpty && currentCache.isNotEmpty) {
+                        posts = currentCache;
                       } else if (posts.isNotEmpty) {
-                        _cachedPosts = List.from(posts);
+                        _modeCaches[_feedMode] = List.from(posts);
                       }
 
                   final visiblePosts = _resolveVisiblePosts(posts);
@@ -519,7 +524,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                             ),
                           ),
                         ),
-                        if (postProvider.isLoading && _cachedPosts.isEmpty)
+                        if (postProvider.isLoading && (_modeCaches[_feedMode]?.isEmpty ?? true))
                           const SliverFillRemaining(
                             child: Center(child: CircularProgressIndicator()),
                           )

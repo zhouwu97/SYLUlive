@@ -10,6 +10,7 @@ class ThemeProvider extends ChangeNotifier {
   static const String _floatingNavBarKey = 'floating_nav_bar';
   static const String _predictiveBackKey = 'predictive_back_enabled';
   static const String _startOnTimetableKey = 'start_on_timetable';
+  static const String _marketIsListViewKey = 'market_is_list_view';
 
   bool _isDarkMode = false;
   String? _backgroundImage;
@@ -19,6 +20,7 @@ class ThemeProvider extends ChangeNotifier {
   bool _floatingNavBar = false;
   bool _predictiveBack = true;
   bool _startOnTimetable = false;
+  bool _marketIsListView = false;
 
   bool get isDarkMode => _isDarkMode;
   String? get backgroundImage => _backgroundImage;
@@ -28,6 +30,7 @@ class ThemeProvider extends ChangeNotifier {
   bool get floatingNavBar => _floatingNavBar;
   bool get predictiveBack => _predictiveBack;
   bool get startOnTimetable => _startOnTimetable;
+  bool get marketIsListView => _marketIsListView;
   bool get hasBackground => _backgroundImage != null && _backgroundImage!.isNotEmpty;
 
   /// 是否有自定义背景（全局生效）
@@ -47,6 +50,7 @@ class ThemeProvider extends ChangeNotifier {
     _floatingNavBar = prefs.getBool(_floatingNavBarKey) ?? false;
     _predictiveBack = prefs.getBool(_predictiveBackKey) ?? true;
     _startOnTimetable = prefs.getBool(_startOnTimetableKey) ?? false;
+    _marketIsListView = prefs.getBool(_marketIsListViewKey) ?? false;
     notifyListeners();
   }
 
@@ -121,6 +125,13 @@ class ThemeProvider extends ChangeNotifier {
     _startOnTimetable = v;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_startOnTimetableKey, v);
+    notifyListeners();
+  }
+
+  Future<void> setMarketIsListView(bool v) async {
+    _marketIsListView = v;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_marketIsListViewKey, v);
     notifyListeners();
   }
 }

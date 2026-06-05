@@ -111,8 +111,6 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
         setState(() {
           _exams = decoded
               .map((e) => ExamModel.fromJson(e))
-              // 过滤掉 endTime 早于当前时间的考试
-              .where((exam) => exam.endTime.isAfter(now))
               .toList();
 
           // 按 startTime 升序排序

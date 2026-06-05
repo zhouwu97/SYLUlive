@@ -32,8 +32,12 @@ class ShuitieScreen extends StatefulWidget {
 }
 
 class _ShuitieScreenState extends State<ShuitieScreen>
-    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   late AnimationController _animationController;
+  late AnimationController _feedSwitchController;
+  late Animation<double> _feedSwitchAnimation;
+  bool _isSwitchingMode = false;
+  double _slideDirection = 0;
   final TextEditingController _searchController = TextEditingController();
   Timer? _autoRefreshTimer;
   Timer? _searchDebounce;
@@ -64,6 +68,15 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     _animationController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 700),
+    );
+    _feedSwitchController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 280),
+      value: 1.0,
+    );
+    _feedSwitchAnimation = CurvedAnimation(
+      parent: _feedSwitchController,
+      curve: Curves.easeOutCubic,
     );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<PostProvider>().loadPosts(boardId: 1, sort: _currentSort);
@@ -106,6 +119,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     _stopAutoRefresh();
     _searchDebounce?.cancel();
     _searchController.dispose();
+    _feedSwitchController.dispose();
     _animationController.dispose();
     super.dispose();
   }
@@ -184,11 +198,44 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   }
 
   Future<void> _changeFeedMode(String mode) async {
-    if (_feedMode == mode) return;
-    setState(() {
-      _feedMode = mode;
-    });
-    await _refresh();
+    if (_feedMode == mode || _isSwitchingMode) return;
+    _isSwitchingMode = true;
+
+    try {
+      // 确定滑动方向
+      const modes = ['new', 'all', 'hot'];
+      final oldIndex = modes.indexOf(_feedMode);
+      final newIndex = modes.indexOf(mode);
+      final goingRight = newIndex > oldIndex;
+
+      // 1. 滑出 + 淡出
+      setState(() {
+        _slideDirection = goingRight ? -1 : 1;
+      });
+      await _feedSwitchController.reverse();
+      if (!mounted) return;
+
+      // 2. 保存当前板块帖子到缓存
+      final postProvider = context.read<PostProvider>();
+      final currentPosts = postProvider.postsFor(1);
+      if (currentPosts.isNotEmpty) {
+        _modeCaches[_feedMode] = List.from(currentPosts);
+      }
+
+      // 3. 切换模式 + 设置入场方向
+      setState(() {
+        _feedMode = mode;
+        _slideDirection = goingRight ? 1 : -1;
+      });
+
+      // 4. 滑入 + 淡入
+      await _feedSwitchController.forward();
+
+      // 5. 后台刷新数据 (不再阻塞UI，让其在后台刷新)
+      _refresh();
+    } finally {
+      _isSwitchingMode = false;
+    }
   }
 
   List<Post> _resolveVisiblePosts(List<Post> posts) {
@@ -215,14 +262,18 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   }
 
   Future<void> _refresh() async {
+    final modeAtStart = _feedMode;
+    final sortAtStart = _currentSort;
     final postProvider = context.read<PostProvider>();
-    await postProvider.refresh(boardId: 1, sort: _currentSort);
+    await postProvider.refresh(boardId: 1, sort: sortAtStart);
     await postProvider.refresh(boardId: 2, sort: 'time');
     if (!mounted) return;
-    final posts = postProvider.posts;
+    // 如果在刷新期间用户已切换了模式，丢弃本次结果，避免数据污染
+    if (_feedMode != modeAtStart) return;
+    final posts = postProvider.postsFor(1);
     setState(() {
       if (posts.isNotEmpty) {
-        _modeCaches[_feedMode] = List.from(posts);
+        _modeCaches[modeAtStart] = List.from(posts);
       }
     });
     if (_searchQuery.isNotEmpty) {
@@ -479,13 +530,11 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                   constraints: const BoxConstraints(maxWidth: 680),
                   child: Consumer<PostProvider>(
                     builder: (context, postProvider, child) {
-                      var posts = postProvider.posts;
-                      final currentCache = _modeCaches[_feedMode] ?? [];
-                      if (posts.isEmpty && currentCache.isNotEmpty) {
-                        posts = currentCache;
-                      } else if (posts.isNotEmpty) {
-                        _modeCaches[_feedMode] = List.from(posts);
-                      }
+                      // 优先使用模式专属缓存，避免不同模式的数据交叉污染
+                      final cachedPosts = _modeCaches[_feedMode];
+                      final posts = (cachedPosts != null && cachedPosts.isNotEmpty)
+                          ? cachedPosts
+                          : postProvider.postsFor(1);
 
                   final visiblePosts = _resolveVisiblePosts(posts);
                   final lostFoundPosts = postProvider
@@ -497,7 +546,14 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                   return GestureDetector(
                     behavior: HitTestBehavior.translucent,
                     onHorizontalDragEnd: _handleFeedSwipe,
-                    child: CustomScrollView(
+                    child: SlideTransition(
+                      position: Tween<Offset>(
+                        begin: Offset(_slideDirection * 0.12, 0),
+                        end: Offset.zero,
+                      ).animate(_feedSwitchAnimation),
+                      child: FadeTransition(
+                        opacity: _feedSwitchAnimation,
+                        child: CustomScrollView(
                       physics: const AlwaysScrollableScrollPhysics(
                         parent: BouncingScrollPhysics(),
                       ),
@@ -512,19 +568,29 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                                 const SizedBox(height: 10),
                                 _buildSearchBar(isDark),
                                 const SizedBox(height: 10),
-                                // 综合模式下显示公告和签到
-                                if (_feedMode == 'all') ...[
-                                  _buildAnnouncementPanel(isDark),
-                                  const SizedBox(height: 8),
-                                  _buildQuickActions(isDark, lostFoundPosts),
-                                  const SizedBox(height: 10),
-                                ],
+                                // 综合模式下显示公告和签到（带动画过渡）
+                                AnimatedSize(
+                                  duration: const Duration(milliseconds: 280),
+                                  curve: Curves.easeOutCubic,
+                                  alignment: Alignment.topCenter,
+                                  child: _feedMode == 'all'
+                                      ? Column(
+                                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                                          children: [
+                                            _buildAnnouncementPanel(isDark),
+                                            const SizedBox(height: 8),
+                                            _buildQuickActions(isDark, lostFoundPosts),
+                                            const SizedBox(height: 10),
+                                          ],
+                                        )
+                                      : const SizedBox.shrink(),
+                                ),
                                 const SizedBox(height: 4),
                               ],
                             ),
                           ),
                         ),
-                        if (postProvider.isLoading && (_modeCaches[_feedMode]?.isEmpty ?? true))
+                        if (postProvider.isLoading && posts.isEmpty)
                           const SliverFillRemaining(
                             child: Center(child: CircularProgressIndicator()),
                           )
@@ -570,6 +636,8 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                           ),
                         const SliverToBoxAdapter(child: SizedBox(height: 80)),
                       ],
+                        ),
+                      ),
                     ),
                   );
                 },

@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="widget_description">沈理校园课表小部件，显示当天课程安排</string>
+    <string name="exam_widget_description">沈理校园考试小部件，显示近期考试安排</string>
 </resources>

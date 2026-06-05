@@ -45,6 +45,16 @@ class EduProvider extends ChangeNotifier {
   bool get isLoading => _isLoading;
   bool get isStatusLoaded => _statusLoaded;
   String? get errorMessage => _errorMessage;
+  int get enrollmentYear {
+    int startYear = DateTime.now().year - 4; // 默认往前推4年
+    if (_studentId.length >= 2) {
+      final parsed = int.tryParse(_studentId.substring(0, 2));
+      if (parsed != null && parsed > 0 && parsed < 99) {
+        startYear = 2000 + parsed;
+      }
+    }
+    return startYear;
+  }
 
   EduProvider(Dio authDio) {
     _authDio = authDio;
@@ -144,7 +154,8 @@ class EduProvider extends ChangeNotifier {
   }
 
   // 绑定教务账号
-  Future<bool> bind(String studentId, String password, {bool isSilent = false}) async {
+  Future<bool> bind(String studentId, String password,
+      {bool isSilent = false}) async {
     if (_userId == null) {
       if (!isSilent) {
         _errorMessage = '用户未登录';
@@ -269,7 +280,9 @@ class EduProvider extends ChangeNotifier {
           return OperationResult.ok(
               List<Map<String, dynamic>>.from(data['courses']));
         }
-        final errorMsg = (data['error'] ?? data['message'] ?? data['detail'] ?? '').toString();
+        final errorMsg =
+            (data['error'] ?? data['message'] ?? data['detail'] ?? '')
+                .toString();
         if (errorMsg.isNotEmpty) {
           return OperationResult.fail(errorMsg);
         }
@@ -280,13 +293,24 @@ class EduProvider extends ChangeNotifier {
       return OperationResult.fail('获取课表失败');
     } on DioException catch (e) {
       final errorMsg = _parseDioError(e);
-      if (errorMsg.contains('未登录') || errorMsg.contains('过期') || errorMsg.contains('重新登录') || errorMsg.contains('会话') || errorMsg.contains('cookie') || errorMsg.contains('暂未开放') || errorMsg.contains('失效') || errorMsg.contains('Cookie')) {
+      if (errorMsg.contains('未登录') ||
+          errorMsg.contains('过期') ||
+          errorMsg.contains('重新登录') ||
+          errorMsg.contains('会话') ||
+          errorMsg.contains('cookie') ||
+          errorMsg.contains('暂未开放') ||
+          errorMsg.contains('失效') ||
+          errorMsg.contains('Cookie')) {
         final rebindSuccess = await _trySilentRelogin();
         if (rebindSuccess) {
           try {
-            final retryResp = await _authDio.post('/edu/courses', data: {'year': year, 'semester': semester});
-            if (retryResp.statusCode == 200 && retryResp.data['courses'] != null && (retryResp.data['courses'] as List).isNotEmpty) {
-              return OperationResult.ok(List<Map<String, dynamic>>.from(retryResp.data['courses']));
+            final retryResp = await _authDio.post('/edu/courses',
+                data: {'year': year, 'semester': semester});
+            if (retryResp.statusCode == 200 &&
+                retryResp.data['courses'] != null &&
+                (retryResp.data['courses'] as List).isNotEmpty) {
+              return OperationResult.ok(
+                  List<Map<String, dynamic>>.from(retryResp.data['courses']));
             }
           } catch (_) {}
         } else {
@@ -328,13 +352,23 @@ class EduProvider extends ChangeNotifier {
       return OperationResult.fail('获取成绩失败');
     } on DioException catch (e) {
       final errorMsg = _parseDioError(e);
-      if (errorMsg.contains('未登录') || errorMsg.contains('过期') || errorMsg.contains('重新登录') || errorMsg.contains('会话') || errorMsg.contains('cookie') || errorMsg.contains('暂未开放') || errorMsg.contains('失效') || errorMsg.contains('Cookie')) {
+      if (errorMsg.contains('未登录') ||
+          errorMsg.contains('过期') ||
+          errorMsg.contains('重新登录') ||
+          errorMsg.contains('会话') ||
+          errorMsg.contains('cookie') ||
+          errorMsg.contains('暂未开放') ||
+          errorMsg.contains('失效') ||
+          errorMsg.contains('Cookie')) {
         final rebindSuccess = await _trySilentRelogin();
         if (rebindSuccess) {
           try {
-            final retryResp = await _authDio.post('/edu/grades', data: {'year': year, 'semester': semester});
-            if (retryResp.statusCode == 200 && retryResp.data['grades'] != null) {
-              return OperationResult.ok(List<Map<String, dynamic>>.from(retryResp.data['grades']));
+            final retryResp = await _authDio.post('/edu/grades',
+                data: {'year': year, 'semester': semester});
+            if (retryResp.statusCode == 200 &&
+                retryResp.data['grades'] != null) {
+              return OperationResult.ok(
+                  List<Map<String, dynamic>>.from(retryResp.data['grades']));
             }
           } catch (_) {}
         } else {

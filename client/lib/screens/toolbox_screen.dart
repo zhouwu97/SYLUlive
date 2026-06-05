@@ -283,9 +283,11 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                 ? Colors.black.withValues(alpha: 0.3)
                 : Colors.white.withValues(alpha: 0.5))
             : null,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
+        child: SizedBox.expand(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
@@ -316,6 +318,7 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
               ),
             ),
           ],
+        ),
         ),
       ),
     );

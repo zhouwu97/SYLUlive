@@ -243,6 +243,8 @@ func main() {
 
 	lotteryHandler := handlers.NewLotteryHandler(db)
 
+	vipHandler := handlers.NewVipHandler(db)
+
 
 
 	// 初始化教务服务配置
@@ -632,7 +634,14 @@ func main() {
 
 		superAdmin.POST("/invitations/:id/approve", invitationHandler.Approve)
 
+		// VIP 管理路由（超级管理员）
+		superAdmin.POST("/vip/grant", vipHandler.GrantVip)
+		superAdmin.DELETE("/vip/:user_id", vipHandler.RevokeVip)
+
 	}
+
+	// VIP 状态查询路由（普通用户，需登录）
+	r.GET("/api/vip/status", middleware.AuthMiddleware(db, cfg.JWTSecret), vipHandler.CheckVip)
 
 
 

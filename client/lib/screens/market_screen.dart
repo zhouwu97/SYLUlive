@@ -221,7 +221,6 @@ class _MarketScreenState extends State<MarketScreen> {
       ),
       body: Stack(
         children: [
-          _buildBackground(themeProvider, isDark),
           Consumer<PostProvider>(
             builder: (context, postProvider, child) {
               final allPosts = postProvider.postsFor(2);

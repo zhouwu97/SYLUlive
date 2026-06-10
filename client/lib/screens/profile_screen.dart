@@ -97,10 +97,6 @@ class _ProfileScreenState extends State<ProfileScreen>
       backgroundColor: Colors.transparent,
       body: Stack(
         children: [
-          // 背景
-          if (!themeProvider.isBackgroundVisible)
-            _buildDefaultBackground(isDark),
-
           // 内容
           FadeTransition(
             opacity: _fadeAnimation,
@@ -454,14 +450,16 @@ class _ProfileScreenState extends State<ProfileScreen>
                 return Padding(
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                   child: ResponsiveUtil.isDesktop(context)
-                      ? Wrap(
-                          spacing: 16,
-                          runSpacing: 16,
-                          children: items.map((e) => SizedBox(
-                            width: (MediaQuery.of(context).size.width - 48) / 2,
-                            child: e,
-                          )).toList(),
-                        )
+                      ? LayoutBuilder(builder: (context, constraints) {
+                          return Wrap(
+                            spacing: 16,
+                            runSpacing: 16,
+                            children: items.map((e) => SizedBox(
+                              width: (constraints.maxWidth - 16) / 2,
+                              child: e,
+                            )).toList(),
+                          );
+                        })
                       : Column(
                           children: [
                             for (int i = 0; i < items.length; i++) ...[
@@ -594,14 +592,16 @@ class _ProfileScreenState extends State<ProfileScreen>
             ),
           ),
           if (ResponsiveUtil.isDesktop(context))
-            Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              children: items.map((e) => SizedBox(
-                width: (MediaQuery.of(context).size.width - 56) / 2,
-                child: e,
-              )).toList(),
-            )
+            LayoutBuilder(builder: (context, constraints) {
+              return Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                children: items.map((e) => SizedBox(
+                  width: (constraints.maxWidth - 12) / 2,
+                  child: e,
+                )).toList(),
+              );
+            })
           else
             Column(children: items),
           const SizedBox(height: 8),

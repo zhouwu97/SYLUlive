@@ -547,6 +547,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
               ? _buildEmptyDetailState(isDark)
               : ClipRect(
                   child: PostDetailScreen(
+                    key: ValueKey(_selectedPost!.id),
                     postId: _selectedPost!.id,
                     isMarket: false,
                     initialPost: _selectedPost,

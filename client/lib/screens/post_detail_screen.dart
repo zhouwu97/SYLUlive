@@ -1194,10 +1194,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
     final allChildren = childMap[thread.parent.id] ?? [];
     final isExpanded = _expandedThreads.contains(thread.parent.id);
-    final visibleChildren = compact && depth == 0 && !isExpanded
-        ? allChildren.take(1).toList()
+    final visibleChildren = !isExpanded
+        ? allChildren.take(2).toList()
         : allChildren;
-    final hasMore = compact && depth == 0 && !isExpanded && allChildren.length > 1;
+    final hasMore = !isExpanded && allChildren.length > 2;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),

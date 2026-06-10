@@ -115,74 +115,71 @@ class BottomNavWrapper extends StatelessWidget {
         }
       },
       child: SafeArea(
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            ConstrainedBox(
+        child: Center(
+          child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 400),
             child: Container(
-              margin: EdgeInsets.only(left: 12, right: 12, top: 4, bottom: bottomSafe > 0 ? bottomSafe : 4),
+              margin: const EdgeInsets.only(left: 12, right: 12, top: 4, bottom: 12),
               child: ClipRRect(
-          borderRadius: BorderRadius.circular(50),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-              decoration: BoxDecoration(
-                color: (isDark ? Colors.grey[900]! : Colors.white)
-                    .withValues(alpha: 0.7),
                 borderRadius: BorderRadius.circular(50),
-                border: Border.all(
-                  color: isDark ? Colors.white10 : Colors.white30,
-                  width: 1,
-                ),
-              ),
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final itemWidth = constraints.maxWidth / 5;
-                  return Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      // 滑动背景指示器
-                      AnimatedPositioned(
-                        duration: const Duration(milliseconds: 300),
-                        curve: Curves.easeOutCubic,
-                        left: itemWidth * currentIndex,
-                        width: itemWidth,
-                        top: 0,
-                        bottom: 0,
-                        child: Center(
-                          child: Container(
-                            width: 44,
-                            height: 44,
-                            decoration: BoxDecoration(
-                              color: primaryColor.withValues(alpha: 0.12),
-                              borderRadius: BorderRadius.circular(22),
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: (isDark ? Colors.grey[900]! : Colors.white)
+                          .withValues(alpha: 0.7),
+                      borderRadius: BorderRadius.circular(50),
+                      border: Border.all(
+                        color: isDark ? Colors.white10 : Colors.white30,
+                        width: 1,
+                      ),
+                    ),
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        final itemWidth = constraints.maxWidth / 5;
+                        return Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            // 滑动背景指示器
+                            AnimatedPositioned(
+                              duration: const Duration(milliseconds: 300),
+                              curve: Curves.easeOutCubic,
+                              left: itemWidth * currentIndex,
+                              width: itemWidth,
+                              top: 0,
+                              bottom: 0,
+                              child: Center(
+                                child: Container(
+                                  width: 44,
+                                  height: 44,
+                                  decoration: BoxDecoration(
+                                    color: primaryColor.withValues(alpha: 0.12),
+                                    borderRadius: BorderRadius.circular(22),
+                                  ),
+                                ),
+                              ),
                             ),
-                          ),
-                        ),
-                      ),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceAround,
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          _iconOnly(Icons.home_rounded, 0, context, primaryColor, itemWidth),
-                          _iconOnly(Icons.storefront_rounded, 1, context, primaryColor, itemWidth),
-                          _iconOnly(Icons.calendar_month_rounded, 2, context, primaryColor, itemWidth),
-                          _iconOnly(Icons.apartment_rounded, 3, context, primaryColor, itemWidth),
-                          _iconOnly(Icons.person_rounded, 4, context, primaryColor, itemWidth),
-                        ],
-                      ),
-                    ],
-                  );
-                },
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceAround,
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                _iconOnly(Icons.home_rounded, 0, context, primaryColor, itemWidth),
+                                _iconOnly(Icons.storefront_rounded, 1, context, primaryColor, itemWidth),
+                                _iconOnly(Icons.calendar_month_rounded, 2, context, primaryColor, itemWidth),
+                                _iconOnly(Icons.apartment_rounded, 3, context, primaryColor, itemWidth),
+                                _iconOnly(Icons.person_rounded, 4, context, primaryColor, itemWidth),
+                              ],
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+                ),
               ),
             ),
           ),
-        ),
-      ),
-    ),
-          ],
         ),
       ),
     );

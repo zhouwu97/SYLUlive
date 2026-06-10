@@ -1171,16 +1171,29 @@ func ensureInjectScript(db *gorm.DB) {
                  let optionLabels = document.querySelectorAll('.option-item, .el-radio, .el-checkbox, .live-option-btn'); 
                  
                  lines.forEach(line => {
-                     // 剔除所有题号、选项前缀 (如 "1. ", "17. ", "A. ", "A、", "A: " 等)
-                     // 正则解释：匹配开头的数字或单个字母，后面跟着点、顿号、冒号或空格
+                     // 1. 尝试匹配完整的选项文字
                      let cleanAnswer = line.replace(/^(?:\\d+|[A-Z])[\\.\\:、\\s]+/, '').trim();
-                     if (!cleanAnswer) return;
+                     let letterMatch = line.match(/^(?:\\d+[\\.\\:、\\s]*)?([A-F])/);
+                     let letter = letterMatch ? letterMatch[1] : null;
+                     
+                     if (!cleanAnswer && !letter) return;
                      
                      optionLabels.forEach(label => {
-                         // 在对比时，也将网页上 DOM 的文本稍微清理一下前缀再比对，防止网页里的 "C. " 干扰
-                         let cleanLabel = label.innerText.replace(/^(?:\\d+|[A-Z])[\\.\\:、\\s]+/, '').trim();
-                         // 只要包含核心文字就点击！彻底无视 A/B/C/D 的乱序错位
-                         if(cleanLabel.includes(cleanAnswer) || cleanAnswer.includes(cleanLabel)) {
+                         let labelText = label.innerText.trim();
+                         let cleanLabel = labelText.replace(/^(?:\\d+|[A-Z])[\\.\\:、\\s]+/, '').trim();
+                         let labelLetterMatch = labelText.match(/^[0-9]*[\\.\\:、\\s]*([A-F])/);
+                         let labelLetter = labelLetterMatch ? labelLetterMatch[1] : null;
+                         
+                         let matched = false;
+                         if (cleanAnswer && cleanLabel && (cleanLabel.includes(cleanAnswer) || cleanAnswer.includes(cleanLabel))) {
+                             matched = true;
+                         } else if (letter && letter === labelLetter) {
+                             matched = true;
+                         } else if (letter && labelText === letter) {
+                             matched = true;
+                         }
+                         
+                         if(matched) {
                              label.click(); 
                              label.style.border = "2px solid #4CAF50";
                          }

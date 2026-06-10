@@ -114,7 +114,11 @@ class CourseReminderService {
       requestSoundPermission: false,
       defaultPresentSound: false,
     );
-    const settings = InitializationSettings(android: android, iOS: darwin);
+    const settings = InitializationSettings(
+      android: android,
+      iOS: darwin,
+      macOS: darwin,
+    );
 
     await _plugin.initialize(settings);
     await _plugin
@@ -291,6 +295,16 @@ class CourseReminderService {
         sound: true,
       );
       return iosGranted ?? false;
+    } else if (Platform.isMacOS) {
+      final macOSPlugin = _plugin.resolvePlatformSpecificImplementation<
+          MacOSFlutterLocalNotificationsPlugin>();
+
+      final bool? macOSGranted = await macOSPlugin?.requestPermissions(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
+      return macOSGranted ?? false;
     }
 
     return true;
@@ -395,6 +409,15 @@ class CourseReminderService {
 
   NotificationDetails _notificationDetails(_CourseReminderEntry reminder) {
     final teacher = reminder.course.teacher?.trim();
+    final darwin = DarwinNotificationDetails(
+      presentAlert: true,
+      presentBanner: true,
+      presentList: true,
+      presentSound: false,
+      subtitle: teacher == null || teacher.isEmpty ? null : teacher,
+      interruptionLevel: InterruptionLevel.active,
+      threadIdentifier: 'course_reminders',
+    );
     return NotificationDetails(
       android: AndroidNotificationDetails(
         _channelId,
@@ -424,15 +447,8 @@ class CourseReminderService {
         usesChronometer: true,
         chronometerCountDown: true,
       ),
-      iOS: DarwinNotificationDetails(
-        presentAlert: true,
-        presentBanner: true,
-        presentList: true,
-        presentSound: false,
-        subtitle: teacher == null || teacher.isEmpty ? null : teacher,
-        interruptionLevel: InterruptionLevel.active,
-        threadIdentifier: 'course_reminders',
-      ),
+      iOS: darwin,
+      macOS: darwin,
     );
   }
 

@@ -70,7 +70,7 @@ class AnswerGateway {
 
   /// 分支 A：用户自带 Key，本地直连大模型，不消耗积分
   Future<String?> _askAiDirectly(String apiKey, String qType, String content, void Function(String)? onProgress) async {
-    final prompt = '你是一个专业的大学辅助答题助手。\n【重点警告】如果是选择题，千万不要只输出 ABCD 字母！你必须直接输出正确选项的【完整文字内容】！\n【关键：题号匹配】我传给你的题目 JSON 中可能带有一个 `__originalIndex` 字段。在输出多道题的答案时，你的编号必须严格等于该题目的 `__originalIndex` 的值（例如："17. 选项文字"，"18. 选项文字"），绝对不能自己从 1 开始顺延编号！\n绝对不要包含任何解析或废话。\n题型：$qType\n题目内容：$content';
+    final prompt = '你是一个专业的大学辅助答题助手。\n【重点警告】如果是选择题，请输出正确选项的字母和【完整文字内容】。如果选项是纯图片，或者你无法用文字描述，请务必输出对应选项的字母（如 A、B、C、D）。\n【关键：题号匹配】我传给你的题目 JSON 中可能带有一个 `__originalIndex` 字段。在输出多道题的答案时，你的编号必须严格等于该题目的 `__originalIndex` 的值（例如："17. A 选项文字"，"18. B"），绝对不能自己从 1 开始顺延编号！\n绝对不要包含任何解析或废话。\n题型：$qType\n题目内容：$content';
     
     final baseUrl = await _secureStorage.read(key: 'custom_base_url') ?? 'https://api.deepseek.com/v1';
     final modelName = await _secureStorage.read(key: 'custom_model_name') ?? 'deepseek-chat';
@@ -78,12 +78,24 @@ class AnswerGateway {
     final endpoint = baseUrl.endsWith('/') ? '${baseUrl}chat/completions' : '$baseUrl/chat/completions';
 
     // 提取图片 URL，支持多模态 Vision
-    final imageRegex = RegExp(r'<img[^>]+src=\\?["\u0027](https?://[^"\u0027\\]+)\\?["\u0027]');
-    final matches = imageRegex.allMatches(content);
-    List<String> imageUrls = [];
-    for (var match in matches) {
-      if (match.groupCount >= 1) imageUrls.add(match.group(1)!);
+    final imageRegex = RegExp(r'<img[^>]+(?:src|data-src)=\\?["\u0027](https?://[^"\u0027\\]+)\\?["\u0027]');
+    final matches1 = imageRegex.allMatches(content);
+    
+    final directUrlRegex = RegExp(r'https?://[^"\u0027\\]+(?:storage\.yuketang\.cn|qn-storage)[^"\u0027\\]+|https?://[^"\u0027\\]+\.(?:png|jpg|jpeg|webp|gif|bmp)(?:\?[^"\u0027\\]*)?');
+    final matches2 = directUrlRegex.allMatches(content);
+
+    Set<String> urlSet = {};
+    for (var match in matches1) {
+      if (match.groupCount >= 1 && match.group(1) != null) {
+        urlSet.add(match.group(1)!);
+      }
     }
+    for (var match in matches2) {
+      String url = match.group(0)!;
+      url = url.replaceAll(RegExp(r'[\\.,;"]+$'), '');
+      urlSet.add(url);
+    }
+    List<String> imageUrls = urlSet.toList();
 
     dynamic messagesContent;
     if (imageUrls.isNotEmpty) {

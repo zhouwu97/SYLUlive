@@ -178,6 +178,7 @@ class BottomNavWrapper extends StatelessWidget {
             ),
           ),
         ),
+      ),
           ),
         ),
       ),

@@ -25,6 +25,7 @@ class PostDetailScreen extends StatefulWidget {
   final Post? initialPost;
   final int? targetReplyId;
   final bool isDesktopSplitMode;
+  final bool hideBackButton;
 
   const PostDetailScreen(
       {super.key,
@@ -32,7 +33,8 @@ class PostDetailScreen extends StatefulWidget {
       this.isMarket = false,
       this.initialPost,
       this.targetReplyId,
-      this.isDesktopSplitMode = false});
+      this.isDesktopSplitMode = false,
+      this.hideBackButton = false});
 
   @override
   State<PostDetailScreen> createState() => _PostDetailScreenState();
@@ -355,8 +357,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        automaticallyImplyLeading: !widget.isDesktopSplitMode,
-        leading: widget.isDesktopSplitMode ? null : const BackButton(),
+        automaticallyImplyLeading: !widget.hideBackButton,
+        leading: widget.hideBackButton ? null : const BackButton(),
         actions: [
           if (canEditMarket)
             IconButton(

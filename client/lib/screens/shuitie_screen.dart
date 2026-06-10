@@ -561,6 +561,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                     isMarket: false,
                     initialPost: _selectedPost,
                     isDesktopSplitMode: true,
+                    hideBackButton: true,
                   ),
                 ),
         ),

@@ -218,8 +218,8 @@ class _TeacherRatingScreenState extends State<TeacherRatingScreen>
   }
 
   Widget _buildBg(ThemeProvider p, bool d) {
-    if (p.hasBackground && p.backgroundImage != null) {
-      final bg = p.backgroundImage!;
+    if (p.isBackgroundVisible && p.getBackgroundImageFor(context) != null) {
+      final bg = p.getBackgroundImageFor(context)!;
       final isAsset = !bg.startsWith('http') && !bg.startsWith('/');
       return Stack(fit: StackFit.expand, children: [
         isAsset

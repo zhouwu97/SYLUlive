@@ -88,8 +88,8 @@ class _AnnouncementScreenState extends State<AnnouncementScreen>
   }
 
   Widget _buildBackground(ThemeProvider themeProvider, bool isDark) {
-    final path = themeProvider.backgroundImage;
-    if (themeProvider.hasBackground && path != null && path.isNotEmpty) {
+    final path = themeProvider.getBackgroundImageFor(context);
+    if (themeProvider.isBackgroundVisible && path != null && path.isNotEmpty) {
       final isAsset = !path.startsWith('http') && !path.startsWith('/');
       return Stack(
         fit: StackFit.expand,

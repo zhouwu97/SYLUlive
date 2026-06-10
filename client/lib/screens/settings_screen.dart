@@ -61,8 +61,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Widget _buildBackground(ThemeProvider themeProvider, bool isDark) {
-    if (themeProvider.hasBackground && themeProvider.backgroundImage != null) {
-      final bgPath = themeProvider.backgroundImage!;
+    String? bgPath = themeProvider.backgroundImage;
+    if (ResponsiveUtil.isDesktop(context) && themeProvider.hasLandscapeBackground) {
+      bgPath = themeProvider.landscapeBackgroundImage;
+    }
+    
+    if (bgPath != null && bgPath.isNotEmpty) {
       final isAsset = !bgPath.startsWith('http') && !bgPath.startsWith('/');
       return Stack(fit: StackFit.expand, children: [
         isAsset
@@ -132,8 +136,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
           icon: Icons.wallpaper,
           iconColor: Colors.purple,
           title: '自定义背景',
+          subtitle: '默认或竖屏时显示的背景',
           isDark: isDark,
-          onTap: () => _showBackgroundPicker(context, themeProvider),
+          onTap: () => _showBackgroundPicker(context, themeProvider, false),
+        )),
+        _buildSettingsRow(child: _buildSettingsTile(
+          icon: Icons.landscape,
+          iconColor: Colors.purpleAccent,
+          title: '横屏自定义背景',
+          subtitle: '平板或宽屏下显示的专属横向背景',
+          isDark: isDark,
+          onTap: () => _showBackgroundPicker(context, themeProvider, true),
         )),
         _buildSettingsRow(child: _buildSettingsTile(
           icon: Icons.opacity,
@@ -398,7 +411,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   void _showBackgroundPicker(
-      BuildContext context, ThemeProvider themeProvider) {
+      BuildContext context, ThemeProvider themeProvider, bool isLandscape) {
     final backgrounds = [
       'bg-mobile.png',
       'https://images.unsplash.com/photo-1579546929518-9e396f3cc809?w=800',
@@ -421,8 +434,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('选择背景',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+            Text(isLandscape ? '选择横屏背景' : '选择背景',
+                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
             const SizedBox(height: 16),
             Row(
               children: [
@@ -439,8 +452,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             : backgrounds[index];
                         return GestureDetector(
                           onTap: () {
-                            themeProvider
-                                .setBackgroundImage(backgrounds[index]);
+                            if (isLandscape) {
+                              themeProvider.setLandscapeBackgroundImage(backgrounds[index]);
+                            } else {
+                              themeProvider.setBackgroundImage(backgrounds[index]);
+                            }
                             Navigator.pop(context);
                           },
                           child: Container(
@@ -478,7 +494,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         'background_${DateTime.now().millisecondsSinceEpoch}${path.extension(image.path)}';
                     final savedPath = path.join(appDir.path, fileName);
                     await File(image.path).copy(savedPath);
-                    themeProvider.setBackgroundImage(savedPath);
+                    if (isLandscape) {
+                      themeProvider.setLandscapeBackgroundImage(savedPath);
+                    } else {
+                      themeProvider.setBackgroundImage(savedPath);
+                    }
                     if (context.mounted) Navigator.pop(context);
                   }
                 },

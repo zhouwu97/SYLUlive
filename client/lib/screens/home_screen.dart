@@ -11,6 +11,7 @@ import '../config/api_constants.dart';
 import '../main.dart';
 import '../providers/auth_provider.dart';
 import '../providers/post_provider.dart';
+import '../providers/theme_provider.dart';
 import '../utils/app_navigator.dart';
 import '../utils/post_image_cache.dart';
 import '../utils/update_checker.dart';

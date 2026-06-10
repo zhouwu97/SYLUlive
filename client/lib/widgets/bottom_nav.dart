@@ -121,13 +121,13 @@ class BottomNavWrapper extends StatelessWidget {
             ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 400),
             child: Container(
-              margin: EdgeInsets.only(left: 12, right: 12, top: 4, bottom: bottomSafe > 0 ? bottomSafe : 8),
+              margin: EdgeInsets.only(left: 12, right: 12, top: 4, bottom: bottomSafe > 0 ? bottomSafe : 4),
               child: ClipRRect(
           borderRadius: BorderRadius.circular(50),
           child: BackdropFilter(
             filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
               decoration: BoxDecoration(
                 color: (isDark ? Colors.grey[900]! : Colors.white)
                     .withValues(alpha: 0.7),

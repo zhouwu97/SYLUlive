@@ -3264,6 +3264,10 @@ $classFilterRule
             isActive: isActive, courseCode: c.courseCode, location: c.location)
         .withValues(alpha: isActive ? _cardOpacity : 0.2);
 
+    // 根据可用宽度动态放大字体和内边距，解决大屏下太空的问题
+    final double scale = (exactW / 45.0).clamp(1.0, 1.35);
+    final double paddingVal = exactW > 80 ? 6.0 : 3.0;
+    
     // 根据可用高度决定显示内容（优先课名+地点）
     final bool isCompact = h < 70;
 
@@ -3277,7 +3281,7 @@ $classFilterRule
         onTap: () => _showDetail(c),
         child: Container(
           alignment: Alignment.topLeft,
-          padding: const EdgeInsets.all(3.0),
+          padding: EdgeInsets.all(paddingVal),
           clipBehavior: Clip.hardEdge,
           decoration: BoxDecoration(
             color: base,
@@ -3292,8 +3296,8 @@ $classFilterRule
             children: [
               if (inactiveLabel != null)
                 Text(inactiveLabel,
-                    style: const TextStyle(
-                        fontSize: 8,
+                    style: TextStyle(
+                        fontSize: 8 * scale,
                         fontWeight: FontWeight.w700,
                         color: Colors.white54)),
               Flexible(
@@ -3301,7 +3305,7 @@ $classFilterRule
                   c.name.isNotEmpty ? c.name : '未知课名',
                   style: TextStyle(
                       color: Colors.white,
-                      fontSize: isCompact ? 11 : 13,
+                      fontSize: (isCompact ? 11 : 13) * scale,
                       fontWeight: FontWeight.bold,
                       height: 1.15),
                   textAlign: TextAlign.left,
@@ -3310,22 +3314,22 @@ $classFilterRule
                 ),
               ),
               if (c.location != null && c.location!.isNotEmpty) ...[
-                const SizedBox(height: 1),
+                SizedBox(height: 1 * scale),
                 Text(
                   '@${c.location}',
                   style: TextStyle(
                       color: Colors.white,
-                      fontSize: isCompact ? 9 : 11,
+                      fontSize: (isCompact ? 9 : 11) * scale,
                       fontWeight: FontWeight.w600,
                       height: 1.15),
                   textAlign: TextAlign.left,
                 ),
               ],
               if (!isCompact && c.teacher != null && c.teacher!.isNotEmpty) ...[
-                const SizedBox(height: 1),
+                SizedBox(height: 1 * scale),
                 Text(
                   c.teacher!,
-                  style: const TextStyle(color: Colors.white60, fontSize: 10),
+                  style: TextStyle(color: Colors.white60, fontSize: 10 * scale),
                   textAlign: TextAlign.left,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,

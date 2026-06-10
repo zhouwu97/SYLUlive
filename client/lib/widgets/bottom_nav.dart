@@ -115,8 +115,10 @@ class BottomNavWrapper extends StatelessWidget {
         }
       },
       child: SafeArea(
-        child: Center(
-          child: ConstrainedBox(
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 400),
             child: Container(
               margin: EdgeInsets.only(left: 12, right: 12, top: 4, bottom: bottomSafe > 0 ? bottomSafe : 8),
@@ -179,7 +181,8 @@ class BottomNavWrapper extends StatelessWidget {
           ),
         ),
       ),
-          ),
+    ),
+          ],
         ),
       ),
     );

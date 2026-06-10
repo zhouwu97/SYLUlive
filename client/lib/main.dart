@@ -294,10 +294,7 @@ class _BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
   }
 
   Widget _buildBackgroundImageLayer(ThemeProvider themeProvider, bool isDark) {
-    String? bgPath = themeProvider.backgroundImage;
-    if (ResponsiveUtil.isDesktop(context) && themeProvider.hasLandscapeBackground) {
-      bgPath = themeProvider.landscapeBackgroundImage;
-    }
+    String? bgPath = themeProvider.getBackgroundImageFor(context);
     if (bgPath == null) return _buildDefaultBackground(isDark);
     final isAsset = !bgPath.startsWith('http') && !bgPath.startsWith('/');
     final resolvedPath = isAsset ? 'assets/images/$bgPath' : bgPath;

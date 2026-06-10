@@ -117,8 +117,8 @@ class MarketExposureScreen extends StatelessWidget {
   }
 
   Widget _buildBackground(ThemeProvider themeProvider, bool isDark) {
-    if (themeProvider.hasBackground && themeProvider.backgroundImage != null) {
-      final bgPath = themeProvider.backgroundImage!;
+    if (themeProvider.isBackgroundVisible && themeProvider.getBackgroundImageFor(context) != null) {
+      final bgPath = themeProvider.getBackgroundImageFor(context)!;
       final isAsset = !bgPath.startsWith('http') && !bgPath.startsWith('/');
       return Stack(
         fit: StackFit.expand,

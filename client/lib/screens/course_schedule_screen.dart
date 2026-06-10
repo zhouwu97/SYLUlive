@@ -319,6 +319,9 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   Widget _buildTodayOverview(CourseScheduleProvider sc, bool isDark) {
     final today = DateTime.now();
     final academicWeek = sc.getAcademicWeek(_weekStart) ?? 1;
+    final targetDate = _weekStart.add(Duration(days: today.weekday - 1));
+    final isRealToday = targetDate.year == today.year && targetDate.month == today.month && targetDate.day == today.day;
+    
     final todayCourses = sc.courses.where((c) {
       if (c.weekday != today.weekday) return false;
       if (c.weeks.isNotEmpty && !c.weeks.contains(academicWeek)) return false;
@@ -346,7 +349,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '今日概览',
+                  isRealToday ? '今日概览' : '周${_wd[today.weekday - 1]}概览',
                   style: TextStyle(
                     fontSize: 24,
                     fontWeight: FontWeight.w900,
@@ -355,7 +358,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '${today.month}月${today.day}日 周${_wd[today.weekday - 1]}',
+                  '${targetDate.month}月${targetDate.day}日 周${_wd[today.weekday - 1]}',
                   style: TextStyle(
                     fontSize: 14,
                     color: isDark ? Colors.white54 : Colors.black54,

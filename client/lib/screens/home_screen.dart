@@ -768,9 +768,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             child: GlassContainer(
               borderRadius: 24,
               blur: 24,
-              opacity: isDark ? 0.3 : 0.6,
-              backgroundColor: isDark ? const Color(0xFF111827) : Colors.white,
-              borderColor: isDark ? Colors.white.withValues(alpha: 0.1) : Colors.white,
+              backgroundColor: isDark ? const Color(0xFF111827).withValues(alpha: 0.5) : Colors.white.withValues(alpha: 0.5),
+              borderColor: isDark ? Colors.white.withValues(alpha: 0.1) : Colors.white.withValues(alpha: 0.5),
               child: NavigationRail(
                 extended: false,
                 selectedIndex: _currentIndex,

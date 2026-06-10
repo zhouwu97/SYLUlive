@@ -457,6 +457,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        if (p.title.isNotEmpty) ...[
+                          Text(p.title,
+                              style: TextStyle(
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.bold,
+                                  color: isDark ? Colors.white : Colors.black87)),
+                          const SizedBox(height: 12),
+                        ],
                         if (p.price > 0) ...[
                           Row(
                             crossAxisAlignment: CrossAxisAlignment.end,
@@ -478,14 +486,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                             ],
                           ),
                           const SizedBox(height: 16),
-                        ],
-                        if (p.title.isNotEmpty) ...[
-                          Text(p.title,
-                              style: TextStyle(
-                                  fontSize: 24,
-                                  fontWeight: FontWeight.bold,
-                                  color: isDark ? Colors.white : Colors.black87)),
-                          const SizedBox(height: 12),
                         ],
                         Text(p.content,
                             style: TextStyle(
@@ -573,6 +573,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      if (p.title.isNotEmpty) ...[
+                        Text(p.title,
+                            style: TextStyle(
+                                fontSize: 24,
+                                fontWeight: FontWeight.bold,
+                                color: isDark ? Colors.white : Colors.black87)),
+                        const SizedBox(height: 12),
+                      ],
                       if (p.price > 0) ...[
                         Row(
                           crossAxisAlignment: CrossAxisAlignment.end,
@@ -594,14 +602,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           ],
                         ),
                         const SizedBox(height: 16),
-                      ],
-                      if (p.title.isNotEmpty) ...[
-                        Text(p.title,
-                            style: TextStyle(
-                                fontSize: 24,
-                                fontWeight: FontWeight.bold,
-                                color: isDark ? Colors.white : Colors.black87)),
-                        const SizedBox(height: 12),
                       ],
                       Text(p.content,
                           style: TextStyle(

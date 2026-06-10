@@ -13,6 +13,8 @@ import 'major_detail_screen.dart';
 import 'subject_ranking_detail_screen.dart';
 import 'canteen_detail_screen.dart';
 import '../widgets/image_upload_widget.dart';
+import '../utils/responsive_util.dart';
+import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 
 class TeacherRateScreen extends StatefulWidget {
   const TeacherRateScreen({super.key});
@@ -258,45 +260,56 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
           );
         }
 
+        Widget buildCard(int index) {
+          final group = groups[index];
+          final topTeachers =
+              group.teachers.take(3).map((t) => t.name).join(' · ');
+          return _buildLeaderboardCard(
+            isDark: isDark,
+            rank: index + 1,
+            title: group.subject,
+            subtitle: topTeachers.isEmpty ? '暂无教师' : '代表教师 · $topTeachers',
+            average: group.averageStar,
+            count: group.ratingCount,
+            extraLabel: '${group.teachers.length} 位教师',
+            icon: Icons.auto_stories_outlined,
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => SubjectRankingDetailScreen(
+                  subjectName: group.subject,
+                  teachers: group.teachers,
+                ),
+              ),
+            ).then((changed) async {
+              if (changed != true || !mounted) return;
+              await context
+                  .read<TeacherProvider>()
+                  .loadTeachers(query: _currentQuery);
+            }),
+          );
+        }
+
         return RefreshIndicator(
           onRefresh: () async {
             await context
                 .read<TeacherProvider>()
                 .loadTeachers(query: _currentQuery);
           },
-          child: ListView.builder(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 80),
-            itemCount: groups.length,
-            itemBuilder: (_, index) {
-              final group = groups[index];
-              final topTeachers =
-                  group.teachers.take(3).map((t) => t.name).join(' · ');
-              return _buildLeaderboardCard(
-                isDark: isDark,
-                rank: index + 1,
-                title: group.subject,
-                subtitle: topTeachers.isEmpty ? '暂无教师' : '代表教师 · $topTeachers',
-                average: group.averageStar,
-                count: group.ratingCount,
-                extraLabel: '${group.teachers.length} 位教师',
-                icon: Icons.auto_stories_outlined,
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => SubjectRankingDetailScreen(
-                      subjectName: group.subject,
-                      teachers: group.teachers,
-                    ),
-                  ),
-                ).then((changed) async {
-                  if (changed != true || !mounted) return;
-                  await context
-                      .read<TeacherProvider>()
-                      .loadTeachers(query: _currentQuery);
-                }),
-              );
-            },
-          ),
+          child: ResponsiveUtil.isDesktop(context)
+              ? MasonryGridView.count(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
+                  crossAxisCount: MediaQuery.of(context).size.width > 900 ? 3 : 2,
+                  mainAxisSpacing: 16,
+                  crossAxisSpacing: 16,
+                  itemCount: groups.length,
+                  itemBuilder: (_, index) => buildCard(index),
+                )
+              : ListView.builder(
+                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 80),
+                  itemCount: groups.length,
+                  itemBuilder: (_, index) => buildCard(index),
+                ),
         );
       });
 
@@ -323,37 +336,48 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
           );
         }
 
+        Widget buildCard(int index) {
+          final major = majors[index];
+          return _buildLeaderboardCard(
+            isDark: isDark,
+            rank: index + 1,
+            title: major.name,
+            subtitle: major.level,
+            average: major.averageStar,
+            count: major.ratingCount,
+            extraLabel: '专业评分',
+            icon: Icons.school_outlined,
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => MajorDetailScreen(
+                  majorId: major.id,
+                  majorName: major.name,
+                ),
+              ),
+            ).then((_) {
+              if (!mounted) return;
+              context.read<MajorProvider>().loadMajors();
+            }),
+          );
+        }
+
         return RefreshIndicator(
           onRefresh: () => context.read<MajorProvider>().loadMajors(),
-          child: ListView.builder(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 80),
-            itemCount: majors.length,
-            itemBuilder: (_, index) {
-              final major = majors[index];
-              return _buildLeaderboardCard(
-                isDark: isDark,
-                rank: index + 1,
-                title: major.name,
-                subtitle: major.level,
-                average: major.averageStar,
-                count: major.ratingCount,
-                extraLabel: '专业评分',
-                icon: Icons.school_outlined,
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => MajorDetailScreen(
-                      majorId: major.id,
-                      majorName: major.name,
-                    ),
-                  ),
-                ).then((_) {
-                  if (!mounted) return;
-                  context.read<MajorProvider>().loadMajors();
-                }),
-              );
-            },
-          ),
+          child: ResponsiveUtil.isDesktop(context)
+              ? MasonryGridView.count(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
+                  crossAxisCount: MediaQuery.of(context).size.width > 900 ? 3 : 2,
+                  mainAxisSpacing: 16,
+                  crossAxisSpacing: 16,
+                  itemCount: majors.length,
+                  itemBuilder: (_, index) => buildCard(index),
+                )
+              : ListView.builder(
+                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 80),
+                  itemCount: majors.length,
+                  itemBuilder: (_, index) => buildCard(index),
+                ),
         );
       });
 
@@ -567,61 +591,72 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
           );
         }
 
+        Widget buildCard(int index) {
+          final canteen = canteens[index];
+          return _buildLeaderboardCard(
+            isDark: isDark,
+            rank: index + 1,
+            title: canteen.name,
+            subtitle: '评分: ${canteen.averageStar.toStringAsFixed(1)}',
+            average: canteen.averageStar,
+            count: canteen.ratingCount,
+            extraLabel: '食堂评分',
+            icon: Icons.restaurant,
+            imageUrl: canteen.image != null && canteen.image.isNotEmpty ? ApiConstants.fullUrl(canteen.image) : null,
+            onLongPress: isAdmin ? () {
+              showDialog(
+                context: context,
+                builder: (ctx) => AlertDialog(
+                  title: const Text('删除店铺'),
+                  content: Text('确定要删除食堂/店铺 "${canteen.name}" 吗？'),
+                  actions: [
+                    TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+                    TextButton(
+                      onPressed: () async {
+                        Navigator.pop(ctx);
+                        final success = await context.read<CanteenProvider>().deleteCanteen(canteen.id);
+                        if (success && mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('删除成功')));
+                          context.read<CanteenProvider>().loadCanteens();
+                        }
+                      },
+                      child: const Text('删除', style: TextStyle(color: Colors.red)),
+                    ),
+                  ],
+                ),
+              );
+            } : null,
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => CanteenDetailScreen(
+                  canteenId: canteen.id,
+                  canteenName: canteen.name,
+                ),
+              ),
+            ).then((_) {
+              if (!mounted) return;
+              context.read<CanteenProvider>().loadCanteens();
+            }),
+          );
+        }
+
         return RefreshIndicator(
           onRefresh: () => context.read<CanteenProvider>().loadCanteens(),
-          child: ListView.builder(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 80),
-            itemCount: canteens.length,
-            itemBuilder: (_, index) {
-              final canteen = canteens[index];
-              return _buildLeaderboardCard(
-                isDark: isDark,
-                rank: index + 1,
-                title: canteen.name,
-                subtitle: '评分: ${canteen.averageStar.toStringAsFixed(1)}',
-                average: canteen.averageStar,
-                count: canteen.ratingCount,
-                extraLabel: '食堂评分',
-                icon: Icons.restaurant,
-                imageUrl: canteen.image != null && canteen.image.isNotEmpty ? ApiConstants.fullUrl(canteen.image) : null,
-                onLongPress: isAdmin ? () {
-                  showDialog(
-                    context: context,
-                    builder: (ctx) => AlertDialog(
-                      title: const Text('删除店铺'),
-                      content: Text('确定要删除食堂/店铺 "${canteen.name}" 吗？'),
-                      actions: [
-                        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
-                        TextButton(
-                          onPressed: () async {
-                            Navigator.pop(ctx);
-                            final success = await context.read<CanteenProvider>().deleteCanteen(canteen.id);
-                            if (success && mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('删除成功')));
-                              context.read<CanteenProvider>().loadCanteens();
-                            }
-                          },
-                          child: const Text('删除', style: TextStyle(color: Colors.red)),
-                        ),
-                      ],
-                    ),
-                  );
-                } : null,
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => CanteenDetailScreen(
-                      canteenId: canteen.id,
-                      canteenName: canteen.name,
-                    ),
-                  ),
-                ).then((_) {
-                  if (!mounted) return;
-                  context.read<CanteenProvider>().loadCanteens();
-                }),
-              );
-            },
-          ),
+          child: ResponsiveUtil.isDesktop(context)
+              ? MasonryGridView.count(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
+                  crossAxisCount: MediaQuery.of(context).size.width > 900 ? 3 : 2,
+                  mainAxisSpacing: 16,
+                  crossAxisSpacing: 16,
+                  itemCount: canteens.length,
+                  itemBuilder: (_, index) => buildCard(index),
+                )
+              : ListView.builder(
+                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 80),
+                  itemCount: canteens.length,
+                  itemBuilder: (_, index) => buildCard(index),
+                ),
         );
       });
   }

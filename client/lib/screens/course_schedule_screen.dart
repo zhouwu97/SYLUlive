@@ -13,6 +13,7 @@ import '../services/course_reminder_service.dart';
 import '../widgets/glass_container.dart';
 import '../utils/app_feedback.dart';
 import '../utils/app_navigator.dart' show appNavigatorKey;
+import '../utils/responsive_util.dart';
 import 'edu_screen.dart';
 import 'login_screen.dart';
 import '../services/home_widget_service.dart';
@@ -278,7 +279,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                 if (!_hasCache && sc.courses.isEmpty)
                   return _buildNoCacheView(context, isDark);
 
-                return Column(children: [
+                final mainContent = Column(children: [
                   _buildDateHeader(sc),
                   Expanded(
                       child: sc.courses.isEmpty
@@ -295,10 +296,190 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                               },
                             )),
                 ]);
+
+                if (ResponsiveUtil.isDesktop(context)) {
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildTodayOverview(sc, isDark),
+                      Expanded(child: mainContent),
+                    ],
+                  );
+                }
+                
+                return mainContent;
               },
             );
           },
         ),
+      ),
+    );
+  }
+
+  Widget _buildTodayOverview(CourseScheduleProvider sc, bool isDark) {
+    final today = DateTime.now();
+    final academicWeek = sc.getAcademicWeek(_weekStart) ?? 1;
+    final todayCourses = sc.courses.where((c) {
+      if (c.weekday != today.weekday) return false;
+      if (c.weeks.isNotEmpty && !c.weeks.contains(academicWeek)) return false;
+      return true;
+    }).toList()
+      ..sort((a, b) => a.startSection.compareTo(b.startSection));
+
+    return Container(
+      width: 320,
+      margin: const EdgeInsets.only(right: 16, top: 16, bottom: 16, left: 16),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0x33FFFFFF) : Colors.white.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(
+          color: isDark ? Colors.white12 : Colors.white,
+          width: 1,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '今日概览',
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.w900,
+                    color: isDark ? Colors.white : Colors.black87,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '${today.month}月${today.day}日 周${_wd[today.weekday - 1]}',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: isDark ? Colors.white54 : Colors.black54,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: todayCourses.isEmpty
+                ? Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.coffee, size: 48, color: isDark ? Colors.white24 : Colors.black12),
+                        const SizedBox(height: 16),
+                        Text(
+                          '今日无课，好好休息',
+                          style: TextStyle(color: isDark ? Colors.white54 : Colors.black54),
+                        ),
+                      ],
+                    ),
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                    itemCount: todayCourses.length,
+                    itemBuilder: (context, index) {
+                      final c = todayCourses[index];
+                      final startIndex = _sectionIndex(c.startSection);
+                      final endIndex = _sectionIndex(c.endSection);
+                      final color = getCourseColor(c.name, courseCode: c.courseCode, location: c.location).withOpacity(1.0);
+                      
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 12),
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: color.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: color.withOpacity(0.3)),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: color.withOpacity(0.2),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Text(
+                                    '${_starts[startIndex]} - ${_ends[endIndex]}',
+                                    style: TextStyle(
+                                      color: color,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ),
+                                const Spacer(),
+                                Text(
+                                  '第${c.startSection}-${c.endSection}节',
+                                  style: TextStyle(
+                                    color: color.withOpacity(0.8),
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              c.name,
+                              style: TextStyle(
+                                color: isDark ? Colors.white : Colors.black87,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                                height: 1.2,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            if (c.location != null && c.location!.isNotEmpty) ...[
+                              Row(
+                                children: [
+                                  Icon(Icons.location_on, size: 14, color: color.withOpacity(0.8)),
+                                  const SizedBox(width: 4),
+                                  Expanded(
+                                    child: Text(
+                                      c.location!,
+                                      style: TextStyle(
+                                        color: isDark ? Colors.white70 : Colors.black87,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                            if (c.teacher != null && c.teacher!.isNotEmpty) ...[
+                              const SizedBox(height: 4),
+                              Row(
+                                children: [
+                                  Icon(Icons.person, size: 14, color: color.withOpacity(0.8)),
+                                  const SizedBox(width: 4),
+                                  Expanded(
+                                    child: Text(
+                                      c.teacher!,
+                                      style: TextStyle(
+                                        color: isDark ? Colors.white70 : Colors.black87,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+          ),
+        ],
       ),
     );
   }

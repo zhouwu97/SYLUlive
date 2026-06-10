@@ -323,45 +323,23 @@ class _BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
     return Stack(
       fit: StackFit.expand,
       children: [
-        if (MediaQuery.of(context).size.width >= 600) ...[
-          // Blurred massive background
-          imageWidget,
+        // Background image
+        imageWidget,
+        // Color overlay (fixed — componentOpacity controls GlassContainer, not background)
+        Container(
+          color: isDark
+              ? Colors.black.withValues(alpha: 0.35)
+              : Colors.white.withValues(alpha: 0.25),
+        ),
+        // Blur overlay
+        if (themeProvider.backgroundBlur > 0 && themeProvider.liquidGlass)
           BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
-            child: Container(
-              color: isDark
-                  ? Colors.black.withValues(alpha: 0.5)
-                  : Colors.white.withValues(alpha: 0.5),
+            filter: ImageFilter.blur(
+              sigmaX: themeProvider.backgroundBlur,
+              sigmaY: themeProvider.backgroundBlur,
             ),
+            child: Container(color: Colors.transparent),
           ),
-          // Left aligned uncropped portrait image
-          Align(
-            alignment: Alignment.centerLeft,
-            child: isAsset
-                ? Image.asset(resolvedPath, fit: BoxFit.fitHeight)
-                : bgPath.startsWith('/')
-                    ? Image.file(File(bgPath), fit: BoxFit.fitHeight)
-                    : Image.network(bgPath, fit: BoxFit.fitHeight),
-          ),
-        ] else ...[
-          // Background image for mobile
-          imageWidget,
-          // Color overlay (fixed — componentOpacity controls GlassContainer, not background)
-          Container(
-            color: isDark
-                ? Colors.black.withValues(alpha: 0.35)
-                : Colors.white.withValues(alpha: 0.25),
-          ),
-          // Blur overlay
-          if (themeProvider.backgroundBlur > 0 && themeProvider.liquidGlass)
-            BackdropFilter(
-              filter: ImageFilter.blur(
-                sigmaX: themeProvider.backgroundBlur,
-                sigmaY: themeProvider.backgroundBlur,
-              ),
-              child: Container(color: Colors.transparent),
-            ),
-        ],
       ],
     );
   }

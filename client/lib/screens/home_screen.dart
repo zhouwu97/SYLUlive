@@ -681,12 +681,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
-    final authProvider = context.watch<AuthProvider>();
     final bottomSafe = MediaQuery.of(context).padding.bottom;
+    final isMobile = !ResponsiveUtil.isDesktop(context);
+    final themeProvider = context.watch<ThemeProvider>();
+    final authProvider = context.watch<AuthProvider>();
     
-    // 使用 ResponsiveUtil 替代硬编码
-    final isMobile = ResponsiveUtil.isMobile(context);
-    final isDesktop = ResponsiveUtil.isDesktop(context);
+    // 如果启用了悬浮底栏，即便是平板也使用底栏模式（不用侧边栏）
+    final useBottomNav = isMobile || themeProvider.floatingNavBar;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
@@ -695,20 +696,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     });
 
     return Scaffold(
-      backgroundColor: Colors.transparent,
       extendBody: true,
       extendBodyBehindAppBar: true,
-      body: !isMobile
-          ? _buildWideLayout(bottomSafe, authProvider, isDesktop)
+      body: !useBottomNav
+          ? _buildWideLayout(bottomSafe, authProvider, false) // 默认收起状态
           : _buildNarrowLayout(bottomSafe, authProvider),
-      bottomNavigationBar: !isMobile
+      bottomNavigationBar: !useBottomNav
           ? null
           : BottomNavWrapper(
               currentIndex: _currentIndex,
               onTap: _onTabTapped,
               authProvider: authProvider,
             ),
-      floatingActionButton: _currentIndex == 0 && isMobile
+      floatingActionButton: _currentIndex == 0 && useBottomNav
           ? Padding(
               padding: EdgeInsets.only(bottom: 110 + bottomSafe),
               child: FloatingActionButton(
@@ -741,17 +741,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               backgroundColor: isDark ? const Color(0xFF111827) : Colors.white,
               borderColor: isDark ? Colors.white.withValues(alpha: 0.1) : Colors.white,
               child: NavigationRail(
-                extended: isExtended,
+                extended: false,
                 selectedIndex: _currentIndex,
                 onDestinationSelected: _onTabTapped,
-                labelType: isExtended ? NavigationRailLabelType.none : NavigationRailLabelType.all,
+                labelType: NavigationRailLabelType.all,
                 backgroundColor: Colors.transparent,
                 indicatorColor: Theme.of(context).primaryColor.withValues(alpha: 0.15),
                 selectedIconTheme: IconThemeData(color: Theme.of(context).primaryColor, size: 28),
                 unselectedIconTheme: IconThemeData(color: isDark ? Colors.white60 : Colors.black54, size: 24),
-                selectedLabelTextStyle: TextStyle(color: Theme.of(context).primaryColor, fontWeight: FontWeight.bold),
-                unselectedLabelTextStyle: TextStyle(color: isDark ? Colors.white60 : Colors.black54),
-                minExtendedWidth: 180,
+                selectedLabelTextStyle: TextStyle(color: Theme.of(context).primaryColor, fontWeight: FontWeight.bold, fontSize: 12),
+                unselectedLabelTextStyle: TextStyle(color: isDark ? Colors.white60 : Colors.black54, fontSize: 12),
+                groupAlignment: 0.0,
                 destinations: const [
                   NavigationRailDestination(
                     icon: Icon(Icons.home_outlined),

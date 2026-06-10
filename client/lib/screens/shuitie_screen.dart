@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../utils/app_feedback.dart';
+import '../utils/responsive_util.dart';
 
 import '../models/announcement.dart' as model;
 import '../models/post.dart';
@@ -50,6 +51,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   bool _checkedIn = false;
   int _streakDays = 0;
   bool _checkInLoading = false;
+  Post? _selectedPost;
   
   static const _autoRefreshInterval = Duration(seconds: 60);
 
@@ -509,144 +511,215 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       WidgetsBinding.instance.addPostFrameCallback((_) => _refresh());
     }
 
+    final isDesktop = ResponsiveUtil.isDesktop(context);
+
     return Scaffold(
       backgroundColor: Colors.transparent,
       extendBodyBehindAppBar: true,
       body: Stack(
         children: [
+          isDesktop ? _buildDesktopLayout(isDark, topPadding) : _buildMobileLayout(isDark, topPadding),
+        ],
+      ),
+    );
+  }
 
-          RefreshIndicator(
-            onRefresh: () async {
-              await _refresh();
-              await _loadAnnouncements();
-            },
-            child: FadeTransition(
-              opacity: CurvedAnimation(
-                parent: _animationController,
-                curve: Curves.easeOut,
-              ),
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 680),
-                  child: Consumer<PostProvider>(
-                    builder: (context, postProvider, child) {
-                      // 优先使用模式专属缓存，避免不同模式的数据交叉污染
-                      final cachedPosts = _modeCaches[_feedMode];
-                      final posts = (cachedPosts != null && cachedPosts.isNotEmpty)
-                          ? cachedPosts
-                          : postProvider.postsFor(1);
-
-                  final visiblePosts = _resolveVisiblePosts(posts);
-                  final lostFoundPosts = postProvider
-                      .postsFor(2)
-                      .where((post) =>
-                          post.postType == 'lost' || post.postType == 'found')
-                      .toList();
-
-                  return GestureDetector(
-                    behavior: HitTestBehavior.translucent,
-                    onHorizontalDragEnd: _handleFeedSwipe,
-                    child: SlideTransition(
-                      position: Tween<Offset>(
-                        begin: Offset(_slideDirection * 0.12, 0),
-                        end: Offset.zero,
-                      ).animate(_feedSwitchAnimation),
-                      child: FadeTransition(
-                        opacity: _feedSwitchAnimation,
-                        child: CustomScrollView(
-                      physics: const AlwaysScrollableScrollPhysics(
-                        parent: BouncingScrollPhysics(),
-                      ),
-                      slivers: [
-                        SliverToBoxAdapter(child: SizedBox(height: topPadding + 8)),
-                        SliverPadding(
-                          padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
-                          sliver: SliverList(
-                            delegate: SliverChildListDelegate(
-                              [
-                                _buildFeedModeBar(isDark),
-                                const SizedBox(height: 10),
-                                _buildSearchBar(isDark),
-                                const SizedBox(height: 10),
-                                // 综合模式下显示公告和签到（带动画过渡）
-                                AnimatedSize(
-                                  duration: const Duration(milliseconds: 280),
-                                  curve: Curves.easeOutCubic,
-                                  alignment: Alignment.topCenter,
-                                  child: _feedMode == 'all'
-                                      ? Column(
-                                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                                          children: [
-                                            _buildAnnouncementPanel(isDark),
-                                            const SizedBox(height: 8),
-                                            _buildQuickActions(isDark, lostFoundPosts),
-                                            const SizedBox(height: 10),
-                                          ],
-                                        )
-                                      : const SizedBox.shrink(),
-                                ),
-                                const SizedBox(height: 4),
-                              ],
-                            ),
-                          ),
-                        ),
-                        if (postProvider.isLoading && posts.isEmpty)
-                          const SliverFillRemaining(
-                            child: Center(child: CircularProgressIndicator()),
-                          )
-                        else if (visiblePosts.isEmpty)
-                          SliverFillRemaining(
-                            child: _buildEmptyState(
-                              isDark,
-                              title:
-                                  _searchQuery.isNotEmpty ? '没有找到匹配帖子' : '暂无帖子',
-                              subtitle: _searchQuery.isNotEmpty
-                                  ? '目前只按标题搜索，换个标题关键词试试'
-                                  : '发布第一条帖子吧',
-                              onRetry: _refresh,
-                            ),
-                          )
-                        else
-                          SliverList(
-                            delegate: SliverChildBuilderDelegate(
-                              (context, index) {
-                                final post = visiblePosts[index];
-                                return Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 12),
-                                  child: PostCard(
-                                    post: post,
-                                    onTap: () {
-                                      Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder: (_) => PostDetailScreen(
-                                            postId: post.id,
-                                            isMarket: false,
-                                            initialPost: post,
-                                          ),
-                                        ),
-                                      );
-                                    },
-                                  ),
-                                );
-                              },
-                              childCount: visiblePosts.length,
-                            ),
-                          ),
-                        const SliverToBoxAdapter(child: SizedBox(height: 80)),
-                      ],
-                        ),
-                      ),
-                    ),
-                  );
-                },
-              ),
-                ),
+  Widget _buildDesktopLayout(bool isDark, double topPadding) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // 左侧 Master 列表
+        Container(
+          width: 380,
+          decoration: BoxDecoration(
+            border: Border(
+              right: BorderSide(
+                color: isDark ? Colors.white10 : Colors.black.withValues(alpha: 0.05),
+                width: 1,
               ),
             ),
           ),
+          child: _buildMobileLayout(isDark, topPadding),
+        ),
+        // 右侧 Detail 详情
+        Expanded(
+          child: _selectedPost == null
+              ? _buildEmptyDetailState(isDark)
+              : ClipRect(
+                  child: PostDetailScreen(
+                    postId: _selectedPost!.id,
+                    isMarket: false,
+                    initialPost: _selectedPost,
+                    isDesktopSplitMode: true,
+                  ),
+                ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildEmptyDetailState(bool isDark) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.forum_outlined, size: 80, color: isDark ? Colors.white24 : Colors.black12),
+          const SizedBox(height: 16),
+          Text('点击左侧帖子查看详情', style: TextStyle(fontSize: 16, color: isDark ? Colors.white54 : Colors.black54)),
         ],
+      ),
+    );
+  }
+
+  Widget _buildMobileLayout(bool isDark, double topPadding) {
+    return RefreshIndicator(
+      onRefresh: () async {
+        await _refresh();
+        await _loadAnnouncements();
+      },
+      child: FadeTransition(
+        opacity: CurvedAnimation(
+          parent: _animationController,
+          curve: Curves.easeOut,
+        ),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 680),
+            child: Consumer<PostProvider>(
+              builder: (context, postProvider, child) {
+                // 优先使用模式专属缓存，避免不同模式的数据交叉污染
+                final cachedPosts = _modeCaches[_feedMode];
+                final posts = (cachedPosts != null && cachedPosts.isNotEmpty)
+                    ? cachedPosts
+                    : postProvider.postsFor(1);
+
+                final visiblePosts = _resolveVisiblePosts(posts);
+                final lostFoundPosts = postProvider
+                    .postsFor(2)
+                    .where((post) =>
+                        post.postType == 'lost' || post.postType == 'found')
+                    .toList();
+
+                return GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onHorizontalDragEnd: _handleFeedSwipe,
+                  child: SlideTransition(
+                    position: Tween<Offset>(
+                      begin: Offset(_slideDirection * 0.12, 0),
+                      end: Offset.zero,
+                    ).animate(_feedSwitchAnimation),
+                    child: FadeTransition(
+                      opacity: _feedSwitchAnimation,
+                      child: CustomScrollView(
+                        physics: const AlwaysScrollableScrollPhysics(
+                          parent: BouncingScrollPhysics(),
+                        ),
+                        slivers: [
+                          SliverToBoxAdapter(child: SizedBox(height: topPadding + 8)),
+                          SliverPadding(
+                            padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+                            sliver: SliverList(
+                              delegate: SliverChildListDelegate(
+                                [
+                                  _buildFeedModeBar(isDark),
+                                  const SizedBox(height: 10),
+                                  _buildSearchBar(isDark),
+                                  const SizedBox(height: 10),
+                                  // 综合模式下显示公告和签到（带动画过渡）
+                                  AnimatedSize(
+                                    duration: const Duration(milliseconds: 280),
+                                    curve: Curves.easeOutCubic,
+                                    alignment: Alignment.topCenter,
+                                    child: _feedMode == 'all'
+                                        ? Column(
+                                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                                            children: [
+                                              _buildAnnouncementPanel(isDark),
+                                              const SizedBox(height: 8),
+                                              _buildQuickActions(isDark, lostFoundPosts),
+                                              const SizedBox(height: 10),
+                                            ],
+                                          )
+                                        : const SizedBox.shrink(),
+                                  ),
+                                  const SizedBox(height: 4),
+                                ],
+                              ),
+                            ),
+                          ),
+                          if (postProvider.isLoading && posts.isEmpty)
+                            const SliverFillRemaining(
+                              child: Center(child: CircularProgressIndicator()),
+                            )
+                          else if (visiblePosts.isEmpty)
+                            SliverFillRemaining(
+                              child: _buildEmptyState(
+                                isDark,
+                                title:
+                                    _searchQuery.isNotEmpty ? '没有找到匹配帖子' : '暂无帖子',
+                                subtitle: _searchQuery.isNotEmpty
+                                    ? '目前只按标题搜索，换个标题关键词试试'
+                                    : '发布第一条帖子吧',
+                                onRetry: _refresh,
+                              ),
+                            )
+                          else
+                            SliverList(
+                              delegate: SliverChildBuilderDelegate(
+                                (context, index) {
+                                  final post = visiblePosts[index];
+                                  final isSelected = _selectedPost?.id == post.id && ResponsiveUtil.isDesktop(context);
+                                  return Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 12),
+                                    child: Container(
+                                      decoration: isSelected ? BoxDecoration(
+                                        borderRadius: BorderRadius.circular(20),
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: Theme.of(context).primaryColor.withValues(alpha: 0.15),
+                                            blurRadius: 20,
+                                            spreadRadius: 2,
+                                          )
+                                        ],
+                                      ) : null,
+                                      child: PostCard(
+                                        post: post,
+                                        onTap: () {
+                                          if (ResponsiveUtil.isDesktop(context)) {
+                                            setState(() {
+                                              _selectedPost = post;
+                                            });
+                                          } else {
+                                            Navigator.push(
+                                              context,
+                                              MaterialPageRoute(
+                                                builder: (_) => PostDetailScreen(
+                                                  postId: post.id,
+                                                  isMarket: false,
+                                                  initialPost: post,
+                                                ),
+                                              ),
+                                            );
+                                          }
+                                        },
+                                      ),
+                                    ),
+                                  );
+                                },
+                                childCount: visiblePosts.length,
+                              ),
+                            ),
+                          const SliverToBoxAdapter(child: SizedBox(height: 80)),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
       ),
     );
   }

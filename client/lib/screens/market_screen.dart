@@ -9,6 +9,8 @@ import '../models/post.dart';
 import '../providers/auth_provider.dart';
 import '../providers/post_provider.dart';
 import '../providers/theme_provider.dart';
+import '../utils/responsive_util.dart';
+import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/post_card.dart';
 import 'create_post_screen.dart';
@@ -288,17 +290,12 @@ class _MarketScreenState extends State<MarketScreen> {
                     else
                       SliverPadding(
                         padding: const EdgeInsets.fromLTRB(12, 0, 12, 80),
-                        sliver: SliverGrid(
-                          gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                            maxCrossAxisExtent: 300,
-                            mainAxisSpacing: 12,
-                            crossAxisSpacing: 12,
-                            mainAxisExtent: 420, // Increased to fix overflow
-                          ),
-                          delegate: SliverChildBuilderDelegate(
-                            (context, index) => _buildMarketCard(marketPosts[index], true),
-                            childCount: marketPosts.length,
-                          ),
+                        sliver: SliverMasonryGrid.extent(
+                          maxCrossAxisExtent: 300,
+                          mainAxisSpacing: 12,
+                          crossAxisSpacing: 12,
+                          childCount: marketPosts.length,
+                          itemBuilder: (context, index) => _buildMarketCard(marketPosts[index], true),
                         ),
                       ),
                   ],
@@ -512,16 +509,41 @@ class _MarketScreenState extends State<MarketScreen> {
       child: PostCard(
         post: post,
         showPrice: true,
-        onTap: () => Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => PostDetailScreen(
-              postId: post.id,
-              isMarket: true,
-              initialPost: post,
-            ),
-          ),
-        ),
+        onTap: () {
+          if (ResponsiveUtil.isDesktop(context)) {
+            showDialog(
+              context: context,
+              barrierColor: Colors.black.withValues(alpha: 0.6),
+              builder: (_) => Dialog(
+                backgroundColor: Colors.transparent,
+                insetPadding: const EdgeInsets.all(32),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 800, maxHeight: 900),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(24),
+                    child: PostDetailScreen(
+                      postId: post.id,
+                      isMarket: true,
+                      initialPost: post,
+                      isDesktopSplitMode: true,
+                    ),
+                  ),
+                ),
+              ),
+            );
+          } else {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => PostDetailScreen(
+                  postId: post.id,
+                  isMarket: true,
+                  initialPost: post,
+                ),
+              ),
+            );
+          }
+        },
       ),
     );
   }

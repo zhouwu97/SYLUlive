@@ -17,6 +17,7 @@ import '../providers/edu_provider.dart';
 import '../providers/course_schedule_provider.dart';
 import '../utils/app_feedback.dart';
 import '../utils/update_checker.dart';
+import '../utils/responsive_util.dart';
 import '../widgets/glass_container.dart';
 import '../config/api_constants.dart';
 import 'edu_screen.dart';
@@ -396,68 +397,81 @@ class _ProfileScreenState extends State<ProfileScreen>
         final overview = snap.data ?? const {'admin': 0, 'super': 0};
         final adminTodo = overview['admin'] ?? 0;
         final superTodo = overview['super'] ?? 0;
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-          child: Column(
-            children: [
-              _buildAdminEntry(
-                context: context,
-                isDark: isDark,
-                icon: Icons.admin_panel_settings,
-                iconColor: Colors.red,
-                title: '管理处',
-                subtitle: adminTodo > 0
-                    ? '处理举报、审核教师和专业 · $adminTodo 条待办'
-                    : '处理举报、审核教师和专业',
-                badgeText: adminTodo > 0 ? '$adminTodo' : null,
-                onTap: () {
-                  Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                          builder: (_) => const AdminPanelScreen()));
-                },
-              ),
-              if (user?.isSuperAdmin == true) ...[
-                const SizedBox(height: 12),
-                _buildAdminEntry(
-                  context: context,
-                  isDark: isDark,
-                  icon: Icons.security,
-                  iconColor: Colors.deepPurple,
-                  title: '超级管理员',
-                  subtitle: superTodo > 0
-                      ? '管理用户、审批管理员邀请 · $superTodo 条待办'
-                      : '管理用户、审批管理员邀请',
-                  badgeText: superTodo > 0 ? '$superTodo' : null,
-                  onTap: () {
-                    Navigator.push(
+        final items = [
+                  _buildAdminEntry(
+                    context: context,
+                    isDark: isDark,
+                    icon: Icons.admin_panel_settings,
+                    iconColor: Colors.red,
+                    title: '管理处',
+                    subtitle: adminTodo > 0
+                        ? '处理举报、审核教师和专业 · $adminTodo 条待办'
+                        : '处理举报、审核教师和专业',
+                    badgeText: adminTodo > 0 ? '$adminTodo' : null,
+                    onTap: () {
+                      Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (_) => const AdminPanelScreen()));
+                    },
+                  ),
+                  if (user?.isSuperAdmin == true)
+                    _buildAdminEntry(
+                      context: context,
+                      isDark: isDark,
+                      icon: Icons.security,
+                      iconColor: Colors.deepPurple,
+                      title: '超级管理员',
+                      subtitle: superTodo > 0
+                          ? '管理用户、审批管理员邀请 · $superTodo 条待办'
+                          : '管理用户、审批管理员邀请',
+                      badgeText: superTodo > 0 ? '$superTodo' : null,
+                      onTap: () {
+                        Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) => const SuperAdminScreen()));
+                      },
+                    ),
+                  _buildAdminEntry(
+                    context: context,
+                    isDark: isDark,
+                    icon: Icons.groups_2_outlined,
+                    iconColor: Colors.indigo,
+                    title: '管理人员',
+                    subtitle: '查看管理员与超级管理员列表',
+                    onTap: () {
+                      Navigator.push(
                         context,
                         MaterialPageRoute(
-                            builder: (_) => const SuperAdminScreen()));
-                  },
-                ),
-              ],
-              const SizedBox(height: 12),
-              _buildAdminEntry(
-                context: context,
-                isDark: isDark,
-                icon: Icons.groups_2_outlined,
-                iconColor: Colors.indigo,
-                title: '管理人员',
-                subtitle: '查看管理员与超级管理员列表',
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const AdminMembersScreen(),
-                    ),
-                  );
-                },
-              ),
-            ],
-          ),
-        );
-      },
+                          builder: (_) => const AdminMembersScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                ];
+
+                return Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  child: ResponsiveUtil.isDesktop(context)
+                      ? Wrap(
+                          spacing: 16,
+                          runSpacing: 16,
+                          children: items.map((e) => SizedBox(
+                            width: (MediaQuery.of(context).size.width - 48) / 2,
+                            child: e,
+                          )).toList(),
+                        )
+                      : Column(
+                          children: [
+                            for (int i = 0; i < items.length; i++) ...[
+                              if (i > 0) const SizedBox(height: 12),
+                              items[i],
+                            ],
+                          ],
+                        ),
+                );
+              },
     );
   }
 
@@ -562,17 +576,16 @@ class _ProfileScreenState extends State<ProfileScreen>
     return {'admin': adminCount, 'super': superCount};
   }
 
-  Widget _buildMyContentSection(BuildContext context, bool isDark) {
+  Widget _buildSectionLayout(BuildContext context, String title, List<Widget> items, bool isDark) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 标题
           Padding(
             padding: const EdgeInsets.only(left: 4, bottom: 10),
             child: Text(
-              '我的内容',
+              title,
               style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
@@ -580,173 +593,153 @@ class _ProfileScreenState extends State<ProfileScreen>
               ),
             ),
           ),
-          _buildSettingsRow(child: _buildSettingsTile(
-            icon: Icons.article_outlined,
-            iconColor: const Color(0xFF6366F1),
-            title: '我的内容',
-            subtitle: '管理发布的帖子与集市物品',
-            isDark: isDark,
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const MyContentScreen()),
-              );
-            },
-          )),
-          _buildSettingsRow(child: _buildSettingsTile(
-            icon: Icons.notifications_active_outlined,
-            iconColor: Colors.orange,
-            title: '收到的回复',
-            subtitle: _unreadReplyCount > 0 ? '$_unreadReplyCount条新回复' : null,
-            trailing: _unreadReplyCount > 0
-                ? Container(
-                    width: 8,
-                    height: 8,
-                    margin: const EdgeInsets.only(right: 8),
-                    decoration: const BoxDecoration(
-                      color: Colors.red,
-                      shape: BoxShape.circle,
-                    ),
-                  )
-                : null,
-            isDark: isDark,
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const UserRepliesScreen()),
-              ).then((_) {
-                _loadUnreadCount();
-              });
-            },
-          )),
-          _buildSettingsRow(child: _buildSettingsTile(
-            icon: Icons.bug_report_outlined,
-            iconColor: Colors.green,
-            title: '功能建议 (Bug提交)',
-            subtitle: '提交的建议会发送至开发者邮箱',
-            isDark: isDark,
-            onTap: () => _showFeedbackDialog(context),
-          )),
+          if (ResponsiveUtil.isDesktop(context))
+            Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: items.map((e) => SizedBox(
+                width: (MediaQuery.of(context).size.width - 56) / 2,
+                child: e,
+              )).toList(),
+            )
+          else
+            Column(children: items),
           const SizedBox(height: 8),
         ],
       ),
     );
+  }
+
+  Widget _buildMyContentSection(BuildContext context, bool isDark) {
+    final items = [
+      _buildSettingsRow(child: _buildSettingsTile(
+        icon: Icons.article_outlined,
+        iconColor: const Color(0xFF6366F1),
+        title: '我的内容',
+        subtitle: '管理发布的帖子与集市物品',
+        isDark: isDark,
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const MyContentScreen()),
+          );
+        },
+      )),
+      _buildSettingsRow(child: _buildSettingsTile(
+        icon: Icons.notifications_active_outlined,
+        iconColor: Colors.orange,
+        title: '收到的回复',
+        subtitle: _unreadReplyCount > 0 ? '$_unreadReplyCount条新回复' : null,
+        trailing: _unreadReplyCount > 0
+            ? Container(
+                width: 8,
+                height: 8,
+                margin: const EdgeInsets.only(right: 8),
+                decoration: const BoxDecoration(
+                  color: Colors.red,
+                  shape: BoxShape.circle,
+                ),
+              )
+            : null,
+        isDark: isDark,
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const UserRepliesScreen()),
+          ).then((_) {
+            _loadUnreadCount();
+          });
+        },
+      )),
+      _buildSettingsRow(child: _buildSettingsTile(
+        icon: Icons.bug_report_outlined,
+        iconColor: Colors.green,
+        title: '功能建议 (Bug提交)',
+        subtitle: '提交的建议会发送至开发者邮箱',
+        isDark: isDark,
+        onTap: () => _showFeedbackDialog(context),
+      )),
+    ];
+    return _buildSectionLayout(context, '我的内容', items, isDark);
   }
 
   Widget _buildEduSection(BuildContext context, AuthProvider authProvider, bool isDark) {
     final eduProvider = context.watch<EduProvider>();
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // 标题
-          Padding(
-            padding: const EdgeInsets.only(left: 4, bottom: 10),
-            child: Text(
-              '教务',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: isDark ? Colors.white54 : Colors.grey[600],
-              ),
-            ),
-          ),
-          _buildSettingsRow(child: _buildSettingsTile(
-            icon: Icons.school,
-            iconColor: eduProvider.isBound ? Colors.green : Colors.grey,
-            title: '教务',
-            subtitle: eduProvider.isBound
-                ? '${eduProvider.studentId} | ${eduProvider.college}'
-                : '绑定后可查询课表、成绩',
-            isDark: isDark,
-            onTap: () {
-              Navigator.push(context,
-                  MaterialPageRoute(builder: (_) => const EduScreen()));
+    final items = [
+      _buildSettingsRow(child: _buildSettingsTile(
+        icon: Icons.school,
+        iconColor: eduProvider.isBound ? Colors.green : Colors.grey,
+        title: '教务',
+        subtitle: eduProvider.isBound
+            ? '${eduProvider.studentId} | ${eduProvider.college}'
+            : '绑定后可查询课表、成绩',
+        isDark: isDark,
+        onTap: () {
+          Navigator.push(context,
+              MaterialPageRoute(builder: (_) => const EduScreen()));
+        },
+      )),
+      _buildSettingsRow(
+        child: _buildSettingsTile(
+          icon: _startOnTimetable ? Icons.calendar_today : Icons.home_rounded,
+          iconColor: const Color(0xFF667EEA),
+          title: '下次直接进入课表',
+          subtitle: _startOnTimetable ? '已开启' : '已关闭',
+          isDark: isDark,
+          trailing: Switch(
+            value: _startOnTimetable,
+            activeColor: const Color(0xFF6366F1),
+            onChanged: (v) {
+              context.read<ThemeProvider>().setStartOnTimetable(v);
+              setState(() => _startOnTimetable = v);
             },
-          )),
-          // 下次启动默认进入的版块
-          _buildSettingsRow(
-            child: _buildSettingsTile(
-              icon: _startOnTimetable ? Icons.calendar_today : Icons.home_rounded,
-              iconColor: const Color(0xFF667EEA),
-              title: '下次启动默认进入课表',
-              subtitle: _startOnTimetable ? '打开：下次直接进入课表版块' : '关闭：下次直接进入首页版块',
-              isDark: isDark,
-              trailing: Switch(
-                value: _startOnTimetable,
-                activeColor: const Color(0xFF6366F1),
-                onChanged: (v) {
-                  context.read<ThemeProvider>().setStartOnTimetable(v);
-                  setState(() => _startOnTimetable = v);
-                },
-              ),
-            ),
           ),
-          _buildSettingsRow(child: _buildSettingsTile(
-            icon: Icons.auto_stories,
-            iconColor: const Color(0xFF667EEA),
-            title: '导入融智云考题库',
-            subtitle: '提取练习题，导出 Markdown',
-            isDark: isDark,
-            onTap: () {
-              if (!authProvider.isLoggedIn) {
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('请先登录')));
-                return;
-              }
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                    builder: (_) => const ExamExtractScreen()),
-              );
-            },
-          )),
-          const SizedBox(height: 8),
-        ],
+        ),
       ),
-    );
+      _buildSettingsRow(child: _buildSettingsTile(
+        icon: Icons.auto_stories,
+        iconColor: const Color(0xFF667EEA),
+        title: '导入融智云考题库',
+        subtitle: '提取练习题，导出 Markdown',
+        isDark: isDark,
+        onTap: () {
+          if (!authProvider.isLoggedIn) {
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('请先登录')));
+            return;
+          }
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+                builder: (_) => const ExamExtractScreen()),
+          );
+        },
+      )),
+    ];
+    return _buildSectionLayout(context, '教务', items, isDark);
   }
 
   Widget _buildSettingsSection(BuildContext context,
       ThemeProvider themeProvider, AuthProvider authProvider, bool isDark) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // 标题
-          Padding(
-            padding: const EdgeInsets.only(left: 4, bottom: 10),
-            child: Text(
-              '设置',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: isDark ? Colors.white54 : Colors.grey[600],
+    final items = [
+      _buildSettingsRow(
+        child: _buildSettingsTile(
+          icon: Icons.settings,
+          iconColor: Colors.blueGrey,
+          title: '设置',
+          subtitle: '主题外观、关于应用、账号设置等',
+          isDark: isDark,
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const SettingsScreen(),
               ),
-            ),
-          ),
-          _buildSettingsRow(
-            child: _buildSettingsTile(
-              icon: Icons.settings,
-              iconColor: Colors.blueGrey,
-              title: '设置',
-              subtitle: '主题外观、关于应用、账号设置等',
-              isDark: isDark,
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => const SettingsScreen(),
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
+            );
+          },
+        ),
       ),
-    );
+    ];
+    return _buildSectionLayout(context, '设置', items, isDark);
   }
 
   // removed update checker methods

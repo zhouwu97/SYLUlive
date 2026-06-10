@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:collection';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import '../services/script_service.dart';
 import '../services/answer_gateway.dart';
@@ -296,8 +297,27 @@ class YuketangWebViewWidgetState extends State<YuketangWebViewWidget> {
                       Container(
                         constraints: const BoxConstraints(maxHeight: 200),
                         width: double.infinity,
-                        child: SingleChildScrollView(
-                          child: Text(_answerText, style: const TextStyle(color: Colors.white70, fontSize: 13, height: 1.6)),
+                        child: Stack(
+                          children: [
+                            SingleChildScrollView(
+                              padding: const EdgeInsets.only(right: 28),
+                              child: SelectableText(_answerText, style: const TextStyle(color: Colors.white70, fontSize: 13, height: 1.6)),
+                            ),
+                            Positioned(
+                              top: -8,
+                              right: -8,
+                              child: IconButton(
+                                icon: const Icon(Icons.copy, size: 16, color: Colors.white54),
+                                tooltip: '复制答案',
+                                onPressed: () {
+                                  Clipboard.setData(ClipboardData(text: _answerText));
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(content: Text('已复制到剪贴板'), duration: Duration(seconds: 1)),
+                                  );
+                                },
+                              ),
+                            ),
+                          ],
                         ),
                       )
                     ],

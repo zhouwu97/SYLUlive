@@ -137,8 +137,8 @@ class _ProfileScreenState extends State<ProfileScreen>
                       context, themeProvider, authProvider, isDark),
                 ),
 
-                const SliverToBoxAdapter(
-                  child: SizedBox(height: 100),
+                SliverToBoxAdapter(
+                  child: SizedBox(height: MediaQuery.of(context).padding.bottom + 90),
                 ),
               ],
             ),

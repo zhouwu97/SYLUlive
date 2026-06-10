@@ -122,19 +122,37 @@ func (h *AiSolveHandler) getAiConfig() (baseURL, apiKey, modelName string) {
 // callAI 直接调用大模型 (兼容 OpenAI API)
 func (h *AiSolveHandler) callAI(baseURL, apiKey, modelName, questionType, cleanedText string) (string, error) {
 	prompt := fmt.Sprintf(`你是一个专业的大学辅助答题助手。
-【重点警告】如果是选择题，千万不要只输出 ABCD 字母！你必须直接输出正确选项的【完整文字内容】！
-【关键：题号匹配】我传给你的题目 JSON 中可能带有一个 "__originalIndex" 字段。在输出多道题的答案时，你的编号必须严格等于该题目的 "__originalIndex" 的值（例如："17. 选项文字"，"18. 选项文字"），绝对不能自己从 1 开始顺延编号！
+【重点警告】如果是选择题，请输出正确选项的字母和【完整文字内容】。如果选项是纯图片，或者你无法用文字描述，请务必输出对应选项的字母（如 A、B、C、D）。
+【关键：题号匹配】我传给你的题目 JSON 中可能带有一个 "__originalIndex" 字段。在输出多道题的答案时，你的编号必须严格等于该题目的 "__originalIndex" 的值（例如："17. A 选项文字"，"18. B"），绝对不能自己从 1 开始顺延编号！
 绝对不要包含任何解析或废话。
 题型：%s
 题目内容：%s`, questionType, cleanedText)
 
 	// 提取图片 URL
+	reImg := regexp.MustCompile(`<img[^>]+(?:src|data-src)=\\?["'](https?://[^"'\\]+)\\?["']`)
+	matches1 := reImg.FindAllStringSubmatch(cleanedText, -1)
+	
+	// 提取雨课堂 OSS 图片和独立图片链接
+	reDirect := regexp.MustCompile(`https?://[^"'\\]+(?:storage\.yuketang\.cn|qn-storage)[^"'\\]+|https?://[^"'\\]+\.(?:png|jpg|jpeg|webp|gif|bmp)(?:\?[^"'\\]*)?`)
+	matches2 := reDirect.FindAllString(cleanedText, -1)
+
+	imageUrlSet := make(map[string]bool)
 	var imageUrls []string
-	re := regexp.MustCompile(`<img[^>]+src=\\?["'](https?://[^"'\\]+)\\?["']`)
-	matches := re.FindAllStringSubmatch(cleanedText, -1)
-	for _, m := range matches {
+
+	for _, m := range matches1 {
 		if len(m) > 1 {
-			imageUrls = append(imageUrls, m[1])
+			url := m[1]
+			if !imageUrlSet[url] {
+				imageUrlSet[url] = true
+				imageUrls = append(imageUrls, url)
+			}
+		}
+	}
+	for _, url := range matches2 {
+		url = strings.TrimRight(url, `\.,;"`)
+		if !imageUrlSet[url] {
+			imageUrlSet[url] = true
+			imageUrls = append(imageUrls, url)
 		}
 	}
 

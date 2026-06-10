@@ -15,6 +15,8 @@ import '../utils/app_navigator.dart';
 import '../utils/post_image_cache.dart';
 import '../utils/update_checker.dart';
 import '../widgets/bottom_nav.dart';
+import '../widgets/glass_container.dart';
+import '../utils/responsive_util.dart';
 import 'shuitie_screen.dart';
 import 'market_screen.dart';
 import 'course_schedule_screen.dart';
@@ -681,9 +683,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     final authProvider = context.watch<AuthProvider>();
     final bottomSafe = MediaQuery.of(context).padding.bottom;
-    final screenWidth = MediaQuery.of(context).size.width;
-    final isWideScreen = screenWidth > 600;
-    final isExtended = screenWidth > 840;
+    
+    // 使用 ResponsiveUtil 替代硬编码
+    final isMobile = ResponsiveUtil.isMobile(context);
+    final isDesktop = ResponsiveUtil.isDesktop(context);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
@@ -695,17 +698,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       backgroundColor: Colors.transparent,
       extendBody: true,
       extendBodyBehindAppBar: true,
-      body: isWideScreen
-          ? _buildWideLayout(bottomSafe, authProvider, isExtended)
+      body: !isMobile
+          ? _buildWideLayout(bottomSafe, authProvider, isDesktop)
           : _buildNarrowLayout(bottomSafe, authProvider),
-      bottomNavigationBar: isWideScreen
+      bottomNavigationBar: !isMobile
           ? null
           : BottomNavWrapper(
               currentIndex: _currentIndex,
               onTap: _onTabTapped,
               authProvider: authProvider,
             ),
-      floatingActionButton: _currentIndex == 0 && !isWideScreen
+      floatingActionButton: _currentIndex == 0 && isMobile
           ? Padding(
               padding: EdgeInsets.only(bottom: 110 + bottomSafe),
               child: FloatingActionButton(
@@ -722,56 +725,75 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Widget _buildWideLayout(double bottomSafe, AuthProvider authProvider, bool isExtended) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    
     return Row(
       children: [
-        NavigationRail(
-          extended: isExtended,
-          selectedIndex: _currentIndex,
-          onDestinationSelected: (index) {
-            setState(() => _currentIndex = index);
-            final screenNames = ['shuitie', 'market', 'schedule', 'campus', 'profile'];
-            backgroundWrapperKey.currentState?.updateScreen(screenNames[index]);
-          },
-          labelType: isExtended ? NavigationRailLabelType.none : NavigationRailLabelType.all,
-          backgroundColor: Colors.transparent,
-          destinations: const [
-            NavigationRailDestination(
-              icon: Icon(Icons.home_rounded),
-              label: Text('首页'),
-            ),
-            NavigationRailDestination(
-              icon: Icon(Icons.storefront_rounded),
-              label: Text('集市'),
-            ),
-            NavigationRailDestination(
-              icon: Icon(Icons.calendar_month_rounded),
-              label: Text('课表'),
-            ),
-            NavigationRailDestination(
-              icon: Icon(Icons.apartment_rounded),
-              label: Text('校园'),
-            ),
-            NavigationRailDestination(
-              icon: Icon(Icons.person_rounded),
-              label: Text('我的'),
-            ),
-          ],
-        ),
-        const VerticalDivider(thickness: 1, width: 1),
-        Expanded(
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 1200),
-              child: IndexedStack(
-                index: _currentIndex,
-                children: const [
-                  ShuitieScreen(),
-                  MarketScreen(),
-                  CourseScheduleScreen(),
-                  CampusScreen(),
-                  ProfileScreen(),
+        // 美化 NavigationRail，增加 GlassContainer 包裹
+        SafeArea(
+          right: false,
+          child: Container(
+            margin: const EdgeInsets.fromLTRB(16, 16, 8, 16),
+            child: GlassContainer(
+              borderRadius: 24,
+              blur: 24,
+              opacity: isDark ? 0.3 : 0.6,
+              backgroundColor: isDark ? const Color(0xFF111827) : Colors.white,
+              borderColor: isDark ? Colors.white.withValues(alpha: 0.1) : Colors.white,
+              child: NavigationRail(
+                extended: isExtended,
+                selectedIndex: _currentIndex,
+                onDestinationSelected: _onTabTapped,
+                labelType: isExtended ? NavigationRailLabelType.none : NavigationRailLabelType.all,
+                backgroundColor: Colors.transparent,
+                indicatorColor: Theme.of(context).primaryColor.withValues(alpha: 0.15),
+                selectedIconTheme: IconThemeData(color: Theme.of(context).primaryColor, size: 28),
+                unselectedIconTheme: IconThemeData(color: isDark ? Colors.white60 : Colors.black54, size: 24),
+                selectedLabelTextStyle: TextStyle(color: Theme.of(context).primaryColor, fontWeight: FontWeight.bold),
+                unselectedLabelTextStyle: TextStyle(color: isDark ? Colors.white60 : Colors.black54),
+                minExtendedWidth: 180,
+                destinations: const [
+                  NavigationRailDestination(
+                    icon: Icon(Icons.home_outlined),
+                    selectedIcon: Icon(Icons.home_rounded),
+                    label: Text('水贴'),
+                  ),
+                  NavigationRailDestination(
+                    icon: Icon(Icons.storefront_outlined),
+                    selectedIcon: Icon(Icons.storefront_rounded),
+                    label: Text('集市'),
+                  ),
+                  NavigationRailDestination(
+                    icon: Icon(Icons.calendar_month_outlined),
+                    selectedIcon: Icon(Icons.calendar_month_rounded),
+                    label: Text('课表'),
+                  ),
+                  NavigationRailDestination(
+                    icon: Icon(Icons.apartment_outlined),
+                    selectedIcon: Icon(Icons.apartment_rounded),
+                    label: Text('校园'),
+                  ),
+                  NavigationRailDestination(
+                    icon: Icon(Icons.person_outline_rounded),
+                    selectedIcon: Icon(Icons.person_rounded),
+                    label: Text('我的'),
+                  ),
                 ],
               ),
+            ),
+          ),
+        ),
+        Expanded(
+          child: ClipRRect(
+            child: IndexedStack(
+              index: _currentIndex,
+              children: const [
+                ShuitieScreen(),
+                MarketScreen(),
+                CourseScheduleScreen(),
+                CampusScreen(),
+                ProfileScreen(),
+              ],
             ),
           ),
         ),

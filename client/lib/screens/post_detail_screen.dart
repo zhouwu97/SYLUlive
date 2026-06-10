@@ -352,7 +352,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final canEditMarket = widget.isMarket && _isCurrentUserPostOwner();
 
     return Scaffold(
-      backgroundColor: isDark ? const Color(0xFF131720) : Colors.white,
+      backgroundColor: widget.isDesktopSplitMode
+          ? Colors.transparent
+          : (isDark ? const Color(0xFF131720) : Colors.white),
       extendBodyBehindAppBar: true,
       appBar: AppBar(
         backgroundColor: Colors.transparent,

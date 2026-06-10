@@ -541,11 +541,6 @@ class _ShuitieScreenState extends State<ShuitieScreen>
           ),
           child: Stack(
             children: [
-              // 当打开帖子导致右侧背景被遮挡时，在左侧单独绘制一个完整的竖屏背景
-              if (_selectedPost != null)
-                Positioned.fill(
-                  child: _buildBackground(context.watch<ThemeProvider>(), isDark),
-                ),
               _buildMobileLayout(isDark, topPadding),
             ],
           ),
@@ -554,19 +549,34 @@ class _ShuitieScreenState extends State<ShuitieScreen>
         Expanded(
           child: _selectedPost == null
               ? _buildEmptyDetailState(isDark)
-              : ClipRect(
-                  child: PostDetailScreen(
-                    key: ValueKey(_selectedPost!.id),
-                    postId: _selectedPost!.id,
-                    isMarket: false,
-                    initialPost: _selectedPost,
-                    isDesktopSplitMode: true,
-                    hideBackButton: true,
-                  ),
-                ),
+              : _buildRightDetailContainer(isDark),
         ),
       ],
     );
+  }
+
+  Widget _buildRightDetailContainer(bool isDark) {
+    final themeProvider = context.watch<ThemeProvider>();
+    final content = ClipRect(
+      child: PostDetailScreen(
+        key: ValueKey(_selectedPost!.id),
+        postId: _selectedPost!.id,
+        isMarket: false,
+        initialPost: _selectedPost,
+        isDesktopSplitMode: true,
+        hideBackButton: true,
+      ),
+    );
+
+    if (themeProvider.isBackgroundVisible) {
+      return GlassContainer(
+        borderRadius: 0,
+        blur: themeProvider.liquidGlass ? 24 : themeProvider.backgroundBlur,
+        opacity: themeProvider.componentOpacity,
+        child: content,
+      );
+    }
+    return content;
   }
 
   Widget _buildEmptyDetailState(bool isDark) {

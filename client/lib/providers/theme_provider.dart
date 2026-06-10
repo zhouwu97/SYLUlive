@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../utils/responsive_util.dart';
 
 class ThemeProvider extends ChangeNotifier {
   static const String _nightModeKey = 'night_mode';
   static const String _backgroundImageKey = 'background_image';
+  static const String _landscapeBackgroundImageKey = 'landscape_background_image';
   static const String _backgroundBlurKey = 'background_blur';
   static const String _componentOpacityKey = 'background_transparency'; // 保持 key 兼容
   static const String _liquidGlassKey = 'liquid_glass_v2';
@@ -14,6 +16,7 @@ class ThemeProvider extends ChangeNotifier {
 
   bool _isDarkMode = false;
   String? _backgroundImage;
+  String? _landscapeBackgroundImage;
   double _backgroundBlur = 10;
   double _componentOpacity = 0.7;  // 组件不透明度：越大越实，越小越透
   bool _liquidGlass = false;
@@ -24,6 +27,7 @@ class ThemeProvider extends ChangeNotifier {
 
   bool get isDarkMode => _isDarkMode;
   String? get backgroundImage => _backgroundImage;
+  String? get landscapeBackgroundImage => _landscapeBackgroundImage;
   double get backgroundBlur => _backgroundBlur;
   double get componentOpacity => _componentOpacity;
   bool get liquidGlass => _liquidGlass;
@@ -32,9 +36,18 @@ class ThemeProvider extends ChangeNotifier {
   bool get startOnTimetable => _startOnTimetable;
   bool get marketIsListView => _marketIsListView;
   bool get hasBackground => _backgroundImage != null && _backgroundImage!.isNotEmpty;
+  bool get hasLandscapeBackground => _landscapeBackgroundImage != null && _landscapeBackgroundImage!.isNotEmpty;
 
   /// 是否有自定义背景（全局生效）
-  bool get isBackgroundVisible => hasBackground;
+  bool get isBackgroundVisible => hasBackground || hasLandscapeBackground;
+
+  /// 获取当前环境适用的背景图片
+  String? getBackgroundImageFor(BuildContext context) {
+    if (ResponsiveUtil.isDesktop(context) && hasLandscapeBackground) {
+      return _landscapeBackgroundImage;
+    }
+    return _backgroundImage;
+  }
 
   ThemeProvider() {
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadTheme());
@@ -44,6 +57,7 @@ class ThemeProvider extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     _isDarkMode = prefs.getBool(_nightModeKey) ?? false;
     _backgroundImage = prefs.getString(_backgroundImageKey);
+    _landscapeBackgroundImage = prefs.getString(_landscapeBackgroundImageKey);
     _backgroundBlur = prefs.getDouble(_backgroundBlurKey) ?? 10;
     _componentOpacity = prefs.getDouble(_componentOpacityKey) ?? 0.7;
     _liquidGlass = prefs.getBool(_liquidGlassKey) ?? false;
@@ -75,6 +89,17 @@ class ThemeProvider extends ChangeNotifier {
       await prefs.setString(_backgroundImageKey, imageUrl);
     } else {
       await prefs.remove(_backgroundImageKey);
+    }
+    notifyListeners();
+  }
+
+  Future<void> setLandscapeBackgroundImage(String? imageUrl) async {
+    _landscapeBackgroundImage = imageUrl;
+    final prefs = await SharedPreferences.getInstance();
+    if (imageUrl != null && imageUrl.isNotEmpty) {
+      await prefs.setString(_landscapeBackgroundImageKey, imageUrl);
+    } else {
+      await prefs.remove(_landscapeBackgroundImageKey);
     }
     notifyListeners();
   }
@@ -116,8 +141,10 @@ class ThemeProvider extends ChangeNotifier {
 
   Future<void> clearBackground() async {
     _backgroundImage = null;
+    _landscapeBackgroundImage = null;
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_backgroundImageKey);
+    await prefs.remove(_landscapeBackgroundImageKey);
     notifyListeners();
   }
 

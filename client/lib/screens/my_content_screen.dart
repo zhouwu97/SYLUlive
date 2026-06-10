@@ -244,8 +244,8 @@ class _MyContentScreenState extends State<MyContentScreen>
 
   Widget _buildBackground(ThemeProvider themeProvider, bool isDark) {
     // 使用全局背景设置，与 profile_screen 保持一致
-    if (themeProvider.hasBackground && themeProvider.backgroundImage != null) {
-      final bgPath = themeProvider.backgroundImage!;
+    if (themeProvider.isBackgroundVisible && themeProvider.getBackgroundImageFor(context) != null) {
+      final bgPath = themeProvider.getBackgroundImageFor(context)!;
       final isAsset = !bgPath.startsWith('http') && !bgPath.startsWith('/');
       return Stack(fit: StackFit.expand, children: [
         isAsset

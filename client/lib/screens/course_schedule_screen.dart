@@ -297,23 +297,12 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                             )),
                 ]);
 
-                Widget contentWidget = mainContent;
-                if (ResponsiveUtil.isDesktop(context)) {
-                  // 在平板/桌面端限制主课表的宽度，避免过宽
-                  contentWidget = Center(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 760),
-                      child: mainContent,
-                    ),
-                  );
-                }
-
                 if (ResponsiveUtil.isDesktop(context)) {
                   return Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       _buildTodayOverview(sc, isDark),
-                      Expanded(child: contentWidget),
+                      Expanded(child: mainContent),
                     ],
                   );
                 }
@@ -3163,10 +3152,12 @@ $classFilterRule
   // ====== 课程网格（指定某一周） ======
   Widget _buildCourseGridForWeek(
       CourseScheduleProvider sc, DateTime weekStart) {
-    final wn = sc.getAcademicWeek(weekStart);
-    final totalH = 12 * _slotHeight;
-    final screenW = MediaQuery.of(context).size.width;
-    final exactW = (screenW - timeColumnWidth) / 7;
+    return LayoutBuilder(builder: (context, constraints) {
+      final wn = sc.getAcademicWeek(weekStart);
+      final totalH = 12 * _slotHeight;
+      // 在平板模式下，主课表区域不是全屏宽度，必须使用 LayoutBuilder 获取实际可用宽度
+      final screenW = constraints.maxWidth;
+      final exactW = (screenW - timeColumnWidth) / 7;
 
     final allActive = <CourseBlock>[];
     final allInactive = <CourseBlock>[];
@@ -3258,6 +3249,7 @@ $classFilterRule
         ),
       ),
     );
+    });
   }
 
   // ====== 课程卡片 ======

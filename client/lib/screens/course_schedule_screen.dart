@@ -297,12 +297,23 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                             )),
                 ]);
 
+                Widget contentWidget = mainContent;
+                if (ResponsiveUtil.isDesktop(context)) {
+                  // 在平板/桌面端限制主课表的宽度，避免过宽
+                  contentWidget = Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 860),
+                      child: mainContent,
+                    ),
+                  );
+                }
+
                 if (ResponsiveUtil.isDesktop(context)) {
                   return Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       _buildTodayOverview(sc, isDark),
-                      Expanded(child: mainContent),
+                      Expanded(child: contentWidget),
                     ],
                   );
                 }

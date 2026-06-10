@@ -54,6 +54,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   String? _replyToName;
   int? _replyToUserId;
   bool _isSending = false;
+  final Set<int> _expandedThreads = {};
 
   final Map<int, GlobalKey> _replyKeys = {};
   bool _hasScrolledToTarget = false;
@@ -441,6 +442,113 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   Widget _buildMarketDetail(bool isDark) {
     final p = _post!;
+    if (widget.isDesktopSplitMode) {
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 左侧文本与评论区
+          Expanded(
+            flex: 5,
+            child: Column(
+              children: [
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(24, 24, 24, 80),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (p.price > 0) ...[
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              const Text('¥ ',
+                                  style: TextStyle(
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.bold,
+                                      color: Color(0xFFFF6B6B))),
+                              Text(
+                                p.price.toStringAsFixed(
+                                    p.price.truncateToDouble() == p.price ? 0 : 2),
+                                style: const TextStyle(
+                                    fontSize: 32,
+                                    fontWeight: FontWeight.w900,
+                                    color: Color(0xFFFF6B6B),
+                                    height: 1.0),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+                        ],
+                        if (p.title.isNotEmpty) ...[
+                          Text(p.title,
+                              style: TextStyle(
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.bold,
+                                  color: isDark ? Colors.white : Colors.black87)),
+                          const SizedBox(height: 12),
+                        ],
+                        Text(p.content,
+                            style: TextStyle(
+                                fontSize: 16,
+                                height: 1.6,
+                                color: isDark ? Colors.white70 : Colors.black87)),
+                        const SizedBox(height: 24),
+                        _buildAuthorCard(p, isDark),
+                        if (p.contact.isNotEmpty) ...[
+                          const SizedBox(height: 24),
+                          GestureDetector(
+                            onTap: () {
+                              Clipboard.setData(ClipboardData(text: p.contact));
+                              AppFeedback.showSnackBar(context, '联系方式已复制到剪贴板');
+                            },
+                            child: _buildContactChip(p.contact, isDark),
+                          ),
+                        ],
+                        if (_isCurrentUserPostOwner()) ...[
+                          const SizedBox(height: 24),
+                          _buildOwnerMarketActions(isDark),
+                        ],
+                        const SizedBox(height: 32),
+                        _buildActionBar(isDark),
+                        const SizedBox(height: 24),
+                        _buildCommentsHeader(isDark),
+                        const SizedBox(height: 10),
+                        _buildCompactReplies(isDark),
+                      ],
+                    ),
+                  ),
+                ),
+                _buildReplyBar(isDark),
+              ],
+            ),
+          ),
+          // 右侧图片区域
+          Container(
+            width: 1,
+            color: isDark ? Colors.white10 : Colors.black.withValues(alpha: 0.05),
+          ),
+          Expanded(
+            flex: 4,
+            child: p.images.isNotEmpty
+                ? _buildMarketHeroImage(p, isDark, forceFitHeight: true)
+                : Container(
+                    color: isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
+                    child: Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.image_not_supported_outlined, size: 64, color: isDark ? Colors.white24 : Colors.grey[300]),
+                          const SizedBox(height: 16),
+                          Text('没有图片展示', style: TextStyle(color: isDark ? Colors.white38 : Colors.grey[500], fontSize: 16)),
+                        ],
+                      ),
+                    ),
+                  ),
+          ),
+        ],
+      );
+    }
+
     return Column(children: [
       Expanded(
         child: SingleChildScrollView(
@@ -534,14 +642,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     ]);
   }
 
-  Widget _buildMarketHeroImage(Post p, bool isDark) {
+  Widget _buildMarketHeroImage(Post p, bool isDark, {bool forceFitHeight = false}) {
     final urls = _resolvedImageUrls(p);
     if (urls.isEmpty) return const SizedBox.shrink();
     return Stack(
       children: [
         Container(
           width: double.infinity,
-          height: 400,
+          height: forceFitHeight ? double.infinity : 400,
           color: isDark ? Colors.white.withValues(alpha: 0.06) : Colors.black.withValues(alpha: 0.04),
           child: PageView.builder(
             itemCount: urls.length,
@@ -557,7 +665,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 cacheManager: PostImageCache.manager,
                 imageUrl: urls[index],
                 width: double.infinity,
-                fit: BoxFit.cover,
+                fit: forceFitHeight ? BoxFit.contain : BoxFit.cover,
                 placeholder: (_, __) => Container(color: isDark ? Colors.white10 : Colors.grey[200]),
                 errorWidget: (_, __, ___) => Container(
                   color: isDark ? Colors.white10 : Colors.grey[200],
@@ -1085,10 +1193,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       }
     }
     final allChildren = childMap[thread.parent.id] ?? [];
-    final visibleChildren = compact && depth == 0
+    final isExpanded = _expandedThreads.contains(thread.parent.id);
+    final visibleChildren = compact && depth == 0 && !isExpanded
         ? allChildren.take(1).toList()
         : allChildren;
-    final hasMore = compact && depth == 0 && allChildren.length > 1;
+    final hasMore = compact && depth == 0 && !isExpanded && allChildren.length > 1;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
@@ -1115,13 +1224,20 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     (child) => _buildChildReply(child, isDark, depth: 0),
                   ),
                   if (hasMore)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 6),
-                      child: Text(
-                        '共${allChildren.length}条回复，点击查看',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Theme.of(context).primaryColor,
+                    GestureDetector(
+                      onTap: () {
+                        setState(() {
+                          _expandedThreads.add(thread.parent.id);
+                        });
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text(
+                          '共${allChildren.length}条回复，点击查看',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Theme.of(context).primaryColor,
+                          ),
                         ),
                       ),
                     ),

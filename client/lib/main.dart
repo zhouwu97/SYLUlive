@@ -298,48 +298,70 @@ class _BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
     final isAsset = !bgPath.startsWith('http') && !bgPath.startsWith('/');
     final resolvedPath = isAsset ? 'assets/images/$bgPath' : bgPath;
 
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        // Background image
-        isAsset
-            ? Image.asset(
-                resolvedPath,
+    final imageWidget = isAsset
+        ? Image.asset(
+            resolvedPath,
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => _buildDefaultBackground(isDark),
+          )
+        : bgPath.startsWith('/')
+            ? Image.file(
+                File(bgPath),
                 fit: BoxFit.cover,
                 errorBuilder: (_, __, ___) => _buildDefaultBackground(isDark),
               )
-            : bgPath.startsWith('/')
-                ? Image.file(
-                    File(bgPath),
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) =>
-                        _buildDefaultBackground(isDark),
-                  )
-                : Image.network(
-                    bgPath,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) =>
-                        _buildDefaultBackground(isDark),
-                    loadingBuilder: (_, child, loadingProgress) {
-                      if (loadingProgress == null) return child;
-                      return _buildDefaultBackground(isDark);
-                    },
-                  ),
-        // Color overlay (fixed — componentOpacity controls GlassContainer, not background)
-        Container(
-          color: isDark
-              ? Colors.black.withValues(alpha: 0.35)
-              : Colors.white.withValues(alpha: 0.25),
-        ),
-        // Blur overlay
-        if (themeProvider.backgroundBlur > 0 && themeProvider.liquidGlass)
+            : Image.network(
+                bgPath,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => _buildDefaultBackground(isDark),
+                loadingBuilder: (_, child, loadingProgress) {
+                  if (loadingProgress == null) return child;
+                  return _buildDefaultBackground(isDark);
+                },
+              );
+
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        if (MediaQuery.of(context).size.width >= 600) ...[
+          // Blurred massive background
+          imageWidget,
           BackdropFilter(
-            filter: ImageFilter.blur(
-              sigmaX: themeProvider.backgroundBlur,
-              sigmaY: themeProvider.backgroundBlur,
+            filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+            child: Container(
+              color: isDark
+                  ? Colors.black.withValues(alpha: 0.5)
+                  : Colors.white.withValues(alpha: 0.5),
             ),
-            child: Container(color: Colors.transparent),
           ),
+          // Left aligned uncropped portrait image
+          Align(
+            alignment: Alignment.centerLeft,
+            child: isAsset
+                ? Image.asset(resolvedPath, fit: BoxFit.fitHeight)
+                : bgPath.startsWith('/')
+                    ? Image.file(File(bgPath), fit: BoxFit.fitHeight)
+                    : Image.network(bgPath, fit: BoxFit.fitHeight),
+          ),
+        ] else ...[
+          // Background image for mobile
+          imageWidget,
+          // Color overlay (fixed — componentOpacity controls GlassContainer, not background)
+          Container(
+            color: isDark
+                ? Colors.black.withValues(alpha: 0.35)
+                : Colors.white.withValues(alpha: 0.25),
+          ),
+          // Blur overlay
+          if (themeProvider.backgroundBlur > 0 && themeProvider.liquidGlass)
+            BackdropFilter(
+              filter: ImageFilter.blur(
+                sigmaX: themeProvider.backgroundBlur,
+                sigmaY: themeProvider.backgroundBlur,
+              ),
+              child: Container(color: Colors.transparent),
+            ),
+        ],
       ],
     );
   }

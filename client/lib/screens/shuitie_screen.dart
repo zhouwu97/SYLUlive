@@ -539,7 +539,16 @@ class _ShuitieScreenState extends State<ShuitieScreen>
               ),
             ),
           ),
-          child: _buildMobileLayout(isDark, topPadding),
+          child: Stack(
+            children: [
+              // 当打开帖子导致右侧背景被遮挡时，在左侧单独绘制一个完整的竖屏背景
+              if (_selectedPost != null)
+                Positioned.fill(
+                  child: _buildBackground(context.watch<ThemeProvider>(), isDark),
+                ),
+              _buildMobileLayout(isDark, topPadding),
+            ],
+          ),
         ),
         // 右侧 Detail 详情
         Expanded(

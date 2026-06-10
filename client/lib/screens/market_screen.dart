@@ -509,39 +509,17 @@ class _MarketScreenState extends State<MarketScreen> {
         post: post,
         showPrice: true,
         onTap: () {
-          if (ResponsiveUtil.isDesktop(context)) {
-            showDialog(
-              context: context,
-              barrierColor: Colors.black.withValues(alpha: 0.6),
-              builder: (_) => Dialog(
-                backgroundColor: Colors.transparent,
-                insetPadding: const EdgeInsets.all(32),
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 800, maxHeight: 900),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(24),
-                    child: PostDetailScreen(
-                      postId: post.id,
-                      isMarket: true,
-                      initialPost: post,
-                      isDesktopSplitMode: true,
-                    ),
-                  ),
-                ),
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => PostDetailScreen(
+                postId: post.id,
+                isMarket: true,
+                initialPost: post,
+                isDesktopSplitMode: ResponsiveUtil.isDesktop(context),
               ),
-            );
-          } else {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => PostDetailScreen(
-                  postId: post.id,
-                  isMarket: true,
-                  initialPost: post,
-                ),
-              ),
-            );
-          }
+            ),
+          );
         },
       ),
     );

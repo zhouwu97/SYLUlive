@@ -53,7 +53,7 @@ class _ImageUploadWidgetState extends State<ImageUploadWidget> {
           return;
         }
 
-        setState(() {
+        if (mounted) setState(() {
           _isUploading = true;
         });
 
@@ -80,7 +80,7 @@ class _ImageUploadWidgetState extends State<ImageUploadWidget> {
         );
 
         if (response.statusCode == 200 && response.data != null && response.data['url'] != null) {
-          setState(() {
+          if (mounted) setState(() {
             _uploadedUrls.add(response.data['url']);
           });
           widget.onImagesUploaded(_uploadedUrls);
@@ -115,7 +115,7 @@ class _ImageUploadWidgetState extends State<ImageUploadWidget> {
         );
       }
     } finally {
-      setState(() {
+      if (mounted) setState(() {
         _isUploading = false;
       });
     }
@@ -186,7 +186,7 @@ class _ImageUploadWidgetState extends State<ImageUploadWidget> {
                         right: 4,
                         child: GestureDetector(
                           onTap: () {
-                            setState(() {
+                            if (mounted) setState(() {
                               _uploadedUrls.removeAt(index);
                             });
                             widget.onImagesUploaded(_uploadedUrls);

@@ -44,7 +44,7 @@ func Load() *Config {
 
 	jwtSecret := os.Getenv("JWT_SECRET")
 	if jwtSecret == "" {
-		jwtSecret = "dev-only-secret-do-not-use-in-production"
+		panic(fmt.Errorf("必须设置 JWT_SECRET 环境变量"))
 	}
 
 	dsn := os.Getenv("DSN")
@@ -70,7 +70,7 @@ func Load() *Config {
 
 	eduServiceURL := os.Getenv("EDU_SERVICE_URL")
 	if eduServiceURL == "" {
-		eduServiceURL = "http://101.42.27.44:8000"
+		eduServiceURL = "http://python-edu-service:8000"
 	}
 
 	smtpHost := os.Getenv("SMTP_HOST")
@@ -90,12 +90,12 @@ func Load() *Config {
 
 	superAdminID := os.Getenv("SUPER_ADMIN_ID")
 	if superAdminID == "" {
-		superAdminID = "admin" // 默认超级管理员账号
+		panic(fmt.Errorf("必须设置 SUPER_ADMIN_ID 环境变量"))
 	}
 
 	superAdminPass := os.Getenv("SUPER_ADMIN_PASSWORD")
 	if superAdminPass == "" {
-		superAdminPass = "admin123" // 默认超级管理员密码
+		panic(fmt.Errorf("必须设置 SUPER_ADMIN_PASSWORD 环境变量"))
 	}
 
 	deepSeekAPIKey := os.Getenv("DEEPSEEK_API_KEY")

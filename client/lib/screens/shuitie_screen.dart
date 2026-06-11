@@ -176,7 +176,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     if (query.isEmpty) return;
 
     _searchController.clear();
-    setState(() {
+    if (mounted) setState(() {
       _searchQuery = '';
       _searchResults = [];
     });
@@ -211,7 +211,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       final goingRight = newIndex > oldIndex;
 
       // 1. 滑出 + 淡出
-      setState(() {
+      if (mounted) setState(() {
         _slideDirection = goingRight ? -1 : 1;
       });
       await _feedSwitchController.reverse();
@@ -225,7 +225,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       }
 
       // 3. 切换模式 + 设置入场方向
-      setState(() {
+      if (mounted) setState(() {
         _feedMode = mode;
         _slideDirection = goingRight ? 1 : -1;
       });
@@ -273,7 +273,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     // 如果在刷新期间用户已切换了模式，丢弃本次结果，避免数据污染
     if (_feedMode != modeAtStart) return;
     final posts = postProvider.postsFor(1);
-    setState(() {
+    if (mounted) setState(() {
       if (posts.isNotEmpty) {
         _modeCaches[modeAtStart] = List.from(posts);
       }
@@ -330,7 +330,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       return;
     }
     if (_checkInLoading || _checkedIn) return;
-    setState(() => _checkInLoading = true);
+    if (mounted) setState(() => _checkInLoading = true);
     try {
       final resp = await auth.dio.post('/user/checkin');
       if (resp.statusCode == 200 && mounted) {
@@ -338,7 +338,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
         final already = data['already'] ?? false;
         final streak = data['streak_days'] ?? 1;
         final exp = data['exp_earned'] ?? 1;
-        setState(() {
+        if (mounted) setState(() {
           _checkedIn = true;
           _streakDays = streak;
           _checkInLoading = false;
@@ -708,7 +708,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                                         post: post,
                                         onTap: () {
                                           if (ResponsiveUtil.isDesktop(context)) {
-                                            setState(() {
+                                            if (mounted) setState(() {
                                               _selectedPost = post;
                                             });
                                           } else {

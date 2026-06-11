@@ -36,7 +36,7 @@ class _TeacherRatingScreenState extends State<TeacherRatingScreen>
   }
 
   Future<void> _loadData() async {
-    setState(() => _loading = true);
+    if (mounted) setState(() => _loading = true);
     final dio = context.read<AuthProvider>().dio;
     final postProvider = context.read<PostProvider>();
     try {

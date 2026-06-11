@@ -13,6 +13,8 @@ import (
 	"github.com/go-rod/rod"
 	"github.com/go-rod/rod/lib/launcher"
 	"github.com/go-rod/rod/lib/proto"
+	"net"
+	"net/url"
 )
 
 // ExamExtractRequest 题库提取请求
@@ -85,6 +87,12 @@ func (h *ExamHandler) Extract(c *gin.Context) {
 	var req ExamExtractRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误: " + err.Error()})
+		return
+	}
+
+	// SSRF 防护：校验 URL
+	if isInternalURL(req.URL) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "非法的 URL 访问"})
 		return
 	}
 
@@ -304,4 +312,32 @@ func (h *ExamHandler) performLogin(page *rod.Page, username, password string) er
 	}
 
 	return nil
+}
+
+// isInternalURL 检查是否是内网 URL，防止 SSRF
+func isInternalURL(rawUrl string) bool {
+	u, err := url.Parse(rawUrl)
+	if err != nil {
+		return true // 解析失败直接拒绝
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return true // 只允许 http/https
+	}
+
+	host := u.Hostname()
+	if host == "localhost" {
+		return true
+	}
+
+	ips, err := net.LookupIP(host)
+	if err != nil {
+		return true // 无法解析的域名拒绝
+	}
+
+	for _, ip := range ips {
+		if ip.IsLoopback() || ip.IsPrivate() || ip.IsUnspecified() || ip.IsMulticast() || ip.IsLinkLocalUnicast() {
+			return true
+		}
+	}
+	return false
 }

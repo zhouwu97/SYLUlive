@@ -38,7 +38,7 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
 
   Future<void> _saveImage() async {
     if (_isSaving) return;
-    setState(() => _isSaving = true);
+    if (mounted) setState(() => _isSaving = true);
 
     try {
       final String url = widget.imageUrls[_currentIndex];
@@ -50,7 +50,7 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('需要相册权限才能保存图片')),
         );
-        setState(() => _isSaving = false);
+        if (mounted) setState(() => _isSaving = false);
         return;
       }
 
@@ -127,7 +127,7 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
         controller: _pageController,
         itemCount: widget.imageUrls.length,
         onPageChanged: (index) {
-          setState(() {
+          if (mounted) setState(() {
             _currentIndex = index;
           });
         },

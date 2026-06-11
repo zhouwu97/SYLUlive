@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"regexp"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/go-resty/resty/v2"
 	"golang.org/x/sync/singleflight"
+	"golang.org/x/time/rate"
 	"gorm.io/gorm"
 
 	"shenliyuan/internal/models"
@@ -35,6 +37,21 @@ type AiSolveHandler struct {
 	cachedAPIKey    string
 	cachedModel     string
 	lastConfigFetch time.Time
+}
+
+var aiRateLimiters = sync.Map{}
+
+var (
+	reWhitespace  = regexp.MustCompile(`\s+`)
+	reImgTag      = regexp.MustCompile(`<img[^>]+(?:src|data-src)=\\?["'](https?://[^"'\\]+)\\?["']`)
+	reDirectLink  = regexp.MustCompile(`https?://[^"'\\]+(?:storage\.yuketang\.cn|qn-storage)[^"'\\]+|https?://[^"'\\]+\.(?:png|jpg|jpeg|webp|gif|bmp)(?:\?[^"'\\]*)?`)
+	reIndexTarget = regexp.MustCompile(`"__originalIndex":\d+,?`)
+)
+
+func getAiRateLimiter(uid uint) *rate.Limiter {
+	// 每小时 10 次限制
+	limiter, _ := aiRateLimiters.LoadOrStore(uid, rate.NewLimiter(rate.Every(time.Hour/10), 10))
+	return limiter.(*rate.Limiter)
 }
 
 // NewAiSolveHandler 创建AI答题处理器
@@ -60,8 +77,7 @@ func cleanText(text string) string {
 	text = strings.ReplaceAll(text, "\n", "")
 	text = strings.ReplaceAll(text, "\r", "")
 
-	re := regexp.MustCompile(`\s+`)
-	text = re.ReplaceAllString(text, " ")
+	text = reWhitespace.ReplaceAllString(text, " ")
 	return text
 }
 
@@ -129,12 +145,10 @@ func (h *AiSolveHandler) callAI(baseURL, apiKey, modelName, questionType, cleane
 题目内容：%s`, questionType, cleanedText)
 
 	// 提取图片 URL
-	reImg := regexp.MustCompile(`<img[^>]+(?:src|data-src)=\\?["'](https?://[^"'\\]+)\\?["']`)
-	matches1 := reImg.FindAllStringSubmatch(cleanedText, -1)
+	matches1 := reImgTag.FindAllStringSubmatch(cleanedText, -1)
 	
 	// 提取雨课堂 OSS 图片和独立图片链接
-	reDirect := regexp.MustCompile(`https?://[^"'\\]+(?:storage\.yuketang\.cn|qn-storage)[^"'\\]+|https?://[^"'\\]+\.(?:png|jpg|jpeg|webp|gif|bmp)(?:\?[^"'\\]*)?`)
-	matches2 := reDirect.FindAllString(cleanedText, -1)
+	matches2 := reDirectLink.FindAllString(cleanedText, -1)
 
 	imageUrlSet := make(map[string]bool)
 	var imageUrls []string
@@ -270,6 +284,13 @@ func (h *AiSolveHandler) Solve(c *gin.Context) {
 	}
 	uid := userID.(uint)
 
+	// AI 解题速率限制：每人每小时 10 次
+	limiter := getAiRateLimiter(uid)
+	if !limiter.Allow() {
+		c.JSON(http.StatusTooManyRequests, gin.H{"error": "接口调用频率过高，每小时最多允许 10 次调用"})
+		return
+	}
+
 	var req SolveRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误"})
@@ -279,18 +300,17 @@ func (h *AiSolveHandler) Solve(c *gin.Context) {
 	// 白名单：特定用户不扣费
 	var user models.User
 	h.db.First(&user, uid)
-	isFreeUser := user.StudentID == "2403060128" || user.Role == "admin" || user.Role == "super_admin"
+	isFreeUser := user.Role == "admin" || user.Role == "super_admin"
 
 	// 1. 文本预处理与 Hash 计算
 	cleanedText := cleanText(req.ContentText)
 	
 	// 为了确保缓存高命中率，剔除 __originalIndex 字段带来的干扰
-	reIndex := regexp.MustCompile(`"__originalIndex":\d+,?`)
-	hashText := reIndex.ReplaceAllString(cleanedText, "")
+	hashText := reIndexTarget.ReplaceAllString(cleanedText, "")
 	questionHash := generateHash(req.QuestionType, hashText)
 
-	fmt.Printf("[AI Solve] 收到请求: 用户 %d, 题型: %s, 原始题目长度: %d\n", uid, req.QuestionType, len(cleanedText))
-	fmt.Printf("[AI Solve] 计算题库 Hash: %s (剔除 originalIndex 后)\n", questionHash)
+	log.Printf("[AI Solve] 收到请求: 用户 %d, 题型: %s, 原始题目长度: %d", uid, req.QuestionType, len(cleanedText))
+	log.Printf("[AI Solve] 计算题库 Hash: %s (剔除 originalIndex 后)", questionHash)
 
 	// 计算题目数量并动态定价
 	qCount := countQuestions(req.RawContent)
@@ -306,12 +326,12 @@ func (h *AiSolveHandler) Solve(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "一次最多只能请求5道题，请分批提交"})
 		return
 	}
-	fmt.Printf("[AI Solve] 检测到题目数量: %d, 预估扣除积分: %d\n", qCount, cost)
+	log.Printf("[AI Solve] 检测到题目数量: %d, 预估扣除积分: %d", qCount, cost)
 
 	// 第一步：查本地题库 (CachedQuestion) - 优先查缓存，命中则免费
 	var cached models.CachedQuestion
 	if err := h.db.Where("question_hash = ?", questionHash).First(&cached).Error; err == nil {
-		fmt.Printf("[AI Solve] ⚡ 命中本地缓存！ Hash: %s\n", questionHash)
+		log.Printf("[AI Solve] ⚡ 命中本地缓存！ Hash: %s", questionHash)
 		// 查到答案，直接返回（不扣除积分）
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
@@ -320,7 +340,7 @@ func (h *AiSolveHandler) Solve(c *gin.Context) {
 		})
 		return
 	}
-	fmt.Printf("[AI Solve] ❌ 未命中缓存，准备调用 AI，Hash: %s\n", questionHash)
+	log.Printf("[AI Solve] ❌ 未命中缓存，准备调用 AI，Hash: %s", questionHash)
 
 	// 第二步：扣费 (只在需要真正调用大模型时扣费)
 	if !isFreeUser {
@@ -362,7 +382,7 @@ func (h *AiSolveHandler) Solve(c *gin.Context) {
 		}
 
 		if err := h.db.Create(&newCache).Error; err != nil {
-			fmt.Printf("写入题库缓存失败: %v\n", err)
+			log.Printf("写入题库缓存失败: %v", err)
 		}
 
 		return answer, nil

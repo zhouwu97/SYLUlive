@@ -244,7 +244,7 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
               if (provider.myRating != null && !_isEditing)
                 TextButton(
                     onPressed: () {
-                      setState(() {
+                      if (mounted) setState(() {
                         _isEditing = true;
                         _star = provider.myRating!.star;
                         _commentCtrl.text = provider.myRating!.comment;
@@ -302,7 +302,7 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
                               widget.teacherId, _star, _commentCtrl.text.trim());
                           if (ok && mounted) {
                             _didChange = true;
-                            setState(() => _isEditing = false);
+                            if (mounted) setState(() => _isEditing = false);
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
                                   content: Text('评价成功'),

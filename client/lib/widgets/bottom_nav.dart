@@ -115,14 +115,17 @@ class BottomNavWrapper extends StatelessWidget {
         }
       },
       child: SafeArea(
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 400),
-            child: Container(
-              margin: const EdgeInsets.only(left: 12, right: 12, top: 4, bottom: 12),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(50),
-                child: BackdropFilter(
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Flexible(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 400),
+                child: Container(
+                  margin: const EdgeInsets.only(left: 12, right: 12, top: 4, bottom: 12),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(50),
+                    child: BackdropFilter(
                   filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
@@ -180,6 +183,8 @@ class BottomNavWrapper extends StatelessWidget {
               ),
             ),
           ),
+          ),
+          ],
         ),
       ),
     );

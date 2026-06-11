@@ -193,7 +193,11 @@ func (h *UploadHandler) UploadMultiple(c *gin.Context) {
 
 		// 保存文件
 		dstPath := filepath.Join(dir1, hashStr+ext)
-		src2, _ := file.Open()
+		src2, err := file.Open()
+		if err != nil {
+			results = append(results, gin.H{"error": "保存文件时读取失败"})
+			continue
+		}
 		dst, err := os.Create(dstPath)
 		if err != nil {
 			results = append(results, gin.H{"error": "保存文件失败"})

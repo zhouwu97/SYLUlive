@@ -46,7 +46,7 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
     final prefs = await SharedPreferences.getInstance();
     final hasShown = prefs.getBool('has_shown_teacher_disclaimer') ?? false;
     if (!hasShown) {
-      setState(() => _showDisclaimer = true);
+      if (mounted) setState(() => _showDisclaimer = true);
     }
   }
 
@@ -197,7 +197,7 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
             ),
             GestureDetector(
               onTap: () async {
-                setState(() => _showDisclaimer = false);
+                if (mounted) setState(() => _showDisclaimer = false);
                 final prefs = await SharedPreferences.getInstance();
                 await prefs.setBool('has_shown_teacher_disclaimer', true);
               },

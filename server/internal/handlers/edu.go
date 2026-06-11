@@ -84,7 +84,7 @@ func (h *EduHandler) BindEdu(c *gin.Context) {
 	client := resty.New()
 
 	// 获取csrf token
-	csrfToken, err := getIndexCookieAndCsrfToken(client)
+	csrfToken, err := getIndexCookieAndCsrfToken(client, 0)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "无法连接教务系统，请检查网络"})
 		return
@@ -200,7 +200,7 @@ func (h *EduHandler) PreVerify(c *gin.Context) {
 
 	// 尝试验证教务密码
 	client := resty.New()
-	csrfToken, err := getIndexCookieAndCsrfToken(client)
+	csrfToken, err := getIndexCookieAndCsrfToken(client, 0)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "无法连接教务系统", "success": false})
 		return
@@ -350,13 +350,16 @@ func (h *EduHandler) GetGrades(c *gin.Context) {
 
 // 以下是整合的教务系统登录和查询逻辑
 
-func getIndexCookieAndCsrfToken(client *resty.Client) (string, error) {
+func getIndexCookieAndCsrfToken(client *resty.Client, retryCount int) (string, error) {
+	if retryCount >= 5 {
+		return "", errors.New("教务系统连接超时，多次重试失败")
+	}
 	client.SetTimeout(3 * time.Second)
 
 	initResp, err := client.R().SetHeaders(baseHttpHeaders()).Get(indexUrl + "/login_slogin.html")
 	if err != nil {
 		if urlErr, ok := err.(*url.Error); ok && urlErr.Timeout() {
-			return getIndexCookieAndCsrfToken(client)
+			return getIndexCookieAndCsrfToken(client, retryCount+1)
 		}
 		return "", err
 	}
@@ -713,7 +716,7 @@ func (h *EduHandler) refreshCookie(userID uint) (string, error) {
 
 	client := resty.New()
 
-	csrfToken, err := getIndexCookieAndCsrfToken(client)
+	csrfToken, err := getIndexCookieAndCsrfToken(client, 0)
 	if err != nil {
 		return "", err
 	}

@@ -26,7 +26,7 @@ class _UserRepliesScreenState extends State<UserRepliesScreen> {
   }
 
   Future<void> _loadReplies() async {
-    setState(() {
+    if (mounted) setState(() {
       _isLoading = true;
       _errorMessage = null;
     });
@@ -37,18 +37,18 @@ class _UserRepliesScreenState extends State<UserRepliesScreen> {
       if (response.statusCode == 200) {
         final list = (response.data as List).map((e) => Reply.fromJson(e)).toList();
         list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-        setState(() {
+        if (mounted) setState(() {
           _replies = list;
           _isLoading = false;
         });
       } else {
-        setState(() {
+        if (mounted) setState(() {
           _errorMessage = '获取失败: ${response.statusCode}';
           _isLoading = false;
         });
       }
     } catch (e) {
-      setState(() {
+      if (mounted) setState(() {
         _errorMessage = '暂无网络或后端接口未部署\n详细信息: $e';
         _isLoading = false;
       });

@@ -127,7 +127,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
 
     _savePasswords(casPwd, erkePwd);
 
-    setState(() {
+    if (mounted) setState(() {
       _isLoading = true;
       _loadingMessage = _loadingMessages.first;
     });
@@ -147,7 +147,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
       final data = crawler.parseErkeData(htmlStr);
 
       if (data['scores'].isNotEmpty) {
-        setState(() {
+        if (mounted) setState(() {
           _scores = data['scores'];
           _summary = data['summary'];
         });

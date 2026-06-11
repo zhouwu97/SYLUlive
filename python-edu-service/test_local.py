@@ -6,6 +6,7 @@ import asyncio
 import sys
 import json
 import io
+import os
 
 # Fix Windows GBK encoding
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
@@ -14,8 +15,8 @@ sys.path.insert(0, '.')
 
 from services.crawler import EduCrawler, CourseNotOpenError, LoginFailedError
 
-STUDENT_ID = "[REDACTED_STUDENT_ID]"
-PASSWORD = "[REDACTED_PASSWORD]"
+STUDENT_ID = os.getenv("TEST_USER", "default_user")
+PASSWORD = os.getenv("TEST_PASS", "default_pass")
 YEAR = "2025"
 SEMESTER = 12  # 春季 = 12, 秋季 = 3
 

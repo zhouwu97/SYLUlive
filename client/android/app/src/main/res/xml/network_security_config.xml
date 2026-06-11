@@ -1,12 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 允许 Release 版本通过 HTTP 明文连接后端服务器 -->
 <network-security-config>
-    <!-- 生产服务器域名/IP: 允许 HTTP 明文 -->
-    <domain-config cleartextTrafficPermitted="true">
-        <domain includeSubdomains="true">156.233.229.232</domain>
-    </domain-config>
-    <!-- 兜底: 禁止其他域名的明文流量 -->
-    <base-config cleartextTrafficPermitted="false">
+    <base-config cleartextTrafficPermitted="true">
         <trust-anchors>
             <certificates src="system" />
         </trust-anchors>

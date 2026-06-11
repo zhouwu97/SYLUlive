@@ -31,12 +31,18 @@ android {
         manifestPlaceholders["JPUSH_CHANNEL"] = "developer-default"
     }
 
+    val keystorePropertiesFile = rootProject.file("key.properties")
+    val keystoreProperties = java.util.Properties()
+    if (keystorePropertiesFile.exists()) {
+        keystoreProperties.load(java.io.FileInputStream(keystorePropertiesFile))
+    }
+
     signingConfigs {
         create("release") {
-            storeFile = file("xiaoyuan.jks")
-            storePassword = "xiaoyuan123456"
-            keyAlias = "xiaoyuan"
-            keyPassword = "xiaoyuan123456"
+            storeFile = file(keystoreProperties.getProperty("storeFile") ?: "xiaoyuan.jks")
+            storePassword = keystoreProperties.getProperty("storePassword") ?: System.getenv("ANDROID_STORE_PASSWORD")
+            keyAlias = keystoreProperties.getProperty("keyAlias") ?: "xiaoyuan"
+            keyPassword = keystoreProperties.getProperty("keyPassword") ?: System.getenv("ANDROID_KEY_PASSWORD")
         }
     }
 

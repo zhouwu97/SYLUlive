@@ -173,7 +173,15 @@ func main() {
 
 	r.Use(func(c *gin.Context) {
 
-		c.Header("Access-Control-Allow-Origin", "*")
+		allowedOrigins := os.Getenv("CORS_ALLOW_ORIGINS")
+		if allowedOrigins != "" && allowedOrigins != "*" {
+			origin := c.GetHeader("Origin")
+			if strings.Contains(allowedOrigins, origin) {
+				c.Header("Access-Control-Allow-Origin", origin)
+			}
+		} else {
+			c.Header("Access-Control-Allow-Origin", "*")
+		}
 
 		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 
@@ -945,13 +953,7 @@ func ensureSystemSuperAdmin(db *gorm.DB, studentID, password string) {
 
 
 
-	// 确保 2005[REDACTED_STUDENT_ID] 也是超级管理员
-
-	db.Model(&models.User{}).
-
-		Where("student_id = ?", "2005[REDACTED_STUDENT_ID]").
-
-		Update("role", models.RoleSuperAdmin)
+	// 已移除硬编码提升超级管理员代码
 
 
 
@@ -973,7 +975,7 @@ func ensureSystemSuperAdmin(db *gorm.DB, studentID, password string) {
 
 
 
-	log.Printf("系统超级管理员已就绪: %s 和 2005[REDACTED_STUDENT_ID]", studentID)
+	log.Printf("系统超级管理员已就绪: %s", studentID)
 
 }
 

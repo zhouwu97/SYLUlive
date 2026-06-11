@@ -1,0 +1,4 @@
+storeFile=xiaoyuan.jks
+storePassword=your_store_password_here
+keyAlias=xiaoyuan
+keyPassword=your_key_password_here

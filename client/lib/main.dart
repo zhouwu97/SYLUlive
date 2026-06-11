@@ -39,7 +39,7 @@ var jpush = JPush.newJPush();
 
 Future<void> setupJPush(AuthProvider authProvider) async {
   jpush.setup(
-    appKey: 'fbbd87f741e919f39519afe6',
+    appKey: ApiConstants.jpushAppKey,
     channel: 'developer-default',
     production: false,
     debug: true,
@@ -261,7 +261,7 @@ class _BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
 
   void updateScreen(String screen) {
     if (_currentScreen != screen) {
-      setState(() {
+      if (mounted) setState(() {
         _currentScreen = screen;
       });
     }

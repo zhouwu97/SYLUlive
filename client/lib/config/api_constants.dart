@@ -1,13 +1,23 @@
 import 'package:flutter/foundation.dart';
 
 class ApiConstants {
-  // Web 端必须走 HTTPS 域名避免跨域/混合内容，App 端直接连服务器 IP 绕过 Web 代理的大小限制
-  static const String baseUrl = kIsWeb 
-      ? 'https://sylu.zhouwu.ccwu.cc/api'
-      : 'http://156.233.229.232:8080/api';
-      
+  // 通过 --dart-define 注入 API 地址，例如：--dart-define=API_URL=http://localhost:8080/api
+  static const String baseUrl = String.fromEnvironment(
+    'API_URL',
+    defaultValue: kIsWeb ? 'http://localhost:8080/api' : 'http://10.0.2.2:8080/api',
+  );
+
   // Python 教务服务（绑定、课表、成绩）
-  static const String eduServiceUrl = 'http://101.42.27.44:8000';
+  static const String eduServiceUrl = String.fromEnvironment(
+    'EDU_URL',
+    defaultValue: kIsWeb ? 'http://localhost:8000' : 'http://10.0.2.2:8000',
+  );
+
+  // 极光推送 AppKey
+  static const String jpushAppKey = String.fromEnvironment(
+    'JPUSH_APP_KEY',
+    defaultValue: 'fbbd87f741e919f39519afe6', // 默认值作为降级，实际生产环境请通过 --dart-define 注入
+  );
 
   /// 将服务端返回的相对路径转为完整 URL
   static String fullUrl(String path) {

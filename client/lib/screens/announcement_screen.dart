@@ -54,14 +54,14 @@ class _AnnouncementScreenState extends State<AnnouncementScreen>
             }
             return b.createdAt.compareTo(a.createdAt);
           });
-        setState(() {
+        if (mounted) setState(() {
           _announcements = list;
           _isLoading = false;
         });
       }
     } catch (e) {
       debugPrint('加载公告失败: $e');
-      setState(() {
+      if (mounted) setState(() {
         _isLoading = false;
       });
     }
@@ -353,7 +353,7 @@ class _AnnouncementCardState extends State<_AnnouncementCard> {
             ? Colors.red.withValues(alpha: widget.isDark ? 0.35 : 0.22)
             : null,
         onTap: widget.emphasized ? () {
-          setState(() {
+          if (mounted) setState(() {
             _expanded = !_expanded;
           });
         } : null,

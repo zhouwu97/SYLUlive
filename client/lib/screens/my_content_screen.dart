@@ -47,7 +47,7 @@ class _MyContentScreenState extends State<MyContentScreen>
   }
 
   Future<void> _loadData() async {
-    setState(() {
+    if (mounted) setState(() {
       _isLoading = true;
       _errorMessage = null;
     });
@@ -57,7 +57,7 @@ class _MyContentScreenState extends State<MyContentScreen>
       final postProvider = context.read<PostProvider>();
       final currentUserId = authProvider.user?.id;
       if (currentUserId == null) {
-        setState(() {
+        if (mounted) setState(() {
           _isLoading = false;
         });
         return;
@@ -77,11 +77,11 @@ class _MyContentScreenState extends State<MyContentScreen>
       _myMarketPosts =
           posts2.where((p) => p.authorId == currentUserId).toList();
 
-      setState(() {
+      if (mounted) setState(() {
         _isLoading = false;
       });
     } catch (e) {
-      setState(() {
+      if (mounted) setState(() {
         _isLoading = false;
         _errorMessage = '加载失败: $e';
       });
@@ -89,7 +89,7 @@ class _MyContentScreenState extends State<MyContentScreen>
   }
 
   void _toggleSelectionMode() {
-    setState(() {
+    if (mounted) setState(() {
       _isSelectionMode = !_isSelectionMode;
       if (!_isSelectionMode) {
         _selectedIds.clear();
@@ -98,7 +98,7 @@ class _MyContentScreenState extends State<MyContentScreen>
   }
 
   void _toggleSelect(int id) {
-    setState(() {
+    if (mounted) setState(() {
       if (_selectedIds.contains(id)) {
         _selectedIds.remove(id);
       } else {
@@ -108,7 +108,7 @@ class _MyContentScreenState extends State<MyContentScreen>
   }
 
   void _onLongPressItem(int id) {
-    setState(() {
+    if (mounted) setState(() {
       _isSelectionMode = true;
       _selectedIds.add(id);
     });
@@ -150,7 +150,7 @@ class _MyContentScreenState extends State<MyContentScreen>
               errors.isEmpty && deletedCount > 0 ? Colors.green : Colors.red,
         ),
       );
-      setState(() {
+      if (mounted) setState(() {
         _selectedIds.clear();
         _isSelectionMode = false;
       });

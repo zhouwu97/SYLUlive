@@ -86,7 +86,7 @@ class _LoginScreenState extends State<LoginScreen> {
     final authProvider = context.read<AuthProvider>();
     AuthResult result;
 
-    setState(() => _isLoading = true);
+    if (mounted) setState(() => _isLoading = true);
 
     if (_isRegister) {
       if (_registerMode == 'graduate') {
@@ -113,7 +113,7 @@ class _LoginScreenState extends State<LoginScreen> {
       result = await authProvider.login(account, _appPasswordController.text);
     }
 
-    setState(() => _isLoading = false);
+    if (mounted) setState(() => _isLoading = false);
 
     if (result.success && mounted) {
       // 先设置 Authorization header，再刷新 EduProvider
@@ -130,7 +130,7 @@ class _LoginScreenState extends State<LoginScreen> {
       }
       if (!_isRegister && result.errorMessage!.contains('尚未注册')) {
         FocusManager.instance.primaryFocus?.unfocus();
-        setState(() {
+        if (mounted) setState(() {
           _isRegister = true;
           _eduPasswordController.clear();
           _appPasswordController.clear();
@@ -156,20 +156,20 @@ class _LoginScreenState extends State<LoginScreen> {
       );
       return;
     }
-    setState(() => _isLoading = true);
+    if (mounted) setState(() => _isLoading = true);
     final result = await context.read<AuthProvider>().sendVerifyCode(qq);
     if (!mounted) return;
     setState(() => _isLoading = false);
     if (result.success) {
       _codeCooldownTimer?.cancel();
-      setState(() => _codeCooldown = 60);
+      if (mounted) setState(() => _codeCooldown = 60);
       _codeCooldownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
         if (!mounted || _codeCooldown <= 1) {
           timer.cancel();
           if (mounted) setState(() => _codeCooldown = 0);
           return;
         }
-        setState(() => _codeCooldown -= 1);
+        if (mounted) setState(() => _codeCooldown -= 1);
       });
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -344,7 +344,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           if (dialogContext.mounted) {
                             Navigator.pop(dialogContext);
                           }
-                          setState(() {
+                          if (mounted) setState(() {
                             _isRegister = false;
                             _studentIdController.text =
                                 studentIdController.text.trim();
@@ -533,7 +533,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                 selected: {_registerMode},
                                 onSelectionChanged: (value) {
                                   FocusManager.instance.primaryFocus?.unfocus();
-                                  setState(() {
+                                  if (mounted) setState(() {
                                     _registerMode = value.first;
                                     _appPasswordController.clear();
                                     _eduPasswordController.clear();
@@ -715,7 +715,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             TextButton(
                               onPressed: () {
                                 FocusManager.instance.primaryFocus?.unfocus();
-                                setState(() {
+                                if (mounted) setState(() {
                                   _isRegister = !_isRegister;
                                   _eduPasswordController.clear();
                                   _nicknameController.clear();

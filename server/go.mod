@@ -10,6 +10,7 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.2.0
 	golang.org/x/crypto v0.41.0
 	golang.org/x/sync v0.20.0
+	golang.org/x/time v0.12.0
 	gorm.io/driver/postgres v1.5.4
 	gorm.io/gorm v1.25.7
 )

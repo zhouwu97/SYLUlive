@@ -67,7 +67,7 @@ class _MarketScreenState extends State<MarketScreen> {
     if (!mounted) return;
 
     if (query.isEmpty) {
-      setState(() {
+      if (mounted) setState(() {
         _searchQuery = '';
         _searchResults = [];
         _isSearching = false;
@@ -75,7 +75,7 @@ class _MarketScreenState extends State<MarketScreen> {
       return;
     }
 
-    setState(() {
+    if (mounted) setState(() {
       _searchQuery = query;
       _isSearching = true;
     });
@@ -89,7 +89,7 @@ class _MarketScreenState extends State<MarketScreen> {
 
     if (!mounted || _searchQuery != query) return;
 
-    setState(() {
+    if (mounted) setState(() {
       _searchResults = results
           .where((post) => _allowedTypes.contains(post.postType))
           .toList();
@@ -113,7 +113,7 @@ class _MarketScreenState extends State<MarketScreen> {
   }
 
   void _changeSort(String sort) async {
-    setState(() {
+    if (mounted) setState(() {
       _sortType = sort;
       _isSearching = true;
     });

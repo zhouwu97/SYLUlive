@@ -27,6 +27,7 @@ type TeacherRating struct {
 	UpdatedAt time.Time `json:"updated_at"`
 
 	// 关联数据（非数据库字段）
+	User          *User  `gorm:"foreignKey:UserID" json:"-"`
 	UserName      string `gorm:"-" json:"user_name"`
 	UserStudentID string `gorm:"-" json:"user_student_id"`
 }

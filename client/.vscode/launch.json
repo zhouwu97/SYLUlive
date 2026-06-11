@@ -1,0 +1,28 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "SYLUlive (Local/Dev)",
+            "request": "launch",
+            "type": "dart",
+            "program": "lib/main.dart",
+            "toolArgs": [
+                "--dart-define=API_URL=http://localhost:8080/api",
+                "--dart-define=EDU_URL=http://localhost:8000"
+            ]
+        },
+        {
+            "name": "SYLUlive (Production)",
+            "request": "launch",
+            "type": "dart",
+            "program": "lib/main.dart",
+            "toolArgs": [
+                "--dart-define=API_URL=https://sylu.zhouwu.ccwu.cc/api",
+                "--dart-define=EDU_URL=http://101.42.27.44:8000"
+            ]
+        }
+    ]
+}

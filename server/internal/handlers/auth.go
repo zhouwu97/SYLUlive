@@ -3,6 +3,7 @@ package handlers
 
 
 import (
+	"os"
 
 	"encoding/json"
 
@@ -736,10 +737,14 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	consumeQQVerified(qq)
 
 	token, err := middleware.GenerateToken(user.ID, string(user.Role), user.TokenVersion, h.jwtSecret)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "生成令牌失败"})
-		return
-	}
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "无法生成Token"})
+			return
+		}
+		
+		secure := os.Getenv("SSL") == "true" || os.Getenv("ENV") == "production"
+		c.SetSameSite(http.SameSiteLaxMode)
+		c.SetCookie("jwt", token, 7*24*3600, "/api", "", secure, true)
 
 	c.JSON(http.StatusCreated, gin.H{
 
@@ -1030,10 +1035,14 @@ func (h *AuthHandler) RegisterWithEdu(c *gin.Context) {
 
 
 	token, err := middleware.GenerateToken(user.ID, string(user.Role), user.TokenVersion, h.jwtSecret)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "生成令牌失败"})
-		return
-	}
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "无法生成Token"})
+			return
+		}
+		
+		secure := os.Getenv("SSL") == "true" || os.Getenv("ENV") == "production"
+		c.SetSameSite(http.SameSiteLaxMode)
+		c.SetCookie("jwt", token, 7*24*3600, "/api", "", secure, true)
 
 	c.JSON(http.StatusCreated, gin.H{
 
@@ -1248,10 +1257,14 @@ func (h *AuthHandler) LoginEdu(c *gin.Context) {
 
 
 	token, err := middleware.GenerateToken(user.ID, string(user.Role), user.TokenVersion, h.jwtSecret)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "生成令牌失败"})
-		return
-	}
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "无法生成Token"})
+			return
+		}
+		
+		secure := os.Getenv("SSL") == "true" || os.Getenv("ENV") == "production"
+		c.SetSameSite(http.SameSiteLaxMode)
+		c.SetCookie("jwt", token, 7*24*3600, "/api", "", secure, true)
 
 	c.JSON(http.StatusOK, gin.H{
 
@@ -1562,10 +1575,14 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	clearLoginFailures(account)
 
 	token, err := middleware.GenerateToken(user.ID, string(user.Role), user.TokenVersion, h.jwtSecret)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "生成令牌失败"})
-		return
-	}
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "无法生成Token"})
+			return
+		}
+		
+		secure := os.Getenv("SSL") == "true" || os.Getenv("ENV") == "production"
+		c.SetSameSite(http.SameSiteLaxMode)
+		c.SetCookie("jwt", token, 7*24*3600, "/api", "", secure, true)
 
 	c.JSON(http.StatusOK, gin.H{
 
@@ -1647,3 +1664,11 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 
 }
 
+
+// Logout 退出登录 (清除 cookie)
+func (h *AuthHandler) Logout(c *gin.Context) {
+	secure := os.Getenv("SSL") == "true" || os.Getenv("ENV") == "production"
+	c.SetSameSite(http.SameSiteLaxMode)
+	c.SetCookie("jwt", "", -1, "/api", "", secure, true)
+	c.JSON(http.StatusOK, gin.H{"message": "已退出登录"})
+}

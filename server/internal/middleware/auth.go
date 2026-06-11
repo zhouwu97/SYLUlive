@@ -22,14 +22,21 @@ type Claims struct {
 // AuthMiddleware JWT认证中间件
 func AuthMiddleware(db *gorm.DB, jwtSecret string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		authHeader := c.GetHeader("Authorization")
-		if authHeader == "" {
+		var tokenString string
+		if cookieToken, err := c.Cookie("jwt"); err == nil && cookieToken != "" {
+			tokenString = cookieToken
+		} else {
+			authHeader := c.GetHeader("Authorization")
+			if authHeader != "" {
+				tokenString = strings.TrimPrefix(authHeader, "Bearer ")
+			}
+		}
+
+		if tokenString == "" {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
 			c.Abort()
 			return
 		}
-
-		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
 		claims := &Claims{}
 
 		token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
@@ -64,9 +71,17 @@ func AuthMiddleware(db *gorm.DB, jwtSecret string) gin.HandlerFunc {
 // OptionalAuthMiddleware 可选JWT认证中间件（解析用户信息但不拦截）
 func OptionalAuthMiddleware(db *gorm.DB, jwtSecret string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		authHeader := c.GetHeader("Authorization")
-		if authHeader != "" {
-			tokenString := strings.TrimPrefix(authHeader, "Bearer ")
+		var tokenString string
+		if cookieToken, err := c.Cookie("jwt"); err == nil && cookieToken != "" {
+			tokenString = cookieToken
+		} else {
+			authHeader := c.GetHeader("Authorization")
+			if authHeader != "" {
+				tokenString = strings.TrimPrefix(authHeader, "Bearer ")
+			}
+		}
+
+		if tokenString != "" {
 			claims := &Claims{}
 			token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
 				return []byte(jwtSecret), nil

@@ -71,13 +71,12 @@ func (h *CanteenHandler) GetDetail(c *gin.Context) {
 	}
 
 	var ratings []models.CanteenRating
-	h.db.Where("canteen_id = ?", id).Order("created_at DESC").Find(&ratings)
+	h.db.Where("canteen_id = ?", id).Preload("User").Order("created_at DESC").Find(&ratings)
 	for i := range ratings {
-		var user models.User
-		if err := h.db.Select("nickname, student_id, avatar").First(&user, ratings[i].UserID).Error; err == nil {
-			ratings[i].UserName = user.Nickname
-			ratings[i].UserStudentID = user.StudentID
-			ratings[i].UserAvatar = user.Avatar
+		if ratings[i].User != nil {
+			ratings[i].UserName = ratings[i].User.Nickname
+			ratings[i].UserStudentID = ratings[i].User.StudentID
+			ratings[i].UserAvatar = ratings[i].User.Avatar
 		}
 	}
 

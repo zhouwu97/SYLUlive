@@ -173,12 +173,10 @@ func main() {
 
 	r.Use(func(c *gin.Context) {
 
-		allowedOrigins := os.Getenv("CORS_ALLOW_ORIGINS")
-		if allowedOrigins != "" && allowedOrigins != "*" {
-			origin := c.GetHeader("Origin")
-			if strings.Contains(allowedOrigins, origin) {
-				c.Header("Access-Control-Allow-Origin", origin)
-			}
+				origin := c.GetHeader("Origin")
+		if origin != "" {
+			c.Header("Access-Control-Allow-Origin", origin)
+			c.Header("Access-Control-Allow-Credentials", "true")
 		} else {
 			c.Header("Access-Control-Allow-Origin", "*")
 		}

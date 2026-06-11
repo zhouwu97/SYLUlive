@@ -66,12 +66,11 @@ func (h *TeacherHandler) GetDetail(c *gin.Context) {
 		return
 	}
 	var ratings []models.TeacherRating
-	h.db.Where("teacher_id = ?", id).Order("created_at DESC").Find(&ratings)
+	h.db.Where("teacher_id = ?", id).Preload("User").Order("created_at DESC").Find(&ratings)
 	for i := range ratings {
-		var user models.User
-		if err := h.db.Select("nickname, student_id").First(&user, ratings[i].UserID).Error; err == nil {
-			ratings[i].UserName = user.Nickname
-			ratings[i].UserStudentID = user.StudentID
+		if ratings[i].User != nil {
+			ratings[i].UserName = ratings[i].User.Nickname
+			ratings[i].UserStudentID = ratings[i].User.StudentID
 		}
 	}
 	var count int64

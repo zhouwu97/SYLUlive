@@ -26,6 +26,7 @@ type MajorRating struct {
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 
+	User          *User  `gorm:"foreignKey:UserID" json:"-"`
 	UserName      string `gorm:"-" json:"user_name"`
 	UserStudentID string `gorm:"-" json:"user_student_id"`
 }

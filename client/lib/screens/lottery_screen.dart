@@ -42,7 +42,7 @@ class _LotteryScreenState extends State<LotteryScreen> {
   }
 
   Future<void> _fetchLottery() async {
-    setState(() {
+    if (mounted) setState(() {
       _isLoading = true;
       _errorMessage = null;
     });
@@ -60,18 +60,18 @@ class _LotteryScreenState extends State<LotteryScreen> {
       }
     } on DioException catch (e) {
       if (e.response?.statusCode == 404) {
-        setState(() {
+        if (mounted) setState(() {
           _isLoading = false;
           _errorMessage = "暂无抽奖活动";
         });
       } else {
-        setState(() {
+        if (mounted) setState(() {
           _isLoading = false;
           _errorMessage = AppFeedback.dioErrorMessage(e, fallback: '加载失败');
         });
       }
     } catch (e) {
-      setState(() {
+      if (mounted) setState(() {
         _isLoading = false;
         _errorMessage = '发生未知错误';
       });
@@ -101,7 +101,7 @@ class _LotteryScreenState extends State<LotteryScreen> {
 
   Future<void> _joinLottery() async {
     if (_event == null || _isSubmitting) return;
-    setState(() => _isSubmitting = true);
+    if (mounted) setState(() => _isSubmitting = true);
     try {
       final response = await _dio.post('/lottery/${_event!.id}/join');
       AppFeedback.showSnackBar(context, '参与成功！');
@@ -132,7 +132,7 @@ class _LotteryScreenState extends State<LotteryScreen> {
     );
     if (!confirm) return;
 
-    setState(() => _isSubmitting = true);
+    if (mounted) setState(() => _isSubmitting = true);
     try {
       await _dio.post('/admin/lottery/${_event!.id}/draw');
       AppFeedback.showSnackBar(context, '开奖成功！');

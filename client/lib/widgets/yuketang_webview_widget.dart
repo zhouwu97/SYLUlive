@@ -106,7 +106,7 @@ class YuketangWebViewWidgetState extends State<YuketangWebViewWidget> {
           callback: (args) {
             if (mounted && args.isNotEmpty) {
               String probId = args[0].toString();
-              setState(() {
+              if (mounted) setState(() {
                 _isIntercepted = true;
                 _isBlockMode = false; // 强行切到单题模式
                 _statusText = '🚨 老师刚发布了一道直播题！';
@@ -148,7 +148,7 @@ class YuketangWebViewWidgetState extends State<YuketangWebViewWidget> {
       top: _dashboardPos.dy,
       child: GestureDetector(
         onPanUpdate: (details) {
-          setState(() {
+          if (mounted) setState(() {
             _dashboardPos += details.delta;
             // 简单边界限制
             if (_dashboardPos.dx < 0) _dashboardPos = Offset(0, _dashboardPos.dy);
@@ -405,7 +405,7 @@ class YuketangWebViewWidgetState extends State<YuketangWebViewWidget> {
 
   Future<void> _handleUpload() async {
     if (!_isIntercepted) {
-      setState(() => _statusText = '错误 - 未拦截到试卷数据！');
+      if (mounted) setState(() => _statusText = '错误 - 未拦截到试卷数据！');
       return;
     }
     
@@ -452,7 +452,7 @@ class YuketangWebViewWidgetState extends State<YuketangWebViewWidget> {
       _uploadedIndices.addAll(requestedIndices);
     }
 
-    setState(() {
+    if (mounted) setState(() {
       _statusText = '正在智能裁剪数据并处理...';
       _answerText = '🚀 AI 正在深度思考中，请稍候...';
     });
@@ -460,7 +460,7 @@ class YuketangWebViewWidgetState extends State<YuketangWebViewWidget> {
     try {
       final result = await webViewController?.evaluateJavascript(source: "window.AiHelper && window.AiHelper.sliceExamData('$rangeStr');");
       if (result == null || result == 'null') {
-        setState(() => _statusText = '错误：无法获取裁剪后的试卷数据');
+        if (mounted) setState(() => _statusText = '错误：无法获取裁剪后的试卷数据');
         return;
       }
       
@@ -489,14 +489,14 @@ class YuketangWebViewWidgetState extends State<YuketangWebViewWidget> {
       
       if (mounted) {
         if (answer != null && !answer.startsWith('错误:') && !answer.startsWith('请求后端失败')) {
-          setState(() {
+          if (mounted) setState(() {
             _statusText = '✅ 答案已就绪！';
             _answerText = answer;
           });
           final safeAnswer = answer.replaceAll("'", "\\'").replaceAll("\n", "\\n");
           await webViewController?.evaluateJavascript(source: "window.AiHelper && window.AiHelper.doAutoAnswer('$safeAnswer', 'full');");
         } else {
-          setState(() {
+          if (mounted) setState(() {
             _statusText = '错误';
             _answerText = answer ?? '未知错误';
           });

@@ -64,7 +64,7 @@ class _ProfileScreenState extends State<ProfileScreen>
 
   void _loadPrefs() {
     final tp = context.read<ThemeProvider>();
-    setState(() => _startOnTimetable = tp.startOnTimetable);
+    if (mounted) setState(() => _startOnTimetable = tp.startOnTimetable);
   }
 
   @override
@@ -691,7 +691,7 @@ class _ProfileScreenState extends State<ProfileScreen>
             activeColor: const Color(0xFF6366F1),
             onChanged: (v) {
               context.read<ThemeProvider>().setStartOnTimetable(v);
-              setState(() => _startOnTimetable = v);
+              if (mounted) setState(() => _startOnTimetable = v);
             },
           ),
         ),

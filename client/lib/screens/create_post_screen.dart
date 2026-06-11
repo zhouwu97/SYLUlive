@@ -83,7 +83,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         }
 
         if (_selectedImages.length < 9) {
-          setState(() {
+          if (mounted) setState(() {
             _selectedImages.add(image);
           });
         } else {
@@ -100,13 +100,13 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   }
 
   void _removeImage(int index) {
-    setState(() {
+    if (mounted) setState(() {
       _selectedImages.removeAt(index);
     });
   }
 
   void _removeExistingImage(int index) {
-    setState(() {
+    if (mounted) setState(() {
       _existingImages.removeAt(index);
     });
   }
@@ -165,7 +165,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       return;
     }
 
-    setState(() {
+    if (mounted) setState(() {
       _isLoading = true;
     });
 
@@ -185,7 +185,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     }
 
     if (hasUploadError) {
-      setState(() {
+      if (mounted) setState(() {
         _isLoading = false;
       });
       if (mounted) {
@@ -228,7 +228,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
             fileIds: mergedFileIds.isNotEmpty ? mergedFileIds : null,
           );
 
-    setState(() {
+    if (mounted) setState(() {
       _isLoading = false;
     });
 
@@ -330,7 +330,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                           const DropdownMenuItem(value: 'exposure', child: Text('曝光')),
                       ],
                       onChanged: (value) {
-                        setState(() {
+                        if (mounted) setState(() {
                           _postType = value ?? '';
                         });
                       },

@@ -651,7 +651,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   void _onTabTapped(int index) {
-    setState(() => _currentIndex = index);
+    if (mounted) setState(() => _currentIndex = index);
     final screenNames = ['shuitie', 'market', 'schedule', 'campus', 'profile'];
     backgroundWrapperKey.currentState?.updateScreen(screenNames[index]);
   }

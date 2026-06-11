@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from config import HOST, PORT
 from models.database import init_db
 from routers import auth, courses, grades, erke, spider
+import os
 
 
 @asynccontextmanager
@@ -28,10 +29,17 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+cors_origins_env = os.getenv("CORS_ALLOW_ORIGINS", "")
+if cors_origins_env and cors_origins_env != "*":
+    origins = [origin.strip() for origin in cors_origins_env.split(",")]
+else:
+    # Avoid wildcard with allow_credentials=True
+    origins = ["http://localhost:3000", "http://localhost:8080", "http://127.0.0.1:3000"]
+
 # 配置CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 生产环境应限制
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

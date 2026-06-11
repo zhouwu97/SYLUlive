@@ -80,7 +80,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   Future<void> _loadPost() async {
-    setState(() {
+    if (mounted) setState(() {
       _isLoading = true;
       _errorMessage = null;
     });
@@ -106,7 +106,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               createdAt: fetchedPost.createdAt,
             )
           : fetchedPost;
-      setState(() {
+      if (mounted) setState(() {
         _replies = (repliesResponse.data as List)
             .map((e) => Reply.fromJson(e))
             .toList();
@@ -135,12 +135,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       }
     } on DioException catch (e) {
       final msg = AppFeedback.dioErrorMessage(e, fallback: '加载帖子失败');
-      setState(() {
+      if (mounted) setState(() {
         _isLoading = false;
         _errorMessage = msg;
       });
     } catch (e) {
-      setState(() {
+      if (mounted) setState(() {
         _isLoading = false;
         _errorMessage = '加载失败: $e';
       });
@@ -153,7 +153,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           .showSnackBar(const SnackBar(content: Text('请先登录')));
       return;
     }
-    setState(() {
+    if (mounted) setState(() {
       _liked = !_liked;
       _likeCount += _liked ? 1 : -1;
       if (_post != null) {
@@ -174,7 +174,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         await _dio.delete('/posts/${widget.postId}/like');
       }
     } catch (_) {
-      setState(() {
+      if (mounted) setState(() {
         _liked = !_liked;
         _likeCount += _liked ? 1 : -1;
         if (_post != null) {
@@ -195,7 +195,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final content = _replyController.text.trim();
     if (content.isEmpty) return;
 
-    setState(() => _isSending = true);
+    if (mounted) setState(() => _isSending = true);
 
     // 先保存 parentReplyId，后面 setState 会清空它
     final parentId = _parentReplyId;
@@ -227,7 +227,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
     _replyController.clear();
     _replyFocus.unfocus();
-    setState(() {
+    if (mounted) setState(() {
       _isReplyComposerOpen = false;
       _parentReplyId = null;
       _replyToName = null;
@@ -1230,7 +1230,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                   if (hasMore)
                     GestureDetector(
                       onTap: () {
-                        setState(() {
+                        if (mounted) setState(() {
                           _expandedThreads.add(thread.parent.id);
                         });
                       },
@@ -1501,7 +1501,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             GestureDetector(
               onTap: () {
                 _replyFocus.unfocus();
-                setState(() => _isReplyComposerOpen = false);
+                if (mounted) setState(() => _isReplyComposerOpen = false);
               },
               child: Container(
                 width: 36,
@@ -1674,7 +1674,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   void _openReplyComposer({int? parentReplyId, String? replyToName, int? replyToUserId}) {
-    setState(() {
+    if (mounted) setState(() {
       _isReplyComposerOpen = true;
       _parentReplyId = parentReplyId;
       _replyToName = replyToName;
@@ -1749,7 +1749,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       if (mounted) {
         AppFeedback.showSnackBar(context, '已删除');
         if (_post != null && _post!.replyCount > 0) {
-          setState(() {
+          if (mounted) setState(() {
             _post = _post!.copyWith(replyCount: _post!.replyCount - 1);
           });
           context.read<PostProvider>().updatePostInCache(_post!);
@@ -1767,7 +1767,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   Future<void> _loadReplies() async {
     try {
       final repliesResponse = await _dio.get('/posts/${widget.postId}/replies');
-      setState(() {
+      if (mounted) setState(() {
         _replies = (repliesResponse.data as List)
             .map((e) => Reply.fromJson(e))
             .toList();

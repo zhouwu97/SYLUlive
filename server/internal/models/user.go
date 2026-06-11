@@ -1,7 +1,12 @@
 package models
 
 import (
+	"strings"
 	"time"
+
+	"gorm.io/gorm"
+	"shenliyuan/internal/config"
+	"shenliyuan/internal/utils"
 )
 
 // Role 用户角色
@@ -48,4 +53,25 @@ type User struct {
 
 	LastCheckInDate string `gorm:"size:10" json:"last_check_in_date"` // 最后签到日期
 	IsCheckedInToday bool  `gorm:"-" json:"is_checked_in_today"`      // 动态字段，不在数据库映射
+}
+
+
+func (u *User) BeforeSave(tx *gorm.DB) (err error) {
+	if u.EduPassword != "" && !strings.HasPrefix(u.EduPassword, "ENC:") {
+		encrypted, err := utils.EncryptAES(u.EduPassword, config.Load().JWTSecret)
+		if err == nil {
+			u.EduPassword = "ENC:" + encrypted
+		}
+	}
+	return nil
+}
+
+func (u *User) AfterFind(tx *gorm.DB) (err error) {
+	if strings.HasPrefix(u.EduPassword, "ENC:") {
+		decrypted, err := utils.DecryptAES(strings.TrimPrefix(u.EduPassword, "ENC:"), config.Load().JWTSecret)
+		if err == nil {
+			u.EduPassword = decrypted
+		}
+	}
+	return nil
 }

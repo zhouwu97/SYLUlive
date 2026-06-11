@@ -134,12 +134,12 @@ func (h *ReportHandler) Handle(c *gin.Context) {
 		var targetUserID uint
 		if report.TargetType == "post" {
 			var post models.Post
-			if h.db.First(&post, report.TargetID) == nil {
+			if h.db.First(&post, report.TargetID).Error == nil {
 				targetUserID = post.AuthorID
 			}
 		} else if report.TargetType == "reply" {
 			var reply models.Reply
-			if h.db.First(&reply, report.TargetID) == nil {
+			if h.db.First(&reply, report.TargetID).Error == nil {
 				targetUserID = reply.AuthorID
 			}
 		}

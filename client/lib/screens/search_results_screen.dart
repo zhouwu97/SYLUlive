@@ -35,7 +35,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
   }
 
   Future<void> _doSearch() async {
-    setState(() {
+    if (mounted) setState(() {
       _isLoading = true;
       _error = null;
     });

@@ -32,7 +32,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
   }
 
   Future<void> _loadData() async {
-    setState(() => _isLoading = true);
+    if (mounted) setState(() => _isLoading = true);
     final data = await context.read<CanteenProvider>().loadCanteenDetail(widget.canteenId);
     if (mounted) {
       setState(() {

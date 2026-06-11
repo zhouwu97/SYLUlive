@@ -34,7 +34,7 @@ class WebVpnService {
     ));
     (_dio.httpClientAdapter as IOHttpClientAdapter).onHttpClientCreate =
         (client) {
-      client.badCertificateCallback = (cert, host, port) => true;
+      client.badCertificateCallback = (cert, host, port) => false; // 强制校验 SSL
       return client;
     };
     _dio.interceptors.add(CookieManager(_jar));

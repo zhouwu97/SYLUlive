@@ -38,7 +38,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       markCorrectAnswers: _markCorrect,
       groupByChapter: _groupByChapter,
     );
-    setState(() {
+    if (mounted) setState(() {
       _markdown = converter.convert(widget.questions);
       _loaded = true;
     });

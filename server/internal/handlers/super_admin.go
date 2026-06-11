@@ -5,9 +5,8 @@ package handlers
 import (
 
 	"fmt"
-
 	"net/http"
-
+	"os"
 	"strconv"
 
 	"time"
@@ -246,15 +245,21 @@ func (h *SuperAdminHandler) ResetUserPassword(c *gin.Context) {
 
 
 
-	defaultPassword := "password123"
+	defaultPassword := os.Getenv("DEFAULT_RESET_PASSWORD")
+	if defaultPassword == "" {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "系统未配置默认重置密码，请联系管理员"})
+		return
+	}
 
-	hashedPassword, _ := bcrypt.GenerateFromPassword([]byte(defaultPassword), bcrypt.DefaultCost)
-
-
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(defaultPassword), bcrypt.DefaultCost)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "密码加密失败"})
+		return
+	}
 
 	h.db.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]interface{}{"password_hash": string(hashedPassword), "token_version": gorm.Expr("token_version + 1")})
 
-	c.JSON(http.StatusOK, gin.H{"message": "密码已重置为: " + defaultPassword})
+	c.JSON(http.StatusOK, gin.H{"message": "密码已重置为系统默认密码"})
 
 }
 

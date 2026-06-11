@@ -164,7 +164,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     if (!edu.isStatusLoaded) return;
     if (!edu.isBound) {
       _didLoad = true;
-      setState(() => _initializing = false);
+      if (mounted) setState(() => _initializing = false);
       return;
     }
     if (sc.isLoading) return;
@@ -175,7 +175,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
     if (hasCache) {
       // 有缓存 → 立即展示，后台静默更新
-      setState(() {
+      if (mounted) setState(() {
         _hasCache = true;
         _initializing = false;
       });
@@ -244,7 +244,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     final now = DateTime.now();
     final currentMonday = _mondayOf(now);
     final targetMonday = currentMonday.add(Duration(days: (index - 500) * 7));
-    setState(() => _weekStart = targetMonday);
+    if (mounted) setState(() => _weekStart = targetMonday);
   }
 
   @override
@@ -834,13 +834,13 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
         .push(MaterialPageRoute(builder: (_) => const EduScreen()));
     if (mounted) {
       final sc = context.read<CourseScheduleProvider>();
-      setState(() {
+      if (mounted) setState(() {
         _initializing = true;
         _isFetchingCourses = true;
       });
       await sc.loadCourses(forceRefresh: false);
       await _syncCourseReminders(sc);
-      setState(() {
+      if (mounted) setState(() {
         _hasCache = sc.courses.isNotEmpty;
         _initializing = false;
         _isFetchingCourses = false;
@@ -883,7 +883,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                   // 返回后强制刷新课表
                   if (mounted) {
                     final sc = context.read<CourseScheduleProvider>();
-                    setState(() {
+                    if (mounted) setState(() {
                       _didLoad = false;
                       _hasCache = false;
                       _initializing = true;
@@ -891,7 +891,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                     });
                     await sc.loadCourses(forceRefresh: false);
                     await _syncCourseReminders(sc);
-                    setState(() {
+                    if (mounted) setState(() {
                       _hasCache = sc.courses.isNotEmpty;
                       _initializing = false;
                       _isFetchingCourses = false;
@@ -925,7 +925,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       return;
     }
 
-    setState(() {
+    if (mounted) setState(() {
       _isFetchingCourses = true;
       _initializing = sc.courses.isEmpty;
     });
@@ -1051,7 +1051,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       await _syncCourseReminders(sc);
       if (!mounted) return;
 
-      setState(() {
+      if (mounted) setState(() {
         _hasCache = sc.courses.isNotEmpty;
         _didLoad = true;
       });
@@ -1344,7 +1344,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       _backgroundKeepAliveStatus = status;
       _backgroundKeepAliveBusy = false;
     });
-    setState(() {
+    if (mounted) setState(() {
       _backgroundKeepAliveStatus = status;
       _backgroundKeepAliveBusy = false;
     });
@@ -2467,7 +2467,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                               label: '${(_cardOpacity * 100).round()}%',
                               onChanged: (v) {
                                 setSheetState(() {});
-                                setState(() => _cardOpacity = v);
+                                if (mounted) setState(() => _cardOpacity = v);
                                 _saveOpacity(v);
                               },
                             ),
@@ -2503,7 +2503,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                               label: '${_slotHeight.round()}',
                               onChanged: (v) {
                                 setSheetState(() {});
-                                setState(() => _slotHeight = v);
+                                if (mounted) setState(() => _slotHeight = v);
                                 _saveSlotHeight(v);
                               },
                             ),
@@ -2539,7 +2539,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                         onChanged: (v) {
                           if (v != null) {
                             setSheetState(() => _widgetTextColor = v);
-                            setState(() => _widgetTextColor = v);
+                            if (mounted) setState(() => _widgetTextColor = v);
                             _saveWidgetTextColor(v, sc);
                           }
                         },
@@ -2942,7 +2942,7 @@ $classFilterRule
                       SnackBar(content: Text(editCourse == null ? '课程已添加' : '课程已更新')),
                     );
                     await _syncCourseReminders(sc);
-                    setState(() => _hasCache = true);
+                    if (mounted) setState(() => _hasCache = true);
                   }
                   Navigator.pop(dialogCtx);
                 },
@@ -3148,7 +3148,7 @@ $classFilterRule
         SnackBar(content: Text('成功导入 $addedCount 门课程！')),
       );
       await _syncCourseReminders(sc);
-      setState(() => _hasCache = true);
+      if (mounted) setState(() => _hasCache = true);
     }
   }
 

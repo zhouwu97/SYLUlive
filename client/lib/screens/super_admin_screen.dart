@@ -101,7 +101,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
       );
       if (mounted) {
         // 本地移除该代办
-        setState(() => _pendingInvitations.removeWhere((i) => i['id'] == inv['id']));
+        if (mounted) setState(() => _pendingInvitations.removeWhere((i) => i['id'] == inv['id']));
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
               content: Text(approve ? '已提交同意审批' : '已驳回'),

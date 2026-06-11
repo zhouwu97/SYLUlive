@@ -100,6 +100,12 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
     _loadExams();
   }
 
+  @override
+  void dispose() {
+    _syncTimer?.cancel();
+    super.dispose();
+  }
+
   Future<void> _loadExams() async {
     final prefs = await SharedPreferences.getInstance();
     final String? examsJson = prefs.getString('local_exams');
@@ -107,7 +113,7 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
       try {
         final List<dynamic> decoded = jsonDecode(examsJson);
 
-        setState(() {
+        if (mounted) setState(() {
           _exams = decoded
               .map((e) => ExamModel.fromJson(e))
               .toList();
@@ -596,7 +602,7 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
                                     semester: _currentSemester,
                                   );
                                 }).toList();
-                                setState(() {
+                                if (mounted) setState(() {
                                   _exams.addAll(newExams);
                                   _exams.sort((a, b) =>
                                       a.startTime.compareTo(b.startTime));
@@ -648,7 +654,7 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
                                 location: locCtrl.text.trim(),
                                 semester: selectedSemester,
                               );
-                              setState(() {
+                              if (mounted) setState(() {
                                 if (index != null && exam != null) {
                                   _exams[index] = newExam;
                                 } else {
@@ -708,7 +714,7 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
                 fontWeight: FontWeight.bold),
             onChanged: (String? newValue) {
               if (newValue != null) {
-                setState(() {
+                if (mounted) setState(() {
                   _currentSemester = newValue;
                 });
               }
@@ -817,7 +823,7 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
                     );
                   },
                   onDismissed: (direction) {
-                    setState(() {
+                    if (mounted) setState(() {
                       _exams.removeAt(originalIndex);
                     });
                     _saveToLocal();

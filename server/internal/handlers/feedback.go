@@ -2,8 +2,10 @@ package handlers
 
 import (
 	"fmt"
+	"html"
 	"net/http"
 	"net/smtp"
+	"os"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -50,7 +52,11 @@ func (h *FeedbackHandler) Submit(c *gin.Context) {
 	}
 
 	// 发送邮件到开发者邮箱
-	to := "13514252317@163.com"
+	to := os.Getenv("FEEDBACK_EMAIL_TO")
+	if to == "" {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "未配置反馈接收邮箱，无法提交反馈"})
+		return
+	}
 	subject := fmt.Sprintf("【沈理校园反馈】来自 %s", nickname)
 	body := fmt.Sprintf(`
 <html>
@@ -74,7 +80,7 @@ func (h *FeedbackHandler) Submit(c *gin.Context) {
       <p style="margin: 0; white-space: pre-wrap;">%s</p>
     </div>
   </body>
-</html>`, nickname, studentID, time.Now().Format("2006-01-02 15:04:05"), input.Content)
+</html>`, html.EscapeString(nickname), html.EscapeString(studentID), time.Now().Format("2006-01-02 15:04:05"), html.EscapeString(input.Content))
 
 	addr := VerifyCodeConfig.SMTPHost + ":" + VerifyCodeConfig.SMTPPort
 	auth := smtp.PlainAuth("", VerifyCodeConfig.SMTPUser, VerifyCodeConfig.SMTPPass, VerifyCodeConfig.SMTPHost)

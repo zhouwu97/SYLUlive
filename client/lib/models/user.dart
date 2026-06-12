@@ -2,9 +2,10 @@
 class User {
   final int id;
   final String studentId;
-  final String nickname;
-  final String avatar;
-  final String background;
+  String nickname;
+  String gender;
+  String avatar;
+  String background;
   final int creditScore;
   final String role;
   final int adminExp;
@@ -22,15 +23,16 @@ class User {
   final String eduMajor;
 
   // 社交统计
-  final int followersCount;
-  final int followingCount;
-  final int totalLikesReceived;
-  final bool isFollowing;
+  int followersCount;
+  int followingCount;
+  int totalLikesReceived;
+  bool isFollowing;
 
   User({
     required this.id,
     required this.studentId,
     required this.nickname,
+    this.gender = '',
     this.avatar = '',
     this.background = '',
     this.creditScore = 100,
@@ -57,6 +59,7 @@ class User {
       id: json['id'] ?? 0,
       studentId: json['student_id'] ?? '',
       nickname: json['nickname'] ?? '',
+      gender: json['gender'] ?? '',
       avatar: json['avatar'] ?? '',
       background: json['background'] ?? '',
       creditScore: json['credit_score'] ?? 100,
@@ -84,6 +87,7 @@ class User {
       'id': id,
       'student_id': studentId,
       'nickname': nickname,
+      'gender': gender,
       'avatar': avatar,
       'background': background,
       'credit_score': creditScore,

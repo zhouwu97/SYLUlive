@@ -2,6 +2,8 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:dio/dio.dart';
+import 'package:image_picker/image_picker.dart';
 import '../providers/auth_provider.dart';
 import '../config/api_constants.dart';
 import '../widgets/glass_container.dart';
@@ -103,9 +105,21 @@ class _UserHomeScreenState extends State<UserHomeScreen> with SingleTickerProvid
                   clipBehavior: Clip.none,
                   children: [
                     Positioned.fill(
-                      child: Image.asset(
-                        'assets/images/morenbeijing.jpeg',
-                        fit: BoxFit.cover,
+                      child: GestureDetector(
+                        onTap: () {
+                          if (widget.userId == null || widget.userId == context.read<AuthProvider>().user?.id) {
+                            _showEditSheet(context, user);
+                          }
+                        },
+                        child: user.background.isNotEmpty
+                            ? CachedNetworkImage(
+                                imageUrl: ApiConstants.fullUrl(user.background),
+                                fit: BoxFit.cover,
+                              )
+                            : Image.asset(
+                                'assets/images/morenbeijing.jpeg',
+                                fit: BoxFit.cover,
+                              ),
                       ),
                     ),
                     Positioned.fill(
@@ -229,7 +243,11 @@ class _UserHomeScreenState extends State<UserHomeScreen> with SingleTickerProvid
                             runSpacing: 4,
                             crossAxisAlignment: WrapCrossAlignment.center,
                             children: [
-                              Icon(Icons.male, size: 12, color: Colors.blue[300]),
+                              Icon(
+                                user.gender == 'female' ? Icons.female : Icons.male,
+                                size: 12,
+                                color: user.gender == 'female' ? Colors.pink[300] : Colors.blue[300],
+                              ),
                               Text('ID ${user.studentId}',
                                   style: TextStyle(
                                       fontSize: 11,
@@ -250,7 +268,7 @@ class _UserHomeScreenState extends State<UserHomeScreen> with SingleTickerProvid
               if (isMe)
                 OutlinedButton(
                   onPressed: () {
-                    // 编辑资料逻辑
+                    _showEditSheet(context, user);
                   },
                   style: OutlinedButton.styleFrom(
                     shape: RoundedRectangleBorder(
@@ -270,16 +288,26 @@ class _UserHomeScreenState extends State<UserHomeScreen> with SingleTickerProvid
               else if (user.isFollowing)
                 OutlinedButton(
                   onPressed: () async {
-                    await context.read<SocialProvider>().unfollow(user.id);
-                    _loadData();
+                    final success = await context.read<SocialProvider>().unfollow(user.id);
+                    if (success && mounted) {
+                      setState(() {
+                        _user!.isFollowing = false;
+                        _user!.followersCount = (_user!.followersCount - 1).clamp(0, 999999);
+                      });
+                    }
                   },
                   child: const Text('已关注'),
                 )
               else
                 ElevatedButton(
                   onPressed: () async {
-                    await context.read<SocialProvider>().follow(user.id);
-                    _loadData();
+                    final success = await context.read<SocialProvider>().follow(user.id);
+                    if (success && mounted) {
+                      setState(() {
+                        _user!.isFollowing = true;
+                        _user!.followersCount++;
+                      });
+                    }
                   },
                   child: const Text('关注'),
                 ),
@@ -406,6 +434,16 @@ class _UserHomeScreenState extends State<UserHomeScreen> with SingleTickerProvid
       ),
     );
   }
+
+  // ---------------- 编辑资料悬浮窗 ----------------
+  void _showEditSheet(BuildContext context, User user) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => _EditProfileSheet(user: user, onSaved: _loadData),
+    );
+  }
 }
 
 class MockPostListTab extends StatefulWidget {
@@ -515,8 +553,212 @@ class _SliverAppBarDelegate extends SliverPersistentHeaderDelegate {
     );
   }
 
-  @override
   bool shouldRebuild(_SliverAppBarDelegate oldDelegate) {
     return false;
+  }
+}
+
+class _EditProfileSheet extends StatefulWidget {
+  final User user;
+  final VoidCallback onSaved;
+
+  const _EditProfileSheet({required this.user, required this.onSaved});
+
+  @override
+  State<_EditProfileSheet> createState() => _EditProfileSheetState();
+}
+
+class _EditProfileSheetState extends State<_EditProfileSheet> {
+  late TextEditingController _nicknameController;
+  late String _selectedGender;
+  bool _isSaving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _nicknameController = TextEditingController(text: widget.user.nickname);
+    _selectedGender = widget.user.gender.isEmpty ? 'male' : widget.user.gender;
+  }
+
+  @override
+  void dispose() {
+    _nicknameController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickAndUploadBackground() async {
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(source: ImageSource.gallery);
+    if (picked == null) return;
+
+    if (!mounted) return;
+    final auth = context.read<AuthProvider>();
+
+    try {
+      setState(() => _isSaving = true);
+      // 复用 auth_provider 的图片上传接口 (也可以直接调 dio)
+      FormData formData = FormData.fromMap({
+        'file': await MultipartFile.fromFile(picked.path),
+      });
+
+      final uploadRes = await auth.dio.post('/upload', data: formData);
+      if (uploadRes.statusCode == 200 && uploadRes.data['url'] != null) {
+        final url = uploadRes.data['url'];
+        // 更新背景
+        await auth.dio.put('/user/background', data: {'background': url});
+        
+        // 更新本地状态
+        await auth.refreshUser();
+        widget.onSaved(); // 触发主页刷新
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('背景更换成功')));
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('上传失败: $e')));
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSaving = false);
+      }
+    }
+  }
+
+  Future<void> _saveProfile() async {
+    final newNickname = _nicknameController.text.trim();
+    if (newNickname.isEmpty) return;
+
+    setState(() => _isSaving = true);
+    try {
+      final auth = context.read<AuthProvider>();
+      await auth.dio.put('/user/profile', data: {
+        'nickname': newNickname,
+        'gender': _selectedGender,
+      });
+
+      await auth.refreshUser();
+      widget.onSaved();
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('资料已保存')));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('保存失败: $e')));
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSaving = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    
+    return Container(
+      padding: EdgeInsets.only(
+        left: 20, right: 20, top: 12,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+      ),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // 拖动条
+          Container(
+            width: 40, height: 4,
+            decoration: BoxDecoration(
+              color: Colors.grey.withOpacity(0.3),
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(height: 20),
+          Text('编辑资料', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: isDark ? Colors.white : Colors.black87)),
+          const SizedBox(height: 24),
+          
+          // 更改背景
+          InkWell(
+            onTap: _isSaving ? null : _pickAndUploadBackground,
+            borderRadius: BorderRadius.circular(12),
+            child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+              decoration: BoxDecoration(
+                color: isDark ? Colors.grey[800] : Colors.grey[100],
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.image, color: Colors.blue),
+                  const SizedBox(width: 12),
+                  const Expanded(child: Text('更改主页背景图')),
+                  Icon(Icons.chevron_right, color: Colors.grey[500]),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // 昵称
+          TextField(
+            controller: _nicknameController,
+            decoration: InputDecoration(
+              labelText: '昵称',
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              prefixIcon: const Icon(Icons.person_outline),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // 性别
+          Row(
+            children: [
+              const Text('性别: ', style: TextStyle(fontSize: 16)),
+              const SizedBox(width: 16),
+              Expanded(
+                child: SegmentedButton<String>(
+                  segments: const [
+                    ButtonSegment(value: 'male', label: Text('男生'), icon: Icon(Icons.male)),
+                    ButtonSegment(value: 'female', label: Text('女生'), icon: Icon(Icons.female)),
+                    ButtonSegment(value: '', label: Text('保密')),
+                  ],
+                  selected: {_selectedGender},
+                  onSelectionChanged: (Set<String> newSelection) {
+                    setState(() {
+                      _selectedGender = newSelection.first;
+                    });
+                  },
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+
+          // 保存按钮
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: _isSaving ? null : _saveProfile,
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              child: _isSaving 
+                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                : const Text('保存', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }

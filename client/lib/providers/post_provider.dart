@@ -102,7 +102,7 @@ class PostProvider extends ChangeNotifier {
         if (data['session_id'] != null) {
           board.sessionId = data['session_id'];
         }
-        final newPosts = (data['posts'] as List)
+        final newPosts = ((data['posts'] as List?) ?? [])
             .map((e) => Post.fromJson(e))
             .toList();
 
@@ -181,7 +181,7 @@ class PostProvider extends ChangeNotifier {
         if (data['session_id'] != null) {
           board.sessionId = data['session_id'];
         }
-        final newPosts = (data['posts'] as List)
+        final newPosts = ((data['posts'] as List?) ?? [])
             .map((e) => Post.fromJson(e))
             .toList();
 
@@ -243,7 +243,7 @@ class PostProvider extends ChangeNotifier {
 
       final response = await _dio.get('/posts', queryParameters: params);
       if (response.statusCode == 200) {
-        final newPosts = (response.data['posts'] as List)
+        final newPosts = ((response.data['posts'] as List?) ?? [])
             .map((e) => Post.fromJson(e))
             .toList();
 
@@ -288,7 +288,7 @@ class PostProvider extends ChangeNotifier {
 
       if (response.statusCode == 200) {
         final data = response.data;
-        return (data['posts'] as List).map((e) => Post.fromJson(e)).toList();
+        return ((data['posts'] as List?) ?? []).map((e) => Post.fromJson(e)).toList();
       }
     } on DioException catch (e) {
       debugPrint('搜索帖子失败: ${AppFeedback.dioErrorMessage(e)}');

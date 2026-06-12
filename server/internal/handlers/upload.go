@@ -3,15 +3,17 @@ package handlers
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"shenliyuan/internal/models"
+
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
-	"shenliyuan/internal/models"
 )
 
 // UploadHandler 上传处理器
@@ -73,7 +75,10 @@ func (h *UploadHandler) Upload(c *gin.Context) {
 
 	if result.Error == nil {
 		// 文件已存在，增加引用计数
-		h.db.Model(&existingFile).Update("ref_count", gorm.Expr("ref_count + 1"))
+		if err := h.db.Model(&existingFile).Update("ref_count", gorm.Expr("ref_count + 1")).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
+			return
+		}
 		c.JSON(http.StatusOK, gin.H{
 			"file_id": existingFile.ID,
 			"url":     existingFile.Path,
@@ -175,7 +180,10 @@ func (h *UploadHandler) UploadMultiple(c *gin.Context) {
 		var existingFile models.File
 		result := h.db.Where("hash = ?", hashStr).First(&existingFile)
 		if result.Error == nil {
-			h.db.Model(&existingFile).Update("ref_count", gorm.Expr("ref_count + 1"))
+			if err := h.db.Model(&existingFile).Update("ref_count", gorm.Expr("ref_count + 1")).Error; err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
+				return
+			}
 			results = append(results, gin.H{
 				"file_id": existingFile.ID,
 				"url":     existingFile.Path,
@@ -193,19 +201,27 @@ func (h *UploadHandler) UploadMultiple(c *gin.Context) {
 
 		// 保存文件
 		dstPath := filepath.Join(dir1, hashStr+ext)
-		src2, err := file.Open()
+		err = func() error {
+			src2, err := file.Open()
+			if err != nil {
+				return fmt.Errorf("保存文件时读取失败")
+			}
+			defer src2.Close()
+
+			dst, err := os.Create(dstPath)
+			if err != nil {
+				return fmt.Errorf("保存文件失败")
+			}
+			defer dst.Close()
+
+			_, err = io.Copy(dst, src2)
+			return err
+		}()
+
 		if err != nil {
-			results = append(results, gin.H{"error": "保存文件时读取失败"})
+			results = append(results, gin.H{"error": err.Error()})
 			continue
 		}
-		dst, err := os.Create(dstPath)
-		if err != nil {
-			results = append(results, gin.H{"error": "保存文件失败"})
-			continue
-		}
-		io.Copy(dst, src2)
-		src2.Close()
-		dst.Close()
 
 		// 创建文件记录
 		fileRecord := models.File{
@@ -215,7 +231,10 @@ func (h *UploadHandler) UploadMultiple(c *gin.Context) {
 			MimeType: getMimeType(ext),
 			RefCount: 1,
 		}
-		h.db.Create(&fileRecord)
+		if err := h.db.Create(&fileRecord).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
+			return
+		}
 		createdFiles = append(createdFiles, fileRecord)
 
 		results = append(results, gin.H{

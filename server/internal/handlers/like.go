@@ -4,9 +4,10 @@ import (
 	"net/http"
 	"strconv"
 
+	"shenliyuan/internal/models"
+
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
-	"shenliyuan/internal/models"
 )
 
 // LikeHandler 点赞处理器
@@ -46,8 +47,14 @@ func (h *LikeHandler) LikePost(c *gin.Context) {
 		TargetType: "post",
 		TargetID:   uint(postID),
 	}
-	h.db.Create(&like)
-	h.db.Model(&models.Post{}).Where("id = ?", postID).Update("like_count", gorm.Expr("like_count + 1"))
+	if err := h.db.Create(&like).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
+		return
+	}
+	if err := h.db.Model(&models.Post{}).Where("id = ?", postID).Update("like_count", gorm.Expr("like_count + 1")).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
+		return
+	}
 	c.JSON(http.StatusCreated, like)
 }
 
@@ -62,7 +69,10 @@ func (h *LikeHandler) UnlikePost(c *gin.Context) {
 	}
 
 	if err := h.db.Where("user_id = ? AND target_type = ? AND target_id = ?", userID, "post", postID).Delete(&models.Like{}).Error; err == nil {
-		h.db.Model(&models.Post{}).Where("id = ?", postID).Update("like_count", gorm.Expr("GREATEST(like_count - 1, 0)"))
+		if err := h.db.Model(&models.Post{}).Where("id = ?", postID).Update("like_count", gorm.Expr("GREATEST(like_count - 1, 0)")).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
+			return
+		}
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "已取消点赞"})
 }
@@ -88,8 +98,14 @@ func (h *LikeHandler) LikeReply(c *gin.Context) {
 		TargetType: "reply",
 		TargetID:   uint(replyID),
 	}
-	h.db.Create(&like)
-	h.db.Model(&models.Reply{}).Where("id = ?", replyID).Update("like_count", gorm.Expr("like_count + 1"))
+	if err := h.db.Create(&like).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
+		return
+	}
+	if err := h.db.Model(&models.Reply{}).Where("id = ?", replyID).Update("like_count", gorm.Expr("like_count + 1")).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
+		return
+	}
 	c.JSON(http.StatusCreated, like)
 }
 
@@ -104,7 +120,10 @@ func (h *LikeHandler) UnlikeReply(c *gin.Context) {
 	}
 
 	if err := h.db.Where("user_id = ? AND target_type = ? AND target_id = ?", userID, "reply", replyID).Delete(&models.Like{}).Error; err == nil {
-		h.db.Model(&models.Reply{}).Where("id = ?", replyID).Update("like_count", gorm.Expr("GREATEST(like_count - 1, 0)"))
+		if err := h.db.Model(&models.Reply{}).Where("id = ?", replyID).Update("like_count", gorm.Expr("GREATEST(like_count - 1, 0)")).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
+			return
+		}
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "已取消点赞"})
 }

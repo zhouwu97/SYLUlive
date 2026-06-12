@@ -28,16 +28,20 @@ type Config struct {
 
 // Load 从环境变量加载配置
 func Load() *Config {
-	// 强制读取 /opt/shenliyuan/.env
-	content, err := os.ReadFile("/opt/shenliyuan/.env")
+	content, err := os.ReadFile(".env")
+	if err != nil {
+		content, err = os.ReadFile("/opt/shenliyuan/.env")
+	}
 	if err == nil {
 		lines := strings.Split(string(content), "\n")
 		for _, line := range lines {
 			line = strings.TrimSpace(line)
-			if strings.HasPrefix(line, "DSN=") {
-				os.Setenv("DSN", strings.TrimPrefix(line, "DSN="))
-			} else if strings.HasPrefix(line, "JWT_SECRET=") {
-				os.Setenv("JWT_SECRET", strings.TrimPrefix(line, "JWT_SECRET="))
+			if line == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+			parts := strings.SplitN(line, "=", 2)
+			if len(parts) == 2 {
+				os.Setenv(strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1]))
 			}
 		}
 	}

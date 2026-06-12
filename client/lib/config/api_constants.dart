@@ -16,7 +16,7 @@ class ApiConstants {
   // 极光推送 AppKey
   static const String jpushAppKey = String.fromEnvironment(
     'JPUSH_APP_KEY',
-    defaultValue: 'fbbd87f741e919f39519afe6', // 默认值作为降级，实际生产环境请通过 --dart-define 注入
+    defaultValue: '', // 必须通过 --dart-define 注入
   );
 
   /// 将服务端返回的相对路径转为完整 URL

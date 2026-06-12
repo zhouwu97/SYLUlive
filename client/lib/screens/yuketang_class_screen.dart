@@ -125,7 +125,7 @@ class _YuketangClassScreenState extends State<YuketangClassScreen> {
 
     if (!context.mounted) return;
 
-    showDialog(
+    await showDialog(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) {
@@ -276,6 +276,9 @@ class _YuketangClassScreenState extends State<YuketangClassScreen> {
         }
       ),
     );
+    keyCtrl.dispose();
+    urlCtrl.dispose();
+    modelCtrl.dispose();
   }
 
   @override

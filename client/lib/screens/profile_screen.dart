@@ -847,9 +847,9 @@ class _ProfileScreenState extends State<ProfileScreen>
     );
   }
 
-  void _showEditProfileDialog(BuildContext context, AuthProvider authProvider) {
+  Future<void> _showEditProfileDialog(BuildContext context, AuthProvider authProvider) async {
     final controller = TextEditingController(text: authProvider.user?.nickname);
-    showDialog(
+    await showDialog(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('编辑资料'),
@@ -877,6 +877,7 @@ class _ProfileScreenState extends State<ProfileScreen>
         ],
       ),
     );
+    controller.dispose();
   }
 
 
@@ -1018,11 +1019,11 @@ class _ProfileScreenState extends State<ProfileScreen>
       },
     );
   }
-  void _showFeedbackDialog(BuildContext context) {
+  Future<void> _showFeedbackDialog(BuildContext context) async {
     final controller = TextEditingController();
     bool isSubmitting = false;
 
-    showDialog(
+    await showDialog(
       context: context,
       builder: (dialogCtx) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(
@@ -1083,5 +1084,6 @@ class _ProfileScreenState extends State<ProfileScreen>
         ),
       ),
     );
+    controller.dispose();
   }
 }

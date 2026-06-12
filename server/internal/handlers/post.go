@@ -387,7 +387,9 @@ func (h *PostHandler) Create(c *gin.Context) {
 		}
 	}
 
-	h.db.Preload("Author").Preload("Images").Preload("Images.File").First(&post, post.ID)
+	if err := h.db.Preload("Author").Preload("Images").Preload("Images.File").First(&post, post.ID).Error; err != nil {
+		log.Printf("[DB_WARN] Failed to re-fetch post with preloads after create: %v", err)
+	}
 
 	// 集市发帖通知所有用户
 	if post.BoardID == models.BoardMarket {
@@ -510,7 +512,9 @@ func (h *PostHandler) Update(c *gin.Context) {
 		}
 	}
 
-	h.db.Preload("Author").Preload("Images").Preload("Images.File").First(&post, id)
+	if err := h.db.Preload("Author").Preload("Images").Preload("Images.File").First(&post, id).Error; err != nil {
+		log.Printf("[DB_WARN] Failed to re-fetch post with preloads after update: %v", err)
+	}
 	c.JSON(http.StatusOK, post)
 }
 

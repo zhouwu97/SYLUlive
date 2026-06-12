@@ -24,6 +24,7 @@ type User struct {
 	StudentID    string    `gorm:"uniqueIndex;size:50;not null" json:"student_id"` // 学号/邮箱
 	PasswordHash string    `gorm:"size:255;not null" json:"-"`                     // 密码哈希
 	Nickname     string    `gorm:"size:100" json:"nickname"`                       // 昵称
+	Gender       string    `gorm:"size:10;default:''" json:"gender"`               // "male"/"female"/"" (未知)
 	Avatar       string    `gorm:"size:500" json:"avatar"`                         // 头像URL
 	Background   string    `gorm:"size:500" json:"background"`                     // 背景图URL
 	NightMode    bool      `gorm:"default:false" json:"night_mode"`                // 夜间模式

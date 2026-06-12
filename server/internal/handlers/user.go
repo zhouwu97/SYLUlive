@@ -45,6 +45,7 @@ func (h *UserHandler) GetProfile(c *gin.Context) {
 // UpdateProfileInput 更新资料输入
 type UpdateProfileInput struct {
 	Nickname string `json:"nickname"`
+	Gender   string `json:"gender"`
 }
 
 // UpdateProfile 更新个人资料
@@ -61,7 +62,10 @@ func (h *UserHandler) UpdateProfile(c *gin.Context) {
 		return
 	}
 
-	if err := h.db.Model(&models.User{}).Where("id = ?", userID).Update("nickname", input.Nickname).Error; err != nil {
+	if err := h.db.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]interface{}{
+		"nickname": input.Nickname,
+		"gender":   input.Gender,
+	}).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
 		return
 	}

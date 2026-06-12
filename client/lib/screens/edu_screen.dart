@@ -13,6 +13,9 @@ class EduScreen extends StatefulWidget {
 }
 
 class _EduScreenState extends State<EduScreen> {
+  final _studentIdController = TextEditingController();
+  final _passwordController = TextEditingController();
+
   @override
   void initState() {
     super.initState();
@@ -23,6 +26,13 @@ class _EduScreenState extends State<EduScreen> {
         eduProvider.setUserId(authProvider.user!.id.toString());
       }
     });
+  }
+
+  @override
+  void dispose() {
+    _studentIdController.dispose();
+    _passwordController.dispose();
+    super.dispose();
   }
 
   @override
@@ -147,8 +157,8 @@ class _EduScreenState extends State<EduScreen> {
   }
 
   void _showBindDialog(BuildContext context, EduProvider eduProvider) {
-    final studentIdController = TextEditingController();
-    final passwordController = TextEditingController();
+    _studentIdController.clear();
+    _passwordController.clear();
     bool isBinding = false; // 本地加载状态
 
     showDialog(
@@ -160,7 +170,7 @@ class _EduScreenState extends State<EduScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               TextField(
-                controller: studentIdController,
+                controller: _studentIdController,
                 decoration: const InputDecoration(
                   labelText: '教务学号',
                   hintText: '请输入10位学号',
@@ -170,7 +180,7 @@ class _EduScreenState extends State<EduScreen> {
               ),
               const SizedBox(height: 16),
               TextField(
-                controller: passwordController,
+                controller: _passwordController,
                 decoration: const InputDecoration(
                   labelText: '教务密码',
                 ),
@@ -205,8 +215,8 @@ class _EduScreenState extends State<EduScreen> {
                   : () async {
                       setDialogState(() => isBinding = true);
                       final success = await eduProvider.bind(
-                        studentIdController.text,
-                        passwordController.text,
+                        _studentIdController.text,
+                        _passwordController.text,
                       );
                       if (context.mounted) {
                         Navigator.pop(context);

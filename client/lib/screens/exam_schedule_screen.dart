@@ -620,7 +620,7 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
                                       content: Text(
                                           '解析失败: ${e.toString().split('\n').first}')),
                                 );
-                              }
+  }
                             } else {
                               if (nameCtrl.text.trim().isEmpty) {
                                 ScaffoldMessenger.of(context).showSnackBar(
@@ -678,7 +678,11 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
             );
         },
       ),
-    );
+    ).then((_) {
+      nameCtrl.dispose();
+      locCtrl.dispose();
+      jsonController.dispose();
+    });
   }
 
   @override

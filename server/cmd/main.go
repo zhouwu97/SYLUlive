@@ -38,10 +38,8 @@ import (
 
 
 func main() {
-	// 强制设置时区为东八区（北京时间）
-	if loc, err := time.LoadLocation("Asia/Shanghai"); err == nil {
-		time.Local = loc
-	}
+	// 强制设置时区为东八区（北京时间），使用 FixedZone 确保在任何没有 tzdata 的系统上也能生效
+	time.Local = time.FixedZone("CST", 8*3600)
 
 	cfg := config.Load()
 

@@ -67,6 +67,7 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
     } catch (e) {
       if (mounted) {
         AppFeedback.showSnackBar(context, '网络异常或接口未部署，反馈提交失败', isError: true);
+        AppFeedback.showSnackBar(context, '反馈提交失败: $e', isError: true);
       }
     } finally {
       if (mounted) setState(() => _isSubmitting = false);

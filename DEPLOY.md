@@ -246,3 +246,88 @@ pgloader ./shenliyuan.db postgresql://postgres:你的密码@localhost:5432/shenl
 2. 选中 SQLite 里的所有表 -> 右键 -> **导出数据 (Export Data)**。
 3. 目标端选择你刚建好的 PostgreSQL 数据库。
 4. 勾选所有映射关系，点击下一步，它会自动帮你把数据 Copy 过去。
+
+---
+
+## 故障记录与排查指南
+
+### 2026-06-12 事故：登录显示"账号不存在"、帖子全部消失
+
+#### 根本原因
+
+`.env` 中的 `DSN` 配置错误。
+
+```
+# .env 里的错误配置
+DSN=sqlite.db
+
+# 正确配置应该是
+DSN=/opt/shenliyuan/shenliyuan.db
+```
+
+服务器代码 `config.go` 中的逻辑是：
+- 如果 DSN 为空 / `shenliyuan.db` / `./shenliyuan.db`，则自动指向 `/opt/shenliyuan/shenliyuan.db`
+- **但 `sqlite.db` 不匹配上述任何条件**，所以服务器直接把 `sqlite.db` 当作数据库文件名
+
+后果：服务器连接到了一个全新的空数据库 `sqlite.db`，而真正存有 73 个用户、65 条帖子的 `shenliyuan.db` 完全没被使用。
+
+#### 同时修复的其他问题
+
+| 问题 | 原因 | 修复方式 |
+|------|------|----------|
+| 首页一直转圈加载 | 服务器返回 `"posts": null`（Go nil slice），客户端 `as List` 强转崩溃 | 服务端 `post.go`：返回前 `if posts == nil { posts = []models.Post{} }`；客户端 `post_provider.dart`：改为 `as List? ?? []` |
+| 反馈提交 401 未登录 | `/api/feedback` 使用了 `AuthMiddleware`（强制登录） | `main.go` 改为 `OptionalAuthMiddleware` |
+| 编译报错 `undefined: time` | `main.go` 缺少 `"time"` 包导入 | import 区添加 `"time"` |
+
+#### 排查思路（通用）
+
+遇到"数据全没了"或"账号不存在"时，按以下顺序排查：
+
+**第一步：确认数据库文件**
+```bash
+# 查看数据库文件是否存在、大小、最后修改时间
+ls -lh /opt/shenliyuan/shenliyuan.db
+ls -lh /opt/shenliyuan/sqlite.db    # 看看有没有意外的数据库文件
+```
+
+**第二步：确认 .env 中 DSN 指向**
+```bash
+grep -i "DSN" /opt/shenliyuan/.env
+```
+确保 DSN 指向的是有数据的那个 `.db` 文件。
+
+**第三步：直接查数据库验证数据是否存在**
+```bash
+sqlite3 /opt/shenliyuan/shenliyuan.db "SELECT COUNT(*) FROM users;"
+sqlite3 /opt/shenliyuan/shenliyuan.db "SELECT COUNT(*) FROM posts;"
+# 查找具体账号
+sqlite3 /opt/shenliyuan/shenliyuan.db "SELECT id, student_id, nickname FROM users WHERE student_id = '你的学号';"
+```
+
+**第四步：看服务日志确认实际报错**
+```bash
+journalctl -u shenliyuan -n 50 --no-pager
+```
+关注以下关键信息：
+- `使用 SQLite 数据库` / `使用 PostgreSQL 数据库` — 确认连接的数据库类型
+- `record not found` — 说明查到了数据库但没找到记录
+- 具体的 SQL 语句 — 确认查的是哪张表、条件是什么
+
+**第五步：确认服务正常运行**
+```bash
+systemctl is-active shenliyuan
+ss -tlnp | grep 8080
+```
+
+#### 一键诊断脚本
+
+以后遇到类似问题，直接在服务器上跑这段：
+
+```bash
+echo "=== DSN配置 ===" && grep DSN /opt/shenliyuan/.env
+echo "=== 数据库文件 ===" && ls -lh /opt/shenliyuan/*.db 2>/dev/null
+echo "=== 用户数 ===" && sqlite3 /opt/shenliyuan/shenliyuan.db "SELECT COUNT(*) FROM users;" 2>/dev/null
+echo "=== 帖子数 ===" && sqlite3 /opt/shenliyuan/shenliyuan.db "SELECT COUNT(*) FROM posts;" 2>/dev/null
+echo "=== 服务状态 ===" && systemctl is-active shenliyuan
+echo "=== 最近错误 ===" && journalctl -u shenliyuan -n 10 --no-pager -p err
+```

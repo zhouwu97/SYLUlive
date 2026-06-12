@@ -4,9 +4,10 @@ import (
 	"net/http"
 	"strconv"
 
+	"shenliyuan/internal/models"
+
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
-	"shenliyuan/internal/models"
 )
 
 var majorLogDB *gorm.DB
@@ -34,36 +35,27 @@ func NewMajorHandler(db *gorm.DB) *MajorHandler {
 }
 
 func (h *MajorHandler) GetList(c *gin.Context) {
-	var majors []models.Major
-	if err := h.db.Where("verified = ?", true).Order("created_at DESC").Find(&majors).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取专业列表失败"})
-		return
-	}
-
 	type MajorWithStats struct {
 		models.Major
 		RatingCount int     `json:"rating_count"`
 		AverageStar float64 `json:"average_star"`
 	}
-	result := make([]MajorWithStats, 0, len(majors))
-	for _, m := range majors {
-		var count int64
-		var avg float64
-		h.db.Model(&models.MajorRating{}).Where("major_id = ?", m.ID).Count(&count)
-		if count > 0 {
-			h.db.Model(&models.MajorRating{}).Where("major_id = ?", m.ID).Select("AVG(CAST(star AS FLOAT))").Scan(&avg)
-		}
-		item := MajorWithStats{Major: m, RatingCount: int(count), AverageStar: avg}
-		result = append(result, item)
+	var result []MajorWithStats
+
+	// 修复 N+1 查询
+	err := h.db.Table("majors").
+		Select("majors.*, COUNT(major_ratings.id) as rating_count, COALESCE(AVG(CAST(major_ratings.star AS FLOAT)), 0) as average_star").
+		Joins("LEFT JOIN major_ratings ON major_ratings.major_id = majors.id").
+		Where("majors.verified = ?", true).
+		Group("majors.id").
+		Order("average_star DESC, rating_count DESC, majors.created_at DESC").
+		Find(&result).Error
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取专业列表失败"})
+		return
 	}
-	// 按平均分从高到低排序
-	for i := 0; i < len(result); i++ {
-		for j := i + 1; j < len(result); j++ {
-			if result[j].AverageStar > result[i].AverageStar {
-				result[i], result[j] = result[j], result[i]
-			}
-		}
-	}
+
 	c.JSON(http.StatusOK, result)
 }
 
@@ -75,7 +67,10 @@ func (h *MajorHandler) GetDetail(c *gin.Context) {
 		return
 	}
 	var ratings []models.MajorRating
-	h.db.Where("major_id = ?", id).Preload("User").Order("created_at DESC").Find(&ratings)
+	if err := h.db.Where("major_id = ?", id).Preload("User").Order("created_at DESC").Find(&ratings).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取评价列表失败"})
+		return
+	}
 	for i := range ratings {
 		if ratings[i].User != nil {
 			ratings[i].UserName = ratings[i].User.Nickname
@@ -154,14 +149,20 @@ func (h *MajorHandler) Rate(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"message": "评价已更新"})
 	} else {
 		rating = models.MajorRating{MajorID: uint(mid), UserID: userID.(uint), Star: input.Star, Comment: input.Comment}
-		h.db.Create(&rating)
+		if err := h.db.Create(&rating).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
+			return
+		}
 		c.JSON(http.StatusCreated, gin.H{"message": "评价成功"})
 	}
 }
 
 func (h *MajorHandler) Verify(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
-	h.db.Model(&models.Major{}).Where("id = ?", id).Update("verified", true)
+	if err := h.db.Model(&models.Major{}).Where("id = ?", id).Update("verified", true).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
+		return
+	}
 	var m models.Major
 	h.db.First(&m, id)
 	logMajorAdmin(c, "审核通过专业", m.Name)
@@ -172,7 +173,10 @@ func (h *MajorHandler) Reject(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	var m models.Major
 	h.db.First(&m, id)
-	h.db.Delete(&models.Major{}, id)
+	if err := h.db.Delete(&models.Major{}, id).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
+		return
+	}
 	logMajorAdmin(c, "拒绝专业", m.Name)
 	c.JSON(http.StatusOK, gin.H{"message": "已拒绝"})
 }
@@ -185,7 +189,10 @@ func (h *MajorHandler) DeleteMajor(c *gin.Context) {
 		return
 	}
 	h.db.Where("major_id = ?", id).Delete(&models.MajorRating{})
-	h.db.Delete(&models.Major{}, id)
+	if err := h.db.Delete(&models.Major{}, id).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
+		return
+	}
 	logMajorAdmin(c, "删除专业", m.Name)
 	c.JSON(http.StatusOK, gin.H{"message": "已删除"})
 }

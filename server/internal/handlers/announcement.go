@@ -5,9 +5,10 @@ import (
 	"strconv"
 	"time"
 
+	"shenliyuan/internal/models"
+
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
-	"shenliyuan/internal/models"
 )
 
 // AnnouncementHandler 公告处理器
@@ -23,14 +24,20 @@ func NewAnnouncementHandler(db *gorm.DB) *AnnouncementHandler {
 // GetList 获取公告列表
 func (h *AnnouncementHandler) GetList(c *gin.Context) {
 	var announcements []models.Announcement
-	h.db.Preload("Creator").Order("is_pinned DESC, created_at DESC").Find(&announcements)
+	if err := h.db.Preload("Creator").Order("is_pinned DESC, created_at DESC").Find(&announcements).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取公告列表失败"})
+		return
+	}
 	c.JSON(http.StatusOK, announcements)
 }
 
 // GetActive 获取置顶公告（用于首页展示）
 func (h *AnnouncementHandler) GetActive(c *gin.Context) {
 	var announcements []models.Announcement
-	h.db.Where("is_pinned = ?", true).Preload("Creator").Order("created_at DESC").Find(&announcements)
+	if err := h.db.Where("is_pinned = ?", true).Preload("Creator").Order("created_at DESC").Find(&announcements).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取公告列表失败"})
+		return
+	}
 	c.JSON(http.StatusOK, announcements)
 }
 

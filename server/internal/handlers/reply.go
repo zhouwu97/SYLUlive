@@ -190,7 +190,9 @@ func (h *ReplyHandler) Create(c *gin.Context) {
 		SendJPushNotification(h.jpushAppKey, h.jpushMasterSecret, h.db, post.AuthorID, userID.(uint), reply.ID, uint(postID), contentPreview)
 	}
 
-	h.db.Preload("Author").Preload("Images").Preload("Images.File").First(&reply, reply.ID)
+	if err := h.db.Preload("Author").Preload("Images").Preload("Images.File").First(&reply, reply.ID).Error; err != nil {
+		log.Printf("[DB_WARN] Failed to re-fetch reply with preloads after create: %v", err)
+	}
 	c.JSON(http.StatusCreated, reply)
 }
 

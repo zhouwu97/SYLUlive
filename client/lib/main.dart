@@ -299,21 +299,27 @@ class _BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
     final isAsset = !bgPath.startsWith('http') && !bgPath.startsWith('/');
     final resolvedPath = isAsset ? 'assets/images/$bgPath' : bgPath;
 
+    final isWide = MediaQuery.of(context).size.width > MediaQuery.of(context).size.height;
+    final alignment = isWide ? Alignment.topCenter : Alignment.center;
+
     final imageWidget = isAsset
         ? Image.asset(
             resolvedPath,
             fit: BoxFit.cover,
+            alignment: alignment,
             errorBuilder: (_, __, ___) => _buildDefaultBackground(isDark),
           )
         : bgPath.startsWith('/')
             ? Image.file(
                 File(bgPath),
                 fit: BoxFit.cover,
+                alignment: alignment,
                 errorBuilder: (_, __, ___) => _buildDefaultBackground(isDark),
               )
             : Image.network(
                 bgPath,
                 fit: BoxFit.cover,
+                alignment: alignment,
                 errorBuilder: (_, __, ___) => _buildDefaultBackground(isDark),
                 loadingBuilder: (_, child, loadingProgress) {
                   if (loadingProgress == null) return child;
@@ -346,6 +352,7 @@ class _BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
   }
 
   Widget _buildDefaultBackground(bool isDark) {
+    final isWide = MediaQuery.of(context).size.width > MediaQuery.of(context).size.height;
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -355,6 +362,7 @@ class _BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
             width: 1080,
           ),
           fit: BoxFit.cover,
+          alignment: isWide ? Alignment.topCenter : Alignment.center,
           gaplessPlayback: true,
           errorBuilder: (_, __, ___) => Container(
             decoration: BoxDecoration(

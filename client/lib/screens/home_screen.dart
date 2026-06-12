@@ -37,6 +37,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   int _currentIndex = 0;
+  final GlobalKey _contentKey = GlobalKey(debugLabel: 'homeContentStack');
   Timer? _announcementTimer;
   String? _announcementAuthKey;
   bool _isCheckingAnnouncements = false;
@@ -743,6 +744,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ? Padding(
               padding: EdgeInsets.only(bottom: 110 + bottomSafe),
               child: FloatingActionButton(
+                heroTag: 'home_fab',
                 onPressed: () => _openCreatePost(context),
                 backgroundColor: const Color(0xFF16A34A),
                 elevation: 4,
@@ -816,6 +818,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         Expanded(
           child: ClipRRect(
             child: FadeIndexedStack(
+              contentKey: _contentKey,
               index: _currentIndex,
               children: const [
                 ShuitieScreen(),
@@ -833,6 +836,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   Widget _buildNarrowLayout(double bottomSafe, AuthProvider authProvider) {
     return FadeIndexedStack(
+      contentKey: _contentKey,
       index: _currentIndex,
       children: const [
         ShuitieScreen(),
@@ -848,12 +852,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 class FadeIndexedStack extends StatefulWidget {
   final int index;
   final List<Widget> children;
+  final Key? contentKey;
   final Duration duration;
 
   const FadeIndexedStack({
     super.key,
     required this.index,
     required this.children,
+    this.contentKey,
     this.duration = const Duration(milliseconds: 250),
   });
 
@@ -890,6 +896,7 @@ class _FadeIndexedStackState extends State<FadeIndexedStack> with SingleTickerPr
     return FadeTransition(
       opacity: _controller,
       child: IndexedStack(
+        key: widget.contentKey,
         index: widget.index,
         children: widget.children,
       ),

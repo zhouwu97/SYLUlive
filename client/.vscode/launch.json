@@ -10,6 +10,7 @@
             "type": "dart",
             "program": "lib/main.dart",
             "toolArgs": [
+                "--no-enable-impeller",
                 "--dart-define=API_URL=http://localhost:8080/api",
                 "--dart-define=EDU_URL=http://localhost:8000",
                 "--dart-define=JPUSH_APP_KEY=fbbd87f741e919f39519afe6"
@@ -21,6 +22,7 @@
             "type": "dart",
             "program": "lib/main.dart",
             "toolArgs": [
+                "--no-enable-impeller",
                 "--dart-define=API_URL=http://156.233.229.232:8080/api",
                 "--dart-define=EDU_URL=http://101.42.27.44:8000",
                 "--dart-define=JPUSH_APP_KEY=fbbd87f741e919f39519afe6"

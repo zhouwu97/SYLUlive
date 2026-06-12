@@ -141,7 +141,10 @@ func (h *CheckInHandler) GetStatus(c *gin.Context) {
 	today := now.Format("2006-01-02")
 
 	var user models.User
-	h.db.Select("exp, last_check_in_date").First(&user, uid)
+	if err := h.db.Select("exp, last_check_in_date").First(&user, uid).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
+		return
+	}
 
 	checkedIn := user.LastCheckInDate == today
 	streakDays := 0

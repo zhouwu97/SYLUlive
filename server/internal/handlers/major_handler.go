@@ -20,7 +20,9 @@ func logMajorAdmin(c *gin.Context, action, target string) {
 	}
 	uid, _ := c.Get("user_id")
 	var u models.User
-	majorLogDB.Select("nickname").First(&u, uid)
+	if err := majorLogDB.Select("nickname").First(&u, uid).Error; err != nil {
+		u.Nickname = "Unknown Admin"
+	}
 	majorLogDB.Create(&models.AdminLog{AdminID: uid.(uint), AdminName: u.Nickname, Action: action, Target: target})
 	// 管理员操作经验+1
 	majorLogDB.Model(&models.User{}).Where("id = ?", uid).UpdateColumn("admin_exp", gorm.Expr("COALESCE(admin_exp, 0) + 1"))
@@ -159,12 +161,16 @@ func (h *MajorHandler) Rate(c *gin.Context) {
 
 func (h *MajorHandler) Verify(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
-	if err := h.db.Model(&models.Major{}).Where("id = ?", id).Update("verified", true).Error; err != nil {
+	var m models.Major
+	if err := h.db.First(&m, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "找不到该专业"})
+		return
+	}
+	
+	if err := h.db.Model(&m).Update("verified", true).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
 		return
 	}
-	var m models.Major
-	h.db.First(&m, id)
 	logMajorAdmin(c, "审核通过专业", m.Name)
 	c.JSON(http.StatusOK, gin.H{"message": "已审核通过"})
 }
@@ -172,7 +178,11 @@ func (h *MajorHandler) Verify(c *gin.Context) {
 func (h *MajorHandler) Reject(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	var m models.Major
-	h.db.First(&m, id)
+	if err := h.db.First(&m, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "找不到该专业"})
+		return
+	}
+	
 	if err := h.db.Delete(&models.Major{}, id).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
 		return

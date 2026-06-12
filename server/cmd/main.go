@@ -11,7 +11,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/glebarez/sqlite"
+	"gorm.io/driver/sqlite"
 
 	"golang.org/x/crypto/bcrypt"
 

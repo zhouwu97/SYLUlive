@@ -4,13 +4,13 @@ class ApiConstants {
   // 通过 --dart-define 注入 API 地址，例如：--dart-define=API_URL=http://localhost:8080/api
   static const String baseUrl = String.fromEnvironment(
     'API_URL',
-    defaultValue: kIsWeb ? 'http://localhost:8080/api' : 'http://10.0.2.2:8080/api',
+    defaultValue: 'http://156.233.229.232:8080/api',
   );
 
   // Python 教务服务（绑定、课表、成绩）
   static const String eduServiceUrl = String.fromEnvironment(
     'EDU_URL',
-    defaultValue: kIsWeb ? 'http://localhost:8000' : 'http://10.0.2.2:8000',
+    defaultValue: 'http://101.42.27.44:8000',
   );
 
   // 极光推送 AppKey

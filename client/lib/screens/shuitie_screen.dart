@@ -267,8 +267,11 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     final modeAtStart = _feedMode;
     final sortAtStart = _currentSort;
     final postProvider = context.read<PostProvider>();
-    await postProvider.refresh(boardId: 1, sort: sortAtStart);
-    await postProvider.refresh(boardId: 2, sort: 'time');
+    await Future.wait([
+      postProvider.refresh(boardId: 1, sort: sortAtStart),
+      postProvider.refresh(boardId: 2, sort: 'time'),
+      _loadCheckinStatus(),
+    ]);
     if (!mounted) return;
     // 如果在刷新期间用户已切换了模式，丢弃本次结果，避免数据污染
     if (_feedMode != modeAtStart) return;
@@ -792,9 +795,11 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       child: Row(
         children: [
           Expanded(child: _buildActionItem(
-            icon: Icons.task_alt_rounded, iconColor: const Color(0xFF16A34A),
-            iconBg: const Color(0xFF16A34A).withValues(alpha: 0.12),
-            title: '签到', subtitle: _checkedIn ? '已签到·连续${_streakDays}天' : '每日一次',
+            icon: Icons.task_alt_rounded, 
+            iconColor: _checkedIn ? Colors.grey : const Color(0xFF16A34A),
+            iconBg: (_checkedIn ? Colors.grey : const Color(0xFF16A34A)).withValues(alpha: 0.12),
+            title: _checkedIn ? '已签到' : '签到', 
+            subtitle: _checkedIn ? '连续${_streakDays}天' : '每日一次',
             isDark: isDark, onTap: _doCheckIn,
           )),
           _buildDivider(isDark),

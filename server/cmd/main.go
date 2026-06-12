@@ -38,6 +38,10 @@ import (
 
 
 func main() {
+	// 强制设置时区为东八区（北京时间）
+	if loc, err := time.LoadLocation("Asia/Shanghai"); err == nil {
+		time.Local = loc
+	}
 
 	cfg := config.Load()
 

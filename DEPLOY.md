@@ -55,11 +55,11 @@ journalctl -u shenliyuan -n 50 --no-pager
 以后线上更新统一使用下面这套命令：
 `
 ```bash
-    cd /opt/shenliyuan
-    git pull origin fwqtest
-    cd /opt/shenliyuan/server
-    go build -o /opt/shenliyuan/shenliyuan ./cmd/main.go
-    systemctl restart shenliyuan
+cd /opt/shenliyuan
+git pull origin fwqtest
+cd /opt/shenliyuan/server
+go build -o /opt/shenliyuan/shenliyuan ./cmd/main.go
+systemctl restart shenliyuan
 ```
 `
 更新后立即验证：
@@ -236,7 +236,7 @@ DSN=host=127.0.0.1 user=postgres password=你的密码 dbname=shenliyuan port=54
 pgloader 是一款专门用于向 PostgreSQL 导入数据的开源工具，原生支持直接从 SQLite 读取并转储到 PostgreSQL。
 `
 在 Linux/macOS 上安装后执行一条命令即可完成整库迁移：
-`ash
+`bash
 pgloader ./shenliyuan.db postgresql://postgres:你的密码@localhost:5432/shenliyuan
 `
 *注意：使用 pgloader 前，建议先让 Go 服务连上 PostgreSQL 跑一次，让 GORM 自动建好表结构，然后再清空表导入，或者直接让 pgloader 建表。*

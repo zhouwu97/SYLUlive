@@ -424,7 +424,14 @@ func (h *SuperAdminHandler) RevokeAdminExp(c *gin.Context) {
 
 		var operator models.User
 
-		h.db.Select("role").First(&operator, operatorID)
+		if err := h.db.Select("role").First(&operator, operatorID).Error; err != nil {
+			if err == gorm.ErrRecordNotFound {
+				c.JSON(http.StatusForbidden, gin.H{"error": "无权追回超级管理员的经验"})
+			} else {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库错误"})
+			}
+			return
+		}
 
 		if operator.Role != "super_admin" {
 
@@ -463,7 +470,9 @@ func (h *SuperAdminHandler) RevokeAdminExp(c *gin.Context) {
 
 	var operator models.User
 
-	h.db.Select("nickname").First(&operator, operatorID)
+	if err := h.db.Select("nickname").First(&operator, operatorID).Error; err != nil {
+		operator.Nickname = "Unknown Admin"
+	}
 
 	h.db.Create(&models.AdminLog{
 

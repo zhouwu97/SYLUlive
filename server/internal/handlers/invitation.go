@@ -125,7 +125,9 @@ func (h *InvitationHandler) DirectPromote(c *gin.Context) {
 
 	var admin models.User
 
-	h.db.Select("nickname").First(&admin, adminID)
+	if err := h.db.Select("nickname").First(&admin, adminID).Error; err != nil {
+		admin.Nickname = "Unknown Admin"
+	}
 
 	if err := h.db.Create(&models.AdminLog{AdminID: adminID.(uint), AdminName: admin.Nickname, Action: "直接提升管理员", Target: user.Nickname, Detail: user.StudentID}).Error; err != nil {
 		log.Printf("[DB_WARN] Failed to write side-effect record: %v", err)
@@ -237,7 +239,9 @@ func (h *InvitationHandler) Create(c *gin.Context) {
 
 	var admin models.User
 
-	h.db.Select("nickname").First(&admin, adminID)
+	if err := h.db.Select("nickname").First(&admin, adminID).Error; err != nil {
+		admin.Nickname = "Unknown Admin"
+	}
 
 	if err := h.db.Create(&models.AdminLog{AdminID: adminID.(uint), AdminName: admin.Nickname, Action: "邀请管理员", Target: user.Nickname, Detail: strings.TrimSpace(input.Reason)}).Error; err != nil {
 		log.Printf("[DB_WARN] Failed to write side-effect record: %v", err)

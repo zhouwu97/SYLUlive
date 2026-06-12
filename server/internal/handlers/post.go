@@ -99,6 +99,9 @@ func (h *PostHandler) GetList(c *gin.Context) {
 
 					// 直接返回，不再走正常查询
 					h.fillLikes(c, posts)
+					if posts == nil {
+						posts = []models.Post{}
+					}
 					c.JSON(http.StatusOK, gin.H{
 						"posts":      posts,
 						"total":      len(snapshot.PostIDs),
@@ -247,6 +250,9 @@ func (h *PostHandler) GetList(c *gin.Context) {
 	}
 
 	h.fillLikes(c, posts)
+	if posts == nil {
+		posts = []models.Post{}
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"posts":      posts,

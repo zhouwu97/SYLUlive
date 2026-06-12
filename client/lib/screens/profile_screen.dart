@@ -24,6 +24,7 @@ import 'edu_screen.dart';
 import 'exam_extract_screen.dart';
 import 'login_screen.dart';
 import 'my_content_screen.dart';
+import 'chat_list_screen.dart';
 import 'admin_panel_screen.dart';
 import 'super_admin_screen.dart';
 import 'admin_members_screen.dart';
@@ -710,15 +711,15 @@ class _ProfileScreenState extends State<ProfileScreen>
   Widget _buildMyContentSection(BuildContext context, bool isDark) {
     final items = [
       _buildSettingsRow(child: _buildSettingsTile(
-        icon: Icons.article_outlined,
-        iconColor: const Color(0xFF6366F1),
-        title: '我的内容',
-        subtitle: '管理发布的帖子与集市物品',
+        icon: Icons.chat_outlined,
+        iconColor: const Color(0xFF10B981),
+        title: '私信',
+        subtitle: '查看私信与系统通知',
         isDark: isDark,
         onTap: () {
           Navigator.push(
             context,
-            MaterialPageRoute(builder: (_) => const MyContentScreen()),
+            MaterialPageRoute(builder: (_) => const ChatListScreen()),
           );
         },
       )),

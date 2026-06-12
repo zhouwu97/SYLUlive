@@ -161,8 +161,7 @@ func (h *UserHandler) GetUserInfo(c *gin.Context) {
 	isFollowing := false
 	if exists {
 		var count int64
-		// 使用 EXISTS 子查询优化
-		h.db.Raw("SELECT EXISTS(SELECT 1 FROM user_follows WHERE follower_id = ? AND following_id = ?)", currentUserID, targetID).Scan(&count)
+		h.db.Model(&models.UserFollow{}).Where("follower_id = ? AND following_id = ?", currentUserID, targetID).Count(&count)
 		isFollowing = count > 0
 	}
 	user.IsFollowing = isFollowing
@@ -196,6 +195,23 @@ func (h *UserHandler) GetFollowing(c *gin.Context) {
 	users := make([]models.User, 0)
 	if len(userIDs) > 0 {
 		h.db.Where("id IN ?", userIDs).Find(&users)
+
+		// 填充 IsFollowing
+		currentUserIDAny, exists := c.Get("user_id")
+		if exists {
+			currentUserID := currentUserIDAny.(uint)
+			var followingIDs []uint
+			h.db.Model(&models.UserFollow{}).Where("follower_id = ? AND following_id IN ?", currentUserID, userIDs).Pluck("following_id", &followingIDs)
+			
+			followingMap := make(map[uint]bool)
+			for _, id := range followingIDs {
+				followingMap[id] = true
+			}
+			
+			for i := range users {
+				users[i].IsFollowing = followingMap[users[i].ID]
+			}
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -232,6 +248,23 @@ func (h *UserHandler) GetFollowers(c *gin.Context) {
 	users := make([]models.User, 0)
 	if len(userIDs) > 0 {
 		h.db.Where("id IN ?", userIDs).Find(&users)
+
+		// 填充 IsFollowing
+		currentUserIDAny, exists := c.Get("user_id")
+		if exists {
+			currentUserID := currentUserIDAny.(uint)
+			var followingIDs []uint
+			h.db.Model(&models.UserFollow{}).Where("follower_id = ? AND following_id IN ?", currentUserID, userIDs).Pluck("following_id", &followingIDs)
+			
+			followingMap := make(map[uint]bool)
+			for _, id := range followingIDs {
+				followingMap[id] = true
+			}
+			
+			for i := range users {
+				users[i].IsFollowing = followingMap[users[i].ID]
+			}
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{

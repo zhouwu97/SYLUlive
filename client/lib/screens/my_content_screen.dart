@@ -15,6 +15,9 @@ import 'dart:io' show File;
 class MyContentScreen extends StatefulWidget {
   const MyContentScreen({super.key});
 
+  // 全局共享的帖子数量缓存，用于个人主页秒开显示
+  static int? globalPostCount;
+
   @override
   State<MyContentScreen> createState() => _MyContentScreenState();
 }
@@ -25,7 +28,11 @@ class _MyContentScreenState extends State<MyContentScreen>
   bool _isSelectionMode = false;
   final Set<int> _selectedIds = {};
 
-  // 数据
+  // 数据缓存
+  static List<Post>? _cachedMyPosts;
+  static List<Post>? _cachedMyMarketPosts;
+  static DateTime? _lastFetchTime;
+
   List<Post> _myPosts = [];
   List<Post> _myMarketPosts = [];
   bool _isLoading = true;
@@ -35,8 +42,17 @@ class _MyContentScreenState extends State<MyContentScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    
+    if (_cachedMyPosts != null) {
+      _myPosts = _cachedMyPosts!;
+      _myMarketPosts = _cachedMyMarketPosts!;
+      _isLoading = false;
+    }
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _loadData();
+      if (_cachedMyPosts == null || _lastFetchTime == null || DateTime.now().difference(_lastFetchTime!).inMinutes > 5) {
+        _loadData(silent: _cachedMyPosts != null);
+      }
     });
   }
 
@@ -46,8 +62,8 @@ class _MyContentScreenState extends State<MyContentScreen>
     super.dispose();
   }
 
-  Future<void> _loadData() async {
-    if (mounted) setState(() {
+  Future<void> _loadData({bool silent = false}) async {
+    if (!silent && mounted) setState(() {
       _isLoading = true;
       _errorMessage = null;
     });
@@ -65,15 +81,19 @@ class _MyContentScreenState extends State<MyContentScreen>
       // 直接从 API 获取用户所有帖子，不走 PostProvider 的 board 分页
       final res = await authProvider.dio.get('/user/$currentUserId/posts',
           queryParameters: {'limit': '999'});
-      final allPosts = (res.data as List)
+      final data = res.data is Map ? res.data['data'] : res.data;
+      final allPosts = (data as List)
           .map((e) => Post.fromJson(e as Map<String, dynamic>))
           .toList();
 
       // 按 board 拆分
-      _myPosts = allPosts.where((p) => p.boardId != 2).toList();
-      _myMarketPosts = allPosts.where((p) => p.boardId == 2).toList();
-
       if (mounted) setState(() {
+        _myPosts = allPosts.where((p) => p.boardId != 2).toList();
+        _myMarketPosts = allPosts.where((p) => p.boardId == 2).toList();
+        _cachedMyPosts = _myPosts;
+        _cachedMyMarketPosts = _myMarketPosts;
+        MyContentScreen.globalPostCount = _myPosts.length + _myMarketPosts.length;
+        _lastFetchTime = DateTime.now();
         _isLoading = false;
       });
     } catch (e) {

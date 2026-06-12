@@ -234,7 +234,9 @@ func (h *ReplyHandler) Delete(c *gin.Context) {
 	// 管理员删除他人回复时，记录日志并增加经验
 	if reply.AuthorID != userID.(uint) && (role == "admin" || role == "super_admin") {
 		var u models.User
-		h.db.Select("nickname").First(&u, userID)
+		if err := h.db.Select("nickname").First(&u, userID).Error; err != nil {
+			u.Nickname = "Unknown Admin"
+		}
 		if err := h.db.Create(&models.AdminLog{
 			AdminID: userID.(uint), AdminName: u.Nickname,
 			Action: "删除回复", Target: reply.Content,
@@ -316,7 +318,10 @@ func (h *ReplyHandler) GetMeList(c *gin.Context) {
 			PostContent: "",
 		}
 		if r.PostID != 0 {
-			h.db.Model(&models.Post{}).Select("title", "content").First(&result[i], r.PostID)
+			if err := h.db.Model(&models.Post{}).Select("title", "content").First(&result[i], r.PostID).Error; err != nil {
+				result[i].PostTitle = "[原帖已被删除]"
+				result[i].PostContent = "..."
+			}
 		}
 	}
 

@@ -1,17 +1,13 @@
 package main
 
-
-
 import (
-
 	"errors"
 	"log"
 	"net/http"
 	"os"
 	"strings"
+	"time"
 	_ "time/tzdata"
-
-
 
 	"github.com/gin-gonic/gin"
 
@@ -32,10 +28,7 @@ import (
 	"shenliyuan/internal/models"
 
 	"shenliyuan/internal/tasks"
-
 )
-
-
 
 func main() {
 	// 强制设置时区为东八区（北京时间），使用 FixedZone 确保在任何没有 tzdata 的系统上也能生效
@@ -43,13 +36,9 @@ func main() {
 
 	cfg := config.Load()
 
-
-
 	// 确保上传目录存在
 
 	os.MkdirAll(cfg.UploadDir, 0755)
-
-
 
 	var db *gorm.DB
 
@@ -176,13 +165,11 @@ func main() {
 
 	r := gin.Default()
 
-
-
 	// CORS中间件
 
 	r.Use(func(c *gin.Context) {
 
-				origin := c.GetHeader("Origin")
+		origin := c.GetHeader("Origin")
 		if origin != "" {
 			c.Header("Access-Control-Allow-Origin", origin)
 			c.Header("Access-Control-Allow-Credentials", "true")
@@ -205,8 +192,6 @@ func main() {
 		c.Next()
 
 	})
-
-
 
 	// 初始化处理器
 
@@ -260,8 +245,6 @@ func main() {
 
 	vipHandler := handlers.NewVipHandler(db)
 
-
-
 	// 初始化教务服务配置
 
 	handlers.EduServiceConfig.BaseURL = cfg.EduServiceURL
@@ -278,19 +261,13 @@ func main() {
 
 	handlers.SetMajorLogDB(db)
 
-
-
 	// 启动后台定时任务
 
 	tasks.StartLotteryCron(db)
 
-
-
 	// 静态文件服务
 
 	r.Static("/uploads", cfg.UploadDir)
-
-
 
 	// 认证路由
 
@@ -328,8 +305,6 @@ func main() {
 	{
 		ai.POST("/solve", aiSolveHandler.Solve)
 	}
-
-
 
 	// 用户路由
 
@@ -371,8 +346,6 @@ func main() {
 
 	}
 
-
-
 	// 帖子路由
 
 	posts := r.Group("/api/posts")
@@ -407,8 +380,6 @@ func main() {
 
 	}
 
-
-
 	// 回复路由（带认证）
 
 	replies := r.Group("/api/replies")
@@ -422,8 +393,6 @@ func main() {
 		replies.GET("/me", replyHandler.GetMeList)
 
 	}
-
-
 
 	// 点赞路由
 
@@ -443,8 +412,6 @@ func main() {
 
 	}
 
-
-
 	// 私信路由
 
 	messages := r.Group("/api/messages")
@@ -462,8 +429,6 @@ func main() {
 		messages.DELETE("/conversations/:id", messageHandler.DeleteConversation)
 
 	}
-
-
 
 	// 公告路由
 
@@ -505,8 +470,6 @@ func main() {
 
 	}
 
-
-
 	// 举报路由
 
 	reports := r.Group("/api/reports")
@@ -531,8 +494,6 @@ func main() {
 
 	}
 
-
-
 	// 申诉路由
 
 	appeals := r.Group("/api/appeals")
@@ -548,8 +509,6 @@ func main() {
 		appeals.POST("/:id/vote", appealHandler.Vote)
 
 	}
-
-
 
 	// 管理员邀请路由
 
@@ -583,15 +542,11 @@ func main() {
 
 	}
 
-
-
 	// 上传路由
 
 	r.POST("/api/upload", middleware.AuthMiddleware(db, cfg.JWTSecret), uploadHandler.Upload)
 
 	r.POST("/api/upload_multiple", middleware.AuthMiddleware(db, cfg.JWTSecret), uploadHandler.UploadMultiple)
-
-
 
 	// 教务系统路由
 
@@ -612,8 +567,6 @@ func main() {
 		edu.POST("/pre_verify", eduHandler.PreVerify) // 注册前验证教务账号
 
 	}
-
-
 
 	// 超级管理员路由
 
@@ -658,33 +611,23 @@ func main() {
 	// VIP 状态查询路由（普通用户，需登录）
 	r.GET("/api/vip/status", middleware.AuthMiddleware(db, cfg.JWTSecret), vipHandler.CheckVip)
 
-
-
 	// 题库提取路由
 
 	r.POST("/api/exam/extract", middleware.AuthMiddleware(db, cfg.JWTSecret), examHandler.Extract)
-
-
 
 	// 二课查询路由
 
 	r.POST("/api/erke/scores", middleware.AuthMiddleware(db, cfg.JWTSecret), erkeHandler.GetScores)
 
-
-
 	// 用户反馈路由
 
-	r.POST("/api/feedback", middleware.AuthMiddleware(db, cfg.JWTSecret), feedbackHandler.Submit)
-
-
+	r.POST("/api/feedback", middleware.OptionalAuthMiddleware(db, cfg.JWTSecret), feedbackHandler.Submit)
 
 	// 教程页面路由（公开读，管理员写）
 
 	r.GET("/api/tutorial/:key", tutorialHandler.Get)
 
 	r.PUT("/api/tutorial/:key", middleware.AuthMiddleware(db, cfg.JWTSecret), middleware.AdminMiddleware(), tutorialHandler.Update)
-
-
 
 	// 避雷版块 - 教师路由
 
@@ -742,8 +685,6 @@ func main() {
 
 	}
 
-
-
 	// 专业榜路由
 
 	major := r.Group("/api/majors")
@@ -784,8 +725,6 @@ func main() {
 
 	}
 
-
-
 	// 食堂榜路由
 
 	canteen := r.Group("/api/canteens")
@@ -820,8 +759,6 @@ func main() {
 
 	}
 
-
-
 	// 违规管理
 
 	violation := r.Group("/api/violations")
@@ -848,8 +785,6 @@ func main() {
 
 	}
 
-
-
 	// 抽奖路由
 
 	lotteryGroup := r.Group("/api/lottery")
@@ -874,33 +809,28 @@ func main() {
 
 	}
 
-
-
 	// 版本信息
 
 	r.GET("/api/version", func(c *gin.Context) {
 
 		c.JSON(http.StatusOK, gin.H{
 
-			"version":             "1.4.0",
+			"version": "1.4.0",
 
-			"min_version":         "1.4.0", // 增加最低版本限制，低于此版本的客户端将被强制更新
+			"min_version": "1.4.0", // 增加最低版本限制，低于此版本的客户端将被强制更新
 
-			"force_update":        false, // 保留兼容旧版逻辑
+			"force_update": false, // 保留兼容旧版逻辑
 
-			"download_url":        "https://github.com/zhouwu97/SYLUlive/releases",
+			"download_url": "https://github.com/zhouwu97/SYLUlive/releases",
 
 			"github_download_url": "https://github.com/zhouwu97/SYLUlive/releases",
 
-			"gitee_download_url":  "https://gitee.com/chunhezi/SYLUlive/releases",
+			"gitee_download_url": "https://gitee.com/chunhezi/SYLUlive/releases",
 
-			"update_msg":          "新版本可用，本次更新包含了重要功能，请务必更新。",
-
+			"update_msg": "新版本可用，本次更新包含了重要功能，请务必更新。",
 		})
 
 	})
-
-
 
 	log.Println("服务器启动在 :8080")
 
@@ -911,8 +841,6 @@ func main() {
 	}
 
 }
-
-
 
 // ensureSystemSuperAdmin 确保系统只有指定超级管理员种子账号。
 
@@ -928,12 +856,11 @@ func ensureSystemSuperAdmin(db *gorm.DB, studentID, password string) {
 
 			"password_hash": string(hashedPassword),
 
-			"nickname":      "超级管理员",
+			"nickname": "超级管理员",
 
-			"role":          models.RoleSuperAdmin,
+			"role": models.RoleSuperAdmin,
 
-			"credit_score":  100,
-
+			"credit_score": 100,
 		})
 
 	} else {
@@ -942,27 +869,22 @@ func ensureSystemSuperAdmin(db *gorm.DB, studentID, password string) {
 
 		user := models.User{
 
-			StudentID:    studentID,
+			StudentID: studentID,
 
 			PasswordHash: string(hashedPassword),
 
-			Nickname:     "超级管理员",
+			Nickname: "超级管理员",
 
-			Role:         models.RoleSuperAdmin,
+			Role: models.RoleSuperAdmin,
 
-			CreditScore:  100,
-
+			CreditScore: 100,
 		}
 
 		db.Create(&user)
 
 	}
 
-
-
 	// 已移除硬编码提升超级管理员代码
-
-
 
 	// 移除将其他超级管理员降级的代码，允许多个超级管理员共存
 
@@ -972,20 +894,13 @@ func ensureSystemSuperAdmin(db *gorm.DB, studentID, password string) {
 
 	// 	Update("role", models.RoleUser)
 
-
-
 	db.Model(&models.User{}).
-
 		Where("student_id = ? AND role = ?", "admin", models.RoleAdmin).
-
 		Update("role", models.RoleUser)
-
-
 
 	log.Printf("系统超级管理员已就绪: %s", studentID)
 
 }
-
 
 // 注意：每次重启服务均会重置该配置，如需永久修改请直接更改此处硬编码
 // ensureInjectScript 确保数据库里有一份基础的拦截脚本
@@ -1289,7 +1204,6 @@ func ensureInjectScript(db *gorm.DB) {
     window.XMLHttpRequest = newXHR;
 })();`
 
-	
 	var config models.SystemConfig
 	if err := db.Where("config_key = ?", "yuketang_inject_js").First(&config).Error; err != nil {
 		db.Create(&models.SystemConfig{

@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:add_2_calendar/add_2_calendar.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:file_picker/file_picker.dart';
 import '../widgets/glass_container.dart';
 
 // 定义考试模型
@@ -221,6 +222,55 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('导出失败: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _importExams() async {
+    try {
+      FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.any,
+      );
+
+      if (result != null && result.files.single.path != null) {
+        final file = File(result.files.single.path!);
+        final content = await file.readAsString();
+        final Map<String, dynamic> data = jsonDecode(content);
+        
+        if (data.containsKey('exams') && data['exams'] is List) {
+          final List<dynamic> examsJson = data['exams'];
+          final List<ExamModel> importedExams = 
+              examsJson.map((e) => ExamModel.fromJson(e)).toList();
+          
+          if (mounted) {
+            setState(() {
+              int addedCount = 0;
+              for (var newExam in importedExams) {
+                bool exists = _exams.any((e) => 
+                    e.name == newExam.name && e.startTime == newExam.startTime);
+                if (!exists) {
+                  _exams.add(newExam);
+                  addedCount++;
+                }
+              }
+              _exams.sort((a, b) => a.startTime.compareTo(b.startTime));
+              
+              _saveToLocal();
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('成功导入 $addedCount 场考试安排！')),
+              );
+            });
+          }
+        } else {
+          throw Exception('文件格式不正确，缺少考试数据');
+        }
+      }
+    } catch (e) {
+      debugPrint('导入考试存档失败: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('导入失败: $e')),
         );
       }
     }
@@ -751,7 +801,12 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
         elevation: 0,
         actions: [
           IconButton(
-            icon: const Icon(Icons.download),
+            icon: const Icon(Icons.file_upload_outlined),
+            tooltip: '导入存档',
+            onPressed: _importExams,
+          ),
+          IconButton(
+            icon: const Icon(Icons.file_download_outlined),
             tooltip: '导出存档',
             onPressed: _exportExams,
           ),

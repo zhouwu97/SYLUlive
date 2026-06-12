@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"log"
 	"net/http"
 	"strconv"
 	"time"
@@ -91,7 +92,9 @@ func (h *AnnouncementHandler) Create(c *gin.Context) {
 	// 管理员创建公告，经验+1
 	h.db.Model(&models.User{}).Where("id = ?", userID).UpdateColumn("admin_exp", gorm.Expr("COALESCE(admin_exp, 0) + 1"))
 
-	h.db.Preload("Creator").First(&announcement, announcement.ID)
+	if err := h.db.Preload("Creator").First(&announcement, announcement.ID).Error; err != nil {
+		log.Printf("[DB_WARN] Failed to re-fetch announcement with creator after create: %v", err)
+	}
 	c.JSON(http.StatusCreated, announcement)
 }
 
@@ -134,8 +137,13 @@ func (h *AnnouncementHandler) Update(c *gin.Context) {
 		updates["is_pinned"] = *input.IsPinned
 	}
 
-	h.db.Model(&announcement).Updates(updates)
-	h.db.Preload("Creator").First(&announcement, id)
+	if err := h.db.Model(&announcement).Updates(updates).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新公告失败"})
+		return
+	}
+	if err := h.db.Preload("Creator").First(&announcement, id).Error; err != nil {
+		log.Printf("[DB_WARN] Failed to re-fetch announcement with creator after update: %v", err)
+	}
 	c.JSON(http.StatusOK, announcement)
 }
 

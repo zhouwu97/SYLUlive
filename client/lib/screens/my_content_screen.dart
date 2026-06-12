@@ -70,7 +70,7 @@ class _MyContentScreenState extends State<MyContentScreen>
           .toList();
 
       // 按 board 拆分
-      _myPosts = allPosts.where((p) => p.boardId == 1).toList();
+      _myPosts = allPosts.where((p) => p.boardId != 2).toList();
       _myMarketPosts = allPosts.where((p) => p.boardId == 2).toList();
 
       if (mounted) setState(() {

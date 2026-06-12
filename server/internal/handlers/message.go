@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"log"
 	"net/http"
 	"strconv"
 
@@ -140,7 +141,9 @@ func (h *MessageHandler) Send(c *gin.Context) {
 		return
 	}
 
-	h.db.Preload("Sender").Preload("File").First(&message, message.ID)
+	if err := h.db.Preload("Sender").Preload("File").First(&message, message.ID).Error; err != nil {
+		log.Printf("[DB_WARN] Failed to re-fetch message with sender/file after create: %v", err)
+	}
 	c.JSON(http.StatusCreated, message)
 }
 

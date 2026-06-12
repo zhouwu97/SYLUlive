@@ -661,7 +661,7 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
       });
   }
 
-  void _showAddDialog() {
+  Future<void> _showAddDialog() async {
     final nameCtrl = TextEditingController();
     final courseCtrl = TextEditingController();
     final levelCtrl = TextEditingController(text: '本科');
@@ -670,7 +670,7 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
     final isTeacher = _tabCtrl.index == 1;
     final isMajor = _tabCtrl.index == 2;
 
-    showDialog(
+    await showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text(isTeacher ? '添加教师' : (isMajor ? '添加专业' : '添加食堂')),
@@ -762,6 +762,10 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
         ],
       ),
     );
+
+    nameCtrl.dispose();
+    courseCtrl.dispose();
+    levelCtrl.dispose();
   }
 
   Color _rankColor(int index) {

@@ -6,10 +6,11 @@ import (
 	"strconv"
 	"time"
 
+	"shenliyuan/internal/models"
+
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
-	"shenliyuan/internal/models"
 )
 
 // CheckInHandler 签到处理器

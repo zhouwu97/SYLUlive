@@ -11,7 +11,8 @@
             "program": "lib/main.dart",
             "toolArgs": [
                 "--dart-define=API_URL=http://localhost:8080/api",
-                "--dart-define=EDU_URL=http://localhost:8000"
+                "--dart-define=EDU_URL=http://localhost:8000",
+                "--dart-define=JPUSH_APP_KEY=fbbd87f741e919f39519afe6"
             ]
         },
         {
@@ -21,7 +22,8 @@
             "program": "lib/main.dart",
             "toolArgs": [
                 "--dart-define=API_URL=https://sylu.zhouwu.ccwu.cc/api",
-                "--dart-define=EDU_URL=http://101.42.27.44:8000"
+                "--dart-define=EDU_URL=http://101.42.27.44:8000",
+                "--dart-define=JPUSH_APP_KEY=fbbd87f741e919f39519afe6"
             ]
         }
     ]

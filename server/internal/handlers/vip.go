@@ -5,9 +5,10 @@ import (
 	"strconv"
 	"time"
 
+	"shenliyuan/internal/models"
+
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
-	"shenliyuan/internal/models"
 )
 
 // VipHandler VIP 权限处理器
@@ -73,7 +74,10 @@ func (h *VipHandler) GrantVip(c *gin.Context) {
 		newExpiry = now.Add(time.Duration(input.Days) * 24 * time.Hour)
 	}
 
-	h.db.Model(&user).Update("vip_expiry", newExpiry)
+	if err := h.db.Model(&user).Update("vip_expiry", newExpiry).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"message":    "VIP 授予成功",
@@ -98,7 +102,10 @@ func (h *VipHandler) RevokeVip(c *gin.Context) {
 		return
 	}
 
-	h.db.Model(&user).Update("vip_expiry", nil)
+	if err := h.db.Model(&user).Update("vip_expiry", nil).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"message":    "VIP 已撤销",
 		"user_id":    user.ID,

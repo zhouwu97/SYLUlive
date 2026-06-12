@@ -460,7 +460,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
 
     if (!mounted) return;
 
-    showDialog(
+    await showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setDialogState) {
@@ -571,6 +571,10 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
         }
       ),
     );
+
+    keyCtrl.dispose();
+    urlCtrl.dispose();
+    modelCtrl.dispose();
   }
   // ====== 管理员日志 Tab ======
 

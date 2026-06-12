@@ -53,6 +53,12 @@ type User struct {
 
 	LastCheckInDate string `gorm:"size:10" json:"last_check_in_date"` // 最后签到日期
 	IsCheckedInToday bool  `gorm:"-" json:"is_checked_in_today"`      // 动态字段，不在数据库映射
+	IsFollowing       bool  `gorm:"-" json:"is_following"`            // 当前登录者是否关注了此用户
+
+	// 社交统计聚合字段
+	FollowersCount     int `gorm:"default:0;index" json:"followers_count"`
+	FollowingCount     int `gorm:"default:0;index" json:"following_count"`
+	TotalLikesReceived int `gorm:"default:0;index" json:"total_likes_received"`
 }
 
 

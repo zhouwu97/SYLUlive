@@ -21,6 +21,12 @@ class User {
   final String eduCollege;
   final String eduMajor;
 
+  // 社交统计
+  final int followersCount;
+  final int followingCount;
+  final int totalLikesReceived;
+  final bool isFollowing;
+
   User({
     required this.id,
     required this.studentId,
@@ -40,6 +46,10 @@ class User {
     this.eduGrade = '',
     this.eduCollege = '',
     this.eduMajor = '',
+    this.followersCount = 0,
+    this.followingCount = 0,
+    this.totalLikesReceived = 0,
+    this.isFollowing = false,
   });
 
   factory User.fromJson(Map<String, dynamic> json) {
@@ -62,6 +72,10 @@ class User {
       eduGrade: json['edu_grade'] ?? '',
       eduCollege: json['edu_college'] ?? '',
       eduMajor: json['edu_major'] ?? '',
+      followersCount: json['followers_count'] ?? 0,
+      followingCount: json['following_count'] ?? 0,
+      totalLikesReceived: json['total_likes_received'] ?? 0,
+      isFollowing: json['is_following'] ?? false,
     );
   }
 
@@ -85,6 +99,10 @@ class User {
       'edu_grade': eduGrade,
       'edu_college': eduCollege,
       'edu_major': eduMajor,
+      'followers_count': followersCount,
+      'following_count': followingCount,
+      'total_likes_received': totalLikesReceived,
+      'is_following': isFollowing,
     };
   }
 

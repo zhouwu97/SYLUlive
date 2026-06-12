@@ -30,6 +30,7 @@ import 'admin_members_screen.dart';
 import 'user_replies_screen.dart';
 import 'settings_screen.dart';
 import 'feedback_screen.dart';
+import 'user_home_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -107,7 +108,13 @@ class _ProfileScreenState extends State<ProfileScreen>
                 SliverToBoxAdapter(
                   child: SafeArea(
                     bottom: false,
-                    child: _buildHeader(user, authProvider, isDark),
+                    child: Column(
+                      children: [
+                        _buildHeader(user, authProvider, isDark),
+                        if (authProvider.isLoggedIn)
+                          _buildSocialStatsSection(context, user, isDark),
+                      ],
+                    ),
                   ),
                 ),
 
@@ -188,10 +195,11 @@ class _ProfileScreenState extends State<ProfileScreen>
 
   Widget _buildHeader(user, AuthProvider authProvider, bool isDark) {
     return Container(
-      padding: const EdgeInsets.all(24),
-      child: Column(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          // 头像
+          // 左侧：头像
           GestureDetector(
             onTap: () {
               if (authProvider.isLoggedIn) {
@@ -201,141 +209,212 @@ class _ProfileScreenState extends State<ProfileScreen>
                     context,
                     PageRouteBuilder(
                       opaque: false,
-                      pageBuilder: (_, __, ___) => LoginScreen(),
+                      pageBuilder: (_, __, ___) => const LoginScreen(),
                     ));
               }
             },
-            child: GlassContainer(
-              padding: const EdgeInsets.all(6),
-              borderRadius: 100,
-              blur: 20,
-              opacity: 0.2,
-              child: Container(
-                width: 120,
-                height: 120,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      Theme.of(context).primaryColor,
-                      Theme.of(context).primaryColor.withOpacity(0.6),
-                    ],
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Theme.of(context).primaryColor.withOpacity(0.3),
-                      blurRadius: 30,
-                      spreadRadius: 5,
-                    ),
-                  ],
-                ),
-                child: user?.avatar.isNotEmpty == true
-                    ? ClipOval(
-                        child: GestureDetector(
-                          onLongPress: user?.avatar.isNotEmpty == true
-                              ? () => _showAvatarPreview(
-                                  context, ApiConstants.fullUrl(user!.avatar))
-                              : null,
-                          child: CachedNetworkImage(
-                            imageUrl: ApiConstants.fullUrl(user?.avatar ?? ''),
-                            fit: BoxFit.cover,
-                            placeholder: (_, __) =>
-                                _buildAvatarPlaceholder(user),
-                            errorWidget: (_, __, ___) =>
-                                _buildAvatarPlaceholder(user),
-                            memCacheWidth: 256,
-                          ),
-                        ),
-                      )
-                    : _buildAvatarPlaceholder(user),
-              ),
-            ),
-          ),
-
-          const SizedBox(height: 20),
-
-          GestureDetector(
-            onTap: () {
-              if (authProvider.isLoggedIn)
-                _showEditProfileDialog(context, authProvider);
-            },
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  user?.nickname ?? '未登录',
-                  style: const TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.bold,
-                       color: Colors.white),
-                ),
-                if (authProvider.isLoggedIn) ...[
-                  const SizedBox(width: 6),
-                  const Icon(Icons.edit, size: 16, color: Colors.white54),
-                ],
-              ],
-            ),
-          ),
-
-          const SizedBox(height: 8),
-
-          if (user?.eduCollege != null || user?.eduMajor != null)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+            child: Container(
+              width: 76,
+              height: 76,
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.2),
-                borderRadius: BorderRadius.circular(20),
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 2),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.1),
+                    blurRadius: 10,
+                    spreadRadius: 2,
+                  ),
+                ],
               ),
-              child: Text(
-                '${user?.eduCollege ?? ""} ${user?.eduMajor ?? ""}'.trim(),
-                style: const TextStyle(color: Colors.white70, fontSize: 14),
-              ),
+              child: user?.avatar.isNotEmpty == true
+                  ? ClipOval(
+                      child: GestureDetector(
+                        onLongPress: user?.avatar.isNotEmpty == true
+                            ? () => _showAvatarPreview(
+                                context, ApiConstants.fullUrl(user!.avatar))
+                            : null,
+                        child: CachedNetworkImage(
+                          imageUrl: ApiConstants.fullUrl(user?.avatar ?? ''),
+                          fit: BoxFit.cover,
+                          placeholder: (_, __) => _buildAvatarPlaceholder(user),
+                          errorWidget: (_, __, ___) =>
+                              _buildAvatarPlaceholder(user),
+                          memCacheWidth: 256,
+                        ),
+                      ),
+                    )
+                  : _buildAvatarPlaceholder(user),
             ),
+          ),
 
-          const SizedBox(height: 20),
+          const SizedBox(width: 16),
 
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
+          // 右侧：信息
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                _buildStatBadge(
-                  icon: Icons.verified,
-                  label: '诚信度',
-                  value: '${user?.creditScore ?? 100}%',
-                  color: Colors.green,
-                ),
-                const SizedBox(width: 8),
-                _buildStatBadge(
-                  icon: Icons.star,
-                  label: '经验',
-                  value: '${user?.exp ?? 0}',
-                  color: Colors.amber,
-                ),
-                const SizedBox(width: 8),
-                _buildStatBadge(
-                  icon: Icons.monetization_on,
-                  label: '代答积分',
-                  value: '${user?.credits ?? 0}',
-                  color: Colors.purpleAccent,
-                ),
-                if (user?.isAdmin == true) ...[
-                  const SizedBox(width: 8),
-                  _buildStatBadge(
-                    icon: Icons.admin_panel_settings,
-                    label: user?.isSuperAdmin == true ? '超级管理员' : '管理员',
-                    value: '${user?.adminExp ?? 0}',
-                    color: Colors.orange,
+                // 第一行：昵称与编辑按钮
+                GestureDetector(
+                  onTap: () {
+                    if (authProvider.isLoggedIn) {
+                      _showEditProfileDialog(context, authProvider);
+                    }
+                  },
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Flexible(
+                        child: Text(
+                          user?.nickname ?? '未登录',
+                          style: TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w700,
+                            color: isDark ? Colors.white : Colors.black87,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (authProvider.isLoggedIn) ...[
+                        const SizedBox(width: 6),
+                        Icon(Icons.edit,
+                            size: 16,
+                            color: isDark ? Colors.white54 : Colors.black54),
+                      ],
+                    ],
                   ),
+                ),
+
+                const SizedBox(height: 8),
+
+                // 第二行：学院专业标签 (如果有)
+                if (user?.eduCollege != null && user!.eduCollege!.isNotEmpty) ...[
+                  Text(
+                    '${user.eduCollege} ${user.eduMajor}'.trim(),
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: isDark ? Colors.white54 : Colors.black45,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 6),
                 ],
+
+                // 第三行：数据统计 (等级、诚信、经验等)
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  children: [
+                    if (user != null)
+                      _buildTag(user.levelLabel.startsWith('Lv') ? user.levelLabel : 'Lv.${user.levelLabel}', icon: Icons.military_tech, color: Colors.amber, isDark: isDark),
+                    _buildTag('诚信 ${user?.creditScore ?? 100}%', icon: Icons.verified_user, color: Colors.teal, isDark: isDark),
+                  ],
+                ),
               ],
             ),
           ),
 
-          const SizedBox(height: 20),
+          // 最右侧箭头，引导去个人设置页 (点击进入主页)
+          if (authProvider.isLoggedIn)
+            GestureDetector(
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const UserHomeScreen()),
+                );
+              },
+              child: Padding(
+                padding: const EdgeInsets.only(left: 8.0, right: 4.0),
+                child: Icon(Icons.arrow_forward_ios, size: 14, color: isDark ? Colors.white54 : Colors.black45),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTag(String text, {IconData? icon, required Color color, required bool isDark}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withOpacity(isDark ? 0.2 : 0.15),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 12, color: color),
+            const SizedBox(width: 2),
+          ],
+          Text(
+            text,
+            style: TextStyle(fontSize: 11, color: color, fontWeight: FontWeight.w500),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSocialStatsSection(BuildContext context, user, bool isDark) {
+    if (user == null) return const SizedBox();
+    return Container(
+      margin: const EdgeInsets.only(left: 16, right: 16, top: 8, bottom: 24),
+      padding: const EdgeInsets.symmetric(vertical: 16),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E1E1E).withOpacity(0.6) : Colors.white.withOpacity(0.6),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.02),
+            blurRadius: 10.0,
+            offset: const Offset(0, 2),
+          )
+        ],
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: [
+          _buildSocialStatItem('5', '我的发帖', isDark, () {
+            // 跳转到我的发帖
+          }),
+          _buildSocialStatItem('1', '关注的人', isDark, () {
+            // 跳转到我的关注
+          }),
+          _buildSocialStatItem('20', '关注我的', isDark, () {
+            // 跳转到关注我的
+          }),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSocialStatItem(String count, String label, bool isDark, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            count,
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w600,
+              color: isDark ? Colors.white : Colors.black87,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              color: isDark ? Colors.white70 : Colors.black87,
+            ),
+          ),
         ],
       ),
     );
@@ -448,28 +527,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                   ),
                 ];
 
-                return Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                  child: ResponsiveUtil.isDesktop(context)
-                      ? LayoutBuilder(builder: (context, constraints) {
-                          return Wrap(
-                            spacing: 16,
-                            runSpacing: 16,
-                            children: items.map((e) => SizedBox(
-                              width: (constraints.maxWidth - 16) / 2,
-                              child: e,
-                            )).toList(),
-                          );
-                        })
-                      : Column(
-                          children: [
-                            for (int i = 0; i < items.length; i++) ...[
-                              if (i > 0) const SizedBox(height: 12),
-                              items[i],
-                            ],
-                          ],
-                        ),
-                );
+                return _buildSectionLayout(context, '管理员', items, isDark);
               },
     );
   }
@@ -486,12 +544,9 @@ class _ProfileScreenState extends State<ProfileScreen>
   }) {
     return GlassContainer(
       padding: const EdgeInsets.all(12),
-      borderRadius: 12,
+      borderRadius: 16,
       blur: 10,
       opacity: 0.15,
-      gradientColors: isDark
-          ? [Colors.red[800]!, Colors.red[900]!]
-          : [Colors.red[50]!, Colors.red[100]!],
       onTap: onTap,
       child: Row(
         children: [
@@ -604,7 +659,14 @@ class _ProfileScreenState extends State<ProfileScreen>
               );
             })
           else
-            Column(children: items),
+            Column(
+              children: [
+                for (int i = 0; i < items.length; i++) ...[
+                  if (i > 0) const SizedBox(height: 12),
+                  items[i],
+                ],
+              ],
+            ),
           const SizedBox(height: 8),
         ],
       ),

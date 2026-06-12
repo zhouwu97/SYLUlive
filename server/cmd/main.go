@@ -144,6 +144,7 @@ func main() {
 		&models.SystemConfig{},
 		&models.Canteen{},
 		&models.CanteenRating{},
+		&models.UserFollow{},
 	); err != nil {
 
 		log.Fatal("数据库迁移失败:", err)
@@ -151,9 +152,10 @@ func main() {
 	}
 
 	// 启动时自动修复可能不同步的评论数和点赞数
-	log.Println("正在同步帖子评论数与点赞数...")
+	log.Println("正在同步数据(评论数、帖子点赞、用户总获赞)...")
 	db.Exec(`UPDATE posts SET reply_count = (SELECT COUNT(*) FROM replies WHERE replies.post_id = posts.id AND replies.status = 'normal')`)
 	db.Exec(`UPDATE posts SET like_count = (SELECT COUNT(*) FROM likes WHERE likes.target_id = posts.id AND likes.target_type = 'post')`)
+	db.Exec(`UPDATE users SET total_likes_received = (SELECT COUNT(*) FROM likes WHERE target_type = 'post' AND target_id IN (SELECT id FROM posts WHERE author_id = users.id))`)
 	log.Println("同步完成")
 
 	// 确保默认超级管理员
@@ -344,6 +346,12 @@ func main() {
 
 		user.GET("/:id", userHandler.GetUserInfo)
 
+		user.GET("/:id/following", userHandler.GetFollowing)
+		user.GET("/:id/followers", userHandler.GetFollowers)
+		user.POST("/:id/follow", userHandler.Follow)
+		user.DELETE("/:id/follow", userHandler.Unfollow)
+		user.GET("/:id/is-following", userHandler.IsFollowing)
+		user.GET("/:id/posts", userHandler.GetUserPosts)
 	}
 
 	// 帖子路由

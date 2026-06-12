@@ -19,6 +19,8 @@ import '../widgets/cached_avatar.dart';
 import 'create_post_screen.dart';
 import 'image_viewer_screen.dart';
 
+import 'user_home_screen.dart';
+
 class PostDetailScreen extends StatefulWidget {
   final int postId;
   final bool isMarket;
@@ -755,7 +757,19 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   // ---- 作者卡片 ----
 
   Widget _buildAuthorCard(Post p, bool isDark) {
-    return Container(
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () {
+        if (p.author != null) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => UserHomeScreen(userId: p.author!.id),
+            ),
+          );
+        }
+      },
+      child: Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: isDark ? const Color(0x99171B24) : const Color(0x0A000000),
@@ -819,6 +833,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 fontSize: 12,
                 color: isDark ? Colors.white30 : Colors.grey[400])),
       ]),
+      ),
     );
   }
 
@@ -1282,12 +1297,19 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         onTap: () => _openReplyComposer(parentReplyId: r.id, replyToName: r.author?.nickname, replyToUserId: r.authorId),
         onLongPress: () => _showReplyActionSheet(r, isOwn, isDark),
         child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          CachedAvatar(
-            radius: 16,
-            imageUrl: r.author?.avatar.isNotEmpty == true
-                ? ApiConstants.fullUrl(r.author!.avatar)
-                : null,
-            fallbackText: r.author?.nickname,
+          GestureDetector(
+            onTap: () {
+              if (r.author != null) {
+                Navigator.push(context, MaterialPageRoute(builder: (_) => UserHomeScreen(userId: r.author!.id)));
+              }
+            },
+            child: CachedAvatar(
+              radius: 16,
+              imageUrl: r.author?.avatar.isNotEmpty == true
+                  ? ApiConstants.fullUrl(r.author!.avatar)
+                  : null,
+              fallbackText: r.author?.nickname,
+            ),
           ),
           const SizedBox(width: 10),
           Expanded(
@@ -1365,12 +1387,19 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              CachedAvatar(
-                radius: 10,
-                imageUrl: r.author?.avatar.isNotEmpty == true
-                    ? ApiConstants.fullUrl(r.author!.avatar)
-                    : null,
-                fallbackText: r.author?.nickname,
+              GestureDetector(
+                onTap: () {
+                  if (r.author != null) {
+                    Navigator.push(context, MaterialPageRoute(builder: (_) => UserHomeScreen(userId: r.author!.id)));
+                  }
+                },
+                child: CachedAvatar(
+                  radius: 10,
+                  imageUrl: r.author?.avatar.isNotEmpty == true
+                      ? ApiConstants.fullUrl(r.author!.avatar)
+                      : null,
+                  fallbackText: r.author?.nickname,
+                ),
               ),
               const SizedBox(width: 8),
               Expanded(

@@ -13,7 +13,18 @@ class YuketangClassScreen extends StatefulWidget {
 class _YuketangClassScreenState extends State<YuketangClassScreen> {
   final GlobalKey<YuketangWebViewWidgetState> _webViewKey = GlobalKey();
   final _storage = const FlutterSecureStorage();
+  final keyCtrl = TextEditingController();
+  final urlCtrl = TextEditingController();
+  final modelCtrl = TextEditingController();
   String? _lastInterceptedExamData;
+
+  @override
+  void dispose() {
+    keyCtrl.dispose();
+    urlCtrl.dispose();
+    modelCtrl.dispose();
+    super.dispose();
+  }
 
   Future<void> _handleBack() async {
     final controller = _webViewKey.currentState?.webViewController;
@@ -25,9 +36,9 @@ class _YuketangClassScreenState extends State<YuketangClassScreen> {
   }
 
   Future<void> _showSettingsDialog() async {
-    final keyCtrl = TextEditingController();
-    final urlCtrl = TextEditingController();
-    final modelCtrl = TextEditingController();
+    keyCtrl.text = '';
+    urlCtrl.text = '';
+    modelCtrl.text = '';
 
     final currentKey = await _storage.read(key: 'custom_api_key');
     final currentUrl = await _storage.read(key: 'custom_base_url');
@@ -276,9 +287,6 @@ class _YuketangClassScreenState extends State<YuketangClassScreen> {
         }
       ),
     );
-    keyCtrl.dispose();
-    urlCtrl.dispose();
-    modelCtrl.dispose();
   }
 
   @override

@@ -63,37 +63,37 @@ class _PostCardState extends State<PostCard> with AutomaticKeepAliveClientMixin 
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () {
-                if (widget.post.author != null) {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => UserHomeScreen(userId: widget.post.author!.id),
+            Row(
+              children: [
+                GestureDetector(
+                  onTap: () {
+                    if (widget.post.author != null) {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => UserHomeScreen(userId: widget.post.author!.id),
+                        ),
+                      );
+                    }
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.all(2),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: LinearGradient(
+                        colors: [
+                          Theme.of(context).primaryColor,
+                          Theme.of(context).primaryColor.withValues(alpha: 0.6),
+                        ],
+                      ),
                     ),
-                  );
-                }
-              },
-              child: Row(
-                children: [
-                Container(
-                  padding: const EdgeInsets.all(2),
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: LinearGradient(
-                      colors: [
-                        Theme.of(context).primaryColor,
-                        Theme.of(context).primaryColor.withValues(alpha: 0.6),
-                      ],
+                    child: CachedAvatar(
+                      radius: isDesktop ? 20 : 18,
+                      imageUrl: displayAvatar.isNotEmpty == true
+                          ? ApiConstants.fullUrl(displayAvatar)
+                          : null,
+                      fallbackText: displayNickname,
                     ),
-                  ),
-                  child: CachedAvatar(
-                    radius: isDesktop ? 20 : 18,
-                    imageUrl: displayAvatar.isNotEmpty == true
-                        ? ApiConstants.fullUrl(displayAvatar)
-                        : null,
-                    fallbackText: displayNickname,
                   ),
                 ),
                 SizedBox(width: isDesktop ? 12 : 10),
@@ -101,22 +101,35 @@ class _PostCardState extends State<PostCard> with AutomaticKeepAliveClientMixin 
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        children: [
-                          Flexible(
-                            child: Text(
-                              displayNickname,
-                              style: TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: isDesktop ? 15 : 13),
-                              overflow: TextOverflow.ellipsis,
+                      GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () {
+                          if (widget.post.author != null) {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => UserHomeScreen(userId: widget.post.author!.id),
+                              ),
+                            );
+                          }
+                        },
+                        child: Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                displayNickname,
+                                style: TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: isDesktop ? 15 : 13),
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
-                          ),
-                          if (widget.post.author != null) ...[
-                            const SizedBox(width: 4),
-                            _buildLevelBadge(widget.post.author!),
+                            if (widget.post.author != null) ...[
+                              const SizedBox(width: 4),
+                              _buildLevelBadge(widget.post.author!),
+                            ],
                           ],
-                        ],
+                        ),
                       ),
                       const SizedBox(height: 2),
                       Text(
@@ -161,7 +174,6 @@ class _PostCardState extends State<PostCard> with AutomaticKeepAliveClientMixin 
                   ),
                 ),
               ],
-            ),
             ),
             if (widget.post.title.isNotEmpty) ...[
               SizedBox(height: isDesktop ? 12 : 8),

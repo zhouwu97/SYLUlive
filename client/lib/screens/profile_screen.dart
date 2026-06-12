@@ -31,6 +31,7 @@ import 'user_replies_screen.dart';
 import 'settings_screen.dart';
 import 'feedback_screen.dart';
 import 'user_home_screen.dart';
+import 'social_list_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -45,6 +46,7 @@ class _ProfileScreenState extends State<ProfileScreen>
   late Animation<double> _fadeAnimation;
   int _unreadReplyCount = 0;
   bool _startOnTimetable = false;
+  int? _postCount;
 
   @override
   void initState() {
@@ -61,7 +63,21 @@ class _ProfileScreenState extends State<ProfileScreen>
       context.read<AuthProvider>().refreshUser();
       _loadUnreadCount();
       _loadPrefs();
+      _fetchPostCount();
     });
+  }
+
+  Future<void> _fetchPostCount() async {
+    final auth = context.read<AuthProvider>();
+    if (!auth.isLoggedIn || auth.user == null) return;
+    try {
+      final res = await auth.dio.get('/user/${auth.user!.id}/posts?limit=999');
+      if (res.statusCode == 200 && mounted) {
+        setState(() {
+          _postCount = (res.data as List).length;
+        });
+      }
+    } catch (_) {}
   }
 
   void _loadPrefs() {
@@ -238,9 +254,10 @@ class _ProfileScreenState extends State<ProfileScreen>
                           imageUrl: ApiConstants.fullUrl(user?.avatar ?? ''),
                           fit: BoxFit.cover,
                           placeholder: (_, __) => _buildAvatarPlaceholder(user),
-                          errorWidget: (_, __, ___) =>
-                              _buildAvatarPlaceholder(user),
+                          errorWidget: (_, __, ___) => _buildAvatarPlaceholder(user),
                           memCacheWidth: 256,
+                          fadeInDuration: Duration.zero,
+                          fadeOutDuration: Duration.zero,
                         ),
                       ),
                     )
@@ -250,88 +267,105 @@ class _ProfileScreenState extends State<ProfileScreen>
 
           const SizedBox(width: 16),
 
-          // 右侧：信息
+          // 右侧：信息与箭头 (整个区域可点击进入主页)
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                // 第一行：昵称与编辑按钮
-                GestureDetector(
-                  onTap: () {
-                    if (authProvider.isLoggedIn) {
-                      _showEditProfileDialog(context, authProvider);
-                    }
-                  },
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Flexible(
-                        child: Text(
-                          user?.nickname ?? '未登录',
-                          style: TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.w700,
-                            color: isDark ? Colors.white : Colors.black87,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      if (authProvider.isLoggedIn) ...[
-                        const SizedBox(width: 6),
-                        Icon(Icons.edit,
-                            size: 16,
-                            color: isDark ? Colors.white54 : Colors.black54),
-                      ],
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: 8),
-
-                // 第二行：学院专业标签 (如果有)
-                if (user?.eduCollege != null && user!.eduCollege!.isNotEmpty) ...[
-                  Text(
-                    '${user.eduCollege} ${user.eduMajor}'.trim(),
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: isDark ? Colors.white54 : Colors.black45,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 6),
-                ],
-
-                // 第三行：数据统计 (等级、诚信、经验等)
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 4,
-                  children: [
-                    if (user != null)
-                      _buildTag(user.levelLabel.startsWith('Lv') ? user.levelLabel : 'Lv.${user.levelLabel}', icon: Icons.military_tech, color: Colors.amber, isDark: isDark),
-                    _buildTag('诚信 ${user?.creditScore ?? 100}%', icon: Icons.verified_user, color: Colors.teal, isDark: isDark),
-                  ],
-                ),
-              ],
-            ),
-          ),
-
-          // 最右侧箭头，引导去个人设置页 (点击进入主页)
-          if (authProvider.isLoggedIn)
-            GestureDetector(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
               onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const UserHomeScreen()),
-                );
+                if (authProvider.isLoggedIn) {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const UserHomeScreen()),
+                  );
+                } else {
+                  Navigator.push(
+                    context,
+                    PageRouteBuilder(
+                      opaque: false,
+                      pageBuilder: (_, __, ___) => const LoginScreen(),
+                    ),
+                  );
+                }
               },
-              child: Padding(
-                padding: const EdgeInsets.only(left: 8.0, right: 4.0),
-                child: Icon(Icons.arrow_forward_ios, size: 14, color: isDark ? Colors.white54 : Colors.black45),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        // 第一行：昵称与编辑按钮
+                        GestureDetector(
+                          onTap: () {
+                            if (authProvider.isLoggedIn) {
+                              _showEditProfileDialog(context, authProvider);
+                            }
+                          },
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  user?.nickname ?? '未登录',
+                                  style: TextStyle(
+                                    fontSize: 22,
+                                    fontWeight: FontWeight.w700,
+                                    color: isDark ? Colors.white : Colors.black87,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              if (authProvider.isLoggedIn) ...[
+                                const SizedBox(width: 6),
+                                Icon(Icons.edit,
+                                    size: 16,
+                                    color: isDark ? Colors.white54 : Colors.black54),
+                              ],
+                            ],
+                          ),
+                        ),
+
+                        const SizedBox(height: 8),
+
+                        // 第二行：学院专业标签 (如果有)
+                        if (user?.eduCollege != null && user!.eduCollege!.isNotEmpty) ...[
+                          Text(
+                            '${user.eduCollege} ${user.eduMajor}'.trim(),
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: isDark ? Colors.white54 : Colors.black45,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 6),
+                        ],
+
+                        // 第三行：数据统计 (等级、诚信、经验等)
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 4,
+                          children: [
+                            if (user != null)
+                              _buildTag(user.levelLabel.startsWith('Lv') ? user.levelLabel : 'Lv.${user.levelLabel}', icon: Icons.military_tech, color: Color(user.levelColorValue), isDark: isDark),
+                            _buildTag('诚信 ${user?.creditScore ?? 100}%', icon: Icons.verified_user, color: Colors.teal, isDark: isDark),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  // 最右侧箭头
+                  if (authProvider.isLoggedIn)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 8.0, right: 4.0),
+                      child: Icon(Icons.arrow_forward_ios, size: 14, color: isDark ? Colors.white54 : Colors.black45),
+                    ),
+                ],
               ),
             ),
+          ),
         ],
       ),
     );
@@ -379,14 +413,14 @@ class _ProfileScreenState extends State<ProfileScreen>
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
-          _buildSocialStatItem('5', '我的发帖', isDark, () {
-            // 跳转到我的发帖
+          _buildSocialStatItem(_postCount?.toString() ?? '-', '我的内容', isDark, () {
+            Navigator.push(context, MaterialPageRoute(builder: (_) => const MyContentScreen()));
           }),
-          _buildSocialStatItem('1', '关注的人', isDark, () {
-            // 跳转到我的关注
+          _buildSocialStatItem(user.followingCount.toString(), '关注的人', isDark, () {
+            Navigator.push(context, MaterialPageRoute(builder: (_) => SocialListScreen(userId: user.id, initialIndex: 0)));
           }),
-          _buildSocialStatItem('20', '关注我的', isDark, () {
-            // 跳转到关注我的
+          _buildSocialStatItem(user.followersCount.toString(), '关注我的', isDark, () {
+            Navigator.push(context, MaterialPageRoute(builder: (_) => SocialListScreen(userId: user.id, initialIndex: 1)));
           }),
         ],
       ),

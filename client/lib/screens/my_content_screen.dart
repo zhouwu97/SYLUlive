@@ -54,7 +54,6 @@ class _MyContentScreenState extends State<MyContentScreen>
 
     try {
       final authProvider = context.read<AuthProvider>();
-      final postProvider = context.read<PostProvider>();
       final currentUserId = authProvider.user?.id;
       if (currentUserId == null) {
         if (mounted) setState(() {
@@ -63,19 +62,16 @@ class _MyContentScreenState extends State<MyContentScreen>
         return;
       }
 
-      // 1. 加载水贴板块 (boardId=1) 的帖子
-      await postProvider.loadPosts(boardId: 1);
-      // 2. 加载集市板块 (boardId=2) 的帖子
-      await postProvider.loadPosts(boardId: 2);
+      // 直接从 API 获取用户所有帖子，不走 PostProvider 的 board 分页
+      final res = await authProvider.dio.get('/user/$currentUserId/posts',
+          queryParameters: {'limit': '999'});
+      final allPosts = (res.data as List)
+          .map((e) => Post.fromJson(e as Map<String, dynamic>))
+          .toList();
 
-      final posts1 = postProvider.postsFor(1);
-      final posts2 = postProvider.postsFor(2);
-
-      // 过滤我的帖子
-      _myPosts = posts1.where((p) => p.authorId == currentUserId).toList();
-      // 过滤我的集市物品
-      _myMarketPosts =
-          posts2.where((p) => p.authorId == currentUserId).toList();
+      // 按 board 拆分
+      _myPosts = allPosts.where((p) => p.boardId == 1).toList();
+      _myMarketPosts = allPosts.where((p) => p.boardId == 2).toList();
 
       if (mounted) setState(() {
         _isLoading = false;

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"time"
@@ -126,18 +127,19 @@ func (h *ReportHandler) Handle(c *gin.Context) {
 
 			// 创建申诉记录
 			var post models.Post
-			h.db.First(&post, report.TargetID)
-
-			appeal := models.Appeal{
-				PostID:      report.TargetID,
-				AppellantID: post.AuthorID,
-				AdminID:     userID.(uint),
-				AdminReason: input.DeleteReason,
-				Status:      models.AppealStatusPending,
-			}
-			if err := h.db.Create(&appeal).Error; err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
-				return
+			if err := h.db.First(&post, report.TargetID).Error; err != nil {
+				log.Printf("[DB_WARN] Failed to find post for appeal creation: report_id=%d, err=%v", report.ID, err)
+			} else {
+				appeal := models.Appeal{
+					PostID:      report.TargetID,
+					AppellantID: post.AuthorID,
+					AdminID:     userID.(uint),
+					AdminReason: input.DeleteReason,
+					Status:      models.AppealStatusPending,
+				}
+				if err := h.db.Create(&appeal).Error; err != nil {
+					log.Printf("[DB_ERROR] Failed to create appeal: %v", err)
+				}
 			}
 		} else if report.TargetType == "reply" {
 			if err := h.db.Model(&models.Reply{}).Where("id = ?", report.TargetID).Update("status", models.ReplyStatusDeleted).Error; err != nil {

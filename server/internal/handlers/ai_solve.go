@@ -301,7 +301,10 @@ func (h *AiSolveHandler) Solve(c *gin.Context) {
 
 	// 白名单：特定用户不扣费
 	var user models.User
-	h.db.First(&user, uid)
+	if err := h.db.First(&user, uid).Error; err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "无效用户"})
+		return
+	}
 	isFreeUser := user.Role == "admin" || user.Role == "super_admin"
 
 	// 1. 文本预处理与 Hash 计算

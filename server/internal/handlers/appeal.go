@@ -108,7 +108,9 @@ func (h *AppealHandler) selectJury(appealID uint, excludeUserID uint) {
 
 	// 如果还是没有候选人（系统里只有发帖人和超级管理员等情况），则自动分配超级管理员
 	if len(candidates) == 0 {
-		h.db.Where("role = ?", models.RoleSuperAdmin).First(&candidates)
+		if err := h.db.Where("role = ?", models.RoleSuperAdmin).First(&candidates).Error; err != nil {
+			log.Printf("[DB_WARN] selectJury failed to find fallback super_admin: %v", err)
+		}
 	}
 
 	// 随机选择最多10人

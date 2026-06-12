@@ -162,7 +162,7 @@ func main() {
 	// 启动时自动修复可能不同步的评论数和点赞数
 	log.Println("正在同步帖子评论数与点赞数...")
 	db.Exec(`UPDATE posts SET reply_count = (SELECT COUNT(*) FROM replies WHERE replies.post_id = posts.id AND replies.status = 'normal')`)
-	db.Exec(`UPDATE posts SET like_count = (SELECT COUNT(*) FROM likes WHERE likes.post_id = posts.id AND likes.target_type = 'post')`)
+	db.Exec(`UPDATE posts SET like_count = (SELECT COUNT(*) FROM likes WHERE likes.target_id = posts.id AND likes.target_type = 'post')`)
 	log.Println("同步完成")
 
 	// 确保默认超级管理员

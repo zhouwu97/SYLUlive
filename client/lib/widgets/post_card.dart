@@ -10,6 +10,7 @@ import 'cached_avatar.dart';
 import 'glass_container.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
+import '../screens/user_home_screen.dart';
 
 class PostCard extends StatefulWidget {
   final Post post;
@@ -62,8 +63,20 @@ class _PostCardState extends State<PostCard> with AutomaticKeepAliveClientMixin 
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () {
+                if (widget.post.author != null) {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => UserHomeScreen(userId: widget.post.author!.id),
+                    ),
+                  );
+                }
+              },
+              child: Row(
+                children: [
                 Container(
                   padding: const EdgeInsets.all(2),
                   decoration: BoxDecoration(
@@ -148,6 +161,7 @@ class _PostCardState extends State<PostCard> with AutomaticKeepAliveClientMixin 
                   ),
                 ),
               ],
+            ),
             ),
             if (widget.post.title.isNotEmpty) ...[
               SizedBox(height: isDesktop ? 12 : 8),

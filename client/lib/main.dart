@@ -17,6 +17,7 @@ import 'providers/course_schedule_provider.dart';
 import 'providers/major_provider.dart';
 import 'providers/teacher_provider.dart';
 import 'providers/canteen_provider.dart';
+import 'providers/social_provider.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/course_schedule_screen.dart';
@@ -115,6 +116,7 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => TeacherProvider(dio)),
         ChangeNotifierProvider(create: (_) => MajorProvider(dio)),
         ChangeNotifierProvider(create: (_) => CanteenProvider(dio)),
+        ChangeNotifierProvider(create: (_) => SocialProvider(dio)),
       ],
       child: const _WidgetDeepLinkHandler(
         child: _AppContent(),

@@ -22,6 +22,7 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
   late PageController _pageController;
   late int _currentIndex;
   bool _isSaving = false;
+  final Map<int, Uint8List> _downloadedImages = {};
 
   @override
   void initState() {
@@ -56,7 +57,7 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('正在保存图片...')),
+        const SnackBar(content: Text('正在下载并保存原图...')),
       );
       
       // 下载图片数据
@@ -77,8 +78,11 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
 
       if (!mounted) return;
       if (result != null) {
+        setState(() {
+          _downloadedImages[_currentIndex] = bytes;
+        });
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('图片已保存到相册')),
+          const SnackBar(content: Text('原图已保存到相册并替换当前显示')),
         );
       } else {
         throw Exception('保存失败');
@@ -134,18 +138,23 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
         itemBuilder: (context, index) {
           return InteractiveViewer(
             child: Center(
-              child: CachedNetworkImage(
-                imageUrl: widget.imageUrls[index],
-                fit: BoxFit.contain,
-                placeholder: (context, url) => const Center(
-                  child: CircularProgressIndicator(color: Colors.white),
-                ),
-                errorWidget: (context, url, error) => const Icon(
-                  Icons.error,
-                  color: Colors.white,
-                  size: 48,
-                ),
-              ),
+              child: _downloadedImages.containsKey(index)
+                  ? Image.memory(
+                      _downloadedImages[index]!,
+                      fit: BoxFit.contain,
+                    )
+                  : CachedNetworkImage(
+                      imageUrl: widget.imageUrls[index],
+                      fit: BoxFit.contain,
+                      placeholder: (context, url) => const Center(
+                        child: CircularProgressIndicator(color: Colors.white),
+                      ),
+                      errorWidget: (context, url, error) => const Icon(
+                        Icons.error,
+                        color: Colors.white,
+                        size: 48,
+                      ),
+                    ),
             ),
           );
         },

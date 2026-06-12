@@ -29,6 +29,7 @@ import 'super_admin_screen.dart';
 import 'admin_members_screen.dart';
 import 'user_replies_screen.dart';
 import 'settings_screen.dart';
+import 'feedback_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -657,7 +658,10 @@ class _ProfileScreenState extends State<ProfileScreen>
         title: '功能建议 (Bug提交)',
         subtitle: '提交的建议会发送至开发者邮箱',
         isDark: isDark,
-        onTap: () => _showFeedbackDialog(context),
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const FeedbackScreen()),
+        ),
       )),
     ];
     return _buildSectionLayout(context, '我的内容', items, isDark);
@@ -1019,71 +1023,5 @@ class _ProfileScreenState extends State<ProfileScreen>
       },
     );
   }
-  Future<void> _showFeedbackDialog(BuildContext context) async {
-    final controller = TextEditingController();
-    bool isSubmitting = false;
 
-    await showDialog(
-      context: context,
-      builder: (dialogCtx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
-          title: const Text('功能建议与 Bug 提交'),
-          content: TextField(
-            controller: controller,
-            maxLines: 4,
-            decoration: const InputDecoration(
-              hintText: '请输入您的建议或遇到的问题...\n提交后会发送至开发者邮箱。',
-              border: OutlineInputBorder(),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: isSubmitting ? null : () => Navigator.pop(ctx),
-              child: const Text('取消'),
-            ),
-            ElevatedButton(
-              onPressed: isSubmitting
-                  ? null
-                  : () async {
-                      final text = controller.text.trim();
-                      if (text.isEmpty) {
-                        AppFeedback.showSnackBar(context, '内容不能为空');
-                        return;
-                      }
-                      setDialogState(() => isSubmitting = true);
-                      try {
-                        final auth = context.read<AuthProvider>();
-                        // 触发后端接口，后端会将邮件发送至 13514252317@163.com
-                        final response = await auth.dio.post('/feedback', data: {'content': text});
-                        if (response.statusCode == 200 || response.statusCode == 201) {
-                          if (ctx.mounted) {
-                            Navigator.pop(ctx);
-                            AppFeedback.showSnackBar(context, '反馈已提交，感谢您的建议！');
-                          }
-                        } else {
-                          if (ctx.mounted) {
-                            AppFeedback.showSnackBar(context, '提交失败，请稍后重试', isError: true);
-                            setDialogState(() => isSubmitting = false);
-                          }
-                        }
-                      } catch (e) {
-                        if (ctx.mounted) {
-                          AppFeedback.showSnackBar(context, '网络异常或接口未部署，反馈提交失败', isError: true);
-                          setDialogState(() => isSubmitting = false);
-                        }
-                      }
-                    },
-              child: isSubmitting
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Text('提交'),
-            ),
-          ],
-        ),
-      ),
-    );
-    controller.dispose();
-  }
 }

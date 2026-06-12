@@ -53,6 +53,10 @@ class YuketangWebViewWidgetState extends State<YuketangWebViewWidget> {
 
   Future<void> _initScript() async {
     _injectScript = await _scriptService.getInjectScript();
+    
+    // 延迟渲染 WebView，等待页面转场动画完成，防止 PlatformView 导致 Navigator 的 !_debugLocked 崩溃
+    await Future.delayed(const Duration(milliseconds: 400));
+    
     if (mounted) {
       setState(() {
         _isInitializing = false;

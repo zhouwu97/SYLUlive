@@ -170,12 +170,17 @@ class _UserListState extends State<_UserList> {
     return OutlinedButton(
       onPressed: () async {
         final provider = context.read<SocialProvider>();
+        bool success = false;
         if (user.isFollowing) {
-           await provider.unfollow(user.id);
+           success = await provider.unfollow(user.id);
         } else {
-           await provider.follow(user.id);
+           success = await provider.follow(user.id);
         }
-        _loadData(refresh: true); 
+        if (success) {
+           setState(() {
+             user.isFollowing = !user.isFollowing;
+           });
+        }
       },
       child: Text(user.isFollowing ? '已关注' : '关注'),
     );

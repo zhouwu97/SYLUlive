@@ -84,6 +84,8 @@ class _TeacherRatingScreenState extends State<TeacherRatingScreen>
         ],
       ),
     );
+    nameCtrl.dispose();
+    deptCtrl.dispose();
     if (ok != true || nameCtrl.text.trim().isEmpty) return;
 
     try {
@@ -129,6 +131,7 @@ class _TeacherRatingScreenState extends State<TeacherRatingScreen>
         ],
       ),
     );
+    commentCtrl.dispose();
     if (rating == null) return;
 
     try {

@@ -15,10 +15,11 @@ import (
 	"strings"
 	"time"
 
+	"shenliyuan/internal/models"
+
 	"github.com/gin-gonic/gin"
 	"github.com/go-resty/resty/v2"
 	"gorm.io/gorm"
-	"shenliyuan/internal/models"
 )
 
 const (
@@ -112,7 +113,12 @@ func (h *EduHandler) BindEdu(c *gin.Context) {
 	}
 
 	// 构建cookie字符串（和学长项目一样，取 client.Cookies[1]）
-	cookieStr := buildCookieString(client.Cookies[1:2])
+	var cookieStr string
+	if len(client.Cookies) > 1 {
+		cookieStr = buildCookieString(client.Cookies[1:2])
+	} else if len(client.Cookies) == 1 {
+		cookieStr = buildCookieString(client.Cookies)
+	}
 
 	// 获取学生基本信息（年级、学院、专业）
 	grade, college, major, _ := getStudentInfo(client, cookieStr, input.StudentID)
@@ -226,8 +232,8 @@ func (h *EduHandler) PreVerify(c *gin.Context) {
 
 	// 验证成功
 	c.JSON(http.StatusOK, gin.H{
-		"success":       true,
-		"message":       "验证通过",
+		"success":        true,
+		"message":        "验证通过",
 		"edu_student_id": input.StudentID,
 	})
 }
@@ -736,7 +742,12 @@ func (h *EduHandler) refreshCookie(userID uint) (string, error) {
 		return "", err
 	}
 
-	cookieStr := buildCookieString(client.Cookies[1:2])
+	var cookieStr string
+	if len(client.Cookies) > 1 {
+		cookieStr = buildCookieString(client.Cookies[1:2])
+	} else if len(client.Cookies) == 1 {
+		cookieStr = buildCookieString(client.Cookies)
+	}
 
 	h.db.Model(&user).Updates(map[string]interface{}{
 		"edu_cookie": cookieStr,

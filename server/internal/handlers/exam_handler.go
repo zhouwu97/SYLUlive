@@ -9,12 +9,13 @@ import (
 	"path/filepath"
 	"time"
 
+	"net"
+	"net/url"
+
 	"github.com/gin-gonic/gin"
 	"github.com/go-rod/rod"
 	"github.com/go-rod/rod/lib/launcher"
 	"github.com/go-rod/rod/lib/proto"
-	"net"
-	"net/url"
 )
 
 // ExamExtractRequest 题库提取请求

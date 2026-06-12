@@ -581,9 +581,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  void _showEditProfileDialog(BuildContext context, AuthProvider authProvider) {
+  Future<void> _showEditProfileDialog(BuildContext context, AuthProvider authProvider) async {
     final controller = TextEditingController(text: authProvider.user?.nickname);
-    showDialog(
+    await showDialog(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('编辑资料'),
@@ -611,13 +611,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ],
       ),
     );
+    controller.dispose();
   }
 
-  void _showChangePasswordDialog(
-      BuildContext context, AuthProvider authProvider) {
+  Future<void> _showChangePasswordDialog(
+      BuildContext context, AuthProvider authProvider) async {
     final oldController = TextEditingController();
     final newController = TextEditingController();
-    showDialog(
+    await showDialog(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('修改密码'),
@@ -654,6 +655,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ],
       ),
     );
+    oldController.dispose();
+    newController.dispose();
   }
 
   void _showAboutDialog(BuildContext context) async {

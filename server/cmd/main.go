@@ -4,12 +4,10 @@ package main
 
 import (
 
+	"errors"
 	"log"
-
 	"net/http"
-
 	"os"
-
 	"strings"
 	_ "time/tzdata"
 
@@ -70,12 +68,21 @@ func main() {
 	}
 
 	if err != nil {
-
 		log.Fatal("数据库连接失败:", err)
-
 	}
 
-
+	// 注册全局 GORM 错误日志钩子 (安全网)
+	logDBError := func(db *gorm.DB) {
+		if db.Error != nil && !errors.Is(db.Error, gorm.ErrRecordNotFound) {
+			log.Printf("[DB_ERROR] table=%s statement=%s err=%v", db.Statement.Table, db.Statement.SQL.String(), db.Error)
+		}
+	}
+	db.Callback().Query().After("gorm:query").Register("audit:log_errors_query", logDBError)
+	db.Callback().Create().After("gorm:create").Register("audit:log_errors_create", logDBError)
+	db.Callback().Update().After("gorm:update").Register("audit:log_errors_update", logDBError)
+	db.Callback().Delete().After("gorm:delete").Register("audit:log_errors_delete", logDBError)
+	db.Callback().Row().After("gorm:row").Register("audit:log_errors_row", logDBError)
+	db.Callback().Raw().After("gorm:raw").Register("audit:log_errors_raw", logDBError)
 
 	// 自动迁移
 

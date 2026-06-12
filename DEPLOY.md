@@ -222,3 +222,37 @@ systemctl restart shenliyuan
 # 鍋滄鏈嶅姟
 systemctl stop shenliyuan
 ```
+
+## 数据库引擎切换与迁移
+
+代码层面已经原生支持了 PostgreSQL。在 `server/cmd/main.go` 中，系统会通过判断环境变量 `DSN` 是否包含 `host=` 或 `port=` 来自动决定使用哪个数据库驱动。
+
+### 1. 修改配置文件切换数据库引擎
+
+修改项目根目录下的 `.env` 文件，将 `DSN` 替换为 PostgreSQL 的连接字符串：
+
+`env
+# 原来的 SQLite 配置
+# DSN=./shenliyuan.db
+
+# 新的 PostgreSQL 配置 (请根据实际情况修改 host, user, password, dbname)
+DSN=host=127.0.0.1 user=postgres password=你的密码 dbname=shenliyuan port=5432 sslmode=disable TimeZone=Asia/Shanghai
+``n
+### 2. 迁移原有的 SQLite 数据
+
+如果你已经在 SQLite 里产生了一些数据，在切换到 PostgreSQL 后，你可以使用以下方案将老数据搬迁过去：
+
+#### 方案 A：使用自动化工具 pgloader (最推荐，速度极快)
+`pgloader` 是一款专门用于向 PostgreSQL 导入数据的开源工具，原生支持直接从 SQLite 读取并转储到 PostgreSQL。
+
+在 Linux/macOS 上安装后执行一条命令即可完成整库迁移：
+`ash
+pgloader ./shenliyuan.db postgresql://postgres:你的密码@localhost:5432/shenliyuan
+``n*注意：使用 `pgloader` 前，建议先让 Go 服务连上 PostgreSQL 跑一次，让 GORM 自动建好表结构，然后再清空表导入，或者直接让 pgloader 建表。*
+
+#### 方案 B：使用可视化数据库客户端 (如 DBeaver / Navicat)
+1. 使用 **DBeaver** 同时连接你的 SQLite 文件和 PostgreSQL 数据库。
+2. 选中 SQLite 里的所有表 -> 右键 -> **导出数据 (Export Data)**。
+3. 目标端选择你刚建好的 PostgreSQL 数据库。
+4. 勾选所有映射关系，点击下一步，它会自动帮你把数据 Copy 过去。
+

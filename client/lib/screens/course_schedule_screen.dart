@@ -1253,23 +1253,52 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   static const _slotHeightKey = 'slot_height';
 
   Future<void> _loadSettings() async {
-    final prefs = await SharedPreferences.getInstance();
-    final remindersEnabled = await CourseReminderService.instance.isEnabled();
-    final reminderCount =
-        await CourseReminderService.instance.pendingCourseReminderCount();
-    final backgroundStatus =
-        await CourseReminderService.instance.backgroundKeepAliveStatus();
-    if (!mounted) return;
-    setState(() {
-      _cardOpacity = prefs.getDouble(_opacityKey) ?? 0.55;
-      _slotHeight = prefs.getDouble(_slotHeightKey) ?? defaultSlotHeight;
-      _widgetTextColor = prefs.getString('widget_text_color') ?? '#333333';
-      _courseReminderEnabled = remindersEnabled;
-      _reminderAdvanceMinutes = prefs.getInt('course_reminder_advance_minutes') ?? 5;
-      _scheduledReminderCount = reminderCount;
-      _backgroundKeepAliveStatus = backgroundStatus;
-      _settingsLoaded = true;
-    });
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      
+      // 关键路径：不涉及原生通道的高耗时操作，仅读取本地配置
+      if (!mounted) return;
+      setState(() {
+        _cardOpacity = prefs.getDouble(_opacityKey) ?? 0.55;
+        _slotHeight = prefs.getDouble(_slotHeightKey) ?? defaultSlotHeight;
+        _widgetTextColor = prefs.getString('widget_text_color') ?? '#333333';
+        _reminderAdvanceMinutes = prefs.getInt('course_reminder_advance_minutes') ?? 5;
+        _settingsLoaded = true; // 立即放行 UI 渲染
+      });
+      
+      // 非关键路径：异步加载后台服务状态和提醒状态，不阻塞 UI
+      _loadBackgroundStatusAsync();
+      
+    } catch (e, stack) {
+      debugPrint('Error loading settings: $e\n$stack');
+      if (mounted) {
+        setState(() {
+          _settingsLoaded = true;
+        });
+      }
+    }
+  }
+
+  Future<void> _loadBackgroundStatusAsync() async {
+    try {
+      final remindersEnabled = await CourseReminderService.instance.isEnabled();
+      final reminderCount =
+          await CourseReminderService.instance.pendingCourseReminderCount();
+      final backgroundStatus =
+          await CourseReminderService.instance.backgroundKeepAliveStatus().timeout(
+                const Duration(seconds: 2),
+                onTimeout: () => const CourseBackgroundKeepAliveStatus.unsupported(),
+              );
+      if (mounted) {
+        setState(() {
+          _courseReminderEnabled = remindersEnabled;
+          _scheduledReminderCount = reminderCount;
+          _backgroundKeepAliveStatus = backgroundStatus;
+        });
+      }
+    } catch (e) {
+      debugPrint('Background keep alive status check failed: $e');
+    }
   }
 
   Future<void> _saveOpacity(double v) async {
@@ -2098,44 +2127,10 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   /// 弹出保存存档的命名对话框
   void _showSaveArchiveDialog(
       BuildContext sheetCtx, CourseScheduleProvider sc, StateSetter setSheetState) {
-    final nameCtrl = TextEditingController(
-        text: '课表 ${DateTime.now().month}/${DateTime.now().day}');
     showDialog(
       context: sheetCtx,
-      builder: (dialogCtx) => AlertDialog(
-        title: const Text('保存为存档'),
-        content: TextField(
-          controller: nameCtrl,
-          maxLength: 20,
-          autofocus: true,
-          decoration: const InputDecoration(
-            hintText: '输入存档名称',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogCtx),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () async {
-              final name = nameCtrl.text.trim();
-              if (name.isEmpty) return;
-              Navigator.pop(dialogCtx);
-              await sc.saveCurrentAsArchive(name);
-              setSheetState(() {});
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('已保存存档「$name」\n如需提取文件，请点击该存档的分享按钮。')),
-                );
-              }
-            },
-            child: const Text('保存'),
-          ),
-        ],
-      ),
-    ).then((_) => nameCtrl.dispose());
+      builder: (dialogCtx) => _SaveArchiveDialog(sc: sc, setSheetState: setSheetState),
+    );
   }
 
   void _showOpacitySheet(BuildContext context, CourseScheduleProvider sc) {
@@ -3461,4 +3456,67 @@ $classFilterRule
           ],
         ),
       );
+}
+
+class _SaveArchiveDialog extends StatefulWidget {
+  final CourseScheduleProvider sc;
+  final StateSetter setSheetState;
+
+  const _SaveArchiveDialog({required this.sc, required this.setSheetState});
+
+  @override
+  State<_SaveArchiveDialog> createState() => _SaveArchiveDialogState();
+}
+
+class _SaveArchiveDialogState extends State<_SaveArchiveDialog> {
+  late final TextEditingController nameCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    nameCtrl = TextEditingController(
+        text: '课表 ${DateTime.now().month}/${DateTime.now().day}');
+  }
+
+  @override
+  void dispose() {
+    nameCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('保存为存档'),
+      content: TextField(
+        controller: nameCtrl,
+        maxLength: 20,
+        autofocus: true,
+        decoration: const InputDecoration(
+          hintText: '输入存档名称',
+          border: OutlineInputBorder(),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: () async {
+            final name = nameCtrl.text.trim();
+            if (name.isEmpty) return;
+            final scaffoldMessenger = ScaffoldMessenger.of(context);
+            Navigator.pop(context);
+            await widget.sc.saveCurrentAsArchive(name);
+            widget.setSheetState(() {});
+            scaffoldMessenger.showSnackBar(
+              SnackBar(content: Text('已保存存档「$name」\n如需提取文件，请点击该存档的分享按钮。')),
+            );
+          },
+          child: const Text('保存'),
+        ),
+      ],
+    );
+  }
 }

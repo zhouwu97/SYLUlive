@@ -6,9 +6,10 @@ import (
 	"strconv"
 	"time"
 
+	"shenliyuan/internal/models"
+
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
-	"shenliyuan/internal/models"
 )
 
 // ReportHandler 举报处理器
@@ -65,7 +66,10 @@ func (h *ReportHandler) GetList(c *gin.Context) {
 	query.Order("created_at DESC")
 
 	var reports []models.Report
-	query.Find(&reports)
+	if err := query.Find(&reports).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取举报列表失败"})
+		return
+	}
 
 	c.JSON(http.StatusOK, reports)
 }
@@ -107,12 +111,18 @@ func (h *ReportHandler) Handle(c *gin.Context) {
 	report.DeleteReason = input.DeleteReason
 	report.HandledAt = &now
 
-	h.db.Save(&report)
+	if err := h.db.Save(&report).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
+		return
+	}
 
 	// 如果是处理举报且理由是删除，则删除内容并允许申诉
 	if input.Status == "handled" && input.DeleteReason != "" {
 		if report.TargetType == "post" {
-			h.db.Model(&models.Post{}).Where("id = ?", report.TargetID).Update("status", models.PostStatusDeleted)
+			if err := h.db.Model(&models.Post{}).Where("id = ?", report.TargetID).Update("status", models.PostStatusDeleted).Error; err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
+				return
+			}
 
 			// 创建申诉记录
 			var post models.Post
@@ -125,9 +135,15 @@ func (h *ReportHandler) Handle(c *gin.Context) {
 				AdminReason: input.DeleteReason,
 				Status:      models.AppealStatusPending,
 			}
-			h.db.Create(&appeal)
+			if err := h.db.Create(&appeal).Error; err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
+				return
+			}
 		} else if report.TargetType == "reply" {
-			h.db.Model(&models.Reply{}).Where("id = ?", report.TargetID).Update("status", models.ReplyStatusDeleted)
+			if err := h.db.Model(&models.Reply{}).Where("id = ?", report.TargetID).Update("status", models.ReplyStatusDeleted).Error; err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
+				return
+			}
 		}
 
 		// 更新被举报者的举报计数
@@ -144,7 +160,10 @@ func (h *ReportHandler) Handle(c *gin.Context) {
 			}
 		}
 		if targetUserID > 0 {
-			h.db.Model(&models.User{}).Where("id = ?", targetUserID).Update("report_count", gorm.Expr("report_count + 1"))
+			if err := h.db.Model(&models.User{}).Where("id = ?", targetUserID).Update("report_count", gorm.Expr("report_count + 1")).Error; err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
+				return
+			}
 		}
 	}
 
@@ -156,7 +175,10 @@ func (h *ReportHandler) Handle(c *gin.Context) {
 		TargetID:   uint(reportID),
 		Detail:     fmt.Sprintf("处理举报: %s, 结果: %s", report.Reason, input.Status),
 	}
-	h.db.Create(&log)
+	if err := h.db.Create(&log).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
+		return
+	}
 
 	// 管理员处理举报，经验+1
 	h.db.Model(&models.User{}).Where("id = ?", userID).UpdateColumn("admin_exp", gorm.Expr("COALESCE(admin_exp, 0) + 1"))

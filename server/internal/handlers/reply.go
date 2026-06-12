@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -14,16 +15,16 @@ import (
 
 // ReplyHandler 回复处理器
 type ReplyHandler struct {
-	db              *gorm.DB
-	jpushAppKey      string
+	db                *gorm.DB
+	jpushAppKey       string
 	jpushMasterSecret string
 }
 
 // NewReplyHandler 创建回复处理器
 func NewReplyHandler(db *gorm.DB, jpushAppKey, jpushMasterSecret string) *ReplyHandler {
 	return &ReplyHandler{
-		db:              db,
-		jpushAppKey:     jpushAppKey,
+		db:                db,
+		jpushAppKey:       jpushAppKey,
 		jpushMasterSecret: jpushMasterSecret,
 	}
 }
@@ -38,9 +39,12 @@ func (h *ReplyHandler) GetList(c *gin.Context) {
 	}
 
 	var replies []models.Reply
-	h.db.Where("post_id = ? AND status = ?", postID, models.ReplyStatusNormal).
+	if err := h.db.Where("post_id = ? AND status = ?", postID, models.ReplyStatusNormal).
 		Preload("Author").Preload("Images").Preload("Images.File").
-		Order("created_at ASC").Find(&replies)
+		Order("created_at ASC").Find(&replies).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取回复列表失败"})
+		return
+	}
 
 	if userID, exists := c.Get("user_id"); exists {
 		uid := userID.(uint)
@@ -119,7 +123,10 @@ func (h *ReplyHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建回复失败"})
 		return
 	}
-	h.db.Model(&models.Post{}).Where("id = ?", postID).Update("reply_count", gorm.Expr("reply_count + 1"))
+	if err := h.db.Model(&models.Post{}).Where("id = ?", postID).Update("reply_count", gorm.Expr("reply_count + 1")).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
+		return
+	}
 
 	// 尝试增加每日首回经验
 	now := time.Now()
@@ -154,7 +161,10 @@ func (h *ReplyHandler) Create(c *gin.Context) {
 				FileID:    uint(fileID),
 				SortOrder: i,
 			}
-			h.db.Create(&replyImage)
+			if err := h.db.Create(&replyImage).Error; err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
+				return
+			}
 		}
 	}
 
@@ -212,18 +222,28 @@ func (h *ReplyHandler) Delete(c *gin.Context) {
 		return
 	}
 
-	h.db.Model(&reply).Update("status", models.ReplyStatusDeleted)
-	h.db.Model(&models.Post{}).Where("id = ?", reply.PostID).Update("reply_count", gorm.Expr("GREATEST(reply_count - 1, 0)"))
+	if err := h.db.Model(&reply).Update("status", models.ReplyStatusDeleted).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
+		return
+	}
+	if err := h.db.Model(&models.Post{}).Where("id = ?", reply.PostID).Update("reply_count", gorm.Expr("GREATEST(reply_count - 1, 0)")).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
+		return
+	}
 
 	// 管理员删除他人回复时，记录日志并增加经验
 	if reply.AuthorID != userID.(uint) && (role == "admin" || role == "super_admin") {
 		var u models.User
 		h.db.Select("nickname").First(&u, userID)
-		h.db.Create(&models.AdminLog{
+		if err := h.db.Create(&models.AdminLog{
 			AdminID: userID.(uint), AdminName: u.Nickname,
 			Action: "删除回复", Target: reply.Content,
-		})
-		h.db.Model(&models.User{}).Where("id = ?", userID).UpdateColumn("admin_exp", gorm.Expr("COALESCE(admin_exp, 0) + 1"))
+		}).Error; err != nil {
+			log.Printf("[DB_WARN] Failed to write admin log: %v", err)
+		}
+		if err := h.db.Model(&models.User{}).Where("id = ?", userID).UpdateColumn("admin_exp", gorm.Expr("COALESCE(admin_exp, 0) + 1")).Error; err != nil {
+			log.Printf("[DB_WARN] Failed to update admin_exp: %v", err)
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})
@@ -344,7 +364,9 @@ func (h *ReplyHandler) GetReceivedList(c *gin.Context) {
 	}
 
 	// 标记所有回复通知为已读
-	h.db.Model(&models.Notification{}).Where("user_id = ? AND type = ? AND is_read = ?", uid, "reply", false).Update("is_read", true)
+	if err := h.db.Model(&models.Notification{}).Where("user_id = ? AND type = ? AND is_read = ?", uid, "reply", false).Update("is_read", true).Error; err != nil {
+		log.Printf("[DB_WARN] Failed to write side-effect record: %v", err)
+	}
 
 	c.JSON(http.StatusOK, result)
 }

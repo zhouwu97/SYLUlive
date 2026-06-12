@@ -1,17 +1,12 @@
 package handlers
 
-
-
 import (
-
 	"fmt"
 	"net/http"
 	"os"
 	"strconv"
 
 	"time"
-
-
 
 	"github.com/gin-gonic/gin"
 
@@ -20,20 +15,13 @@ import (
 	"gorm.io/gorm"
 
 	"shenliyuan/internal/models"
-
 )
-
-
 
 // SuperAdminHandler 超级管理员处理器
 
 type SuperAdminHandler struct {
-
 	db *gorm.DB
-
 }
-
-
 
 // NewSuperAdminHandler 创建超级管理员处理器
 
@@ -43,8 +31,6 @@ func NewSuperAdminHandler(db *gorm.DB) *SuperAdminHandler {
 
 }
 
-
-
 // GetUsers 获取所有用户
 
 func (h *SuperAdminHandler) GetUsers(c *gin.Context) {
@@ -52,8 +38,6 @@ func (h *SuperAdminHandler) GetUsers(c *gin.Context) {
 	search := c.Query("search")
 
 	role := c.Query("role")
-
-
 
 	query := h.db.Model(&models.User{})
 
@@ -69,29 +53,21 @@ func (h *SuperAdminHandler) GetUsers(c *gin.Context) {
 
 	}
 
-
-
 	var users []models.User
-
-	query.Order("created_at DESC").Find(&users)
-
-
+	if err := query.Order("created_at DESC").Find(&users).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取用户列表失败"})
+		return
+	}
 
 	c.JSON(http.StatusOK, users)
 
 }
 
-
-
 // UpdateUserRoleInput 更新用户角色输入
 
 type UpdateUserRoleInput struct {
-
 	Role string `json:"role" binding:"required"`
-
 }
-
-
 
 // UpdateUserRole 更新用户角色
 
@@ -109,8 +85,6 @@ func (h *SuperAdminHandler) UpdateUserRole(c *gin.Context) {
 
 	}
 
-
-
 	var user models.User
 
 	if err := h.db.First(&user, userID).Error; err != nil {
@@ -120,8 +94,6 @@ func (h *SuperAdminHandler) UpdateUserRole(c *gin.Context) {
 		return
 
 	}
-
-
 
 	// 超级管理员不能被降级
 
@@ -133,8 +105,6 @@ func (h *SuperAdminHandler) UpdateUserRole(c *gin.Context) {
 
 	}
 
-
-
 	var input UpdateUserRoleInput
 
 	if err := c.ShouldBindJSON(&input); err != nil {
@@ -145,8 +115,6 @@ func (h *SuperAdminHandler) UpdateUserRole(c *gin.Context) {
 
 	}
 
-
-
 	if input.Role != string(models.RoleUser) && input.Role != string(models.RoleAdmin) {
 
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的角色"})
@@ -154,8 +122,6 @@ func (h *SuperAdminHandler) UpdateUserRole(c *gin.Context) {
 		return
 
 	}
-
-
 
 	// 防止权限提升：不能把自己提升为超级管理员
 
@@ -169,25 +135,20 @@ func (h *SuperAdminHandler) UpdateUserRole(c *gin.Context) {
 
 	}
 
-
-
-	h.db.Model(&user).Update("role", input.Role)
+	if err := h.db.Model(&user).Update("role", input.Role).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "角色更新成功"})
 
 }
 
-
-
 // UpdateUserCreditInput 更新用户诚信度输入
 
 type UpdateUserCreditInput struct {
-
 	CreditScore int `json:"credit_score" binding:"required,min=0,max=100"`
-
 }
-
-
 
 // UpdateUserCredit 更新用户诚信度
 
@@ -205,8 +166,6 @@ func (h *SuperAdminHandler) UpdateUserCredit(c *gin.Context) {
 
 	}
 
-
-
 	var input UpdateUserCreditInput
 
 	if err := c.ShouldBindJSON(&input); err != nil {
@@ -217,15 +176,14 @@ func (h *SuperAdminHandler) UpdateUserCredit(c *gin.Context) {
 
 	}
 
-
-
-	h.db.Model(&models.User{}).Where("id = ?", userID).Update("credit_score", input.CreditScore)
+	if err := h.db.Model(&models.User{}).Where("id = ?", userID).Update("credit_score", input.CreditScore).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "诚信度更新成功"})
 
 }
-
-
 
 // ResetUserPassword 重置用户密码
 
@@ -242,8 +200,6 @@ func (h *SuperAdminHandler) ResetUserPassword(c *gin.Context) {
 		return
 
 	}
-
-
 
 	defaultPassword := os.Getenv("DEFAULT_RESET_PASSWORD")
 	if defaultPassword == "" {
@@ -263,8 +219,6 @@ func (h *SuperAdminHandler) ResetUserPassword(c *gin.Context) {
 
 }
 
-
-
 // DeleteUser 删除用户
 
 func (h *SuperAdminHandler) DeleteUser(c *gin.Context) {
@@ -281,8 +235,6 @@ func (h *SuperAdminHandler) DeleteUser(c *gin.Context) {
 
 	}
 
-
-
 	var user models.User
 
 	if err := h.db.First(&user, userID).Error; err != nil {
@@ -292,8 +244,6 @@ func (h *SuperAdminHandler) DeleteUser(c *gin.Context) {
 		return
 
 	}
-
-
 
 	// 超级管理员不能删除
 
@@ -305,47 +255,40 @@ func (h *SuperAdminHandler) DeleteUser(c *gin.Context) {
 
 	}
 
-
-
-	h.db.Delete(&user)
+	if err := h.db.Delete(&user).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "用户已删除"})
 
 }
 
-
-
 // Statistics 系统统计
 
 type Statistics struct {
+	TotalUsers int64 `json:"total_users"`
 
-	TotalUsers      int64 `json:"total_users"`
+	TotalPosts int64 `json:"total_posts"`
 
-	TotalPosts      int64 `json:"total_posts"`
+	TotalReports int64 `json:"total_reports"`
 
-	TotalReports    int64 `json:"total_reports"`
+	PendingReports int64 `json:"pending_reports"`
 
-	PendingReports  int64 `json:"pending_reports"`
+	TotalAppeals int64 `json:"total_appeals"`
 
-	TotalAppeals    int64 `json:"total_appeals"`
+	PendingAppeals int64 `json:"pending_appeals"`
 
-	PendingAppeals  int64 `json:"pending_appeals"`
-
-	AdminCount      int64 `json:"admin_count"`
+	AdminCount int64 `json:"admin_count"`
 
 	SuperAdminCount int64 `json:"super_admin_count"`
-
 }
-
-
 
 // GetStatistics 获取系统统计
 
 func (h *SuperAdminHandler) GetStatistics(c *gin.Context) {
 
 	var stats Statistics
-
-
 
 	h.db.Model(&models.User{}).Count(&stats.TotalUsers)
 
@@ -363,49 +306,42 @@ func (h *SuperAdminHandler) GetStatistics(c *gin.Context) {
 
 	h.db.Model(&models.User{}).Where("role = ?", models.RoleSuperAdmin).Count(&stats.SuperAdminCount)
 
-
-
 	c.JSON(http.StatusOK, stats)
 
 }
 
-
-
 // AdminLogItem 管理员日志项（含经验信息）
 
 type AdminLogItem struct {
+	ID uint `json:"id"`
 
-	ID        uint      `json:"id"`
+	AdminID uint `json:"admin_id"`
 
-	AdminID   uint      `json:"admin_id"`
+	AdminName string `json:"admin_name"`
 
-	AdminName string    `json:"admin_name"`
+	Action string `json:"action"`
 
-	Action    string    `json:"action"`
+	Target string `json:"target"`
 
-	Target    string    `json:"target"`
-
-	Detail    string    `json:"detail"`
+	Detail string `json:"detail"`
 
 	CreatedAt time.Time `json:"created_at"`
 
-	AdminExp  int       `json:"admin_exp"`  // 当前管理员经验
+	AdminExp int `json:"admin_exp"` // 当前管理员经验
 
-	AdminRole string    `json:"admin_role"` // 管理员角色
+	AdminRole string `json:"admin_role"` // 管理员角色
 
 }
-
-
 
 // GetAdminLogs 获取管理员操作日志（含经验信息）
 
 func (h *SuperAdminHandler) GetAdminLogs(c *gin.Context) {
 
 	var logs []models.AdminLog
-
-	h.db.Preload("Admin").Order("created_at DESC").Limit(200).Find(&logs)
-
-
+	if err := h.db.Preload("Admin").Order("created_at DESC").Limit(200).Find(&logs).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取管理日志失败"})
+		return
+	}
 
 	result := make([]AdminLogItem, len(logs))
 
@@ -413,57 +349,46 @@ func (h *SuperAdminHandler) GetAdminLogs(c *gin.Context) {
 
 		result[i] = AdminLogItem{
 
-			ID:        log.ID,
+			ID: log.ID,
 
-			AdminID:   log.AdminID,
+			AdminID: log.AdminID,
 
 			AdminName: log.AdminName,
 
-			Action:    log.Action,
+			Action: log.Action,
 
-			Target:    log.Target,
+			Target: log.Target,
 
-			Detail:    log.Detail,
+			Detail: log.Detail,
 
 			CreatedAt: log.CreatedAt,
 
-			AdminExp:  log.Admin.AdminExp,
+			AdminExp: log.Admin.AdminExp,
 
 			AdminRole: string(log.Admin.Role),
-
 		}
 
 	}
-
-
 
 	c.JSON(http.StatusOK, result)
 
 }
 
-
-
 // RevokeAdminExpInput 追回管理员经验输入
 
 type RevokeAdminExpInput struct {
-
 	AdminID uint `json:"admin_id" binding:"required"`
 
-	Amount  int  `json:"amount" binding:"required,min=1"`
+	Amount int `json:"amount" binding:"required,min=1"`
 
-	Reason  string `json:"reason"`
-
+	Reason string `json:"reason"`
 }
-
-
 
 // RevokeAdminExp 追回管理员经验
 
 func (h *SuperAdminHandler) RevokeAdminExp(c *gin.Context) {
 
 	operatorID, _ := c.Get("user_id")
-
-
 
 	var input RevokeAdminExpInput
 
@@ -475,8 +400,6 @@ func (h *SuperAdminHandler) RevokeAdminExp(c *gin.Context) {
 
 	}
 
-
-
 	var target models.User
 
 	if err := h.db.First(&target, input.AdminID).Error; err != nil {
@@ -487,8 +410,6 @@ func (h *SuperAdminHandler) RevokeAdminExp(c *gin.Context) {
 
 	}
 
-
-
 	if target.Role != "admin" && target.Role != "super_admin" {
 
 		c.JSON(http.StatusBadRequest, gin.H{"error": "目标用户不是管理员"})
@@ -496,8 +417,6 @@ func (h *SuperAdminHandler) RevokeAdminExp(c *gin.Context) {
 		return
 
 	}
-
-
 
 	// 不能追回超级管理员的经验（除非操作者也是超级管理员）
 
@@ -517,8 +436,6 @@ func (h *SuperAdminHandler) RevokeAdminExp(c *gin.Context) {
 
 	}
 
-
-
 	// 扣减经验（不低于0）
 
 	newExp := target.AdminExp - input.Amount
@@ -529,9 +446,10 @@ func (h *SuperAdminHandler) RevokeAdminExp(c *gin.Context) {
 
 	}
 
-	h.db.Model(&target).Update("admin_exp", newExp)
-
-
+	if err := h.db.Model(&target).Update("admin_exp", newExp).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
+		return
+	}
 
 	// 记录操作日志
 
@@ -558,26 +476,20 @@ func (h *SuperAdminHandler) RevokeAdminExp(c *gin.Context) {
 		Target: target.Nickname,
 
 		Detail: fmt.Sprintf("追回 %d 经验（原因: %s），剩余 %d", input.Amount, reason, newExp),
-
 	})
-
-
 
 	c.JSON(http.StatusOK, gin.H{
 
-		"message":      "经验已追回",
+		"message": "经验已追回",
 
-		"admin_id":     input.AdminID,
+		"admin_id": input.AdminID,
 
-		"revoked":      input.Amount,
+		"revoked": input.Amount,
 
-		"remaining":    newExp,
-
+		"remaining": newExp,
 	})
 
 }
-
-
 
 // AiConfigInput AI 全局配置输入
 type AiConfigInput struct {
@@ -590,7 +502,10 @@ type AiConfigInput struct {
 func (h *SuperAdminHandler) GetAiConfig(c *gin.Context) {
 	configKeys := []string{"ai_base_url", "ai_api_key", "ai_model_name"}
 	var configs []models.SystemConfig
-	h.db.Where("config_key IN ?", configKeys).Find(&configs)
+	if err := h.db.Where("config_key IN ?", configKeys).Find(&configs).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取配置失败"})
+		return
+	}
 
 	configMap := make(map[string]string)
 	for _, conf := range configs {
@@ -655,10 +570,13 @@ func (h *SuperAdminHandler) GetLotteryParticipants(c *gin.Context) {
 	}
 
 	var participants []models.LotteryParticipant
-	h.db.Where("lottery_id = ?", event.ID).Preload("User").Find(&participants)
-	
+	if err := h.db.Where("lottery_id = ?", event.ID).Preload("User").Find(&participants).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取参与者列表失败"})
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"event": event,
+		"event":        event,
 		"participants": participants,
 	})
 }

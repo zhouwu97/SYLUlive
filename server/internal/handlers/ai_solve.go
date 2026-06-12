@@ -23,14 +23,14 @@ import (
 
 // AiSolveHandler AI答题处理器
 type AiSolveHandler struct {
-	db              *gorm.DB
-	requestGroup    singleflight.Group
-	restyClient     *resty.Client
-	
+	db           *gorm.DB
+	requestGroup singleflight.Group
+	restyClient  *resty.Client
+
 	// 默认配置 (兜底)
-	defaultAPIKey   string
-	defaultBaseURL  string
-	
+	defaultAPIKey  string
+	defaultBaseURL string
+
 	// 动态配置缓存
 	configMutex     sync.RWMutex
 	cachedBaseURL   string
@@ -57,10 +57,10 @@ func getAiRateLimiter(uid uint) *rate.Limiter {
 // NewAiSolveHandler 创建AI答题处理器
 func NewAiSolveHandler(db *gorm.DB, apiKey, baseURL string) *AiSolveHandler {
 	return &AiSolveHandler{
-		db:              db,
-		restyClient:     resty.New(),
-		defaultAPIKey:   apiKey,
-		defaultBaseURL:  baseURL,
+		db:             db,
+		restyClient:    resty.New(),
+		defaultAPIKey:  apiKey,
+		defaultBaseURL: baseURL,
 	}
 }
 
@@ -109,7 +109,9 @@ func (h *AiSolveHandler) getAiConfig() (baseURL, apiKey, modelName string) {
 
 	configKeys := []string{"ai_base_url", "ai_api_key", "ai_model_name"}
 	var configs []models.SystemConfig
-	h.db.Where("config_key IN ?", configKeys).Find(&configs)
+	if err := h.db.Where("config_key IN ?", configKeys).Find(&configs).Error; err != nil {
+		log.Printf("[DB_ERROR] getAiConfig Find failed: %v", err)
+	}
 
 	configMap := make(map[string]string)
 	for _, conf := range configs {
@@ -146,7 +148,7 @@ func (h *AiSolveHandler) callAI(baseURL, apiKey, modelName, questionType, cleane
 
 	// 提取图片 URL
 	matches1 := reImgTag.FindAllStringSubmatch(cleanedText, -1)
-	
+
 	// 提取雨课堂 OSS 图片和独立图片链接
 	matches2 := reDirectLink.FindAllString(cleanedText, -1)
 
@@ -188,7 +190,7 @@ func (h *AiSolveHandler) callAI(baseURL, apiKey, modelName, questionType, cleane
 				},
 			})
 		}
-		
+
 		reqBody = map[string]interface{}{
 			"model": modelName,
 			"messages": []map[string]interface{}{
@@ -304,7 +306,7 @@ func (h *AiSolveHandler) Solve(c *gin.Context) {
 
 	// 1. 文本预处理与 Hash 计算
 	cleanedText := cleanText(req.ContentText)
-	
+
 	// 为了确保缓存高命中率，剔除 __originalIndex 字段带来的干扰
 	hashText := reIndexTarget.ReplaceAllString(cleanedText, "")
 	questionHash := generateHash(req.QuestionType, hashText)
@@ -365,7 +367,7 @@ func (h *AiSolveHandler) Solve(c *gin.Context) {
 
 		// 第四步：直连大模型
 		baseURL, apiKey, modelName := h.getAiConfig()
-		
+
 		answer, err := h.callAI(baseURL, apiKey, modelName, req.QuestionType, cleanedText)
 		if err != nil {
 			return nil, err
@@ -391,7 +393,10 @@ func (h *AiSolveHandler) Solve(c *gin.Context) {
 	if err != nil {
 		// 第五步：失败补偿
 		if !isFreeUser {
-			h.db.Exec("UPDATE users SET credits = credits + ? WHERE id = ?", cost, uid)
+			if err := h.db.Exec("UPDATE users SET credits = credits + ? WHERE id = ?", cost, uid).Error; err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
+				return
+			}
 		}
 
 		c.JSON(http.StatusInternalServerError, gin.H{

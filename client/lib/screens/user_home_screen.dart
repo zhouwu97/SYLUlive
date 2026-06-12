@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:dio/dio.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:image_cropper/image_cropper.dart';
 import '../providers/auth_provider.dart';
 import '../config/api_constants.dart';
 import '../widgets/glass_container.dart';
@@ -12,7 +13,7 @@ import '../models/post.dart';
 import '../providers/social_provider.dart';
 import '../widgets/post_card.dart';
 import 'social_list_screen.dart';
-
+import 'image_viewer_screen.dart';
 class UserHomeScreen extends StatefulWidget {
   final int? userId;
   const UserHomeScreen({super.key, this.userId});
@@ -32,6 +33,9 @@ class _UserHomeScreenState extends State<UserHomeScreen> with SingleTickerProvid
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    if (widget.userId == null) {
+      _user = context.read<AuthProvider>().user;
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadData();
     });
@@ -68,13 +72,12 @@ class _UserHomeScreenState extends State<UserHomeScreen> with SingleTickerProvid
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    if (_isLoading) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
-    }
-
     if (_user == null) {
+      if (_isLoading) {
+        return const Scaffold(
+          body: Center(child: CircularProgressIndicator()),
+        );
+      }
       return Scaffold(
         appBar: AppBar(title: const Text('错误')),
         body: const Center(child: Text('用户不存在或加载失败')),
@@ -173,8 +176,10 @@ class _UserHomeScreenState extends State<UserHomeScreen> with SingleTickerProvid
         body: TabBarView(
           controller: _tabController,
           children: [
-            _posts.isEmpty
-                ? const Center(child: Text('暂无帖子'))
+            _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : _posts.isEmpty
+                    ? const Center(child: Text('暂无帖子'))
                 : ListView.builder(
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     itemCount: _posts.length,
@@ -206,16 +211,30 @@ class _UserHomeScreenState extends State<UserHomeScreen> with SingleTickerProvid
               Expanded(
                 child: Row(
                   children: [
-                    ClipOval(
-                      child: user.avatar.isNotEmpty
-                          ? CachedNetworkImage(
-                              imageUrl: ApiConstants.fullUrl(user.avatar),
-                              width: 64, height: 64, fit: BoxFit.cover,
-                            )
-                          : Container(
-                              width: 64, height: 64, color: Colors.grey[300],
-                              child: const Icon(Icons.person, size: 30, color: Colors.white),
+                    GestureDetector(
+                      onTap: () {
+                        if (user.avatar.isNotEmpty) {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => ImageViewerScreen(
+                                imageUrls: [ApiConstants.fullUrl(user.avatar)],
+                              ),
                             ),
+                          );
+                        }
+                      },
+                      child: ClipOval(
+                        child: user.avatar.isNotEmpty
+                            ? CachedNetworkImage(
+                                imageUrl: ApiConstants.fullUrl(user.avatar),
+                                width: 64, height: 64, fit: BoxFit.cover,
+                              )
+                            : Container(
+                                width: 64, height: 64, color: Colors.grey[300],
+                                child: const Icon(Icons.person, size: 30, color: Colors.white),
+                              ),
+                      ),
                     ),
                     const SizedBox(width: 16),
                     Expanded(
@@ -294,6 +313,7 @@ class _UserHomeScreenState extends State<UserHomeScreen> with SingleTickerProvid
                         _user!.isFollowing = false;
                         _user!.followersCount = (_user!.followersCount - 1).clamp(0, 999999);
                       });
+                      context.read<AuthProvider>().refreshUser();
                     }
                   },
                   child: const Text('已关注'),
@@ -307,6 +327,7 @@ class _UserHomeScreenState extends State<UserHomeScreen> with SingleTickerProvid
                         _user!.isFollowing = true;
                         _user!.followersCount++;
                       });
+                      context.read<AuthProvider>().refreshUser();
                     }
                   },
                   child: const Text('关注'),
@@ -437,11 +458,13 @@ class _UserHomeScreenState extends State<UserHomeScreen> with SingleTickerProvid
 
   // ---------------- 编辑资料悬浮窗 ----------------
   void _showEditSheet(BuildContext context, User user) {
-    showModalBottomSheet(
+    showDialog(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => _EditProfileSheet(user: user, onSaved: _loadData),
+      builder: (context) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+        child: _EditProfileSheet(user: user, onSaved: _loadData),
+      ),
     );
   }
 }
@@ -591,6 +614,25 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
     final picked = await picker.pickImage(source: ImageSource.gallery);
     if (picked == null) return;
 
+    final cropped = await ImageCropper().cropImage(
+      sourcePath: picked.path,
+      aspectRatio: const CropAspectRatio(ratioX: 16, ratioY: 9),
+      uiSettings: [
+        AndroidUiSettings(
+          toolbarTitle: '裁剪背景图',
+          toolbarColor: Colors.black,
+          toolbarWidgetColor: Colors.white,
+          statusBarColor: Colors.black,
+          backgroundColor: Colors.black,
+          initAspectRatio: CropAspectRatioPreset.ratio16x9,
+          lockAspectRatio: true,
+        ),
+        IOSUiSettings(title: '裁剪背景图', aspectRatioLockEnabled: true),
+      ],
+    );
+
+    if (cropped == null) return;
+
     if (!mounted) return;
     final auth = context.read<AuthProvider>();
 
@@ -598,7 +640,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
       setState(() => _isSaving = true);
       // 复用 auth_provider 的图片上传接口 (也可以直接调 dio)
       FormData formData = FormData.fromMap({
-        'file': await MultipartFile.fromFile(picked.path),
+        'file': await MultipartFile.fromFile(cropped.path),
       });
 
       final uploadRes = await auth.dio.post('/upload', data: formData);
@@ -669,7 +711,14 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
       ),
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 20,
+            spreadRadius: 5,
+          )
+        ],
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,

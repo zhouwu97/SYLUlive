@@ -308,6 +308,7 @@ class _MarketScreenState extends State<MarketScreen> {
       floatingActionButton: Padding(
         padding: const EdgeInsets.only(bottom: 80),
         child: FloatingActionButton(
+          heroTag: 'market_fab',
           onPressed: () async {
             final authProvider = context.read<AuthProvider>();
             if (!authProvider.isLoggedIn) {

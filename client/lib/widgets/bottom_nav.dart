@@ -114,41 +114,45 @@ class BottomNavWrapper extends StatelessWidget {
           onTap(currentIndex + 1);
         }
       },
-      child: SafeArea(
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Flexible(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 400),
-                child: Container(
-                  margin: const EdgeInsets.only(left: 12, right: 12, top: 4, bottom: 12),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(50),
-                    child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: (isDark ? Colors.grey[900]! : Colors.white)
-                          .withValues(alpha: 0.7),
-                      borderRadius: BorderRadius.circular(50),
-                      border: Border.all(
-                        color: isDark ? Colors.white10 : Colors.white30,
-                        width: 1,
-                      ),
-                    ),
-                    child: LayoutBuilder(
-                      builder: (context, constraints) {
-                        final itemWidth = constraints.maxWidth / 5;
-                        return Stack(
-                          alignment: Alignment.center,
-                          children: [
-                            // 滑动背景指示器
-                            AnimatedPositioned(
-                              duration: const Duration(milliseconds: 300),
-                              curve: Curves.easeOutCubic,
-                              left: itemWidth * currentIndex,
+      child: Container(
+        // 取消 SafeArea 强制避让，而是手动计算使其更贴近小白条，同时保证无安全区时留有足够边距
+        margin: EdgeInsets.only(bottom: bottomSafe > 0 ? (bottomSafe > 20 ? bottomSafe - 16 : bottomSafe) : 16),
+        alignment: Alignment.bottomCenter,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 260),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(50),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                decoration: BoxDecoration(
+                  color: (isDark ? Colors.grey[900]! : Colors.white)
+                      .withValues(alpha: 0.8),
+                  borderRadius: BorderRadius.circular(50),
+                  border: Border.all(
+                    color: isDark ? Colors.white10 : Colors.black.withValues(alpha: 0.05),
+                    width: 0.5,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.1),
+                      blurRadius: 10,
+                      spreadRadius: 1,
+                    )
+                  ]
+                ),
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final itemWidth = constraints.maxWidth / 5;
+                      return Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          // 滑动背景指示器
+                          AnimatedPositioned(
+                            duration: const Duration(milliseconds: 350),
+                            curve: Curves.fastLinearToSlowEaseIn,
+                            left: itemWidth * currentIndex,
                               width: itemWidth,
                               top: 0,
                               bottom: 0,
@@ -178,13 +182,9 @@ class BottomNavWrapper extends StatelessWidget {
                         );
                       },
                     ),
-                  ),
                 ),
               ),
             ),
-          ),
-          ),
-          ],
         ),
       ),
     );

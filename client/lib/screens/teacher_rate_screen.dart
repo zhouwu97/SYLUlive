@@ -159,6 +159,7 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
     return Padding(
       padding: EdgeInsets.only(bottom: bottomSafe > 0 ? bottomSafe : 0),
       child: FloatingActionButton(
+        heroTag: 'teacher_rate_fab',
         onPressed: _showAddDialog,
         backgroundColor: const Color(0xFF16A34A),
         elevation: 4,

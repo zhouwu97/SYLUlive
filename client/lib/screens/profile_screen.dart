@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:image_picker/image_picker.dart';
+import 'package:image_cropper/image_cropper.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
@@ -56,10 +57,9 @@ class _ProfileScreenState extends State<ProfileScreen>
       vsync: this,
       duration: const Duration(milliseconds: 800),
     );
-    _fadeAnimation = Tween<double>(begin: 0, end: 1).animate(
+    _fadeAnimation = Tween<double>(begin: 1, end: 1).animate(
       CurvedAnimation(parent: _animationController, curve: Curves.easeOut),
     );
-    _animationController.forward();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<AuthProvider>().refreshUser();
       _loadUnreadCount();
@@ -71,11 +71,24 @@ class _ProfileScreenState extends State<ProfileScreen>
   Future<void> _fetchPostCount() async {
     final auth = context.read<AuthProvider>();
     if (!auth.isLoggedIn || auth.user == null) return;
+    
+    // 如果有缓存，直接使用缓存秒开
+    if (MyContentScreen.globalPostCount != null) {
+      if (mounted) {
+        setState(() {
+          _postCount = MyContentScreen.globalPostCount;
+        });
+      }
+      // 不直接 return，在后台静默刷新以保证数据一致性
+    }
+
     try {
       final res = await auth.dio.get('/user/${auth.user!.id}/posts?limit=999');
       if (res.statusCode == 200 && mounted) {
         setState(() {
-          _postCount = (res.data as List).length;
+          final data = res.data is Map ? res.data['data'] : res.data;
+          _postCount = (data as List).length;
+          MyContentScreen.globalPostCount = _postCount; // 同步更新缓存
         });
       }
     } catch (_) {}
@@ -117,9 +130,7 @@ class _ProfileScreenState extends State<ProfileScreen>
       body: Stack(
         children: [
           // 内容
-          FadeTransition(
-            opacity: _fadeAnimation,
-            child: CustomScrollView(
+          CustomScrollView(
               physics: const BouncingScrollPhysics(),
               slivers: [
                 SliverToBoxAdapter(
@@ -167,7 +178,6 @@ class _ProfileScreenState extends State<ProfileScreen>
                 ),
               ],
             ),
-          ),
         ],
       ),
     );
@@ -430,6 +440,7 @@ class _ProfileScreenState extends State<ProfileScreen>
 
   Widget _buildSocialStatItem(String count, String label, bool isDark, VoidCallback onTap) {
     return GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -988,7 +999,30 @@ class _ProfileScreenState extends State<ProfileScreen>
       final image = await ImagePicker().pickImage(source: source);
       if (image == null) return;
 
-      final length = await image.length();
+      final cropped = await ImageCropper().cropImage(
+        sourcePath: image.path,
+        aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
+        uiSettings: [
+          AndroidUiSettings(
+            toolbarTitle: '裁剪头像',
+            toolbarColor: Theme.of(context).primaryColor,
+            toolbarWidgetColor: Colors.white,
+            statusBarColor: Colors.black,
+            backgroundColor: Colors.black,
+            initAspectRatio: CropAspectRatioPreset.square,
+            lockAspectRatio: true,
+          ),
+          IOSUiSettings(
+            title: '裁剪头像',
+            aspectRatioLockEnabled: true,
+            resetButtonHidden: true,
+          ),
+        ],
+      );
+
+      if (cropped == null) return;
+
+      final length = File(cropped.path).lengthSync();
       if (length > 10 * 1024 * 1024) {
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -1000,9 +1034,9 @@ class _ProfileScreenState extends State<ProfileScreen>
 
       final appDir = await getApplicationDocumentsDirectory();
       final fileName =
-          'avatar_${DateTime.now().millisecondsSinceEpoch}${path.extension(image.path)}';
+          'avatar_${DateTime.now().millisecondsSinceEpoch}${path.extension(cropped.path)}';
       final savedPath = path.join(appDir.path, fileName);
-      await File(image.path).copy(savedPath);
+      await File(cropped.path).copy(savedPath);
       final result = await authProvider.updateAvatar(savedPath);
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(

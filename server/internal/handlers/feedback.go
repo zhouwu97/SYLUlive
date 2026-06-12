@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/smtp"
 	"os"
+	"strings"
 	"time"
 
 	"shenliyuan/internal/models"
@@ -85,8 +86,20 @@ func (h *FeedbackHandler) Submit(c *gin.Context) {
 	imagesHtml := ""
 	if len(input.Images) > 0 {
 		imagesHtml = `<div style="margin-top: 16px;"><strong>📎 附图：</strong><br>`
+		scheme := "http"
+		if c.Request.TLS != nil || c.GetHeader("X-Forwarded-Proto") == "https" {
+			scheme = "https"
+		}
+		host := c.Request.Host
 		for i, imgUrl := range input.Images {
-			imagesHtml += fmt.Sprintf(`<a href="%s" target="_blank" style="display: inline-block; margin-right: 10px; color: #4F46E5; text-decoration: none;">📷 截图 %d</a>`, html.EscapeString(imgUrl), i+1)
+			fullUrl := imgUrl
+			if !strings.HasPrefix(fullUrl, "http") {
+				if !strings.HasPrefix(fullUrl, "/") {
+					fullUrl = "/" + fullUrl
+				}
+				fullUrl = scheme + "://" + host + fullUrl
+			}
+			imagesHtml += fmt.Sprintf(`<a href="%s" target="_blank" style="display: inline-block; margin-right: 10px; color: #4F46E5; text-decoration: none;">📷 截图 %d</a>`, html.EscapeString(fullUrl), i+1)
 		}
 		imagesHtml += `</div>`
 	}

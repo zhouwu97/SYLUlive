@@ -6,6 +6,7 @@ import 'package:dio/dio.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../config/api_constants.dart';
+import '../screens/image_viewer_screen.dart';
 
 class ImageUploadWidget extends StatefulWidget {
   final int maxImages;
@@ -40,6 +41,7 @@ class _ImageUploadWidgetState extends State<ImageUploadWidget> {
         maxWidth: 1920,
         maxHeight: 1920,
         imageQuality: 85,
+        requestFullMetadata: false,
       );
 
       if (image != null) {
@@ -173,11 +175,27 @@ class _ImageUploadWidgetState extends State<ImageUploadWidget> {
                           borderRadius: BorderRadius.circular(8),
                           border: Border.all(color: Colors.grey[300]!),
                         ),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(8),
-                          child: Image.network(
-                            ApiConstants.fullUrl(url),
-                            fit: BoxFit.cover,
+                        child: GestureDetector(
+                          onTap: () {
+                            final fullUrls = _uploadedUrls
+                                .map((u) => ApiConstants.fullUrl(u))
+                                .toList();
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => ImageViewerScreen(
+                                  imageUrls: fullUrls,
+                                  initialIndex: index,
+                                ),
+                              ),
+                            );
+                          },
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: Image.network(
+                              ApiConstants.fullUrl(url),
+                              fit: BoxFit.cover,
+                            ),
                           ),
                         ),
                       ),

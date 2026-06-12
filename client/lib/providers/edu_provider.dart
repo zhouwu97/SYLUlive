@@ -125,11 +125,19 @@ class EduProvider extends ChangeNotifier {
     if (_userId == null) return;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('edu_bound_$_userId', _isBound);
+    await prefs.setString('edu_student_id_$_userId', _studentId);
+    await prefs.setString('edu_grade_$_userId', _grade);
+    await prefs.setString('edu_college_$_userId', _college);
+    await prefs.setString('edu_major_$_userId', _major);
   }
 
   Future<bool> _loadBoundStatus() async {
     if (_userId == null) return false;
     final prefs = await SharedPreferences.getInstance();
+    _studentId = prefs.getString('edu_student_id_$_userId') ?? '';
+    _grade = prefs.getString('edu_grade_$_userId') ?? '';
+    _college = prefs.getString('edu_college_$_userId') ?? '';
+    _major = prefs.getString('edu_major_$_userId') ?? '';
     return prefs.getBool('edu_bound_$_userId') ?? false;
   }
 

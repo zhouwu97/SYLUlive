@@ -63,27 +63,52 @@ class _UserList extends StatefulWidget {
 }
 
 class _UserListState extends State<_UserList> {
+  static final Map<String, List<User>> _usersCache = {};
+  static final Map<String, int> _pageCache = {};
+  static final Map<String, bool> _hasMoreCache = {};
+  
+  String get _cacheKey => '${widget.userId}_${widget.type}';
+
   List<User> _users = [];
   bool _isLoading = true;
   bool _hasMore = true;
   int _page = 1;
+  bool _isFetching = false;
 
   @override
   void initState() {
     super.initState();
-    _loadData();
+    if (_usersCache.containsKey(_cacheKey)) {
+      _users = List.from(_usersCache[_cacheKey]!);
+      _page = _pageCache[_cacheKey] ?? 1;
+      _hasMore = _hasMoreCache[_cacheKey] ?? true;
+      _isLoading = false;
+      // 静默刷新
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _loadData(refresh: true, silent: true);
+      });
+    } else {
+      _loadData();
+    }
   }
 
-  Future<void> _loadData({bool refresh = false}) async {
+  Future<void> _loadData({bool refresh = false, bool silent = false}) async {
+    if (_isFetching) return;
     if (refresh) {
-      setState(() {
+      if (!silent) {
+        setState(() {
+          _page = 1;
+          _hasMore = true;
+          _isLoading = true;
+        });
+      } else {
         _page = 1;
         _hasMore = true;
-        _isLoading = true;
-      });
+      }
     }
 
     if (!_hasMore) return;
+    _isFetching = true;
 
     final provider = context.read<SocialProvider>();
     Map<String, dynamic> result;
@@ -103,15 +128,27 @@ class _UserListState extends State<_UserList> {
         if (refresh) {
           _users = loadedUsers;
         } else {
-          _users.addAll(loadedUsers);
+          // Add basic deduplication check to prevent edge-case duplicate inserts
+          for (final loadedUser in loadedUsers) {
+            if (!_users.any((u) => u.id == loadedUser.id)) {
+              _users.add(loadedUser);
+            }
+          }
         }
         _isLoading = false;
+        _isFetching = false;
         if (_users.length >= total || loadedUsers.isEmpty) {
           _hasMore = false;
         } else {
           _page++;
         }
+        
+        _usersCache[_cacheKey] = _users;
+        _pageCache[_cacheKey] = _page;
+        _hasMoreCache[_cacheKey] = _hasMore;
       });
+    } else {
+      _isFetching = false;
     }
   }
 
@@ -172,14 +209,16 @@ class _UserListState extends State<_UserList> {
         final provider = context.read<SocialProvider>();
         bool success = false;
         if (user.isFollowing) {
-           success = await provider.unfollow(user.id);
+          success = await provider.unfollow(user.id);
         } else {
-           success = await provider.follow(user.id);
+          success = await provider.follow(user.id);
         }
-        if (success) {
-           setState(() {
-             user.isFollowing = !user.isFollowing;
-           });
+        if (success && mounted) {
+          setState(() {
+            user.isFollowing = !user.isFollowing;
+          });
+          // Refresh global user state so profile follow count updates instantly
+          context.read<AuthProvider>().refreshUser();
         }
       },
       child: Text(user.isFollowing ? '已关注' : '关注'),

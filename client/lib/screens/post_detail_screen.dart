@@ -776,12 +776,26 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         borderRadius: BorderRadius.circular(18),
       ),
       child: Row(children: [
-        CachedAvatar(
-          radius: 24,
-          imageUrl: p.author?.avatar.isNotEmpty == true
-              ? ApiConstants.fullUrl(p.author!.avatar)
-              : null,
-          fallbackText: p.author?.nickname,
+        GestureDetector(
+          onTap: () {
+            if (p.author?.avatar.isNotEmpty == true) {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => ImageViewerScreen(
+                    imageUrls: [ApiConstants.fullUrl(p.author!.avatar)],
+                  ),
+                ),
+              );
+            }
+          },
+          child: CachedAvatar(
+            radius: 24,
+            imageUrl: p.author?.avatar.isNotEmpty == true
+                ? ApiConstants.fullUrl(p.author!.avatar)
+                : null,
+            fallbackText: p.author?.nickname,
+          ),
         ),
         const SizedBox(width: 14),
         Expanded(

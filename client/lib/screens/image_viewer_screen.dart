@@ -2,7 +2,9 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:dio/dio.dart';
-import 'package:photo_manager/photo_manager.dart';
+import 'package:gal/gal.dart';
+import 'package:path_provider/path_provider.dart';
+import 'dart:io';
 
 class ImageViewerScreen extends StatefulWidget {
   final List<String> imageUrls;
@@ -44,15 +46,17 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
     try {
       final String url = widget.imageUrls[_currentIndex];
       
-      // 请求相册权限
-      final PermissionState ps = await PhotoManager.requestPermissionExtend();
-      if (!ps.isAuth) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('需要相册权限才能保存图片')),
-        );
-        if (mounted) setState(() => _isSaving = false);
-        return;
+      final hasAccess = await Gal.hasAccess();
+      if (!hasAccess) {
+        final request = await Gal.requestAccess();
+        if (!request) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('需要相册权限才能保存图片')),
+          );
+          if (mounted) setState(() => _isSaving = false);
+          return;
+        }
       }
 
       if (!mounted) return;
@@ -60,7 +64,6 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
         const SnackBar(content: Text('正在下载并保存原图...')),
       );
       
-      // 下载图片数据
       final response = await Dio().get(
         url,
         options: Options(responseType: ResponseType.bytes),
@@ -69,24 +72,20 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
       final Uint8List bytes = Uint8List.fromList(response.data);
       final String filename = 'sylulive_${DateTime.now().millisecondsSinceEpoch}.jpg';
       
-      // 保存到相册
-      final AssetEntity? result = await PhotoManager.editor.saveImage(
-        bytes,
-        title: filename,
-        filename: filename,
-      );
+      final tempDir = await getTemporaryDirectory();
+      final tempPath = '${tempDir.path}/$filename';
+      final file = File(tempPath);
+      await file.writeAsBytes(bytes);
+
+      await Gal.putImage(tempPath, album: '沈理');
 
       if (!mounted) return;
-      if (result != null) {
-        setState(() {
-          _downloadedImages[_currentIndex] = bytes;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('原图已保存到相册并替换当前显示')),
-        );
-      } else {
-        throw Exception('保存失败');
-      }
+      setState(() {
+        _downloadedImages[_currentIndex] = bytes;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('原图已保存到"沈理"相册并替换当前显示')),
+      );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

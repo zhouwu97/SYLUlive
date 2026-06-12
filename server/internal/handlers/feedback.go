@@ -25,7 +25,10 @@ func NewFeedbackHandler(db *gorm.DB) *FeedbackHandler {
 }
 
 type feedbackInput struct {
-	Content string `json:"content" binding:"required"`
+	Content string   `json:"content" binding:"required"`
+	Type    string   `json:"type"`
+	Images  []string `json:"images"`
+	Contact string   `json:"contact"`
 }
 
 // Submit 用户提交反馈，通过SMTP发送邮件给开发者
@@ -55,14 +58,43 @@ func (h *FeedbackHandler) Submit(c *gin.Context) {
 	// 发送邮件到开发者邮箱
 	to := os.Getenv("FEEDBACK_EMAIL_TO")
 	if to == "" {
+		to = "13514252317@163.com"
+	}
+	if to == "" {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "未配置反馈接收邮箱，无法提交反馈"})
 		return
 	}
 	subject := fmt.Sprintf("【沈理校园反馈】来自 %s", nickname)
+
+	badge := "💡 功能建议"
+	badgeColor := "#3B82F6" // 蓝色
+	if input.Type == "bug" {
+		badge = "🐛 Bug 反馈"
+		badgeColor = "#EF4444" // 红色
+	}
+
+	contactRow := ""
+	if input.Contact != "" {
+		contactRow = fmt.Sprintf(`
+      <tr>
+        <td style="padding: 6px 12px; color: #666;">联系方式</td>
+        <td style="padding: 6px 12px; font-weight: bold;">%s</td>
+      </tr>`, html.EscapeString(input.Contact))
+	}
+
+	imagesHtml := ""
+	if len(input.Images) > 0 {
+		imagesHtml = `<div style="margin-top: 16px;"><strong>📎 附图：</strong><br>`
+		for i, imgUrl := range input.Images {
+			imagesHtml += fmt.Sprintf(`<a href="%s" target="_blank" style="display: inline-block; margin-right: 10px; color: #4F46E5; text-decoration: none;">📷 截图 %d</a>`, html.EscapeString(imgUrl), i+1)
+		}
+		imagesHtml += `</div>`
+	}
+
 	body := fmt.Sprintf(`
 <html>
   <body style="font-family: Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif; line-height: 1.6; color: #222;">
-    <h2 style="margin: 0 0 12px; color: #4F46E5;">📮 用户反馈</h2>
+    <h2 style="margin: 0 0 12px; color: %s;">%s</h2>
     <table style="border-collapse: collapse; margin: 12px 0;">
       <tr>
         <td style="padding: 6px 12px; color: #666;">用户昵称</td>
@@ -71,7 +103,7 @@ func (h *FeedbackHandler) Submit(c *gin.Context) {
       <tr>
         <td style="padding: 6px 12px; color: #666;">学号/QQ</td>
         <td style="padding: 6px 12px; font-weight: bold;">%s</td>
-      </tr>
+      </tr>%s
       <tr>
         <td style="padding: 6px 12px; color: #666;">提交时间</td>
         <td style="padding: 6px 12px;">%s</td>
@@ -80,8 +112,9 @@ func (h *FeedbackHandler) Submit(c *gin.Context) {
     <div style="margin: 16px 0; padding: 16px; background: #F5F3FF; border-radius: 10px; border-left: 4px solid #4F46E5;">
       <p style="margin: 0; white-space: pre-wrap;">%s</p>
     </div>
+    %s
   </body>
-</html>`, html.EscapeString(nickname), html.EscapeString(studentID), time.Now().Format("2006-01-02 15:04:05"), html.EscapeString(input.Content))
+</html>`, badgeColor, badge, html.EscapeString(nickname), html.EscapeString(studentID), contactRow, time.Now().Format("2006-01-02 15:04:05"), html.EscapeString(input.Content), imagesHtml)
 
 	addr := VerifyCodeConfig.SMTPHost + ":" + VerifyCodeConfig.SMTPPort
 	auth := smtp.PlainAuth("", VerifyCodeConfig.SMTPUser, VerifyCodeConfig.SMTPPass, VerifyCodeConfig.SMTPHost)

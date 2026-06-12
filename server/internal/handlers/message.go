@@ -4,9 +4,10 @@ import (
 	"net/http"
 	"strconv"
 
+	"shenliyuan/internal/models"
+
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
-	"shenliyuan/internal/models"
 )
 
 // MessageHandler 私信处理器
@@ -24,9 +25,12 @@ func (h *MessageHandler) GetConversations(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 
 	var conversations []models.Conversation
-	h.db.Where("user1_id = ? OR user2_id = ?", userID, userID).
+	if err := h.db.Where("user1_id = ? OR user2_id = ?", userID, userID).
 		Preload("User1").Preload("User2").
-		Order("last_message_at DESC").Find(&conversations)
+		Order("last_message_at DESC").Find(&conversations).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取会话列表失败"})
+		return
+	}
 
 	// 获取每个会话的未读消息数
 	type ConversationWithUnread struct {
@@ -67,9 +71,12 @@ func (h *MessageHandler) GetMessages(c *gin.Context) {
 	}
 
 	var messages []models.Message
-	h.db.Where("conversation_id = ?", convID).
+	if err := h.db.Where("conversation_id = ?", convID).
 		Preload("Sender").Preload("File").
-		Order("created_at ASC").Find(&messages)
+		Order("created_at ASC").Find(&messages).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取消息列表失败"})
+		return
+	}
 
 	// 标记消息为已读
 	h.db.Model(&models.Message{}).
@@ -128,7 +135,10 @@ func (h *MessageHandler) Send(c *gin.Context) {
 	}
 
 	// 更新会话最后消息时间
-	h.db.Model(&conv).Update("last_message_at", message.CreatedAt)
+	if err := h.db.Model(&conv).Update("last_message_at", message.CreatedAt).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
+		return
+	}
 
 	h.db.Preload("Sender").Preload("File").First(&message, message.ID)
 	c.JSON(http.StatusCreated, message)
@@ -155,6 +165,9 @@ func (h *MessageHandler) DeleteConversation(c *gin.Context) {
 	}
 
 	h.db.Where("conversation_id = ?", convID).Delete(&models.Message{})
-	h.db.Delete(&conv)
+	if err := h.db.Delete(&conv).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{"message": "会话已删除"})
 }

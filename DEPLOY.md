@@ -247,6 +247,22 @@ pgloader ./shenliyuan.db postgresql://postgres:你的密码@localhost:5432/shenl
 3. 目标端选择你刚建好的 PostgreSQL 数据库。
 4. 勾选所有映射关系，点击下一步，它会自动帮你把数据 Copy 过去。
 
+#### 方案 C：迁移后的必做操作 (主键序列修复与数据校准)
+无论使用何种工具迁移数据，**都必须在迁移完成后执行数据校准脚本**，否则会导致创建新帖子、新评论时报错 HTTP 500 (主键冲突)。
+
+我们将这些修复命令打包成了一个便捷脚本：
+1. 将本地的 `fix_postgres_data.sh` 上传到服务器。
+2. 授予执行权限并运行（替换 `<数据库名>` 为你的实际数据库名，如 `shenliyuan`）：
+```bash
+chmod +x fix_postgres_data.sh
+bash fix_postgres_data.sh <数据库名>
+```
+
+该脚本的具体作用：
+1. **校准 `posts` 表的点赞数和评论数**：排除被软删除的回复。
+2. **校准 `users` 表的获赞总数**：仅累加用户发出的帖子获得的点赞，排除回复的点赞。
+3. **修复主键自增序列**：将 PostgreSQL 的 `id` 自增序列同步到迁移过来的最大 `id` 值，避免 `Unique Constraint Violation`。
+
 ---
 
 ## 故障记录与排查指南

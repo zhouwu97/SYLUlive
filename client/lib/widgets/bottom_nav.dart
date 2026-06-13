@@ -164,8 +164,8 @@ class BottomNavWrapper extends StatelessWidget {
                               bottom: 0,
                               child: Center(
                                 child: Container(
-                                  width: 56,
-                                  height: 32,
+                                  width: 48,
+                                  height: 48,
                                   decoration: BoxDecoration(
                                     color: primaryColor.withValues(alpha: 0.12),
                                     borderRadius: BorderRadius.circular(16),
@@ -177,11 +177,11 @@ class BottomNavWrapper extends StatelessWidget {
                               mainAxisAlignment: MainAxisAlignment.spaceAround,
                               crossAxisAlignment: CrossAxisAlignment.center,
                               children: [
-                                _iconOnly(Icons.home_rounded, 0, context, primaryColor, itemWidth),
-                                _iconOnly(Icons.storefront_rounded, 1, context, primaryColor, itemWidth),
-                                _iconOnly(Icons.calendar_month_rounded, 2, context, primaryColor, itemWidth),
-                                _iconOnly(Icons.apartment_rounded, 3, context, primaryColor, itemWidth),
-                                _iconOnly(Icons.person_rounded, 4, context, primaryColor, itemWidth),
+                                _labeledItem(Icons.home_rounded, '首页', 0, context, primaryColor, itemWidth),
+                                _labeledItem(Icons.storefront_rounded, '集市', 1, context, primaryColor, itemWidth),
+                                _labeledItem(Icons.calendar_month_rounded, '课表', 2, context, primaryColor, itemWidth),
+                                _labeledItem(Icons.apartment_rounded, '校园', 3, context, primaryColor, itemWidth),
+                                _labeledItem(Icons.person_rounded, '我', 4, context, primaryColor, itemWidth),
                               ],
                             ),
                           ],

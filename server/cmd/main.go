@@ -344,14 +344,18 @@ func main() {
 
 		user.GET("/checkin/status", checkinHandler.GetStatus)
 
-		user.GET("/:id", userHandler.GetUserInfo)
-
-		user.GET("/:id/following", userHandler.GetFollowing)
-		user.GET("/:id/followers", userHandler.GetFollowers)
 		user.POST("/:id/follow", userHandler.Follow)
 		user.DELETE("/:id/follow", userHandler.Unfollow)
 		user.GET("/:id/is-following", userHandler.IsFollowing)
-		user.GET("/:id/posts", userHandler.GetUserPosts)
+	}
+
+	userOptional := r.Group("/api/user")
+	userOptional.Use(middleware.OptionalAuthMiddleware(db, cfg.JWTSecret))
+	{
+		userOptional.GET("/:id", userHandler.GetUserInfo)
+		userOptional.GET("/:id/following", userHandler.GetFollowing)
+		userOptional.GET("/:id/followers", userHandler.GetFollowers)
+		userOptional.GET("/:id/posts", userHandler.GetUserPosts)
 	}
 
 	// 帖子路由

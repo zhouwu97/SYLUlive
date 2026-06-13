@@ -860,7 +860,7 @@ class FadeIndexedStack extends StatefulWidget {
     required this.index,
     required this.children,
     this.contentKey,
-    this.duration = const Duration(milliseconds: 250),
+    this.duration = const Duration(milliseconds: 300),
   });
 
   @override
@@ -869,18 +869,38 @@ class FadeIndexedStack extends StatefulWidget {
 
 class _FadeIndexedStackState extends State<FadeIndexedStack> with SingleTickerProviderStateMixin {
   late AnimationController _controller;
+  late Animation<Offset> _slideAnimation;
+  late Animation<double> _fadeAnimation;
+  int _direction = 1; // 1 = 向右滑入, -1 = 向左滑入
 
   @override
   void initState() {
     super.initState();
     _controller = AnimationController(vsync: this, duration: widget.duration);
+    _setupAnimations();
     _controller.forward();
+  }
+
+  void _setupAnimations() {
+    _fadeAnimation = CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeOut,
+    );
+    _slideAnimation = Tween<Offset>(
+      begin: Offset(0.15 * _direction, 0),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeOutCubic,
+    ));
   }
 
   @override
   void didUpdateWidget(FadeIndexedStack oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.index != oldWidget.index) {
+      _direction = widget.index > oldWidget.index ? 1 : -1;
+      _setupAnimations();
       _controller.forward(from: 0.0);
     }
   }
@@ -893,12 +913,15 @@ class _FadeIndexedStackState extends State<FadeIndexedStack> with SingleTickerPr
 
   @override
   Widget build(BuildContext context) {
-    return FadeTransition(
-      opacity: _controller,
-      child: IndexedStack(
-        key: widget.contentKey,
-        index: widget.index,
-        children: widget.children,
+    return SlideTransition(
+      position: _slideAnimation,
+      child: FadeTransition(
+        opacity: _fadeAnimation,
+        child: IndexedStack(
+          key: widget.contentKey,
+          index: widget.index,
+          children: widget.children,
+        ),
       ),
     );
   }

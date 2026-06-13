@@ -30,6 +30,14 @@ import 'utils/app_navigator.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // 强制沉浸式（Edge-to-Edge），解决悬浮底栏下方的系统黑条空挡问题
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+    systemNavigationBarColor: Colors.transparent,
+    statusBarColor: Colors.transparent,
+  ));
+
   await Hive.initFlutter();
   await CourseReminderService.instance.initialize();
   runApp(const MyApp());

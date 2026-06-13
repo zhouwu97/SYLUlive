@@ -69,9 +69,26 @@ cd /opt/shenliyuan
 git log -1 --oneline
 systemctl is-active shenliyuan
 journalctl -u shenliyuan -n 50 --no-pager
-`
 ```
-`
+
+## 客户端 (APK) 更新
+
+如果修改了 Flutter 客户端代码，需要重新打包 Android 安装包并上传到服务器，用户即可下载更新：
+
+```bash
+# 1. 在本地机器（需有 Flutter 环境）进行编译
+cd client
+flutter build apk --release
+
+# 2. 将编译好的 APK 上传至服务器的 uploads 静态资源目录
+# 本地生成的包路径：client/build/app/outputs/flutter-apk/app-release.apk
+scp client/build/app/outputs/flutter-apk/app-release.apk root@<你的服务器IP>:/opt/shenliyuan/uploads/app-release.apk
+
+# 3. 用户更新
+# 上传完毕后，用户可以直接通过浏览器访问下载最新版：
+# http://<你的服务器IP>/uploads/app-release.apk
+```
+
 ## 开发阶段重建
 `
 当前还在开发阶段、没有真实用户时，最干净的方式是直接重建部署目录和数据库：

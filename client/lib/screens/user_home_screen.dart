@@ -577,7 +577,7 @@ class _SliverAppBarDelegate extends SliverPersistentHeaderDelegate {
   }
 
   bool shouldRebuild(_SliverAppBarDelegate oldDelegate) {
-    return false;
+    return _tabBar != oldDelegate._tabBar || backgroundColor != oldDelegate.backgroundColor;
   }
 }
 

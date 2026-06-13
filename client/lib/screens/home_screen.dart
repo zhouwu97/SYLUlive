@@ -707,30 +707,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           !useBottomNav
               ? _buildWideLayout(bottomSafe, authProvider, false) // 默认收起状态
               : _buildNarrowLayout(bottomSafe, authProvider),
-          
-          // 在使用悬浮底栏时，在屏幕底部叠加一个透明的滑动捕获层
-          // 这个层高度约为屏幕下方 30%，专门捕捉水平滑动用来切换底部栏，
-          // 因为 HitTestBehavior.translucent 的特性，它不会阻挡垂直滑动（列表滚动）和点击事件，
-          // 但当用户进行明确的水平横滑时，它会优先判定并切换底部标签。
-          if (useBottomNav)
-            Positioned(
-              bottom: 0,
-              left: 0,
-              right: 0,
-              height: MediaQuery.of(context).size.height * 0.3,
-              child: GestureDetector(
-                behavior: HitTestBehavior.translucent,
-                onHorizontalDragEnd: (details) {
-                  if (details.primaryVelocity == null) return;
-                  if (_currentIndex > 0 && details.primaryVelocity! > 200) {
-                    _onTabTapped(_currentIndex - 1);
-                  } else if (_currentIndex < 4 && details.primaryVelocity! < -200) {
-                    _onTabTapped(_currentIndex + 1);
-                  }
-                },
-                child: const SizedBox.expand(),
-              ),
-            ),
         ],
       ),
       bottomNavigationBar: !useBottomNav

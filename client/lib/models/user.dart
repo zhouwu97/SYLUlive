@@ -114,37 +114,43 @@ class User {
   bool get isSuperAdmin => role == 'super_admin';
 
   /// 根据经验值计算用户等级
-  /// Level 1: 0-9 exp
-  /// Level 2: 10-99 exp
-  /// Level 3: 100-249 exp
-  /// Level 4: 250-999 exp
+  /// Level 1: 0-49 exp
+  /// Level 2: 50-149 exp
+  /// Level 3: 150-499 exp
+  /// Level 4: 500-999 exp
   /// Level 5: 1000-2499 exp
-  /// Level 6: 2500+ exp
+  /// Level 6: 2500-4999 exp
+  /// Level 7: 5000-7999 exp
+  /// Level 8: 8000+ exp
   int get level {
+    if (exp >= 8000) return 8;
+    if (exp >= 5000) return 7;
     if (exp >= 2500) return 6;
     if (exp >= 1000) return 5;
-    if (exp >= 250) return 4;
-    if (exp >= 100) return 3;
-    if (exp >= 10) return 2;
+    if (exp >= 500) return 4;
+    if (exp >= 150) return 3;
+    if (exp >= 50) return 2;
     return 1;
   }
 
   /// 升级到下一级所需经验
   int get expToNextLevel {
     switch (level) {
-      case 1: return 10;
-      case 2: return 100;
-      case 3: return 250;
+      case 1: return 50;
+      case 2: return 150;
+      case 3: return 500;
       case 4: return 1000;
       case 5: return 2500;
+      case 6: return 5000;
+      case 7: return 8000;
       default: return 0; // 已满级
     }
   }
 
   /// 当前等级进度（0.0 - 1.0）
   double get levelProgress {
-    if (level >= 6) return 1.0;
-    final currentMin = level == 1 ? 0 : [0, 10, 100, 250, 1000][level - 1];
+    if (level >= 8) return 1.0;
+    final currentMin = level == 1 ? 0 : [0, 50, 150, 500, 1000, 2500, 5000, 8000][level - 1];
     final needed = expToNextLevel - currentMin;
     if (needed <= 0) return 1.0;
     return ((exp - currentMin) / needed).clamp(0.0, 1.0);
@@ -156,12 +162,15 @@ class User {
   /// 等级颜色
   int get levelColorValue {
     switch (level) {
-      case 6: return 0xFFD4AF37; // 金色
-      case 5: return 0xFFE040FB; // 紫色
-      case 4: return 0xFF448AFF; // 蓝色
-      case 3: return 0xFF00C853; // 绿色
-      case 2: return 0xFFFF9800; // 橙色
-      default: return 0xFF9E9E9E; // 灰色
+      case 8: return 0xFFFF0000; // 烈焰红 - 终极神话
+      case 7: return 0xFFD32F2F; // 炽红 - 巅峰的前奏
+      case 6: return 0xFFFFA000; // 琥珀橙 - 荣耀光芒
+      case 5: return 0xFF8E24AA; // 紫晶紫 - 尊贵神秘
+      case 4: return 0xFF4682B4; // 深海蓝 / 钢蓝
+      case 3: return 0xFF2E7D32; // 森林绿
+      case 2: return 0xFF00897B; // 墨绿 - 初露锋芒
+      case 1: 
+      default: return 0xFF616161; // 深灰 - 初始的沉淀
     }
   }
 }

@@ -122,7 +122,7 @@ class BottomNavWrapper extends StatelessWidget {
           Container(
             padding: EdgeInsets.only(
               top: 12,
-              bottom: bottomSafe > 0 ? (bottomSafe > 20 ? bottomSafe - 16 : bottomSafe) : 16,
+              bottom: bottomSafe > 0 ? bottomSafe : 16,
             ),
             child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 280),

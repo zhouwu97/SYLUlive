@@ -257,6 +257,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: SafeArea(
+        bottom: false,
         child: Consumer<AuthProvider>(
           builder: (context, auth, _) {
             if (!auth.isLoggedIn) {
@@ -291,6 +292,8 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                                 final currentMonday = _mondayOf(DateTime.now());
                                 final targetMonday = currentMonday.add(Duration(days: (index - 500) * 7));
                                 return SingleChildScrollView(
+                                  padding: EdgeInsets.only(
+                                      bottom: MediaQuery.of(context).padding.bottom + 100),
                                   child: _buildCourseGridForWeek(sc, targetMonday)
                                 );
                               },

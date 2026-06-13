@@ -4,6 +4,7 @@ import '../providers/social_provider.dart';
 import '../providers/auth_provider.dart';
 import '../models/user.dart';
 import 'user_home_screen.dart';
+import '../config/api_constants.dart';
 
 class SocialListScreen extends StatefulWidget {
   final int userId;
@@ -159,9 +160,19 @@ class _UserListState extends State<_UserList> {
     }
 
     if (_users.isEmpty) {
-      return Center(
-        child: Text(widget.type == 'following' ? '暂无关注' : '暂无粉丝',
-            style: const TextStyle(color: Colors.grey)),
+      return RefreshIndicator(
+        onRefresh: () => _loadData(refresh: true),
+        child: CustomScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          slivers: [
+            SliverFillRemaining(
+              child: Center(
+                child: Text(widget.type == 'following' ? '暂无关注' : '暂无粉丝',
+                    style: const TextStyle(color: Colors.grey)),
+              ),
+            ),
+          ],
+        ),
       );
     }
 
@@ -170,7 +181,7 @@ class _UserListState extends State<_UserList> {
     return RefreshIndicator(
       onRefresh: () => _loadData(refresh: true),
       child: ListView.builder(
-        itemCount: _users.length + (_hasMore ? 1 : 0),
+        itemCount: _users.length + (_hasMore && !_isLoading ? 1 : 0),
         itemBuilder: (context, index) {
           if (index == _users.length) {
             _loadData();
@@ -185,7 +196,7 @@ class _UserListState extends State<_UserList> {
 
           return ListTile(
             leading: CircleAvatar(
-              backgroundImage: user.avatar.isNotEmpty ? NetworkImage(user.avatar) : null,
+              backgroundImage: user.avatar.isNotEmpty ? NetworkImage(ApiConstants.fullUrl(user.avatar)) : null,
               child: user.avatar.isEmpty ? const Icon(Icons.person) : null,
             ),
             title: Text(user.nickname.isNotEmpty ? user.nickname : '用户${user.id}'),

@@ -106,6 +106,7 @@ class BottomNavWrapper extends StatelessWidget {
     final bottomSafe = MediaQuery.of(context).padding.bottom;
 
     return GestureDetector(
+      behavior: HitTestBehavior.translucent,
       onHorizontalDragEnd: (details) {
         if (details.primaryVelocity == null) return;
         if (currentIndex > 0 && details.primaryVelocity! > 200) {
@@ -115,17 +116,17 @@ class BottomNavWrapper extends StatelessWidget {
         }
       },
       child: Container(
-        // 取消 SafeArea 强制避让，而是手动计算使其更贴近小白条，同时保证无安全区时留有足够边距
-        margin: EdgeInsets.only(bottom: bottomSafe > 0 ? (bottomSafe > 20 ? bottomSafe - 16 : bottomSafe) : 16),
+        height: 120, // 固定合理的滑动热区高度
         alignment: Alignment.bottomCenter,
+        padding: EdgeInsets.only(bottom: bottomSafe > 0 ? (bottomSafe > 20 ? bottomSafe - 16 : bottomSafe) : 16),
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 260),
+          constraints: const BoxConstraints(maxWidth: 280),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(50),
             child: BackdropFilter(
               filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0),
                 decoration: BoxDecoration(
                   color: (isDark ? Colors.grey[900]! : Colors.white)
                       .withValues(alpha: 0.8),
@@ -158,11 +159,11 @@ class BottomNavWrapper extends StatelessWidget {
                               bottom: 0,
                               child: Center(
                                 child: Container(
-                                  width: 44,
-                                  height: 44,
+                                  width: 56,
+                                  height: 32,
                                   decoration: BoxDecoration(
                                     color: primaryColor.withValues(alpha: 0.12),
-                                    borderRadius: BorderRadius.circular(22),
+                                    borderRadius: BorderRadius.circular(16),
                                   ),
                                 ),
                               ),

@@ -46,6 +46,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final Set<int> _seenAnnouncementIds = {};
   String? _announcementSeenKey;
 
+  // 用 Listener（原始指针）实现底部半屏横滑切换，不参与手势竞争，不阻塞滚动
+  Offset? _swipeStart;
+  DateTime? _swipeStartTime;
+
   @override
   void initState() {
     super.initState();
@@ -707,6 +711,43 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           !useBottomNav
               ? _buildWideLayout(bottomSafe, authProvider, false) // 默认收起状态
               : _buildNarrowLayout(bottomSafe, authProvider),
+
+          // 底部半屏横滑切换底栏：用 Listener 被动监听指针，不会参与手势竞争
+          if (useBottomNav)
+            Positioned(
+              bottom: 0,
+              left: 0,
+              right: 0,
+              height: MediaQuery.of(context).size.height * 0.45,
+              child: Listener(
+                behavior: HitTestBehavior.translucent,
+                onPointerDown: (e) {
+                  _swipeStart = e.position;
+                  _swipeStartTime = DateTime.now();
+                },
+                onPointerUp: (e) {
+                  if (_swipeStart == null || _swipeStartTime == null) return;
+                  final dx = e.position.dx - _swipeStart!.dx;
+                  final dy = e.position.dy - _swipeStart!.dy;
+                  final dt = DateTime.now().difference(_swipeStartTime!).inMilliseconds;
+                  _swipeStart = null;
+                  _swipeStartTime = null;
+                  // 必须：水平位移 > 60px、水平位移 > 垂直的 2 倍、时间 < 400ms
+                  if (dx.abs() > 60 && dx.abs() > dy.abs() * 2 && dt < 400) {
+                    if (dx > 0 && _currentIndex > 0) {
+                      _onTabTapped(_currentIndex - 1);
+                    } else if (dx < 0 && _currentIndex < 4) {
+                      _onTabTapped(_currentIndex + 1);
+                    }
+                  }
+                },
+                onPointerCancel: (_) {
+                  _swipeStart = null;
+                  _swipeStartTime = null;
+                },
+                child: const SizedBox.expand(),
+              ),
+            ),
         ],
       ),
       bottomNavigationBar: !useBottomNav

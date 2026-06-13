@@ -14,6 +14,7 @@ import '../providers/social_provider.dart';
 import '../widgets/post_card.dart';
 import 'social_list_screen.dart';
 import 'image_viewer_screen.dart';
+import 'chat_detail_screen.dart';
 class UserHomeScreen extends StatefulWidget {
   final int? userId;
   const UserHomeScreen({super.key, this.userId});
@@ -85,6 +86,7 @@ class _UserHomeScreenState extends State<UserHomeScreen> with SingleTickerProvid
     }
     
     final user = _user!;
+    final isMe = widget.userId == null || widget.userId == context.read<AuthProvider>().user?.id;
 
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
@@ -140,9 +142,42 @@ class _UserHomeScreenState extends State<UserHomeScreen> with SingleTickerProvid
                 ),
               ),
               actions: [
-                _buildCircleIconButton(Icons.search, () {}),
-                const SizedBox(width: 8),
-                _buildCircleIconButton(Icons.more_vert, () {}),
+                if (!isMe)
+                  Container(
+                    margin: const EdgeInsets.all(4),
+                    decoration: const BoxDecoration(
+                      color: Colors.black26,
+                      shape: BoxShape.circle,
+                    ),
+                    child: PopupMenuButton<String>(
+                      icon: const Icon(Icons.more_vert, color: Colors.white, size: 20),
+                      padding: EdgeInsets.zero,
+                      offset: const Offset(0, 40),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      onSelected: (value) {
+                        if (value == 'message') {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => ChatDetailScreen(userName: user.nickname),
+                            ),
+                          );
+                        }
+                      },
+                      itemBuilder: (context) => [
+                        const PopupMenuItem(
+                          value: 'message',
+                          child: Row(
+                            children: [
+                              Icon(Icons.mail_outline, size: 20),
+                              SizedBox(width: 12),
+                              Text('私信'),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 const SizedBox(width: 8),
               ],
             ),
@@ -442,19 +477,7 @@ class _UserHomeScreenState extends State<UserHomeScreen> with SingleTickerProvid
     );
   }
 
-  Widget _buildCircleIconButton(IconData icon, VoidCallback onPressed) {
-    return Container(
-      margin: const EdgeInsets.all(4),
-      decoration: const BoxDecoration(
-        color: Colors.black26,
-        shape: BoxShape.circle,
-      ),
-      child: IconButton(
-        icon: Icon(icon, color: Colors.white, size: 20),
-        onPressed: onPressed,
-      ),
-    );
-  }
+
 
   // ---------------- 编辑资料悬浮窗 ----------------
   void _showEditSheet(BuildContext context, User user) {

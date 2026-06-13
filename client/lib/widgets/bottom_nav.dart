@@ -115,11 +115,16 @@ class BottomNavWrapper extends StatelessWidget {
           onTap(currentIndex + 1);
         }
       },
-      child: Container(
-        height: 120, // 固定合理的滑动热区高度
-        alignment: Alignment.bottomCenter,
-        padding: EdgeInsets.only(bottom: bottomSafe > 0 ? (bottomSafe > 20 ? bottomSafe - 16 : bottomSafe) : 16),
-        child: ConstrainedBox(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          Container(
+            padding: EdgeInsets.only(
+              top: 12,
+              bottom: bottomSafe > 0 ? (bottomSafe > 20 ? bottomSafe - 16 : bottomSafe) : 16,
+            ),
+            child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 280),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(50),
@@ -182,14 +187,16 @@ class BottomNavWrapper extends StatelessWidget {
                           ],
                         );
                       },
-                    ),
+                  ),
                 ),
               ),
             ),
+          ),
         ),
-      ),
-    );
-  }
+      ],
+    ),
+  );
+}
 
   // 标准模式 Item（图标+文字）
   Widget _labeledItem(IconData icon, String label, int index, BuildContext context, Color primaryColor, double width) {

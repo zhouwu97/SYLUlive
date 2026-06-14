@@ -11,6 +11,7 @@ class User {
   final int adminExp;
   final int exp;
   final int credits;
+  final int aiBalanceCents;
   final bool isCheckedInToday;
   final int reportCount;
   final DateTime createdAt;
@@ -40,6 +41,7 @@ class User {
     this.adminExp = 0,
     this.exp = 0,
     this.credits = 0,
+    this.aiBalanceCents = 0,
     this.isCheckedInToday = false,
     this.reportCount = 0,
     required this.createdAt,
@@ -67,6 +69,7 @@ class User {
       adminExp: json['admin_exp'] ?? 0,
       exp: json['exp'] ?? 0,
       credits: json['credits'] ?? 0,
+      aiBalanceCents: json['ai_balance_cents'] ?? 0,
       isCheckedInToday: json['is_checked_in_today'] ?? false,
       reportCount: json['report_count'] ?? 0,
       createdAt: DateTime.tryParse(json['created_at'] ?? '') ?? DateTime.now(),
@@ -95,6 +98,7 @@ class User {
       'admin_exp': adminExp,
       'exp': exp,
       'credits': credits,
+      'ai_balance_cents': aiBalanceCents,
       'is_checked_in_today': isCheckedInToday,
       'report_count': reportCount,
       'created_at': createdAt.toIso8601String(),

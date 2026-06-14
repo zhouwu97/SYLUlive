@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 
 	"time"
 
@@ -502,14 +503,26 @@ func (h *SuperAdminHandler) RevokeAdminExp(c *gin.Context) {
 
 // AiConfigInput AI 全局配置输入
 type AiConfigInput struct {
-	BaseURL   string `json:"base_url" binding:"required"`
-	APIKey    string `json:"api_key" binding:"required"`
-	ModelName string `json:"model_name" binding:"required"`
+	BaseURL               string `json:"base_url" binding:"required"`
+	APIKey                string `json:"api_key" binding:"required"`
+	ModelName             string `json:"model_name" binding:"required"`
+	InputPricePer1kCents  int    `json:"input_price_per_1k_cents"`
+	OutputPricePer1kCents int    `json:"output_price_per_1k_cents"`
+	CacheHitPriceCents    int    `json:"cache_hit_price_cents"`
+	MinLivePriceCents     int    `json:"min_live_price_cents"`
 }
 
 // GetAiConfig 获取全局 AI 配置
 func (h *SuperAdminHandler) GetAiConfig(c *gin.Context) {
-	configKeys := []string{"ai_base_url", "ai_api_key", "ai_model_name"}
+	configKeys := []string{
+		"ai_base_url",
+		"ai_api_key",
+		"ai_model_name",
+		"ai_input_price_per_1k_cents",
+		"ai_output_price_per_1k_cents",
+		"ai_cache_hit_price_cents",
+		"ai_min_live_price_cents",
+	}
 	var configs []models.SystemConfig
 	if err := h.db.Where("config_key IN ?", configKeys).Find(&configs).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取配置失败"})
@@ -522,9 +535,13 @@ func (h *SuperAdminHandler) GetAiConfig(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"base_url":   configMap["ai_base_url"],
-		"api_key":    configMap["ai_api_key"],
-		"model_name": configMap["ai_model_name"],
+		"base_url":                  configMap["ai_base_url"],
+		"api_key":                   configMap["ai_api_key"],
+		"model_name":                configMap["ai_model_name"],
+		"input_price_per_1k_cents":  configMap["ai_input_price_per_1k_cents"],
+		"output_price_per_1k_cents": configMap["ai_output_price_per_1k_cents"],
+		"cache_hit_price_cents":     configMap["ai_cache_hit_price_cents"],
+		"min_live_price_cents":      configMap["ai_min_live_price_cents"],
 	})
 }
 
@@ -538,10 +555,34 @@ func (h *SuperAdminHandler) UpdateAiConfig(c *gin.Context) {
 
 	// 开启事务更新三个键值对
 	err := h.db.Transaction(func(tx *gorm.DB) error {
+		inputPrice := input.InputPricePer1kCents
+		if inputPrice <= 0 {
+			inputPrice = 2
+		}
+		outputPrice := input.OutputPricePer1kCents
+		if outputPrice <= 0 {
+			outputPrice = 4
+		}
+		cacheHitPrice := input.CacheHitPriceCents
+		if cacheHitPrice < 0 {
+			cacheHitPrice = 0
+		}
+		if cacheHitPrice == 0 {
+			cacheHitPrice = 1
+		}
+		minLivePrice := input.MinLivePriceCents
+		if minLivePrice <= 0 {
+			minLivePrice = 2
+		}
+
 		configs := []models.SystemConfig{
 			{ConfigKey: "ai_base_url", ConfigValue: input.BaseURL},
 			{ConfigKey: "ai_api_key", ConfigValue: input.APIKey},
 			{ConfigKey: "ai_model_name", ConfigValue: input.ModelName},
+			{ConfigKey: "ai_input_price_per_1k_cents", ConfigValue: strconv.Itoa(inputPrice)},
+			{ConfigKey: "ai_output_price_per_1k_cents", ConfigValue: strconv.Itoa(outputPrice)},
+			{ConfigKey: "ai_cache_hit_price_cents", ConfigValue: strconv.Itoa(cacheHitPrice)},
+			{ConfigKey: "ai_min_live_price_cents", ConfigValue: strconv.Itoa(minLivePrice)},
 		}
 
 		for _, conf := range configs {
@@ -567,6 +608,68 @@ func (h *SuperAdminHandler) UpdateAiConfig(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "配置已保存"})
+}
+
+type RechargeAiBalanceInput struct {
+	AmountCents int    `json:"amount_cents" binding:"required"`
+	Note        string `json:"note"`
+}
+
+func (h *SuperAdminHandler) RechargeAiBalance(c *gin.Context) {
+	idStr := c.Param("id")
+	userID, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的用户ID"})
+		return
+	}
+
+	var input RechargeAiBalanceInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if input.AmountCents <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "充值金额必须大于 0"})
+		return
+	}
+
+	var user models.User
+	if err := h.db.First(&user, uint(userID)).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
+		return
+	}
+
+	newBalance := user.AiBalanceCents + input.AmountCents
+	if err := h.db.Model(&user).Update("ai_balance_cents", newBalance).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "充值失败"})
+		return
+	}
+
+	operatorID, _ := c.Get("user_id")
+	operatorName := "Unknown Admin"
+	if operatorID != nil {
+		var admin models.User
+		if err := h.db.First(&admin, operatorID.(uint)).Error; err == nil {
+			operatorName = admin.Nickname
+		}
+		h.db.Create(&models.AdminLog{
+			AdminID:   operatorID.(uint),
+			AdminName: operatorName,
+			Action:    "云考余额充值",
+			Target:    user.Nickname,
+			Detail:    fmt.Sprintf("金额 ¥%.2f，备注：%s", float64(input.AmountCents)/100.0, strings.TrimSpace(input.Note)),
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":          "充值成功",
+		"user_id":          user.ID,
+		"student_id":       user.StudentID,
+		"ai_balance_cents": newBalance,
+		"ai_balance_yuan":  float64(newBalance) / 100.0,
+		"recharged_cents":  input.AmountCents,
+		"recharged_yuan":   float64(input.AmountCents) / 100.0,
+	})
 }
 
 // GetLotteryParticipants 获取当前抽奖的参与者

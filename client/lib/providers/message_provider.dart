@@ -34,9 +34,9 @@ class MessageProvider extends ChangeNotifier {
   MessageProvider(this._dio);
 
   Future<void> loadConversations({bool silent = false}) async {
+    _conversationError = null;
     if (!silent) {
       _conversationLoading = true;
-      _conversationError = null;
       notifyListeners();
     }
 
@@ -57,6 +57,43 @@ class MessageProvider extends ChangeNotifier {
       _conversationLoading = false;
       notifyListeners();
     }
+  }
+
+  Future<int?> openConversationWithUser({
+    required int currentUserId,
+    required int targetUserId,
+  }) async {
+    clearMessages();
+    _messageLoading = true;
+    notifyListeners();
+    await loadConversations(silent: true);
+
+    if (_conversationError != null) {
+      _messageError = _conversationError;
+      _messageLoading = false;
+      notifyListeners();
+      return null;
+    }
+
+    Conversation? existingConversation;
+    for (final conversation in _conversations) {
+      final matchesForward = conversation.user1Id == currentUserId &&
+          conversation.user2Id == targetUserId;
+      final matchesReverse = conversation.user1Id == targetUserId &&
+          conversation.user2Id == currentUserId;
+      if (matchesForward || matchesReverse) {
+        existingConversation = conversation;
+        break;
+      }
+    }
+
+    if (existingConversation == null) {
+      prepareNewConversation();
+      return null;
+    }
+
+    await loadMessages(existingConversation.id);
+    return existingConversation.id;
   }
 
   Future<void> loadMessages(int conversationId) async {

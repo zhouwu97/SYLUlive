@@ -38,12 +38,13 @@ class CachedAvatar extends StatelessWidget {
 
     return CachedNetworkImage(
       imageUrl: imageUrl!,
-      memCacheWidth: (radius * 2 * 3).toInt(),   // 3x 像素密度足够清晰
+      memCacheWidth: (radius * 2 * 3).toInt(), // 3x 像素密度足够清晰
       memCacheHeight: (radius * 2 * 3).toInt(),
       maxWidthDiskCache: (radius * 2 * 2).toInt(),
       maxHeightDiskCache: (radius * 2 * 2).toInt(),
-      fadeOutDuration: const Duration(milliseconds: 300),
-      fadeInDuration: const Duration(milliseconds: 200),
+      fadeOutDuration: Duration.zero,
+      fadeInDuration: Duration.zero,
+      useOldImageOnUrlChange: true,
       imageBuilder: (context, imageProvider) => CircleAvatar(
         radius: radius,
         backgroundColor: bgColor,

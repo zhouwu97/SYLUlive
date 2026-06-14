@@ -38,10 +38,12 @@ func (h *VipHandler) CheckVip(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"is_vip":     isVip,
-		"vip_expiry": expiryStr,
-		"student_id": user.StudentID,
-		"nickname":   user.Nickname,
+		"is_vip":          isVip,
+		"vip_expiry":      expiryStr,
+		"student_id":      user.StudentID,
+		"nickname":        user.Nickname,
+		"ai_balance_cents": user.AiBalanceCents,
+		"ai_balance_yuan":  float64(user.AiBalanceCents) / 100.0,
 	})
 }
 

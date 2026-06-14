@@ -14,6 +14,7 @@ import '../providers/post_provider.dart';
 import '../providers/theme_provider.dart';
 import '../utils/app_navigator.dart';
 import '../utils/post_image_cache.dart';
+import '../utils/screen_swipe.dart';
 import '../utils/update_checker.dart';
 import '../widgets/bottom_nav.dart';
 import '../widgets/glass_container.dart';
@@ -45,6 +46,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final Set<int> _dismissedAnnouncementIds = {};
   final Set<int> _seenAnnouncementIds = {};
   String? _announcementSeenKey;
+  Offset? _navigationSwipeStart;
+  DateTime? _navigationSwipeStartTime;
+  int? _navigationSwipePointer;
 
   @override
   void initState() {
@@ -657,8 +661,52 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     backgroundWrapperKey.currentState?.updateScreen(screenNames[index]);
   }
 
+  void _startNavigationSwipe(PointerDownEvent event, double screenHeight) {
+    if (_navigationSwipePointer != null ||
+        !isBottomNavigationSwipeStart(event.position.dy, screenHeight)) {
+      return;
+    }
+    _navigationSwipePointer = event.pointer;
+    _navigationSwipeStart = event.position;
+    _navigationSwipeStartTime = DateTime.now();
+  }
+
+  void _finishNavigationSwipe(PointerUpEvent event) {
+    if (event.pointer != _navigationSwipePointer ||
+        _navigationSwipeStart == null ||
+        _navigationSwipeStartTime == null) {
+      return;
+    }
+
+    final direction = horizontalSwipeDirection(
+      start: _navigationSwipeStart!,
+      end: event.position,
+      elapsed: DateTime.now().difference(_navigationSwipeStartTime!),
+    );
+    _resetNavigationSwipe();
+    if (direction == 0) return;
+
+    final nextIndex = (_currentIndex + direction).clamp(0, 4);
+    if (nextIndex != _currentIndex) {
+      _onTabTapped(nextIndex);
+    }
+  }
+
+  void _cancelNavigationSwipe(PointerCancelEvent event) {
+    if (event.pointer == _navigationSwipePointer) {
+      _resetNavigationSwipe();
+    }
+  }
+
+  void _resetNavigationSwipe() {
+    _navigationSwipePointer = null;
+    _navigationSwipeStart = null;
+    _navigationSwipeStartTime = null;
+  }
+
   void _openCreatePost(BuildContext context) {
     final auth = context.read<AuthProvider>();
+    final postProvider = context.read<PostProvider>();
     if (!auth.isLoggedIn) {
       Navigator.push(
         context,
@@ -676,7 +724,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       ),
     ).then((_) {
       if (mounted) {
-        context.read<PostProvider>().refresh(boardId: 1, sort: 'time');
+        unawaited(Future.wait([
+          postProvider.refresh(boardId: 1, sort: 'time'),
+          postProvider.refresh(boardId: 1, sort: 'all'),
+          postProvider.refresh(boardId: 1, sort: 'hot'),
+        ]));
       }
     });
   }
@@ -697,39 +749,48 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       }
     });
 
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      extendBody: true,
-      extendBodyBehindAppBar: true,
-      body: Stack(
-        children: [
-          // 实际内容区
-          !useBottomNav
-              ? _buildWideLayout(bottomSafe, authProvider, false) // 默认收起状态
-              : _buildNarrowLayout(bottomSafe, authProvider),
-        ],
-      ),
-      bottomNavigationBar: !useBottomNav
-          ? null
-          : BottomNavWrapper(
-              currentIndex: _currentIndex,
-              onTap: _onTabTapped,
-              authProvider: authProvider,
-            ),
-      floatingActionButton: _currentIndex == 0 && useBottomNav
-          ? Padding(
-              padding: EdgeInsets.only(bottom: 110 + bottomSafe),
-              child: FloatingActionButton(
-                heroTag: 'home_fab',
-                onPressed: () => _openCreatePost(context),
-                backgroundColor: const Color(0xFF16A34A),
-                elevation: 4,
-                shape: const CircleBorder(),
-                child: const Icon(Icons.add, color: Colors.white, size: 32),
-              ),
-            )
+    final screenHeight = MediaQuery.sizeOf(context).height;
+    return Listener(
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: useBottomNav
+          ? (event) => _startNavigationSwipe(event, screenHeight)
           : null,
-      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+      onPointerUp: useBottomNav ? _finishNavigationSwipe : null,
+      onPointerCancel: useBottomNav ? _cancelNavigationSwipe : null,
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        extendBody: true,
+        extendBodyBehindAppBar: true,
+        body: Stack(
+          children: [
+            // 实际内容区
+            !useBottomNav
+                ? _buildWideLayout(bottomSafe, authProvider, false) // 默认收起状态
+                : _buildNarrowLayout(bottomSafe, authProvider),
+          ],
+        ),
+        bottomNavigationBar: !useBottomNav
+            ? null
+            : BottomNavWrapper(
+                currentIndex: _currentIndex,
+                onTap: _onTabTapped,
+                authProvider: authProvider,
+              ),
+        floatingActionButton: _currentIndex == 0 && useBottomNav
+            ? Padding(
+                padding: EdgeInsets.only(bottom: 110 + bottomSafe),
+                child: FloatingActionButton(
+                  heroTag: 'home_fab',
+                  onPressed: () => _openCreatePost(context),
+                  backgroundColor: const Color(0xFF16A34A),
+                  elevation: 4,
+                  shape: const CircleBorder(),
+                  child: const Icon(Icons.add, color: Colors.white, size: 32),
+                ),
+              )
+            : null,
+        floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+      ),
     );
   }
 

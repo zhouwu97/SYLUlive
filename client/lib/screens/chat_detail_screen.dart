@@ -50,9 +50,23 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     if (!mounted) return;
     final provider = context.read<MessageProvider>();
     if (_conversationId == null) {
-      provider.prepareNewConversation();
+      final currentUserId = context.read<AuthProvider>().user?.id;
+      if (currentUserId == null) {
+        provider.prepareNewConversation();
+      } else {
+        final conversationId = await provider.openConversationWithUser(
+          currentUserId: currentUserId,
+          targetUserId: widget.targetUser.id,
+        );
+        if (!mounted) return;
+        _conversationId = conversationId;
+        if (conversationId != null) {
+          _scrollToBottom(jump: true);
+        }
+      }
     } else {
       await provider.loadMessages(_conversationId!);
+      if (!mounted) return;
       _scrollToBottom(jump: true);
     }
     _startPolling();
@@ -217,9 +231,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
             Text(provider.messageError!),
             const SizedBox(height: 12),
             FilledButton.tonal(
-              onPressed: _conversationId == null
-                  ? provider.prepareNewConversation
-                  : () => provider.loadMessages(_conversationId!),
+              onPressed: _initialize,
               child: const Text('重新加载'),
             ),
           ],

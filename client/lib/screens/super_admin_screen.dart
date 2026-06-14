@@ -101,7 +101,9 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
       );
       if (mounted) {
         // 本地移除该代办
-        if (mounted) setState(() => _pendingInvitations.removeWhere((i) => i['id'] == inv['id']));
+        if (mounted)
+          setState(() =>
+              _pendingInvitations.removeWhere((i) => i['id'] == inv['id']));
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
               content: Text(approve ? '已提交同意审批' : '已驳回'),
@@ -199,11 +201,14 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
             Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text('学号: ${user['student_id']}'),
           Text('角色: ${user['role']} | 诚信: ${user['credit_score']}%'),
+          Text(
+              '云考余额: ¥${(((user['ai_balance_cents'] ?? 0) as num).toDouble() / 100).toStringAsFixed(2)}'),
         ]),
         isThreeLine: true,
         trailing: PopupMenuButton<String>(
           onSelected: (v) => _handleUserAction(user, v),
           itemBuilder: (_) => [
+            const PopupMenuItem(value: 'recharge', child: Text('云考充值')),
             const PopupMenuItem(value: 'role', child: Text('修改角色')),
             const PopupMenuItem(value: 'reset', child: Text('重置密码')),
             if (user['role'] != 'super_admin')
@@ -215,11 +220,97 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
   }
 
   void _handleUserAction(dynamic user, String action) {
-    if (action == 'role')
+    if (action == 'recharge')
+      _showRechargeDialog(user);
+    else if (action == 'role')
       _showChangeRoleDialog(user);
     else if (action == 'reset')
       _resetPassword(user['id']);
     else if (action == 'delete') _deleteUser(user['id']);
+  }
+
+  void _showRechargeDialog(dynamic user) {
+    final amountCtrl = TextEditingController();
+    final noteCtrl = TextEditingController(text: '云考余额充值');
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('云考余额充值'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text('用户: ${user['nickname']} (${user['student_id']})'),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: amountCtrl,
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(
+                labelText: '充值金额 (元)',
+                border: OutlineInputBorder(),
+                hintText: '例如 9.90',
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: noteCtrl,
+              maxLines: 2,
+              decoration: const InputDecoration(
+                labelText: '备注',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final yuan = double.tryParse(amountCtrl.text.trim());
+              if (yuan == null || yuan <= 0) {
+                return;
+              }
+              final cents = (yuan * 100).round();
+              try {
+                await _dio.post(
+                    '/super/users/${user['id']}/ai_balance/recharge',
+                    data: {
+                      'amount_cents': cents,
+                      'note': noteCtrl.text.trim(),
+                    });
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                        content: Text(
+                            '已为 ${user['nickname']} 充值 ¥${yuan.toStringAsFixed(2)}')),
+                  );
+                }
+                if (mounted) {
+                  Navigator.pop(ctx);
+                }
+                _loadUsers();
+              } catch (_) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('充值失败')),
+                  );
+                }
+              }
+            },
+            child: const Text('确认充值'),
+          ),
+        ],
+      ),
+    ).then((_) {
+      amountCtrl.dispose();
+      noteCtrl.dispose();
+    });
   }
 
   Widget _buildApprovalsTab() {
@@ -362,11 +453,14 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
     }
   }
 
-
   Future<void> _showGlobalAiConfigDialog() async {
     final keyCtrl = TextEditingController();
     final urlCtrl = TextEditingController();
     final modelCtrl = TextEditingController();
+    final inputTokenCtrl = TextEditingController(text: '2');
+    final outputTokenCtrl = TextEditingController(text: '4');
+    final cacheHitCtrl = TextEditingController(text: '1');
+    final minLiveCtrl = TextEditingController(text: '2');
     String currentProvider = 'custom';
 
     // 先加载当前的配置
@@ -375,23 +469,37 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
       urlCtrl.text = res.data['base_url'] ?? '';
       keyCtrl.text = res.data['api_key'] ?? '';
       modelCtrl.text = res.data['model_name'] ?? '';
+      inputTokenCtrl.text =
+          (res.data['input_price_per_1k_cents'] ?? '2').toString();
+      outputTokenCtrl.text =
+          (res.data['output_price_per_1k_cents'] ?? '4').toString();
+      cacheHitCtrl.text = (res.data['cache_hit_price_cents'] ?? '1').toString();
+      minLiveCtrl.text = (res.data['min_live_price_cents'] ?? '2').toString();
 
       final url = urlCtrl.text.toLowerCase();
-      if (url.contains('deepseek')) currentProvider = 'deepseek';
-      else if (url.contains('moonshot')) currentProvider = 'kimi';
-      else if (url.contains('bigmodel.cn')) currentProvider = 'zhipu';
-      else if (url.contains('dashscope')) currentProvider = 'qwen';
+      if (url.contains('deepseek'))
+        currentProvider = 'deepseek';
+      else if (url.contains('moonshot'))
+        currentProvider = 'kimi';
+      else if (url.contains('bigmodel.cn'))
+        currentProvider = 'zhipu';
+      else if (url.contains('dashscope'))
+        currentProvider = 'qwen';
+      else if (url.contains('xiaomi') || url.contains('mimo'))
+        currentProvider = 'mimo';
       else if (url.contains('openai.com')) currentProvider = 'openai';
-
     } catch (_) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('加载配置失败')));
+      if (mounted)
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('加载配置失败')));
     }
 
-    
     bool isFetchingModels = false;
     Future<void> fetchModels(StateSetter setDialogState) async {
       if (urlCtrl.text.isEmpty || keyCtrl.text.isEmpty) {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('请先填写 Base URL 和 API Key')));
+        if (mounted)
+          ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('请先填写 Base URL 和 API Key')));
         return;
       }
       setDialogState(() => isFetchingModels = true);
@@ -403,7 +511,8 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
         }
         final res = await dio.get(
           url,
-          options: Options(headers: {'Authorization': 'Bearer ${keyCtrl.text.trim()}'}),
+          options: Options(
+              headers: {'Authorization': 'Bearer ${keyCtrl.text.trim()}'}),
         );
         if (res.statusCode == 200 && res.data['data'] != null) {
           final List data = res.data['data'];
@@ -427,13 +536,19 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
               );
             }
           } else {
-            if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('未获取到模型列表')));
+            if (mounted)
+              ScaffoldMessenger.of(context)
+                  .showSnackBar(const SnackBar(content: Text('未获取到模型列表')));
           }
         } else {
-          if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('获取失败')));
+          if (mounted)
+            ScaffoldMessenger.of(context)
+                .showSnackBar(const SnackBar(content: Text('获取失败')));
         }
       } catch (e) {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('请求失败: $e')));
+        if (mounted)
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text('请求失败: $e')));
       } finally {
         setDialogState(() => isFetchingModels = false);
       }
@@ -454,7 +569,10 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
         modelCtrl.text = 'qwen-turbo';
       } else if (provider == 'openai') {
         urlCtrl.text = 'https://api.openai.com/v1';
-        modelCtrl.text = 'gpt-3.5-turbo';
+        modelCtrl.text = 'gpt-4o-mini';
+      } else if (provider == 'mimo') {
+        urlCtrl.text = 'https://api.xiaomimimo.com/v1';
+        modelCtrl.text = 'mimo-v2.5-pro';
       }
     }
 
@@ -462,119 +580,201 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
 
     await showDialog(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setDialogState) {
-          final isCustom = currentProvider == 'custom';
-          return AlertDialog(
-            title: const Text('系统全局 AI 兜底配置'),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('此配置为系统默认的大模型（积分池）。\n当用户未填写自定义 API Key 时，会走此配置并扣减积分。', style: TextStyle(fontSize: 12, color: Colors.grey)),
-                  const SizedBox(height: 16),
-                  DropdownButtonFormField<String>(
-                    value: currentProvider,
-                    decoration: const InputDecoration(
-                      labelText: '快速预设提供商',
-                      border: OutlineInputBorder(),
-                      isDense: true,
-                    ),
-                    items: const [
-                      DropdownMenuItem(value: 'deepseek', child: Text('DeepSeek')),
-                      DropdownMenuItem(value: 'kimi', child: Text('Kimi (月之暗面)')),
-                      DropdownMenuItem(value: 'zhipu', child: Text('智谱清言')),
-                      DropdownMenuItem(value: 'qwen', child: Text('通义千问')),
-                      DropdownMenuItem(value: 'openai', child: Text('OpenAI')),
-                      DropdownMenuItem(value: 'custom', child: Text('自定义 (Custom)')),
-                    ],
-                    onChanged: (val) {
-                      setDialogState(() {
-                        currentProvider = val!;
-                        applyProviderDefaults(currentProvider);
-                      });
-                    },
+      builder: (ctx) => StatefulBuilder(builder: (context, setDialogState) {
+        return AlertDialog(
+          title: const Text('系统全局 AI 兜底配置'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('此配置为系统默认的官方大模型。\n当用户未填写自定义 API Key 时，会走此配置并按余额扣费。',
+                    style: TextStyle(fontSize: 12, color: Colors.grey)),
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(10),
                   ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: keyCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'API Key (必填)',
-                      border: OutlineInputBorder(),
-                      isDense: true,
-                    ),
-                    obscureText: true,
+                  child: const Text(
+                    '建议把官方接口价格设置得低于市场直连价。\n缓存命中会走更低单价，未命中才按真实 token 结算。',
+                    style: TextStyle(fontSize: 12, color: Colors.black87),
                   ),
-
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: urlCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Base URL',
-                      border: OutlineInputBorder(),
-                      isDense: true,
-                    ),
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  value: currentProvider,
+                  decoration: const InputDecoration(
+                    labelText: '快速预设提供商',
+                    border: OutlineInputBorder(),
+                    isDense: true,
                   ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: modelCtrl,
-                          decoration: const InputDecoration(
-                            labelText: 'Model Name',
-                            border: OutlineInputBorder(),
-                            isDense: true,
-                          ),
+                  items: const [
+                    DropdownMenuItem(
+                        value: 'deepseek', child: Text('DeepSeek')),
+                    DropdownMenuItem(value: 'kimi', child: Text('Kimi (月之暗面)')),
+                    DropdownMenuItem(value: 'zhipu', child: Text('智谱清言')),
+                    DropdownMenuItem(value: 'qwen', child: Text('通义千问')),
+                    DropdownMenuItem(value: 'openai', child: Text('OpenAI')),
+                    DropdownMenuItem(value: 'mimo', child: Text('小米 MiMo')),
+                    DropdownMenuItem(
+                        value: 'custom', child: Text('自定义 (Custom)')),
+                  ],
+                  onChanged: (val) {
+                    setDialogState(() {
+                      currentProvider = val!;
+                      applyProviderDefaults(currentProvider);
+                    });
+                  },
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: keyCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'API Key (必填)',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  obscureText: true,
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: urlCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Base URL',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: modelCtrl,
+                        decoration: const InputDecoration(
+                          labelText: 'Model Name',
+                          border: OutlineInputBorder(),
+                          isDense: true,
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      isFetchingModels 
-                          ? const CircularProgressIndicator()
-                          : IconButton(
-                              icon: const Icon(Icons.sync),
-                              onPressed: () => fetchModels(setDialogState),
-                              tooltip: '获取可用模型',
-                            ),
-                    ],
-                  ),
-
-                ],
-              ),
+                    ),
+                    const SizedBox(width: 8),
+                    isFetchingModels
+                        ? const CircularProgressIndicator()
+                        : IconButton(
+                            icon: const Icon(Icons.sync),
+                            onPressed: () => fetchModels(setDialogState),
+                            tooltip: '获取可用模型',
+                          ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: inputTokenCtrl,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: '输入 1K token 单价 (分)',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: TextField(
+                        controller: outputTokenCtrl,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: '输出 1K token 单价 (分)',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: cacheHitCtrl,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: '缓存命中价格 (分)',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: TextField(
+                        controller: minLiveCtrl,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: '实时调用最低价格 (分)',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text('取消'),
-              ),
-              ElevatedButton(
-                onPressed: () async {
-                  try {
-                    await _dio.put('/super/ai_config', data: {
-                      'base_url': urlCtrl.text.trim(),
-                      'api_key': keyCtrl.text.trim(),
-                      'model_name': modelCtrl.text.trim(),
-                    });
-                    if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('系统 AI 配置已更新')));
-                    }
-                    Navigator.pop(ctx);
-                  } catch (_) {
-                    if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('更新失败')));
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('取消'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                try {
+                  await _dio.put('/super/ai_config', data: {
+                    'base_url': urlCtrl.text.trim(),
+                    'api_key': keyCtrl.text.trim(),
+                    'model_name': modelCtrl.text.trim(),
+                    'input_price_per_1k_cents':
+                        int.tryParse(inputTokenCtrl.text.trim()) ?? 2,
+                    'output_price_per_1k_cents':
+                        int.tryParse(outputTokenCtrl.text.trim()) ?? 4,
+                    'cache_hit_price_cents':
+                        int.tryParse(cacheHitCtrl.text.trim()) ?? 1,
+                    'min_live_price_cents':
+                        int.tryParse(minLiveCtrl.text.trim()) ?? 2,
+                  });
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('系统 AI 配置已更新')));
                   }
-                },
-                child: const Text('保存全局配置'),
-              ),
-            ],
-          );
-        }
-      ),
+                  Navigator.pop(ctx);
+                } catch (_) {
+                  if (mounted)
+                    ScaffoldMessenger.of(context)
+                        .showSnackBar(const SnackBar(content: Text('更新失败')));
+                }
+              },
+              child: const Text('保存全局配置'),
+            ),
+          ],
+        );
+      }),
     );
 
     keyCtrl.dispose();
     urlCtrl.dispose();
     modelCtrl.dispose();
+    inputTokenCtrl.dispose();
+    outputTokenCtrl.dispose();
+    cacheHitCtrl.dispose();
+    minLiveCtrl.dispose();
   }
   // ====== 管理员日志 Tab ======
 
@@ -620,7 +820,8 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
                   ),
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                   decoration: BoxDecoration(
                     color: Colors.orange.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(8),
@@ -651,7 +852,8 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
               Align(
                 alignment: Alignment.centerRight,
                 child: TextButton.icon(
-                  onPressed: () => _showRevokeExpDialog(adminId, adminName, adminExp),
+                  onPressed: () =>
+                      _showRevokeExpDialog(adminId, adminName, adminExp),
                   icon: const Icon(Icons.undo, size: 16, color: Colors.red),
                   label: const Text('追回经验',
                       style: TextStyle(color: Colors.red, fontSize: 12)),
@@ -748,7 +950,6 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
     return '${dt.month}/${dt.day} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
   }
 
-
   Widget _buildLotteryTab() {
     return FutureBuilder(
       future: _dio.get('/super/lottery/participants'),
@@ -770,7 +971,9 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
         if (data == null) return const Center(child: Text('暂无数据'));
 
         final event = data['event'];
-        final participants = (data['participants'] as List).map((e) => e as Map<String, dynamic>).toList();
+        final participants = (data['participants'] as List)
+            .map((e) => e as Map<String, dynamic>)
+            .toList();
 
         return Column(
           children: [
@@ -778,7 +981,8 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
               padding: const EdgeInsets.all(16.0),
               child: Text(
                 '当前活动: ${event['name'] ?? ''} (奖品: ${event['prize_name'] ?? ''})',
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                style:
+                    const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
               ),
             ),
             Expanded(
@@ -789,17 +993,19 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
                   final user = p['user'];
                   return ListTile(
                     leading: CircleAvatar(
-                      backgroundImage: user['avatar'] != null && user['avatar'].isNotEmpty
-                          ? NetworkImage(user['avatar'].startsWith('http') 
-                              ? user['avatar'] 
-                              : 'https://sylu.zhouwu.ccwu.cc')
-                          : null,
+                      backgroundImage:
+                          user['avatar'] != null && user['avatar'].isNotEmpty
+                              ? NetworkImage(user['avatar'].startsWith('http')
+                                  ? user['avatar']
+                                  : 'https://sylu.zhouwu.ccwu.cc')
+                              : null,
                       child: user['avatar'] == null || user['avatar'].isEmpty
                           ? Text(user['nickname'][0])
                           : null,
                     ),
                     title: Text(user['nickname'] ?? '未知用户'),
-                    subtitle: Text('学号: ${user['student_id']} | 权重: ${p['weight']}'),
+                    subtitle:
+                        Text('学号: ${user['student_id']} | 权重: ${p['weight']}'),
                     trailing: IconButton(
                       icon: const Icon(Icons.remove_circle, color: Colors.red),
                       tooltip: '踢出',
@@ -808,26 +1014,36 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
                           context: context,
                           builder: (context) => AlertDialog(
                             title: const Text('踢出用户'),
-                            content: Text('确定要将 ${user['nickname'] ?? user['student_id']} 踢出本次抽奖吗？'),
+                            content: Text(
+                                '确定要将 ${user['nickname'] ?? user['student_id']} 踢出本次抽奖吗？'),
                             actions: [
-                              TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('取消')),
-                              TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('踢出', style: TextStyle(color: Colors.red))),
+                              TextButton(
+                                  onPressed: () =>
+                                      Navigator.pop(context, false),
+                                  child: const Text('取消')),
+                              TextButton(
+                                  onPressed: () => Navigator.pop(context, true),
+                                  child: const Text('踢出',
+                                      style: TextStyle(color: Colors.red))),
                             ],
                           ),
                         );
 
                         if (confirm == true) {
                           try {
-                            final res = await _dio.delete('/super/lottery/participants/${event['id']}/${user['id']}');
+                            final res = await _dio.delete(
+                                '/super/lottery/participants/${event['id']}/${user['id']}');
                             if (res.statusCode == 200) {
                               if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已踢出该用户')));
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(content: Text('已踢出该用户')));
                                 setState(() {}); // 刷新列表
                               }
                             }
                           } catch (e) {
                             if (context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('踢出失败: $e')));
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text('踢出失败: $e')));
                             }
                           }
                         }

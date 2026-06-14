@@ -38,9 +38,9 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   late AnimationController _animationController;
   late AnimationController _feedSwitchController;
   late Animation<double> _feedSwitchAnimation;
-  bool _isSwitchingMode = false;
   double _slideDirection = 0;
-  double? _feedSwipeStartY;
+  double _feedSwipeDx = 0;
+  bool _feedSwipeAccepted = false;
   final TextEditingController _searchController = TextEditingController();
   Timer? _autoRefreshTimer;
   List<model.Announcement> _announcements = [];
@@ -76,7 +76,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     );
     _feedSwitchController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 280),
+      duration: const Duration(milliseconds: 180),
       value: 1.0,
     );
     _feedSwitchAnimation = CurvedAnimation(
@@ -199,41 +199,37 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     setState(() {});
   }
 
-  Future<void> _changeFeedMode(String mode) async {
-    if (_feedMode == mode || _isSwitchingMode) return;
-    _isSwitchingMode = true;
+  Future<void> _changeFeedMode(
+    String mode, {
+    double initialProgress = 0,
+  }) async {
+    if (_feedMode == mode) return;
+    const modes = ['new', 'all', 'hot'];
+    final oldIndex = modes.indexOf(_feedMode);
+    final newIndex = modes.indexOf(mode);
+    if (oldIndex < 0 || newIndex < 0) return;
 
-    try {
-      // 确定滑动方向
-      const modes = ['new', 'all', 'hot'];
-      final oldIndex = modes.indexOf(_feedMode);
-      final newIndex = modes.indexOf(mode);
-      final goingRight = newIndex > oldIndex;
+    setState(() {
+      _feedMode = mode;
+      _slideDirection = newIndex > oldIndex ? 1 : -1;
+    });
+    _feedSwitchController.forward(
+      from: initialProgress.clamp(0.0, 1.0).toDouble(),
+    );
+    _refreshFeedMode(mode);
+  }
 
-      // 1. 滑出 + 淡出
-      if (mounted)
-        setState(() {
-          _slideDirection = goingRight ? -1 : 1;
-        });
-      await _feedSwitchController.reverse();
-      if (!mounted) return;
-
-      final postProvider = context.read<PostProvider>();
-
-      // 2. 切换模式 + 设置入场方向
-      if (mounted)
-        setState(() {
-          _feedMode = mode;
-          _slideDirection = goingRight ? 1 : -1;
-        });
-
-      // 3. 滑入 + 淡入
-      await _feedSwitchController.forward();
-
-      // 4. 按新排序刷新
-      await postProvider.refresh(boardId: 1, sort: _currentSort);
-    } finally {
-      _isSwitchingMode = false;
+  void _refreshFeedMode(String mode) {
+    final sort = switch (mode) {
+      'hot' => 'hot',
+      'all' => 'all',
+      _ => 'time',
+    };
+    final postProvider = context.read<PostProvider>();
+    if (postProvider.hasLoadedFor(1, sort: sort)) {
+      unawaited(postProvider.refresh(boardId: 1, sort: sort));
+    } else {
+      unawaited(postProvider.loadPosts(boardId: 1, sort: sort));
     }
   }
 
@@ -425,27 +421,57 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     return '已达最高等级，每日15经验！继续保持！';
   }
 
+  void _handleFeedSwipeStart(DragStartDetails details) {
+    _feedSwipeDx = 0;
+    _feedSwipeAccepted = isUpperContentSwipeStart(
+      details.globalPosition.dy,
+      MediaQuery.sizeOf(context).height,
+    );
+  }
+
+  void _handleFeedSwipeUpdate(DragUpdateDetails details) {
+    if (!_feedSwipeAccepted) return;
+    _feedSwipeDx += details.primaryDelta ?? 0;
+    final direction = _feedSwipeDx < 0 ? -1.0 : 1.0;
+    if (_slideDirection != direction && mounted) {
+      setState(() => _slideDirection = direction);
+    }
+    final width = MediaQuery.sizeOf(context).width;
+    _feedSwitchController.value =
+        (1 - (_feedSwipeDx.abs() / width)).clamp(0.0, 1.0);
+  }
+
   Future<void> _handleFeedSwipe(DragEndDetails details) async {
-    final startY = _feedSwipeStartY;
-    _feedSwipeStartY = null;
-    if (startY == null ||
-        isBottomNavigationSwipeStart(
-          startY,
-          MediaQuery.sizeOf(context).height,
-        )) {
+    final accepted = _feedSwipeAccepted;
+    _feedSwipeAccepted = false;
+    if (!accepted) {
       return;
     }
 
     final velocity = details.primaryVelocity ?? 0;
-    if (velocity.abs() < 320) return;
+    final shouldSwitch = velocity.abs() >= 320 || _feedSwipeDx.abs() >= 56;
+    if (!shouldSwitch) {
+      _feedSwipeDx = 0;
+      await _feedSwitchController.forward();
+      return;
+    }
+
     const modes = ['new', 'all', 'hot'];
     final currentIndex = modes.indexOf(_feedMode);
     if (currentIndex < 0) return;
-    final nextIndex = velocity < 0
+    final swipeDirection = velocity.abs() >= 320 ? velocity : _feedSwipeDx;
+    final transitionProgress = 1 - _feedSwitchController.value;
+    final nextIndex = swipeDirection < 0
         ? (currentIndex + 1).clamp(0, modes.length - 1)
         : (currentIndex - 1).clamp(0, modes.length - 1);
+    _feedSwipeDx = 0;
     if (nextIndex != currentIndex) {
-      await _changeFeedMode(modes[nextIndex]);
+      await _changeFeedMode(
+        modes[nextIndex],
+        initialProgress: transitionProgress,
+      );
+    } else {
+      await _feedSwitchController.forward();
     }
   }
 
@@ -643,12 +669,13 @@ class _ShuitieScreenState extends State<ShuitieScreen>
 
                 return GestureDetector(
                   behavior: HitTestBehavior.translucent,
-                  onHorizontalDragStart: (details) {
-                    _feedSwipeStartY = details.globalPosition.dy;
-                  },
+                  onHorizontalDragStart: _handleFeedSwipeStart,
+                  onHorizontalDragUpdate: _handleFeedSwipeUpdate,
                   onHorizontalDragEnd: _handleFeedSwipe,
                   onHorizontalDragCancel: () {
-                    _feedSwipeStartY = null;
+                    _feedSwipeDx = 0;
+                    _feedSwipeAccepted = false;
+                    _feedSwitchController.forward();
                   },
                   child: SlideTransition(
                     position: Tween<Offset>(

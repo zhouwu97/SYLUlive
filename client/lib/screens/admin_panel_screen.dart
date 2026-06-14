@@ -240,7 +240,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
       });
       if (mounted) {
         // 本地移除已处理的举报，不全局刷新
-        if (mounted) setState(() => _reports.removeWhere((r) => r['id'] == report['id']));
+        if (mounted)
+          setState(() => _reports.removeWhere((r) => r['id'] == report['id']));
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(action == 'handled' ? '已处理并删除' : '已忽略'),
@@ -296,7 +297,9 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
             content: Text('邀请已发送，用户同意后进入管理员代办'), backgroundColor: Colors.green),
       );
       // 本地移除该候选人，不全局刷新
-      if (mounted) setState(() => _candidates.removeWhere((c) => c['id'] == candidate['id']));
+      if (mounted)
+        setState(
+            () => _candidates.removeWhere((c) => c['id'] == candidate['id']));
     } on DioException catch (e) {
       if (!mounted) return;
       messenger.showSnackBar(SnackBar(
@@ -402,7 +405,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
                       Tab(
                           text:
                               '举报${pendingCount > 0 ? ' ($pendingCount)' : ''}'),
-                      const Tab(text: '候选人'),
+                      Tab(text: '候选人 (${_candidates.length})'),
                       Tab(text: '代办${todoCount > 0 ? ' ($todoCount)' : ''}'),
                       const Tab(text: '操作日志'),
                       const Tab(text: '公告'),
@@ -436,7 +439,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
 
   // ---- 背景 ----
   Widget _buildBackground(ThemeProvider themeProvider, bool isDark) {
-    if (themeProvider.isBackgroundVisible && themeProvider.getBackgroundImageFor(context) != null) {
+    if (themeProvider.isBackgroundVisible &&
+        themeProvider.getBackgroundImageFor(context) != null) {
       final bgPath = themeProvider.getBackgroundImageFor(context)!;
       final isAsset = !bgPath.startsWith('http') && !bgPath.startsWith('/');
       return Stack(fit: StackFit.expand, children: [
@@ -672,7 +676,9 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
                             content: Text('已忽略'), backgroundColor: Colors.grey),
                       );
                       // 本地移除该举报
-                      if (mounted) setState(() => _reports.removeWhere((r) => r['id'] == report['id']));
+                      if (mounted)
+                        setState(() => _reports
+                            .removeWhere((r) => r['id'] == report['id']));
                     }
                   } catch (_) {}
                 },
@@ -1104,7 +1110,9 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
       messenger.showSnackBar(
           SnackBar(content: Text(message), backgroundColor: Colors.green));
       // 本地移除该代办
-      if (mounted) setState(() => _pendingInvitations.removeWhere((i) => i['id'] == inv['id']));
+      if (mounted)
+        setState(
+            () => _pendingInvitations.removeWhere((i) => i['id'] == inv['id']));
     } on DioException catch (e) {
       if (!mounted) return;
       messenger.showSnackBar(SnackBar(
@@ -1138,7 +1146,9 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
       messenger.showSnackBar(
           SnackBar(content: Text(message), backgroundColor: Colors.green));
       // 本地移除该罢免投票
-      if (mounted) setState(() => _pendingRemovals.removeWhere((r) => r['id'] == removal['id']));
+      if (mounted)
+        setState(() =>
+            _pendingRemovals.removeWhere((r) => r['id'] == removal['id']));
     } on DioException catch (e) {
       if (!mounted) return;
       messenger.showSnackBar(SnackBar(
@@ -1156,7 +1166,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
         await dio.delete('/majors/$id/reject');
       if (mounted) {
         // 本地移除，不全局刷新
-        if (mounted) setState(() => _pendingMajors.removeWhere((m) => m['id'] == id));
+        if (mounted)
+          setState(() => _pendingMajors.removeWhere((m) => m['id'] == id));
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: Text(approve ? '已审核通过' : '已拒绝'),
             backgroundColor: Colors.green));
@@ -1178,7 +1189,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
       }
       if (mounted) {
         // 本地移除，不全局刷新
-        if (mounted) setState(() => _pendingTeachers.removeWhere((t) => t['id'] == id));
+        if (mounted)
+          setState(() => _pendingTeachers.removeWhere((t) => t['id'] == id));
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: Text(approve ? '已审核通过' : '已拒绝'),
             backgroundColor: Colors.green));

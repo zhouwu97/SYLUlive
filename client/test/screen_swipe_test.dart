@@ -6,6 +6,8 @@ void main() {
   test('bottom third is reserved for main navigation swipes', () {
     expect(isBottomNavigationSwipeStart(650, 900), isTrue);
     expect(isBottomNavigationSwipeStart(599, 900), isFalse);
+    expect(isUpperContentSwipeStart(599, 900), isTrue);
+    expect(isUpperContentSwipeStart(650, 900), isFalse);
   });
 
   test('detects a fast horizontal swipe direction', () {

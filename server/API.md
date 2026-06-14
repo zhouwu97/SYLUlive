@@ -103,10 +103,19 @@
 | Method | Endpoint | Description |
 |---|---|---|
 | `GET` | `/api/messages/conversations` | 获取私信会话列表 |
-| `GET` | `/api/messages/conversations/:id`| 获取具体会话的聊天记录 |
-| `POST`| `/api/messages/:user_id` | 发送私信 |
+| `GET` | `/api/messages/conversations/:id`| 分页获取聊天记录，支持 `limit` 和 `before_id` |
+| `POST`| `/api/messages/:user_id` | 发送私信，首次发送时自动创建会话 |
+| `POST`| `/api/messages/conversations/:id/read` | 将会话中的接收消息标记为已读 |
+| `GET` | `/api/messages/unread_count` | 获取私信未读总数 |
 | `GET` | `/api/user/notifications/unread_count`| 获取未读系统通知和互动红点数 |
 | `POST`| `/api/user/notifications/read` | 标记所有通知为已读 |
+
+## 6.1 统一搜索 (Search)
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/search?type=posts&q=关键词&sort=relevance` | 按标题或正文搜索帖子，支持 relevance/latest/hot |
+| `GET` | `/api/search?type=users&q=账号或昵称&sort=relevance` | 按账号或昵称搜索用户，支持 relevance/newest |
 
 ## 7. 管理员与超级管理员 (Admin)
 

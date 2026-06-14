@@ -15,6 +15,7 @@ import '../widgets/post_card.dart';
 import 'social_list_screen.dart';
 import 'image_viewer_screen.dart';
 import 'chat_detail_screen.dart';
+
 class UserHomeScreen extends StatefulWidget {
   final int? userId;
   const UserHomeScreen({super.key, this.userId});
@@ -23,7 +24,8 @@ class UserHomeScreen extends StatefulWidget {
   State<UserHomeScreen> createState() => _UserHomeScreenState();
 }
 
-class _UserHomeScreenState extends State<UserHomeScreen> with SingleTickerProviderStateMixin {
+class _UserHomeScreenState extends State<UserHomeScreen>
+    with SingleTickerProviderStateMixin {
   late TabController _tabController;
   final ScrollController _scrollController = ScrollController();
   User? _user;
@@ -84,9 +86,10 @@ class _UserHomeScreenState extends State<UserHomeScreen> with SingleTickerProvid
         body: const Center(child: Text('用户不存在或加载失败')),
       );
     }
-    
+
     final user = _user!;
-    final isMe = widget.userId == null || widget.userId == context.read<AuthProvider>().user?.id;
+    final isMe = widget.userId == null ||
+        widget.userId == context.read<AuthProvider>().user?.id;
 
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
@@ -99,139 +102,155 @@ class _UserHomeScreenState extends State<UserHomeScreen> with SingleTickerProvid
           controller: _scrollController,
           headerSliverBuilder: (BuildContext context, bool innerBoxIsScrolled) {
             return <Widget>[
-            SliverAppBar(
-              expandedHeight: 200.0,
-              floating: false,
-              pinned: true,
-              backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-              flexibleSpace: FlexibleSpaceBar(
-                collapseMode: CollapseMode.parallax,
-                background: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    Positioned.fill(
-                      child: GestureDetector(
-                        onTap: () {
-                          if (widget.userId == null || widget.userId == context.read<AuthProvider>().user?.id) {
-                            _showEditSheet(context, user);
+              SliverAppBar(
+                expandedHeight: 200.0,
+                floating: false,
+                pinned: true,
+                backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+                flexibleSpace: FlexibleSpaceBar(
+                  collapseMode: CollapseMode.parallax,
+                  background: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      Positioned.fill(
+                        child: GestureDetector(
+                          onTap: () {
+                            if (widget.userId == null ||
+                                widget.userId ==
+                                    context.read<AuthProvider>().user?.id) {
+                              _showEditSheet(context, user);
+                            }
+                          },
+                          child: user.background.isNotEmpty
+                              ? CachedNetworkImage(
+                                  imageUrl:
+                                      ApiConstants.fullUrl(user.background),
+                                  fit: BoxFit.cover,
+                                )
+                              : Image.asset(
+                                  'assets/images/morenbeijing.jpeg',
+                                  fit: BoxFit.cover,
+                                ),
+                        ),
+                      ),
+                      Positioned.fill(
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [
+                                Colors.transparent,
+                                isDark ? Colors.black87 : Colors.black54
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                actions: [
+                  if (!isMe)
+                    Container(
+                      margin: const EdgeInsets.all(4),
+                      decoration: const BoxDecoration(
+                        color: Colors.black26,
+                        shape: BoxShape.circle,
+                      ),
+                      child: PopupMenuButton<String>(
+                        icon: const Icon(Icons.more_vert,
+                            color: Colors.white, size: 20),
+                        padding: EdgeInsets.zero,
+                        offset: const Offset(0, 40),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                        onSelected: (value) {
+                          if (value == 'message') {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) =>
+                                    ChatDetailScreen(targetUser: user),
+                              ),
+                            );
                           }
                         },
-                        child: user.background.isNotEmpty
-                            ? CachedNetworkImage(
-                                imageUrl: ApiConstants.fullUrl(user.background),
-                                fit: BoxFit.cover,
-                              )
-                            : Image.asset(
-                                'assets/images/morenbeijing.jpeg',
-                                fit: BoxFit.cover,
-                              ),
-                      ),
-                    ),
-                    Positioned.fill(
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [Colors.transparent, isDark ? Colors.black87 : Colors.black54],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              actions: [
-                if (!isMe)
-                  Container(
-                    margin: const EdgeInsets.all(4),
-                    decoration: const BoxDecoration(
-                      color: Colors.black26,
-                      shape: BoxShape.circle,
-                    ),
-                    child: PopupMenuButton<String>(
-                      icon: const Icon(Icons.more_vert, color: Colors.white, size: 20),
-                      padding: EdgeInsets.zero,
-                      offset: const Offset(0, 40),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      onSelected: (value) {
-                        if (value == 'message') {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => ChatDetailScreen(userName: user.nickname),
+                        itemBuilder: (context) => [
+                          const PopupMenuItem(
+                            value: 'message',
+                            child: Row(
+                              children: [
+                                Icon(Icons.mail_outline, size: 20),
+                                SizedBox(width: 12),
+                                Text('私信'),
+                              ],
                             ),
-                          );
-                        }
-                      },
-                      itemBuilder: (context) => [
-                        const PopupMenuItem(
-                          value: 'message',
-                          child: Row(
-                            children: [
-                              Icon(Icons.mail_outline, size: 20),
-                              SizedBox(width: 12),
-                              Text('私信'),
-                            ],
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
-                const SizedBox(width: 8),
-              ],
-            ),
-
-            // 个人信息区域
-            SliverToBoxAdapter(
-              child: _buildProfileInfo(context, user, isDark),
-            ),
-
-            // 标签栏
-            SliverPersistentHeader(
-              pinned: true,
-              delegate: _SliverAppBarDelegate(
-                TabBar(
-                  controller: _tabController,
-                  indicatorSize: TabBarIndicatorSize.label,
-                  labelColor: Theme.of(context).primaryColor,
-                  unselectedLabelColor: isDark ? Colors.white54 : Colors.black54,
-                  indicatorColor: Theme.of(context).primaryColor,
-                  indicatorWeight: 3,
-                  tabs: [
-                    Tab(text: '帖子 ${_posts.length}'),
-                    const Tab(text: '智能体 0'),
-                  ],
-                ),
-                isDark ? Theme.of(context).scaffoldBackgroundColor : Colors.white,
+                  const SizedBox(width: 8),
+                ],
               ),
-            ),
-          ];
-        },
-        body: TabBarView(
-          controller: _tabController,
-          children: [
-            _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : _posts.isEmpty
-                    ? const Center(child: Text('暂无帖子'))
-                : ListView.builder(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    itemCount: _posts.length,
-                    itemBuilder: (context, index) {
-                      return PostCard(post: _posts[index]);
-                    },
+
+              // 个人信息区域
+              SliverToBoxAdapter(
+                child: _buildProfileInfo(context, user, isDark),
+              ),
+
+              // 标签栏
+              SliverPersistentHeader(
+                pinned: true,
+                delegate: _SliverAppBarDelegate(
+                  TabBar(
+                    controller: _tabController,
+                    indicatorSize: TabBarIndicatorSize.label,
+                    labelColor: Theme.of(context).primaryColor,
+                    unselectedLabelColor:
+                        isDark ? Colors.white54 : Colors.black54,
+                    indicatorColor: Theme.of(context).primaryColor,
+                    indicatorWeight: 3,
+                    tabs: [
+                      Tab(text: '帖子 ${_posts.length}'),
+                      const Tab(text: '智能体 0'),
+                    ],
                   ),
-            const Center(child: Text('暂无智能体')),
-          ],
+                  isDark
+                      ? Theme.of(context).scaffoldBackgroundColor
+                      : Colors.white,
+                ),
+              ),
+            ];
+          },
+          body: TabBarView(
+            controller: _tabController,
+            children: [
+              _isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _posts.isEmpty
+                      ? const Center(child: Text('暂无帖子'))
+                      : ListView.builder(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 8),
+                          itemCount: _posts.length,
+                          itemBuilder: (context, index) {
+                            return PostCard(
+                                post: _posts[index],
+                                disableAuthorNavigation: true);
+                          },
+                        ),
+              const Center(child: Text('暂无智能体')),
+            ],
+          ),
         ),
-      ),
       ),
     );
   }
 
   Widget _buildProfileInfo(BuildContext context, User user, bool isDark) {
-    final isMe = widget.userId == null || widget.userId == context.read<AuthProvider>().user?.id;
+    final isMe = widget.userId == null ||
+        widget.userId == context.read<AuthProvider>().user?.id;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16.0),
@@ -263,11 +282,16 @@ class _UserHomeScreenState extends State<UserHomeScreen> with SingleTickerProvid
                         child: user.avatar.isNotEmpty
                             ? CachedNetworkImage(
                                 imageUrl: ApiConstants.fullUrl(user.avatar),
-                                width: 64, height: 64, fit: BoxFit.cover,
+                                width: 64,
+                                height: 64,
+                                fit: BoxFit.cover,
                               )
                             : Container(
-                                width: 64, height: 64, color: Colors.grey[300],
-                                child: const Icon(Icons.person, size: 30, color: Colors.white),
+                                width: 64,
+                                height: 64,
+                                color: Colors.grey[300],
+                                child: const Icon(Icons.person,
+                                    size: 30, color: Colors.white),
                               ),
                       ),
                     ),
@@ -298,18 +322,29 @@ class _UserHomeScreenState extends State<UserHomeScreen> with SingleTickerProvid
                             crossAxisAlignment: WrapCrossAlignment.center,
                             children: [
                               Icon(
-                                user.gender == 'female' ? Icons.female : Icons.male,
+                                user.gender == 'female'
+                                    ? Icons.female
+                                    : Icons.male,
                                 size: 12,
-                                color: user.gender == 'female' ? Colors.pink[300] : Colors.blue[300],
+                                color: user.gender == 'female'
+                                    ? Colors.pink[300]
+                                    : Colors.blue[300],
                               ),
                               Text('ID ${user.studentId}',
                                   style: TextStyle(
                                       fontSize: 11,
-                                      color: isDark ? Colors.white54 : Colors.black54)),
-                              Text(user.eduCollege.isNotEmpty ? user.eduCollege : '未知归属',
+                                      color: isDark
+                                          ? Colors.white54
+                                          : Colors.black54)),
+                              Text(
+                                  user.eduCollege.isNotEmpty
+                                      ? user.eduCollege
+                                      : '未知归属',
                                   style: TextStyle(
                                       fontSize: 11,
-                                      color: isDark ? Colors.white54 : Colors.black54)),
+                                      color: isDark
+                                          ? Colors.white54
+                                          : Colors.black54)),
                             ],
                           ),
                         ],
@@ -330,8 +365,8 @@ class _UserHomeScreenState extends State<UserHomeScreen> with SingleTickerProvid
                     ),
                     side: BorderSide(
                         color: isDark ? Colors.white30 : Colors.black26),
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 0),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
                     minimumSize: const Size(0, 32),
                   ),
                   child: Text('编辑资料',
@@ -342,11 +377,13 @@ class _UserHomeScreenState extends State<UserHomeScreen> with SingleTickerProvid
               else if (user.isFollowing)
                 OutlinedButton(
                   onPressed: () async {
-                    final success = await context.read<SocialProvider>().unfollow(user.id);
+                    final success =
+                        await context.read<SocialProvider>().unfollow(user.id);
                     if (success && mounted) {
                       setState(() {
                         _user!.isFollowing = false;
-                        _user!.followersCount = (_user!.followersCount - 1).clamp(0, 999999);
+                        _user!.followersCount =
+                            (_user!.followersCount - 1).clamp(0, 999999);
                       });
                       context.read<AuthProvider>().refreshUser();
                     }
@@ -356,7 +393,8 @@ class _UserHomeScreenState extends State<UserHomeScreen> with SingleTickerProvid
               else
                 ElevatedButton(
                   onPressed: () async {
-                    final success = await context.read<SocialProvider>().follow(user.id);
+                    final success =
+                        await context.read<SocialProvider>().follow(user.id);
                     if (success && mounted) {
                       setState(() {
                         _user!.isFollowing = true;
@@ -380,15 +418,36 @@ class _UserHomeScreenState extends State<UserHomeScreen> with SingleTickerProvid
           // 统计数据区 (极其精简版)
           Row(
             children: [
-              _buildStatItem(user.totalLikesReceived.toString(), '获赞', isDark, null),
+              _buildStatItem(
+                  user.totalLikesReceived.toString(), '获赞', isDark, null),
               const SizedBox(width: 32),
-              _buildStatItem(user.followingCount.toString(), '关注', isDark, isMe ? () {
-                Navigator.push(context, MaterialPageRoute(builder: (_) => SocialListScreen(userId: user.id, initialIndex: 0)));
-              } : null),
+              _buildStatItem(
+                  user.followingCount.toString(),
+                  '关注',
+                  isDark,
+                  isMe
+                      ? () {
+                          Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (_) => SocialListScreen(
+                                      userId: user.id, initialIndex: 0)));
+                        }
+                      : null),
               const SizedBox(width: 32),
-              _buildStatItem(user.followersCount.toString(), '粉丝', isDark, isMe ? () {
-                Navigator.push(context, MaterialPageRoute(builder: (_) => SocialListScreen(userId: user.id, initialIndex: 1)));
-              } : null),
+              _buildStatItem(
+                  user.followersCount.toString(),
+                  '粉丝',
+                  isDark,
+                  isMe
+                      ? () {
+                          Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (_) => SocialListScreen(
+                                      userId: user.id, initialIndex: 1)));
+                        }
+                      : null),
             ],
           ),
 
@@ -398,7 +457,8 @@ class _UserHomeScreenState extends State<UserHomeScreen> with SingleTickerProvid
     );
   }
 
-  Widget _buildStatItem(String countStr, String label, bool isDark, VoidCallback? onTap) {
+  Widget _buildStatItem(
+      String countStr, String label, bool isDark, VoidCallback? onTap) {
     int count = int.tryParse(countStr) ?? 0;
     return InkWell(
       onTap: onTap,
@@ -430,7 +490,7 @@ class _UserHomeScreenState extends State<UserHomeScreen> with SingleTickerProvid
   Widget _buildLevelCard(BuildContext context, User user, bool isDark) {
     final nextExp = user.expToNextLevel;
     final progress = user.levelProgress;
-    
+
     return Row(
       children: [
         Text(
@@ -449,7 +509,8 @@ class _UserHomeScreenState extends State<UserHomeScreen> with SingleTickerProvid
             borderRadius: BorderRadius.circular(4),
             child: LinearProgressIndicator(
               value: progress,
-              backgroundColor: isDark ? Colors.white12 : const Color(0xFFEEEEEE),
+              backgroundColor:
+                  isDark ? Colors.white12 : const Color(0xFFEEEEEE),
               valueColor: AlwaysStoppedAnimation<Color>(
                 Color(user.levelColorValue),
               ),
@@ -477,8 +538,6 @@ class _UserHomeScreenState extends State<UserHomeScreen> with SingleTickerProvid
     );
   }
 
-
-
   // ---------------- 编辑资料悬浮窗 ----------------
   void _showEditSheet(BuildContext context, User user) {
     showDialog(
@@ -500,7 +559,8 @@ class MockPostListTab extends StatefulWidget {
   State<MockPostListTab> createState() => _MockPostListTabState();
 }
 
-class _MockPostListTabState extends State<MockPostListTab> with AutomaticKeepAliveClientMixin {
+class _MockPostListTabState extends State<MockPostListTab>
+    with AutomaticKeepAliveClientMixin {
   @override
   bool get wantKeepAlive => true;
 
@@ -515,7 +575,9 @@ class _MockPostListTabState extends State<MockPostListTab> with AutomaticKeepAli
           margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: widget.isDark ? const Color(0xFF1E1E1E).withOpacity(0.9) : Colors.white.withOpacity(0.95),
+            color: widget.isDark
+                ? const Color(0xFF1E1E1E).withOpacity(0.9)
+                : Colors.white.withOpacity(0.95),
             borderRadius: BorderRadius.circular(20),
             boxShadow: [
               BoxShadow(
@@ -530,23 +592,29 @@ class _MockPostListTabState extends State<MockPostListTab> with AutomaticKeepAli
             children: [
               Text(
                 '这是一个动态占位内容 $index',
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                style:
+                    const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 8),
               Text(
                 '这里是动态内容的摘要部分。在这个设计中，我们采用了贴吧风格的列表展示...',
-                style: TextStyle(color: widget.isDark ? Colors.white70 : Colors.black87),
+                style: TextStyle(
+                    color: widget.isDark ? Colors.white70 : Colors.black87),
               ),
               const SizedBox(height: 12),
               Row(
                 children: [
-                  Icon(Icons.thumb_up_alt_outlined, size: 16, color: Colors.grey[500]),
+                  Icon(Icons.thumb_up_alt_outlined,
+                      size: 16, color: Colors.grey[500]),
                   const SizedBox(width: 4),
-                  Text('12', style: TextStyle(color: Colors.grey[500], fontSize: 12)),
+                  Text('12',
+                      style: TextStyle(color: Colors.grey[500], fontSize: 12)),
                   const SizedBox(width: 16),
-                  Icon(Icons.chat_bubble_outline, size: 16, color: Colors.grey[500]),
+                  Icon(Icons.chat_bubble_outline,
+                      size: 16, color: Colors.grey[500]),
                   const SizedBox(width: 4),
-                  Text('4', style: TextStyle(color: Colors.grey[500], fontSize: 12)),
+                  Text('4',
+                      style: TextStyle(color: Colors.grey[500], fontSize: 12)),
                 ],
               )
             ],
@@ -600,7 +668,8 @@ class _SliverAppBarDelegate extends SliverPersistentHeaderDelegate {
   }
 
   bool shouldRebuild(_SliverAppBarDelegate oldDelegate) {
-    return _tabBar != oldDelegate._tabBar || backgroundColor != oldDelegate.backgroundColor;
+    return _tabBar != oldDelegate._tabBar ||
+        backgroundColor != oldDelegate.backgroundColor;
   }
 }
 
@@ -671,19 +740,19 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
         final url = uploadRes.data['url'];
         // 更新背景
         await auth.dio.put('/user/background', data: {'background': url});
-        
+
         // 更新本地状态
         await auth.refreshUser();
         widget.onSaved(); // 触发主页刷新
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('背景更换成功')));
+          ScaffoldMessenger.of(context)
+              .showSnackBar(const SnackBar(content: Text('背景更换成功')));
         }
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('上传失败: $e')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('上传失败: $e')));
       }
     } finally {
       if (mounted) {
@@ -708,13 +777,13 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
       widget.onSaved();
       if (mounted) {
         Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('资料已保存')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('资料已保存')));
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('保存失败: $e')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('保存失败: $e')));
       }
     } finally {
       if (mounted) {
@@ -726,10 +795,12 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    
+
     return Container(
       padding: EdgeInsets.only(
-        left: 20, right: 20, top: 12,
+        left: 20,
+        right: 20,
+        top: 12,
         bottom: MediaQuery.of(context).viewInsets.bottom + 20,
       ),
       decoration: BoxDecoration(
@@ -748,16 +819,21 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
         children: [
           // 拖动条
           Container(
-            width: 40, height: 4,
+            width: 40,
+            height: 4,
             decoration: BoxDecoration(
               color: Colors.grey.withOpacity(0.3),
               borderRadius: BorderRadius.circular(2),
             ),
           ),
           const SizedBox(height: 20),
-          Text('编辑资料', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: isDark ? Colors.white : Colors.black87)),
+          Text('编辑资料',
+              style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: isDark ? Colors.white : Colors.black87)),
           const SizedBox(height: 24),
-          
+
           // 更改背景
           InkWell(
             onTap: _isSaving ? null : _pickAndUploadBackground,
@@ -785,7 +861,8 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
             controller: _nicknameController,
             decoration: InputDecoration(
               labelText: '昵称',
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              border:
+                  OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
               prefixIcon: const Icon(Icons.person_outline),
             ),
           ),
@@ -799,8 +876,14 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
               Expanded(
                 child: SegmentedButton<String>(
                   segments: const [
-                    ButtonSegment(value: 'male', label: Text('男生'), icon: Icon(Icons.male)),
-                    ButtonSegment(value: 'female', label: Text('女生'), icon: Icon(Icons.female)),
+                    ButtonSegment(
+                        value: 'male',
+                        label: Text('男生'),
+                        icon: Icon(Icons.male)),
+                    ButtonSegment(
+                        value: 'female',
+                        label: Text('女生'),
+                        icon: Icon(Icons.female)),
                     ButtonSegment(value: '', label: Text('保密')),
                   ],
                   selected: {_selectedGender},
@@ -822,11 +905,17 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
               onPressed: _isSaving ? null : _saveProfile,
               style: ElevatedButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 16),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
               ),
-              child: _isSaving 
-                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                : const Text('保存', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              child: _isSaving
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Text('保存',
+                      style:
+                          TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             ),
           ),
         ],

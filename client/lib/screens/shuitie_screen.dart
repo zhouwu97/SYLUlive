@@ -41,10 +41,8 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   double _slideDirection = 0;
   final TextEditingController _searchController = TextEditingController();
   Timer? _autoRefreshTimer;
-  Timer? _searchDebounce;
   List<model.Announcement> _announcements = [];
   bool _wasLoggedIn = false;
-  final Map<String, List<Post>> _modeCaches = {};
   String _feedMode = 'all';
   String _searchQuery = '';
   List<Post> _searchResults = [];
@@ -52,14 +50,17 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   int _streakDays = 0;
   bool _checkInLoading = false;
   Post? _selectedPost;
-  
+
   static const _autoRefreshInterval = Duration(seconds: 60);
 
   String get _currentSort {
     switch (_feedMode) {
-      case 'hot': return 'hot';
-      case 'all': return 'all';
-      default:    return 'time';
+      case 'hot':
+        return 'hot';
+      case 'all':
+        return 'all';
+      default:
+        return 'time';
     }
   }
 
@@ -119,7 +120,6 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _stopAutoRefresh();
-    _searchDebounce?.cancel();
     _searchController.dispose();
     _feedSwitchController.dispose();
     _animationController.dispose();
@@ -176,10 +176,11 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     if (query.isEmpty) return;
 
     _searchController.clear();
-    if (mounted) setState(() {
-      _searchQuery = '';
-      _searchResults = [];
-    });
+    if (mounted)
+      setState(() {
+        _searchQuery = '';
+        _searchResults = [];
+      });
 
     Navigator.push(
       context,
@@ -191,12 +192,6 @@ class _ShuitieScreenState extends State<ShuitieScreen>
 
   void _onSearchChanged(String value) {
     setState(() {});
-    _searchDebounce?.cancel();
-    _searchDebounce = Timer(const Duration(milliseconds: 260), () {
-      if (value.trim().isNotEmpty) {
-        _runSearch(value);
-      }
-    });
   }
 
   Future<void> _changeFeedMode(String mode) async {
@@ -211,30 +206,27 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       final goingRight = newIndex > oldIndex;
 
       // 1. 滑出 + 淡出
-      if (mounted) setState(() {
-        _slideDirection = goingRight ? -1 : 1;
-      });
+      if (mounted)
+        setState(() {
+          _slideDirection = goingRight ? -1 : 1;
+        });
       await _feedSwitchController.reverse();
       if (!mounted) return;
 
-      // 2. 保存当前板块帖子到缓存
       final postProvider = context.read<PostProvider>();
-      final currentPosts = postProvider.postsFor(1);
-      if (currentPosts.isNotEmpty) {
-        _modeCaches[_feedMode] = List.from(currentPosts);
-      }
 
-      // 3. 切换模式 + 设置入场方向
-      if (mounted) setState(() {
-        _feedMode = mode;
-        _slideDirection = goingRight ? 1 : -1;
-      });
+      // 2. 切换模式 + 设置入场方向
+      if (mounted)
+        setState(() {
+          _feedMode = mode;
+          _slideDirection = goingRight ? 1 : -1;
+        });
 
-      // 4. 滑入 + 淡入
+      // 3. 滑入 + 淡入
       await _feedSwitchController.forward();
 
-      // 5. 后台刷新数据 (不再阻塞UI，让其在后台刷新)
-      _refresh();
+      // 4. 按新排序刷新
+      await postProvider.refresh(boardId: 1, sort: _currentSort);
     } finally {
       _isSwitchingMode = false;
     }
@@ -242,9 +234,9 @@ class _ShuitieScreenState extends State<ShuitieScreen>
 
   List<Post> _resolveVisiblePosts(List<Post> posts) {
     if (_searchQuery.isNotEmpty) return _searchResults;
-    
+
     List<Post> sortedPosts = List.from(posts);
-    
+
     // 排序逻辑已下沉至服务端，客户端只需原样返回
     // 但对于新帖过滤可以保留部分逻辑（如果服务端未实现new模式的话）
     if (_feedMode == 'new') {
@@ -259,7 +251,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       sortedPosts.sort((a, b) => b.createdAt.compareTo(a.createdAt));
       return sortedPosts.take(12).toList();
     }
-    
+
     return sortedPosts;
   }
 
@@ -275,12 +267,6 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     if (!mounted) return;
     // 如果在刷新期间用户已切换了模式，丢弃本次结果，避免数据污染
     if (_feedMode != modeAtStart) return;
-    final posts = postProvider.postsFor(1);
-    if (mounted) setState(() {
-      if (posts.isNotEmpty) {
-        _modeCaches[modeAtStart] = List.from(posts);
-      }
-    });
     if (_searchQuery.isNotEmpty) {
       await _runSearch(_searchQuery);
     }
@@ -329,7 +315,10 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   Future<void> _doCheckIn() async {
     final auth = context.read<AuthProvider>();
     if (!auth.isLoggedIn) {
-      Navigator.push(context, PageRouteBuilder(opaque: false, pageBuilder: (_, __, ___) => const LoginScreen()));
+      Navigator.push(
+          context,
+          PageRouteBuilder(
+              opaque: false, pageBuilder: (_, __, ___) => const LoginScreen()));
       return;
     }
     if (_checkInLoading || _checkedIn) return;
@@ -341,11 +330,12 @@ class _ShuitieScreenState extends State<ShuitieScreen>
         final already = data['already'] ?? false;
         final streak = data['streak_days'] ?? 1;
         final exp = data['exp_earned'] ?? 1;
-        if (mounted) setState(() {
-          _checkedIn = true;
-          _streakDays = streak;
-          _checkInLoading = false;
-        });
+        if (mounted)
+          setState(() {
+            _checkedIn = true;
+            _streakDays = streak;
+            _checkInLoading = false;
+          });
         auth.refreshUser();
         if (!already) {
           _showCheckInSuccessDialog(streak, exp);
@@ -389,7 +379,9 @@ class _ShuitieScreenState extends State<ShuitieScreen>
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
               decoration: BoxDecoration(
-                color: isDark ? Colors.amber.withOpacity(0.15) : Colors.amber.withOpacity(0.1),
+                color: isDark
+                    ? Colors.amber.withOpacity(0.15)
+                    : Colors.amber.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Text(
@@ -404,7 +396,9 @@ class _ShuitieScreenState extends State<ShuitieScreen>
             const SizedBox(height: 16),
             Text(
               _nextRewardHint(streak),
-              style: TextStyle(fontSize: 13, color: isDark ? Colors.white60 : Colors.grey[600]),
+              style: TextStyle(
+                  fontSize: 13,
+                  color: isDark ? Colors.white60 : Colors.grey[600]),
               textAlign: TextAlign.center,
             ),
           ],
@@ -521,7 +515,9 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       extendBodyBehindAppBar: true,
       body: Stack(
         children: [
-          isDesktop ? _buildDesktopLayout(isDark, topPadding) : _buildMobileLayout(isDark, topPadding),
+          isDesktop
+              ? _buildDesktopLayout(isDark, topPadding)
+              : _buildMobileLayout(isDark, topPadding),
         ],
       ),
     );
@@ -537,7 +533,9 @@ class _ShuitieScreenState extends State<ShuitieScreen>
           decoration: BoxDecoration(
             border: Border(
               right: BorderSide(
-                color: isDark ? Colors.white10 : Colors.black.withValues(alpha: 0.05),
+                color: isDark
+                    ? Colors.white10
+                    : Colors.black.withValues(alpha: 0.05),
                 width: 1,
               ),
             ),
@@ -587,9 +585,13 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.forum_outlined, size: 80, color: isDark ? Colors.white24 : Colors.black12),
+          Icon(Icons.forum_outlined,
+              size: 80, color: isDark ? Colors.white24 : Colors.black12),
           const SizedBox(height: 16),
-          Text('点击左侧帖子查看详情', style: TextStyle(fontSize: 16, color: isDark ? Colors.white54 : Colors.black54)),
+          Text('点击左侧帖子查看详情',
+              style: TextStyle(
+                  fontSize: 16,
+                  color: isDark ? Colors.white54 : Colors.black54)),
         ],
       ),
     );
@@ -611,11 +613,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
             constraints: const BoxConstraints(maxWidth: 680),
             child: Consumer<PostProvider>(
               builder: (context, postProvider, child) {
-                // 优先使用模式专属缓存，避免不同模式的数据交叉污染
-                final cachedPosts = _modeCaches[_feedMode];
-                final posts = (cachedPosts != null && cachedPosts.isNotEmpty)
-                    ? cachedPosts
-                    : postProvider.postsFor(1);
+                final posts = postProvider.postsFor(1);
 
                 final visiblePosts = _resolveVisiblePosts(posts);
                 final lostFoundPosts = postProvider
@@ -634,108 +632,152 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                     ).animate(_feedSwitchAnimation),
                     child: FadeTransition(
                       opacity: _feedSwitchAnimation,
-                      child: CustomScrollView(
-                        physics: const AlwaysScrollableScrollPhysics(
-                          parent: BouncingScrollPhysics(),
-                        ),
-                        slivers: [
-                          SliverToBoxAdapter(child: SizedBox(height: topPadding + 8)),
-                          SliverPadding(
-                            padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
-                            sliver: SliverList(
-                              delegate: SliverChildListDelegate(
-                                [
-                                  _buildFeedModeBar(isDark),
-                                  const SizedBox(height: 10),
-                                  _buildSearchBar(isDark),
-                                  const SizedBox(height: 10),
-                                  // 综合模式下显示公告和签到（带动画过渡）
-                                  AnimatedSize(
-                                    duration: const Duration(milliseconds: 280),
-                                    curve: Curves.easeOutCubic,
-                                    alignment: Alignment.topCenter,
-                                    child: _feedMode == 'all'
-                                        ? Column(
-                                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                                            children: [
-                                              _buildAnnouncementPanel(isDark),
-                                              const SizedBox(height: 8),
-                                              _buildQuickActions(isDark, lostFoundPosts),
-                                              const SizedBox(height: 10),
-                                            ],
-                                          )
-                                        : const SizedBox.shrink(),
-                                  ),
-                                  const SizedBox(height: 4),
-                                ],
-                              ),
-                            ),
+                      child: NotificationListener<ScrollNotification>(
+                        onNotification: (notification) {
+                          if (notification.metrics.pixels >=
+                                  notification.metrics.maxScrollExtent - 500 &&
+                              postProvider.hasMore &&
+                              !postProvider.isLoading) {
+                            postProvider.loadPosts(
+                              boardId: 1,
+                              sort: _currentSort,
+                            );
+                          }
+                          return false;
+                        },
+                        child: CustomScrollView(
+                          physics: const AlwaysScrollableScrollPhysics(
+                            parent: BouncingScrollPhysics(),
                           ),
-                          if (postProvider.isLoading && posts.isEmpty)
-                            const SliverFillRemaining(
-                              child: Center(child: CircularProgressIndicator()),
-                            )
-                          else if (visiblePosts.isEmpty)
-                            SliverFillRemaining(
-                              child: _buildEmptyState(
-                                isDark,
-                                title:
-                                    _searchQuery.isNotEmpty ? '没有找到匹配帖子' : '暂无帖子',
-                                subtitle: _searchQuery.isNotEmpty
-                                    ? '目前只按标题搜索，换个标题关键词试试'
-                                    : '发布第一条帖子吧',
-                                onRetry: _refresh,
-                              ),
-                            )
-                          else
-                            SliverList(
-                              delegate: SliverChildBuilderDelegate(
-                                (context, index) {
-                                  final post = visiblePosts[index];
-                                  final isSelected = _selectedPost?.id == post.id && ResponsiveUtil.isDesktop(context);
-                                  return Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 12),
-                                    child: Container(
-                                      decoration: isSelected ? BoxDecoration(
-                                        borderRadius: BorderRadius.circular(20),
-                                        boxShadow: [
-                                          BoxShadow(
-                                            color: Theme.of(context).primaryColor.withValues(alpha: 0.15),
-                                            blurRadius: 20,
-                                            spreadRadius: 2,
-                                          )
-                                        ],
-                                      ) : null,
-                                      child: PostCard(
-                                        post: post,
-                                        onTap: () {
-                                          if (ResponsiveUtil.isDesktop(context)) {
-                                            if (mounted) setState(() {
-                                              _selectedPost = post;
-                                            });
-                                          } else {
-                                            Navigator.push(
-                                              context,
-                                              MaterialPageRoute(
-                                                builder: (_) => PostDetailScreen(
-                                                  postId: post.id,
-                                                  isMarket: false,
-                                                  initialPost: post,
-                                                ),
-                                              ),
-                                            );
-                                          }
-                                        },
-                                      ),
+                          slivers: [
+                            SliverToBoxAdapter(
+                                child: SizedBox(height: topPadding + 8)),
+                            SliverPadding(
+                              padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+                              sliver: SliverList(
+                                delegate: SliverChildListDelegate(
+                                  [
+                                    _buildFeedModeBar(isDark),
+                                    const SizedBox(height: 10),
+                                    _buildSearchBar(isDark),
+                                    const SizedBox(height: 10),
+                                    // 综合模式下显示公告和签到（带动画过渡）
+                                    AnimatedSize(
+                                      duration:
+                                          const Duration(milliseconds: 280),
+                                      curve: Curves.easeOutCubic,
+                                      alignment: Alignment.topCenter,
+                                      child: _feedMode == 'all'
+                                          ? Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.stretch,
+                                              children: [
+                                                _buildAnnouncementPanel(isDark),
+                                                const SizedBox(height: 8),
+                                                _buildQuickActions(
+                                                    isDark, lostFoundPosts),
+                                                const SizedBox(height: 10),
+                                              ],
+                                            )
+                                          : const SizedBox.shrink(),
                                     ),
-                                  );
-                                },
-                                childCount: visiblePosts.length,
+                                    const SizedBox(height: 4),
+                                  ],
+                                ),
                               ),
                             ),
-                          const SliverToBoxAdapter(child: SizedBox(height: 80)),
-                        ],
+                            if (postProvider.isLoading && posts.isEmpty)
+                              const SliverFillRemaining(
+                                child:
+                                    Center(child: CircularProgressIndicator()),
+                              )
+                            else if (visiblePosts.isEmpty)
+                              SliverFillRemaining(
+                                child: _buildEmptyState(
+                                  isDark,
+                                  title: _searchQuery.isNotEmpty
+                                      ? '没有找到匹配帖子'
+                                      : '暂无帖子',
+                                  subtitle: _searchQuery.isNotEmpty
+                                      ? '目前只按标题搜索，换个标题关键词试试'
+                                      : '发布第一条帖子吧',
+                                  onRetry: _refresh,
+                                ),
+                              )
+                            else
+                              SliverList(
+                                delegate: SliverChildBuilderDelegate(
+                                  (context, index) {
+                                    final post = visiblePosts[index];
+                                    final isSelected =
+                                        _selectedPost?.id == post.id &&
+                                            ResponsiveUtil.isDesktop(context);
+                                    return Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 12),
+                                      child: Container(
+                                        decoration: isSelected
+                                            ? BoxDecoration(
+                                                borderRadius:
+                                                    BorderRadius.circular(20),
+                                                boxShadow: [
+                                                  BoxShadow(
+                                                    color: Theme.of(context)
+                                                        .primaryColor
+                                                        .withValues(
+                                                            alpha: 0.15),
+                                                    blurRadius: 20,
+                                                    spreadRadius: 2,
+                                                  )
+                                                ],
+                                              )
+                                            : null,
+                                        child: PostCard(
+                                          post: post,
+                                          onTap: () {
+                                            if (ResponsiveUtil.isDesktop(
+                                                context)) {
+                                              if (mounted)
+                                                setState(() {
+                                                  _selectedPost = post;
+                                                });
+                                            } else {
+                                              Navigator.push(
+                                                context,
+                                                MaterialPageRoute(
+                                                  builder: (_) =>
+                                                      PostDetailScreen(
+                                                    postId: post.id,
+                                                    isMarket: false,
+                                                    initialPost: post,
+                                                  ),
+                                                ),
+                                              );
+                                            }
+                                          },
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                  childCount: visiblePosts.length,
+                                ),
+                              ),
+                            if (postProvider.isLoading && posts.isNotEmpty)
+                              const SliverToBoxAdapter(
+                                child: Padding(
+                                  padding: EdgeInsets.symmetric(vertical: 18),
+                                  child: Center(
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            const SliverToBoxAdapter(
+                              child: SizedBox(height: 80),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -754,8 +796,11 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       borderRadius: 50,
       blur: 16,
       opacity: 0.85,
-      backgroundColor: isDark ? const Color(0xE6171B24) : const Color(0xF2FFFFFF),
-      borderColor: isDark ? Colors.white.withValues(alpha: 0.12) : Colors.white.withValues(alpha: 0.85),
+      backgroundColor:
+          isDark ? const Color(0xE6171B24) : const Color(0xF2FFFFFF),
+      borderColor: isDark
+          ? Colors.white.withValues(alpha: 0.12)
+          : Colors.white.withValues(alpha: 0.85),
       child: TextField(
         controller: _searchController,
         onChanged: _onSearchChanged,
@@ -766,7 +811,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
           border: InputBorder.none,
           isDense: true,
           contentPadding: const EdgeInsets.symmetric(vertical: 11),
-          hintText: '搜索帖子标题',
+          hintText: '搜索账号、用户或帖子关键词',
           hintStyle: const TextStyle(fontSize: 14),
           prefixIcon: const Icon(Icons.search, size: 20),
           suffixIcon: _searchController.text.isEmpty
@@ -775,7 +820,6 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                   icon: const Icon(Icons.close, size: 16),
                   onPressed: () {
                     _searchController.clear();
-                    _runSearch('');
                     setState(() {});
                   },
                 ),
@@ -790,52 +834,101 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       borderRadius: 30,
       blur: 16,
       opacity: 0.85,
-      backgroundColor: isDark ? const Color(0xE6171B24) : const Color(0xF2FFFFFF),
-      borderColor: isDark ? Colors.white.withValues(alpha: 0.10) : Colors.white.withValues(alpha: 0.75),
+      backgroundColor:
+          isDark ? const Color(0xE6171B24) : const Color(0xF2FFFFFF),
+      borderColor: isDark
+          ? Colors.white.withValues(alpha: 0.10)
+          : Colors.white.withValues(alpha: 0.75),
       child: Row(
         children: [
-          Expanded(child: _buildActionItem(
-            icon: Icons.task_alt_rounded, 
+          Expanded(
+              child: _buildActionItem(
+            icon: Icons.task_alt_rounded,
             iconColor: _checkedIn ? Colors.grey : const Color(0xFF16A34A),
-            iconBg: (_checkedIn ? Colors.grey : const Color(0xFF16A34A)).withValues(alpha: 0.12),
-            title: _checkedIn ? '已签到' : '签到', 
+            iconBg: (_checkedIn ? Colors.grey : const Color(0xFF16A34A))
+                .withValues(alpha: 0.12),
+            title: _checkedIn ? '已签到' : '签到',
             subtitle: _checkedIn ? '连续${_streakDays}天' : '每日一次',
-            isDark: isDark, onTap: _doCheckIn,
-          )),
-          _buildDivider(isDark),
-          Expanded(child: _buildActionItem(
-            icon: Icons.luggage_outlined, iconColor: const Color(0xFF0EA5A4),
-            iconBg: const Color(0xFF0EA5A4).withValues(alpha: 0.12),
-            title: '失物招领', subtitle: lostFoundPosts.isEmpty ? '查看线索' : '${lostFoundPosts.length}条',
             isDark: isDark,
-            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MarketScreen(onlyPostTypes: ['lost', 'found'], titleOverride: '失物招领'))),
+            onTap: _doCheckIn,
           )),
           _buildDivider(isDark),
-          Expanded(child: _buildActionItem(
-            icon: Icons.handyman_outlined, iconColor: const Color(0xFFF97316),
+          Expanded(
+              child: _buildActionItem(
+            icon: Icons.luggage_outlined,
+            iconColor: const Color(0xFF0EA5A4),
+            iconBg: const Color(0xFF0EA5A4).withValues(alpha: 0.12),
+            title: '失物招领',
+            subtitle:
+                lostFoundPosts.isEmpty ? '查看线索' : '${lostFoundPosts.length}条',
+            isDark: isDark,
+            onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => const MarketScreen(
+                        onlyPostTypes: ['lost', 'found'],
+                        titleOverride: '失物招领'))),
+          )),
+          _buildDivider(isDark),
+          Expanded(
+              child: _buildActionItem(
+            icon: Icons.handyman_outlined,
+            iconColor: const Color(0xFFF97316),
             iconBg: const Color(0xFFF97316).withValues(alpha: 0.12),
-            title: '工具箱', subtitle: '快捷小工具',
-            isDark: isDark, 
-            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ToolboxScreen())),
+            title: '工具箱',
+            subtitle: '快捷小工具',
+            isDark: isDark,
+            onTap: () => Navigator.push(context,
+                MaterialPageRoute(builder: (_) => const ToolboxScreen())),
           )),
         ],
       ),
     );
   }
 
-  Widget _buildDivider(bool isDark) => Container(width: 0.5, height: 32, color: isDark ? Colors.white10 : Colors.black.withValues(alpha: 0.08));
+  Widget _buildDivider(bool isDark) => Container(
+      width: 0.5,
+      height: 32,
+      color: isDark ? Colors.white10 : Colors.black.withValues(alpha: 0.08));
 
-  Widget _buildActionItem({required IconData icon, required Color iconColor, required Color iconBg, required String title, required String subtitle, required bool isDark, required VoidCallback onTap}) {
-    return Material(color: Colors.transparent, child: InkWell(onTap: onTap, borderRadius: BorderRadius.circular(12), child: Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
-      child: Column(mainAxisSize: MainAxisSize.min, children: [
-        Container(width: 28, height: 28, decoration: BoxDecoration(color: iconBg, borderRadius: BorderRadius.circular(8)), child: Icon(icon, color: iconColor, size: 16)),
-        const SizedBox(height: 4),
-        Text(title, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: isDark ? Colors.white : Colors.black87)),
-        const SizedBox(height: 1),
-        Text(subtitle, textAlign: TextAlign.center, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 9, color: isDark ? Colors.white54 : Colors.black54)),
-      ]),
-    )));
+  Widget _buildActionItem(
+      {required IconData icon,
+      required Color iconColor,
+      required Color iconBg,
+      required String title,
+      required String subtitle,
+      required bool isDark,
+      required VoidCallback onTap}) {
+    return Material(
+        color: Colors.transparent,
+        child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(12),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                Container(
+                    width: 28,
+                    height: 28,
+                    decoration: BoxDecoration(
+                        color: iconBg, borderRadius: BorderRadius.circular(8)),
+                    child: Icon(icon, color: iconColor, size: 16)),
+                const SizedBox(height: 4),
+                Text(title,
+                    style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: isDark ? Colors.white : Colors.black87)),
+                const SizedBox(height: 1),
+                Text(subtitle,
+                    textAlign: TextAlign.center,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        fontSize: 9,
+                        color: isDark ? Colors.white54 : Colors.black54)),
+              ]),
+            )));
   }
 
   Widget _buildAnnouncementPanel(bool isDark) {
@@ -843,7 +936,8 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AnnouncementScreen())),
+        onTap: () => Navigator.push(context,
+            MaterialPageRoute(builder: (_) => const AnnouncementScreen())),
         borderRadius: BorderRadius.circular(30),
         child: Container(
           width: double.infinity,
@@ -851,35 +945,112 @@ class _ShuitieScreenState extends State<ShuitieScreen>
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(30),
             gradient: LinearGradient(
-              begin: Alignment.topLeft, end: Alignment.bottomRight,
-              colors: isDark ? [const Color(0xFF202A43), const Color(0xFF161B2E)] : [const Color(0xFFEEF6FF), const Color(0xFFE4F0FF)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: isDark
+                  ? [const Color(0xFF202A43), const Color(0xFF161B2E)]
+                  : [const Color(0xFFEEF6FF), const Color(0xFFE4F0FF)],
             ),
-            boxShadow: [BoxShadow(color: (isDark ? Colors.black : Colors.grey).withValues(alpha: 0.08), offset: const Offset(0, 5), blurRadius: 15)],
+            boxShadow: [
+              BoxShadow(
+                  color: (isDark ? Colors.black : Colors.grey)
+                      .withValues(alpha: 0.08),
+                  offset: const Offset(0, 5),
+                  blurRadius: 15)
+            ],
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(children: [
-                Container(width: 38, height: 38, decoration: BoxDecoration(color: const Color(0xFF3B82F6).withValues(alpha: 0.14), borderRadius: BorderRadius.circular(12)), child: const Icon(Icons.campaign_outlined, color: Color(0xFF3B82F6), size: 18)),
+                Container(
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                        color: const Color(0xFF3B82F6).withValues(alpha: 0.14),
+                        borderRadius: BorderRadius.circular(12)),
+                    child: const Icon(Icons.campaign_outlined,
+                        color: Color(0xFF3B82F6), size: 18)),
                 const SizedBox(width: 10),
-                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text('系统公告', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: isDark ? Colors.white : Colors.black87)),
-                  Text(latest == null ? '当前没有新的系统消息' : '最新通知与校园消息', style: TextStyle(fontSize: 11, color: isDark ? Colors.white54 : Colors.black54)),
-                ])),
-                if (_announcements.isNotEmpty) Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), decoration: BoxDecoration(color: const Color(0xFF3B82F6).withValues(alpha: 0.14), borderRadius: BorderRadius.circular(999)), child: Text('${_announcements.length} 条', style: const TextStyle(fontSize: 11, color: Color(0xFF3B82F6), fontWeight: FontWeight.w700))),
+                Expanded(
+                    child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                      Text('系统公告',
+                          style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                              color: isDark ? Colors.white : Colors.black87)),
+                      Text(latest == null ? '当前没有新的系统消息' : '最新通知与校园消息',
+                          style: TextStyle(
+                              fontSize: 11,
+                              color: isDark ? Colors.white54 : Colors.black54)),
+                    ])),
+                if (_announcements.isNotEmpty)
+                  Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                          color:
+                              const Color(0xFF3B82F6).withValues(alpha: 0.14),
+                          borderRadius: BorderRadius.circular(999)),
+                      child: Text('${_announcements.length} 条',
+                          style: const TextStyle(
+                              fontSize: 11,
+                              color: Color(0xFF3B82F6),
+                              fontWeight: FontWeight.w700))),
               ]),
               const SizedBox(height: 12),
               if (latest == null)
-                Text('当前没有新的系统公告', style: TextStyle(fontSize: 13, color: isDark ? Colors.white60 : Colors.black54))
+                Text('当前没有新的系统公告',
+                    style: TextStyle(
+                        fontSize: 13,
+                        color: isDark ? Colors.white60 : Colors.black54))
               else ...[
-                Text(latest.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: isDark ? Colors.white : Colors.black87)),
+                Text(latest.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: isDark ? Colors.white : Colors.black87)),
                 const SizedBox(height: 6),
-                Text(latest.content, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, height: 1.45, color: isDark ? Colors.white60 : Colors.black54)),
+                Text(latest.content,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        fontSize: 12,
+                        height: 1.45,
+                        color: isDark ? Colors.white60 : Colors.black54)),
                 const SizedBox(height: 10),
                 Row(children: [
-                  if (latest.isPinned) Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), decoration: BoxDecoration(color: Colors.red.withValues(alpha: 0.14), borderRadius: BorderRadius.circular(999)), child: const Text('置顶公告', style: TextStyle(fontSize: 11, color: Colors.red, fontWeight: FontWeight.w700))),
+                  if (latest.isPinned)
+                    Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                            color: Colors.red.withValues(alpha: 0.14),
+                            borderRadius: BorderRadius.circular(999)),
+                        child: const Text('置顶公告',
+                            style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.red,
+                                fontWeight: FontWeight.w700))),
                   const Spacer(),
-                  GestureDetector(onTap: () => _dismissAnnouncement(latest.id), child: Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6), decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.18), borderRadius: BorderRadius.circular(999)), child: Text('收起', style: TextStyle(fontSize: 12, color: isDark ? Colors.white60 : Colors.black54)))),
+                  GestureDetector(
+                      onTap: () => _dismissAnnouncement(latest.id),
+                      child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.18),
+                              borderRadius: BorderRadius.circular(999)),
+                          child: Text('收起',
+                              style: TextStyle(
+                                  fontSize: 12,
+                                  color: isDark
+                                      ? Colors.white60
+                                      : Colors.black54)))),
                 ]),
               ],
             ],
@@ -902,8 +1073,11 @@ class _ShuitieScreenState extends State<ShuitieScreen>
         borderRadius: 14,
         blur: 12,
         opacity: 0.85,
-        backgroundColor: isDark ? const Color(0xE6171B24) : const Color(0xF2FFFFFF),
-        borderColor: isDark ? Colors.white.withValues(alpha: 0.10) : Colors.white.withValues(alpha: 0.75),
+        backgroundColor:
+            isDark ? const Color(0xE6171B24) : const Color(0xF2FFFFFF),
+        borderColor: isDark
+            ? Colors.white.withValues(alpha: 0.10)
+            : Colors.white.withValues(alpha: 0.75),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: items.map((item) {
@@ -912,16 +1086,25 @@ class _ShuitieScreenState extends State<ShuitieScreen>
               onTap: () => _changeFeedMode(item.$1),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
                 decoration: BoxDecoration(
                   gradient: active
-                      ? LinearGradient(colors: [Theme.of(context).primaryColor, Theme.of(context).primaryColor.withValues(alpha: 0.8)])
+                      ? LinearGradient(colors: [
+                          Theme.of(context).primaryColor,
+                          Theme.of(context).primaryColor.withValues(alpha: 0.8)
+                        ])
                       : null,
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: Text(item.$2, textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700,
-                    color: active ? Colors.white : (isDark ? Colors.white70 : Colors.black54))),
+                child: Text(item.$2,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: active
+                            ? Colors.white
+                            : (isDark ? Colors.white70 : Colors.black54))),
               ),
             );
           }).toList(),

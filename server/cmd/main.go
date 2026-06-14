@@ -77,6 +77,10 @@ func main() {
 
 	// 自动迁移
 
+	if err := models.NormalizeConversationPairs(db); err != nil {
+		log.Fatalf("failed to normalize legacy conversations: %v", err)
+	}
+
 	if err := db.AutoMigrate(
 
 		&models.User{},
@@ -202,6 +206,7 @@ func main() {
 	userHandler := handlers.NewUserHandler(db)
 
 	postHandler := handlers.NewPostHandler(db)
+	searchHandler := handlers.NewSearchHandler(db, postHandler)
 
 	replyHandler := handlers.NewReplyHandler(db, cfg.JPushAppKey, cfg.JPushMasterSecret)
 
@@ -355,6 +360,7 @@ func main() {
 		userOptional.GET("/:id", userHandler.GetUserInfo)
 		userOptional.GET("/:id/following", userHandler.GetFollowing)
 		userOptional.GET("/:id/followers", userHandler.GetFollowers)
+		userOptional.GET("/:id/posts/count", userHandler.GetUserPostCount)
 		userOptional.GET("/:id/posts", userHandler.GetUserPosts)
 	}
 
@@ -373,6 +379,8 @@ func main() {
 		posts.GET("/:id/replies", replyHandler.GetList)
 
 	}
+
+	r.GET("/api/search", middleware.OptionalAuthMiddleware(db, cfg.JWTSecret), searchHandler.Search)
 
 	postsAuth := r.Group("/api/posts")
 
@@ -438,7 +446,9 @@ func main() {
 
 		messages.POST("/:user_id", messageHandler.Send)
 
-		messages.DELETE("/conversations/:id", messageHandler.DeleteConversation)
+		messages.POST("/conversations/:id/read", messageHandler.MarkRead)
+
+		messages.GET("/unread_count", messageHandler.GetUnreadCount)
 
 	}
 

@@ -1,8 +1,7 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:provider/provider.dart';
-import '../providers/theme_provider.dart';
+import '../utils/screen_swipe.dart';
 import 'teacher_rate_screen.dart';
 import 'campus_map_tab_page.dart';
 import 'campus_calendar_screen.dart';
@@ -17,6 +16,9 @@ class CampusScreen extends StatefulWidget {
 class _CampusScreenState extends State<CampusScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabCtrl;
+  Offset? _tabSwipeStart;
+  DateTime? _tabSwipeStartTime;
+  int? _tabSwipePointer;
 
   @override
   void initState() {
@@ -30,15 +32,69 @@ class _CampusScreenState extends State<CampusScreen>
     super.dispose();
   }
 
+  void _handleTabPointerDown(PointerDownEvent event) {
+    if (_tabSwipePointer != null ||
+        !isUpperContentSwipeStart(
+          event.position.dy,
+          MediaQuery.sizeOf(context).height,
+        )) {
+      return;
+    }
+    _tabSwipePointer = event.pointer;
+    _tabSwipeStart = event.position;
+    _tabSwipeStartTime = DateTime.now();
+  }
+
+  void _handleTabPointerUp(PointerUpEvent event) {
+    if (event.pointer != _tabSwipePointer ||
+        _tabSwipeStart == null ||
+        _tabSwipeStartTime == null) {
+      return;
+    }
+    final direction = horizontalSwipeDirection(
+      start: _tabSwipeStart!,
+      end: event.position,
+      elapsed: DateTime.now().difference(_tabSwipeStartTime!),
+    );
+    _resetTabSwipe();
+    if (direction == 0) return;
+
+    final nextIndex = (_tabCtrl.index + direction).clamp(0, 2);
+    if (nextIndex != _tabCtrl.index) {
+      HapticFeedback.selectionClick();
+      _tabCtrl.animateTo(
+        nextIndex,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+      );
+    }
+  }
+
+  void _handleTabPointerCancel(PointerCancelEvent event) {
+    if (event.pointer == _tabSwipePointer) {
+      _resetTabSwipe();
+    }
+  }
+
+  void _resetTabSwipe() {
+    _tabSwipePointer = null;
+    _tabSwipeStart = null;
+    _tabSwipeStartTime = null;
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final primaryColor = Theme.of(context).primaryColor;
-    final themeProvider = context.watch<ThemeProvider>();
 
-    return Scaffold(
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      body: NestedScrollView(
+    return Listener(
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: _handleTabPointerDown,
+      onPointerUp: _handleTabPointerUp,
+      onPointerCancel: _handleTabPointerCancel,
+      child: Scaffold(
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+        body: NestedScrollView(
           headerSliverBuilder: (context, innerBoxIsScrolled) {
             return [
               SliverAppBar(
@@ -50,7 +106,8 @@ class _CampusScreenState extends State<CampusScreen>
                 expandedHeight: 120, // 增加高度
                 flexibleSpace: FlexibleSpaceBar(
                   expandedTitleScale: 1.2,
-                  titlePadding: const EdgeInsets.only(left: 20, bottom: 62), // 标题位置，避开下方 Tab
+                  titlePadding: const EdgeInsets.only(
+                      left: 20, bottom: 62), // 标题位置，避开下方 Tab
                   title: Text(
                     '校园',
                     style: TextStyle(
@@ -91,7 +148,7 @@ class _CampusScreenState extends State<CampusScreen>
           },
           body: TabBarView(
             controller: _tabCtrl,
-            physics: const BouncingScrollPhysics(),
+            physics: const NeverScrollableScrollPhysics(),
             children: const [
               TeacherRateScreen(),
               CampusMapTabPage(),
@@ -99,7 +156,8 @@ class _CampusScreenState extends State<CampusScreen>
             ],
           ),
         ),
-      );
+      ),
+    );
   }
 
   Widget _buildGlassTabBar(bool isDark, Color primaryColor) {

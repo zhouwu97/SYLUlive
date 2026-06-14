@@ -20,6 +20,7 @@ import '../utils/app_feedback.dart';
 import '../utils/update_checker.dart';
 import '../utils/responsive_util.dart';
 import '../widgets/glass_container.dart';
+import '../widgets/cached_avatar.dart';
 import '../config/api_constants.dart';
 import 'edu_screen.dart';
 import 'exam_extract_screen.dart';
@@ -277,16 +278,10 @@ class _ProfileScreenState extends State<ProfileScreen>
                             ? () => _showAvatarPreview(
                                 context, ApiConstants.fullUrl(user!.avatar))
                             : null,
-                        child: CachedNetworkImage(
+                        child: CachedAvatar(
                           imageUrl: ApiConstants.fullUrl(user?.avatar ?? ''),
-                          fit: BoxFit.cover,
-                          placeholder: (_, __) => _buildAvatarPlaceholder(user),
-                          errorWidget: (_, __, ___) =>
-                              _buildAvatarPlaceholder(user),
-                          memCacheWidth: 256,
-                          fadeInDuration: Duration.zero,
-                          fadeOutDuration: Duration.zero,
-                          useOldImageOnUrlChange: true,
+                          radius: 36,
+                          fallbackText: user?.nickname,
                         ),
                       ),
                     )

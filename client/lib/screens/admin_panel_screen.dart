@@ -188,8 +188,10 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
                   controller: resultController,
                   maxLines: 2,
                   decoration: InputDecoration(
-                    labelText: '处理结果说明',
-                    hintText: '对举报的处理结论',
+                    labelText: '处理结果（必填，不会删除内容）',
+                    hintText: '例如：举报不成立；已警告发布者；内容无需处理',
+                    helperText: '用于管理员处理记录，用户内容会保留。',
+                    helperMaxLines: 2,
                     border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12)),
                   ),
@@ -200,8 +202,10 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
                   controller: deleteReasonController,
                   maxLines: 2,
                   decoration: InputDecoration(
-                    labelText: '删除理由（选填，填了会软删除该内容）',
-                    hintText: '用户可在申诉中看到此理由',
+                    labelText: '删除理由（选填，填写后将删除内容）',
+                    hintText: '例如：包含辱骂、人身攻击或违规联系方式',
+                    helperText: '留空表示不删除；填写后内容会被软删除，发布者申诉时可看到。',
+                    helperMaxLines: 3,
                     border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12)),
                   ),
@@ -281,8 +285,9 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
     final messenger = ScaffoldMessenger.of(context);
     final reason = await _showReasonDialog(
       title: '邀请 ${candidate['nickname'] ?? ''} 成为管理员',
-      label: '邀请理由',
-      hint: '说明为什么推荐该用户成为管理员',
+      label: '给候选人的邀请理由',
+      hint: '例如：社区贡献活跃、处理问题客观，希望邀请你参与管理',
+      helperText: '该用户会看到这段文字，并决定是否接受邀请。',
       confirmText: '发送邀请',
     );
     if (!mounted || reason == null) return;
@@ -312,6 +317,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
     required String title,
     required String label,
     required String hint,
+    required String helperText,
     required String confirmText,
   }) async {
     final controller = TextEditingController();
@@ -326,6 +332,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
           decoration: InputDecoration(
             labelText: label,
             hintText: hint,
+            helperText: helperText,
+            helperMaxLines: 3,
             border: const OutlineInputBorder(),
           ),
         ),
@@ -783,7 +791,10 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
             child: TextField(
               controller: _searchController,
               decoration: InputDecoration(
-                hintText: '按学号搜索候选人',
+                labelText: '候选人学号',
+                hintText: '输入完整或部分学号后按键盘搜索',
+                helperText: '这里只筛选可被邀请成为管理员的普通用户。',
+                helperMaxLines: 2,
                 hintStyle: TextStyle(
                     fontSize: 13,
                     color: isDark ? Colors.white38 : Colors.grey[400]),
@@ -1092,8 +1103,9 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
     final user = (inv['user'] as Map?) ?? {};
     final reason = await _showReasonDialog(
       title: '同意 ${user['nickname'] ?? '该用户'} 成为管理员',
-      label: '审批理由',
-      hint: '说明同意该用户成为管理员的原因',
+      label: '同意审批理由',
+      hint: '例如：候选人信用良好，且持续参与社区维护',
+      helperText: '用于审批记录，说明你投同意票的依据。',
       confirmText: '确认同意',
     );
     if (!mounted || reason == null) return;
@@ -1127,8 +1139,9 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
     final admin = (removal['admin'] as Map?) ?? {};
     final reason = await _showReasonDialog(
       title: '同意罢免 ${admin['nickname'] ?? '该管理员'}',
-      label: '投票理由',
-      hint: '说明同意罢免的原因',
+      label: '同意罢免的投票理由',
+      hint: '例如：多次滥用权限，已有明确处理记录',
+      helperText: '用于罢免投票记录，请填写可核实的具体依据。',
       confirmText: '确认投票',
     );
     if (!mounted || reason == null) return;
@@ -1382,13 +1395,22 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
               TextField(
                   controller: titleCtrl,
                   decoration: const InputDecoration(
-                      labelText: '标题', border: OutlineInputBorder())),
+                    labelText: '公告标题',
+                    hintText: '例如：校园社区使用规范更新',
+                    helperText: '显示在首页公告卡片的标题位置。',
+                    border: OutlineInputBorder(),
+                  )),
               const SizedBox(height: 12),
               TextField(
                   controller: contentCtrl,
                   maxLines: 6,
                   decoration: const InputDecoration(
-                      labelText: '内容', border: OutlineInputBorder())),
+                    labelText: '公告正文',
+                    hintText: '填写通知详情、执行时间和注意事项',
+                    helperText: '支持完整说明公告事项，发布后所有用户可见。',
+                    helperMaxLines: 2,
+                    border: OutlineInputBorder(),
+                  )),
               const SizedBox(height: 12),
               SwitchListTile(
                 value: isPinned,

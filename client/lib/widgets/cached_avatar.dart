@@ -2,7 +2,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 /// 统一的头像组件：自动缓存 + 内存尺寸限制，弱网秒开
-class CachedAvatar extends StatelessWidget {
+class CachedAvatar extends StatefulWidget {
   final String? imageUrl;
   final double radius;
   final String? fallbackText;
@@ -15,20 +15,54 @@ class CachedAvatar extends StatelessWidget {
   });
 
   @override
+  State<CachedAvatar> createState() => _CachedAvatarState();
+}
+
+class _CachedAvatarState extends State<CachedAvatar> {
+  CachedNetworkImageProvider? _imageProvider;
+  String? _providerUrl;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _prepareImage();
+  }
+
+  @override
+  void didUpdateWidget(covariant CachedAvatar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.imageUrl != widget.imageUrl) {
+      _prepareImage();
+    }
+  }
+
+  void _prepareImage() {
+    final url = widget.imageUrl;
+    if (url == null || url.isEmpty || url == _providerUrl) return;
+    _providerUrl = url;
+    _imageProvider = CachedNetworkImageProvider(
+      url,
+      maxWidth: (widget.radius * 2 * 3).toInt(),
+      maxHeight: (widget.radius * 2 * 3).toInt(),
+    );
+    precacheImage(_imageProvider!, context).ignore();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final bgColor = isDark ? Colors.white12 : Colors.grey[200]!;
 
-    if (imageUrl == null || imageUrl!.isEmpty) {
+    if (widget.imageUrl == null || widget.imageUrl!.isEmpty) {
       return CircleAvatar(
-        radius: radius,
+        radius: widget.radius,
         backgroundColor: bgColor,
-        child: fallbackText != null && fallbackText!.isNotEmpty
+        child: widget.fallbackText != null && widget.fallbackText!.isNotEmpty
             ? Text(
-                fallbackText![0].toUpperCase(),
+                widget.fallbackText![0].toUpperCase(),
                 style: TextStyle(
                   fontWeight: FontWeight.w600,
-                  fontSize: radius * 0.6,
+                  fontSize: widget.radius * 0.6,
                   color: isDark ? Colors.white60 : Colors.grey[600],
                 ),
               )
@@ -36,43 +70,36 @@ class CachedAvatar extends StatelessWidget {
       );
     }
 
-    return CachedNetworkImage(
-      imageUrl: imageUrl!,
-      memCacheWidth: (radius * 2 * 3).toInt(), // 3x 像素密度足够清晰
-      memCacheHeight: (radius * 2 * 3).toInt(),
-      maxWidthDiskCache: (radius * 2 * 2).toInt(),
-      maxHeightDiskCache: (radius * 2 * 2).toInt(),
-      fadeOutDuration: Duration.zero,
-      fadeInDuration: Duration.zero,
-      useOldImageOnUrlChange: true,
-      imageBuilder: (context, imageProvider) => CircleAvatar(
-        radius: radius,
-        backgroundColor: bgColor,
-        backgroundImage: imageProvider,
+    return CircleAvatar(
+      radius: widget.radius,
+      backgroundColor: bgColor,
+      child: ClipOval(
+        child: Image(
+          image: _imageProvider!,
+          width: widget.radius * 2,
+          height: widget.radius * 2,
+          fit: BoxFit.cover,
+          gaplessPlayback: true,
+          errorBuilder: (_, __, ___) => _buildFallback(isDark, bgColor),
+          frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+            if (frame != null || wasSynchronouslyLoaded) return child;
+            return _buildFallback(isDark, bgColor);
+          },
+        ),
       ),
-      placeholder: (context, url) => CircleAvatar(
-        radius: radius,
-        backgroundColor: bgColor,
-        child: fallbackText != null && fallbackText!.isNotEmpty
+    );
+  }
+
+  Widget _buildFallback(bool isDark, Color bgColor) {
+    return ColoredBox(
+      color: bgColor,
+      child: Center(
+        child: widget.fallbackText != null && widget.fallbackText!.isNotEmpty
             ? Text(
-                fallbackText![0].toUpperCase(),
+                widget.fallbackText![0].toUpperCase(),
                 style: TextStyle(
                   fontWeight: FontWeight.w600,
-                  fontSize: radius * 0.6,
-                  color: isDark ? Colors.white60 : Colors.grey[600],
-                ),
-              )
-            : const Icon(Icons.person, size: 14, color: Colors.grey),
-      ),
-      errorWidget: (context, url, error) => CircleAvatar(
-        radius: radius,
-        backgroundColor: bgColor,
-        child: fallbackText != null && fallbackText!.isNotEmpty
-            ? Text(
-                fallbackText![0].toUpperCase(),
-                style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  fontSize: radius * 0.6,
+                  fontSize: widget.radius * 0.6,
                   color: isDark ? Colors.white60 : Colors.grey[600],
                 ),
               )

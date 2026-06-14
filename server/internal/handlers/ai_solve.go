@@ -38,8 +38,8 @@ type AiSolveHandler struct {
 	cachedBaseURL               string
 	cachedAPIKey                string
 	cachedModel                 string
-	cachedInputPricePer1MCents  int
-	cachedOutputPricePer1MCents int
+	cachedInputPricePer1KCents  int
+	cachedOutputPricePer1KCents int
 	cachedCacheHitPriceCents    int
 	cachedMinLivePriceCents     int
 	lastConfigFetch             time.Time
@@ -91,8 +91,8 @@ type aiRuntimeConfig struct {
 	BaseURL               string
 	APIKey                string
 	ModelName             string
-	InputPricePer1MCents  int
-	OutputPricePer1MCents int
+	InputPricePer1KCents  int
+	OutputPricePer1KCents int
 	CacheHitPriceCents    int
 	MinLivePriceCents     int
 }
@@ -198,8 +198,8 @@ func estimateCompletionTokens(qCount int) int {
 func estimateReservedAmountCents(cfg aiRuntimeConfig, cleanedText string, qCount int) int {
 	estimatedPrompt := int(math.Ceil(float64(estimateTokenCount(cleanedText))*1.35)) + 60
 	estimatedCompletion := int(math.Ceil(float64(estimateCompletionTokens(qCount)) * 1.4))
-	estimated := int(math.Ceil(float64(estimatedPrompt*cfg.InputPricePer1MCents)/1000000.0 +
-		float64(estimatedCompletion*cfg.OutputPricePer1MCents)/1000000.0))
+	estimated := int(math.Ceil(float64(estimatedPrompt*cfg.InputPricePer1KCents)/1000.0 +
+		float64(estimatedCompletion*cfg.OutputPricePer1KCents)/1000.0))
 	if estimated < cfg.MinLivePriceCents {
 		return cfg.MinLivePriceCents
 	}
@@ -213,8 +213,8 @@ func calculateLiveAmountCents(cfg aiRuntimeConfig, promptTokens, completionToken
 	if completionTokens < 0 {
 		completionTokens = 0
 	}
-	total := int(math.Ceil(float64(promptTokens*cfg.InputPricePer1MCents)/1000000.0 +
-		float64(completionTokens*cfg.OutputPricePer1MCents)/1000000.0))
+	total := int(math.Ceil(float64(promptTokens*cfg.InputPricePer1KCents)/1000.0 +
+		float64(completionTokens*cfg.OutputPricePer1KCents)/1000.0))
 	if total < cfg.MinLivePriceCents {
 		return cfg.MinLivePriceCents
 	}
@@ -263,8 +263,8 @@ func (h *AiSolveHandler) getAiConfig() aiRuntimeConfig {
 			BaseURL:               h.cachedBaseURL,
 			APIKey:                h.cachedAPIKey,
 			ModelName:             h.cachedModel,
-			InputPricePer1MCents:  h.cachedInputPricePer1MCents,
-			OutputPricePer1MCents: h.cachedOutputPricePer1MCents,
+			InputPricePer1KCents:  h.cachedInputPricePer1KCents,
+			OutputPricePer1KCents: h.cachedOutputPricePer1KCents,
 			CacheHitPriceCents:    h.cachedCacheHitPriceCents,
 			MinLivePriceCents:     h.cachedMinLivePriceCents,
 		}
@@ -281,8 +281,8 @@ func (h *AiSolveHandler) getAiConfig() aiRuntimeConfig {
 			BaseURL:               h.cachedBaseURL,
 			APIKey:                h.cachedAPIKey,
 			ModelName:             h.cachedModel,
-			InputPricePer1MCents:  h.cachedInputPricePer1MCents,
-			OutputPricePer1MCents: h.cachedOutputPricePer1MCents,
+			InputPricePer1KCents:  h.cachedInputPricePer1KCents,
+			OutputPricePer1KCents: h.cachedOutputPricePer1KCents,
 			CacheHitPriceCents:    h.cachedCacheHitPriceCents,
 			MinLivePriceCents:     h.cachedMinLivePriceCents,
 		}
@@ -312,30 +312,30 @@ func (h *AiSolveHandler) getAiConfig() aiRuntimeConfig {
 	h.cachedBaseURL = configMap["ai_base_url"]
 	h.cachedAPIKey = configMap["ai_api_key"]
 	h.cachedModel = configMap["ai_model_name"]
-	inputPricePer1M := parseIntConfig(configMap["ai_input_price_per_1m_cents"], 0)
-	if inputPricePer1M <= 0 {
-		legacyPer1K := parseIntConfig(configMap["ai_input_price_per_1k_cents"], 0)
-		if legacyPer1K > 0 {
-			inputPricePer1M = legacyPer1K * 1000
+	inputPricePer1K := parseIntConfig(configMap["ai_input_price_per_1k_cents"], 0)
+	if inputPricePer1K <= 0 {
+		legacyPer1M := parseIntConfig(configMap["ai_input_price_per_1m_cents"], 0)
+		if legacyPer1M > 0 {
+			inputPricePer1K = int(math.Ceil(float64(legacyPer1M) / 1000.0))
 		}
 	}
-	if inputPricePer1M <= 0 {
-		inputPricePer1M = 2000
+	if inputPricePer1K <= 0 {
+		inputPricePer1K = 2
 	}
 
-	outputPricePer1M := parseIntConfig(configMap["ai_output_price_per_1m_cents"], 0)
-	if outputPricePer1M <= 0 {
-		legacyPer1K := parseIntConfig(configMap["ai_output_price_per_1k_cents"], 0)
-		if legacyPer1K > 0 {
-			outputPricePer1M = legacyPer1K * 1000
+	outputPricePer1K := parseIntConfig(configMap["ai_output_price_per_1k_cents"], 0)
+	if outputPricePer1K <= 0 {
+		legacyPer1M := parseIntConfig(configMap["ai_output_price_per_1m_cents"], 0)
+		if legacyPer1M > 0 {
+			outputPricePer1K = int(math.Ceil(float64(legacyPer1M) / 1000.0))
 		}
 	}
-	if outputPricePer1M <= 0 {
-		outputPricePer1M = 4000
+	if outputPricePer1K <= 0 {
+		outputPricePer1K = 4
 	}
 
-	h.cachedInputPricePer1MCents = inputPricePer1M
-	h.cachedOutputPricePer1MCents = outputPricePer1M
+	h.cachedInputPricePer1KCents = inputPricePer1K
+	h.cachedOutputPricePer1KCents = outputPricePer1K
 	h.cachedCacheHitPriceCents = parseIntConfig(configMap["ai_cache_hit_price_cents"], 1)
 	h.cachedMinLivePriceCents = parseIntConfig(configMap["ai_min_live_price_cents"], 2)
 
@@ -355,8 +355,8 @@ func (h *AiSolveHandler) getAiConfig() aiRuntimeConfig {
 		BaseURL:               h.cachedBaseURL,
 		APIKey:                h.cachedAPIKey,
 		ModelName:             h.cachedModel,
-		InputPricePer1MCents:  h.cachedInputPricePer1MCents,
-		OutputPricePer1MCents: h.cachedOutputPricePer1MCents,
+		InputPricePer1KCents:  h.cachedInputPricePer1KCents,
+		OutputPricePer1KCents: h.cachedOutputPricePer1KCents,
 		CacheHitPriceCents:    h.cachedCacheHitPriceCents,
 		MinLivePriceCents:     h.cachedMinLivePriceCents,
 	}

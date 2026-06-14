@@ -43,16 +43,22 @@ class _YuketangClassScreenState extends State<YuketangClassScreen> {
     final currentKey = await _storage.read(key: 'custom_api_key');
     final currentUrl = await _storage.read(key: 'custom_base_url');
     final currentModel = await _storage.read(key: 'custom_model_name');
-    String currentProvider = await _storage.read(key: 'custom_ai_provider') ?? 'default';
+    String currentProvider =
+        await _storage.read(key: 'custom_ai_provider') ?? 'default';
     String currentMode = await _storage.read(key: 'auto_submit_mode') ?? 'semi';
 
-    
     if (currentProvider == 'custom') {
       final url = currentUrl?.toLowerCase() ?? '';
-      if (url.contains('deepseek')) currentProvider = 'deepseek';
-      else if (url.contains('moonshot')) currentProvider = 'kimi';
-      else if (url.contains('bigmodel.cn')) currentProvider = 'zhipu';
-      else if (url.contains('dashscope')) currentProvider = 'qwen';
+      if (url.contains('deepseek'))
+        currentProvider = 'deepseek';
+      else if (url.contains('moonshot'))
+        currentProvider = 'kimi';
+      else if (url.contains('bigmodel.cn'))
+        currentProvider = 'zhipu';
+      else if (url.contains('dashscope'))
+        currentProvider = 'qwen';
+      else if (url.contains('xiaomi') || url.contains('mimo'))
+        currentProvider = 'mimo';
       else if (url.contains('openai.com')) currentProvider = 'openai';
     }
 
@@ -61,11 +67,13 @@ class _YuketangClassScreenState extends State<YuketangClassScreen> {
     modelCtrl.text = currentModel ?? '';
 
     // 如果选了自带，并且是预设提供商，则锁定URL和模型输入
-    
+
     bool isFetchingModels = false;
     Future<void> fetchModels(StateSetter setDialogState) async {
       if (urlCtrl.text.isEmpty || keyCtrl.text.isEmpty) {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('请先填写 Base URL 和 API Key')));
+        if (mounted)
+          ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('请先填写 Base URL 和 API Key')));
         return;
       }
       setDialogState(() => isFetchingModels = true);
@@ -77,7 +85,8 @@ class _YuketangClassScreenState extends State<YuketangClassScreen> {
         }
         final res = await dio.get(
           url,
-          options: Options(headers: {'Authorization': 'Bearer ${keyCtrl.text.trim()}'}),
+          options: Options(
+              headers: {'Authorization': 'Bearer ${keyCtrl.text.trim()}'}),
         );
         if (res.statusCode == 200 && res.data['data'] != null) {
           final List data = res.data['data'];
@@ -101,13 +110,19 @@ class _YuketangClassScreenState extends State<YuketangClassScreen> {
               );
             }
           } else {
-            if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('未获取到模型列表')));
+            if (mounted)
+              ScaffoldMessenger.of(context)
+                  .showSnackBar(const SnackBar(content: Text('未获取到模型列表')));
           }
         } else {
-          if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('获取失败')));
+          if (mounted)
+            ScaffoldMessenger.of(context)
+                .showSnackBar(const SnackBar(content: Text('获取失败')));
         }
       } catch (e) {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('请求失败: $e')));
+        if (mounted)
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text('请求失败: $e')));
       } finally {
         setDialogState(() => isFetchingModels = false);
       }
@@ -128,7 +143,10 @@ class _YuketangClassScreenState extends State<YuketangClassScreen> {
         modelCtrl.text = 'qwen-turbo';
       } else if (provider == 'openai') {
         urlCtrl.text = 'https://api.openai.com/v1';
-        modelCtrl.text = 'gpt-3.5-turbo';
+        modelCtrl.text = 'gpt-4o-mini';
+      } else if (provider == 'mimo') {
+        urlCtrl.text = 'https://api.xiaomimimo.com/v1';
+        modelCtrl.text = 'mimo-v2.5-pro';
       } else if (provider == 'custom') {
         // 自定义保持不变
       }
@@ -138,194 +156,201 @@ class _YuketangClassScreenState extends State<YuketangClassScreen> {
 
     await showDialog(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) {
-          final isByok = currentProvider != 'default';
-          final isCustomByok = currentProvider == 'custom';
+      builder: (context) => StatefulBuilder(builder: (context, setDialogState) {
+        final isByok = currentProvider != 'default';
+        final isCustomByok = currentProvider == 'custom';
 
-          return AlertDialog(
-            title: const Text('助手核心设置'),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('⚙️ 答题模式', style: TextStyle(fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 8),
-                  RadioListTile<String>(
-                    title: const Text('半自动 (辅助选填)'),
-                    subtitle: const Text('自动选择选项，需手动提交'),
-                    value: 'semi',
-                    groupValue: currentMode,
-                    onChanged: (val) => setDialogState(() => currentMode = val!),
-                    contentPadding: EdgeInsets.zero,
-                  ),
-                  RadioListTile<String>(
-                    title: const Text('全自动 (托管摸鱼)'),
-                    subtitle: const Text('自动选择并提交，彻底解放双手'),
-                    value: 'full',
-                    groupValue: currentMode,
-                    onChanged: (val) => setDialogState(() => currentMode = val!),
-                    contentPadding: EdgeInsets.zero,
-                  ),
-                  const Divider(height: 32),
-                  const Text('🤖 AI 接口来源', style: TextStyle(fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 8),
-                  RadioListTile<String>(
-                    title: const Text('内置大模型 (消耗积分)'),
-                    value: 'default',
-                    groupValue: currentProvider == 'default' ? 'default' : 'byok',
-                    onChanged: (val) => setDialogState(() {
-                      currentProvider = 'default';
-                    }),
-                    contentPadding: EdgeInsets.zero,
-                  ),
-                  RadioListTile<String>(
-                    title: const Text('自定义模型 (BYOK, 自带)'),
-                    value: 'byok',
-                    groupValue: currentProvider == 'default' ? 'default' : 'byok',
-                    onChanged: (val) => setDialogState(() {
-                      currentProvider = 'deepseek';
-                      applyProviderDefaults(currentProvider);
-                    }),
-                    contentPadding: EdgeInsets.zero,
-                  ),
-                  
-                  if (isByok) ...[
-                    const SizedBox(height: 16),
-                    DropdownButtonFormField<String>(
-                      value: currentProvider,
-                      decoration: const InputDecoration(
-                        labelText: '大模型提供商',
-                        border: OutlineInputBorder(),
-                        isDense: true,
-                      ),
-                      items: const [
-                        DropdownMenuItem(value: 'deepseek', child: Text('DeepSeek')),
-                        DropdownMenuItem(value: 'kimi', child: Text('Kimi (月之暗面)')),
-                        DropdownMenuItem(value: 'zhipu', child: Text('智谱清言')),
-                        DropdownMenuItem(value: 'qwen', child: Text('通义千问')),
-                        DropdownMenuItem(value: 'openai', child: Text('OpenAI')),
-                        DropdownMenuItem(value: 'custom', child: Text('自定义 (Custom)')),
-                      ],
-                      onChanged: (val) {
-                        setDialogState(() {
-                          currentProvider = val!;
-                          applyProviderDefaults(currentProvider);
-                        });
-                      },
+        return AlertDialog(
+          title: const Text('助手核心设置'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('⚙️ 答题模式',
+                    style: TextStyle(fontWeight: FontWeight.bold)),
+                const SizedBox(height: 8),
+                RadioListTile<String>(
+                  title: const Text('半自动 (辅助选填)'),
+                  subtitle: const Text('自动选择选项，需手动提交'),
+                  value: 'semi',
+                  groupValue: currentMode,
+                  onChanged: (val) => setDialogState(() => currentMode = val!),
+                  contentPadding: EdgeInsets.zero,
+                ),
+                RadioListTile<String>(
+                  title: const Text('全自动 (托管摸鱼)'),
+                  subtitle: const Text('自动选择并提交，彻底解放双手'),
+                  value: 'full',
+                  groupValue: currentMode,
+                  onChanged: (val) => setDialogState(() => currentMode = val!),
+                  contentPadding: EdgeInsets.zero,
+                ),
+                const Divider(height: 32),
+                const Text('🤖 AI 接口来源',
+                    style: TextStyle(fontWeight: FontWeight.bold)),
+                const SizedBox(height: 8),
+                RadioListTile<String>(
+                  title: const Text('官方大模型 (按余额扣费)'),
+                  value: 'default',
+                  groupValue: currentProvider == 'default' ? 'default' : 'byok',
+                  onChanged: (val) => setDialogState(() {
+                    currentProvider = 'default';
+                  }),
+                  contentPadding: EdgeInsets.zero,
+                ),
+                RadioListTile<String>(
+                  title: const Text('自定义模型 (BYOK, 自带)'),
+                  value: 'byok',
+                  groupValue: currentProvider == 'default' ? 'default' : 'byok',
+                  onChanged: (val) => setDialogState(() {
+                    currentProvider = 'deepseek';
+                    applyProviderDefaults(currentProvider);
+                  }),
+                  contentPadding: EdgeInsets.zero,
+                ),
+                if (isByok) ...[
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<String>(
+                    value: currentProvider,
+                    decoration: const InputDecoration(
+                      labelText: '大模型提供商',
+                      border: OutlineInputBorder(),
+                      isDense: true,
                     ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: keyCtrl,
-                      decoration: const InputDecoration(
-                        labelText: 'API Key (必填)',
-                        border: OutlineInputBorder(),
-                        isDense: true,
-                      ),
-                      obscureText: true,
+                    items: const [
+                      DropdownMenuItem(
+                          value: 'deepseek', child: Text('DeepSeek')),
+                      DropdownMenuItem(
+                          value: 'kimi', child: Text('Kimi (月之暗面)')),
+                      DropdownMenuItem(value: 'zhipu', child: Text('智谱清言')),
+                      DropdownMenuItem(value: 'qwen', child: Text('通义千问')),
+                      DropdownMenuItem(value: 'mimo', child: Text('小米 MiMo')),
+                      DropdownMenuItem(value: 'openai', child: Text('OpenAI')),
+                      DropdownMenuItem(
+                          value: 'custom', child: Text('自定义 (Custom)')),
+                    ],
+                    onChanged: (val) {
+                      setDialogState(() {
+                        currentProvider = val!;
+                        applyProviderDefaults(currentProvider);
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: keyCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'API Key (必填)',
+                      border: OutlineInputBorder(),
+                      isDense: true,
                     ),
-
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: urlCtrl,
-                        decoration: const InputDecoration(
-                          labelText: 'Base URL',
-                          border: OutlineInputBorder(),
-                          isDense: true,
+                    obscureText: true,
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: urlCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Base URL',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: modelCtrl,
+                          decoration: const InputDecoration(
+                            labelText: 'Model Name',
+                            border: OutlineInputBorder(),
+                            isDense: true,
+                          ),
                         ),
                       ),
-                      const SizedBox(height: 12),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: TextField(
-                              controller: modelCtrl,
-                              decoration: const InputDecoration(
-                                labelText: 'Model Name',
-                                border: OutlineInputBorder(),
-                                isDense: true,
-                              ),
+                      const SizedBox(width: 8),
+                      isFetchingModels
+                          ? const CircularProgressIndicator()
+                          : IconButton(
+                              icon: const Icon(Icons.sync),
+                              onPressed: () => fetchModels(setDialogState),
+                              tooltip: '获取可用模型',
                             ),
-                          ),
-                          const SizedBox(width: 8),
-                          isFetchingModels 
-                              ? const CircularProgressIndicator()
-                              : IconButton(
-                                  icon: const Icon(Icons.sync),
-                                  onPressed: () => fetchModels(setDialogState),
-                                  tooltip: '获取可用模型',
-                                ),
-                        ],
-                      ),
-
-                  ],
+                    ],
+                  ),
                 ],
-              ),
+              ],
             ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('取消'),
-              ),
-              ElevatedButton(
-                onPressed: () async {
-                  await _storage.write(key: 'auto_submit_mode', value: currentMode);
-                  await _storage.write(key: 'custom_ai_provider', value: currentProvider);
-                  if (currentProvider != 'default') {
-                    await _storage.write(key: 'custom_api_key', value: keyCtrl.text.trim());
-                    await _storage.write(key: 'custom_base_url', value: urlCtrl.text.trim());
-                    await _storage.write(key: 'custom_model_name', value: modelCtrl.text.trim());
-                  }
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('设置已保存')));
-                },
-                child: const Text('保存'),
-              ),
-            ],
-          );
-        }
-      ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('取消'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                await _storage.write(
+                    key: 'auto_submit_mode', value: currentMode);
+                await _storage.write(
+                    key: 'custom_ai_provider', value: currentProvider);
+                if (currentProvider != 'default') {
+                  await _storage.write(
+                      key: 'custom_api_key', value: keyCtrl.text.trim());
+                  await _storage.write(
+                      key: 'custom_base_url', value: urlCtrl.text.trim());
+                  await _storage.write(
+                      key: 'custom_model_name', value: modelCtrl.text.trim());
+                }
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context)
+                    .showSnackBar(const SnackBar(content: Text('设置已保存')));
+              },
+              child: const Text('保存'),
+            ),
+          ],
+        );
+      }),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () => FocusScope.of(context).unfocus(),
-      child: PopScope(
-        canPop: false,
-        onPopInvokedWithResult: (didPop, _) async {
-          if (didPop) return;
-          await _handleBack();
-        },
-        child: Scaffold(
-          resizeToAvoidBottomInset: false,
-        appBar: AppBar(
-          title: const Text('长江雨课堂'),
-          leading: IconButton(
-            icon: const Icon(Icons.arrow_back),
-            onPressed: _handleBack,
+        onTap: () => FocusScope.of(context).unfocus(),
+        child: PopScope(
+          canPop: false,
+          onPopInvokedWithResult: (didPop, _) async {
+            if (didPop) return;
+            await _handleBack();
+          },
+          child: Scaffold(
+            resizeToAvoidBottomInset: false,
+            appBar: AppBar(
+              title: const Text('长江雨课堂'),
+              leading: IconButton(
+                icon: const Icon(Icons.arrow_back),
+                onPressed: _handleBack,
+              ),
+              actions: [
+                IconButton(
+                  icon: const Icon(Icons.settings),
+                  onPressed: _showSettingsDialog,
+                  tooltip: '设置与 AI 配置',
+                ),
+                IconButton(
+                  icon: const Icon(Icons.refresh),
+                  onPressed: () {
+                    _webViewKey.currentState?.webViewController?.reload();
+                  },
+                ),
+              ],
+            ),
+            body: YuketangWebViewWidget(
+              key: _webViewKey,
+              url: 'https://changjiang.yuketang.cn/v2/web/index',
+            ),
           ),
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.settings),
-              onPressed: _showSettingsDialog,
-              tooltip: '设置与 AI 配置',
-            ),
-            IconButton(
-              icon: const Icon(Icons.refresh),
-              onPressed: () {
-                _webViewKey.currentState?.webViewController?.reload();
-              },
-            ),
-          ],
-        ),
-        body: YuketangWebViewWidget(
-          key: _webViewKey,
-          url: 'https://changjiang.yuketang.cn/v2/web/index',
-        ),
-      ),
-    ));
+        ));
   }
 }

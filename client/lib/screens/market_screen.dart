@@ -3,7 +3,6 @@ import 'dart:io' show File;
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/post.dart';
 import '../providers/auth_provider.dart';
@@ -67,18 +66,20 @@ class _MarketScreenState extends State<MarketScreen> {
     if (!mounted) return;
 
     if (query.isEmpty) {
-      if (mounted) setState(() {
-        _searchQuery = '';
-        _searchResults = [];
-        _isSearching = false;
-      });
+      if (mounted)
+        setState(() {
+          _searchQuery = '';
+          _searchResults = [];
+          _isSearching = false;
+        });
       return;
     }
 
-    if (mounted) setState(() {
-      _searchQuery = query;
-      _isSearching = true;
-    });
+    if (mounted)
+      setState(() {
+        _searchQuery = query;
+        _isSearching = true;
+      });
 
     final results = await context.read<PostProvider>().searchPosts(
           boardId: 2,
@@ -89,12 +90,13 @@ class _MarketScreenState extends State<MarketScreen> {
 
     if (!mounted || _searchQuery != query) return;
 
-    if (mounted) setState(() {
-      _searchResults = results
-          .where((post) => _allowedTypes.contains(post.postType))
-          .toList();
-      _isSearching = false;
-    });
+    if (mounted)
+      setState(() {
+        _searchResults = results
+            .where((post) => _allowedTypes.contains(post.postType))
+            .toList();
+        _isSearching = false;
+      });
   }
 
   void _onSearchChanged(String value) {
@@ -113,10 +115,11 @@ class _MarketScreenState extends State<MarketScreen> {
   }
 
   void _changeSort(String sort) async {
-    if (mounted) setState(() {
-      _sortType = sort;
-      _isSearching = true;
-    });
+    if (mounted)
+      setState(() {
+        _sortType = sort;
+        _isSearching = true;
+      });
     await _refreshCurrent();
     if (mounted) {
       setState(() {
@@ -199,9 +202,12 @@ class _MarketScreenState extends State<MarketScreen> {
         title: Text(widget.titleOverride ?? '集市'),
         actions: [
           IconButton(
-            icon: Icon(themeProvider.marketIsListView ? Icons.grid_view : Icons.view_list),
+            icon: Icon(themeProvider.marketIsListView
+                ? Icons.grid_view
+                : Icons.view_list),
             onPressed: () {
-              themeProvider.setMarketIsListView(!themeProvider.marketIsListView);
+              themeProvider
+                  .setMarketIsListView(!themeProvider.marketIsListView);
             },
           ),
           if (widget.titleOverride != '失物招领')
@@ -223,7 +229,7 @@ class _MarketScreenState extends State<MarketScreen> {
         children: [
           Consumer<PostProvider>(
             builder: (context, postProvider, child) {
-              final allPosts = postProvider.postsFor(2);
+              final allPosts = postProvider.postsFor(2, sort: _sortType);
               final exposurePosts = allPosts
                   .where((post) => post.postType == 'exposure')
                   .toList();
@@ -231,7 +237,8 @@ class _MarketScreenState extends State<MarketScreen> {
                   ? _searchResults
                   : _buildMarketPosts(allPosts);
 
-              if (postProvider.isLoadingFor(2) && allPosts.isEmpty) {
+              if (postProvider.isLoadingFor(2, sort: _sortType) &&
+                  allPosts.isEmpty) {
                 return const Center(child: CircularProgressIndicator());
               }
 
@@ -281,7 +288,8 @@ class _MarketScreenState extends State<MarketScreen> {
                         padding: const EdgeInsets.fromLTRB(12, 0, 12, 80),
                         sliver: SliverList(
                           delegate: SliverChildBuilderDelegate(
-                            (context, index) => _buildMarketCard(marketPosts[index], false),
+                            (context, index) =>
+                                _buildMarketCard(marketPosts[index], false),
                             childCount: marketPosts.length,
                           ),
                         ),
@@ -294,7 +302,8 @@ class _MarketScreenState extends State<MarketScreen> {
                           mainAxisSpacing: 12,
                           crossAxisSpacing: 12,
                           childCount: marketPosts.length,
-                          itemBuilder: (context, index) => _buildMarketCard(marketPosts[index], true),
+                          itemBuilder: (context, index) =>
+                              _buildMarketCard(marketPosts[index], true),
                         ),
                       ),
                   ],
@@ -396,8 +405,8 @@ class _MarketScreenState extends State<MarketScreen> {
       ),
       child: GlassContainer(
         padding: const EdgeInsets.all(14),
-      borderRadius: 50,
-      blur: 12,
+        borderRadius: 50,
+        blur: 12,
         opacity: 0.18,
         backgroundColor:
             isDark ? const Color(0xA31C1620) : const Color(0xD9FFF4F2),
@@ -485,8 +494,8 @@ class _MarketScreenState extends State<MarketScreen> {
         Text(
           title,
           style: TextStyle(
-          fontSize: 16,
-          fontWeight: FontWeight.w700,
+            fontSize: 16,
+            fontWeight: FontWeight.w700,
             color: isDark ? Colors.white : Colors.black87,
           ),
         ),

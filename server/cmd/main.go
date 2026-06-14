@@ -150,6 +150,15 @@ func main() {
 		&models.Canteen{},
 		&models.CanteenRating{},
 		&models.UserFollow{},
+		// 融智云考助手独立业务表
+		&models.YunkaoAiProvider{},
+		&models.YunkaoAiModel{},
+		&models.YunkaoWallet{},
+		&models.YunkaoRechargeOrder{},
+		&models.YunkaoUsageLog{},
+		&models.YunkaoQuestionCache{},
+		&models.YunkaoWrongReport{},
+		&models.YunkaoPayOrder{},
 	); err != nil {
 
 		log.Fatal("数据库迁移失败:", err)
@@ -253,6 +262,15 @@ func main() {
 
 	vipHandler := handlers.NewVipHandler(db)
 
+	// 融智云考助手独立业务处理器
+	yunkaoSolveHandler := handlers.NewYunkaoSolveHandler(db)
+	yunkaoWalletHandler := handlers.NewYunkaoWalletHandler(db)
+	yunkaoAdminHandler := handlers.NewYunkaoAdminHandler(db)
+	yunkaoPayHandler := handlers.NewYunkaoPayHandler(db)
+
+	// 初始化融智云考助手默认提供商和模型
+	yunkaoAdminHandler.SeedDefaultProviders()
+
 	// 初始化教务服务配置
 
 	handlers.EduServiceConfig.BaseURL = cfg.EduServiceURL
@@ -314,6 +332,73 @@ func main() {
 		ai.POST("/solve", aiSolveHandler.Solve)
 		ai.POST("/mark_wrong", aiSolveHandler.MarkWrong)
 		ai.POST("/confirm_cache", aiSolveHandler.ConfirmCache)
+	}
+
+	// ============ 融智云考助手独立业务路由 ============
+
+	// 普通用户路由
+	yunkao := r.Group("/api/yunkao")
+	yunkao.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
+	{
+		yunkao.GET("/models", yunkaoSolveHandler.GetModels)
+		yunkao.GET("/wallet", yunkaoWalletHandler.GetWallet)
+		yunkao.GET("/wallet/logs", yunkaoWalletHandler.GetWalletLogs)
+		yunkao.POST("/solve", yunkaoSolveHandler.Solve)
+		yunkao.POST("/report-wrong", yunkaoSolveHandler.ReportWrong)
+		yunkao.POST("/rewrite", yunkaoSolveHandler.Rewrite)
+	}
+
+	// 管理员路由 (admin 和 super_admin)
+	yunkaoAdmin := r.Group("/api/yunkao/admin")
+	yunkaoAdmin.Use(middleware.AuthMiddleware(db, cfg.JWTSecret), middleware.AdminMiddleware())
+	{
+		// 提供商管理
+		yunkaoAdmin.GET("/providers", yunkaoAdminHandler.GetProviders)
+		yunkaoAdmin.POST("/providers", yunkaoAdminHandler.CreateProvider)
+		yunkaoAdmin.PUT("/providers/:id", yunkaoAdminHandler.UpdateProvider)
+		yunkaoAdmin.DELETE("/providers/:id", yunkaoAdminHandler.DeleteProvider)
+
+		// 模型管理
+		yunkaoAdmin.GET("/models", yunkaoAdminHandler.GetModels)
+		yunkaoAdmin.POST("/models", yunkaoAdminHandler.CreateModel)
+		yunkaoAdmin.PUT("/models/:id", yunkaoAdminHandler.UpdateModel)
+		yunkaoAdmin.DELETE("/models/:id", yunkaoAdminHandler.DeleteModel)
+
+		// 用户钱包管理
+		yunkaoAdmin.GET("/wallets", yunkaoAdminHandler.GetUserWallets)
+		yunkaoAdmin.POST("/wallet/recharge", yunkaoAdminHandler.RechargeWallet)
+		yunkaoAdmin.POST("/wallet/deduct", yunkaoAdminHandler.DeductWallet)
+
+		// 错题审核
+		yunkaoAdmin.GET("/reports", yunkaoAdminHandler.GetWrongReports)
+		yunkaoAdmin.POST("/reports/:id/review", yunkaoAdminHandler.ReviewWrongReport)
+
+		// 使用日志
+		yunkaoAdmin.GET("/usage-logs", yunkaoAdminHandler.GetUsageLogs)
+
+		// 统计概览
+		yunkaoAdmin.GET("/stats", yunkaoAdminHandler.GetAdminStats)
+	}
+
+	// 支付路由（不需要 auth 的回调接口）
+	r.Any("/api/yunkao/pay/notify", yunkaoPayHandler.PayNotify)
+	r.Any("/api/yunkao/pay/vmq_notify", yunkaoPayHandler.VmqNotify)
+
+	// 支付路由（需要 auth）
+	yunkaoPay := r.Group("/api/yunkao/pay")
+	yunkaoPay.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
+	{
+		yunkaoPay.POST("/create", yunkaoPayHandler.CreatePayOrder)
+		yunkaoPay.GET("/orders", yunkaoPayHandler.GetPayOrders)
+	}
+
+	// 管理员支付管理
+	yunkaoAdminPay := r.Group("/api/yunkao/admin/pay")
+	yunkaoAdminPay.Use(middleware.AuthMiddleware(db, cfg.JWTSecret), middleware.AdminMiddleware())
+	{
+		yunkaoAdminPay.GET("/orders", yunkaoPayHandler.AdminGetPayOrders)
+		yunkaoAdminPay.GET("/config", yunkaoPayHandler.GetPayConfig)
+		yunkaoAdminPay.PUT("/config", yunkaoPayHandler.UpdatePayConfig)
 	}
 
 	// 用户路由

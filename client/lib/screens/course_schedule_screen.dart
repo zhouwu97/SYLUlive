@@ -124,7 +124,9 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
   // 左右滑动切周
   late PageController _weekPageController;
-  bool _allowWeekSwipe = true;
+  Offset? _weekSwipeStart;
+  DateTime? _weekSwipeStartTime;
+  int? _weekSwipePointer;
 
   static DateTime _mondayOf(DateTime d) {
     return DateTime(d.year, d.month, d.day)
@@ -251,14 +253,50 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   }
 
   void _handleWeekPointerDown(PointerDownEvent event) {
-    _allowWeekSwipe = isUpperContentSwipeStart(
-      event.position.dy,
-      MediaQuery.sizeOf(context).height,
+    if (_weekSwipePointer != null ||
+        !isUpperContentSwipeStart(
+          event.position.dy,
+          MediaQuery.sizeOf(context).height,
+        )) {
+      return;
+    }
+    _weekSwipePointer = event.pointer;
+    _weekSwipeStart = event.position;
+    _weekSwipeStartTime = DateTime.now();
+  }
+
+  void _handleWeekPointerUp(PointerUpEvent event) {
+    if (event.pointer != _weekSwipePointer ||
+        _weekSwipeStart == null ||
+        _weekSwipeStartTime == null) {
+      return;
+    }
+    final direction = horizontalSwipeDirection(
+      start: _weekSwipeStart!,
+      end: event.position,
+      elapsed: DateTime.now().difference(_weekSwipeStartTime!),
+    );
+    _resetWeekSwipe();
+    if (direction == 0 || !_weekPageController.hasClients) return;
+
+    final currentPage = _weekPageController.page?.round() ?? 500;
+    _weekPageController.animateToPage(
+      currentPage + direction,
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
     );
   }
 
-  void _handleWeekPointerEnd(PointerEvent event) {
-    _allowWeekSwipe = true;
+  void _handleWeekPointerCancel(PointerCancelEvent event) {
+    if (event.pointer == _weekSwipePointer) {
+      _resetWeekSwipe();
+    }
+  }
+
+  void _resetWeekSwipe() {
+    _weekSwipePointer = null;
+    _weekSwipeStart = null;
+    _weekSwipeStartTime = null;
   }
 
   @override
@@ -301,13 +339,11 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                           ? _buildEmptyView(context, isDark)
                           : Listener(
                               onPointerDown: _handleWeekPointerDown,
-                              onPointerUp: _handleWeekPointerEnd,
-                              onPointerCancel: _handleWeekPointerEnd,
+                              onPointerUp: _handleWeekPointerUp,
+                              onPointerCancel: _handleWeekPointerCancel,
                               child: PageView.builder(
                                 controller: _weekPageController,
-                                physics: _ConditionalPageScrollPhysics(
-                                  enabled: () => _allowWeekSwipe,
-                                ),
+                                physics: const NeverScrollableScrollPhysics(),
                                 onPageChanged: _onWeekPageChanged,
                                 itemBuilder: (_, index) {
                                   final currentMonday =
@@ -3610,28 +3646,6 @@ $classFilterRule
           ],
         ),
       );
-}
-
-class _ConditionalPageScrollPhysics extends PageScrollPhysics {
-  final bool Function() enabled;
-
-  const _ConditionalPageScrollPhysics({
-    required this.enabled,
-    super.parent,
-  });
-
-  @override
-  _ConditionalPageScrollPhysics applyTo(ScrollPhysics? ancestor) {
-    return _ConditionalPageScrollPhysics(
-      enabled: enabled,
-      parent: buildParent(ancestor),
-    );
-  }
-
-  @override
-  bool shouldAcceptUserOffset(ScrollMetrics position) {
-    return enabled() && super.shouldAcceptUserOffset(position);
-  }
 }
 
 class _SaveArchiveDialog extends StatefulWidget {

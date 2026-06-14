@@ -145,6 +145,7 @@ func main() {
 
 		&models.LotteryParticipant{},
 		&models.CachedQuestion{},
+		&models.AiUsageLog{},
 		&models.SystemConfig{},
 		&models.Canteen{},
 		&models.CanteenRating{},
@@ -311,6 +312,8 @@ func main() {
 	ai.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
 	{
 		ai.POST("/solve", aiSolveHandler.Solve)
+		ai.POST("/mark_wrong", aiSolveHandler.MarkWrong)
+		ai.POST("/confirm_cache", aiSolveHandler.ConfirmCache)
 	}
 
 	// 用户路由
@@ -605,6 +608,7 @@ func main() {
 		superAdmin.PUT("/users/:id/role", superAdminHandler.UpdateUserRole)
 
 		superAdmin.PUT("/users/:id/credit", superAdminHandler.UpdateUserCredit)
+		superAdmin.POST("/users/:id/ai_balance/recharge", superAdminHandler.RechargeAiBalance)
 
 		superAdmin.POST("/users/:id/reset_password", superAdminHandler.ResetUserPassword)
 

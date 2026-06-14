@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../utils/app_feedback.dart';
 import '../utils/responsive_util.dart';
+import '../utils/screen_swipe.dart';
 
 import '../models/announcement.dart' as model;
 import '../models/post.dart';
@@ -39,6 +40,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   late Animation<double> _feedSwitchAnimation;
   bool _isSwitchingMode = false;
   double _slideDirection = 0;
+  double? _feedSwipeStartY;
   final TextEditingController _searchController = TextEditingController();
   Timer? _autoRefreshTimer;
   List<model.Announcement> _announcements = [];
@@ -82,8 +84,11 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       curve: Curves.easeOutCubic,
     );
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<PostProvider>().loadPosts(boardId: 1, sort: _currentSort);
-      context.read<PostProvider>().loadPosts(boardId: 2, sort: 'time');
+      final postProvider = context.read<PostProvider>();
+      postProvider.loadPosts(boardId: 1, sort: _currentSort);
+      unawaited(postProvider.loadPosts(boardId: 1, sort: 'time'));
+      unawaited(postProvider.loadPosts(boardId: 1, sort: 'hot'));
+      postProvider.loadPosts(boardId: 2, sort: 'time');
       _loadAnnouncements();
       _loadCheckinStatus();
       _animationController.forward();
@@ -421,6 +426,16 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   }
 
   Future<void> _handleFeedSwipe(DragEndDetails details) async {
+    final startY = _feedSwipeStartY;
+    _feedSwipeStartY = null;
+    if (startY == null ||
+        isBottomNavigationSwipeStart(
+          startY,
+          MediaQuery.sizeOf(context).height,
+        )) {
+      return;
+    }
+
     final velocity = details.primaryVelocity ?? 0;
     if (velocity.abs() < 320) return;
     const modes = ['new', 'all', 'hot'];
@@ -613,7 +628,11 @@ class _ShuitieScreenState extends State<ShuitieScreen>
             constraints: const BoxConstraints(maxWidth: 680),
             child: Consumer<PostProvider>(
               builder: (context, postProvider, child) {
-                final posts = postProvider.postsFor(1);
+                final posts = postProvider.postsFor(1, sort: _currentSort);
+                final isFeedLoading =
+                    postProvider.isLoadingFor(1, sort: _currentSort);
+                final feedHasMore =
+                    postProvider.hasMoreFor(1, sort: _currentSort);
 
                 final visiblePosts = _resolveVisiblePosts(posts);
                 final lostFoundPosts = postProvider
@@ -624,7 +643,13 @@ class _ShuitieScreenState extends State<ShuitieScreen>
 
                 return GestureDetector(
                   behavior: HitTestBehavior.translucent,
+                  onHorizontalDragStart: (details) {
+                    _feedSwipeStartY = details.globalPosition.dy;
+                  },
                   onHorizontalDragEnd: _handleFeedSwipe,
+                  onHorizontalDragCancel: () {
+                    _feedSwipeStartY = null;
+                  },
                   child: SlideTransition(
                     position: Tween<Offset>(
                       begin: Offset(_slideDirection * 0.12, 0),
@@ -636,8 +661,8 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                         onNotification: (notification) {
                           if (notification.metrics.pixels >=
                                   notification.metrics.maxScrollExtent - 500 &&
-                              postProvider.hasMore &&
-                              !postProvider.isLoading) {
+                              feedHasMore &&
+                              !isFeedLoading) {
                             postProvider.loadPosts(
                               boardId: 1,
                               sort: _currentSort,
@@ -686,7 +711,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                                 ),
                               ),
                             ),
-                            if (postProvider.isLoading && posts.isEmpty)
+                            if (isFeedLoading && posts.isEmpty)
                               const SliverFillRemaining(
                                 child:
                                     Center(child: CircularProgressIndicator()),
@@ -762,7 +787,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                                   childCount: visiblePosts.length,
                                 ),
                               ),
-                            if (postProvider.isLoading && posts.isNotEmpty)
+                            if (isFeedLoading && posts.isNotEmpty)
                               const SliverToBoxAdapter(
                                 child: Padding(
                                   padding: EdgeInsets.symmetric(vertical: 18),

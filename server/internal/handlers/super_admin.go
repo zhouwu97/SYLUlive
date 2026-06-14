@@ -506,8 +506,8 @@ type AiConfigInput struct {
 	BaseURL               string `json:"base_url" binding:"required"`
 	APIKey                string `json:"api_key" binding:"required"`
 	ModelName             string `json:"model_name" binding:"required"`
-	InputPricePer1kCents  int    `json:"input_price_per_1k_cents"`
-	OutputPricePer1kCents int    `json:"output_price_per_1k_cents"`
+	InputPricePer1MCents  int    `json:"input_price_per_1m_cents"`
+	OutputPricePer1MCents int    `json:"output_price_per_1m_cents"`
 	CacheHitPriceCents    int    `json:"cache_hit_price_cents"`
 	MinLivePriceCents     int    `json:"min_live_price_cents"`
 }
@@ -518,6 +518,8 @@ func (h *SuperAdminHandler) GetAiConfig(c *gin.Context) {
 		"ai_base_url",
 		"ai_api_key",
 		"ai_model_name",
+		"ai_input_price_per_1m_cents",
+		"ai_output_price_per_1m_cents",
 		"ai_input_price_per_1k_cents",
 		"ai_output_price_per_1k_cents",
 		"ai_cache_hit_price_cents",
@@ -534,12 +536,36 @@ func (h *SuperAdminHandler) GetAiConfig(c *gin.Context) {
 		configMap[conf.ConfigKey] = conf.ConfigValue
 	}
 
+	inputPricePer1M := configMap["ai_input_price_per_1m_cents"]
+	if strings.TrimSpace(inputPricePer1M) == "" {
+		if legacy := strings.TrimSpace(configMap["ai_input_price_per_1k_cents"]); legacy != "" {
+			if value, err := strconv.Atoi(legacy); err == nil && value > 0 {
+				inputPricePer1M = strconv.Itoa(value * 1000)
+			}
+		}
+	}
+	if strings.TrimSpace(inputPricePer1M) == "" {
+		inputPricePer1M = "2000"
+	}
+
+	outputPricePer1M := configMap["ai_output_price_per_1m_cents"]
+	if strings.TrimSpace(outputPricePer1M) == "" {
+		if legacy := strings.TrimSpace(configMap["ai_output_price_per_1k_cents"]); legacy != "" {
+			if value, err := strconv.Atoi(legacy); err == nil && value > 0 {
+				outputPricePer1M = strconv.Itoa(value * 1000)
+			}
+		}
+	}
+	if strings.TrimSpace(outputPricePer1M) == "" {
+		outputPricePer1M = "4000"
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"base_url":                  configMap["ai_base_url"],
 		"api_key":                   configMap["ai_api_key"],
 		"model_name":                configMap["ai_model_name"],
-		"input_price_per_1k_cents":  configMap["ai_input_price_per_1k_cents"],
-		"output_price_per_1k_cents": configMap["ai_output_price_per_1k_cents"],
+		"input_price_per_1m_cents":  inputPricePer1M,
+		"output_price_per_1m_cents": outputPricePer1M,
 		"cache_hit_price_cents":     configMap["ai_cache_hit_price_cents"],
 		"min_live_price_cents":      configMap["ai_min_live_price_cents"],
 	})
@@ -555,13 +581,13 @@ func (h *SuperAdminHandler) UpdateAiConfig(c *gin.Context) {
 
 	// 开启事务更新三个键值对
 	err := h.db.Transaction(func(tx *gorm.DB) error {
-		inputPrice := input.InputPricePer1kCents
+		inputPrice := input.InputPricePer1MCents
 		if inputPrice <= 0 {
-			inputPrice = 2
+			inputPrice = 2000
 		}
-		outputPrice := input.OutputPricePer1kCents
+		outputPrice := input.OutputPricePer1MCents
 		if outputPrice <= 0 {
-			outputPrice = 4
+			outputPrice = 4000
 		}
 		cacheHitPrice := input.CacheHitPriceCents
 		if cacheHitPrice < 0 {
@@ -579,8 +605,8 @@ func (h *SuperAdminHandler) UpdateAiConfig(c *gin.Context) {
 			{ConfigKey: "ai_base_url", ConfigValue: input.BaseURL},
 			{ConfigKey: "ai_api_key", ConfigValue: input.APIKey},
 			{ConfigKey: "ai_model_name", ConfigValue: input.ModelName},
-			{ConfigKey: "ai_input_price_per_1k_cents", ConfigValue: strconv.Itoa(inputPrice)},
-			{ConfigKey: "ai_output_price_per_1k_cents", ConfigValue: strconv.Itoa(outputPrice)},
+			{ConfigKey: "ai_input_price_per_1m_cents", ConfigValue: strconv.Itoa(inputPrice)},
+			{ConfigKey: "ai_output_price_per_1m_cents", ConfigValue: strconv.Itoa(outputPrice)},
 			{ConfigKey: "ai_cache_hit_price_cents", ConfigValue: strconv.Itoa(cacheHitPrice)},
 			{ConfigKey: "ai_min_live_price_cents", ConfigValue: strconv.Itoa(minLivePrice)},
 		}

@@ -457,8 +457,8 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
     final keyCtrl = TextEditingController();
     final urlCtrl = TextEditingController();
     final modelCtrl = TextEditingController();
-    final inputTokenCtrl = TextEditingController(text: '2');
-    final outputTokenCtrl = TextEditingController(text: '4');
+    final inputTokenCtrl = TextEditingController(text: '2000');
+    final outputTokenCtrl = TextEditingController(text: '4000');
     final cacheHitCtrl = TextEditingController(text: '1');
     final minLiveCtrl = TextEditingController(text: '2');
     String currentProvider = 'custom';
@@ -470,9 +470,9 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
       keyCtrl.text = res.data['api_key'] ?? '';
       modelCtrl.text = res.data['model_name'] ?? '';
       inputTokenCtrl.text =
-          (res.data['input_price_per_1k_cents'] ?? '2').toString();
+          (res.data['input_price_per_1m_cents'] ?? '2000').toString();
       outputTokenCtrl.text =
-          (res.data['output_price_per_1k_cents'] ?? '4').toString();
+          (res.data['output_price_per_1m_cents'] ?? '4000').toString();
       cacheHitCtrl.text = (res.data['cache_hit_price_cents'] ?? '1').toString();
       minLiveCtrl.text = (res.data['min_live_price_cents'] ?? '2').toString();
 
@@ -678,7 +678,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
                         controller: inputTokenCtrl,
                         keyboardType: TextInputType.number,
                         decoration: const InputDecoration(
-                          labelText: '输入 1K token 单价 (分)',
+                          labelText: '输入 1M token 单价 (分)',
                           border: OutlineInputBorder(),
                           isDense: true,
                         ),
@@ -690,7 +690,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
                         controller: outputTokenCtrl,
                         keyboardType: TextInputType.number,
                         decoration: const InputDecoration(
-                          labelText: '输出 1K token 单价 (分)',
+                          labelText: '输出 1M token 单价 (分)',
                           border: OutlineInputBorder(),
                           isDense: true,
                         ),
@@ -741,10 +741,10 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
                     'base_url': urlCtrl.text.trim(),
                     'api_key': keyCtrl.text.trim(),
                     'model_name': modelCtrl.text.trim(),
-                    'input_price_per_1k_cents':
-                        int.tryParse(inputTokenCtrl.text.trim()) ?? 2,
-                    'output_price_per_1k_cents':
-                        int.tryParse(outputTokenCtrl.text.trim()) ?? 4,
+                    'input_price_per_1m_cents':
+                        int.tryParse(inputTokenCtrl.text.trim()) ?? 2000,
+                    'output_price_per_1m_cents':
+                        int.tryParse(outputTokenCtrl.text.trim()) ?? 4000,
                     'cache_hit_price_cents':
                         int.tryParse(cacheHitCtrl.text.trim()) ?? 1,
                     'min_live_price_cents':

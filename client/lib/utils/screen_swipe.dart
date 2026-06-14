@@ -7,6 +7,10 @@ bool isBottomNavigationSwipeStart(double startY, double screenHeight) {
   return startY >= screenHeight * (1 - bottomNavigationSwipeFraction);
 }
 
+bool isUpperContentSwipeStart(double startY, double screenHeight) {
+  return !isBottomNavigationSwipeStart(startY, screenHeight);
+}
+
 /// Returns -1 for the previous tab, 1 for the next tab, and 0 when ignored.
 int horizontalSwipeDirection({
   required Offset start,

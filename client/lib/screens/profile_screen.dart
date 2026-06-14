@@ -77,7 +77,6 @@ class _ProfileScreenState extends State<ProfileScreen>
   void didUpdateWidget(covariant ProfileScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.isActive && !oldWidget.isActive) {
-      context.read<AuthProvider>().refreshUser();
       _loadUnreadCount();
       _fetchPostCount();
     }
@@ -287,6 +286,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                           memCacheWidth: 256,
                           fadeInDuration: Duration.zero,
                           fadeOutDuration: Duration.zero,
+                          useOldImageOnUrlChange: true,
                         ),
                       ),
                     )

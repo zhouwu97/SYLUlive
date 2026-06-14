@@ -31,7 +31,6 @@ class _MyContentScreenState extends State<MyContentScreen>
   // 数据缓存
   static List<Post>? _cachedMyPosts;
   static List<Post>? _cachedMyMarketPosts;
-  static DateTime? _lastFetchTime;
 
   List<Post> _myPosts = [];
   List<Post> _myMarketPosts = [];
@@ -42,7 +41,7 @@ class _MyContentScreenState extends State<MyContentScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-    
+
     if (_cachedMyPosts != null) {
       _myPosts = _cachedMyPosts!;
       _myMarketPosts = _cachedMyMarketPosts!;
@@ -50,9 +49,7 @@ class _MyContentScreenState extends State<MyContentScreen>
     }
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_cachedMyPosts == null || _lastFetchTime == null || DateTime.now().difference(_lastFetchTime!).inMinutes > 5) {
-        _loadData(silent: _cachedMyPosts != null);
-      }
+      _loadData(silent: _cachedMyPosts != null);
     });
   }
 
@@ -63,71 +60,78 @@ class _MyContentScreenState extends State<MyContentScreen>
   }
 
   Future<void> _loadData({bool silent = false}) async {
-    if (!silent && mounted) setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
+    if (!silent && mounted)
+      setState(() {
+        _isLoading = true;
+        _errorMessage = null;
+      });
 
     try {
       final authProvider = context.read<AuthProvider>();
       final currentUserId = authProvider.user?.id;
       if (currentUserId == null) {
-        if (mounted) setState(() {
-          _isLoading = false;
-        });
+        if (mounted)
+          setState(() {
+            _isLoading = false;
+          });
         return;
       }
 
       // 直接从 API 获取用户所有帖子，不走 PostProvider 的 board 分页
-      final res = await authProvider.dio.get('/user/$currentUserId/posts',
-          queryParameters: {'limit': '999'});
+      final res = await authProvider.dio
+          .get('/user/$currentUserId/posts', queryParameters: {'limit': '999'});
       final data = res.data is Map ? res.data['data'] : res.data;
       final allPosts = (data as List)
           .map((e) => Post.fromJson(e as Map<String, dynamic>))
           .toList();
 
       // 按 board 拆分
-      if (mounted) setState(() {
-        _myPosts = allPosts.where((p) => p.boardId != 2).toList();
-        _myMarketPosts = allPosts.where((p) => p.boardId == 2).toList();
-        _cachedMyPosts = _myPosts;
-        _cachedMyMarketPosts = _myMarketPosts;
-        MyContentScreen.globalPostCount = _myPosts.length + _myMarketPosts.length;
-        _lastFetchTime = DateTime.now();
-        _isLoading = false;
-      });
+      if (mounted)
+        setState(() {
+          _myPosts = allPosts.where((p) => p.boardId != 2).toList();
+          _myMarketPosts = allPosts.where((p) => p.boardId == 2).toList();
+          _cachedMyPosts = _myPosts;
+          _cachedMyMarketPosts = _myMarketPosts;
+          MyContentScreen.globalPostCount =
+              _myPosts.length + _myMarketPosts.length;
+          _isLoading = false;
+        });
     } catch (e) {
-      if (mounted) setState(() {
-        _isLoading = false;
-        _errorMessage = '加载失败: $e';
-      });
+      if (mounted)
+        setState(() {
+          _isLoading = false;
+          _errorMessage = '加载失败: $e';
+        });
     }
   }
 
   void _toggleSelectionMode() {
-    if (mounted) setState(() {
-      _isSelectionMode = !_isSelectionMode;
-      if (!_isSelectionMode) {
-        _selectedIds.clear();
-      }
-    });
+    if (mounted)
+      setState(() {
+        _isSelectionMode = !_isSelectionMode;
+        if (!_isSelectionMode) {
+          _selectedIds.clear();
+        }
+      });
   }
 
   void _toggleSelect(int id) {
-    if (mounted) setState(() {
-      if (_selectedIds.contains(id)) {
-        _selectedIds.remove(id);
-      } else {
-        _selectedIds.add(id);
-      }
-    });
+    if (mounted)
+      setState(() {
+        if (_selectedIds.contains(id)) {
+          _selectedIds.remove(id);
+        } else {
+          _selectedIds.add(id);
+        }
+      });
   }
 
   void _onLongPressItem(int id) {
-    if (mounted) setState(() {
-      _isSelectionMode = true;
-      _selectedIds.add(id);
-    });
+    if (mounted)
+      setState(() {
+        _isSelectionMode = true;
+        _selectedIds.add(id);
+      });
   }
 
   Future<void> _deleteSelected() async {
@@ -157,6 +161,9 @@ class _MyContentScreenState extends State<MyContentScreen>
     }
 
     if (mounted) {
+      _cachedMyPosts = List<Post>.from(_myPosts);
+      _cachedMyMarketPosts = List<Post>.from(_myMarketPosts);
+      MyContentScreen.globalPostCount = _myPosts.length + _myMarketPosts.length;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(errors.isEmpty
@@ -166,10 +173,11 @@ class _MyContentScreenState extends State<MyContentScreen>
               errors.isEmpty && deletedCount > 0 ? Colors.green : Colors.red,
         ),
       );
-      if (mounted) setState(() {
-        _selectedIds.clear();
-        _isSelectionMode = false;
-      });
+      if (mounted)
+        setState(() {
+          _selectedIds.clear();
+          _isSelectionMode = false;
+        });
     }
   }
 
@@ -260,7 +268,8 @@ class _MyContentScreenState extends State<MyContentScreen>
 
   Widget _buildBackground(ThemeProvider themeProvider, bool isDark) {
     // 使用全局背景设置，与 profile_screen 保持一致
-    if (themeProvider.isBackgroundVisible && themeProvider.getBackgroundImageFor(context) != null) {
+    if (themeProvider.isBackgroundVisible &&
+        themeProvider.getBackgroundImageFor(context) != null) {
       final bgPath = themeProvider.getBackgroundImageFor(context)!;
       final isAsset = !bgPath.startsWith('http') && !bgPath.startsWith('/');
       return Stack(fit: StackFit.expand, children: [

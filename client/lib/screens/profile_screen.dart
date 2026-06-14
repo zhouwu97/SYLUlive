@@ -36,7 +36,12 @@ import 'user_home_screen.dart';
 import 'social_list_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
-  const ProfileScreen({super.key});
+  final bool isActive;
+
+  const ProfileScreen({
+    super.key,
+    this.isActive = true,
+  });
 
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
@@ -68,10 +73,20 @@ class _ProfileScreenState extends State<ProfileScreen>
     });
   }
 
+  @override
+  void didUpdateWidget(covariant ProfileScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isActive && !oldWidget.isActive) {
+      context.read<AuthProvider>().refreshUser();
+      _loadUnreadCount();
+      _fetchPostCount();
+    }
+  }
+
   Future<void> _fetchPostCount() async {
     final auth = context.read<AuthProvider>();
     if (!auth.isLoggedIn || auth.user == null) return;
-    
+
     // 如果有缓存，直接使用缓存秒开
     if (MyContentScreen.globalPostCount != null) {
       if (mounted) {
@@ -83,15 +98,16 @@ class _ProfileScreenState extends State<ProfileScreen>
     }
 
     try {
-      final res = await auth.dio.get('/user/${auth.user!.id}/posts?limit=999');
+      final res = await auth.dio.get('/user/${auth.user!.id}/posts/count');
       if (res.statusCode == 200 && mounted) {
         setState(() {
-          final data = res.data is Map ? res.data['data'] : res.data;
-          _postCount = (data as List).length;
+          _postCount = res.data['count'] ?? 0;
           MyContentScreen.globalPostCount = _postCount; // 同步更新缓存
         });
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('刷新我的内容数量失败: $e');
+    }
   }
 
   void _loadPrefs() {
@@ -131,53 +147,54 @@ class _ProfileScreenState extends State<ProfileScreen>
         children: [
           // 内容
           CustomScrollView(
-              physics: const BouncingScrollPhysics(),
-              slivers: [
-                SliverToBoxAdapter(
-                  child: SafeArea(
-                    bottom: false,
-                    child: Column(
-                      children: [
-                        _buildHeader(user, authProvider, isDark),
-                        if (authProvider.isLoggedIn)
-                          _buildSocialStatsSection(context, user, isDark),
-                      ],
-                    ),
+            physics: const BouncingScrollPhysics(),
+            slivers: [
+              SliverToBoxAdapter(
+                child: SafeArea(
+                  bottom: false,
+                  child: Column(
+                    children: [
+                      _buildHeader(user, authProvider, isDark),
+                      if (authProvider.isLoggedIn)
+                        _buildSocialStatsSection(context, user, isDark),
+                    ],
                   ),
                 ),
+              ),
 
-                // 管理入口（仅管理员可见）
-                if (user?.isAdmin == true)
-                  SliverToBoxAdapter(
-                      child: _buildAdminSection(context, user, isDark)),
-
-                // 收到邀请（所有用户）
-                if (authProvider.isLoggedIn)
-                  SliverToBoxAdapter(
-                      child: _buildInvitationSection(
-                          context, authProvider, isDark)),
-
-                // 教务版块（绑定状态 + 题库入口）
+              // 管理入口（仅管理员可见）
+              if (user?.isAdmin == true)
                 SliverToBoxAdapter(
-                  child: _buildEduSection(context, authProvider, isDark),
-                ),
+                    child: _buildAdminSection(context, user, isDark)),
 
-                // 我的内容
+              // 收到邀请（所有用户）
+              if (authProvider.isLoggedIn)
                 SliverToBoxAdapter(
-                  child: _buildMyContentSection(context, isDark),
-                ),
+                    child:
+                        _buildInvitationSection(context, authProvider, isDark)),
 
-                // 设置区域
-                SliverToBoxAdapter(
-                  child: _buildSettingsSection(
-                      context, themeProvider, authProvider, isDark),
-                ),
+              // 教务版块（绑定状态 + 题库入口）
+              SliverToBoxAdapter(
+                child: _buildEduSection(context, authProvider, isDark),
+              ),
 
-                SliverToBoxAdapter(
-                  child: SizedBox(height: MediaQuery.of(context).padding.bottom + 90),
-                ),
-              ],
-            ),
+              // 我的内容
+              SliverToBoxAdapter(
+                child: _buildMyContentSection(context, isDark),
+              ),
+
+              // 设置区域
+              SliverToBoxAdapter(
+                child: _buildSettingsSection(
+                    context, themeProvider, authProvider, isDark),
+              ),
+
+              SliverToBoxAdapter(
+                child: SizedBox(
+                    height: MediaQuery.of(context).padding.bottom + 90),
+              ),
+            ],
+          ),
         ],
       ),
     );
@@ -265,7 +282,8 @@ class _ProfileScreenState extends State<ProfileScreen>
                           imageUrl: ApiConstants.fullUrl(user?.avatar ?? ''),
                           fit: BoxFit.cover,
                           placeholder: (_, __) => _buildAvatarPlaceholder(user),
-                          errorWidget: (_, __, ___) => _buildAvatarPlaceholder(user),
+                          errorWidget: (_, __, ___) =>
+                              _buildAvatarPlaceholder(user),
                           memCacheWidth: 256,
                           fadeInDuration: Duration.zero,
                           fadeOutDuration: Duration.zero,
@@ -321,7 +339,8 @@ class _ProfileScreenState extends State<ProfileScreen>
                                   style: TextStyle(
                                     fontSize: 22,
                                     fontWeight: FontWeight.w700,
-                                    color: isDark ? Colors.white : Colors.black87,
+                                    color:
+                                        isDark ? Colors.white : Colors.black87,
                                   ),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
@@ -331,7 +350,9 @@ class _ProfileScreenState extends State<ProfileScreen>
                                 const SizedBox(width: 6),
                                 Icon(Icons.edit,
                                     size: 16,
-                                    color: isDark ? Colors.white54 : Colors.black54),
+                                    color: isDark
+                                        ? Colors.white54
+                                        : Colors.black54),
                               ],
                             ],
                           ),
@@ -340,7 +361,8 @@ class _ProfileScreenState extends State<ProfileScreen>
                         const SizedBox(height: 8),
 
                         // 第二行：学院专业标签 (如果有)
-                        if (user?.eduCollege != null && user!.eduCollege!.isNotEmpty) ...[
+                        if (user?.eduCollege != null &&
+                            user!.eduCollege!.isNotEmpty) ...[
                           Text(
                             '${user.eduCollege} ${user.eduMajor}'.trim(),
                             style: TextStyle(
@@ -359,8 +381,17 @@ class _ProfileScreenState extends State<ProfileScreen>
                           runSpacing: 4,
                           children: [
                             if (user != null)
-                              _buildTag(user.levelLabel.startsWith('Lv') ? user.levelLabel : 'Lv.${user.levelLabel}', icon: Icons.military_tech, color: Color(user.levelColorValue), isDark: isDark),
-                            _buildTag('诚信 ${user?.creditScore ?? 100}%', icon: Icons.verified_user, color: Colors.teal, isDark: isDark),
+                              _buildTag(
+                                  user.levelLabel.startsWith('Lv')
+                                      ? user.levelLabel
+                                      : 'Lv.${user.levelLabel}',
+                                  icon: Icons.military_tech,
+                                  color: Color(user.levelColorValue),
+                                  isDark: isDark),
+                            _buildTag('诚信 ${user?.creditScore ?? 100}%',
+                                icon: Icons.verified_user,
+                                color: Colors.teal,
+                                isDark: isDark),
                           ],
                         ),
                       ],
@@ -371,7 +402,9 @@ class _ProfileScreenState extends State<ProfileScreen>
                   if (authProvider.isLoggedIn)
                     Padding(
                       padding: const EdgeInsets.only(left: 8.0, right: 4.0),
-                      child: Icon(Icons.arrow_forward_ios, size: 14, color: isDark ? Colors.white54 : Colors.black45),
+                      child: Icon(Icons.arrow_forward_ios,
+                          size: 14,
+                          color: isDark ? Colors.white54 : Colors.black45),
                     ),
                 ],
               ),
@@ -382,7 +415,8 @@ class _ProfileScreenState extends State<ProfileScreen>
     );
   }
 
-  Widget _buildTag(String text, {IconData? icon, required Color color, required bool isDark}) {
+  Widget _buildTag(String text,
+      {IconData? icon, required Color color, required bool isDark}) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
@@ -398,7 +432,8 @@ class _ProfileScreenState extends State<ProfileScreen>
           ],
           Text(
             text,
-            style: TextStyle(fontSize: 11, color: color, fontWeight: FontWeight.w500),
+            style: TextStyle(
+                fontSize: 11, color: color, fontWeight: FontWeight.w500),
           ),
         ],
       ),
@@ -411,7 +446,9 @@ class _ProfileScreenState extends State<ProfileScreen>
       margin: const EdgeInsets.only(left: 16, right: 16, top: 8, bottom: 24),
       padding: const EdgeInsets.symmetric(vertical: 16),
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1E1E1E).withOpacity(0.6) : Colors.white.withOpacity(0.6),
+        color: isDark
+            ? const Color(0xFF1E1E1E).withOpacity(0.6)
+            : Colors.white.withOpacity(0.6),
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
@@ -424,21 +461,37 @@ class _ProfileScreenState extends State<ProfileScreen>
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
-          _buildSocialStatItem(_postCount?.toString() ?? '-', '我的内容', isDark, () {
-            Navigator.push(context, MaterialPageRoute(builder: (_) => const MyContentScreen()));
+          _buildSocialStatItem(_postCount?.toString() ?? '-', '我的内容', isDark,
+              () async {
+            await Navigator.push(context,
+                MaterialPageRoute(builder: (_) => const MyContentScreen()));
+            if (mounted) {
+              await _fetchPostCount();
+            }
           }),
-          _buildSocialStatItem(user.followingCount.toString(), '关注的人', isDark, () {
-            Navigator.push(context, MaterialPageRoute(builder: (_) => SocialListScreen(userId: user.id, initialIndex: 0)));
+          _buildSocialStatItem(user.followingCount.toString(), '关注的人', isDark,
+              () {
+            Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) =>
+                        SocialListScreen(userId: user.id, initialIndex: 0)));
           }),
-          _buildSocialStatItem(user.followersCount.toString(), '关注我的', isDark, () {
-            Navigator.push(context, MaterialPageRoute(builder: (_) => SocialListScreen(userId: user.id, initialIndex: 1)));
+          _buildSocialStatItem(user.followersCount.toString(), '关注我的', isDark,
+              () {
+            Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) =>
+                        SocialListScreen(userId: user.id, initialIndex: 1)));
           }),
         ],
       ),
     );
   }
 
-  Widget _buildSocialStatItem(String count, String label, bool isDark, VoidCallback onTap) {
+  Widget _buildSocialStatItem(
+      String count, String label, bool isDark, VoidCallback onTap) {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
@@ -465,8 +518,6 @@ class _ProfileScreenState extends State<ProfileScreen>
       ),
     );
   }
-
-
 
   Widget _buildAvatarPlaceholder(user) {
     return Center(
@@ -520,61 +571,59 @@ class _ProfileScreenState extends State<ProfileScreen>
         final adminTodo = overview['admin'] ?? 0;
         final superTodo = overview['super'] ?? 0;
         final items = [
-                  _buildAdminEntry(
-                    context: context,
-                    isDark: isDark,
-                    icon: Icons.admin_panel_settings,
-                    iconColor: Colors.red,
-                    title: '管理处',
-                    subtitle: adminTodo > 0
-                        ? '处理举报、审核教师和专业 · $adminTodo 条待办'
-                        : '处理举报、审核教师和专业',
-                    badgeText: adminTodo > 0 ? '$adminTodo' : null,
-                    onTap: () {
-                      Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                              builder: (_) => const AdminPanelScreen()));
-                    },
-                  ),
-                  if (user?.isSuperAdmin == true)
-                    _buildAdminEntry(
-                      context: context,
-                      isDark: isDark,
-                      icon: Icons.security,
-                      iconColor: Colors.deepPurple,
-                      title: '超级管理员',
-                      subtitle: superTodo > 0
-                          ? '管理用户、审批管理员邀请 · $superTodo 条待办'
-                          : '管理用户、审批管理员邀请',
-                      badgeText: superTodo > 0 ? '$superTodo' : null,
-                      onTap: () {
-                        Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                                builder: (_) => const SuperAdminScreen()));
-                      },
-                    ),
-                  _buildAdminEntry(
-                    context: context,
-                    isDark: isDark,
-                    icon: Icons.groups_2_outlined,
-                    iconColor: Colors.indigo,
-                    title: '管理人员',
-                    subtitle: '查看管理员与超级管理员列表',
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const AdminMembersScreen(),
-                        ),
-                      );
-                    },
-                  ),
-                ];
-
-                return _buildSectionLayout(context, '管理员', items, isDark);
+          _buildAdminEntry(
+            context: context,
+            isDark: isDark,
+            icon: Icons.admin_panel_settings,
+            iconColor: Colors.red,
+            title: '管理处',
+            subtitle: adminTodo > 0
+                ? '处理举报、审核教师和专业 · $adminTodo 条待办'
+                : '处理举报、审核教师和专业',
+            badgeText: adminTodo > 0 ? '$adminTodo' : null,
+            onTap: () {
+              Navigator.push(context,
+                  MaterialPageRoute(builder: (_) => const AdminPanelScreen()));
+            },
+          ),
+          if (user?.isSuperAdmin == true)
+            _buildAdminEntry(
+              context: context,
+              isDark: isDark,
+              icon: Icons.security,
+              iconColor: Colors.deepPurple,
+              title: '超级管理员',
+              subtitle: superTodo > 0
+                  ? '管理用户、审批管理员邀请 · $superTodo 条待办'
+                  : '管理用户、审批管理员邀请',
+              badgeText: superTodo > 0 ? '$superTodo' : null,
+              onTap: () {
+                Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => const SuperAdminScreen()));
               },
+            ),
+          _buildAdminEntry(
+            context: context,
+            isDark: isDark,
+            icon: Icons.groups_2_outlined,
+            iconColor: Colors.indigo,
+            title: '管理人员',
+            subtitle: '查看管理员与超级管理员列表',
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const AdminMembersScreen(),
+                ),
+              );
+            },
+          ),
+        ];
+
+        return _buildSectionLayout(context, '管理员', items, isDark);
+      },
     );
   }
 
@@ -676,7 +725,8 @@ class _ProfileScreenState extends State<ProfileScreen>
     return {'admin': adminCount, 'super': superCount};
   }
 
-  Widget _buildSectionLayout(BuildContext context, String title, List<Widget> items, bool isDark) {
+  Widget _buildSectionLayout(
+      BuildContext context, String title, List<Widget> items, bool isDark) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Column(
@@ -698,10 +748,12 @@ class _ProfileScreenState extends State<ProfileScreen>
               return Wrap(
                 spacing: 12,
                 runSpacing: 12,
-                children: items.map((e) => SizedBox(
-                  width: (constraints.maxWidth - 12) / 2,
-                  child: e,
-                )).toList(),
+                children: items
+                    .map((e) => SizedBox(
+                          width: (constraints.maxWidth - 12) / 2,
+                          child: e,
+                        ))
+                    .toList(),
               );
             })
           else
@@ -721,7 +773,8 @@ class _ProfileScreenState extends State<ProfileScreen>
 
   Widget _buildMyContentSection(BuildContext context, bool isDark) {
     final items = [
-      _buildSettingsRow(child: _buildSettingsTile(
+      _buildSettingsRow(
+          child: _buildSettingsTile(
         icon: Icons.chat_outlined,
         iconColor: const Color(0xFF10B981),
         title: '私信',
@@ -734,7 +787,8 @@ class _ProfileScreenState extends State<ProfileScreen>
           );
         },
       )),
-      _buildSettingsRow(child: _buildSettingsTile(
+      _buildSettingsRow(
+          child: _buildSettingsTile(
         icon: Icons.notifications_active_outlined,
         iconColor: Colors.orange,
         title: '收到的回复',
@@ -760,7 +814,8 @@ class _ProfileScreenState extends State<ProfileScreen>
           });
         },
       )),
-      _buildSettingsRow(child: _buildSettingsTile(
+      _buildSettingsRow(
+          child: _buildSettingsTile(
         icon: Icons.bug_report_outlined,
         iconColor: Colors.green,
         title: '功能建议 (Bug提交)',
@@ -775,10 +830,12 @@ class _ProfileScreenState extends State<ProfileScreen>
     return _buildSectionLayout(context, '我的内容', items, isDark);
   }
 
-  Widget _buildEduSection(BuildContext context, AuthProvider authProvider, bool isDark) {
+  Widget _buildEduSection(
+      BuildContext context, AuthProvider authProvider, bool isDark) {
     final eduProvider = context.watch<EduProvider>();
     final items = [
-      _buildSettingsRow(child: _buildSettingsTile(
+      _buildSettingsRow(
+          child: _buildSettingsTile(
         icon: Icons.school,
         iconColor: eduProvider.isBound ? Colors.green : Colors.grey,
         title: '教务',
@@ -787,8 +844,8 @@ class _ProfileScreenState extends State<ProfileScreen>
             : '绑定后可查询课表、成绩',
         isDark: isDark,
         onTap: () {
-          Navigator.push(context,
-              MaterialPageRoute(builder: (_) => const EduScreen()));
+          Navigator.push(
+              context, MaterialPageRoute(builder: (_) => const EduScreen()));
         },
       )),
       _buildSettingsRow(
@@ -808,7 +865,8 @@ class _ProfileScreenState extends State<ProfileScreen>
           ),
         ),
       ),
-      _buildSettingsRow(child: _buildSettingsTile(
+      _buildSettingsRow(
+          child: _buildSettingsTile(
         icon: Icons.auto_stories,
         iconColor: const Color(0xFF667EEA),
         title: '导入融智云考题库',
@@ -816,13 +874,13 @@ class _ProfileScreenState extends State<ProfileScreen>
         isDark: isDark,
         onTap: () {
           if (!authProvider.isLoggedIn) {
-            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('请先登录')));
+            ScaffoldMessenger.of(context)
+                .showSnackBar(const SnackBar(content: Text('请先登录')));
             return;
           }
           Navigator.push(
             context,
-            MaterialPageRoute(
-                builder: (_) => const ExamExtractScreen()),
+            MaterialPageRoute(builder: (_) => const ExamExtractScreen()),
           );
         },
       )),
@@ -933,7 +991,8 @@ class _ProfileScreenState extends State<ProfileScreen>
               ),
               if (trailing != null) trailing,
               if (trailing == null && onTap != null)
-                Icon(Icons.chevron_right, size: 18,
+                Icon(Icons.chevron_right,
+                    size: 18,
                     color: isDark ? Colors.white30 : Colors.grey[400]),
             ],
           ),
@@ -941,9 +1000,6 @@ class _ProfileScreenState extends State<ProfileScreen>
       ),
     );
   }
-
-
-
 
   void _showAvatarPreview(BuildContext context, String url) {
     showDialog(
@@ -959,7 +1015,8 @@ class _ProfileScreenState extends State<ProfileScreen>
     );
   }
 
-  Future<void> _showEditProfileDialog(BuildContext context, AuthProvider authProvider) async {
+  Future<void> _showEditProfileDialog(
+      BuildContext context, AuthProvider authProvider) async {
     final controller = TextEditingController(text: authProvider.user?.nickname);
     await showDialog(
       context: context,
@@ -991,7 +1048,6 @@ class _ProfileScreenState extends State<ProfileScreen>
     );
     controller.dispose();
   }
-
 
   void _showAvatarOptions(BuildContext context, AuthProvider authProvider) {
     Future<void> pickAndUpload(ImageSource source) async {
@@ -1026,7 +1082,8 @@ class _ProfileScreenState extends State<ProfileScreen>
       if (length > 10 * 1024 * 1024) {
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('头像大小不能超过 10MB'), backgroundColor: Colors.red),
+            const SnackBar(
+                content: Text('头像大小不能超过 10MB'), backgroundColor: Colors.red),
           );
         }
         return;
@@ -1084,7 +1141,6 @@ class _ProfileScreenState extends State<ProfileScreen>
           ),
         ));
   }
-
 
   // ---- 邀请版块 ----
   Widget _buildInvitationSection(
@@ -1154,5 +1210,4 @@ class _ProfileScreenState extends State<ProfileScreen>
       },
     );
   }
-
 }

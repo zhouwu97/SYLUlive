@@ -631,6 +631,17 @@
                 }
             }
         }
+        // --- 终极修复：使用容器上自带的 data-answer ---
+        const realDataAnswer = slideContent.getAttribute('data-answer');
+        if (realDataAnswer && realDataAnswer.trim() !== '') {
+            let parsedAnswer = realDataAnswer.trim();
+            // 针对判断题做统一转换
+            if (question.questionType.includes('判断')) {
+                if (parsedAnswer === '对' || parsedAnswer === 'A') parsedAnswer = '正确';
+                else if (parsedAnswer === '错' || parsedAnswer === 'B') parsedAnswer = '错误';
+            }
+            question.answer = parsedAnswer;
+        }
 
         // 提取解析
         const analysisElement = slideContent.querySelector('.analysis-content .desc');

@@ -144,7 +144,7 @@ func (h *UserHandler) UpdateNightMode(c *gin.Context) {
 // GetUserInfo 获取任意用户信息
 func (h *UserHandler) GetUserInfo(c *gin.Context) {
 	currentUserID, exists := c.Get("user_id")
-	
+
 	idStr := c.Param("id")
 	targetID, err := strconv.ParseUint(idStr, 10, 64)
 	if err != nil {
@@ -202,12 +202,12 @@ func (h *UserHandler) GetFollowing(c *gin.Context) {
 			currentUserID := currentUserIDAny.(uint)
 			var followingIDs []uint
 			h.db.Model(&models.UserFollow{}).Where("follower_id = ? AND following_id IN ?", currentUserID, userIDs).Pluck("following_id", &followingIDs)
-			
+
 			followingMap := make(map[uint]bool)
 			for _, id := range followingIDs {
 				followingMap[id] = true
 			}
-			
+
 			for i := range users {
 				users[i].IsFollowing = followingMap[users[i].ID]
 			}
@@ -255,12 +255,12 @@ func (h *UserHandler) GetFollowers(c *gin.Context) {
 			currentUserID := currentUserIDAny.(uint)
 			var followingIDs []uint
 			h.db.Model(&models.UserFollow{}).Where("follower_id = ? AND following_id IN ?", currentUserID, userIDs).Pluck("following_id", &followingIDs)
-			
+
 			followingMap := make(map[uint]bool)
 			for _, id := range followingIDs {
 				followingMap[id] = true
 			}
-			
+
 			for i := range users {
 				users[i].IsFollowing = followingMap[users[i].ID]
 			}
@@ -304,7 +304,7 @@ func (h *UserHandler) Follow(c *gin.Context) {
 			FollowerID:  followerID,
 			FollowingID: uint(followingID),
 		})
-		
+
 		if result.RowsAffected > 0 {
 			tx.Model(&models.User{}).Where("id = ?", followerID).UpdateColumn("following_count", gorm.Expr("following_count + 1"))
 			tx.Model(&models.User{}).Where("id = ?", followingID).UpdateColumn("followers_count", gorm.Expr("followers_count + 1"))
@@ -390,6 +390,24 @@ func (h *UserHandler) GetUserPosts(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, posts)
+}
+
+// GetUserPostCount returns the number of visible posts created by a user.
+func (h *UserHandler) GetUserPostCount(c *gin.Context) {
+	targetID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的用户ID"})
+		return
+	}
+
+	var count int64
+	if err := h.db.Model(&models.Post{}).
+		Where("author_id = ? AND status = ?", targetID, models.PostStatusNormal).
+		Count(&count).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取内容数量失败"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"count": count})
 }
 
 // UpdateDeviceTokenInput 更新设备Token输入

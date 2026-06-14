@@ -17,6 +17,7 @@ class PostCard extends StatefulWidget {
   final VoidCallback? onTap;
   final bool showPrice;
   final bool showWarning;
+  final bool disableAuthorNavigation;
 
   const PostCard({
     super.key,
@@ -24,6 +25,7 @@ class PostCard extends StatefulWidget {
     this.onTap,
     this.showPrice = false,
     this.showWarning = false,
+    this.disableAuthorNavigation = false,
   });
 
   @override
@@ -66,7 +68,7 @@ class _PostCardState extends State<PostCard> with AutomaticKeepAliveClientMixin 
             Row(
               children: [
                 GestureDetector(
-                  onTap: () {
+                  onTap: widget.disableAuthorNavigation ? null : () {
                     if (widget.post.author != null) {
                       Navigator.push(
                         context,
@@ -103,7 +105,7 @@ class _PostCardState extends State<PostCard> with AutomaticKeepAliveClientMixin 
                     children: [
                       GestureDetector(
                         behavior: HitTestBehavior.opaque,
-                        onTap: () {
+                        onTap: widget.disableAuthorNavigation ? null : () {
                           if (widget.post.author != null) {
                             Navigator.push(
                               context,

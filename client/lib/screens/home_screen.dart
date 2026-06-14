@@ -46,10 +46,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final Set<int> _seenAnnouncementIds = {};
   String? _announcementSeenKey;
 
-  // 用 Listener（原始指针）实现底部半屏横滑切换，不参与手势竞争，不阻塞滚动
-  Offset? _swipeStart;
-  DateTime? _swipeStartTime;
-
   @override
   void initState() {
     super.initState();
@@ -691,7 +687,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final isMobile = !ResponsiveUtil.isDesktop(context);
     final themeProvider = context.watch<ThemeProvider>();
     final authProvider = context.watch<AuthProvider>();
-    
+
     // 如果启用了悬浮底栏，即便是平板也使用底栏模式（不用侧边栏）
     final useBottomNav = isMobile || themeProvider.floatingNavBar;
 
@@ -711,43 +707,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           !useBottomNav
               ? _buildWideLayout(bottomSafe, authProvider, false) // 默认收起状态
               : _buildNarrowLayout(bottomSafe, authProvider),
-
-          // 底部半屏横滑切换底栏：用 Listener 被动监听指针，不会参与手势竞争
-          if (useBottomNav)
-            Positioned(
-              bottom: 0,
-              left: 0,
-              right: 0,
-              height: MediaQuery.of(context).size.height * 0.45,
-              child: Listener(
-                behavior: HitTestBehavior.translucent,
-                onPointerDown: (e) {
-                  _swipeStart = e.position;
-                  _swipeStartTime = DateTime.now();
-                },
-                onPointerUp: (e) {
-                  if (_swipeStart == null || _swipeStartTime == null) return;
-                  final dx = e.position.dx - _swipeStart!.dx;
-                  final dy = e.position.dy - _swipeStart!.dy;
-                  final dt = DateTime.now().difference(_swipeStartTime!).inMilliseconds;
-                  _swipeStart = null;
-                  _swipeStartTime = null;
-                  // 必须：水平位移 > 60px、水平位移 > 垂直的 2 倍、时间 < 400ms
-                  if (dx.abs() > 60 && dx.abs() > dy.abs() * 2 && dt < 400) {
-                    if (dx > 0 && _currentIndex > 0) {
-                      _onTabTapped(_currentIndex - 1);
-                    } else if (dx < 0 && _currentIndex < 4) {
-                      _onTabTapped(_currentIndex + 1);
-                    }
-                  }
-                },
-                onPointerCancel: (_) {
-                  _swipeStart = null;
-                  _swipeStartTime = null;
-                },
-                child: const SizedBox.expand(),
-              ),
-            ),
         ],
       ),
       bottomNavigationBar: !useBottomNav
@@ -774,9 +733,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
-  Widget _buildWideLayout(double bottomSafe, AuthProvider authProvider, bool isExtended) {
+  Widget _buildWideLayout(
+      double bottomSafe, AuthProvider authProvider, bool isExtended) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    
+
     return Row(
       children: [
         // 美化 NavigationRail，增加 GlassContainer 包裹
@@ -787,19 +747,31 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             child: GlassContainer(
               borderRadius: 24,
               blur: 24,
-              backgroundColor: isDark ? const Color(0xFF111827).withValues(alpha: 0.5) : Colors.white.withValues(alpha: 0.5),
-              borderColor: isDark ? Colors.white.withValues(alpha: 0.1) : Colors.white.withValues(alpha: 0.5),
+              backgroundColor: isDark
+                  ? const Color(0xFF111827).withValues(alpha: 0.5)
+                  : Colors.white.withValues(alpha: 0.5),
+              borderColor: isDark
+                  ? Colors.white.withValues(alpha: 0.1)
+                  : Colors.white.withValues(alpha: 0.5),
               child: NavigationRail(
                 extended: false,
                 selectedIndex: _currentIndex,
                 onDestinationSelected: _onTabTapped,
                 labelType: NavigationRailLabelType.all,
                 backgroundColor: Colors.transparent,
-                indicatorColor: Theme.of(context).primaryColor.withValues(alpha: 0.15),
-                selectedIconTheme: IconThemeData(color: Theme.of(context).primaryColor, size: 28),
-                unselectedIconTheme: IconThemeData(color: isDark ? Colors.white60 : Colors.black54, size: 24),
-                selectedLabelTextStyle: TextStyle(color: Theme.of(context).primaryColor, fontWeight: FontWeight.bold, fontSize: 12),
-                unselectedLabelTextStyle: TextStyle(color: isDark ? Colors.white60 : Colors.black54, fontSize: 12),
+                indicatorColor:
+                    Theme.of(context).primaryColor.withValues(alpha: 0.15),
+                selectedIconTheme: IconThemeData(
+                    color: Theme.of(context).primaryColor, size: 28),
+                unselectedIconTheme: IconThemeData(
+                    color: isDark ? Colors.white60 : Colors.black54, size: 24),
+                selectedLabelTextStyle: TextStyle(
+                    color: Theme.of(context).primaryColor,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12),
+                unselectedLabelTextStyle: TextStyle(
+                    color: isDark ? Colors.white60 : Colors.black54,
+                    fontSize: 12),
                 groupAlignment: 0.0,
                 destinations: const [
                   NavigationRailDestination(
@@ -837,12 +809,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             child: FadeIndexedStack(
               contentKey: _contentKey,
               index: _currentIndex,
-              children: const [
-                ShuitieScreen(),
-                MarketScreen(),
-                CourseScheduleScreen(),
-                CampusScreen(),
-                ProfileScreen(),
+              children: [
+                const ShuitieScreen(),
+                const MarketScreen(),
+                const CourseScheduleScreen(),
+                const CampusScreen(),
+                ProfileScreen(isActive: _currentIndex == 4),
               ],
             ),
           ),
@@ -855,12 +827,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     return FadeIndexedStack(
       contentKey: _contentKey,
       index: _currentIndex,
-      children: const [
-        ShuitieScreen(),
-        MarketScreen(),
-        CourseScheduleScreen(),
-        CampusScreen(),
-        ProfileScreen(),
+      children: [
+        const ShuitieScreen(),
+        const MarketScreen(),
+        const CourseScheduleScreen(),
+        const CampusScreen(),
+        ProfileScreen(isActive: _currentIndex == 4),
       ],
     );
   }
@@ -884,7 +856,8 @@ class FadeIndexedStack extends StatefulWidget {
   State<FadeIndexedStack> createState() => _FadeIndexedStackState();
 }
 
-class _FadeIndexedStackState extends State<FadeIndexedStack> with SingleTickerProviderStateMixin {
+class _FadeIndexedStackState extends State<FadeIndexedStack>
+    with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   late Animation<Offset> _slideAnimation;
   late Animation<double> _fadeAnimation;

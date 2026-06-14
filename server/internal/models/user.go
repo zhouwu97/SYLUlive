@@ -35,7 +35,7 @@ type User struct {
 	Exp          int       `gorm:"default:0" json:"exp"`                           // 用户经验值（签到等获得）
 	ReportCount  int       `gorm:"default:0;index" json:"report_count"`            // 90天内举报数
 	QQ           string    `gorm:"size:20" json:"qq"`                              // QQ号
-	DeviceToken  string    `gorm:"size:255" json:"device_token"`                   // 极光 RegistrationID
+	DeviceToken  string    `gorm:"size:255" json:"-"`                              // 极光 RegistrationID
 	Credits      int       `gorm:"default:0" json:"credits"`                       // 代答积分
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
@@ -43,25 +43,24 @@ type User struct {
 	// 教务系统绑定信息（整合学长项目）
 	EduStudentID string `gorm:"size:20" json:"edu_student_id"`  // 教务学号
 	EduPassword  string `gorm:"size:255" json:"-"`              // 教务密码（加密存储）
-	EduCookie    string `gorm:"size:1000" json:"edu_cookie"`    // 登录Cookie
+	EduCookie    string `gorm:"size:1000" json:"-"`             // 登录Cookie
 	EduBound     bool   `gorm:"default:false" json:"edu_bound"` // 是否已绑定教务
 	EduGrade     string `gorm:"size:20" json:"edu_grade"`       // 年级
 	EduCollege   string `gorm:"size:100" json:"edu_college"`    // 学院
 	EduMajor     string `gorm:"size:100" json:"edu_major"`      // 专业
 
 	// VIP 权限控制（题库导出桌面端高级功能）
-	VipExpiry    *time.Time `gorm:"index" json:"vip_expiry"`       // VIP 过期时间，nil 表示非 VIP
+	VipExpiry *time.Time `gorm:"index" json:"vip_expiry"` // VIP 过期时间，nil 表示非 VIP
 
-	LastCheckInDate string `gorm:"size:10" json:"last_check_in_date"` // 最后签到日期
-	IsCheckedInToday bool  `gorm:"-" json:"is_checked_in_today"`      // 动态字段，不在数据库映射
-	IsFollowing       bool  `gorm:"-" json:"is_following"`            // 当前登录者是否关注了此用户
+	LastCheckInDate  string `gorm:"size:10" json:"last_check_in_date"` // 最后签到日期
+	IsCheckedInToday bool   `gorm:"-" json:"is_checked_in_today"`      // 动态字段，不在数据库映射
+	IsFollowing      bool   `gorm:"-" json:"is_following"`             // 当前登录者是否关注了此用户
 
 	// 社交统计聚合字段
 	FollowersCount     int `gorm:"default:0;index" json:"followers_count"`
 	FollowingCount     int `gorm:"default:0;index" json:"following_count"`
 	TotalLikesReceived int `gorm:"default:0;index" json:"total_likes_received"`
 }
-
 
 func (u *User) BeforeSave(tx *gorm.DB) (err error) {
 	if u.EduPassword != "" && !strings.HasPrefix(u.EduPassword, "ENC:") {

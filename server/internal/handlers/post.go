@@ -206,7 +206,10 @@ func (h *PostHandler) GetList(c *gin.Context) {
 		} else if sort == "hot" {
 			snapshotQuery = snapshotQuery.Order("(view_count*1 + like_count*20 + reply_count*50) DESC")
 		}
-		snapshotQuery.Limit(500).Pluck("id", &allIDs)
+		if sort == "hot" {
+			snapshotQuery = snapshotQuery.Limit(500)
+		}
+		snapshotQuery.Pluck("id", &allIDs)
 
 		sessionID = fmt.Sprintf("%d", time.Now().UnixNano())
 		ActiveSnapshots.Store(sessionID, Snapshot{

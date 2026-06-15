@@ -792,11 +792,35 @@ func (h *OneClassPayHandler) AdminGetOrders(c *gin.Context) {
 }
 
 func (h *OneClassPayHandler) ClientVersion(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{
+	response := gin.H{
 		"version":      oneClassClientVersion,
 		"released_at":  oneClassClientReleasedAt,
 		"force_update": false,
 		"download_url": "",
 		"message":      "当前版本可用。一次性购买仅支持购买日及之前发布的客户端版本；长期更新不受此限制。",
-	})
+	}
+	if update := h.currentClientUpdate(c); update != nil {
+		response["update_notice"] = gin.H{
+			"id":           update.ID,
+			"title":        update.Title,
+			"content":      update.Content,
+			"version":      update.Version,
+			"download_url": update.DownloadURL,
+			"force_update": update.ForceUpdate,
+			"target_scope": update.TargetScope,
+			"created_at":   update.CreatedAt,
+		}
+		if update.ForceUpdate {
+			response["force_update"] = true
+		}
+		if update.DownloadURL != "" {
+			response["download_url"] = update.DownloadURL
+		}
+		if strings.TrimSpace(update.Content) != "" {
+			response["message"] = update.Content
+		} else {
+			response["message"] = update.Title
+		}
+	}
+	c.JSON(http.StatusOK, response)
 }

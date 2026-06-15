@@ -160,6 +160,7 @@ func main() {
 		&models.YunkaoWrongReport{},
 		&models.YunkaoPayOrder{},
 		&models.OneClassPayOrder{},
+		&models.OneClassUpdate{},
 	); err != nil {
 
 		log.Fatal("数据库迁移失败:", err)
@@ -406,6 +407,9 @@ func main() {
 	oneClassAdmin.Use(middleware.AuthMiddleware(db, cfg.JWTSecret), middleware.AdminMiddleware())
 	{
 		oneClassAdmin.GET("/orders", oneClassPayHandler.AdminGetOrders)
+		oneClassAdmin.GET("/updates", oneClassPayHandler.AdminListUpdates)
+		oneClassAdmin.POST("/updates", oneClassPayHandler.AdminCreateUpdate)
+		oneClassAdmin.PUT("/updates/:id", oneClassPayHandler.AdminUpdateUpdate)
 	}
 
 	// 支付路由（需要 auth）

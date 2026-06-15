@@ -193,8 +193,8 @@ var oneClassBuyPageTemplate = template.Must(template.New("oneclass-buy").Parse(`
   <div class="price">¥{{.Amount}}</div>
   <div class="desc">{{.Title}} | {{.Description}}</div>
   <div class="field">
-    <label for="machine-id">机器标识</label>
-    <input id="machine-id" placeholder="建议填写设备标识，方便开通授权" value="{{.MachineID}}">
+    <label for="machine-id">机器标识（自动检测）</label>
+    <input id="machine-id" placeholder="请从 OneClass 客户端打开购买页" value="{{.MachineID}}" readonly>
   </div>
   <div class="field">
     <label for="contact">联系方式</label>
@@ -208,14 +208,23 @@ var oneClassBuyPageTemplate = template.Must(template.New("oneclass-buy").Parse(`
     </select>
   </div>
   <button id="pay" class="pay">立即支付</button>
-  <div id="message" class="message"></div>
-  <div class="hint">支付成功后会记录你的档位、机器标识和联系方式</div>
+  <div id="message" class="message">{{if not .MachineID}}未检测到机器标识，请从 OneClass 客户端内打开购买页。{{end}}</div>
+  <div class="hint">支付成功后会按机器标识自动绑定，换机器不能直接复用</div>
 </main></div>
 <script>
 const tier={{printf "%q" .Tier}};
+const machineInput=document.getElementById('machine-id');
 const pay=document.getElementById('pay');
 const message=document.getElementById('message');
+if(!machineInput.value.trim()){
+  pay.disabled=true;
+}
 pay.addEventListener('click', async()=>{
+  const machineId=machineInput.value.trim();
+  if(!machineId){
+    message.textContent='未检测到机器标识，请从 OneClass 客户端内打开购买页';
+    return;
+  }
   pay.disabled=true;
   message.textContent='正在创建订单...';
   try{
@@ -225,7 +234,7 @@ pay.addEventListener('click', async()=>{
       body:JSON.stringify({
         tier:tier,
         pay_type:document.getElementById('pay-type').value,
-        machine_id:document.getElementById('machine-id').value.trim(),
+        machine_id:machineId,
         contact:document.getElementById('contact').value.trim()
       })
     });
@@ -279,6 +288,11 @@ func (h *OneClassPayHandler) CreateOrder(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效档位"})
 		return
 	}
+	req.MachineID = strings.TrimSpace(req.MachineID)
+	if req.MachineID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少机器标识，请从 OneClass 客户端打开购买页"})
+		return
+	}
 	payType := req.PayType
 	if payType != "alipay" && payType != "wechat" {
 		payType = "alipay"
@@ -288,7 +302,7 @@ func (h *OneClassPayHandler) CreateOrder(c *gin.Context) {
 		OrderNo:     orderNo,
 		Tier:        req.Tier,
 		Title:       title,
-		MachineID:   strings.TrimSpace(req.MachineID),
+		MachineID:   req.MachineID,
 		Contact:     strings.TrimSpace(req.Contact),
 		AmountCents: amountCents,
 		PayType:     payType,

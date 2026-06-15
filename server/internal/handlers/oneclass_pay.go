@@ -71,6 +71,8 @@ func (h *OneClassPayHandler) tierLabel(tier string) string {
 		return "一次性购买"
 	case models.OneClassTierLifetimeUpdates:
 		return "长期更新"
+	case models.OneClassTierUpgradeUpdates:
+		return "补差升级长期更新"
 	default:
 		return tier
 	}
@@ -91,9 +93,11 @@ func (h *OneClassPayHandler) getNotifyBase(c *gin.Context) string {
 func (h *OneClassPayHandler) tierMeta(tier string) (string, int, bool) {
 	switch tier {
 	case models.OneClassTierOneTime:
-		return "OneClass 一次性购买", 500, true
+		return "OneClass 一次性购买", 300, true
 	case models.OneClassTierLifetimeUpdates:
-		return "OneClass 长期更新", 1000, true
+		return "OneClass 长期更新", 800, true
+	case models.OneClassTierUpgradeUpdates:
+		return "OneClass 补差升级长期更新", 600, true
 	default:
 		return "", 0, false
 	}
@@ -258,6 +262,8 @@ func (h *OneClassPayHandler) BuyPage(c *gin.Context) {
 	description := "当前版本可用，不含后续长期更新"
 	if tier == models.OneClassTierLifetimeUpdates {
 		description = "含后续长期更新支持"
+	} else if tier == models.OneClassTierUpgradeUpdates {
+		description = "适用于已购买一次性版后补差升级到长期更新"
 	}
 	c.Header("Content-Type", "text/html; charset=utf-8")
 	if err := oneClassBuyPageTemplate.Execute(c.Writer, gin.H{
@@ -588,6 +594,7 @@ func (h *OneClassPayHandler) AdminGetOrders(c *gin.Context) {
 		"tier_stats": gin.H{
 			"one_time":         models.OneClassTierOneTime,
 			"lifetime_updates": models.OneClassTierLifetimeUpdates,
+			"upgrade_updates":  models.OneClassTierUpgradeUpdates,
 		},
 	})
 }

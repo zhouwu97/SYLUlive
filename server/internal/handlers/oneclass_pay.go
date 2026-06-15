@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"crypto/subtle"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"log"
@@ -103,25 +104,33 @@ func (h *OneClassPayHandler) tierMeta(tier string) (string, int, bool) {
 	}
 }
 
-func (h *OneClassPayHandler) buildGatewayURL(c *gin.Context, order models.OneClassPayOrder) (string, error) {
+func (h *OneClassPayHandler) buildGatewayPayment(c *gin.Context, order models.OneClassPayOrder) (gatewayPayment, error) {
 	cfg := h.resolvePayConfig()
 	if strings.EqualFold(cfg[models.YunkaoPayEnabled], "false") {
-		return "", fmt.Errorf("在线支付已停用")
+		return gatewayPayment{}, fmt.Errorf("在线支付已停用")
 	}
 	if gateway := cfg[models.YunkaoPayGatewayType]; gateway != "" && gateway != "epay" {
-		return "", fmt.Errorf("当前站点支付网关不是易支付")
+		return gatewayPayment{}, fmt.Errorf("当前站点支付网关不是易支付")
 	}
 
 	notifyBase := h.getNotifyBase(c)
 	if notifyBase == "" {
-		return "", fmt.Errorf("站点地址未配置")
+		return gatewayPayment{}, fmt.Errorf("站点地址未配置")
+	}
+
+	if order.GatewayPayURL != "" || order.GatewayQRCode != "" || order.GatewayScheme != "" {
+		return gatewayPayment{
+			PayURL:    order.GatewayPayURL,
+			QRCode:    order.GatewayQRCode,
+			URLScheme: order.GatewayScheme,
+		}, nil
 	}
 
 	payAppID := cfg[models.YunkaoPayAppID]
 	payAppSecret := cfg[models.YunkaoPayAppSecret]
 	payApiURL := cfg[models.YunkaoPayApiURL]
 	if payAppID == "" || payAppSecret == "" || payApiURL == "" {
-		return "", fmt.Errorf("易支付网关未配置")
+		return gatewayPayment{}, fmt.Errorf("易支付网关未配置")
 	}
 
 	money := fmt.Sprintf("%.2f", float64(order.AmountCents)/100.0)
@@ -140,20 +149,82 @@ func (h *OneClassPayHandler) buildGatewayURL(c *gin.Context, order models.OneCla
 	params["sign"] = sign
 	params["sign_type"] = "MD5"
 
-	query := url.Values{}
+	form := url.Values{}
 	for k, v := range params {
-		query.Set(k, v)
+		form.Set(k, v)
 	}
-	payURL := strings.TrimRight(payApiURL, "/")
-	if !strings.HasSuffix(payURL, ".php") {
-		payURL += "/submit.php"
+
+	request, err := http.NewRequestWithContext(
+		c.Request.Context(),
+		http.MethodPost,
+		epayMAPIURL(payApiURL),
+		strings.NewReader(form.Encode()),
+	)
+	if err != nil {
+		return gatewayPayment{}, fmt.Errorf("创建支付请求失败")
 	}
-	if strings.Contains(payURL, "?") {
-		payURL += "&" + query.Encode()
-	} else {
-		payURL += "?" + query.Encode()
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	response, err := (&http.Client{Timeout: 10 * time.Second}).Do(request)
+	if err != nil {
+		return gatewayPayment{}, fmt.Errorf("支付网关连接失败")
 	}
-	return payURL, nil
+	defer response.Body.Close()
+
+	var result epayMAPIResponse
+	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
+		return gatewayPayment{}, fmt.Errorf("支付网关响应无效")
+	}
+	if response.StatusCode != http.StatusOK || !epayMAPISucceeded(result.Code) {
+		if result.Msg == "" {
+			result.Msg = "创建支付订单失败"
+		}
+		return gatewayPayment{}, fmt.Errorf("%s", result.Msg)
+	}
+
+	payment := gatewayPayment{
+		PayURL:    strings.TrimSpace(result.PayURL),
+		QRCode:    strings.TrimSpace(result.QRCode),
+		URLScheme: strings.TrimSpace(result.URLScheme),
+	}
+	if payment.QRCode == "" {
+		payment.QRCode = payment.PayURL
+	}
+	if payment.PayURL == "" {
+		payment.PayURL = payment.QRCode
+	}
+	if payment.PayURL == "" && payment.URLScheme == "" {
+		return gatewayPayment{}, fmt.Errorf("支付网关未返回付款地址")
+	}
+
+	updates := map[string]any{
+		"gateway_pay_url": payment.PayURL,
+		"gateway_qr_code": payment.QRCode,
+		"gateway_scheme":  payment.URLScheme,
+	}
+	if result.TradeNo != "" {
+		updates["trade_no"] = result.TradeNo
+	}
+	if err := h.db.Model(&models.OneClassPayOrder{}).
+		Where("id = ?", order.ID).
+		Updates(updates).Error; err != nil {
+		return gatewayPayment{}, fmt.Errorf("保存支付订单失败")
+	}
+	return payment, nil
+}
+
+func (h *OneClassPayHandler) buildGatewayURL(c *gin.Context, order models.OneClassPayOrder) (string, error) {
+	payment, err := h.buildGatewayPayment(c, order)
+	if err != nil {
+		return "", err
+	}
+	if payment.URLScheme != "" {
+		return payment.URLScheme, nil
+	}
+	if payment.PayURL != "" {
+		return payment.PayURL, nil
+	}
+	return payment.QRCode, nil
 }
 
 func (h *OneClassPayHandler) findPublicOrder(c *gin.Context) (models.OneClassPayOrder, bool) {
@@ -388,7 +459,7 @@ func (h *OneClassPayHandler) CheckoutPage(c *gin.Context) {
 	if !ok {
 		return
 	}
-	_, gatewayErr := h.buildGatewayURL(c, order)
+	_, gatewayErr := h.buildGatewayPayment(c, order)
 	payLabel := "支付宝"
 	if order.PayType == "wechat" {
 		payLabel = "微信"
@@ -442,12 +513,19 @@ func (h *OneClassPayHandler) PaymentQRCode(c *gin.Context) {
 	if !ok {
 		return
 	}
-	payURL, err := h.buildGatewayURL(c, order)
+	payment, err := h.buildGatewayPayment(c, order)
 	if err != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
 		return
 	}
-	png, err := qrcode.Encode(payURL, qrcode.Medium, 320)
+	qrContent := payment.QRCode
+	if qrContent == "" {
+		qrContent = payment.PayURL
+	}
+	if qrContent == "" {
+		qrContent = payment.URLScheme
+	}
+	png, err := qrcode.Encode(qrContent, qrcode.Medium, 320)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "生成付款码失败"})
 		return

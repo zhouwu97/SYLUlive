@@ -1,9 +1,14 @@
 package handlers
 
 import (
+	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
+	"net/url"
+	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -26,6 +31,11 @@ func NewYunkaoAdminHandler(db *gorm.DB) *YunkaoAdminHandler {
 func (h *YunkaoAdminHandler) GetProviders(c *gin.Context) {
 	var providers []models.YunkaoAiProvider
 	h.db.Order("priority DESC, id ASC").Find(&providers)
+	for i := range providers {
+		if providers[i].APIKey != "" {
+			providers[i].APIKey = "********"
+		}
+	}
 	c.JSON(http.StatusOK, gin.H{"providers": providers})
 }
 
@@ -82,6 +92,117 @@ func (h *YunkaoAdminHandler) DeleteProvider(c *gin.Context) {
 	// 同时删除关联的模型
 	h.db.Where("provider_id = ?", id).Delete(&models.YunkaoAiModel{})
 	c.JSON(http.StatusOK, gin.H{"success": true})
+}
+
+// FetchProviderModels 从提供商的 OpenAI 兼容 models 接口读取可用模型。
+func (h *YunkaoAdminHandler) FetchProviderModels(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的提供商 ID"})
+		return
+	}
+
+	var provider models.YunkaoAiProvider
+	if err := h.db.First(&provider, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "提供商不存在"})
+		return
+	}
+	if strings.TrimSpace(provider.APIKey) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "该提供商尚未配置 API Key"})
+		return
+	}
+
+	baseURL := strings.TrimRight(strings.TrimSpace(provider.BaseURL), "/")
+	if _, err := url.ParseRequestURI(baseURL); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "提供商 Base URL 无效"})
+		return
+	}
+
+	candidates := []string{baseURL + "/models"}
+	if !strings.HasSuffix(strings.ToLower(baseURL), "/v1") {
+		candidates = append(candidates, baseURL+"/v1/models")
+	}
+
+	client := &http.Client{Timeout: 15 * time.Second}
+	var lastErr error
+	for _, endpoint := range candidates {
+		req, err := http.NewRequestWithContext(c.Request.Context(), http.MethodGet, endpoint, nil)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		authHeader := strings.TrimSpace(provider.AuthHeader)
+		if authHeader == "" {
+			authHeader = "Authorization"
+		}
+		authPrefix := provider.AuthPrefix
+		if authPrefix == "" {
+			authPrefix = "Bearer "
+		}
+		req.Header.Set(authHeader, authPrefix+provider.APIKey)
+		req.Header.Set("Accept", "application/json")
+
+		resp, err := client.Do(req)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		var payload struct {
+			Data []struct {
+				ID string `json:"id"`
+			} `json:"data"`
+			Models []interface{} `json:"models"`
+			Error  interface{}   `json:"error"`
+		}
+		decodeErr := json.NewDecoder(resp.Body).Decode(&payload)
+		resp.Body.Close()
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			lastErr = fmt.Errorf("接口返回 HTTP %d", resp.StatusCode)
+			continue
+		}
+		if decodeErr != nil {
+			lastErr = fmt.Errorf("无法解析模型列表")
+			continue
+		}
+
+		modelSet := make(map[string]struct{})
+		for _, item := range payload.Data {
+			if name := strings.TrimSpace(item.ID); name != "" {
+				modelSet[name] = struct{}{}
+			}
+		}
+		for _, item := range payload.Models {
+			switch value := item.(type) {
+			case string:
+				if name := strings.TrimSpace(value); name != "" {
+					modelSet[name] = struct{}{}
+				}
+			case map[string]interface{}:
+				if raw, ok := value["id"].(string); ok {
+					if name := strings.TrimSpace(raw); name != "" {
+						modelSet[name] = struct{}{}
+					}
+				}
+			}
+		}
+
+		modelNames := make([]string, 0, len(modelSet))
+		for name := range modelSet {
+			modelNames = append(modelNames, name)
+		}
+		sort.Strings(modelNames)
+		c.JSON(http.StatusOK, gin.H{
+			"provider_id":  provider.ID,
+			"provider_key": provider.ProviderKey,
+			"models":       modelNames,
+		})
+		return
+	}
+
+	if lastErr == nil {
+		lastErr = fmt.Errorf("未返回可用模型")
+	}
+	c.JSON(http.StatusBadGateway, gin.H{"error": "获取模型列表失败: " + lastErr.Error()})
 }
 
 // ==================== 模型管理 ====================
@@ -316,8 +437,8 @@ func (h *YunkaoAdminHandler) ReviewWrongReport(c *gin.Context) {
 	}
 
 	var req struct {
-		Action       string `json:"action" binding:"required"` // approve / reject
-		FinalAnswer  string `json:"final_answer"`              // 人工修正后的最终答案
+		Action      string `json:"action" binding:"required"` // approve / reject
+		FinalAnswer string `json:"final_answer"`              // 人工修正后的最终答案
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误"})
@@ -493,21 +614,21 @@ func getDefaultModelForProvider(providerKey string) *models.YunkaoAiModel {
 	switch providerKey {
 	case "deepseek":
 		return &models.YunkaoAiModel{
-			ModelName:               "deepseek-v4-flash",
-			Label:                   "DeepSeek V4 Flash (推荐)",
-			SupportsVision:           false,
-			CacheHitInputPrice1MCents: 10,   // ¥0.10 / 百万 tokens
-			LiveInputPrice1MCents:     200,  // ¥2.00 / 百万 tokens
-			OutputPrice1MCents:        600,  // ¥6.00 / 百万 tokens
+			ModelName:                 "deepseek-v4-flash",
+			Label:                     "DeepSeek V4 Flash (推荐)",
+			SupportsVision:            false,
+			CacheHitInputPrice1MCents: 10,  // ¥0.10 / 百万 tokens
+			LiveInputPrice1MCents:     200, // ¥2.00 / 百万 tokens
+			OutputPrice1MCents:        600, // ¥6.00 / 百万 tokens
 			IsDefault:                 true,
 			Enabled:                   true,
 			Priority:                  10,
 		}
 	case "openai":
 		return &models.YunkaoAiModel{
-			ModelName:               "gpt-4o-mini",
-			Label:                   "GPT-4o Mini",
-			SupportsVision:           true,
+			ModelName:                 "gpt-4o-mini",
+			Label:                     "GPT-4o Mini",
+			SupportsVision:            true,
 			CacheHitInputPrice1MCents: 20,
 			LiveInputPrice1MCents:     600,
 			OutputPrice1MCents:        2400,
@@ -517,9 +638,9 @@ func getDefaultModelForProvider(providerKey string) *models.YunkaoAiModel {
 		}
 	case "kimi":
 		return &models.YunkaoAiModel{
-			ModelName:               "kimi-k2.6",
-			Label:                   "Kimi K2.6",
-			SupportsVision:           true,
+			ModelName:                 "kimi-k2.6",
+			Label:                     "Kimi K2.6",
+			SupportsVision:            true,
 			CacheHitInputPrice1MCents: 10,
 			LiveInputPrice1MCents:     200,
 			OutputPrice1MCents:        600,
@@ -528,9 +649,9 @@ func getDefaultModelForProvider(providerKey string) *models.YunkaoAiModel {
 		}
 	case "qwen":
 		return &models.YunkaoAiModel{
-			ModelName:               "qwen-vl-plus",
-			Label:                   "通义千问 VL Plus",
-			SupportsVision:           true,
+			ModelName:                 "qwen-vl-plus",
+			Label:                     "通义千问 VL Plus",
+			SupportsVision:            true,
 			CacheHitInputPrice1MCents: 10,
 			LiveInputPrice1MCents:     200,
 			OutputPrice1MCents:        600,
@@ -539,9 +660,9 @@ func getDefaultModelForProvider(providerKey string) *models.YunkaoAiModel {
 		}
 	case "glm":
 		return &models.YunkaoAiModel{
-			ModelName:               "glm-5.1",
-			Label:                   "智谱 GLM-5.1",
-			SupportsVision:           true,
+			ModelName:                 "glm-5.1",
+			Label:                     "智谱 GLM-5.1",
+			SupportsVision:            true,
 			CacheHitInputPrice1MCents: 10,
 			LiveInputPrice1MCents:     200,
 			OutputPrice1MCents:        600,
@@ -550,9 +671,9 @@ func getDefaultModelForProvider(providerKey string) *models.YunkaoAiModel {
 		}
 	case "mimo":
 		return &models.YunkaoAiModel{
-			ModelName:               "mimo-v2.5-pro",
-			Label:                   "小米 MiMo V2.5 Pro",
-			SupportsVision:           true,
+			ModelName:                 "mimo-v2.5-pro",
+			Label:                     "小米 MiMo V2.5 Pro",
+			SupportsVision:            true,
 			CacheHitInputPrice1MCents: 10,
 			LiveInputPrice1MCents:     200,
 			OutputPrice1MCents:        600,

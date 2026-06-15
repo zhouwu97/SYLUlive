@@ -159,6 +159,7 @@ func main() {
 		&models.YunkaoQuestionCache{},
 		&models.YunkaoWrongReport{},
 		&models.YunkaoPayOrder{},
+		&models.OneClassPayOrder{},
 	); err != nil {
 
 		log.Fatal("数据库迁移失败:", err)
@@ -267,6 +268,7 @@ func main() {
 	yunkaoWalletHandler := handlers.NewYunkaoWalletHandler(db)
 	yunkaoAdminHandler := handlers.NewYunkaoAdminHandler(db)
 	yunkaoPayHandler := handlers.NewYunkaoPayHandler(db)
+	oneClassPayHandler := handlers.NewOneClassPayHandler(db)
 
 	// 初始化融智云考助手默认提供商和模型
 	yunkaoAdminHandler.SeedDefaultProviders()
@@ -357,6 +359,7 @@ func main() {
 		yunkaoAdmin.POST("/providers", yunkaoAdminHandler.CreateProvider)
 		yunkaoAdmin.PUT("/providers/:id", yunkaoAdminHandler.UpdateProvider)
 		yunkaoAdmin.DELETE("/providers/:id", yunkaoAdminHandler.DeleteProvider)
+		yunkaoAdmin.GET("/providers/:id/remote-models", yunkaoAdminHandler.FetchProviderModels)
 
 		// 模型管理
 		yunkaoAdmin.GET("/models", yunkaoAdminHandler.GetModels)
@@ -383,6 +386,26 @@ func main() {
 	// 支付路由（不需要 auth 的回调接口）
 	r.Any("/api/yunkao/pay/notify", yunkaoPayHandler.PayNotify)
 	r.Any("/api/yunkao/pay/vmq_notify", yunkaoPayHandler.VmqNotify)
+	r.GET("/api/yunkao/pay/recharge-page", yunkaoPayHandler.RechargePage)
+	r.GET("/api/yunkao/pay/checkout", yunkaoPayHandler.CheckoutPage)
+	r.GET("/api/yunkao/pay/status", yunkaoPayHandler.PayStatus)
+	r.GET("/api/yunkao/pay/start", yunkaoPayHandler.StartPayment)
+	r.GET("/api/yunkao/pay/qrcode", yunkaoPayHandler.PaymentQRCode)
+
+	// OneClass 公开购买路由（仅易支付）
+	r.Any("/api/oneclass/pay/notify", oneClassPayHandler.PayNotify)
+	r.GET("/api/oneclass/pay/buy", oneClassPayHandler.BuyPage)
+	r.POST("/api/oneclass/pay/create", oneClassPayHandler.CreateOrder)
+	r.GET("/api/oneclass/pay/checkout", oneClassPayHandler.CheckoutPage)
+	r.GET("/api/oneclass/pay/status", oneClassPayHandler.PayStatus)
+	r.GET("/api/oneclass/pay/start", oneClassPayHandler.StartPayment)
+	r.GET("/api/oneclass/pay/qrcode", oneClassPayHandler.PaymentQRCode)
+
+	oneClassAdmin := r.Group("/api/oneclass/admin")
+	oneClassAdmin.Use(middleware.AuthMiddleware(db, cfg.JWTSecret), middleware.AdminMiddleware())
+	{
+		oneClassAdmin.GET("/orders", oneClassPayHandler.AdminGetOrders)
+	}
 
 	// 支付路由（需要 auth）
 	yunkaoPay := r.Group("/api/yunkao/pay")

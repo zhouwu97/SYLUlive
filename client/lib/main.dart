@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:jpush_flutter/jpush_flutter.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'providers/auth_provider.dart';
 import 'providers/theme_provider.dart';
 import 'providers/post_provider.dart';
@@ -59,6 +60,9 @@ Future<void> setupJPush(AuthProvider authProvider) async {
     },
     onOpenNotification: (Map<String, dynamic> message) async {
       debugPrint('👆 用户点击通知: $message');
+      if (await _handleUpdateNotification(message)) {
+        return;
+      }
       if (appNavigatorKey.currentState != null) {
         appNavigatorKey.currentState!.popUntil((route) => route.isFirst);
         appNavigatorKey.currentState!.push(
@@ -70,10 +74,52 @@ Future<void> setupJPush(AuthProvider authProvider) async {
   final rid = await jpush.getRegistrationID();
   debugPrint('🔥 JPush RegistrationID: $rid');
   
-  if (rid != null && rid.isNotEmpty) {
+  if (rid.isNotEmpty) {
     await authProvider.updateDeviceToken(rid);
     debugPrint('✅ 成功上报 JPush Device Token: $rid');
   }
+}
+
+Future<bool> _handleUpdateNotification(Map<String, dynamic> message) async {
+  final extras = _extractJPushExtras(message);
+  if (extras['type']?.toString() != 'app_update') {
+    return false;
+  }
+
+  final downloadUrl = extras['download_url']?.toString() ?? '';
+  final uri = Uri.tryParse(downloadUrl);
+  if (uri == null || !uri.hasScheme || !uri.hasAuthority) {
+    debugPrint('更新推送缺少有效下载地址: $message');
+    return true;
+  }
+
+  try {
+    var launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!launched) {
+      launched = await launchUrl(uri, mode: LaunchMode.platformDefault);
+    }
+    if (!launched) {
+      debugPrint('无法打开更新下载地址: $downloadUrl');
+    }
+  } catch (e) {
+    debugPrint('打开更新下载地址失败: $e');
+  }
+  return true;
+}
+
+Map<String, dynamic> _extractJPushExtras(Map<String, dynamic> message) {
+  final extras = message['extras'];
+  if (extras is Map) {
+    return extras.map((key, value) => MapEntry(key.toString(), value));
+  }
+
+  final android = message['android'];
+  if (android is Map && android['extras'] is Map) {
+    final androidExtras = android['extras'] as Map;
+    return androidExtras.map((key, value) => MapEntry(key.toString(), value));
+  }
+
+  return message.map((key, value) => MapEntry(key.toString(), value));
 }
 
 Dio? _sharedDio;
@@ -251,8 +297,8 @@ class _AppContent extends StatelessWidget {
   }
 }
 
-final GlobalKey<_BackgroundWrapperState> backgroundWrapperKey =
-    GlobalKey<_BackgroundWrapperState>();
+final GlobalKey<BackgroundWrapperState> backgroundWrapperKey =
+    GlobalKey<BackgroundWrapperState>();
 
 class GlobalBackgroundWrapper extends StatefulWidget {
   final Widget child;
@@ -263,17 +309,19 @@ class GlobalBackgroundWrapper extends StatefulWidget {
   });
 
   @override
-  State<GlobalBackgroundWrapper> createState() => _BackgroundWrapperState();
+  State<GlobalBackgroundWrapper> createState() => BackgroundWrapperState();
 }
 
-class _BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
+class BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
   String _currentScreen = 'shuitie';
 
   void updateScreen(String screen) {
     if (_currentScreen != screen) {
-      if (mounted) setState(() {
-        _currentScreen = screen;
-      });
+      if (mounted) {
+        setState(() {
+          _currentScreen = screen;
+        });
+      }
     }
   }
 
@@ -367,8 +415,8 @@ class _BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
       fit: StackFit.expand,
       children: [
         Image(
-          image: ResizeImage(
-            const AssetImage('assets/images/morenbeijing.jpeg'),
+          image: const ResizeImage(
+            AssetImage('assets/images/morenbeijing.jpeg'),
             width: 1080,
           ),
           fit: BoxFit.cover,

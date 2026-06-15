@@ -59,3 +59,7 @@ flutter:
     - assets/images/
     - assets/scripts/
     - assets/yongzhiyunkao/
+  fonts:
+    - family: NotoSansCJKsc
+      fonts:
+        - asset: assets/fonts/NotoSansCJKsc-Regular.otf

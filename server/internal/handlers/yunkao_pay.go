@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"crypto/subtle"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"log"
@@ -82,14 +83,54 @@ func (h *YunkaoPayHandler) getNotifyBase(c *gin.Context) string {
 	return scheme + "://" + c.Request.Host
 }
 
-func (h *YunkaoPayHandler) buildGatewayURL(c *gin.Context, order models.YunkaoPayOrder) (string, error) {
+type gatewayPayment struct {
+	PayURL    string
+	QRCode    string
+	URLScheme string
+}
+
+type epayMAPIResponse struct {
+	Code      json.RawMessage `json:"code"`
+	Msg       string          `json:"msg"`
+	TradeNo   string          `json:"trade_no"`
+	PayURL    string          `json:"payurl"`
+	QRCode    string          `json:"qrcode"`
+	URLScheme string          `json:"urlscheme"`
+}
+
+func epayMAPISucceeded(code json.RawMessage) bool {
+	value := strings.Trim(strings.TrimSpace(string(code)), `"`)
+	return value == "1" || value == "200"
+}
+
+func epayMAPIURL(base string) string {
+	base = strings.TrimSpace(base)
+	parsed, err := url.Parse(base)
+	if err == nil && parsed.Scheme != "" && parsed.Host != "" {
+		path := strings.TrimRight(parsed.Path, "/")
+		switch {
+		case strings.HasSuffix(strings.ToLower(path), "/submit.php"):
+			path = path[:len(path)-len("submit.php")] + "mapi.php"
+		case strings.HasSuffix(strings.ToLower(path), "/mapi.php"):
+		default:
+			path += "/mapi.php"
+		}
+		parsed.Path = path
+		parsed.RawQuery = ""
+		parsed.Fragment = ""
+		return parsed.String()
+	}
+	return strings.TrimRight(base, "/") + "/mapi.php"
+}
+
+func (h *YunkaoPayHandler) buildGatewayPayment(c *gin.Context, order models.YunkaoPayOrder) (gatewayPayment, error) {
 	cfg := h.resolvePayConfig()
 	if strings.EqualFold(cfg[models.YunkaoPayEnabled], "false") {
-		return "", fmt.Errorf("在线支付已停用")
+		return gatewayPayment{}, fmt.Errorf("在线支付已停用")
 	}
 	notifyBase := h.getNotifyBase(c)
 	if notifyBase == "" {
-		return "", fmt.Errorf("站点地址未配置")
+		return gatewayPayment{}, fmt.Errorf("站点地址未配置")
 	}
 
 	money := fmt.Sprintf("%.2f", float64(order.AmountCents)/100.0)
@@ -99,7 +140,7 @@ func (h *YunkaoPayHandler) buildGatewayURL(c *gin.Context, order models.YunkaoPa
 		vmqSecret := cfg[models.YunkaoPayVmqSecret]
 		vmqApiURL := cfg[models.YunkaoPayVmqApiURL]
 		if vmqSecret == "" || vmqApiURL == "" {
-			return "", fmt.Errorf("V免签支付未配置")
+			return gatewayPayment{}, fmt.Errorf("V免签支付未配置")
 		}
 
 		vType := "1"
@@ -117,14 +158,23 @@ func (h *YunkaoPayHandler) buildGatewayURL(c *gin.Context, order models.YunkaoPa
 		query.Set("isHtml", "1")
 		query.Set("notifyUrl", notifyBase+"/api/yunkao/pay/vmq_notify")
 		query.Set("returnUrl", checkoutURL)
-		return strings.TrimRight(vmqApiURL, "/") + "/createOrder?" + query.Encode(), nil
+		payURL := strings.TrimRight(vmqApiURL, "/") + "/createOrder?" + query.Encode()
+		return gatewayPayment{PayURL: payURL, QRCode: payURL}, nil
+	}
+
+	if order.GatewayPayURL != "" || order.GatewayQRCode != "" || order.GatewayScheme != "" {
+		return gatewayPayment{
+			PayURL:    order.GatewayPayURL,
+			QRCode:    order.GatewayQRCode,
+			URLScheme: order.GatewayScheme,
+		}, nil
 	}
 
 	payAppID := cfg[models.YunkaoPayAppID]
 	payAppSecret := cfg[models.YunkaoPayAppSecret]
 	payApiURL := cfg[models.YunkaoPayApiURL]
 	if payAppID == "" || payAppSecret == "" || payApiURL == "" {
-		return "", fmt.Errorf("易支付网关未配置")
+		return gatewayPayment{}, fmt.Errorf("易支付网关未配置")
 	}
 
 	params := map[string]string{
@@ -140,20 +190,82 @@ func (h *YunkaoPayHandler) buildGatewayURL(c *gin.Context, order models.YunkaoPa
 	params["sign"] = sign
 	params["sign_type"] = "MD5"
 
-	query := url.Values{}
+	form := url.Values{}
 	for k, v := range params {
-		query.Set(k, v)
+		form.Set(k, v)
 	}
-	payURL := strings.TrimRight(payApiURL, "/")
-	if !strings.HasSuffix(payURL, ".php") {
-		payURL += "/submit.php"
+
+	request, err := http.NewRequestWithContext(
+		c.Request.Context(),
+		http.MethodPost,
+		epayMAPIURL(payApiURL),
+		strings.NewReader(form.Encode()),
+	)
+	if err != nil {
+		return gatewayPayment{}, fmt.Errorf("创建支付请求失败")
 	}
-	if strings.Contains(payURL, "?") {
-		payURL += "&" + query.Encode()
-	} else {
-		payURL += "?" + query.Encode()
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	response, err := (&http.Client{Timeout: 10 * time.Second}).Do(request)
+	if err != nil {
+		return gatewayPayment{}, fmt.Errorf("支付网关连接失败")
 	}
-	return payURL, nil
+	defer response.Body.Close()
+
+	var result epayMAPIResponse
+	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
+		return gatewayPayment{}, fmt.Errorf("支付网关响应无效")
+	}
+	if response.StatusCode != http.StatusOK || !epayMAPISucceeded(result.Code) {
+		if result.Msg == "" {
+			result.Msg = "创建支付订单失败"
+		}
+		return gatewayPayment{}, fmt.Errorf("%s", result.Msg)
+	}
+
+	payment := gatewayPayment{
+		PayURL:    strings.TrimSpace(result.PayURL),
+		QRCode:    strings.TrimSpace(result.QRCode),
+		URLScheme: strings.TrimSpace(result.URLScheme),
+	}
+	if payment.QRCode == "" {
+		payment.QRCode = payment.PayURL
+	}
+	if payment.PayURL == "" {
+		payment.PayURL = payment.QRCode
+	}
+	if payment.PayURL == "" && payment.URLScheme == "" {
+		return gatewayPayment{}, fmt.Errorf("支付网关未返回付款地址")
+	}
+
+	updates := map[string]any{
+		"gateway_pay_url": payment.PayURL,
+		"gateway_qr_code": payment.QRCode,
+		"gateway_scheme":  payment.URLScheme,
+	}
+	if result.TradeNo != "" {
+		updates["trade_no"] = result.TradeNo
+	}
+	if err := h.db.Model(&models.YunkaoPayOrder{}).
+		Where("id = ?", order.ID).
+		Updates(updates).Error; err != nil {
+		return gatewayPayment{}, fmt.Errorf("保存支付订单失败")
+	}
+	return payment, nil
+}
+
+func (h *YunkaoPayHandler) buildGatewayURL(c *gin.Context, order models.YunkaoPayOrder) (string, error) {
+	payment, err := h.buildGatewayPayment(c, order)
+	if err != nil {
+		return "", err
+	}
+	if payment.URLScheme != "" {
+		return payment.URLScheme, nil
+	}
+	if payment.PayURL != "" {
+		return payment.PayURL, nil
+	}
+	return payment.QRCode, nil
 }
 
 // CreatePayOrder 创建充值订单，始终返回融智云考自己的收银台链接。
@@ -236,12 +348,14 @@ var rechargePageTemplate = template.Must(template.New("yunkao-recharge").Parse(`
     .wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
     .card{width:min(480px,100%);background:#fff;border-radius:18px;padding:28px;box-shadow:0 18px 50px rgba(30,64,175,.12)}
     .brand{text-align:center;font-size:22px;font-weight:700;color:#1268d3}.subtitle{text-align:center;color:#6b7280;margin:8px 0 24px}
-    .label{font-size:14px;font-weight:700;margin-bottom:10px}.amounts{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+    .label{font-size:14px;font-weight:700;margin-bottom:10px}.amounts{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
     .amount{border:1px solid #dbe3ef;background:#fff;border-radius:10px;padding:13px 8px;font-size:17px;cursor:pointer}
     .amount.active{border-color:#1677ff;background:#eff6ff;color:#1268d3;font-weight:700}
     .custom{display:flex;align-items:center;border:1px solid #dbe3ef;border-radius:10px;margin-top:12px;padding:0 13px}
-    .custom input{width:100%;border:0;outline:0;padding:13px 8px;font-size:16px}.pay{width:100%;border:0;background:#1677ff;color:#fff;border-radius:10px;padding:14px;margin-top:20px;font-size:16px;font-weight:700;cursor:pointer}
+    .custom input{width:100%;border:0;outline:0;padding:13px 8px;font-size:16px}
+    .pay{width:100%;border:0;background:#1677ff;color:#fff;border-radius:10px;padding:14px;margin-top:20px;font-size:16px;font-weight:700;cursor:pointer}
     .pay:disabled{background:#9ca3af;cursor:not-allowed}.message{min-height:22px;margin-top:14px;text-align:center;color:#c2410c;font-size:13px}
+    .warning{text-align:center;color:#dc2626;font-size:14px;font-weight:700;line-height:1.7;margin-top:14px}
     .hint{text-align:center;color:#9ca3af;font-size:12px;margin-top:8px}
   </style>
 </head>
@@ -250,15 +364,14 @@ var rechargePageTemplate = template.Must(template.New("yunkao-recharge").Parse(`
   <div class="subtitle">选择充值金额</div>
   <div class="label">充值金额（元）</div>
   <div class="amounts">
-    <button class="amount active" data-cents="500">¥5</button>
+    <button class="amount active" data-cents="100">¥1</button>
+    <button class="amount" data-cents="300">¥3</button>
+    <button class="amount" data-cents="500">¥5</button>
     <button class="amount" data-cents="1000">¥10</button>
-    <button class="amount" data-cents="2000">¥20</button>
-    <button class="amount" data-cents="5000">¥50</button>
-    <button class="amount" data-cents="10000">¥100</button>
-    <button class="amount" data-cents="20000">¥200</button>
   </div>
   <div class="custom"><span>¥</span><input id="custom" type="number" min="1" step="0.01" placeholder="其他金额"></div>
-  <button id="pay" class="pay">支付宝充值 ¥5.00</button>
+  <div class="warning">请务必仔细核对充值金额<br>金额填写错误概不退款</div>
+  <button id="pay" class="pay">支付宝充值 ¥1.00</button>
   <div id="message" class="message"></div>
   <div class="hint">订单创建后将进入付款码页面</div>
 </main></div>
@@ -266,7 +379,7 @@ var rechargePageTemplate = template.Must(template.New("yunkao-recharge").Parse(`
 const hash=new URLSearchParams(location.hash.slice(1));
 const token=hash.get('token')||'';
 history.replaceState(null,'',location.pathname+location.search);
-let cents=500;
+let cents=100;
 const buttons=[...document.querySelectorAll('.amount')];
 const custom=document.getElementById('custom');
 const pay=document.getElementById('pay');
@@ -330,12 +443,14 @@ var checkoutPageTemplate = template.Must(template.New("yunkao-checkout").Parse(`
     .meta{font-size:13px;color:#6b7280;word-break:break-all}.qr{width:260px;height:260px;margin:22px auto 12px;border:1px solid #e5e7eb;border-radius:12px;padding:8px}
     .qr img{width:100%;height:100%;object-fit:contain}.button{display:block;background:#1677ff;color:#fff;text-decoration:none;border-radius:10px;padding:13px;margin-top:16px;font-weight:700}
     .status{margin-top:18px;padding:12px;border-radius:10px;background:#eff6ff;color:#1d4ed8}.warn{background:#fff7ed;color:#c2410c}
+    .warning{margin:12px 0;color:#dc2626;font-size:15px;font-weight:700;line-height:1.7}
     .hint{font-size:12px;color:#9ca3af;margin-top:14px}
   </style>
 </head>
 <body><div class="wrap"><main class="card">
   <div class="brand">融智云考助手</div>
   <div class="amount">¥{{.Amount}}</div>
+  <div class="warning">请务必核对付款金额<br>金额错误概不退款</div>
   <div class="meta">订单号：{{.OrderNo}}</div>
   {{if .GatewayReady}}
     <div class="qr"><img src="/api/yunkao/pay/qrcode?order_no={{.OrderNo}}" alt="付款二维码"></div>
@@ -389,7 +504,7 @@ func (h *YunkaoPayHandler) CheckoutPage(c *gin.Context) {
 	if !ok {
 		return
 	}
-	_, gatewayErr := h.buildGatewayURL(c, order)
+	_, gatewayErr := h.buildGatewayPayment(c, order)
 	payLabel := "支付宝"
 	if order.PayType == "wechat" {
 		payLabel = "微信"
@@ -440,12 +555,19 @@ func (h *YunkaoPayHandler) PaymentQRCode(c *gin.Context) {
 	if !ok {
 		return
 	}
-	payURL, err := h.buildGatewayURL(c, order)
+	payment, err := h.buildGatewayPayment(c, order)
 	if err != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
 		return
 	}
-	png, err := qrcode.Encode(payURL, qrcode.Medium, 320)
+	qrContent := payment.QRCode
+	if qrContent == "" {
+		qrContent = payment.PayURL
+	}
+	if qrContent == "" {
+		qrContent = payment.URLScheme
+	}
+	png, err := qrcode.Encode(qrContent, qrcode.Medium, 320)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "生成付款码失败"})
 		return

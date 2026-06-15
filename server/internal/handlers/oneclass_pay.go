@@ -216,7 +216,7 @@ var oneClassBuyPageTemplate = template.Must(template.New("oneclass-buy").Parse(`
   <div class="hint">支付成功后会按机器标识自动绑定，换机器不能直接复用</div>
 </main></div>
 <script>
-const tier={{printf "%q" .Tier}};
+const tier={{.Tier | js}};
 const machineInput=document.getElementById('machine-id');
 const pay=document.getElementById('pay');
 const message=document.getElementById('message');
@@ -362,7 +362,7 @@ var oneClassCheckoutPageTemplate = template.Must(template.New("oneclass-checkout
   {{end}}
 </main></div>
 <script>
-const orderNo={{printf "%q" .OrderNo}};
+const orderNo={{.OrderNo | js}};
 async function refreshStatus(){
   try{
     const r=await fetch('/api/oneclass/pay/status?order_no='+encodeURIComponent(orderNo));

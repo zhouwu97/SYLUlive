@@ -1,7 +1,9 @@
 package handlers
 
 import (
+	"crypto/ed25519"
 	"crypto/subtle"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"html/template"
@@ -24,15 +26,115 @@ import (
 
 type OneClassPayOrderAdminItem struct {
 	models.OneClassPayOrder
-	TierLabel string `json:"tier_label"`
+	TierLabel       string `json:"tier_label"`
+	HasLicenseToken bool   `json:"has_license_token"`
+	LicenseToken    string `json:"license_token,omitempty"`
 }
 
 type OneClassPayHandler struct {
 	db *gorm.DB
 }
 
+const (
+	oneClassClientVersion    = "1.0.0"
+	oneClassClientReleasedAt = "2026-06-15T00:00:00+08:00"
+	oneClassDevLicenseSeed   = "o7UOr8XZaeIgK4HP3vz1VnnEs_IzfTCf5OID5oIJUp8"
+)
+
+// OneClass has two intentionally separate JWT families:
+// login JWTs are existing HS256 bearer tokens for online API auth, while
+// license JWTs are Ed25519-signed offline grants verified by the Python client.
 func NewOneClassPayHandler(db *gorm.DB) *OneClassPayHandler {
 	return &OneClassPayHandler{db: db}
+}
+
+func oneClassBase64URL(data []byte) string {
+	return base64.RawURLEncoding.EncodeToString(data)
+}
+
+func oneClassLicensePrivateKey() (ed25519.PrivateKey, error) {
+	value := strings.TrimSpace(os.Getenv("ONECLASS_LICENSE_PRIVATE_KEY"))
+	if value == "" {
+		if os.Getenv("ENV") == "production" || os.Getenv("GIN_MODE") == "release" {
+			return nil, fmt.Errorf("ONECLASS_LICENSE_PRIVATE_KEY 未配置")
+		}
+		value = oneClassDevLicenseSeed
+	}
+	seed, err := base64.RawURLEncoding.DecodeString(value)
+	if err != nil {
+		return nil, fmt.Errorf("OneClass 授权私钥格式无效")
+	}
+	if len(seed) == ed25519.SeedSize {
+		return ed25519.NewKeyFromSeed(seed), nil
+	}
+	if len(seed) == ed25519.PrivateKeySize {
+		return ed25519.PrivateKey(seed), nil
+	}
+	return nil, fmt.Errorf("OneClass 授权私钥长度无效")
+}
+
+func oneClassUpdatesUntil(order models.OneClassPayOrder) *time.Time {
+	if order.Tier == models.OneClassTierOneTime {
+		if order.PaidAt != nil {
+			return order.PaidAt
+		}
+		now := time.Now()
+		return &now
+	}
+	return nil
+}
+
+func (h *OneClassPayHandler) issueLicenseToken(order *models.OneClassPayOrder) error {
+	key, err := oneClassLicensePrivateKey()
+	if err != nil {
+		return err
+	}
+	now := time.Now()
+	updatesUntil := oneClassUpdatesUntil(*order)
+	payload := gin.H{
+		"iss":            "shenliyuan-oneclass",
+		"aud":            "oneclass-client",
+		"typ":            "oneclass_license",
+		"sub":            order.OrderNo,
+		"order_no":       order.OrderNo,
+		"user_id":        order.UserID,
+		"tier":           order.Tier,
+		"machine_id":     order.MachineID,
+		"paid_at":        nil,
+		"updates_until":  nil,
+		"iat":            now.Unix(),
+		"license_issued": now.Format(time.RFC3339),
+	}
+	if order.PaidAt != nil {
+		payload["paid_at"] = order.PaidAt.Format(time.RFC3339)
+	}
+	if updatesUntil != nil {
+		payload["updates_until"] = updatesUntil.Format(time.RFC3339)
+	}
+	headerJSON, _ := json.Marshal(gin.H{"alg": "EdDSA", "typ": "JWT"})
+	payloadJSON, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	signingInput := oneClassBase64URL(headerJSON) + "." + oneClassBase64URL(payloadJSON)
+	signature := ed25519.Sign(key, []byte(signingInput))
+	order.LicenseToken = signingInput + "." + oneClassBase64URL(signature)
+	order.LicenseIssuedAt = &now
+	order.UpdatesUntil = updatesUntil
+	return h.db.Model(order).Updates(map[string]any{
+		"license_token":     order.LicenseToken,
+		"license_issued_at": order.LicenseIssuedAt,
+		"updates_until":     order.UpdatesUntil,
+	}).Error
+}
+
+func (h *OneClassPayHandler) ensureLicenseToken(order *models.OneClassPayOrder) {
+	if order.Status != "completed" || order.LicenseToken != "" {
+		return
+	}
+	if err := h.issueLicenseToken(order); err != nil {
+		log.Printf("[OneClass Pay] 授权补签失败: order=%s err=%v", order.OrderNo, err)
+	}
 }
 
 func (h *OneClassPayHandler) resolvePayConfig() map[string]string {
@@ -264,7 +366,7 @@ var oneClassBuyPageTemplate = template.Must(template.New("oneclass-buy").Parse(`
 </head>
 <body><div class="wrap"><main class="card">
   <div class="brand">OneClass</div>
-  <div class="subtitle">使用易支付完成购买</div>
+  <div class="subtitle">使用支付宝完成 OneClass 授权购买</div>
   <div class="price">¥{{.Amount}}</div>
   <div class="desc">{{.Title}} | {{.Description}}</div>
   <div class="field">
@@ -276,15 +378,12 @@ var oneClassBuyPageTemplate = template.Must(template.New("oneclass-buy").Parse(`
     <input id="contact" placeholder="微信 / QQ / 手机号" value="{{.Contact}}">
   </div>
   <div class="field">
-    <label for="pay-type">支付方式</label>
-    <select id="pay-type">
-      <option value="alipay">支付宝</option>
-      <option value="wechat">微信</option>
-    </select>
+    <label>支付方式</label>
+    <input value="支付宝（OneClass 授权专用，不会增加云考余额）" readonly>
   </div>
   <button id="pay" class="pay">立即支付</button>
   <div id="message" class="message">{{if not .MachineID}}未检测到机器标识，请从 OneClass 客户端内打开购买页。{{end}}</div>
-  <div class="hint">支付成功后会按机器标识自动绑定，换机器不能直接复用</div>
+  <div class="hint">支付成功后会按机器标识自动绑定；OneClass 授权与云考余额互不通用</div>
 </main></div>
 <script>
 const tier={{.Tier | js}};
@@ -308,7 +407,6 @@ pay.addEventListener('click', async()=>{
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({
         tier:tier,
-        pay_type:document.getElementById('pay-type').value,
         machine_id:machineId,
         contact:document.getElementById('contact').value.trim()
       })
@@ -352,7 +450,6 @@ func (h *OneClassPayHandler) BuyPage(c *gin.Context) {
 func (h *OneClassPayHandler) CreateOrder(c *gin.Context) {
 	var req struct {
 		Tier      string `json:"tier" binding:"required"`
-		PayType   string `json:"pay_type"`
 		MachineID string `json:"machine_id"`
 		Contact   string `json:"contact"`
 	}
@@ -370,19 +467,22 @@ func (h *OneClassPayHandler) CreateOrder(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少机器标识，请从 OneClass 客户端打开购买页"})
 		return
 	}
-	payType := req.PayType
-	if payType != "alipay" && payType != "wechat" {
-		payType = "alipay"
+	userID, _ := c.Get("user_id")
+	uid, _ := userID.(uint)
+	if uid == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "请先登录统一账号后购买 OneClass 授权"})
+		return
 	}
 	orderNo := fmt.Sprintf("OC%d%d", time.Now().UnixMilli(), time.Now().Nanosecond()%10000)
 	order := models.OneClassPayOrder{
+		UserID:      uid,
 		OrderNo:     orderNo,
 		Tier:        req.Tier,
 		Title:       title,
 		MachineID:   req.MachineID,
 		Contact:     strings.TrimSpace(req.Contact),
 		AmountCents: amountCents,
-		PayType:     payType,
+		PayType:     "alipay",
 		Status:      "pending",
 	}
 	if err := h.db.Create(&order).Error; err != nil {
@@ -441,7 +541,7 @@ async function refreshStatus(){
     const el=document.getElementById('status');
     if(!el)return;
     if(d.status==='completed'){
-      el.textContent='支付成功，请联系管理员开通授权';
+      el.textContent='支付成功，客户端会自动写入 OneClass 授权';
       el.style.background='#ecfdf5';el.style.color='#047857';
     }else if(d.status==='cancelled'){
       el.textContent='订单已取消';
@@ -461,9 +561,6 @@ func (h *OneClassPayHandler) CheckoutPage(c *gin.Context) {
 	}
 	_, gatewayErr := h.buildGatewayPayment(c, order)
 	payLabel := "支付宝"
-	if order.PayType == "wechat" {
-		payLabel = "微信"
-	}
 	c.Header("Content-Type", "text/html; charset=utf-8")
 	if err := oneClassCheckoutPageTemplate.Execute(c.Writer, gin.H{
 		"OrderNo":      order.OrderNo,
@@ -482,13 +579,24 @@ func (h *OneClassPayHandler) PayStatus(c *gin.Context) {
 	if !ok {
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"order_no":    order.OrderNo,
-		"status":      order.Status,
-		"amount_cents": order.AmountCents,
-		"tier":        order.Tier,
-		"paid_at":     order.PaidAt,
-	})
+	includeLicense := c.GetHeader("X-OneClass-Client") == "desktop"
+	if includeLicense {
+		h.ensureLicenseToken(&order)
+	}
+	response := gin.H{
+		"order_no":          order.OrderNo,
+		"status":            order.Status,
+		"amount_cents":      order.AmountCents,
+		"tier":              order.Tier,
+		"machine_id":        order.MachineID,
+		"paid_at":           order.PaidAt,
+		"updates_until":     order.UpdatesUntil,
+		"license_issued_at": order.LicenseIssuedAt,
+	}
+	if includeLicense {
+		response["license_token"] = order.LicenseToken
+	}
+	c.JSON(http.StatusOK, response)
 }
 
 func (h *OneClassPayHandler) StartPayment(c *gin.Context) {
@@ -607,6 +715,9 @@ func (h *OneClassPayHandler) PayNotify(c *gin.Context) {
 		c.String(http.StatusInternalServerError, "fail")
 		return
 	}
+	if err := h.issueLicenseToken(&order); err != nil {
+		log.Printf("[OneClass Pay] 支付成功但授权签发失败，将由 status 补签: order=%s err=%v", outTradeNo, err)
+	}
 
 	log.Printf("[OneClass Pay] 支付成功: order=%s tier=%s machine=%s", outTradeNo, order.Tier, order.MachineID)
 	c.String(http.StatusOK, "success")
@@ -649,6 +760,7 @@ func (h *OneClassPayHandler) AdminGetOrders(c *gin.Context) {
 
 	var orders []models.OneClassPayOrder
 	if err := query.Order("created_at DESC").
+		Preload("User").
 		Offset((page - 1) * pageSize).
 		Limit(pageSize).
 		Find(&orders).Error; err != nil {
@@ -661,18 +773,30 @@ func (h *OneClassPayHandler) AdminGetOrders(c *gin.Context) {
 		items = append(items, OneClassPayOrderAdminItem{
 			OneClassPayOrder: order,
 			TierLabel:        h.tierLabel(order.Tier),
+			HasLicenseToken:  order.LicenseToken != "",
+			LicenseToken:     "",
 		})
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"orders":     items,
-		"total":      total,
-		"page":       page,
-		"page_size":  pageSize,
+		"orders":    items,
+		"total":     total,
+		"page":      page,
+		"page_size": pageSize,
 		"tier_stats": gin.H{
 			"one_time":         models.OneClassTierOneTime,
 			"lifetime_updates": models.OneClassTierLifetimeUpdates,
 			"upgrade_updates":  models.OneClassTierUpgradeUpdates,
 		},
+	})
+}
+
+func (h *OneClassPayHandler) ClientVersion(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{
+		"version":      oneClassClientVersion,
+		"released_at":  oneClassClientReleasedAt,
+		"force_update": false,
+		"download_url": "",
+		"message":      "当前版本可用。一次性购买仅支持购买日及之前发布的客户端版本；长期更新不受此限制。",
 	})
 }

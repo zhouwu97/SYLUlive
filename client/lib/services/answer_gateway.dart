@@ -168,7 +168,7 @@ class AnswerGateway {
     }
 
     try {
-      final rootUrl = ApiConstants.baseUrl.replaceAll('/api', '');
+      final rootUrl = ApiConstants.apiRootFromBaseUrl(ApiConstants.baseUrl);
       final endpoint = '$rootUrl/api/v1/question/mark_wrong';
       final response = await _dio.post(
         endpoint,
@@ -210,7 +210,7 @@ class AnswerGateway {
     }
 
     try {
-      final rootUrl = ApiConstants.baseUrl.replaceAll('/api', '');
+      final rootUrl = ApiConstants.apiRootFromBaseUrl(ApiConstants.baseUrl);
       final endpoint = '$rootUrl/api/v1/question/confirm_cache';
       final response = await _dio.post(
         endpoint,
@@ -372,7 +372,7 @@ class AnswerGateway {
           onProgress?.call(forceRefresh ? 'AI答题中（忽略旧缓存）...' : 'AI答题中...');
         }
 
-        final rootUrl = ApiConstants.baseUrl.replaceAll('/api', '');
+        final rootUrl = ApiConstants.apiRootFromBaseUrl(ApiConstants.baseUrl);
         final endpoint = '$rootUrl/api/v1/question/solve';
 
         final response = await _dio.post(

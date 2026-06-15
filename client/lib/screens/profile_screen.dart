@@ -30,6 +30,7 @@ import 'chat_list_screen.dart';
 import 'admin_panel_screen.dart';
 import 'super_admin_screen.dart';
 import 'admin_members_screen.dart';
+import 'oneclass_orders_screen.dart';
 import 'user_replies_screen.dart';
 import 'settings_screen.dart';
 import 'feedback_screen.dart';
@@ -611,6 +612,22 @@ class _ProfileScreenState extends State<ProfileScreen>
                 context,
                 MaterialPageRoute(
                   builder: (_) => const AdminMembersScreen(),
+                ),
+              );
+            },
+          ),
+          _buildAdminEntry(
+            context: context,
+            isDark: isDark,
+            icon: Icons.receipt_long,
+            iconColor: Colors.teal,
+            title: 'OneClass 订单',
+            subtitle: '查看 OneClass 支付、机器授权与签发状态',
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const OneClassOrdersScreen(),
                 ),
               );
             },

@@ -11,6 +11,8 @@ const (
 // OneClassPayOrder 记录 oneclass 的公开购买订单。
 type OneClassPayOrder struct {
 	ID              uint       `gorm:"primaryKey" json:"id"`
+	UserID          uint       `gorm:"index" json:"user_id"`
+	User            *User      `gorm:"foreignKey:UserID" json:"user,omitempty"`
 	OrderNo         string     `gorm:"uniqueIndex;size:64;not null" json:"order_no"`
 	Tier            string     `gorm:"size:32;not null;index" json:"tier"`
 	Title           string     `gorm:"size:64;not null" json:"title"`
@@ -23,6 +25,9 @@ type OneClassPayOrder struct {
 	GatewayPayURL   string     `gorm:"type:text" json:"-"`
 	GatewayQRCode   string     `gorm:"type:text" json:"-"`
 	GatewayScheme   string     `gorm:"type:text" json:"-"`
+	LicenseToken    string     `gorm:"type:text" json:"license_token,omitempty"`
+	LicenseIssuedAt *time.Time `json:"license_issued_at"`
+	UpdatesUntil    *time.Time `json:"updates_until"`
 	PaidAt          *time.Time `json:"paid_at"`
 	CreatedAt       time.Time  `gorm:"default:CURRENT_TIMESTAMP" json:"created_at"`
 	UpdatedAt       time.Time  `json:"updated_at"`

@@ -261,7 +261,7 @@ func main() {
 
 	lotteryHandler := handlers.NewLotteryHandler(db)
 
-	vipHandler := handlers.NewVipHandler(db)
+	vipHandler := handlers.NewVipHandler(db, cfg.JPushAppKey, cfg.JPushMasterSecret)
 
 	// 融智云考助手独立业务处理器
 	yunkaoSolveHandler := handlers.NewYunkaoSolveHandler(db)
@@ -395,11 +395,12 @@ func main() {
 	// OneClass 公开购买路由（仅易支付）
 	r.Any("/api/oneclass/pay/notify", oneClassPayHandler.PayNotify)
 	r.GET("/api/oneclass/pay/buy", oneClassPayHandler.BuyPage)
-	r.POST("/api/oneclass/pay/create", oneClassPayHandler.CreateOrder)
+	r.POST("/api/oneclass/pay/create", middleware.AuthMiddleware(db, cfg.JWTSecret), oneClassPayHandler.CreateOrder)
 	r.GET("/api/oneclass/pay/checkout", oneClassPayHandler.CheckoutPage)
 	r.GET("/api/oneclass/pay/status", oneClassPayHandler.PayStatus)
 	r.GET("/api/oneclass/pay/start", oneClassPayHandler.StartPayment)
 	r.GET("/api/oneclass/pay/qrcode", oneClassPayHandler.PaymentQRCode)
+	r.GET("/api/oneclass/client/version", oneClassPayHandler.ClientVersion)
 
 	oneClassAdmin := r.Group("/api/oneclass/admin")
 	oneClassAdmin.Use(middleware.AuthMiddleware(db, cfg.JWTSecret), middleware.AdminMiddleware())
@@ -739,6 +740,7 @@ func main() {
 		// VIP 管理路由（超级管理员）
 		superAdmin.POST("/vip/grant", vipHandler.GrantVip)
 		superAdmin.DELETE("/vip/:user_id", vipHandler.RevokeVip)
+		superAdmin.POST("/vip/push_update", vipHandler.PushUpdateToVip)
 
 	}
 

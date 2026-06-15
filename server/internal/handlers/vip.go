@@ -2,10 +2,13 @@ package handlers
 
 import (
 	"net/http"
+	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"shenliyuan/internal/models"
+	"shenliyuan/utils"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -13,12 +16,18 @@ import (
 
 // VipHandler VIP 权限处理器
 type VipHandler struct {
-	db *gorm.DB
+	db                *gorm.DB
+	jpushAppKey       string
+	jpushMasterSecret string
 }
 
 // NewVipHandler 创建 VIP 处理器
-func NewVipHandler(db *gorm.DB) *VipHandler {
-	return &VipHandler{db: db}
+func NewVipHandler(db *gorm.DB, jpushAppKey, jpushMasterSecret string) *VipHandler {
+	return &VipHandler{
+		db:                db,
+		jpushAppKey:       jpushAppKey,
+		jpushMasterSecret: jpushMasterSecret,
+	}
 }
 
 // CheckVip 检查当前用户的 VIP 状态（桌面端调用）
@@ -38,10 +47,10 @@ func (h *VipHandler) CheckVip(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"is_vip":          isVip,
-		"vip_expiry":      expiryStr,
-		"student_id":      user.StudentID,
-		"nickname":        user.Nickname,
+		"is_vip":           isVip,
+		"vip_expiry":       expiryStr,
+		"student_id":       user.StudentID,
+		"nickname":         user.Nickname,
 		"ai_balance_cents": user.AiBalanceCents,
 		"ai_balance_yuan":  float64(user.AiBalanceCents) / 100.0,
 	})
@@ -112,5 +121,107 @@ func (h *VipHandler) RevokeVip(c *gin.Context) {
 		"message":    "VIP 已撤销",
 		"user_id":    user.ID,
 		"student_id": user.StudentID,
+	})
+}
+
+// PushVipUpdateInput 管理员向当前有效 VIP 用户推送版本更新通知
+type PushVipUpdateInput struct {
+	Title       string `json:"title"`
+	Message     string `json:"message"`
+	Version     string `json:"version"`
+	DownloadURL string `json:"download_url" binding:"required"`
+	DryRun      bool   `json:"dry_run"`
+}
+
+// PushUpdateToVip 向当前有效 VIP 用户推送 APP 更新通知（超级管理员）
+func (h *VipHandler) PushUpdateToVip(c *gin.Context) {
+	var input PushVipUpdateInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	input.Title = strings.TrimSpace(input.Title)
+	input.Message = strings.TrimSpace(input.Message)
+	input.Version = strings.TrimSpace(input.Version)
+	input.DownloadURL = strings.TrimSpace(input.DownloadURL)
+
+	parsedURL, err := url.ParseRequestURI(input.DownloadURL)
+	if err != nil || parsedURL.Scheme == "" || parsedURL.Host == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "download_url 必须是完整的 http/https 链接"})
+		return
+	}
+	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "download_url 仅支持 http/https"})
+		return
+	}
+
+	if input.Title == "" {
+		input.Title = "发现新版本"
+	}
+	if input.Message == "" {
+		if input.Version != "" {
+			input.Message = "高级用户可更新到 " + input.Version
+		} else {
+			input.Message = "高级用户可下载最新版本"
+		}
+	}
+
+	var users []models.User
+	now := time.Now()
+	if err := h.db.
+		Where("vip_expiry IS NOT NULL AND vip_expiry > ? AND device_token <> ''", now).
+		Select("id, student_id, nickname, device_token, vip_expiry").
+		Find(&users).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询 VIP 用户失败"})
+		return
+	}
+
+	if input.DryRun {
+		c.JSON(http.StatusOK, gin.H{
+			"message":      "更新推送预演完成",
+			"dry_run":      true,
+			"target_count": len(users),
+			"sent":         0,
+			"failed":       0,
+		})
+		return
+	}
+
+	if h.jpushAppKey == "" || h.jpushMasterSecret == "" {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "JPush 配置未设置，无法推送"})
+		return
+	}
+
+	jpush := utils.NewJPushClient(h.jpushAppKey, h.jpushMasterSecret)
+	extras := map[string]interface{}{
+		"type":         "app_update",
+		"download_url": input.DownloadURL,
+	}
+	if input.Version != "" {
+		extras["version"] = input.Version
+	}
+
+	failedUsers := make([]gin.H, 0)
+	sent := 0
+	for _, user := range users {
+		if err := jpush.SendNotification(user.DeviceToken, input.Title, input.Message, extras); err != nil {
+			failedUsers = append(failedUsers, gin.H{
+				"user_id":    user.ID,
+				"student_id": user.StudentID,
+				"error":      err.Error(),
+			})
+			continue
+		}
+		sent++
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":      "更新推送完成",
+		"dry_run":      false,
+		"target_count": len(users),
+		"sent":         sent,
+		"failed":       len(failedUsers),
+		"failed_users": failedUsers,
 	})
 }

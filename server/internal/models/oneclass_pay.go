@@ -5,6 +5,7 @@ import "time"
 const (
 	OneClassTierOneTime         = "one_time"
 	OneClassTierLifetimeUpdates = "lifetime_updates"
+	OneClassTierUpgradeUpdates  = "upgrade_updates"
 )
 
 // OneClassPayOrder 记录 oneclass 的公开购买订单。

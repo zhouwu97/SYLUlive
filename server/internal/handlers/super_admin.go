@@ -698,6 +698,65 @@ func (h *SuperAdminHandler) RechargeAiBalance(c *gin.Context) {
 	})
 }
 
+type CreateLotteryEventInput struct {
+	Title       string `json:"title" binding:"required"`
+	Description string `json:"description"`
+	PrizeName   string `json:"prize_name" binding:"required"`
+	DrawTime    string `json:"draw_time" binding:"required"`
+}
+
+// CreateLotteryEvent 发布抽奖活动。发布新活动时会结束旧的未开奖活动，保证前台只有一个当前活动。
+func (h *SuperAdminHandler) CreateLotteryEvent(c *gin.Context) {
+	var input CreateLotteryEventInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请完整填写抽奖标题、奖品和开奖时间"})
+		return
+	}
+
+	title := strings.TrimSpace(input.Title)
+	prizeName := strings.TrimSpace(input.PrizeName)
+	description := strings.TrimSpace(input.Description)
+	if title == "" || prizeName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "抽奖标题和奖品不能为空"})
+		return
+	}
+
+	drawTime, err := time.Parse(time.RFC3339, strings.TrimSpace(input.DrawTime))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "开奖时间格式无效"})
+		return
+	}
+	if !drawTime.After(time.Now()) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "开奖时间必须晚于当前时间"})
+		return
+	}
+
+	event := models.LotteryEvent{
+		Title:       title,
+		Description: description,
+		PrizeName:   prizeName,
+		DrawTime:    drawTime,
+		Status:      0,
+	}
+
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&models.LotteryEvent{}).
+			Where("status = ?", 0).
+			Update("status", 1).Error; err != nil {
+			return err
+		}
+		return tx.Create(&event).Error
+	}); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "发布抽奖失败"})
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{
+		"event":   event,
+		"message": "抽奖已发布",
+	})
+}
+
 // GetLotteryParticipants 获取当前抽奖的参与者
 func (h *SuperAdminHandler) GetLotteryParticipants(c *gin.Context) {
 	var event models.LotteryEvent

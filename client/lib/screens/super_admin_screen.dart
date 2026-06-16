@@ -17,12 +17,14 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
   List<dynamic> _pendingInvitations = [];
   List<dynamic> _adminLogs = [];
   String _searchQuery = '';
+  late Future<Response<dynamic>> _lotteryFuture;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
     _dio = context.read<AuthProvider>().dio;
+    _lotteryFuture = _loadLotteryParticipants();
     _loadAll();
   }
 
@@ -58,6 +60,18 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
       final res = await _dio.get('/super/invitations/pending');
       _pendingInvitations = res.data as List;
     } catch (_) {}
+  }
+
+  Future<Response<dynamic>> _loadLotteryParticipants() {
+    return _dio.get('/super/lottery/participants');
+  }
+
+  void _refreshLotteryTab() {
+    if (mounted) {
+      setState(() {
+        _lotteryFuture = _loadLotteryParticipants();
+      });
+    }
   }
 
   Future<void> _approveInvitation(dynamic inv, bool approve) async {
@@ -952,23 +966,23 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
 
   Widget _buildLotteryTab() {
     return FutureBuilder(
-      future: _dio.get('/super/lottery/participants'),
+      future: _lotteryFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
         }
         if (snapshot.hasError) {
           if (snapshot.error.toString().contains('404')) {
-            return const Center(child: Text('暂无进行中的抽奖活动'));
+            return _buildLotteryEmptyState('暂无抽奖活动');
           }
           return Center(child: Text('加载失败: ${snapshot.error}'));
         }
         if (snapshot.data?.statusCode == 404) {
-          return const Center(child: Text('暂无抽奖活动'));
+          return _buildLotteryEmptyState('暂无抽奖活动');
         }
 
         final data = snapshot.data?.data;
-        if (data == null) return const Center(child: Text('暂无数据'));
+        if (data == null) return _buildLotteryEmptyState('暂无数据');
 
         final event = data['event'];
         final participants = (data['participants'] as List)
@@ -978,84 +992,270 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
         return Column(
           children: [
             Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Text(
-                '当前活动: ${event['name'] ?? ''} (奖品: ${event['prize_name'] ?? ''})',
-                style:
-                    const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          '当前活动: ${event['title'] ?? ''}',
+                          style: const TextStyle(
+                              fontSize: 16, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: '刷新',
+                        onPressed: _refreshLotteryTab,
+                        icon: const Icon(Icons.refresh),
+                      ),
+                      FilledButton.icon(
+                        onPressed: _showCreateLotteryDialog,
+                        icon: const Icon(Icons.add),
+                        label: const Text('发布抽奖'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text('奖品: ${event['prize_name'] ?? ''}'),
+                  Text('开奖时间: ${_formatLotteryDateTime(event['draw_time'])}'),
+                  Text('参与人数: ${participants.length}'),
+                ],
               ),
             ),
             Expanded(
-              child: ListView.builder(
-                itemCount: participants.length,
-                itemBuilder: (context, index) {
-                  final p = participants[index];
-                  final user = p['user'];
-                  return ListTile(
-                    leading: CircleAvatar(
-                      backgroundImage:
-                          user['avatar'] != null && user['avatar'].isNotEmpty
-                              ? NetworkImage(user['avatar'].startsWith('http')
-                                  ? user['avatar']
-                                  : 'https://sylu.zhouwu.ccwu.cc')
-                              : null,
-                      child: user['avatar'] == null || user['avatar'].isEmpty
-                          ? Text(user['nickname'][0])
-                          : null,
-                    ),
-                    title: Text(user['nickname'] ?? '未知用户'),
-                    subtitle:
-                        Text('学号: ${user['student_id']} | 权重: ${p['weight']}'),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.remove_circle, color: Colors.red),
-                      tooltip: '踢出',
-                      onPressed: () async {
-                        final confirm = await showDialog<bool>(
-                          context: context,
-                          builder: (context) => AlertDialog(
-                            title: const Text('踢出用户'),
-                            content: Text(
-                                '确定要将 ${user['nickname'] ?? user['student_id']} 踢出本次抽奖吗？'),
-                            actions: [
-                              TextButton(
-                                  onPressed: () =>
-                                      Navigator.pop(context, false),
-                                  child: const Text('取消')),
-                              TextButton(
-                                  onPressed: () => Navigator.pop(context, true),
-                                  child: const Text('踢出',
-                                      style: TextStyle(color: Colors.red))),
-                            ],
+              child: participants.isEmpty
+                  ? const Center(child: Text('暂无参与者'))
+                  : ListView.builder(
+                      itemCount: participants.length,
+                      itemBuilder: (context, index) {
+                        final p = participants[index];
+                        final user = p['user'];
+                        final nickname = '${user['nickname'] ?? '未知用户'}';
+                        final avatar = '${user['avatar'] ?? ''}';
+                        return ListTile(
+                          leading: CircleAvatar(
+                            backgroundImage: avatar.isNotEmpty
+                                ? NetworkImage(avatar.startsWith('http')
+                                    ? avatar
+                                    : 'https://sylu.zhouwu.ccwu.cc$avatar')
+                                : null,
+                            child: avatar.isEmpty
+                                ? Text(nickname.isNotEmpty ? nickname[0] : '?')
+                                : null,
+                          ),
+                          title: Text(nickname),
+                          subtitle: Text(
+                              '学号: ${user['student_id']} | 权重: ${p['weight']}'),
+                          trailing: IconButton(
+                            icon: const Icon(Icons.remove_circle,
+                                color: Colors.red),
+                            tooltip: '踢出',
+                            onPressed: () => _kickLotteryParticipant(
+                              eventId: event['id'],
+                              userId: user['id'],
+                              userLabel: nickname,
+                            ),
                           ),
                         );
-
-                        if (confirm == true) {
-                          try {
-                            final res = await _dio.delete(
-                                '/super/lottery/participants/${event['id']}/${user['id']}');
-                            if (res.statusCode == 200) {
-                              if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(content: Text('已踢出该用户')));
-                                setState(() {}); // 刷新列表
-                              }
-                            }
-                          } catch (e) {
-                            if (context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text('踢出失败: $e')));
-                            }
-                          }
-                        }
                       },
                     ),
-                  );
-                },
-              ),
             ),
           ],
         );
       },
     );
+  }
+
+  Widget _buildLotteryEmptyState(String message) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(message),
+          const SizedBox(height: 16),
+          FilledButton.icon(
+            onPressed: _showCreateLotteryDialog,
+            icon: const Icon(Icons.add),
+            label: const Text('发布抽奖'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatLotteryDateTime(dynamic value) {
+    final text = '${value ?? ''}';
+    final dt = DateTime.tryParse(text);
+    if (dt == null) return text;
+    final local = dt.toLocal();
+    return '${local.year}-${local.month.toString().padLeft(2, '0')}-${local.day.toString().padLeft(2, '0')} '
+        '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
+  }
+
+  Future<void> _kickLotteryParticipant({
+    required dynamic eventId,
+    required dynamic userId,
+    required String userLabel,
+  }) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('踢出用户'),
+        content: Text('确定要将 $userLabel 踢出本次抽奖吗？'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('取消')),
+          TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('踢出', style: TextStyle(color: Colors.red))),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+    try {
+      final res =
+          await _dio.delete('/super/lottery/participants/$eventId/$userId');
+      if (res.statusCode == 200 && mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('已踢出该用户')));
+        _refreshLotteryTab();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('踢出失败: $e')));
+      }
+    }
+  }
+
+  Future<void> _showCreateLotteryDialog() async {
+    final titleCtrl = TextEditingController();
+    final prizeCtrl = TextEditingController();
+    final descCtrl = TextEditingController();
+    final messenger = ScaffoldMessenger.of(context);
+    DateTime drawTime = DateTime.now().add(const Duration(hours: 1));
+
+    final created = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('发布抽奖'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: titleCtrl,
+                  decoration: const InputDecoration(labelText: '抽奖标题'),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: prizeCtrl,
+                  decoration: const InputDecoration(labelText: '奖品名称'),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: descCtrl,
+                  maxLines: 3,
+                  decoration: const InputDecoration(labelText: '活动说明'),
+                ),
+                const SizedBox(height: 16),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.event),
+                  title:
+                      Text(_formatLotteryDateTime(drawTime.toIso8601String())),
+                  subtitle: const Text('开奖时间'),
+                  onTap: () async {
+                    final date = await showDatePicker(
+                      context: ctx,
+                      initialDate: drawTime,
+                      firstDate: DateTime.now(),
+                      lastDate: DateTime.now().add(const Duration(days: 365)),
+                    );
+                    if (date == null) return;
+                    if (!ctx.mounted) return;
+                    final time = await showTimePicker(
+                      context: ctx,
+                      initialTime: TimeOfDay.fromDateTime(drawTime),
+                    );
+                    if (time == null) return;
+                    setDialogState(() {
+                      drawTime = DateTime(
+                        date.year,
+                        date.month,
+                        date.day,
+                        time.hour,
+                        time.minute,
+                      );
+                    });
+                  },
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+                onPressed: () {
+                  FocusManager.instance.primaryFocus?.unfocus();
+                  Navigator.pop(ctx, false);
+                },
+                child: const Text('取消')),
+            FilledButton(
+              onPressed: () async {
+                final navigator = Navigator.of(ctx);
+                final title = titleCtrl.text.trim();
+                final prize = prizeCtrl.text.trim();
+                if (title.isEmpty || prize.isEmpty) {
+                  messenger.showSnackBar(
+                    const SnackBar(content: Text('请填写标题和奖品')),
+                  );
+                  return;
+                }
+                if (!drawTime.isAfter(DateTime.now())) {
+                  messenger.showSnackBar(
+                    const SnackBar(content: Text('开奖时间必须晚于当前时间')),
+                  );
+                  return;
+                }
+                try {
+                  await _dio.post('/super/lottery', data: {
+                    'title': title,
+                    'prize_name': prize,
+                    'description': descCtrl.text.trim(),
+                    'draw_time': drawTime.toUtc().toIso8601String(),
+                  });
+                  FocusManager.instance.primaryFocus?.unfocus();
+                  if (navigator.mounted) navigator.pop(true);
+                } on DioException catch (e) {
+                  final data = e.response?.data;
+                  final msg = data is Map && data['error'] != null
+                      ? data['error'].toString()
+                      : '发布失败';
+                  messenger.showSnackBar(
+                    SnackBar(content: Text(msg), backgroundColor: Colors.red),
+                  );
+                }
+              },
+              child: const Text('发布'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    titleCtrl.dispose();
+    prizeCtrl.dispose();
+    descCtrl.dispose();
+
+    if (created == true && mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('抽奖已发布')));
+      _refreshLotteryTab();
+    }
   }
 }

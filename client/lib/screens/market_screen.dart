@@ -66,20 +66,22 @@ class _MarketScreenState extends State<MarketScreen> {
     if (!mounted) return;
 
     if (query.isEmpty) {
-      if (mounted)
+      if (mounted) {
         setState(() {
           _searchQuery = '';
           _searchResults = [];
           _isSearching = false;
         });
+      }
       return;
     }
 
-    if (mounted)
+    if (mounted) {
       setState(() {
         _searchQuery = query;
         _isSearching = true;
       });
+    }
 
     final results = await context.read<PostProvider>().searchPosts(
           boardId: 2,
@@ -90,13 +92,14 @@ class _MarketScreenState extends State<MarketScreen> {
 
     if (!mounted || _searchQuery != query) return;
 
-    if (mounted)
+    if (mounted) {
       setState(() {
         _searchResults = results
             .where((post) => _allowedTypes.contains(post.postType))
             .toList();
         _isSearching = false;
       });
+    }
   }
 
   void _onSearchChanged(String value) {
@@ -115,11 +118,12 @@ class _MarketScreenState extends State<MarketScreen> {
   }
 
   void _changeSort(String sort) async {
-    if (mounted)
+    if (mounted) {
       setState(() {
         _sortType = sort;
         _isSearching = true;
       });
+    }
     await _refreshCurrent();
     if (mounted) {
       setState(() {
@@ -227,6 +231,9 @@ class _MarketScreenState extends State<MarketScreen> {
       ),
       body: Stack(
         children: [
+          Positioned.fill(
+            child: _buildBackground(themeProvider, isDark),
+          ),
           Consumer<PostProvider>(
             builder: (context, postProvider, child) {
               final allPosts = postProvider.postsFor(2, sort: _sortType);

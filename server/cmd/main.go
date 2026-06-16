@@ -715,6 +715,7 @@ func main() {
 	{
 
 		superAdmin.GET("/users", superAdminHandler.GetUsers)
+		superAdmin.POST("/lottery", superAdminHandler.CreateLotteryEvent)
 		superAdmin.GET("/lottery/participants", superAdminHandler.GetLotteryParticipants)
 		superAdmin.DELETE("/lottery/participants/:event_id/:user_id", superAdminHandler.KickLotteryParticipant)
 
@@ -941,7 +942,7 @@ func main() {
 
 	lotteryAdminGroup := r.Group("/api/admin/lottery")
 
-	lotteryAdminGroup.Use(middleware.AuthMiddleware(db, cfg.JWTSecret), middleware.AdminMiddleware())
+	lotteryAdminGroup.Use(middleware.AuthMiddleware(db, cfg.JWTSecret), middleware.SuperAdminMiddleware())
 
 	{
 

@@ -7,7 +7,6 @@ import '../providers/auth_provider.dart';
 import '../utils/app_feedback.dart';
 import '../config/api_constants.dart';
 import '../widgets/cached_avatar.dart';
-import '../main.dart'; // for GlobalBackgroundWrapper
 
 class LotteryScreen extends StatefulWidget {
   const LotteryScreen({super.key});
@@ -42,10 +41,11 @@ class _LotteryScreenState extends State<LotteryScreen> {
   }
 
   Future<void> _fetchLottery() async {
-    if (mounted) setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
+    if (mounted)
+      setState(() {
+        _isLoading = true;
+        _errorMessage = null;
+      });
     try {
       final response = await _dio.get('/lottery/current');
       if (mounted) {
@@ -60,21 +60,24 @@ class _LotteryScreenState extends State<LotteryScreen> {
       }
     } on DioException catch (e) {
       if (e.response?.statusCode == 404) {
-        if (mounted) setState(() {
-          _isLoading = false;
-          _errorMessage = "暂无抽奖活动";
-        });
+        if (mounted)
+          setState(() {
+            _isLoading = false;
+            _errorMessage = "暂无抽奖活动";
+          });
       } else {
-        if (mounted) setState(() {
-          _isLoading = false;
-          _errorMessage = AppFeedback.dioErrorMessage(e, fallback: '加载失败');
-        });
+        if (mounted)
+          setState(() {
+            _isLoading = false;
+            _errorMessage = AppFeedback.dioErrorMessage(e, fallback: '加载失败');
+          });
       }
     } catch (e) {
-      if (mounted) setState(() {
-        _isLoading = false;
-        _errorMessage = '发生未知错误';
-      });
+      if (mounted)
+        setState(() {
+          _isLoading = false;
+          _errorMessage = '发生未知错误';
+        });
     }
   }
 
@@ -152,53 +155,53 @@ class _LotteryScreenState extends State<LotteryScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final primary = Theme.of(context).primaryColor;
     final user = context.watch<AuthProvider>().user;
-    final isAdmin = user?.isAdmin == true;
+    final isSuperAdmin = user?.isSuperAdmin == true;
 
-    return GlobalBackgroundWrapper(
-      child: Scaffold(
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      appBar: AppBar(
+        title: const Text('官方抽奖'),
+        elevation: 0,
         backgroundColor: Colors.transparent,
-        appBar: AppBar(
-          title: const Text('官方抽奖'),
-          elevation: 0,
-          backgroundColor: Colors.transparent,
-        ),
-        extendBodyBehindAppBar: true,
-        body: SafeArea(
-          child: _isLoading
-              ? const Center(child: CircularProgressIndicator())
-              : _errorMessage != null
-                  ? Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.inbox_rounded,
-                              size: 80,
-                              color: isDark ? Colors.white30 : Colors.black26),
-                          const SizedBox(height: 16),
-                          Text(_errorMessage!,
-                              style: TextStyle(
-                                  fontSize: 16,
-                                  color: isDark ? Colors.white70 : Colors.black54)),
-                        ],
-                      ),
-                    )
-                  : _buildEventContent(context, primary, isDark, isAdmin),
-        ),
+      ),
+      extendBodyBehindAppBar: true,
+      body: SafeArea(
+        child: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : _errorMessage != null
+                ? Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.inbox_rounded,
+                            size: 80,
+                            color: isDark ? Colors.white30 : Colors.black26),
+                        const SizedBox(height: 16),
+                        Text(_errorMessage!,
+                            style: TextStyle(
+                                fontSize: 16,
+                                color:
+                                    isDark ? Colors.white70 : Colors.black54)),
+                      ],
+                    ),
+                  )
+                : _buildEventContent(context, primary, isDark, isSuperAdmin),
       ),
     );
   }
 
   Widget _buildEventContent(
-      BuildContext context, Color primary, bool isDark, bool isAdmin) {
+      BuildContext context, Color primary, bool isDark, bool isSuperAdmin) {
     final ev = _event!;
     final isOngoing = ev.status == 0;
-    
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Column(
         children: [
           const SizedBox(height: 20),
-          Icon(Icons.card_giftcard, size: 100, color: Colors.white.withValues(alpha: 0.9)),
+          Icon(Icons.card_giftcard,
+              size: 100, color: Colors.white.withValues(alpha: 0.9)),
           const SizedBox(height: 24),
           Text(
             ev.title,
@@ -219,7 +222,8 @@ class _LotteryScreenState extends State<LotteryScreen> {
           Container(
             padding: const EdgeInsets.all(24),
             decoration: BoxDecoration(
-              color: isDark ? Colors.black45 : Colors.white.withValues(alpha: 0.8),
+              color:
+                  isDark ? Colors.black45 : Colors.white.withValues(alpha: 0.8),
               borderRadius: BorderRadius.circular(24),
               boxShadow: [
                 BoxShadow(
@@ -252,7 +256,10 @@ class _LotteryScreenState extends State<LotteryScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: [
                     _buildStatItem('当前参与', '$_participantCount人', isDark),
-                    _buildStatItem('预计开奖', isOngoing ? _formatCountdown(ev.drawTime) : '已结束', isDark),
+                    _buildStatItem(
+                        '预计开奖',
+                        isOngoing ? _formatCountdown(ev.drawTime) : '已结束',
+                        isDark),
                   ],
                 ),
               ],
@@ -262,11 +269,13 @@ class _LotteryScreenState extends State<LotteryScreen> {
           if (isOngoing) ...[
             if (_joined)
               Container(
-                padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
+                padding:
+                    const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
                 decoration: BoxDecoration(
                   color: Colors.green.withValues(alpha: 0.2),
                   borderRadius: BorderRadius.circular(100),
-                  border: Border.all(color: Colors.green.withValues(alpha: 0.5)),
+                  border:
+                      Border.all(color: Colors.green.withValues(alpha: 0.5)),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -317,7 +326,8 @@ class _LotteryScreenState extends State<LotteryScreen> {
               child: Column(
                 children: [
                   const Text('🎉 中奖名单',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                      style:
+                          TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 16),
                   if (ev.winner != null)
                     Row(
@@ -344,15 +354,17 @@ class _LotteryScreenState extends State<LotteryScreen> {
               ),
             ),
           ],
-          if (isAdmin && isOngoing) ...[
+          if (isSuperAdmin && isOngoing) ...[
             const SizedBox(height: 40),
             TextButton.icon(
               onPressed: _adminDraw,
               icon: const Icon(Icons.flash_on, color: Colors.orange),
-              label: const Text('管理员手动开奖', style: TextStyle(color: Colors.orange)),
+              label:
+                  const Text('管理员手动开奖', style: TextStyle(color: Colors.orange)),
               style: TextButton.styleFrom(
                 backgroundColor: Colors.orange.withValues(alpha: 0.1),
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
               ),
             ),
           ],

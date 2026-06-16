@@ -7,6 +7,7 @@ import '../providers/post_provider.dart';
 import '../providers/theme_provider.dart';
 import '../utils/app_feedback.dart';
 import '../widgets/glass_container.dart';
+import 'create_post_screen.dart';
 import 'post_detail_screen.dart';
 import 'dart:io' show File;
 
@@ -178,6 +179,38 @@ class _MyContentScreenState extends State<MyContentScreen>
           _selectedIds.clear();
           _isSelectionMode = false;
         });
+    }
+  }
+
+  Future<void> _openPostDetail(Post post, {bool isMarket = false}) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PostDetailScreen(
+          postId: post.id,
+          isMarket: isMarket,
+          initialPost: post,
+        ),
+      ),
+    );
+    if (mounted) {
+      await _loadData(silent: true);
+    }
+  }
+
+  Future<void> _editPost(Post post) async {
+    final updated = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => CreatePostScreen(
+          boardId: post.boardId,
+          defaultPostType: post.postType,
+          editingPost: post,
+        ),
+      ),
+    );
+    if (updated == true && mounted) {
+      await _loadData(silent: true);
     }
   }
 
@@ -395,15 +428,7 @@ class _MyContentScreenState extends State<MyContentScreen>
       opacity: isDark ? 0.12 : 0.35,
       onTap: _isSelectionMode
           ? () => _toggleSelect(post.id)
-          : () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) =>
-                      PostDetailScreen(postId: post.id, initialPost: post),
-                ),
-              );
-            },
+          : () => _openPostDetail(post),
       onLongPress: _isSelectionMode ? null : () => _onLongPressItem(post.id),
       child: Row(
         children: [
@@ -463,8 +488,19 @@ class _MyContentScreenState extends State<MyContentScreen>
             ),
           ),
           if (!_isSelectionMode)
-            Icon(Icons.chevron_right,
-                color: isDark ? Colors.white30 : Colors.grey[400]),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  tooltip: '编辑帖子',
+                  icon: Icon(Icons.edit_outlined,
+                      color: isDark ? Colors.white54 : Colors.grey[600]),
+                  onPressed: () => _editPost(post),
+                ),
+                Icon(Icons.chevron_right,
+                    color: isDark ? Colors.white30 : Colors.grey[400]),
+              ],
+            ),
         ],
       ),
     );
@@ -501,18 +537,7 @@ class _MyContentScreenState extends State<MyContentScreen>
       opacity: isDark ? 0.12 : 0.35,
       onTap: _isSelectionMode
           ? () => _toggleSelect(post.id)
-          : () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => PostDetailScreen(
-                    postId: post.id,
-                    isMarket: true,
-                    initialPost: post,
-                  ),
-                ),
-              );
-            },
+          : () => _openPostDetail(post, isMarket: true),
       onLongPress: _isSelectionMode ? null : () => _onLongPressItem(post.id),
       child: Row(
         children: [
@@ -596,8 +621,19 @@ class _MyContentScreenState extends State<MyContentScreen>
             ),
           ),
           if (!_isSelectionMode)
-            Icon(Icons.chevron_right,
-                color: isDark ? Colors.white30 : Colors.grey[400]),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  tooltip: '编辑帖子',
+                  icon: Icon(Icons.edit_outlined,
+                      color: isDark ? Colors.white54 : Colors.grey[600]),
+                  onPressed: () => _editPost(post),
+                ),
+                Icon(Icons.chevron_right,
+                    color: isDark ? Colors.white30 : Colors.grey[400]),
+              ],
+            ),
         ],
       ),
     );

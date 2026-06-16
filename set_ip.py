@@ -26,8 +26,8 @@ def update_launch_json(ip_address):
         content = f.read()
     
     content = re.sub(
-        r'"--dart-define=API_URL=http://[^:]+:8080/api"',
-        f'"--dart-define=API_URL=http://{ip_address}:8080/api"',
+        r'"--dart-define=(?:APP_API_URL|API_URL)=http://[^:]+:8080/api"',
+        f'"--dart-define=APP_API_URL=http://{ip_address}:8080/api"',
         content
     )
     

@@ -1,12 +1,17 @@
 import 'package:flutter/foundation.dart';
 
 class ApiConstants {
-  // 通过 --dart-define 注入 API 地址，例如：--dart-define=API_URL=http://localhost:8080/api
+  // Web 与 App 使用不同的编译参数，避免 HTTPS 网页误用 App 的明文 IP 接口。
+  // Web: --dart-define=WEB_API_URL=/api
+  // App: --dart-define=APP_API_URL=http://localhost:8080/api
   // Web 生产环境默认走同源 /api，避免 HTTPS 页面请求明文 IP:8080 导致连接失败。
-  static const String _configuredBaseUrl = String.fromEnvironment('API_URL');
+  static const String _webBaseUrl = String.fromEnvironment('WEB_API_URL');
+  static const String _appBaseUrl = String.fromEnvironment('APP_API_URL');
+  static const String _legacyBaseUrl = String.fromEnvironment('API_URL');
   static String get baseUrl {
-    if (_configuredBaseUrl.isNotEmpty) return _configuredBaseUrl;
-    if (kIsWeb) return '/api';
+    if (kIsWeb) return _webBaseUrl.isNotEmpty ? _webBaseUrl : '/api';
+    if (_appBaseUrl.isNotEmpty) return _appBaseUrl;
+    if (_legacyBaseUrl.isNotEmpty) return _legacyBaseUrl;
     return 'http://156.233.229.232:8080/api';
   }
 
@@ -24,7 +29,23 @@ class ApiConstants {
 
   /// 将服务端返回的相对路径转为完整 URL
   static String fullUrl(String path) {
-    return fullUrlForBase(path, baseUrl);
+    return fullUrlForBase(normalizeWebResourceUrl(path), baseUrl);
+  }
+
+  static String normalizeWebResourceUrl(String path) {
+    if (!kIsWeb) return path;
+    return normalizeSameOriginResourceUrl(path);
+  }
+
+  static String normalizeSameOriginResourceUrl(String path) {
+    final uri = Uri.tryParse(path.trim());
+    if (uri == null || !uri.hasScheme || uri.scheme != 'http') return path;
+    if (!uri.path.startsWith('/uploads/')) return path;
+
+    final buffer = StringBuffer(uri.path);
+    if (uri.hasQuery) buffer.write('?${uri.query}');
+    if (uri.hasFragment) buffer.write('#${uri.fragment}');
+    return buffer.toString();
   }
 
   static String fullUrlForBase(String path, String url) {

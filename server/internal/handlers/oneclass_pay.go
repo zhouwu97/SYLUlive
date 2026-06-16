@@ -39,6 +39,7 @@ const (
 	oneClassClientVersion    = "1.0.0"
 	oneClassClientReleasedAt = "2026-06-15T00:00:00+08:00"
 	oneClassDevLicenseSeed   = "o7UOr8XZaeIgK4HP3vz1VnnEs_IzfTCf5OID5oIJUp8"
+	oneClassOrdersStudentID  = "2403060128"
 )
 
 // OneClass has two intentionally separate JWT families:
@@ -724,6 +725,17 @@ func (h *OneClassPayHandler) PayNotify(c *gin.Context) {
 }
 
 func (h *OneClassPayHandler) AdminGetOrders(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	var currentUser models.User
+	if err := h.db.Select("student_id").First(&currentUser, userID).Error; err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "用户不存在"})
+		return
+	}
+	if currentUser.StudentID != oneClassOrdersStudentID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权查看 OneClass 订单"})
+		return
+	}
+
 	status := strings.TrimSpace(c.DefaultQuery("status", ""))
 	tier := strings.TrimSpace(c.DefaultQuery("tier", ""))
 	search := strings.TrimSpace(c.DefaultQuery("search", ""))

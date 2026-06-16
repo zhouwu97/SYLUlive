@@ -1,6 +1,4 @@
 import 'dart:async';
-import 'dart:io' show File;
-
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -136,61 +134,6 @@ class _MarketScreenState extends State<MarketScreen> {
     return allPosts.where((p) => _allowedTypes.contains(p.postType)).toList();
   }
 
-  Widget _buildDefaultBg(bool isDark) {
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        Image.asset(
-          'assets/images/morenbeijing.jpeg',
-          fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => Container(
-            color: isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
-          ),
-        ),
-        Container(
-          color: isDark
-              ? Colors.black.withValues(alpha: 0.34)
-              : Colors.white.withValues(alpha: 0.20),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildBackground(ThemeProvider themeProvider, bool isDark) {
-    final path = themeProvider.getBackgroundImageFor(context);
-    if (themeProvider.isBackgroundVisible && path != null && path.isNotEmpty) {
-      final isAsset = !path.startsWith('http') && !path.startsWith('/');
-      return Stack(
-        fit: StackFit.expand,
-        children: [
-          isAsset
-              ? Image.asset(
-                  'assets/images/$path',
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => _buildDefaultBg(isDark),
-                )
-              : path.startsWith('/')
-                  ? Image.file(
-                      File(path),
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => _buildDefaultBg(isDark),
-                    )
-                  : Image.network(
-                      path,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => _buildDefaultBg(isDark),
-                    ),
-          Container(
-            color: isDark
-                ? Colors.black.withValues(alpha: 0.34)
-                : Colors.white.withValues(alpha: 0.20),
-          ),
-        ],
-      );
-    }
-    return _buildDefaultBg(isDark);
-  }
-
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -232,7 +175,13 @@ class _MarketScreenState extends State<MarketScreen> {
       body: Stack(
         children: [
           Positioned.fill(
-            child: _buildBackground(themeProvider, isDark),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: isDark
+                    ? Colors.black.withValues(alpha: 0.18)
+                    : Colors.white.withValues(alpha: 0.16),
+              ),
+            ),
           ),
           Consumer<PostProvider>(
             builder: (context, postProvider, child) {

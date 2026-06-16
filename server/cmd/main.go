@@ -716,6 +716,7 @@ func main() {
 
 		superAdmin.GET("/users", superAdminHandler.GetUsers)
 		superAdmin.POST("/lottery", superAdminHandler.CreateLotteryEvent)
+		superAdmin.DELETE("/lottery/:id", superAdminHandler.DeleteLotteryEvent)
 		superAdmin.GET("/lottery/participants", superAdminHandler.GetLotteryParticipants)
 		superAdmin.DELETE("/lottery/participants/:event_id/:user_id", superAdminHandler.KickLotteryParticipant)
 

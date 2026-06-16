@@ -286,6 +286,8 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
           ),
           ElevatedButton(
             onPressed: () async {
+              final messenger = ScaffoldMessenger.of(context);
+              final navigator = Navigator.of(ctx);
               final yuan = double.tryParse(amountCtrl.text.trim());
               if (yuan == null || yuan <= 0) {
                 return;
@@ -298,20 +300,17 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
                       'amount_cents': cents,
                       'note': noteCtrl.text.trim(),
                     });
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                        content: Text(
-                            '已为 ${user['nickname']} 充值 ¥${yuan.toStringAsFixed(2)}')),
-                  );
-                }
-                if (mounted) {
-                  Navigator.pop(ctx);
-                }
+                if (!mounted) return;
+                messenger.showSnackBar(
+                  SnackBar(
+                      content: Text(
+                          '已为 ${user['nickname']} 充值 ¥${yuan.toStringAsFixed(2)}')),
+                );
+                if (navigator.mounted) navigator.pop();
                 _loadUsers();
               } catch (_) {
                 if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
+                  messenger.showSnackBar(
                     const SnackBar(content: Text('充值失败')),
                   );
                 }
@@ -750,6 +749,8 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
             ),
             ElevatedButton(
               onPressed: () async {
+                final messenger = ScaffoldMessenger.of(context);
+                final navigator = Navigator.of(ctx);
                 try {
                   await _dio.put('/super/ai_config', data: {
                     'base_url': urlCtrl.text.trim(),
@@ -764,15 +765,17 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
                     'min_live_price_cents':
                         int.tryParse(minLiveCtrl.text.trim()) ?? 2,
                   });
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('系统 AI 配置已更新')));
-                  }
-                  Navigator.pop(ctx);
+                  if (!mounted) return;
+                  messenger.showSnackBar(
+                    const SnackBar(content: Text('系统 AI 配置已更新')),
+                  );
+                  if (navigator.mounted) navigator.pop();
                 } catch (_) {
-                  if (mounted)
-                    ScaffoldMessenger.of(context)
-                        .showSnackBar(const SnackBar(content: Text('更新失败')));
+                  if (mounted) {
+                    messenger.showSnackBar(
+                      const SnackBar(content: Text('更新失败')),
+                    );
+                  }
                 }
               },
               child: const Text('保存全局配置'),
@@ -917,9 +920,11 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
           ),
           FilledButton(
             onPressed: () async {
+              final messenger = ScaffoldMessenger.of(context);
+              final navigator = Navigator.of(ctx);
               final amount = int.tryParse(amountCtrl.text) ?? 0;
               if (amount <= 0) {
-                ScaffoldMessenger.of(context).showSnackBar(
+                messenger.showSnackBar(
                   const SnackBar(content: Text('请输入有效的追回数量')),
                 );
                 return;
@@ -930,17 +935,16 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
                   'amount': amount,
                   'reason': reasonCtrl.text.trim(),
                 });
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('经验已追回')),
-                  );
-                  _loadAdminLogs();
-                }
-                Navigator.pop(ctx);
+                if (!mounted) return;
+                messenger.showSnackBar(
+                  const SnackBar(content: Text('经验已追回')),
+                );
+                _loadAdminLogs();
+                if (navigator.mounted) navigator.pop();
               } on DioException catch (e) {
                 final msg = e.response?.data?['error'] ?? '操作失败';
                 if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
+                  messenger.showSnackBar(
                     SnackBar(content: Text(msg.toString())),
                   );
                 }
@@ -985,6 +989,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
         if (data == null) return _buildLotteryEmptyState('暂无数据');
 
         final event = data['event'];
+        final eventID = event['id'];
         final participants = (data['participants'] as List)
             .map((e) => e as Map<String, dynamic>)
             .toList();
@@ -1014,6 +1019,14 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
                         onPressed: _showCreateLotteryDialog,
                         icon: const Icon(Icons.add),
                         label: const Text('发布抽奖'),
+                      ),
+                      IconButton(
+                        tooltip: '删除当前抽奖',
+                        onPressed: eventID == null
+                            ? null
+                            : () => _deleteLotteryEvent(eventID),
+                        icon: const Icon(Icons.delete_outline),
+                        color: Colors.red,
                       ),
                     ],
                   ),
@@ -1089,9 +1102,80 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
     final text = '${value ?? ''}';
     final dt = DateTime.tryParse(text);
     if (dt == null) return text;
-    final local = dt.toLocal();
-    return '${local.year}-${local.month.toString().padLeft(2, '0')}-${local.day.toString().padLeft(2, '0')} '
-        '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
+    final beijing = dt.toUtc().add(const Duration(hours: 8));
+    return _formatBeijingWallTime(beijing);
+  }
+
+  String _formatBeijingWallTime(DateTime value) {
+    return '${value.year}-${value.month.toString().padLeft(2, '0')}-${value.day.toString().padLeft(2, '0')} '
+        '${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
+  }
+
+  DateTime _nowBeijingWallTime() {
+    final now = DateTime.now().toUtc().add(const Duration(hours: 8));
+    return DateTime(now.year, now.month, now.day, now.hour, now.minute);
+  }
+
+  bool _isFutureBeijingWallTime(DateTime value) {
+    return _beijingWallTimeToUtc(value).isAfter(DateTime.now().toUtc());
+  }
+
+  String _beijingWallTimeToRfc3339(DateTime value) {
+    final y = value.year.toString().padLeft(4, '0');
+    final m = value.month.toString().padLeft(2, '0');
+    final d = value.day.toString().padLeft(2, '0');
+    final h = value.hour.toString().padLeft(2, '0');
+    final min = value.minute.toString().padLeft(2, '0');
+    return '$y-$m-${d}T$h:$min:00+08:00';
+  }
+
+  DateTime _beijingWallTimeToUtc(DateTime value) {
+    return DateTime.utc(
+      value.year,
+      value.month,
+      value.day,
+      value.hour,
+      value.minute,
+    ).subtract(const Duration(hours: 8));
+  }
+
+  Future<void> _deleteLotteryEvent(dynamic eventId) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('删除抽奖'),
+        content: const Text('确定删除当前抽奖吗？参与记录也会一起删除，此操作不可恢复。'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('取消')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || confirm != true) return;
+
+    try {
+      await _dio.delete('/super/lottery/$eventId');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('抽奖已删除')));
+      _refreshLotteryTab();
+    } on DioException catch (e) {
+      final data = e.response?.data;
+      final msg = data is Map && data['error'] != null
+          ? data['error'].toString()
+          : '删除失败';
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(msg), backgroundColor: Colors.red),
+        );
+      }
+    }
   }
 
   Future<void> _kickLotteryParticipant({
@@ -1137,7 +1221,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
     final prizeCtrl = TextEditingController();
     final descCtrl = TextEditingController();
     final messenger = ScaffoldMessenger.of(context);
-    DateTime drawTime = DateTime.now().add(const Duration(hours: 1));
+    DateTime drawTime = _nowBeijingWallTime().add(const Duration(hours: 1));
 
     final created = await showDialog<bool>(
       context: context,
@@ -1167,15 +1251,16 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
                 ListTile(
                   contentPadding: EdgeInsets.zero,
                   leading: const Icon(Icons.event),
-                  title:
-                      Text(_formatLotteryDateTime(drawTime.toIso8601String())),
+                  title: Text(_formatBeijingWallTime(drawTime)),
                   subtitle: const Text('开奖时间'),
                   onTap: () async {
+                    FocusManager.instance.primaryFocus?.unfocus();
                     final date = await showDatePicker(
                       context: ctx,
                       initialDate: drawTime,
-                      firstDate: DateTime.now(),
-                      lastDate: DateTime.now().add(const Duration(days: 365)),
+                      firstDate: _nowBeijingWallTime(),
+                      lastDate:
+                          _nowBeijingWallTime().add(const Duration(days: 365)),
                     );
                     if (date == null) return;
                     if (!ctx.mounted) return;
@@ -1184,6 +1269,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
                       initialTime: TimeOfDay.fromDateTime(drawTime),
                     );
                     if (time == null) return;
+                    if (!ctx.mounted) return;
                     setDialogState(() {
                       drawTime = DateTime(
                         date.year,
@@ -1216,7 +1302,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
                   );
                   return;
                 }
-                if (!drawTime.isAfter(DateTime.now())) {
+                if (!_isFutureBeijingWallTime(drawTime)) {
                   messenger.showSnackBar(
                     const SnackBar(content: Text('开奖时间必须晚于当前时间')),
                   );
@@ -1227,7 +1313,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
                     'title': title,
                     'prize_name': prize,
                     'description': descCtrl.text.trim(),
-                    'draw_time': drawTime.toUtc().toIso8601String(),
+                    'draw_time': _beijingWallTimeToRfc3339(drawTime),
                   });
                   FocusManager.instance.primaryFocus?.unfocus();
                   if (navigator.mounted) navigator.pop(true);

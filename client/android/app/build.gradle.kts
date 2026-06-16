@@ -26,7 +26,9 @@ android {
     defaultConfig {
         applicationId = "com.example.shenliyuan"
         minSdk = flutter.minSdkVersion
-        targetSdk = flutter.targetSdkVersion
+        // UCropActivity from image_cropper is not edge-to-edge safe on Android 15+;
+        // keeping targetSdk at 34 prevents its toolbar from being drawn under the status bar.
+        targetSdk = 34
         versionCode = flutter.versionCode
         versionName = flutter.versionName
         manifestPlaceholders["JPUSH_PKGNAME"] = "com.example.shenliyuan"

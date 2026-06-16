@@ -357,7 +357,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final canDelete = _post != null &&
         currentUser != null &&
         (currentUser.id == _post!.authorId || currentUser.isAdmin);
-    final canEditMarket = widget.isMarket && _isCurrentUserPostOwner();
+    final canEdit = _isCurrentUserPostOwner();
 
     return Scaffold(
       backgroundColor: widget.isDesktopSplitMode
@@ -370,7 +370,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         automaticallyImplyLeading: !widget.hideBackButton,
         leading: widget.hideBackButton ? null : const BackButton(),
         actions: [
-          if (canEditMarket)
+          if (canEdit)
             IconButton(
               icon: const Icon(Icons.edit_outlined),
               tooltip: '编辑帖子',
@@ -521,7 +521,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                             child: _buildContactChip(p.contact, isDark),
                           ),
                         ],
-                        if (_isCurrentUserPostOwner()) ...[
+                        if (_canUseOwnerMarketActions()) ...[
                           const SizedBox(height: 24),
                           _buildOwnerMarketActions(isDark),
                         ],
@@ -652,7 +652,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           child: _buildContactChip(p.contact, isDark),
                         ),
                       ],
-                      if (_isCurrentUserPostOwner()) ...[
+                      if (_canUseOwnerMarketActions()) ...[
                         const SizedBox(height: 24),
                         _buildOwnerMarketActions(isDark),
                       ],
@@ -1725,10 +1725,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   bool _isCurrentUserPostOwner() {
     final post = _post;
     final currentUser = context.read<AuthProvider>().user;
-    return widget.isMarket &&
-        post != null &&
+    return post != null &&
         currentUser != null &&
         currentUser.id == post.authorId;
+  }
+
+  bool _canUseOwnerMarketActions() {
+    return widget.isMarket && _isCurrentUserPostOwner();
   }
 
   List<String> _resolvedImageUrls(Post post) {

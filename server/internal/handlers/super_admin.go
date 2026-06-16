@@ -757,6 +757,38 @@ func (h *SuperAdminHandler) CreateLotteryEvent(c *gin.Context) {
 	})
 }
 
+// DeleteLotteryEvent 删除抽奖活动，同时清理参与记录。
+func (h *SuperAdminHandler) DeleteLotteryEvent(c *gin.Context) {
+	eventID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil || eventID == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的抽奖ID"})
+		return
+	}
+
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("lottery_id = ?", eventID).Delete(&models.LotteryParticipant{}).Error; err != nil {
+			return err
+		}
+		result := tx.Delete(&models.LotteryEvent{}, eventID)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return gorm.ErrRecordNotFound
+		}
+		return nil
+	}); err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "抽奖活动不存在"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "删除抽奖失败"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "抽奖已删除"})
+}
+
 // GetLotteryParticipants 获取当前抽奖的参与者
 func (h *SuperAdminHandler) GetLotteryParticipants(c *gin.Context) {
 	var event models.LotteryEvent

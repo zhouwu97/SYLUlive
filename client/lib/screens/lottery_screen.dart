@@ -23,6 +23,8 @@ class _LotteryScreenState extends State<LotteryScreen> {
   bool _joined = false;
   int _myWeight = 0;
   bool _isSubmitting = false;
+  bool _postDrawRefreshInFlight = false;
+  DateTime? _lastPostDrawRefreshAt;
 
   late Dio _dio;
   Timer? _countdownTimer;
@@ -40,12 +42,13 @@ class _LotteryScreenState extends State<LotteryScreen> {
     super.dispose();
   }
 
-  Future<void> _fetchLottery() async {
-    if (mounted)
+  Future<void> _fetchLottery({bool silent = false}) async {
+    if (mounted && !silent) {
       setState(() {
         _isLoading = true;
         _errorMessage = null;
       });
+    }
     try {
       final response = await _dio.get('/lottery/current');
       if (mounted) {
@@ -56,37 +59,70 @@ class _LotteryScreenState extends State<LotteryScreen> {
           _myWeight = response.data['my_weight'] ?? 0;
           _isLoading = false;
         });
-        _startCountdown();
+        if (_event?.status == 0) {
+          if (_event!.drawTime.isAfter(DateTime.now())) {
+            _lastPostDrawRefreshAt = null;
+          }
+          _startCountdown();
+        } else {
+          _countdownTimer?.cancel();
+        }
       }
     } on DioException catch (e) {
       if (e.response?.statusCode == 404) {
-        if (mounted)
+        if (mounted) {
           setState(() {
             _isLoading = false;
             _errorMessage = "暂无抽奖活动";
           });
+        }
       } else {
-        if (mounted)
+        if (mounted) {
           setState(() {
             _isLoading = false;
             _errorMessage = AppFeedback.dioErrorMessage(e, fallback: '加载失败');
           });
+        }
       }
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         setState(() {
           _isLoading = false;
           _errorMessage = '发生未知错误';
         });
+      }
     }
   }
 
   void _startCountdown() {
     _countdownTimer?.cancel();
     _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      _refreshAfterDrawTimeIfNeeded();
       if (mounted) {
         setState(() {});
       }
+    });
+  }
+
+  void _refreshAfterDrawTimeIfNeeded() {
+    final event = _event;
+    if (event == null ||
+        event.status != 0 ||
+        event.drawTime.isAfter(DateTime.now())) {
+      return;
+    }
+
+    final now = DateTime.now();
+    if (_postDrawRefreshInFlight) return;
+    if (_lastPostDrawRefreshAt != null &&
+        now.difference(_lastPostDrawRefreshAt!) < const Duration(seconds: 15)) {
+      return;
+    }
+
+    _lastPostDrawRefreshAt = now;
+    _postDrawRefreshInFlight = true;
+    _fetchLottery(silent: true).whenComplete(() {
+      _postDrawRefreshInFlight = false;
     });
   }
 
@@ -107,22 +143,22 @@ class _LotteryScreenState extends State<LotteryScreen> {
     if (mounted) setState(() => _isSubmitting = true);
     try {
       final response = await _dio.post('/lottery/${_event!.id}/join');
+      if (!mounted) return;
       AppFeedback.showSnackBar(context, '参与成功！');
-      if (mounted) {
-        setState(() {
-          _joined = true;
-          _myWeight = response.data['weight'] ?? 0;
-          _participantCount++;
-          _isSubmitting = false;
-        });
-      }
+      setState(() {
+        _joined = true;
+        _myWeight = response.data['weight'] ?? 0;
+        _participantCount++;
+        _isSubmitting = false;
+      });
     } on DioException catch (e) {
+      if (!mounted) return;
       AppFeedback.showSnackBar(
         context,
         AppFeedback.dioErrorMessage(e, fallback: '参与失败'),
         isError: true,
       );
-      if (mounted) setState(() => _isSubmitting = false);
+      setState(() => _isSubmitting = false);
     }
   }
 
@@ -133,20 +169,23 @@ class _LotteryScreenState extends State<LotteryScreen> {
       title: '手动开奖',
       message: '确定要立即对该活动开奖吗？此操作不可逆，将立刻按权重抽取一名幸运儿。',
     );
+    if (!mounted) return;
     if (!confirm) return;
 
     if (mounted) setState(() => _isSubmitting = true);
     try {
       await _dio.post('/admin/lottery/${_event!.id}/draw');
+      if (!mounted) return;
       AppFeedback.showSnackBar(context, '开奖成功！');
       _fetchLottery();
     } on DioException catch (e) {
+      if (!mounted) return;
       AppFeedback.showSnackBar(
         context,
         AppFeedback.dioErrorMessage(e, fallback: '开奖失败'),
         isError: true,
       );
-      if (mounted) setState(() => _isSubmitting = false);
+      setState(() => _isSubmitting = false);
     }
   }
 
@@ -158,34 +197,63 @@ class _LotteryScreenState extends State<LotteryScreen> {
     final isSuperAdmin = user?.isSuperAdmin == true;
 
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor:
+          isDark ? const Color(0xFF06080D) : const Color(0xFFF4F6FB),
       appBar: AppBar(
         title: const Text('官方抽奖'),
         elevation: 0,
         backgroundColor: Colors.transparent,
       ),
       extendBodyBehindAppBar: true,
-      body: SafeArea(
-        child: _isLoading
-            ? const Center(child: CircularProgressIndicator())
-            : _errorMessage != null
-                ? Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.inbox_rounded,
-                            size: 80,
-                            color: isDark ? Colors.white30 : Colors.black26),
-                        const SizedBox(height: 16),
-                        Text(_errorMessage!,
-                            style: TextStyle(
-                                fontSize: 16,
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: isDark
+                      ? const [
+                          Color(0xFF06080D),
+                          Color(0xFF10131A),
+                          Color(0xFF06080D),
+                        ]
+                      : const [
+                          Color(0xFFF4F6FB),
+                          Color(0xFFEFF3F8),
+                          Color(0xFFF8FAFC),
+                        ],
+                ),
+              ),
+            ),
+          ),
+          SafeArea(
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : _errorMessage != null
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.inbox_rounded,
+                                size: 80,
                                 color:
-                                    isDark ? Colors.white70 : Colors.black54)),
-                      ],
-                    ),
-                  )
-                : _buildEventContent(context, primary, isDark, isSuperAdmin),
+                                    isDark ? Colors.white30 : Colors.black26),
+                            const SizedBox(height: 16),
+                            Text(_errorMessage!,
+                                style: TextStyle(
+                                    fontSize: 16,
+                                    color: isDark
+                                        ? Colors.white70
+                                        : Colors.black54)),
+                          ],
+                        ),
+                      )
+                    : _buildEventContent(
+                        context, primary, isDark, isSuperAdmin),
+          ),
+        ],
       ),
     );
   }

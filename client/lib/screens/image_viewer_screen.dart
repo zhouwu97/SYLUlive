@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:dio/dio.dart';
@@ -62,18 +64,78 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
       );
       final data = response.data;
       if (data != null && data.isNotEmpty) {
-        return _ImageBytesResult(Uint8List.fromList(data), '原图');
+        return _ImageBytesResult(await _normalizeImageBytes(data), '原图');
       }
     } catch (_) {
       // 网络原图不可用时继续尝试本地缓存，典型场景是服务器文件丢失但手机曾经看过这张图。
     }
 
+    final visible = await _readVisibleImage(url);
+    if (visible != null) {
+      return _ImageBytesResult(visible, '当前显示图片');
+    }
+
     final cached = await _readCachedImage(url);
     if (cached != null) {
-      return _ImageBytesResult(cached, '缓存图');
+      return _ImageBytesResult(await _normalizeImageBytes(cached), '缓存图');
     }
 
     throw Exception('原图不可用，且本机没有找到缓存');
+  }
+
+  Future<Uint8List> _normalizeImageBytes(List<int> bytes) async {
+    final codec = await ui.instantiateImageCodec(Uint8List.fromList(bytes));
+    final frame = await codec.getNextFrame();
+    return _encodeImageForGallery(frame.image);
+  }
+
+  Future<Uint8List?> _readVisibleImage(String url) async {
+    final provider = CachedNetworkImageProvider(
+      url,
+      cacheManager: PostImageCache.manager,
+    );
+    final stream = provider.resolve(const ImageConfiguration());
+    final completer = Completer<ui.Image?>();
+    late ImageStreamListener listener;
+    listener = ImageStreamListener(
+      (info, _) {
+        stream.removeListener(listener);
+        completer.complete(info.image);
+      },
+      onError: (error, stackTrace) {
+        stream.removeListener(listener);
+        completer.complete(null);
+      },
+    );
+    stream.addListener(listener);
+
+    final image = await completer.future.timeout(
+      const Duration(seconds: 2),
+      onTimeout: () {
+        stream.removeListener(listener);
+        return null;
+      },
+    );
+    if (image == null) return null;
+    return _encodeImageForGallery(image);
+  }
+
+  Future<Uint8List> _encodeImageForGallery(ui.Image image) async {
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+    final size = Size(image.width.toDouble(), image.height.toDouble());
+    canvas.drawColor(Colors.white, BlendMode.src);
+    canvas.drawImage(image, Offset.zero, Paint());
+    final picture = recorder.endRecording();
+    final flattened = await picture.toImage(
+      size.width.toInt(),
+      size.height.toInt(),
+    );
+    final byteData = await flattened.toByteData(format: ui.ImageByteFormat.png);
+    if (byteData == null) {
+      throw Exception('图片编码失败');
+    }
+    return byteData.buffer.asUint8List();
   }
 
   Future<Uint8List?> _readCachedImage(String url) async {
@@ -91,14 +153,6 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
       }
     }
     return null;
-  }
-
-  String _saveExtension(String url) {
-    final path = Uri.tryParse(url)?.path.toLowerCase() ?? '';
-    for (final ext in ['.jpg', '.jpeg', '.png', '.webp', '.gif']) {
-      if (path.endsWith(ext)) return ext;
-    }
-    return '.jpg';
   }
 
   Future<void> _saveImage() async {
@@ -128,7 +182,7 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
 
       final image = await _loadImageBytesForSaving(url);
       final String filename =
-          'sylulive_${DateTime.now().millisecondsSinceEpoch}${_saveExtension(url)}';
+          'sylulive_${DateTime.now().millisecondsSinceEpoch}.png';
 
       final tempDir = await getTemporaryDirectory();
       final tempPath = '${tempDir.path}/$filename';

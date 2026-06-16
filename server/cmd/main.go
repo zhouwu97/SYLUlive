@@ -957,7 +957,7 @@ func main() {
 
 		c.JSON(http.StatusOK, gin.H{
 
-			"version": "1.4.0",
+			"version": "1.5.4",
 
 			"min_version": "1.4.0", // 增加最低版本限制，低于此版本的客户端将被强制更新
 
@@ -969,7 +969,7 @@ func main() {
 
 			"gitee_download_url": "https://gitee.com/chunhezi/SYLUlive/releases",
 
-			"update_msg": "新版本可用，本次更新包含了重要功能，请务必更新。",
+			"update_msg": "1.5.4 更新：修复头像和主页背景裁剪页按钮与状态栏重叠；修复图片可显示但保存到相册变黑的问题；优化失物招领和官方抽奖页面背景；保留帖子编辑、图片占位、缓存保存、自动开奖公告和抽奖删除等 1.5.3 修复。",
 		})
 
 	})

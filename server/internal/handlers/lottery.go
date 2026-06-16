@@ -3,6 +3,7 @@ package handlers
 import (
 	"net/http"
 	"strconv"
+	"time"
 
 	"shenliyuan/internal/models"
 	"shenliyuan/internal/tasks"
@@ -66,6 +67,10 @@ func (h *LotteryHandler) Join(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "该活动已结束或已开奖"})
 		return
 	}
+	if !event.DrawTime.After(time.Now()) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "该活动已到开奖时间，已停止参与"})
+		return
+	}
 
 	// 获取用户当前的经验值以计算权重
 	var user models.User
@@ -102,6 +107,16 @@ func (h *LotteryHandler) Draw(c *gin.Context) {
 	eventID, err := strconv.ParseUint(eventIDStr, 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的活动ID"})
+		return
+	}
+
+	var event models.LotteryEvent
+	if err := h.db.First(&event, uint(eventID)).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "抽奖活动不存在"})
+		return
+	}
+	if event.DrawTime.After(time.Now()) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "还未到开奖时间"})
 		return
 	}
 

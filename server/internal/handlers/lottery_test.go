@@ -96,6 +96,66 @@ func TestCreateLotteryEventPublishesNewCurrentEventAndClosesOldOne(t *testing.T)
 	}
 }
 
+func TestDeleteLotteryEventRemovesEventAndParticipants(t *testing.T) {
+	db := newLotteryHandlerTestDB(t)
+	handler := NewSuperAdminHandler(db)
+
+	user := models.User{
+		StudentID:    "delete-participant-001",
+		PasswordHash: "test",
+		Nickname:     "参与者",
+	}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	event := models.LotteryEvent{
+		Title:       "待删除抽奖",
+		Description: "测试删除",
+		PrizeName:   "奖品",
+		DrawTime:    time.Now().Add(time.Hour),
+		Status:      0,
+	}
+	if err := db.Create(&event).Error; err != nil {
+		t.Fatalf("create event: %v", err)
+	}
+
+	if err := db.Create(&models.LotteryParticipant{
+		LotteryID: event.ID,
+		UserID:    user.ID,
+		Weight:    1,
+	}).Error; err != nil {
+		t.Fatalf("create participant: %v", err)
+	}
+
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Request = httptest.NewRequest(http.MethodDelete, "/api/super/lottery/1", nil)
+	context.Params = gin.Params{{Key: "id", Value: "1"}}
+	handler.DeleteLotteryEvent(context)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+
+	var eventCount int64
+	if err := db.Model(&models.LotteryEvent{}).Where("id = ?", event.ID).Count(&eventCount).Error; err != nil {
+		t.Fatalf("count events: %v", err)
+	}
+	if eventCount != 0 {
+		t.Fatalf("expected event deleted, count=%d", eventCount)
+	}
+
+	var participantCount int64
+	if err := db.Model(&models.LotteryParticipant{}).Where("lottery_id = ?", event.ID).Count(&participantCount).Error; err != nil {
+		t.Fatalf("count participants: %v", err)
+	}
+	if participantCount != 0 {
+		t.Fatalf("expected participants deleted, count=%d", participantCount)
+	}
+}
+
 func TestJoinLotteryRejectsAfterDrawTime(t *testing.T) {
 	db := newLotteryHandlerTestDB(t)
 	handler := NewLotteryHandler(db)

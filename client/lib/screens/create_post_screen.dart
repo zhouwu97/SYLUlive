@@ -4,6 +4,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../config/api_constants.dart';
+import '../config/privileged_accounts.dart';
 import '../models/post.dart';
 import '../providers/auth_provider.dart';
 import '../providers/post_provider.dart';
@@ -39,6 +40,14 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   final List<PostImage> _existingImages = [];
 
   bool get _isEditing => widget.editingPost != null;
+  bool get _canUploadUnlimitedImages {
+    final studentId = context.read<AuthProvider>().user?.studentId;
+    return PrivilegedAccounts.canUploadUnlimitedImages(studentId);
+  }
+
+  int get _totalImageCount => _existingImages.length + _selectedImages.length;
+  bool get _canAddMoreImages =>
+      _canUploadUnlimitedImages || _totalImageCount < 9;
 
   @override
   void initState() {
@@ -76,16 +85,19 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         if (length > 10 * 1024 * 1024) {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('图片大小不能超过 10MB'), backgroundColor: Colors.red),
+              const SnackBar(
+                  content: Text('图片大小不能超过 10MB'), backgroundColor: Colors.red),
             );
           }
           return;
         }
 
-        if (_selectedImages.length < 9) {
-          if (mounted) setState(() {
-            _selectedImages.add(image);
-          });
+        if (_canAddMoreImages) {
+          if (mounted) {
+            setState(() {
+              _selectedImages.add(image);
+            });
+          }
         } else {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
@@ -100,15 +112,19 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   }
 
   void _removeImage(int index) {
-    if (mounted) setState(() {
-      _selectedImages.removeAt(index);
-    });
+    if (mounted) {
+      setState(() {
+        _selectedImages.removeAt(index);
+      });
+    }
   }
 
   void _removeExistingImage(int index) {
-    if (mounted) setState(() {
-      _existingImages.removeAt(index);
-    });
+    if (mounted) {
+      setState(() {
+        _existingImages.removeAt(index);
+      });
+    }
   }
 
   void _showImageSourceDialog() {
@@ -165,9 +181,11 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       return;
     }
 
-    if (mounted) setState(() {
-      _isLoading = true;
-    });
+    if (mounted) {
+      setState(() {
+        _isLoading = true;
+      });
+    }
 
     final postProvider = context.read<PostProvider>();
 
@@ -185,9 +203,11 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     }
 
     if (hasUploadError) {
-      if (mounted) setState(() {
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -228,9 +248,11 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
             fileIds: mergedFileIds.isNotEmpty ? mergedFileIds : null,
           );
 
-    if (mounted) setState(() {
-      _isLoading = false;
-    });
+    if (mounted) {
+      setState(() {
+        _isLoading = false;
+      });
+    }
 
     if (result.success && mounted) {
       Navigator.pop(context, true);
@@ -283,7 +305,9 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                 TextField(
                   controller: _titleController,
                   decoration: InputDecoration(
-                    labelText: (_postType == 'lost' || _postType == 'found') ? '物品名称' : '商品名称',
+                    labelText: (_postType == 'lost' || _postType == 'found')
+                        ? '物品名称'
+                        : '商品名称',
                     hintText: (_postType == 'lost' || _postType == 'found')
                         ? '请输入物品名称'
                         : '请输入商品名称',
@@ -316,23 +340,37 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                       ),
                       initialValue: _postType.isEmpty ? null : _postType,
                       items: [
-                        if (widget.allowedPostTypes == null || widget.allowedPostTypes!.contains('sell'))
-                          const DropdownMenuItem(value: 'sell', child: Text('出售')),
-                        if (widget.allowedPostTypes == null || widget.allowedPostTypes!.contains('buy'))
-                          const DropdownMenuItem(value: 'buy', child: Text('求购')),
-                        if (widget.allowedPostTypes == null || widget.allowedPostTypes!.contains('proxy'))
-                          const DropdownMenuItem(value: 'proxy', child: Text('代课')),
-                        if (widget.allowedPostTypes == null || widget.allowedPostTypes!.contains('lost'))
-                          const DropdownMenuItem(value: 'lost', child: Text('求问失物')),
-                        if (widget.allowedPostTypes == null || widget.allowedPostTypes!.contains('found'))
-                          const DropdownMenuItem(value: 'found', child: Text('寻找失主')),
-                        if (widget.allowedPostTypes == null || widget.allowedPostTypes!.contains('exposure'))
-                          const DropdownMenuItem(value: 'exposure', child: Text('曝光')),
+                        if (widget.allowedPostTypes == null ||
+                            widget.allowedPostTypes!.contains('sell'))
+                          const DropdownMenuItem(
+                              value: 'sell', child: Text('出售')),
+                        if (widget.allowedPostTypes == null ||
+                            widget.allowedPostTypes!.contains('buy'))
+                          const DropdownMenuItem(
+                              value: 'buy', child: Text('求购')),
+                        if (widget.allowedPostTypes == null ||
+                            widget.allowedPostTypes!.contains('proxy'))
+                          const DropdownMenuItem(
+                              value: 'proxy', child: Text('代课')),
+                        if (widget.allowedPostTypes == null ||
+                            widget.allowedPostTypes!.contains('lost'))
+                          const DropdownMenuItem(
+                              value: 'lost', child: Text('求问失物')),
+                        if (widget.allowedPostTypes == null ||
+                            widget.allowedPostTypes!.contains('found'))
+                          const DropdownMenuItem(
+                              value: 'found', child: Text('寻找失主')),
+                        if (widget.allowedPostTypes == null ||
+                            widget.allowedPostTypes!.contains('exposure'))
+                          const DropdownMenuItem(
+                              value: 'exposure', child: Text('曝光')),
                       ],
                       onChanged: (value) {
-                        if (mounted) setState(() {
-                          _postType = value ?? '';
-                        });
+                        if (mounted) {
+                          setState(() {
+                            _postType = value ?? '';
+                          });
+                        }
                       },
                     ),
                   ),
@@ -362,7 +400,9 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
               TextField(
                 controller: _contactController,
                 decoration: InputDecoration(
-                  labelText: (_postType == 'lost' || _postType == 'found') ? '联系方式及地点（选填）' : '联系方式（选填）',
+                  labelText: (_postType == 'lost' || _postType == 'found')
+                      ? '联系方式及地点（选填）'
+                      : '联系方式（选填）',
                   hintText: '您的联系方式，方便他人核实',
                 ),
               ),
@@ -409,9 +449,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                   scrollDirection: Axis.horizontal,
                   itemCount: _existingImages.length +
                       _selectedImages.length +
-                      (_existingImages.length + _selectedImages.length < 9
-                          ? 1
-                          : 0),
+                      (_canAddMoreImages ? 1 : 0),
                   itemBuilder: (context, index) {
                     final totalImages =
                         _existingImages.length + _selectedImages.length;
@@ -525,7 +563,11 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
             OutlinedButton.icon(
               onPressed: _showImageSourceDialog,
               icon: const Icon(Icons.add_photo_alternate),
-              label: Text(_selectedImages.isEmpty ? '添加图片（最多9张）' : '继续添加'),
+              label: Text(
+                _canUploadUnlimitedImages
+                    ? (_selectedImages.isEmpty ? '添加图片' : '继续添加')
+                    : (_selectedImages.isEmpty ? '添加图片（最多9张）' : '继续添加'),
+              ),
             ),
           ],
         ),

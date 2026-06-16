@@ -4,8 +4,10 @@
 `
 ## 基线原则
 `
-- `/opt/shenliyuan` 是唯一部署目录
-- 线上行为只由 `/opt/shenliyuan` 当前代码、当前二进制和当前 systemd 进程决定
+- `/opt/shenliyuan-src` 是干净源码目录，只用于 `git pull`、依赖下载和编译
+- `/opt/shenliyuan` 是线上运行目录，只存放 `.env`、运行二进制、上传文件、数据库文件和备份文件
+- 线上行为由 `/opt/shenliyuan/shenliyuan` 二进制、`/opt/shenliyuan/.env` 配置和当前 systemd 进程决定
+- 不要在 `/opt/shenliyuan` 执行 `git pull`，这个目录可能包含生产上传文件和历史备份
 - 不要用 `/root/SYLUlive`、`/root/server`、`/root/client` 直接更新线上服务
 - 排查顺序固定为：`commit -> 编译 -> 进程 -> token`
 `
@@ -13,6 +15,8 @@
 `
 服务配置以 systemd 为准：
 `
+- 源码目录：`/opt/shenliyuan-src`
+- 运行目录：`/opt/shenliyuan`
 - `WorkingDirectory=/opt/shenliyuan`
 - `ExecStart=/opt/shenliyuan/shenliyuan`
 `
@@ -21,6 +25,8 @@
 ```bash
 systemctl cat shenliyuan
 systemctl status shenliyuan --no-pager
+cd /opt/shenliyuan-src && git status --short --branch
+cd /opt/shenliyuan-src && git log -1 --oneline
 readlink -f /proc/$(pgrep -o shenliyuan)/exe
 ```
 `
@@ -35,40 +41,82 @@ readlink -f /proc/$(pgrep -o shenliyuan)/exe
 ### 部署步骤
 `
 ```bash
-git clone -b fwqtest https://github.com/zhouwu97/SYLUlive.git /opt/shenliyuan
-cd /opt/shenliyuan
-bash deploy.sh
+mkdir -p /opt/shenliyuan
+git clone -b fwqtest https://github.com/zhouwu97/SYLUlive.git /opt/shenliyuan-src
+
+cd /opt/shenliyuan-src/server
+go mod download
+go build -o /opt/shenliyuan/shenliyuan ./cmd/main.go
+chmod +x /opt/shenliyuan/shenliyuan
+
+# 确认 /opt/shenliyuan/.env 已配置完成后启动服务
+systemctl restart shenliyuan
 ```
 `
 部署完成后检查：
 `
 ```bash
-cd /opt/shenliyuan
+cd /opt/shenliyuan-src
 git branch --show-current
 git log -1 --oneline
+git status --short --branch
 systemctl status shenliyuan --no-pager
 journalctl -u shenliyuan -n 50 --no-pager
 ```
 `
 ## 日常更新
 `
-以后线上更新统一使用下面这套命令：
+以后线上更新统一使用一键脚本：
 `
 ```bash
-cd /opt/shenliyuan
-git pull origin fwqtest
-cd /opt/shenliyuan/server
-go build -o /opt/shenliyuan/shenliyuan ./cmd/main.go
+deploy-shenliyuan
+```
+`
+脚本等价于下面这套流程：
+`
+```bash
+cd /opt/shenliyuan-src
+git fetch origin
+git checkout fwqtest
+git pull --ff-only origin fwqtest
+
+cd /opt/shenliyuan-src/server
+go mod download
+go build -o /opt/shenliyuan/shenliyuan.new ./cmd/main.go
+
+cp -a /opt/shenliyuan/shenliyuan /opt/shenliyuan/shenliyuan.bak.$(date +%Y%m%d_%H%M%S)
+mv /opt/shenliyuan/shenliyuan.new /opt/shenliyuan/shenliyuan
+chmod +x /opt/shenliyuan/shenliyuan
+
 systemctl restart shenliyuan
 ```
 `
 更新后立即验证：
 `
 ```bash
-cd /opt/shenliyuan
+cd /opt/shenliyuan-src
 git log -1 --oneline
+git status --short --branch
+
 systemctl is-active shenliyuan
+curl -s http://127.0.0.1:8080/api/version
 journalctl -u shenliyuan -n 50 --no-pager
+```
+
+如果更新失败，先看服务状态和日志：
+`
+```bash
+systemctl status shenliyuan --no-pager
+journalctl -u shenliyuan -n 100 --no-pager
+```
+`
+如需回滚到上一个二进制：
+`
+```bash
+ls -lh /opt/shenliyuan/shenliyuan.bak.*
+cp -a /opt/shenliyuan/shenliyuan.bak.具体时间 /opt/shenliyuan/shenliyuan
+chmod +x /opt/shenliyuan/shenliyuan
+systemctl restart shenliyuan
 ```
 
 ## 客户端 (APK) 更新
@@ -91,20 +139,25 @@ scp client/build/app/outputs/flutter-apk/app-release.apk root@<你的服务器IP
 
 ## 开发阶段重建
 `
-当前还在开发阶段、没有真实用户时，最干净的方式是直接重建部署目录和数据库：
+当前还在开发阶段、没有真实用户时，最干净的方式是直接重建源码目录、运行目录和数据库：
 `
 ```bash
 systemctl stop shenliyuan
 `
+rm -rf /opt/shenliyuan-src
 rm -rf /opt/shenliyuan
 `
 sudo -u postgres psql -c "DROP DATABASE IF EXISTS shenliyuan;"
 sudo -u postgres psql -c "DROP USER IF EXISTS shenliyuan;"
 `
-git clone -b fwqtest https://github.com/zhouwu97/SYLUlive.git /opt/shenliyuan
+mkdir -p /opt/shenliyuan
+git clone -b fwqtest https://github.com/zhouwu97/SYLUlive.git /opt/shenliyuan-src
 `
-cd /opt/shenliyuan
-bash deploy.sh
+cd /opt/shenliyuan-src/server
+go mod download
+go build -o /opt/shenliyuan/shenliyuan ./cmd/main.go
+chmod +x /opt/shenliyuan/shenliyuan
+systemctl restart shenliyuan
 ```
 `
 这会绕开旧 schema 兼容问题，适合快速回到干净基线。
@@ -146,7 +199,7 @@ GIN_MODE=release
 `
 ### 基础验收
 `
-1. `/opt/shenliyuan` 当前 commit 正确
+1. `/opt/shenliyuan-src` 当前 commit 正确
 2. `shenliyuan` 服务为 `active`
 3. `readlink -f /proc/$(pgrep -o shenliyuan)/exe` 指向 `/opt/shenliyuan/shenliyuan`
 4. 超管账号可正常登录
@@ -200,8 +253,9 @@ GIN_MODE=release
 按顺序检查：
 `
 ```bash
-cd /opt/shenliyuan
+cd /opt/shenliyuan-src
 git log -1 --oneline
+git status --short --branch
 ls -l /opt/shenliyuan/shenliyuan
 readlink -f /proc/$(pgrep -o shenliyuan)/exe
 systemctl status shenliyuan --no-pager

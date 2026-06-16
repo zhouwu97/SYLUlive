@@ -35,4 +35,25 @@ void main() {
       'https://cdn.example.com/a.png',
     );
   });
+
+  test('legacy http upload URLs can be normalized to same-origin paths', () {
+    expect(
+      ApiConstants.normalizeSameOriginResourceUrl(
+        'http://156.233.229.232:8080/uploads/a/a.png',
+      ),
+      '/uploads/a/a.png',
+    );
+    expect(
+      ApiConstants.normalizeSameOriginResourceUrl(
+        'http://156.233.229.232:8080/uploads/a/a.png?v=1#preview',
+      ),
+      '/uploads/a/a.png?v=1#preview',
+    );
+    expect(
+      ApiConstants.normalizeSameOriginResourceUrl(
+        'http://example.com/not-upload/a.png',
+      ),
+      'http://example.com/not-upload/a.png',
+    );
+  });
 }

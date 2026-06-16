@@ -2,9 +2,12 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:dio/dio.dart';
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:gal/gal.dart';
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
+
+import '../utils/post_image_cache.dart';
 
 class ImageViewerScreen extends StatefulWidget {
   final List<String> imageUrls;
@@ -18,6 +21,13 @@ class ImageViewerScreen extends StatefulWidget {
 
   @override
   State<ImageViewerScreen> createState() => _ImageViewerScreenState();
+}
+
+class _ImageBytesResult {
+  final Uint8List bytes;
+  final String sourceLabel;
+
+  const _ImageBytesResult(this.bytes, this.sourceLabel);
 }
 
 class _ImageViewerScreenState extends State<ImageViewerScreen> {
@@ -39,13 +49,65 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
     super.dispose();
   }
 
+  Future<_ImageBytesResult> _loadImageBytesForSaving(String url) async {
+    final alreadyDownloaded = _downloadedImages[_currentIndex];
+    if (alreadyDownloaded != null) {
+      return _ImageBytesResult(alreadyDownloaded, '当前图片');
+    }
+
+    try {
+      final response = await Dio().get<List<int>>(
+        url,
+        options: Options(responseType: ResponseType.bytes),
+      );
+      final data = response.data;
+      if (data != null && data.isNotEmpty) {
+        return _ImageBytesResult(Uint8List.fromList(data), '原图');
+      }
+    } catch (_) {
+      // 网络原图不可用时继续尝试本地缓存，典型场景是服务器文件丢失但手机曾经看过这张图。
+    }
+
+    final cached = await _readCachedImage(url);
+    if (cached != null) {
+      return _ImageBytesResult(cached, '缓存图');
+    }
+
+    throw Exception('原图不可用，且本机没有找到缓存');
+  }
+
+  Future<Uint8List?> _readCachedImage(String url) async {
+    final cacheManagers = <BaseCacheManager>[
+      PostImageCache.manager,
+      DefaultCacheManager(),
+    ];
+
+    for (final cacheManager in cacheManagers) {
+      final fileInfo = await cacheManager.getFileFromCache(url);
+      final file = fileInfo?.file;
+      if (file != null && await file.exists()) {
+        final bytes = await file.readAsBytes();
+        if (bytes.isNotEmpty) return bytes;
+      }
+    }
+    return null;
+  }
+
+  String _saveExtension(String url) {
+    final path = Uri.tryParse(url)?.path.toLowerCase() ?? '';
+    for (final ext in ['.jpg', '.jpeg', '.png', '.webp', '.gif']) {
+      if (path.endsWith(ext)) return ext;
+    }
+    return '.jpg';
+  }
+
   Future<void> _saveImage() async {
     if (_isSaving) return;
     if (mounted) setState(() => _isSaving = true);
 
     try {
       final String url = widget.imageUrls[_currentIndex];
-      
+
       final hasAccess = await Gal.hasAccess();
       if (!hasAccess) {
         final request = await Gal.requestAccess();
@@ -61,30 +123,26 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('正在下载并保存原图...')),
-      );
-      
-      final response = await Dio().get(
-        url,
-        options: Options(responseType: ResponseType.bytes),
+        const SnackBar(content: Text('正在保存图片，原图不可用时会尝试本地缓存...')),
       );
 
-      final Uint8List bytes = Uint8List.fromList(response.data);
-      final String filename = 'sylulive_${DateTime.now().millisecondsSinceEpoch}.jpg';
-      
+      final image = await _loadImageBytesForSaving(url);
+      final String filename =
+          'sylulive_${DateTime.now().millisecondsSinceEpoch}${_saveExtension(url)}';
+
       final tempDir = await getTemporaryDirectory();
       final tempPath = '${tempDir.path}/$filename';
       final file = File(tempPath);
-      await file.writeAsBytes(bytes);
+      await file.writeAsBytes(image.bytes);
 
       await Gal.putImage(tempPath, album: '沈理');
 
       if (!mounted) return;
       setState(() {
-        _downloadedImages[_currentIndex] = bytes;
+        _downloadedImages[_currentIndex] = image.bytes;
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('原图已保存到"沈理"相册并替换当前显示')),
+        SnackBar(content: Text('${image.sourceLabel}已保存到"沈理"相册')),
       );
     } catch (e) {
       if (!mounted) return;
@@ -130,9 +188,11 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
         controller: _pageController,
         itemCount: widget.imageUrls.length,
         onPageChanged: (index) {
-          if (mounted) setState(() {
-            _currentIndex = index;
-          });
+          if (mounted) {
+            setState(() {
+              _currentIndex = index;
+            });
+          }
         },
         itemBuilder: (context, index) {
           return InteractiveViewer(
@@ -143,6 +203,7 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
                       fit: BoxFit.contain,
                     )
                   : CachedNetworkImage(
+                      cacheManager: PostImageCache.manager,
                       imageUrl: widget.imageUrls[index],
                       fit: BoxFit.contain,
                       placeholder: (context, url) => const Center(

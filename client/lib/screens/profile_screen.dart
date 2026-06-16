@@ -22,6 +22,7 @@ import '../utils/responsive_util.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/cached_avatar.dart';
 import '../config/api_constants.dart';
+import '../config/privileged_accounts.dart';
 import 'edu_screen.dart';
 import 'exam_extract_screen.dart';
 import 'login_screen.dart';
@@ -616,22 +617,23 @@ class _ProfileScreenState extends State<ProfileScreen>
               );
             },
           ),
-          _buildAdminEntry(
-            context: context,
-            isDark: isDark,
-            icon: Icons.receipt_long,
-            iconColor: Colors.teal,
-            title: 'OneClass 订单',
-            subtitle: '查看 OneClass 支付、机器授权与签发状态',
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const OneClassOrdersScreen(),
-                ),
-              );
-            },
-          ),
+          if (PrivilegedAccounts.canViewOneClassOrders(user?.studentId))
+            _buildAdminEntry(
+              context: context,
+              isDark: isDark,
+              icon: Icons.receipt_long,
+              iconColor: Colors.teal,
+              title: 'OneClass 订单',
+              subtitle: '查看 OneClass 支付、机器授权与签发状态',
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const OneClassOrdersScreen(),
+                  ),
+                );
+              },
+            ),
         ];
 
         return _buildSectionLayout(context, '管理员', items, isDark);

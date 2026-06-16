@@ -141,7 +141,8 @@ class _MarketScreenState extends State<MarketScreen> {
     final topInset = MediaQuery.paddingOf(context).top + kToolbarHeight + 12;
 
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor:
+          isDark ? const Color(0xFF06080D) : const Color(0xFFF4F6FB),
       extendBodyBehindAppBar: true,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
@@ -177,9 +178,21 @@ class _MarketScreenState extends State<MarketScreen> {
           Positioned.fill(
             child: DecoratedBox(
               decoration: BoxDecoration(
-                color: isDark
-                    ? Colors.black.withValues(alpha: 0.18)
-                    : Colors.white.withValues(alpha: 0.16),
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: isDark
+                      ? const [
+                          Color(0xFF06080D),
+                          Color(0xFF10131A),
+                          Color(0xFF06080D),
+                        ]
+                      : const [
+                          Color(0xFFF4F6FB),
+                          Color(0xFFEFF3F8),
+                          Color(0xFFF8FAFC),
+                        ],
+                ),
               ),
             ),
           ),

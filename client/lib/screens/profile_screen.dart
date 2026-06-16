@@ -1075,7 +1075,7 @@ class _ProfileScreenState extends State<ProfileScreen>
         uiSettings: [
           AndroidUiSettings(
             toolbarTitle: '裁剪头像',
-            toolbarColor: Theme.of(context).primaryColor,
+            toolbarColor: Colors.black,
             toolbarWidgetColor: Colors.white,
             statusBarColor: Colors.black,
             backgroundColor: Colors.black,

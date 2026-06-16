@@ -262,40 +262,53 @@ class _LotteryScreenState extends State<LotteryScreen> {
       BuildContext context, Color primary, bool isDark, bool isSuperAdmin) {
     final ev = _event!;
     final isOngoing = ev.status == 0;
+    final titleColor = isDark ? Colors.white : const Color(0xFF111827);
+    final subtitleColor = isDark ? Colors.white70 : const Color(0xFF64748B);
+    final giftColor = isDark
+        ? Colors.white.withValues(alpha: 0.86)
+        : primary.withValues(alpha: 0.68);
+    final cardColor =
+        isDark ? const Color(0xCC111827) : Colors.white.withValues(alpha: 0.96);
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Column(
         children: [
           const SizedBox(height: 20),
-          Icon(Icons.card_giftcard,
-              size: 100, color: Colors.white.withValues(alpha: 0.9)),
+          Icon(Icons.card_giftcard, size: 100, color: giftColor),
           const SizedBox(height: 24),
           Text(
             ev.title,
-            style: const TextStyle(
+            textAlign: TextAlign.center,
+            style: TextStyle(
               fontSize: 28,
               fontWeight: FontWeight.w900,
-              color: Colors.white,
-              shadows: [Shadow(color: Colors.black26, blurRadius: 10)],
+              color: titleColor,
+              shadows: isDark
+                  ? const [Shadow(color: Colors.black26, blurRadius: 10)]
+                  : null,
             ),
           ),
           const SizedBox(height: 12),
           Text(
             ev.description,
             textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 15, color: Colors.white70),
+            style: TextStyle(fontSize: 15, color: subtitleColor),
           ),
           const SizedBox(height: 32),
           Container(
             padding: const EdgeInsets.all(24),
             decoration: BoxDecoration(
-              color:
-                  isDark ? Colors.black45 : Colors.white.withValues(alpha: 0.8),
+              color: cardColor,
               borderRadius: BorderRadius.circular(24),
+              border: Border.all(
+                color: isDark
+                    ? Colors.white.withValues(alpha: 0.08)
+                    : Colors.black.withValues(alpha: 0.04),
+              ),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.1),
+                  color: Colors.black.withValues(alpha: isDark ? 0.24 : 0.08),
                   blurRadius: 20,
                   offset: const Offset(0, 10),
                 )
@@ -387,15 +400,27 @@ class _LotteryScreenState extends State<LotteryScreen> {
             Container(
               padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
-                color: primary.withValues(alpha: 0.1),
+                color: isDark
+                    ? primary.withValues(alpha: 0.14)
+                    : Colors.white.withValues(alpha: 0.96),
                 borderRadius: BorderRadius.circular(20),
                 border: Border.all(color: primary.withValues(alpha: 0.3)),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: isDark ? 0.18 : 0.06),
+                    blurRadius: 18,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
               ),
               child: Column(
                 children: [
-                  const Text('🎉 中奖名单',
-                      style:
-                          TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  Text('🎉 中奖名单',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: titleColor,
+                      )),
                   const SizedBox(height: 16),
                   if (ev.winner != null)
                     Row(

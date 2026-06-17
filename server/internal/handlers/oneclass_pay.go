@@ -600,6 +600,61 @@ func (h *OneClassPayHandler) PayStatus(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
+func (h *OneClassPayHandler) SyncLicense(c *gin.Context) {
+	var req struct {
+		MachineID string `json:"machine_id" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少机器标识"})
+		return
+	}
+	req.MachineID = strings.TrimSpace(req.MachineID)
+	if req.MachineID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少机器标识"})
+		return
+	}
+	userID, _ := c.Get("user_id")
+	uid, _ := userID.(uint)
+	if uid == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "请先登录统一账号后同步 OneClass 授权"})
+		return
+	}
+
+	var order models.OneClassPayOrder
+	err := h.db.Where(
+		"user_id = ? AND machine_id = ? AND status = ?",
+		uid,
+		req.MachineID,
+		"completed",
+	).Order("paid_at DESC, updated_at DESC, id DESC").First(&order).Error
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "当前账号和机器标识没有已付款的 OneClass 订单"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询 OneClass 订单失败"})
+		return
+	}
+
+	h.ensureLicenseToken(&order)
+	if order.LicenseToken == "" {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "授权 token 暂未签发，请稍后重试"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success":           true,
+		"order_no":          order.OrderNo,
+		"status":            order.Status,
+		"amount_cents":      order.AmountCents,
+		"tier":              order.Tier,
+		"machine_id":        order.MachineID,
+		"paid_at":           order.PaidAt,
+		"updates_until":     order.UpdatesUntil,
+		"license_issued_at": order.LicenseIssuedAt,
+		"license_token":     order.LicenseToken,
+	})
+}
+
 func (h *OneClassPayHandler) StartPayment(c *gin.Context) {
 	order, ok := h.findPublicOrder(c)
 	if !ok {

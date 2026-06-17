@@ -397,6 +397,7 @@ func main() {
 	r.Any("/api/oneclass/pay/notify", oneClassPayHandler.PayNotify)
 	r.GET("/api/oneclass/pay/buy", oneClassPayHandler.BuyPage)
 	r.POST("/api/oneclass/pay/create", middleware.AuthMiddleware(db, cfg.JWTSecret), oneClassPayHandler.CreateOrder)
+	r.POST("/api/oneclass/pay/sync", middleware.AuthMiddleware(db, cfg.JWTSecret), oneClassPayHandler.SyncLicense)
 	r.GET("/api/oneclass/pay/checkout", oneClassPayHandler.CheckoutPage)
 	r.GET("/api/oneclass/pay/status", oneClassPayHandler.PayStatus)
 	r.GET("/api/oneclass/pay/start", oneClassPayHandler.StartPayment)
@@ -957,7 +958,7 @@ func main() {
 
 		c.JSON(http.StatusOK, gin.H{
 
-			"version": "1.5.4",
+			"version": "1.5.5",
 
 			"min_version": "1.4.0", // 增加最低版本限制，低于此版本的客户端将被强制更新
 
@@ -969,7 +970,7 @@ func main() {
 
 			"gitee_download_url": "https://gitee.com/chunhezi/SYLUlive/releases",
 
-			"update_msg": "1.5.4 更新：修复头像和主页背景裁剪页按钮与状态栏重叠；修复图片可显示但保存到相册变黑的问题；优化失物招领和官方抽奖页面背景；保留帖子编辑、图片占位、缓存保存、自动开奖公告和抽奖删除等 1.5.3 修复。",
+			"update_msg": "1.5.5 更新：优化平板与网页版横屏布局，恢复帖子详情的移动端背景观感；新增手机/平板内置壁纸，支持完整显示、直接使用和裁剪编辑；裁剪后的背景可全屏铺满，网页版完整显示改为居中；修复部分按钮在 Web 首次加载后不可见或不可点的问题；移动端接口默认改为 HTTPS 域名代理，提升手机网络可用性。",
 		})
 
 	})

@@ -122,6 +122,89 @@ func TestOneClassPayStatusDoesNotExposeLicenseToBrowser(t *testing.T) {
 	}
 }
 
+func TestOneClassSyncLicenseReturnsPaidOrderForCurrentUserAndMachine(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	handler := newOneClassPayTestHandler(t)
+	paidAt := time.Date(2026, 6, 15, 8, 0, 0, 0, time.UTC)
+	order := models.OneClassPayOrder{
+		UserID:      7,
+		OrderNo:     "OCSYNC123",
+		Tier:        models.OneClassTierOneTime,
+		Title:       "OneClass 一次性购买",
+		MachineID:   "oc-sync-machine",
+		AmountCents: 300,
+		PayType:     "alipay",
+		Status:      "completed",
+		PaidAt:      &paidAt,
+	}
+	if err := handler.db.Create(&order).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Request = httptest.NewRequest(
+		http.MethodPost,
+		"/api/oneclass/pay/sync",
+		strings.NewReader(`{"machine_id":"oc-sync-machine"}`),
+	)
+	context.Request.Header.Set("Content-Type", "application/json")
+	context.Set("user_id", uint(7))
+
+	handler.SyncLicense(context)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", recorder.Code, recorder.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	token, _ := body["license_token"].(string)
+	if token == "" || len(strings.Split(token, ".")) != 3 {
+		t.Fatalf("expected JWT license token, got %#v", body)
+	}
+	if body["order_no"] != "OCSYNC123" {
+		t.Fatalf("unexpected order response: %#v", body)
+	}
+}
+
+func TestOneClassSyncLicenseRejectsDifferentUser(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	handler := newOneClassPayTestHandler(t)
+	paidAt := time.Date(2026, 6, 15, 8, 0, 0, 0, time.UTC)
+	order := models.OneClassPayOrder{
+		UserID:      7,
+		OrderNo:     "OCOTHER123",
+		Tier:        models.OneClassTierOneTime,
+		Title:       "OneClass 一次性购买",
+		MachineID:   "oc-sync-machine",
+		AmountCents: 300,
+		PayType:     "alipay",
+		Status:      "completed",
+		PaidAt:      &paidAt,
+	}
+	if err := handler.db.Create(&order).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Request = httptest.NewRequest(
+		http.MethodPost,
+		"/api/oneclass/pay/sync",
+		strings.NewReader(`{"machine_id":"oc-sync-machine"}`),
+	)
+	context.Request.Header.Set("Content-Type", "application/json")
+	context.Set("user_id", uint(8))
+
+	handler.SyncLicense(context)
+
+	if recorder.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
 func TestOneClassLicenseKeyRequiredInGinReleaseMode(t *testing.T) {
 	t.Setenv("GIN_MODE", "release")
 	t.Setenv("ONECLASS_LICENSE_PRIVATE_KEY", "")

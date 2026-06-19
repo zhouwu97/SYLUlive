@@ -27,6 +27,8 @@ import (
 
 	"shenliyuan/internal/models"
 
+	"shenliyuan/internal/services"
+
 	"shenliyuan/internal/tasks"
 )
 
@@ -224,7 +226,7 @@ func main() {
 
 	likeHandler := handlers.NewLikeHandler(db)
 
-	messageHandler := handlers.NewMessageHandler(db)
+	messageHandler := handlers.NewMessageHandler(db, services.NewNotificationService(cfg.JPushAppKey, cfg.JPushMasterSecret))
 
 	announcementHandler := handlers.NewAnnouncementHandler(db)
 

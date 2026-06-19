@@ -55,6 +55,7 @@ var jpush = JPush.newJPush();
 final FlutterLocalNotificationsPlugin _privateMessageNotifications =
     FlutterLocalNotificationsPlugin();
 bool _privateMessageNotificationsReady = false;
+final Set<String> _seenJpushMsgIds = {};
 
 Future<void> setupJPush(AuthProvider authProvider) async {
   jpush.setup(
@@ -202,6 +203,16 @@ Future<bool> _handlePrivateMessageNotification(
     return true;
   }
 
+  // 去重：同一个 JPush 消息 ID 不重复弹本地通知（后台已由极光显示过）
+  final msgId = _jpushMsgId(message);
+  if (msgId != null) {
+    if (_seenJpushMsgIds.contains(msgId)) {
+      debugPrint('跳过重复通知: msg_id=$msgId');
+      return true;
+    }
+    _seenJpushMsgIds.add(msgId);
+  }
+
   final context = appNavigatorKey.currentContext;
   final provider = context?.read<MessageProvider>();
   if (provider?.currentConversationId == conversationId) {
@@ -280,6 +291,14 @@ String? _androidNotificationValue(Map<String, dynamic> message, String key) {
   final android = message['android'];
   if (android is Map && android[key] != null) {
     return android[key].toString();
+  }
+  return null;
+}
+
+String? _jpushMsgId(Map<String, dynamic> message) {
+  final extras = message['extras'];
+  if (extras is Map) {
+    return extras['cn.jpush.android.MSG_ID']?.toString();
   }
   return null;
 }

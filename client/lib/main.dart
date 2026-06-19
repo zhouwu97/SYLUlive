@@ -56,6 +56,8 @@ final FlutterLocalNotificationsPlugin _privateMessageNotifications =
     FlutterLocalNotificationsPlugin();
 bool _privateMessageNotificationsReady = false;
 final Set<String> _seenJpushMsgIds = {};
+/// 刚启动时跳过本地通知（极光已显示过的旧通知重放），2 秒后恢复
+bool _skipInitialNotifications = false;
 
 Future<void> setupJPush(AuthProvider authProvider) async {
   jpush.setup(
@@ -64,6 +66,11 @@ Future<void> setupJPush(AuthProvider authProvider) async {
     production: false,
     debug: true,
   );
+  // 启动窗口：注册 handler 后 2 秒内收到的通知是极光已显示过的，跳过本地弹窗
+  _skipInitialNotifications = true;
+  Future.delayed(const Duration(seconds: 2), () {
+    _skipInitialNotifications = false;
+  });
   jpush.addEventHandler(
     onReceiveNotification: (Map<String, dynamic> message) async {
       debugPrint('🔔 收到通知: $message');
@@ -211,6 +218,12 @@ Future<bool> _handlePrivateMessageNotification(
       return true;
     }
     _seenJpushMsgIds.add(msgId);
+  }
+
+  // 启动窗口跳过：刚打开 app 时重放的旧通知不弹本地
+  if (_skipInitialNotifications) {
+    debugPrint('启动窗口跳过本地通知');
+    return true;
   }
 
   final context = appNavigatorKey.currentContext;

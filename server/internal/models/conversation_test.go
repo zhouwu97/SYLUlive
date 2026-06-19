@@ -33,6 +33,57 @@ func TestConversationNormalizesParticipantsAndRejectsDuplicates(t *testing.T) {
 	}
 }
 
+func TestEnsureConversationIndexesCreatesMissingIndexes(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	if err := db.Exec(`
+		CREATE TABLE conversations (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			user1_id INTEGER NOT NULL,
+			user2_id INTEGER NOT NULL,
+			last_message_at DATETIME,
+			created_at DATETIME
+		)
+	`).Error; err != nil {
+		t.Fatalf("create legacy conversations: %v", err)
+	}
+	if err := db.Exec(`
+		CREATE TABLE messages (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			conversation_id INTEGER NOT NULL,
+			sender_id INTEGER NOT NULL,
+			content TEXT,
+			file_id INTEGER,
+			created_at DATETIME,
+			read_at DATETIME
+		)
+	`).Error; err != nil {
+		t.Fatalf("create legacy messages: %v", err)
+	}
+
+	if err := models.EnsureConversationIndexes(db); err != nil {
+		t.Fatalf("ensure indexes: %v", err)
+	}
+
+	expected := []struct {
+		model interface{}
+		name  string
+	}{
+		{&models.Conversation{}, "idx_conversation_users"},
+		{&models.Conversation{}, "idx_conversations_user1_last_message"},
+		{&models.Conversation{}, "idx_conversations_user2_last_message"},
+		{&models.Message{}, "idx_messages_conversation_id_id"},
+		{&models.Message{}, "idx_messages_conversation_read_sender"},
+	}
+	for _, index := range expected {
+		if !db.Migrator().HasIndex(index.model, index.name) {
+			t.Fatalf("missing index %s", index.name)
+		}
+	}
+}
+
 func TestNormalizeConversationPairsMergesLegacyDuplicates(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {

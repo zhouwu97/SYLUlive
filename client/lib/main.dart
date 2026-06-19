@@ -1,10 +1,12 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:ui';
 import 'dart:io' show File;
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:jpush_flutter/jpush_flutter.dart';
 import 'package:provider/provider.dart';
@@ -20,6 +22,8 @@ import 'providers/teacher_provider.dart';
 import 'providers/canteen_provider.dart';
 
 import 'providers/social_provider.dart';
+import 'models/user.dart';
+import 'screens/chat_detail_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/course_schedule_screen.dart';
@@ -42,11 +46,15 @@ Future<void> main() async {
 
   await Hive.initFlutter();
   await CourseReminderService.instance.initialize();
+  await _initializePrivateMessageNotifications();
   runApp(const MyApp());
 }
 
 /// 极光推送初始化
 var jpush = JPush.newJPush();
+final FlutterLocalNotificationsPlugin _privateMessageNotifications =
+    FlutterLocalNotificationsPlugin();
+bool _privateMessageNotificationsReady = false;
 
 Future<void> setupJPush(AuthProvider authProvider) async {
   jpush.setup(
@@ -58,10 +66,16 @@ Future<void> setupJPush(AuthProvider authProvider) async {
   jpush.addEventHandler(
     onReceiveNotification: (Map<String, dynamic> message) async {
       debugPrint('🔔 收到通知: $message');
+      if (await _handlePrivateMessageNotification(message, opened: false)) {
+        return;
+      }
     },
     onOpenNotification: (Map<String, dynamic> message) async {
       debugPrint('👆 用户点击通知: $message');
       if (await _handleUpdateNotification(message)) {
+        return;
+      }
+      if (await _handlePrivateMessageNotification(message, opened: true)) {
         return;
       }
       if (appNavigatorKey.currentState != null) {
@@ -79,6 +93,165 @@ Future<void> setupJPush(AuthProvider authProvider) async {
     await authProvider.updateDeviceToken(rid);
     debugPrint('✅ 成功上报 JPush Device Token: $rid');
   }
+  final userId = authProvider.user?.id;
+  if (userId != null) {
+    try {
+      await jpush.setAlias(userId.toString());
+      debugPrint('✅ 成功设置 JPush Alias: $userId');
+    } catch (e) {
+      debugPrint('设置 JPush Alias 失败: $e');
+    }
+  }
+}
+
+Future<void> _initializePrivateMessageNotifications() async {
+  if (_privateMessageNotificationsReady) return;
+  const android = AndroidInitializationSettings('@mipmap/ic_launcher');
+  const darwin = DarwinInitializationSettings(
+    requestAlertPermission: false,
+    requestBadgePermission: false,
+    requestSoundPermission: false,
+  );
+  const settings = InitializationSettings(android: android, iOS: darwin);
+  await _privateMessageNotifications.initialize(
+    settings,
+    onDidReceiveNotificationResponse: (response) {
+      final payload = response.payload;
+      if (payload == null || payload.isEmpty) return;
+      try {
+        final data = jsonDecode(payload);
+        if (data is Map) {
+          final extras =
+              data.map((key, value) => MapEntry(key.toString(), value));
+          final conversationId = _intFromExtra(extras['conversation_id']);
+          final senderId = _intFromExtra(extras['sender_id']);
+          final senderName = extras['sender_name']?.toString() ?? '';
+          if (conversationId != null && senderId != null) {
+            _openPrivateMessage(conversationId, senderId, senderName);
+          }
+        }
+      } catch (e) {
+        debugPrint('解析私信本地通知 payload 失败: $e');
+      }
+    },
+  );
+  await _privateMessageNotifications
+      .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin>()
+      ?.createNotificationChannel(
+        const AndroidNotificationChannel(
+          'private_messages',
+          '私信通知',
+          description: '收到新的私信时提醒',
+          importance: Importance.defaultImportance,
+        ),
+      );
+  _privateMessageNotificationsReady = true;
+}
+
+Future<bool> _handlePrivateMessageNotification(
+  Map<String, dynamic> message, {
+  required bool opened,
+}) async {
+  final extras = _extractJPushExtras(message);
+  if (extras['type']?.toString() != 'private_message') {
+    return false;
+  }
+
+  final conversationId = _intFromExtra(extras['conversation_id']);
+  final senderId = _intFromExtra(extras['sender_id']);
+  if (conversationId == null || senderId == null) {
+    debugPrint('私信推送缺少 conversation_id 或 sender_id: $message');
+    return true;
+  }
+
+  final title = _notificationTitle(message);
+  final content = _notificationContent(message);
+  if (opened) {
+    _openPrivateMessage(conversationId, senderId, title);
+    return true;
+  }
+
+  final context = appNavigatorKey.currentContext;
+  final provider = context?.read<MessageProvider>();
+  if (provider?.currentConversationId == conversationId) {
+    await provider?.refreshMessages();
+    return true;
+  }
+
+  await _initializePrivateMessageNotifications();
+  final payload = jsonEncode({
+    'conversation_id': conversationId,
+    'sender_id': senderId,
+    'sender_name': title,
+  });
+  await _privateMessageNotifications.show(
+    conversationId,
+    title.isEmpty ? '新私信' : title,
+    content.isEmpty ? '你收到一条新私信' : content,
+    const NotificationDetails(
+      android: AndroidNotificationDetails(
+        'private_messages',
+        '私信通知',
+        channelDescription: '收到新的私信时提醒',
+        importance: Importance.defaultImportance,
+        priority: Priority.defaultPriority,
+      ),
+      iOS: DarwinNotificationDetails(),
+    ),
+    payload: payload,
+  );
+  return true;
+}
+
+void _openPrivateMessage(int conversationId, int senderId, String senderName) {
+  final navigator = appNavigatorKey.currentState;
+  if (navigator == null) return;
+  final displayName =
+      senderName.trim().isEmpty ? '用户$senderId' : senderName.trim();
+  navigator.popUntil((route) => route.isFirst);
+  navigator.push(
+    MaterialPageRoute(
+      builder: (_) => ChatDetailScreen(
+        conversationId: conversationId,
+        targetUser: User(
+          id: senderId,
+          studentId: '',
+          nickname: displayName,
+          createdAt: DateTime.now(),
+        ),
+      ),
+    ),
+  );
+}
+
+int? _intFromExtra(dynamic value) {
+  if (value is int) return value;
+  if (value is num) return value.toInt();
+  return int.tryParse(value?.toString() ?? '');
+}
+
+String _notificationTitle(Map<String, dynamic> message) {
+  return message['title']?.toString() ??
+      message['notificationTitle']?.toString() ??
+      _androidNotificationValue(message, 'title') ??
+      '';
+}
+
+String _notificationContent(Map<String, dynamic> message) {
+  return message['alert']?.toString() ??
+      message['content']?.toString() ??
+      message['message']?.toString() ??
+      _androidNotificationValue(message, 'alert') ??
+      '';
+}
+
+String? _androidNotificationValue(Map<String, dynamic> message, String key) {
+  final android = message['android'];
+  if (android is Map && android[key] != null) {
+    return android[key].toString();
+  }
+  return null;
 }
 
 Future<bool> _handleUpdateNotification(Map<String, dynamic> message) async {
@@ -131,6 +304,7 @@ Dio getSharedDio() {
       baseUrl: ApiConstants.baseUrl,
       connectTimeout: ApiConstants.connectTimeout,
       receiveTimeout: ApiConstants.receiveTimeout,
+      sendTimeout: ApiConstants.sendTimeout,
     ));
 
     if (kDebugMode) {
@@ -360,15 +534,17 @@ class BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
   Widget _buildBackgroundImageLayer(ThemeProvider themeProvider, bool isDark) {
     String? bgPath = themeProvider.getBackgroundImageFor(context);
     if (bgPath == null) return _buildDefaultBackground(isDark);
-    final isAsset = !bgPath.startsWith('http') && !bgPath.startsWith('/');
-    final resolvedPath = isAsset ? 'assets/images/$bgPath' : bgPath;
+    final isAsset = ThemeProvider.isBundledAssetBackground(bgPath);
+    final isLocalFile = ThemeProvider.isLocalFileBackground(bgPath);
+    final resolvedPath =
+        isAsset ? ThemeProvider.resolveBundledAssetPath(bgPath) : bgPath;
 
     const alignment = Alignment.center;
     final fillScreen = themeProvider.getBackgroundFillScreenFor(context);
 
     final imageProvider = isAsset
         ? AssetImage(resolvedPath) as ImageProvider
-        : bgPath.startsWith('/')
+        : isLocalFile
             ? FileImage(File(bgPath)) as ImageProvider
             : NetworkImage(bgPath) as ImageProvider;
     return Stack(

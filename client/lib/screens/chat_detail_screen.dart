@@ -36,6 +36,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   Timer? _refreshTimer;
   int? _conversationId;
   bool _loadingOlder = false;
+  DateTime _lastMessageActivity = DateTime.now();
 
   @override
   void initState() {
@@ -43,12 +44,18 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     _conversationId = widget.conversationId;
     WidgetsBinding.instance.addObserver(this);
     _scrollController.addListener(_handleScroll);
+    _textController.addListener(_saveDraft);
     WidgetsBinding.instance.addPostFrameCallback((_) => _initialize());
   }
 
   Future<void> _initialize() async {
     if (!mounted) return;
     final provider = context.read<MessageProvider>();
+    final draft = provider.draftFor(widget.targetUser.id);
+    if (draft.isNotEmpty && _textController.text.isEmpty) {
+      _textController.text = draft;
+      _textController.selection = TextSelection.collapsed(offset: draft.length);
+    }
     if (_conversationId == null) {
       final currentUserId = context.read<AuthProvider>().user?.id;
       if (currentUserId == null) {
@@ -79,6 +86,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     _scrollController
       ..removeListener(_handleScroll)
       ..dispose();
+    _textController.removeListener(_saveDraft);
     _textController.dispose();
     super.dispose();
   }
@@ -95,10 +103,17 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
 
   void _startPolling() {
     _refreshTimer?.cancel();
-    _refreshTimer = Timer.periodic(
-      const Duration(seconds: 3),
-      (_) => _refreshMessages(),
-    );
+    _refreshTimer = Timer(_pollDelay, () async {
+      await _refreshMessages();
+      if (mounted) _startPolling();
+    });
+  }
+
+  Duration get _pollDelay {
+    final idle = DateTime.now().difference(_lastMessageActivity);
+    if (idle < const Duration(minutes: 2)) return const Duration(seconds: 3);
+    if (idle < const Duration(minutes: 10)) return const Duration(seconds: 10);
+    return const Duration(seconds: 30);
   }
 
   Future<void> _refreshMessages() async {
@@ -109,6 +124,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     if (!mounted) return;
     final newLastId = context.read<MessageProvider>().messages.lastOrNull?.id;
     if (wasNearBottom && oldLastId != newLastId) {
+      _lastMessageActivity = DateTime.now();
       _scrollToBottom();
     }
   }
@@ -148,6 +164,14 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   Future<void> _sendMessage() async {
     final content = _textController.text.trim();
     if (content.isEmpty) return;
+    if (content.runes.length > MessageProvider.maxMessageLength) {
+      AppFeedback.showSnackBar(
+        context,
+        '消息内容不能超过${MessageProvider.maxMessageLength}个字符',
+        isError: true,
+      );
+      return;
+    }
 
     final provider = context.read<MessageProvider>();
     final message = await provider.sendMessage(widget.targetUser.id, content);
@@ -162,8 +186,17 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     }
 
     _conversationId = message.conversationId;
+    _lastMessageActivity = DateTime.now();
     _textController.clear();
+    _startPolling();
     _scrollToBottom();
+  }
+
+  void _saveDraft() {
+    if (!mounted) return;
+    context
+        .read<MessageProvider>()
+        .updateDraft(widget.targetUser.id, _textController.text);
   }
 
   void _scrollToBottom({bool jump = false}) {
@@ -416,11 +449,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
                 controller: _textController,
                 minLines: 1,
                 maxLines: 5,
-                maxLength: 2000,
                 textInputAction: TextInputAction.newline,
                 decoration: InputDecoration(
                   hintText: '发送消息',
-                  counterText: '',
                   isDense: true,
                   filled: true,
                   fillColor: Theme.of(context)

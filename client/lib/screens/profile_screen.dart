@@ -52,6 +52,7 @@ class _ProfileScreenState extends State<ProfileScreen>
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
   int _unreadReplyCount = 0;
+  int _unreadMessageCount = 0;
   bool _startOnTimetable = false;
   int? _postCount;
 
@@ -124,11 +125,18 @@ class _ProfileScreenState extends State<ProfileScreen>
     final auth = context.read<AuthProvider>();
     if (!auth.isLoggedIn) return;
     try {
-      final resp = await auth.dio.get('/user/notifications/unread_count');
-      if (resp.statusCode == 200 && mounted) {
-        setState(() {
-          _unreadReplyCount = resp.data['count'] ?? 0;
-        });
+      final repliesFuture = auth.dio.get('/user/notifications/unread_count');
+      final messagesFuture = auth.dio.get('/messages/unread_count');
+      final responses = await Future.wait([repliesFuture, messagesFuture]);
+      if (mounted) {
+        final replyResp = responses[0];
+        final messageResp = responses[1];
+        if (replyResp.statusCode == 200 && messageResp.statusCode == 200) {
+          setState(() {
+            _unreadReplyCount = replyResp.data['count'] ?? 0;
+            _unreadMessageCount = messageResp.data['count'] ?? 0;
+          });
+        }
       }
     } catch (_) {}
   }
@@ -783,19 +791,35 @@ class _ProfileScreenState extends State<ProfileScreen>
   }
 
   Widget _buildMyContentSection(BuildContext context, bool isDark) {
+    final totalUnreadCount = _unreadReplyCount + _unreadMessageCount;
     final items = [
       _buildSettingsRow(
           child: _buildSettingsTile(
         icon: Icons.chat_outlined,
         iconColor: const Color(0xFF10B981),
         title: '私信',
-        subtitle: '查看私信与系统通知',
+        subtitle: totalUnreadCount > 0
+            ? '共$totalUnreadCount条未读，含$_unreadMessageCount条私信'
+            : '查看私信与系统通知',
+        trailing: totalUnreadCount > 0
+            ? Container(
+                width: 8,
+                height: 8,
+                margin: const EdgeInsets.only(right: 8),
+                decoration: const BoxDecoration(
+                  color: Colors.red,
+                  shape: BoxShape.circle,
+                ),
+              )
+            : null,
         isDark: isDark,
         onTap: () {
           Navigator.push(
             context,
             MaterialPageRoute(builder: (_) => const ChatListScreen()),
-          );
+          ).then((_) {
+            _loadUnreadCount();
+          });
         },
       )),
       _buildSettingsRow(

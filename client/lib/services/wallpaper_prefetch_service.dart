@@ -6,7 +6,10 @@ import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 
 class WallpaperPrefetchService {
-  static const String baseUrl = 'https://sylu.zhouwu.ccwu.cc/wallpapers';
+  static const String baseUrl =
+      'http://156.233.229.232:8080/uploads/wallpapers/originals';
+  static Future<void>? _prefetchTask;
+
   static const List<String> bundledWallpaperNames = [
     'phone_wallpaper_01.png',
     'phone_wallpaper_02.png',
@@ -22,7 +25,10 @@ class WallpaperPrefetchService {
     'tablet_landscape_08.png',
   ];
 
-  static void start() {}
+  static void start() {
+    if (kIsWeb) return;
+    _prefetchTask ??= prefetchAll();
+  }
 
   static Future<String> localPathFor(String fileName) async {
     final appDir = await getApplicationDocumentsDirectory();

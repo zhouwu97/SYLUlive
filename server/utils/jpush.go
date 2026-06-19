@@ -20,12 +20,6 @@ type PushPayload struct {
 	Platform     string       `json:"platform"`
 	Audience     Audience     `json:"audience"`
 	Notification Notification `json:"notification"`
-	Options      *Options     `json:"options,omitempty"`
-}
-
-// Options 推送选项
-type Options struct {
-	Channel string `json:"channel,omitempty"`
 }
 
 // Audience 推送目标
@@ -42,9 +36,10 @@ type Notification struct {
 
 // AndroidNotification Android 平台通知
 type AndroidNotification struct {
-	Alert  string                 `json:"alert"`
-	Title  string                 `json:"title"`
-	Extras map[string]interface{} `json:"extras,omitempty"`
+	Alert     string                 `json:"alert"`
+	Title     string                 `json:"title"`
+	Extras    map[string]interface{} `json:"extras,omitempty"`
+	ChannelID string                 `json:"channel_id,omitempty"`
 }
 
 // NewJPushClient 初始化极光客户端
@@ -83,12 +78,12 @@ func (c *JPushClient) SendAliasNotification(alias, title, alert string, extras m
 		Notification: Notification{
 			Alert: alert,
 			Android: AndroidNotification{
-				Alert:  alert,
-				Title:  title,
-				Extras: extras,
+				Alert:     alert,
+				Title:     title,
+				Extras:    extras,
+				ChannelID: "private_messages",
 			},
 		},
-		Options: &Options{Channel: "private_message_push"},
 	})
 }
 

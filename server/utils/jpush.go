@@ -20,6 +20,37 @@ type PushPayload struct {
 	Platform     string       `json:"platform"`
 	Audience     Audience     `json:"audience"`
 	Notification Notification `json:"notification"`
+	Options      *Options     `json:"options,omitempty"`
+}
+
+// Options 推送选项（厂商通道等）
+type Options struct {
+	ThirdPartyChannel *ThirdPartyChannel `json:"third_party_channel,omitempty"`
+}
+
+// ThirdPartyChannel 厂商通道配置
+type ThirdPartyChannel struct {
+	Xiaomi *XiaomiChannel `json:"xiaomi,omitempty"`
+	Oppo   *OppoChannel   `json:"oppo,omitempty"`
+	Vivo   *VivoChannel   `json:"vivo,omitempty"`
+	Huawei *HuaweiChannel `json:"huawei,omitempty"`
+	Fcm    *FcmChannel    `json:"fcm,omitempty"`
+}
+
+type XiaomiChannel struct {
+	ChannelID string `json:"channel_id"`
+}
+type OppoChannel struct {
+	ChannelID string `json:"channel_id"`
+}
+type VivoChannel struct {
+	Classification int `json:"classification"` // 0=服务与通讯, 1=内容与推荐
+}
+type HuaweiChannel struct {
+	ChannelID string `json:"channel_id"`
+}
+type FcmChannel struct {
+	ChannelID string `json:"channel_id"`
 }
 
 // Audience 推送目标
@@ -82,6 +113,15 @@ func (c *JPushClient) SendAliasNotification(alias, title, alert string, extras m
 				Title:     title,
 				Extras:    extras,
 				ChannelID: "private_messages",
+			},
+		},
+		// 厂商通道：App 被杀后走系统级推送，提升到达率
+		Options: &Options{
+			ThirdPartyChannel: &ThirdPartyChannel{
+				Xiaomi: &XiaomiChannel{ChannelID: "private_messages"},
+				Oppo:   &OppoChannel{ChannelID: "private_messages"},
+				Vivo:   &VivoChannel{Classification: 0},
+				Huawei: &HuaweiChannel{ChannelID: "private_messages"},
 			},
 		},
 	})

@@ -143,7 +143,7 @@ Future<void> _initializePrivateMessageNotifications() async {
           'private_messages',
           '私信通知',
           description: '收到新的私信时提醒',
-          importance: Importance.defaultImportance,
+          importance: Importance.high,
         ),
       );
   _privateMessageNotificationsReady = true;
@@ -194,8 +194,8 @@ Future<bool> _handlePrivateMessageNotification(
         'private_messages',
         '私信通知',
         channelDescription: '收到新的私信时提醒',
-        importance: Importance.defaultImportance,
-        priority: Priority.defaultPriority,
+        importance: Importance.high,
+        priority: Priority.high,
       ),
       iOS: DarwinNotificationDetails(),
     ),

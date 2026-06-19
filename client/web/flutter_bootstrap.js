@@ -1,7 +1,7 @@
 {{flutter_js}}
 {{flutter_build_config}}
 
-const mainJsVersion = '20260616-2307';
+const mainJsVersion = '20260619-0835';
 const dart2jsBuild = _flutter.buildConfig.builds.find(
   (build) => build.compileTarget === 'dart2js',
 );

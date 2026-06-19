@@ -159,7 +159,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Future<List<dynamic>> _fetchAnnouncementsFallback(AuthProvider auth) async {
-    final resp = await auth.dio.get('/announcements');
+    final resp = await auth.dio.get(ApiConstants.noticesPath);
     final list = (resp.data as List?) ?? const [];
     return list
         .where((item) => !_seenAnnouncementIds.contains(_announcementId(item)))
@@ -168,14 +168,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   Future<List<dynamic>> _loadUnreadAnnouncements(AuthProvider auth) async {
     try {
-      final resp = await auth.dio.get('/announcements/unread');
+      final resp = await auth.dio.get('${ApiConstants.noticesPath}/unread');
       return (resp.data as List?) ?? const [];
     } on DioException catch (e) {
       final isBadUnreadRoute = e.response?.statusCode == 400 &&
           e.response?.data is Map &&
           (e.response!.data['error']?.toString().contains('无效的公告ID') ?? false);
       if (isBadUnreadRoute) {
-        debugPrint('未读公告接口异常，降级到 /announcements');
+        debugPrint('未读公告接口异常，降级到 ${ApiConstants.noticesPath}');
         return _fetchAnnouncementsFallback(auth);
       }
       rethrow;
@@ -610,10 +610,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       ElevatedButton.icon(
                         onPressed: () async {
                           try {
-                            await context
-                                .read<AuthProvider>()
-                                .dio
-                                .post('/announcements/${a['id']}/read');
+                            await context.read<AuthProvider>().dio.post(
+                                '${ApiConstants.noticesPath}/${a['id']}/read');
                           } catch (_) {}
                           await _markAnnouncementsSeen([a]);
                           if (current < unread.length - 1) {
@@ -736,12 +734,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     final bottomSafe = MediaQuery.of(context).padding.bottom;
-    final isMobile = !ResponsiveUtil.isDesktop(context);
+    final useDesktopShell = ResponsiveUtil.useDesktopShell(context);
     final themeProvider = context.watch<ThemeProvider>();
     final authProvider = context.watch<AuthProvider>();
 
-    // 如果启用了悬浮底栏，即便是平板也使用底栏模式（不用侧边栏）
-    final useBottomNav = isMobile || themeProvider.floatingNavBar;
+    // 宽屏默认按 Pad 版处理；开启悬浮底栏时，宽屏也切到浮动导航。
+    final useSideRail = useDesktopShell && !themeProvider.floatingNavBar;
+    final useBottomNav = !useSideRail;
+    final showFloatingNavBar = themeProvider.floatingNavBar;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
@@ -764,12 +764,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         body: Stack(
           children: [
             // 实际内容区
-            !useBottomNav
-                ? _buildWideLayout(bottomSafe, authProvider, false) // 默认收起状态
+            useSideRail
+                ? _buildWideLayout(bottomSafe, authProvider, false)
                 : _buildNarrowLayout(bottomSafe, authProvider),
           ],
         ),
-        bottomNavigationBar: !useBottomNav
+        bottomNavigationBar: useSideRail
             ? null
             : BottomNavWrapper(
                 currentIndex: _currentIndex,
@@ -778,7 +778,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               ),
         floatingActionButton: _currentIndex == 0 && useBottomNav
             ? Padding(
-                padding: EdgeInsets.only(bottom: 110 + bottomSafe),
+                padding: EdgeInsets.only(
+                  bottom: (showFloatingNavBar ? 110 : 80) + bottomSafe,
+                ),
                 child: FloatingActionButton(
                   heroTag: 'home_fab',
                   onPressed: () => _openCreatePost(context),

@@ -76,6 +76,10 @@ class ApiConstants {
   static const Duration connectTimeout = Duration(seconds: 30);
   static const Duration receiveTimeout = Duration(seconds: 30);
   static const int maxRetries = 3;
+
+  // Public alias for announcements. Some mobile networks stall plaintext
+  // direct-IP requests whose path contains "announcement".
+  static const String noticesPath = '/notices';
 }
 
 class StorageKeys {

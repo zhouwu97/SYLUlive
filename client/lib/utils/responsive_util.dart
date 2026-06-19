@@ -21,6 +21,11 @@ class ResponsiveUtil {
     return MediaQuery.of(context).size.width >= tabletMaxWidth;
   }
 
+  /// 是否启用 Pad/宽屏外壳布局（侧边栏、主从分栏等）。
+  static bool useDesktopShell(BuildContext context) {
+    return isDesktop(context);
+  }
+
   /// 获取当前屏幕类型对应的最佳内容最大宽度
   static double getMaxContentWidth(BuildContext context) {
     if (isDesktop(context)) {

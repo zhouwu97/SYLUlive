@@ -609,6 +609,46 @@ func main() {
 
 	}
 
+	// 公告别名路由：App 直连公网 IP 时，部分网络会卡住包含
+	// "announcement" 的明文 HTTP 路径；保留旧路径兼容，客户端走 notices。
+	notices := r.Group("/api/notices")
+
+	{
+
+		notices.GET("", announcementHandler.GetList)
+
+		notices.GET("/active", announcementHandler.GetActive)
+
+	}
+
+	noticesAuth := notices.Group("")
+
+	noticesAuth.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
+
+	{
+
+		noticesAuth.GET("/unread", announcementHandler.GetUnread)
+
+		noticesAuth.GET("/:id", announcementHandler.GetOne)
+
+		noticesAuth.POST("/:id/read", announcementHandler.MarkRead)
+
+	}
+
+	noticesAdmin := notices.Group("")
+
+	noticesAdmin.Use(middleware.AuthMiddleware(db, cfg.JWTSecret), middleware.AdminMiddleware())
+
+	{
+
+		noticesAdmin.POST("", announcementHandler.Create)
+
+		noticesAdmin.PUT("/:id", announcementHandler.Update)
+
+		noticesAdmin.DELETE("/:id", announcementHandler.Delete)
+
+	}
+
 	// 举报路由
 
 	reports := r.Group("/api/reports")

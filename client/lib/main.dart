@@ -18,6 +18,7 @@ import 'providers/course_schedule_provider.dart';
 import 'providers/major_provider.dart';
 import 'providers/teacher_provider.dart';
 import 'providers/canteen_provider.dart';
+
 import 'providers/social_provider.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
@@ -31,7 +32,7 @@ import 'utils/app_navigator.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
+
   // 强制沉浸式（Edge-to-Edge），解决悬浮底栏下方的系统黑条空挡问题
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
@@ -73,7 +74,7 @@ Future<void> setupJPush(AuthProvider authProvider) async {
   );
   final rid = await jpush.getRegistrationID();
   debugPrint('🔥 JPush RegistrationID: $rid');
-  
+
   if (rid.isNotEmpty) {
     await authProvider.updateDeviceToken(rid);
     debugPrint('✅ 成功上报 JPush Device Token: $rid');
@@ -142,7 +143,8 @@ Dio getSharedDio() {
 
     dio.interceptors.add(InterceptorsWrapper(
       onError: (error, handler) {
-        debugPrint('DioError [${error.response?.statusCode}]: ${error.requestOptions.uri}');
+        debugPrint(
+            'DioError [${error.response?.statusCode}]: ${error.requestOptions.uri}');
         handler.next(error);
       },
     ));
@@ -200,17 +202,19 @@ class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) => _checkDeepLink());
-    
+
     // 监听原生端主动推送的深度链接（瞬间响应，避免打断动画）
     _channel.setMethodCallHandler((call) async {
       if (call.method == 'onDeepLink') {
         final uri = call.arguments as String?;
-        if ((uri == 'widget_timetable' || uri == 'campus://timetable') && mounted) {
+        if ((uri == 'widget_timetable' || uri == 'campus://timetable') &&
+            mounted) {
           appNavigatorKey.currentState?.popUntil((route) => route.isFirst);
           widgetTabSwitch.value++;
         } else if (uri != null && uri.startsWith('widget_exam') && mounted) {
           appNavigatorKey.currentState?.popUntil((route) => route.isFirst);
-          appNavigatorKey.currentState?.push(MaterialPageRoute(builder: (_) => const ExamScheduleScreen()));
+          appNavigatorKey.currentState?.push(
+              MaterialPageRoute(builder: (_) => const ExamScheduleScreen()));
         }
       }
     });
@@ -232,13 +236,15 @@ class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
   Future<void> _checkDeepLink() async {
     try {
       final uri = await _channel.invokeMethod<String>('getPendingDeepLink');
-      if ((uri == 'widget_timetable' || uri == 'campus://timetable') && mounted) {
+      if ((uri == 'widget_timetable' || uri == 'campus://timetable') &&
+          mounted) {
         appNavigatorKey.currentState?.popUntil((route) => route.isFirst);
         // 切换到底部导航的课程表 tab，不 push 新页面
         widgetTabSwitch.value++;
       } else if (uri != null && uri.startsWith('widget_exam') && mounted) {
         appNavigatorKey.currentState?.popUntil((route) => route.isFirst);
-        appNavigatorKey.currentState?.push(MaterialPageRoute(builder: (_) => const ExamScheduleScreen()));
+        appNavigatorKey.currentState?.push(
+            MaterialPageRoute(builder: (_) => const ExamScheduleScreen()));
       }
     } catch (e) {
       debugPrint('深度链接检查失败: $e');
@@ -357,39 +363,23 @@ class BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
     final isAsset = !bgPath.startsWith('http') && !bgPath.startsWith('/');
     final resolvedPath = isAsset ? 'assets/images/$bgPath' : bgPath;
 
-    final isWide = MediaQuery.of(context).size.width > MediaQuery.of(context).size.height;
-    final alignment = isWide ? Alignment.topCenter : Alignment.center;
+    const alignment = Alignment.center;
+    final fillScreen = themeProvider.getBackgroundFillScreenFor(context);
 
-    final imageWidget = isAsset
-        ? Image.asset(
-            resolvedPath,
-            fit: BoxFit.cover,
-            alignment: alignment,
-            errorBuilder: (_, __, ___) => _buildDefaultBackground(isDark),
-          )
+    final imageProvider = isAsset
+        ? AssetImage(resolvedPath) as ImageProvider
         : bgPath.startsWith('/')
-            ? Image.file(
-                File(bgPath),
-                fit: BoxFit.cover,
-                alignment: alignment,
-                errorBuilder: (_, __, ___) => _buildDefaultBackground(isDark),
-              )
-            : Image.network(
-                bgPath,
-                fit: BoxFit.cover,
-                alignment: alignment,
-                errorBuilder: (_, __, ___) => _buildDefaultBackground(isDark),
-                loadingBuilder: (_, child, loadingProgress) {
-                  if (loadingProgress == null) return child;
-                  return _buildDefaultBackground(isDark);
-                },
-              );
-
+            ? FileImage(File(bgPath)) as ImageProvider
+            : NetworkImage(bgPath) as ImageProvider;
     return Stack(
       fit: StackFit.expand,
       children: [
-        // Background image
-        imageWidget,
+        _buildBackgroundImage(
+          imageProvider: imageProvider,
+          alignment: alignment,
+          isDark: isDark,
+          fillScreen: fillScreen,
+        ),
         // Color overlay (fixed — componentOpacity controls GlassContainer, not background)
         Container(
           color: isDark
@@ -409,38 +399,68 @@ class BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
     );
   }
 
-  Widget _buildDefaultBackground(bool isDark) {
-    final isWide = MediaQuery.of(context).size.width > MediaQuery.of(context).size.height;
+  Widget _buildBackgroundImage({
+    required ImageProvider imageProvider,
+    required Alignment alignment,
+    required bool isDark,
+    required bool fillScreen,
+  }) {
+    if (fillScreen) {
+      return Image(
+        image: imageProvider,
+        fit: BoxFit.cover,
+        alignment: alignment,
+        gaplessPlayback: true,
+        errorBuilder: (_, __, ___) => Container(
+          color: isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
+        ),
+      );
+    }
+
     return Stack(
       fit: StackFit.expand,
       children: [
-        Image(
-          image: const ResizeImage(
-            AssetImage('assets/images/morenbeijing.jpeg'),
-            width: 1080,
-          ),
-          fit: BoxFit.cover,
-          alignment: isWide ? Alignment.topCenter : Alignment.center,
-          gaplessPlayback: true,
-          errorBuilder: (_, __, ___) => Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: isDark
-                    ? [
-                        const Color(0xFF1A1A2E),
-                        const Color(0xFF16213E),
-                        const Color(0xFF0F3460)
-                      ]
-                    : [
-                        const Color(0xFF667EEA),
-                        const Color(0xFF764BA2),
-                        const Color(0xFFF093FB)
-                      ],
+        Transform.scale(
+          scale: 1.06,
+          child: ImageFiltered(
+            imageFilter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+            child: Image(
+              image: imageProvider,
+              fit: BoxFit.cover,
+              alignment: alignment,
+              gaplessPlayback: true,
+              errorBuilder: (_, __, ___) => Container(
+                color:
+                    isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
               ),
             ),
           ),
+        ),
+        Image(
+          image: imageProvider,
+          fit: BoxFit.contain,
+          alignment: alignment,
+          gaplessPlayback: true,
+          errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDefaultBackground(bool isDark) {
+    final isWide =
+        MediaQuery.of(context).size.width > MediaQuery.of(context).size.height;
+    final defaultImage = isWide
+        ? 'assets/images/tablet_default_landscape.png'
+        : 'assets/images/morenbeijing.jpeg';
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        _buildBackgroundImage(
+          imageProvider: AssetImage(defaultImage),
+          alignment: Alignment.center,
+          isDark: isDark,
+          fillScreen: false,
         ),
         Container(
           color: isDark

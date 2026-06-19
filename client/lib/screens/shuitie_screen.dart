@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io' show File;
+import 'dart:ui';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -7,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../config/api_constants.dart';
 import '../utils/app_feedback.dart';
 import '../utils/responsive_util.dart';
 import '../utils/screen_swipe.dart';
@@ -134,7 +136,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   Future<void> _loadAnnouncements() async {
     final authProvider = context.read<AuthProvider>();
     try {
-      final response = await authProvider.dio.get('/announcements');
+      final response = await authProvider.dio.get(ApiConstants.noticesPath);
       if (response.statusCode == 200) {
         final all = (response.data as List)
             .map((e) => model.Announcement.fromJson(e))
@@ -476,15 +478,19 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   }
 
   Widget _buildDefaultBg(bool isDark) {
+    final isWide =
+        MediaQuery.of(context).size.width > MediaQuery.of(context).size.height;
+    final defaultImage = isWide
+        ? 'assets/images/tablet_default_landscape.png'
+        : 'assets/images/morenbeijing.jpeg';
     return Stack(
       fit: StackFit.expand,
       children: [
-        Image.asset(
-          'assets/images/morenbeijing.jpeg',
-          fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => Container(
-            color: isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
-          ),
+        _buildBackgroundImage(
+          imageProvider: AssetImage(defaultImage),
+          alignment: Alignment.center,
+          isDark: isDark,
+          fillScreen: false,
         ),
         Container(
           color: isDark
@@ -496,29 +502,22 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   }
 
   Widget _buildBackground(ThemeProvider themeProvider, bool isDark) {
-    final path = themeProvider.backgroundImage;
-    if (themeProvider.hasBackground && path != null && path.isNotEmpty) {
+    final path = themeProvider.getBackgroundImageFor(context);
+    if (path != null && path.isNotEmpty) {
       final isAsset = !path.startsWith('http') && !path.startsWith('/');
+      final imageProvider = isAsset
+          ? AssetImage('assets/images/$path') as ImageProvider
+          : path.startsWith('/')
+              ? FileImage(File(path)) as ImageProvider
+              : NetworkImage(path) as ImageProvider;
       return Stack(
         fit: StackFit.expand,
         children: [
-          isAsset
-              ? Image.asset(
-                  'assets/images/$path',
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => _buildDefaultBg(isDark),
-                )
-              : path.startsWith('/')
-                  ? Image.file(
-                      File(path),
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => _buildDefaultBg(isDark),
-                    )
-                  : Image.network(
-                      path,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => _buildDefaultBg(isDark),
-                    ),
+          _buildBackgroundImage(
+            imageProvider: imageProvider,
+            isDark: isDark,
+            fillScreen: themeProvider.getBackgroundFillScreenFor(context),
+          ),
           Container(
             color: isDark
                 ? Colors.black.withValues(alpha: 0.32)
@@ -528,6 +527,54 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       );
     }
     return _buildDefaultBg(isDark);
+  }
+
+  Widget _buildBackgroundImage({
+    required ImageProvider imageProvider,
+    required bool isDark,
+    required bool fillScreen,
+    Alignment alignment = Alignment.center,
+  }) {
+    if (fillScreen) {
+      return Image(
+        image: imageProvider,
+        fit: BoxFit.cover,
+        alignment: alignment,
+        gaplessPlayback: true,
+        errorBuilder: (_, __, ___) => Container(
+          color: isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
+        ),
+      );
+    }
+
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        Transform.scale(
+          scale: 1.06,
+          child: ImageFiltered(
+            imageFilter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+            child: Image(
+              image: imageProvider,
+              fit: BoxFit.cover,
+              alignment: alignment,
+              gaplessPlayback: true,
+              errorBuilder: (_, __, ___) => Container(
+                color:
+                    isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
+              ),
+            ),
+          ),
+        ),
+        Image(
+          image: imageProvider,
+          fit: BoxFit.contain,
+          alignment: alignment,
+          gaplessPlayback: true,
+          errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+        ),
+      ],
+    );
   }
 
   @override
@@ -549,14 +596,14 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       WidgetsBinding.instance.addPostFrameCallback((_) => _refresh());
     }
 
-    final isDesktop = ResponsiveUtil.isDesktop(context);
+    final useDesktopShell = ResponsiveUtil.useDesktopShell(context);
 
     return Scaffold(
       backgroundColor: Colors.transparent,
       extendBodyBehindAppBar: true,
       body: Stack(
         children: [
-          isDesktop
+          useDesktopShell
               ? _buildDesktopLayout(isDark, topPadding)
               : _buildMobileLayout(isDark, topPadding),
         ],
@@ -598,7 +645,6 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   }
 
   Widget _buildRightDetailContainer(bool isDark) {
-    final themeProvider = context.watch<ThemeProvider>();
     final content = ClipRect(
       child: PostDetailScreen(
         key: ValueKey(_selectedPost!.id),
@@ -610,15 +656,10 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       ),
     );
 
-    if (themeProvider.isBackgroundVisible) {
-      return GlassContainer(
-        borderRadius: 0,
-        blur: themeProvider.liquidGlass ? 24 : themeProvider.backgroundBlur,
-        opacity: themeProvider.componentOpacity,
-        child: content,
-      );
-    }
-    return content;
+    return ColoredBox(
+      color: isDark ? const Color(0xFF131720) : Colors.white,
+      child: content,
+    );
   }
 
   Widget _buildEmptyDetailState(bool isDark) {
@@ -761,9 +802,9 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                                 delegate: SliverChildBuilderDelegate(
                                   (context, index) {
                                     final post = visiblePosts[index];
-                                    final isSelected =
-                                        _selectedPost?.id == post.id &&
-                                            ResponsiveUtil.isDesktop(context);
+                                    final isSelected = _selectedPost?.id ==
+                                            post.id &&
+                                        ResponsiveUtil.useDesktopShell(context);
                                     return Padding(
                                       padding: const EdgeInsets.symmetric(
                                           horizontal: 12),
@@ -787,7 +828,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                                         child: PostCard(
                                           post: post,
                                           onTap: () {
-                                            if (ResponsiveUtil.isDesktop(
+                                            if (ResponsiveUtil.useDesktopShell(
                                                 context)) {
                                               if (mounted)
                                                 setState(() {

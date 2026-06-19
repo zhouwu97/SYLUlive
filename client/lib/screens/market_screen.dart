@@ -495,7 +495,7 @@ class _MarketScreenState extends State<MarketScreen> {
                 postId: post.id,
                 isMarket: true,
                 initialPost: post,
-                isDesktopSplitMode: ResponsiveUtil.isDesktop(context),
+                isDesktopSplitMode: ResponsiveUtil.useDesktopShell(context),
               ),
             ),
           );

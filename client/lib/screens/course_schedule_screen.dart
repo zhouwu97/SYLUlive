@@ -730,19 +730,14 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                   const SizedBox(height: 28),
                   SizedBox(
                       width: double.infinity,
-                      child: ElevatedButton.icon(
-                        onPressed: () => Navigator.push(
+                      child: _solidActionButton(
+                        context,
+                        label: '去登录',
+                        onTap: () => Navigator.push(
                             context,
                             PageRouteBuilder(
                                 opaque: false,
                                 pageBuilder: (_, __, ___) => LoginScreen())),
-                        icon: const Icon(Icons.login),
-                        label:
-                            const Text('去登录', style: TextStyle(fontSize: 16)),
-                        style: ElevatedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12))),
                       )),
                 ]))));
   }
@@ -776,15 +771,10 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
               const SizedBox(height: 28),
               SizedBox(
                 width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: () => _showBindDialog(context, edu, sc),
-                  icon: const Icon(Icons.link),
-                  label: const Text('立即绑定', style: TextStyle(fontSize: 16)),
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
-                  ),
+                child: _solidActionButton(
+                  context,
+                  label: '立即绑定',
+                  onTap: () => _showBindDialog(context, edu, sc),
                 ),
               ),
             ],
@@ -903,13 +893,11 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                     color: isDark ? Colors.grey[400] : Colors.grey[600]),
               ),
               const SizedBox(height: 24),
-              ElevatedButton.icon(
-                onPressed: () => _openEduManage(context),
-                icon: const Icon(Icons.download),
-                label: const Text('获取课表'),
-                style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 24, vertical: 12)),
+              _solidActionButton(
+                context,
+                label: '获取课表',
+                horizontalPadding: 24,
+                onTap: () => _openEduManage(context),
               ),
             ],
           ),
@@ -968,8 +956,11 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 24),
-              ElevatedButton.icon(
-                onPressed: () async {
+              _solidActionButton(
+                context,
+                label: '去教务导入课表',
+                horizontalPadding: 24,
+                onTap: () async {
                   await Navigator.of(context).push(
                     MaterialPageRoute(builder: (_) => const EduScreen()),
                   );
@@ -993,11 +984,6 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                       });
                   }
                 },
-                icon: const Icon(Icons.school),
-                label: const Text('去教务导入课表'),
-                style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 24, vertical: 12)),
               ),
             ],
           ),
@@ -3010,15 +2996,14 @@ $classFilterRule
                     ),
                   ),
                   const SizedBox(height: 16),
-                  ElevatedButton.icon(
-                    icon: const Icon(Icons.copy, size: 18),
-                    label: const Text('一键复制 AI 提示词'),
+                  ElevatedButton(
                     style: ElevatedButton.styleFrom(
                       backgroundColor:
                           Theme.of(context).colorScheme.primaryContainer,
                       foregroundColor:
                           Theme.of(context).colorScheme.onPrimaryContainer,
                     ),
+                    child: _buttonContent(Icons.copy, '一键复制 AI 提示词'),
                     onPressed: () {
                       Clipboard.setData(ClipboardData(text: aiPromptTemplate));
                       ScaffoldMessenger.of(context).showSnackBar(
@@ -3326,6 +3311,56 @@ $classFilterRule
       await _syncCourseReminders(sc);
       if (mounted) setState(() => _hasCache = true);
     }
+  }
+
+  Widget _buttonContent(IconData icon, String label, {double fontSize = 14}) {
+    return Text(
+      label,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      textAlign: TextAlign.center,
+      style: TextStyle(
+        color: Theme.of(context).colorScheme.primary,
+        fontSize: fontSize,
+        fontWeight: FontWeight.w600,
+      ),
+    );
+  }
+
+  Widget _solidActionButton(
+    BuildContext context, {
+    required String label,
+    required VoidCallback onTap,
+    double horizontalPadding = 16,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Ink(
+          padding: EdgeInsets.symmetric(
+            horizontal: horizontalPadding,
+            vertical: 14,
+          ),
+          decoration: BoxDecoration(
+            color: Theme.of(context).primaryColor,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   // ====== 课程网格（指定某一周） ======

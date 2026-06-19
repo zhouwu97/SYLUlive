@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
-import 'dart:io';
+import 'package:image_picker/image_picker.dart';
 import '../models/post.dart';
 import '../services/post_cache_service.dart';
 import '../utils/app_feedback.dart';
@@ -479,25 +479,28 @@ class PostProvider extends ChangeNotifier {
     }
   }
 
-  Future<int?> uploadImage(String filePath) async {
+  /// Upload an image to the server.
+  /// Accepts an [XFile] to handle content:// URIs correctly on Android 10+.
+  Future<int?> uploadImage(XFile xfile) async {
     try {
-      String uploadPath = filePath;
-      if (filePath.startsWith('content://')) {
-        final tempDir = Directory.systemTemp;
-        final tempFile = File(
-            '${tempDir.path}/upload_${DateTime.now().millisecondsSinceEpoch}.jpg');
-        await File(filePath).copy(tempFile.path);
-        uploadPath = tempFile.path;
-      }
+      debugPrint('[UPIMG] uploadImage called, xfile.name=${xfile.name} xfile.path=${xfile.path}');
+      final bytes = await xfile.readAsBytes();
+      debugPrint('[UPIMG] readAsBytes OK, size=${bytes.length} bytes');
+      final fileName = xfile.name.isNotEmpty ? xfile.name : 'upload.jpg';
       final formData = FormData.fromMap({
-        'file': await MultipartFile.fromFile(uploadPath),
+        'file': MultipartFile.fromBytes(bytes, filename: fileName),
       });
+      debugPrint('[UPIMG] posting to /upload ...');
       final response = await _dio.post('/upload', data: formData);
+      debugPrint('[UPIMG] response status=${response.statusCode} data=${response.data}');
       if (response.statusCode == 200 && response.data != null) {
-        return response.data['file_id'] as int?;
+        final fileId = response.data['file_id'] as int?;
+        debugPrint('[UPIMG] upload success, file_id=$fileId url=${response.data['url']}');
+        return fileId;
       }
-    } catch (e) {
-      debugPrint('上传图片失败: $e');
+      debugPrint('[UPIMG] upload failed: unexpected status or null data');
+    } catch (e, st) {
+      debugPrint('[UPIMG] uploadImage exception: $e\n$st');
     }
     return null;
   }

@@ -51,14 +51,6 @@ services:
     networks:
       - shenliyuan_network
 
-volumes:
-  server_data:
-  postgres_data:
-
-networks:
-  shenliyuan_network:
-    driver: bridge
-
   nginx:
     image: nginx:alpine
     ports:
@@ -70,3 +62,11 @@ networks:
       - server
     networks:
       - shenliyuan_network
+
+volumes:
+  server_data:
+  postgres_data:
+
+networks:
+  shenliyuan_network:
+    driver: bridge

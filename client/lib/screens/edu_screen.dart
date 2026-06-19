@@ -102,41 +102,44 @@ class _EduScreenState extends State<EduScreen> {
                           style: TextStyle(color: Colors.grey[600]),
                         ),
                       const SizedBox(height: 16),
-                      Row(
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
                         children: [
                           if (eduProvider.isBound)
-                            ElevatedButton.icon(
-                              onPressed: () =>
+                            _solidActionButton(
+                              context,
+                              label: '解绑',
+                              backgroundColor: Colors.red,
+                              onTap: () =>
                                   _showUnbindDialog(context, eduProvider),
-                              icon: const Icon(Icons.link_off),
-                              label: const Text('解绑'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.red,
-                                foregroundColor: Colors.white,
-                              ),
                             )
                           else
-                            ElevatedButton.icon(
-                              onPressed: () =>
+                            _solidActionButton(
+                              context,
+                              label: '绑定教务',
+                              onTap: () =>
                                   _showBindDialog(context, eduProvider),
-                              icon: const Icon(Icons.link),
-                              label: const Text('绑定教务'),
                             ),
-                          const SizedBox(width: 8),
                           if (eduProvider.isBound)
-                            OutlinedButton.icon(
+                            OutlinedButton(
                               onPressed: () =>
                                   _showCourseDialog(context, eduProvider),
-                              icon: const Icon(Icons.schedule),
-                              label: const Text('课表'),
+                              child: Text(
+                                '课表',
+                                style: TextStyle(
+                                    color: Theme.of(context).primaryColor),
+                              ),
                             ),
-                          const SizedBox(width: 8),
                           if (eduProvider.isBound)
-                            OutlinedButton.icon(
+                            OutlinedButton(
                               onPressed: () =>
                                   _showGradesDialog(context, eduProvider),
-                              icon: const Icon(Icons.grade),
-                              label: const Text('成绩'),
+                              child: Text(
+                                '成绩',
+                                style: TextStyle(
+                                    color: Theme.of(context).primaryColor),
+                              ),
                             ),
                         ],
                       ),
@@ -441,8 +444,12 @@ class _EduScreenState extends State<EduScreen> {
               padding: const EdgeInsets.all(16),
               child: SizedBox(
                 width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: () async {
+                child: _solidActionButton(
+                  context,
+                  label: '导入到课表',
+                  verticalPadding: 14,
+                  fontSize: 16,
+                  onTap: () async {
                     // 先拿到全局 ScaffoldMessenger（此时 context 还活着）
                     final navContext = appNavigatorKey.currentContext;
                     if (navContext == null) return;
@@ -477,13 +484,6 @@ class _EduScreenState extends State<EduScreen> {
                       );
                     }
                   },
-                  icon: const Icon(Icons.download),
-                  label: const Text('导入到课表', style: TextStyle(fontSize: 16)),
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
-                  ),
                 ),
               ),
             ),
@@ -594,6 +594,62 @@ class _EduScreenState extends State<EduScreen> {
                   : const Text('查询'),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buttonContent(IconData icon, String label, {double fontSize = 14}) {
+    return Text(
+      label,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      textAlign: TextAlign.center,
+      style: TextStyle(
+        color: Theme.of(context).colorScheme.primary,
+        fontSize: fontSize,
+        fontWeight: FontWeight.w600,
+      ),
+    );
+  }
+
+  Widget _solidActionButton(
+    BuildContext context, {
+    required String label,
+    required VoidCallback onTap,
+    Color? backgroundColor,
+    Color? foregroundColor,
+    double horizontalPadding = 16,
+    double verticalPadding = 12,
+    double fontSize = 14,
+  }) {
+    final bg = backgroundColor ?? Theme.of(context).primaryColor;
+    final fg = foregroundColor ?? Colors.white;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Ink(
+          padding: EdgeInsets.symmetric(
+            horizontal: horizontalPadding,
+            vertical: verticalPadding,
+          ),
+          decoration: BoxDecoration(
+            color: bg,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: fg,
+              fontSize: fontSize,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
         ),
       ),
     );

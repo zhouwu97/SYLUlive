@@ -130,12 +130,13 @@ class _LoginScreenState extends State<LoginScreen> {
       }
       if (!_isRegister && result.errorMessage!.contains('尚未注册')) {
         FocusManager.instance.primaryFocus?.unfocus();
-        if (mounted) setState(() {
-          _isRegister = true;
-          _eduPasswordController.clear();
-          _appPasswordController.clear();
-          _nicknameController.clear();
-        });
+        if (mounted)
+          setState(() {
+            _isRegister = true;
+            _eduPasswordController.clear();
+            _appPasswordController.clear();
+            _nicknameController.clear();
+          });
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) {
             _eduPasswordFocus.requestFocus();
@@ -344,13 +345,14 @@ class _LoginScreenState extends State<LoginScreen> {
                           if (dialogContext.mounted) {
                             Navigator.pop(dialogContext);
                           }
-                          if (mounted) setState(() {
-                            _isRegister = false;
-                            _studentIdController.text =
-                                studentIdController.text.trim();
-                            _appPasswordController.clear();
-                            _eduPasswordController.clear();
-                          });
+                          if (mounted)
+                            setState(() {
+                              _isRegister = false;
+                              _studentIdController.text =
+                                  studentIdController.text.trim();
+                              _appPasswordController.clear();
+                              _eduPasswordController.clear();
+                            });
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
                               content: Text('密码已重置，请使用新密码登录'),
@@ -410,325 +412,333 @@ class _LoginScreenState extends State<LoginScreen> {
                   children: [
                     Padding(
                         padding: const EdgeInsets.fromLTRB(28, 40, 28, 28),
-                    child: Form(
-                      key: _formKey,
-                      child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            Icon(Icons.school,
-                                size: 56,
-                                color: Theme.of(context).primaryColor),
-                            const SizedBox(height: 12),
-                            Text('沈理校园',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .headlineSmall
-                                    ?.copyWith(fontWeight: FontWeight.bold),
-                                textAlign: TextAlign.center),
-                            const SizedBox(height: 4),
-                            Text('校园互助社交平台',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .bodySmall
-                                    ?.copyWith(color: Colors.grey),
-                                textAlign: TextAlign.center),
-                            const SizedBox(height: 28),
+                        child: Form(
+                          key: _formKey,
+                          child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                Icon(Icons.school,
+                                    size: 56,
+                                    color: Theme.of(context).primaryColor),
+                                const SizedBox(height: 12),
+                                Text('沈理校园',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .headlineSmall
+                                        ?.copyWith(fontWeight: FontWeight.bold),
+                                    textAlign: TextAlign.center),
+                                const SizedBox(height: 4),
+                                Text('校园互助社交平台',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodySmall
+                                        ?.copyWith(color: Colors.grey),
+                                    textAlign: TextAlign.center),
+                                const SizedBox(height: 28),
 
-                            if (_isRegister) ...[
-                              Container(
-                                padding: const EdgeInsets.all(14),
-                                decoration: BoxDecoration(
-                                  color: _isGraduateRegister
-                                      ? const Color(0xFFFDF5E8)
-                                      : const Color(0xFFF3F6FF),
-                                  borderRadius: BorderRadius.circular(14),
-                                  border: Border.all(
-                                    color: _isGraduateRegister
-                                        ? const Color(0xFFFFD8A8)
-                                        : const Color(0xFFD6E4FF),
-                                  ),
-                                ),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      _isGraduateRegister
-                                          ? '毕业人员注册说明'
-                                          : '在校生注册说明',
-                                      style: const TextStyle(
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w700,
+                                if (_isRegister) ...[
+                                  Container(
+                                    padding: const EdgeInsets.all(14),
+                                    decoration: BoxDecoration(
+                                      color: _isGraduateRegister
+                                          ? const Color(0xFFFDF5E8)
+                                          : const Color(0xFFF3F6FF),
+                                      borderRadius: BorderRadius.circular(14),
+                                      border: Border.all(
+                                        color: _isGraduateRegister
+                                            ? const Color(0xFFFFD8A8)
+                                            : const Color(0xFFD6E4FF),
                                       ),
                                     ),
-                                    const SizedBox(height: 6),
-                                    Text(
-                                      _isGraduateRegister
-                                          ? '毕业人员使用 QQ 号注册，验证码会发送到 QQ 邮箱。为降低交易风险，毕业人员账号不能在集市发布帖子，可在首页转到闲鱼等专业平台。'
-                                          : '在校生仅使用学号注册，并通过教务密码验证身份。注册成功后可使用校园全部功能。',
-                                      style: TextStyle(
-                                        fontSize: 12.5,
-                                        height: 1.45,
-                                        color: Colors.grey[700],
-                                      ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          _isGraduateRegister
+                                              ? '毕业人员注册说明'
+                                              : '在校生注册说明',
+                                          style: const TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 6),
+                                        Text(
+                                          _isGraduateRegister
+                                              ? '毕业人员使用 QQ 号注册，验证码会发送到 QQ 邮箱。为降低交易风险，毕业人员账号不能在集市发布帖子，可在首页转到闲鱼等专业平台。'
+                                              : '在校生仅使用学号注册，并通过教务密码验证身份。注册成功后可使用校园全部功能。',
+                                          style: TextStyle(
+                                            fontSize: 12.5,
+                                            height: 1.45,
+                                            color: Colors.grey[700],
+                                          ),
+                                        ),
+                                      ],
                                     ),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(height: 16),
-                            ],
-
-                            TextFormField(
-                              controller: _isGraduateRegister
-                                  ? _qqController
-                                  : _studentIdController,
-                              maxLength: _isGraduateRegister ? 15 : 20,
-                              keyboardType: _isGraduateRegister
-                                  ? TextInputType.number
-                                  : TextInputType.text,
-                              decoration: InputDecoration(
-                                labelText: _isRegister
-                                    ? (_isGraduateRegister ? 'QQ号' : '学号')
-                                    : '学号 / QQ',
-                                helperText: _isRegister
-                                    ? (_isGraduateRegister
-                                        ? '仅毕业人员使用 QQ 注册'
-                                        : '仅在校生使用学号注册')
-                                    : '在校生用学号登录，毕业人员用 QQ 登录',
-                                prefixIcon: const Icon(Icons.person_outline),
-                                border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(12)),
-                                contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 16, vertical: 14),
-                              ),
-                              validator: (v) {
-                                if (v == null || v.isEmpty) {
-                                  if (_isRegister) {
-                                    return _isGraduateRegister
-                                        ? '请输入QQ号'
-                                        : '请输入学号';
-                                  }
-                                  return '请输入学号或QQ';
-                                }
-                                return null;
-                              },
-                            ),
-
-                            if (_isRegister) ...[
-                              const SizedBox(height: 16),
-
-                              SegmentedButton<String>(
-                                segments: const [
-                                  ButtonSegment(
-                                    value: 'campus',
-                                    label: Text('在校生注册'),
-                                    icon: Icon(Icons.school_outlined),
                                   ),
-                                  ButtonSegment(
-                                    value: 'graduate',
-                                    label: Text('毕业人员注册'),
-                                    icon: Icon(Icons.mark_email_read_outlined),
-                                  ),
+                                  const SizedBox(height: 16),
                                 ],
-                                selected: {_registerMode},
-                                onSelectionChanged: (value) {
-                                  FocusManager.instance.primaryFocus?.unfocus();
-                                  if (mounted) setState(() {
-                                    _registerMode = value.first;
-                                    _appPasswordController.clear();
-                                    _eduPasswordController.clear();
-                                    _verifyCodeController.clear();
-                                  });
-                                },
-                              ),
-                              const SizedBox(height: 16),
 
-                              // 昵称
-                              TextFormField(
-                                controller: _nicknameController,
-                                decoration: InputDecoration(
-                                  labelText: '昵称（选填）',
-                                  prefixIcon: const Icon(Icons.badge_outlined),
-                                  border: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(12)),
-                                  contentPadding: const EdgeInsets.symmetric(
-                                      horizontal: 16, vertical: 14),
-                                  helperText: '将显示在帖子和评论中',
-                                  helperStyle: TextStyle(color: Colors.orange),
-                                ),
-                              ),
-                              const SizedBox(height: 16),
-
-                              if (_registerMode == 'campus')
                                 TextFormField(
-                                  controller: _eduPasswordController,
-                                  focusNode: _eduPasswordFocus,
-                                  obscureText: _obscureEduPassword,
+                                  controller: _isGraduateRegister
+                                      ? _qqController
+                                      : _studentIdController,
+                                  maxLength: _isGraduateRegister ? 15 : 20,
+                                  keyboardType: _isGraduateRegister
+                                      ? TextInputType.number
+                                      : TextInputType.text,
                                   decoration: InputDecoration(
-                                    labelText: '教务密码',
+                                    labelText: _isRegister
+                                        ? (_isGraduateRegister ? 'QQ号' : '学号')
+                                        : '学号 / QQ',
+                                    helperText: _isRegister
+                                        ? (_isGraduateRegister
+                                            ? '仅毕业人员使用 QQ 注册'
+                                            : '仅在校生使用学号注册')
+                                        : '在校生用学号登录，毕业人员用 QQ 登录',
+                                    prefixIcon:
+                                        const Icon(Icons.person_outline),
+                                    border: OutlineInputBorder(
+                                        borderRadius:
+                                            BorderRadius.circular(12)),
+                                    contentPadding: const EdgeInsets.symmetric(
+                                        horizontal: 16, vertical: 14),
+                                  ),
+                                  validator: (v) {
+                                    if (v == null || v.isEmpty) {
+                                      if (_isRegister) {
+                                        return _isGraduateRegister
+                                            ? '请输入QQ号'
+                                            : '请输入学号';
+                                      }
+                                      return '请输入学号或QQ';
+                                    }
+                                    return null;
+                                  },
+                                ),
+
+                                if (_isRegister) ...[
+                                  const SizedBox(height: 16),
+
+                                  SegmentedButton<String>(
+                                    segments: const [
+                                      ButtonSegment(
+                                        value: 'campus',
+                                        label: Text('在校生注册'),
+                                        icon: Icon(Icons.school_outlined),
+                                      ),
+                                      ButtonSegment(
+                                        value: 'graduate',
+                                        label: Text('毕业人员注册'),
+                                        icon: Icon(
+                                            Icons.mark_email_read_outlined),
+                                      ),
+                                    ],
+                                    selected: {_registerMode},
+                                    onSelectionChanged: (value) {
+                                      FocusManager.instance.primaryFocus
+                                          ?.unfocus();
+                                      if (mounted)
+                                        setState(() {
+                                          _registerMode = value.first;
+                                          _appPasswordController.clear();
+                                          _eduPasswordController.clear();
+                                          _verifyCodeController.clear();
+                                        });
+                                    },
+                                  ),
+                                  const SizedBox(height: 16),
+
+                                  // 昵称
+                                  TextFormField(
+                                    controller: _nicknameController,
+                                    decoration: InputDecoration(
+                                      labelText: '昵称（选填）',
+                                      prefixIcon:
+                                          const Icon(Icons.badge_outlined),
+                                      border: OutlineInputBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(12)),
+                                      contentPadding:
+                                          const EdgeInsets.symmetric(
+                                              horizontal: 16, vertical: 14),
+                                      helperText: '将显示在帖子和评论中',
+                                      helperStyle:
+                                          TextStyle(color: Colors.orange),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 16),
+
+                                  if (_registerMode == 'campus')
+                                    TextFormField(
+                                      controller: _eduPasswordController,
+                                      focusNode: _eduPasswordFocus,
+                                      obscureText: _obscureEduPassword,
+                                      decoration: InputDecoration(
+                                        labelText: '教务密码',
+                                        prefixIcon:
+                                            const Icon(Icons.lock_outline),
+                                        border: OutlineInputBorder(
+                                            borderRadius:
+                                                BorderRadius.circular(12)),
+                                        contentPadding:
+                                            const EdgeInsets.symmetric(
+                                                horizontal: 16, vertical: 14),
+                                        helperText: '用于验证学号真实性',
+                                        helperStyle:
+                                            TextStyle(color: Colors.orange),
+                                        suffixIcon: IconButton(
+                                          onPressed: () => setState(() {
+                                            _obscureEduPassword =
+                                                !_obscureEduPassword;
+                                          }),
+                                          icon: Icon(
+                                            _obscureEduPassword
+                                                ? Icons.visibility_off_outlined
+                                                : Icons.visibility_outlined,
+                                          ),
+                                        ),
+                                      ),
+                                      validator: (v) => (v == null || v.isEmpty)
+                                          ? '请输入教务密码'
+                                          : null,
+                                    )
+                                  else
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: TextFormField(
+                                            controller: _verifyCodeController,
+                                            keyboardType: TextInputType.number,
+                                            decoration: InputDecoration(
+                                              labelText: '验证码',
+                                              prefixIcon: const Icon(
+                                                  Icons.verified_outlined),
+                                              border: OutlineInputBorder(
+                                                  borderRadius:
+                                                      BorderRadius.circular(
+                                                          12)),
+                                              contentPadding:
+                                                  const EdgeInsets.symmetric(
+                                                      horizontal: 16,
+                                                      vertical: 14),
+                                              helperText: '发送到 QQ 邮箱',
+                                              helperStyle: TextStyle(
+                                                  color: Colors.orange),
+                                            ),
+                                            validator: (v) => (v == null ||
+                                                    v.trim().length != 6)
+                                                ? '请输入6位验证码'
+                                                : null,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        SizedBox(
+                                          height: 54,
+                                          child: _softActionButton(
+                                            label: _codeCooldown > 0
+                                                ? '${_codeCooldown}s'
+                                                : '发送验证码',
+                                            onTap: (_isLoading ||
+                                                    _codeCooldown > 0)
+                                                ? null
+                                                : _sendGraduateCode,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                ],
+
+                                const SizedBox(height: 16),
+
+                                // APP密码
+                                TextFormField(
+                                  controller: _appPasswordController,
+                                  obscureText: _obscureAppPassword,
+                                  decoration: InputDecoration(
+                                    labelText: _isRegister ? 'APP密码' : '密码',
                                     prefixIcon: const Icon(Icons.lock_outline),
                                     border: OutlineInputBorder(
                                         borderRadius:
                                             BorderRadius.circular(12)),
                                     contentPadding: const EdgeInsets.symmetric(
                                         horizontal: 16, vertical: 14),
-                                    helperText: '用于验证学号真实性',
+                                    helperText:
+                                        _isRegister ? '8位以上，需包含数字和字母' : null,
                                     helperStyle:
                                         TextStyle(color: Colors.orange),
                                     suffixIcon: IconButton(
                                       onPressed: () => setState(() {
-                                        _obscureEduPassword =
-                                            !_obscureEduPassword;
+                                        _obscureAppPassword =
+                                            !_obscureAppPassword;
                                       }),
                                       icon: Icon(
-                                        _obscureEduPassword
+                                        _obscureAppPassword
                                             ? Icons.visibility_off_outlined
                                             : Icons.visibility_outlined,
                                       ),
                                     ),
                                   ),
-                                  validator: (v) => (v == null || v.isEmpty)
-                                      ? '请输入教务密码'
-                                      : null,
-                                )
-                              else
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: TextFormField(
-                                        controller: _verifyCodeController,
-                                        keyboardType: TextInputType.number,
-                                        decoration: InputDecoration(
-                                          labelText: '验证码',
-                                          prefixIcon: const Icon(
-                                              Icons.verified_outlined),
-                                          border: OutlineInputBorder(
-                                              borderRadius:
-                                                  BorderRadius.circular(12)),
-                                          contentPadding:
-                                              const EdgeInsets.symmetric(
-                                                  horizontal: 16, vertical: 14),
-                                          helperText: '发送到 QQ 邮箱',
-                                          helperStyle:
-                                              TextStyle(color: Colors.orange),
-                                        ),
-                                        validator: (v) =>
-                                            (v == null || v.trim().length != 6)
-                                                ? '请输入6位验证码'
-                                                : null,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    SizedBox(
-                                      height: 54,
-                                      child: FilledButton.tonal(
-                                        onPressed:
-                                            (_isLoading || _codeCooldown > 0)
-                                                ? null
-                                                : _sendGraduateCode,
-                                        child: Text(_codeCooldown > 0
-                                            ? '${_codeCooldown}s'
-                                            : '发送验证码'),
-                                      ),
-                                    ),
-                                  ],
+                                  validator: _isRegister
+                                      ? _validateAppPassword
+                                      : (v) => (v == null || v.isEmpty)
+                                          ? '请输入密码'
+                                          : null,
                                 ),
-                            ],
 
-                            const SizedBox(height: 16),
+                                if (!_isRegister)
+                                  Align(
+                                    alignment: Alignment.centerRight,
+                                    child: TextButton(
+                                      onPressed: _isLoading
+                                          ? null
+                                          : _showForgotPasswordDialog,
+                                      child: Text(
+                                        '忘记密码？',
+                                        style: TextStyle(
+                                            color:
+                                                Theme.of(context).primaryColor),
+                                      ),
+                                    ),
+                                  ),
 
-                            // APP密码
-                            TextFormField(
-                              controller: _appPasswordController,
-                              obscureText: _obscureAppPassword,
-                              decoration: InputDecoration(
-                                labelText: _isRegister ? 'APP密码' : '密码',
-                                prefixIcon: const Icon(Icons.lock_outline),
-                                border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(12)),
-                                contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 16, vertical: 14),
-                                helperText:
-                                    _isRegister ? '8位以上，需包含数字和字母' : null,
-                                helperStyle: TextStyle(color: Colors.orange),
-                                suffixIcon: IconButton(
-                                  onPressed: () => setState(() {
-                                    _obscureAppPassword = !_obscureAppPassword;
-                                  }),
-                                  icon: Icon(
-                                    _obscureAppPassword
-                                        ? Icons.visibility_off_outlined
-                                        : Icons.visibility_outlined,
+                                const SizedBox(height: 24),
+
+                                // 提交按钮
+                                SizedBox(
+                                  height: 48,
+                                  child: _solidActionButton(
+                                    label: _isRegister ? '注册' : '登录',
+                                    onTap: _isLoading ? null : _submit,
+                                    isLoading: _isLoading,
                                   ),
                                 ),
-                              ),
-                              validator: _isRegister
-                                  ? _validateAppPassword
-                                  : (v) =>
-                                      (v == null || v.isEmpty) ? '请输入密码' : null,
-                            ),
+                                const SizedBox(height: 16),
 
-                            if (!_isRegister)
-                              Align(
-                                alignment: Alignment.centerRight,
-                                child: TextButton(
-                                  onPressed: _isLoading
-                                      ? null
-                                      : _showForgotPasswordDialog,
+                                // 切换登录/注册
+                                TextButton(
+                                  onPressed: () {
+                                    FocusManager.instance.primaryFocus
+                                        ?.unfocus();
+                                    if (mounted)
+                                      setState(() {
+                                        _isRegister = !_isRegister;
+                                        _eduPasswordController.clear();
+                                        _nicknameController.clear();
+                                        _appPasswordController.clear();
+                                        _verifyCodeController.clear();
+                                      });
+                                  },
                                   child: Text(
-                                    '忘记密码？',
-                                    style: TextStyle(
-                                        color: Theme.of(context).primaryColor),
-                                  ),
+                                      _isRegister ? '已有账号？去登录' : '没有账号？去注册',
+                                      style: TextStyle(
+                                          color:
+                                              Theme.of(context).primaryColor)),
                                 ),
-                              ),
-
-                            const SizedBox(height: 24),
-
-                            // 提交按钮
-                            Consumer<AuthProvider>(
-                              builder: (context, auth, child) => SizedBox(
-                                height: 48,
-                                child: ElevatedButton(
-                                  onPressed: _isLoading ? null : _submit,
-                                  style: ElevatedButton.styleFrom(
-                                      shape: RoundedRectangleBorder(
-                                          borderRadius:
-                                              BorderRadius.circular(12))),
-                                  child: _isLoading
-                                      ? const SizedBox(
-                                          height: 20,
-                                          width: 20,
-                                          child: CircularProgressIndicator(
-                                              strokeWidth: 2,
-                                              color: Colors.white))
-                                      : Text(_isRegister ? '注册' : '登录',
-                                          style: const TextStyle(
-                                              fontSize: 16,
-                                              fontWeight: FontWeight.w600)),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 16),
-
-                            // 切换登录/注册
-                            TextButton(
-                              onPressed: () {
-                                FocusManager.instance.primaryFocus?.unfocus();
-                                if (mounted) setState(() {
-                                  _isRegister = !_isRegister;
-                                  _eduPasswordController.clear();
-                                  _nicknameController.clear();
-                                  _appPasswordController.clear();
-                                  _verifyCodeController.clear();
-                                });
-                              },
-                              child: Text(_isRegister ? '已有账号？去登录' : '没有账号？去注册',
-                                  style: TextStyle(
-                                      color: Theme.of(context).primaryColor)),
-                            ),
-                          ]),
-                    )),
+                              ]),
+                        )),
                     Positioned(
                       top: 12,
                       right: 16,
@@ -736,18 +746,103 @@ class _LoginScreenState extends State<LoginScreen> {
                         onPressed: () => Navigator.pop(context),
                         style: TextButton.styleFrom(
                           minimumSize: Size.zero,
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 8),
                           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                         ),
                         child: Text('跳过',
                             style: TextStyle(
                                 fontSize: 14,
-                                color: isDark ? Colors.white70 : Colors.black54)),
+                                color:
+                                    isDark ? Colors.white70 : Colors.black54)),
                       ),
                     ),
                   ],
                 ),
               )),
+        ),
+      ),
+    );
+  }
+
+  Widget _solidActionButton({
+    required String label,
+    required VoidCallback? onTap,
+    bool isLoading = false,
+  }) {
+    final enabled = onTap != null && !isLoading;
+    final color = enabled
+        ? Theme.of(context).primaryColor
+        : Theme.of(context).primaryColor.withValues(alpha: 0.42);
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: enabled ? onTap : null,
+        borderRadius: BorderRadius.circular(12),
+        child: Ink(
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Center(
+            child: isLoading
+                ? const SizedBox(
+                    height: 20,
+                    width: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _softActionButton({
+    required String label,
+    required VoidCallback? onTap,
+  }) {
+    final primary = Theme.of(context).primaryColor;
+    final enabled = onTap != null;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Ink(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            color: primary.withValues(alpha: enabled ? 0.12 : 0.06),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Center(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: enabled ? primary : primary.withValues(alpha: 0.55),
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
         ),
       ),
     );

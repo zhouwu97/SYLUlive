@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
@@ -37,6 +38,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   String _postType = '';
   bool _isLoading = false;
   final List<XFile> _selectedImages = [];
+  final Map<int, Uint8List> _previewBytes = {};
   final List<PostImage> _existingImages = [];
 
   bool get _isEditing => widget.editingPost != null;
@@ -193,7 +195,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     List<int> fileIds = [];
     bool hasUploadError = false;
     for (final image in _selectedImages) {
-      final fileId = await postProvider.uploadImage(image.path);
+      final fileId = await postProvider.uploadImage(image);
       if (fileId != null) {
         fileIds.add(fileId);
       } else {
@@ -526,14 +528,17 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                           ),
                           child: ClipRRect(
                             borderRadius: BorderRadius.circular(12),
-                            child: Image.file(
-                              File(image.path),
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) => Container(
+                            child: Builder(builder: (ctx) {
+                              final idx = index - _existingImages.length;
+                              final bytes = _previewBytes[idx];
+                              if (bytes != null) {
+                                return Image.memory(bytes, fit: BoxFit.cover);
+                              }
+                              return Image.file(File(image.path), fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(
                                 color: Colors.grey[300],
                                 child: const Icon(Icons.broken_image),
-                              ),
-                            ),
+                              ));
+                            }),
                           ),
                         ),
                         Positioned(

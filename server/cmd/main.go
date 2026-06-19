@@ -169,6 +169,10 @@ func main() {
 
 	}
 
+	if err := models.EnsureConversationIndexes(db); err != nil {
+		log.Fatal("私信索引迁移失败:", err)
+	}
+
 	// 启动时自动修复可能不同步的评论数和点赞数
 	log.Println("正在同步数据(评论数、帖子点赞、用户总获赞)...")
 	db.Exec(`UPDATE posts SET reply_count = (SELECT COUNT(*) FROM replies WHERE replies.post_id = posts.id AND replies.status = 'normal')`)

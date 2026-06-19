@@ -1,6 +1,7 @@
 package models
 
 import (
+	"fmt"
 	"time"
 
 	"gorm.io/gorm"
@@ -24,6 +25,30 @@ func (c *Conversation) BeforeSave(_ *gorm.DB) error {
 	if c.LastMessageAt.IsZero() {
 		c.LastMessageAt = time.Now()
 	}
+	return nil
+}
+
+func EnsureConversationIndexes(db *gorm.DB) error {
+	indexes := []struct {
+		model interface{}
+		name  string
+	}{
+		{&Conversation{}, "idx_conversation_users"},
+		{&Conversation{}, "idx_conversations_user1_last_message"},
+		{&Conversation{}, "idx_conversations_user2_last_message"},
+		{&Message{}, "idx_messages_conversation_id_id"},
+		{&Message{}, "idx_messages_conversation_read_sender"},
+	}
+
+	for _, index := range indexes {
+		if db.Migrator().HasIndex(index.model, index.name) {
+			continue
+		}
+		if err := db.Migrator().CreateIndex(index.model, index.name); err != nil {
+			return fmt.Errorf("create index %s: %w", index.name, err)
+		}
+	}
+
 	return nil
 }
 

@@ -55,9 +55,6 @@ var jpush = JPush.newJPush();
 final FlutterLocalNotificationsPlugin _privateMessageNotifications =
     FlutterLocalNotificationsPlugin();
 bool _privateMessageNotificationsReady = false;
-final Set<String> _seenJpushMsgIds = {};
-/// 刚启动时跳过本地通知（极光已显示过的旧通知重放），2 秒后恢复
-bool _skipInitialNotifications = false;
 
 Future<void> setupJPush(AuthProvider authProvider) async {
   jpush.setup(
@@ -66,11 +63,6 @@ Future<void> setupJPush(AuthProvider authProvider) async {
     production: false,
     debug: true,
   );
-  // 启动窗口：注册 handler 后 2 秒内收到的通知是极光已显示过的，跳过本地弹窗
-  _skipInitialNotifications = true;
-  Future.delayed(const Duration(seconds: 2), () {
-    _skipInitialNotifications = false;
-  });
   jpush.addEventHandler(
     onReceiveNotification: (Map<String, dynamic> message) async {
       debugPrint('🔔 收到通知: $message');
@@ -210,51 +202,14 @@ Future<bool> _handlePrivateMessageNotification(
     return true;
   }
 
-  // 去重：同一个 JPush 消息 ID 不重复弹本地通知（后台已由极光显示过）
-  final msgId = _jpushMsgId(message);
-  if (msgId != null) {
-    if (_seenJpushMsgIds.contains(msgId)) {
-      debugPrint('跳过重复通知: msg_id=$msgId');
-      return true;
-    }
-    _seenJpushMsgIds.add(msgId);
-  }
-
-  // 启动窗口跳过：刚打开 app 时重放的旧通知不弹本地
-  if (_skipInitialNotifications) {
-    debugPrint('启动窗口跳过本地通知');
-    return true;
-  }
-
+  // 前台不做本地弹窗，全部交给极光 SDK 显示，避免双通知
   final context = appNavigatorKey.currentContext;
   final provider = context?.read<MessageProvider>();
   if (provider?.currentConversationId == conversationId) {
     await provider?.refreshMessages();
-    return true;
+  } else {
+    await provider?.loadConversations(silent: true);
   }
-
-  await _initializePrivateMessageNotifications();
-  final payload = jsonEncode({
-    'conversation_id': conversationId,
-    'sender_id': senderId,
-    'sender_name': title,
-  });
-  await _privateMessageNotifications.show(
-    conversationId,
-    title.isEmpty ? '新私信' : title,
-    content.isEmpty ? '你收到一条新私信' : content,
-    const NotificationDetails(
-      android: AndroidNotificationDetails(
-        'private_messages',
-        '私信通知',
-        channelDescription: '收到新的私信时提醒',
-        importance: Importance.high,
-        priority: Priority.high,
-      ),
-      iOS: DarwinNotificationDetails(),
-    ),
-    payload: payload,
-  );
   return true;
 }
 
@@ -304,14 +259,6 @@ String? _androidNotificationValue(Map<String, dynamic> message, String key) {
   final android = message['android'];
   if (android is Map && android[key] != null) {
     return android[key].toString();
-  }
-  return null;
-}
-
-String? _jpushMsgId(Map<String, dynamic> message) {
-  final extras = message['extras'];
-  if (extras is Map) {
-    return extras['cn.jpush.android.MSG_ID']?.toString();
   }
   return null;
 }

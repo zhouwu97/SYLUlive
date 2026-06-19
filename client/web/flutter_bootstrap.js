@@ -12,6 +12,5 @@ if (dart2jsBuild && dart2jsBuild.mainJsPath === 'main.dart.js') {
 _flutter.loader.load({
   config: {
     canvasKitBaseUrl: "canvaskit/",
-    fontFallbackBaseUrl: "assets/fallback_fonts/",
   },
 });

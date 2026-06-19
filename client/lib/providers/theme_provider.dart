@@ -5,9 +5,14 @@ import '../utils/responsive_util.dart';
 class ThemeProvider extends ChangeNotifier {
   static const String _nightModeKey = 'night_mode';
   static const String _backgroundImageKey = 'background_image';
-  static const String _landscapeBackgroundImageKey = 'landscape_background_image';
+  static const String _landscapeBackgroundImageKey =
+      'landscape_background_image';
+  static const String _backgroundFillScreenKey = 'background_fill_screen';
+  static const String _landscapeBackgroundFillScreenKey =
+      'landscape_background_fill_screen';
   static const String _backgroundBlurKey = 'background_blur';
-  static const String _componentOpacityKey = 'background_transparency'; // 保持 key 兼容
+  static const String _componentOpacityKey =
+      'background_transparency'; // 保持 key 兼容
   static const String _liquidGlassKey = 'liquid_glass_v2';
   static const String _floatingNavBarKey = 'floating_nav_bar';
   static const String _predictiveBackKey = 'predictive_back_enabled';
@@ -17,8 +22,10 @@ class ThemeProvider extends ChangeNotifier {
   bool _isDarkMode = false;
   String? _backgroundImage;
   String? _landscapeBackgroundImage;
+  bool _backgroundFillScreen = false;
+  bool _landscapeBackgroundFillScreen = false;
   double _backgroundBlur = 10;
-  double _componentOpacity = 0.7;  // 组件不透明度：越大越实，越小越透
+  double _componentOpacity = 0.7; // 组件不透明度：越大越实，越小越透
   bool _liquidGlass = false;
   bool _floatingNavBar = false;
   bool _predictiveBack = true;
@@ -28,6 +35,8 @@ class ThemeProvider extends ChangeNotifier {
   bool get isDarkMode => _isDarkMode;
   String? get backgroundImage => _backgroundImage;
   String? get landscapeBackgroundImage => _landscapeBackgroundImage;
+  bool get backgroundFillScreen => _backgroundFillScreen;
+  bool get landscapeBackgroundFillScreen => _landscapeBackgroundFillScreen;
   double get backgroundBlur => _backgroundBlur;
   double get componentOpacity => _componentOpacity;
   bool get liquidGlass => _liquidGlass;
@@ -35,18 +44,28 @@ class ThemeProvider extends ChangeNotifier {
   bool get predictiveBack => _predictiveBack;
   bool get startOnTimetable => _startOnTimetable;
   bool get marketIsListView => _marketIsListView;
-  bool get hasBackground => _backgroundImage != null && _backgroundImage!.isNotEmpty;
-  bool get hasLandscapeBackground => _landscapeBackgroundImage != null && _landscapeBackgroundImage!.isNotEmpty;
+  bool get hasBackground =>
+      _backgroundImage != null && _backgroundImage!.isNotEmpty;
+  bool get hasLandscapeBackground =>
+      _landscapeBackgroundImage != null &&
+      _landscapeBackgroundImage!.isNotEmpty;
 
   /// 是否有自定义背景（全局生效）
   bool get isBackgroundVisible => hasBackground || hasLandscapeBackground;
 
   /// 获取当前环境适用的背景图片
   String? getBackgroundImageFor(BuildContext context) {
-    if (ResponsiveUtil.isDesktop(context) && hasLandscapeBackground) {
+    if (ResponsiveUtil.useDesktopShell(context) && hasLandscapeBackground) {
       return _landscapeBackgroundImage;
     }
     return _backgroundImage;
+  }
+
+  bool getBackgroundFillScreenFor(BuildContext context) {
+    if (ResponsiveUtil.useDesktopShell(context) && hasLandscapeBackground) {
+      return _landscapeBackgroundFillScreen;
+    }
+    return _backgroundFillScreen;
   }
 
   ThemeProvider() {
@@ -58,6 +77,9 @@ class ThemeProvider extends ChangeNotifier {
     _isDarkMode = prefs.getBool(_nightModeKey) ?? false;
     _backgroundImage = prefs.getString(_backgroundImageKey);
     _landscapeBackgroundImage = prefs.getString(_landscapeBackgroundImageKey);
+    _backgroundFillScreen = prefs.getBool(_backgroundFillScreenKey) ?? false;
+    _landscapeBackgroundFillScreen =
+        prefs.getBool(_landscapeBackgroundFillScreenKey) ?? false;
     _backgroundBlur = prefs.getDouble(_backgroundBlurKey) ?? 10;
     _componentOpacity = prefs.getDouble(_componentOpacityKey) ?? 0.7;
     _liquidGlass = prefs.getBool(_liquidGlassKey) ?? false;
@@ -82,24 +104,39 @@ class ThemeProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> setBackgroundImage(String? imageUrl) async {
+  Future<void> setBackgroundImage(
+    String? imageUrl, {
+    bool fillScreen = false,
+  }) async {
     _backgroundImage = imageUrl;
+    _backgroundFillScreen =
+        imageUrl != null && imageUrl.isNotEmpty ? fillScreen : false;
     final prefs = await SharedPreferences.getInstance();
     if (imageUrl != null && imageUrl.isNotEmpty) {
       await prefs.setString(_backgroundImageKey, imageUrl);
+      await prefs.setBool(_backgroundFillScreenKey, _backgroundFillScreen);
     } else {
       await prefs.remove(_backgroundImageKey);
+      await prefs.remove(_backgroundFillScreenKey);
     }
     notifyListeners();
   }
 
-  Future<void> setLandscapeBackgroundImage(String? imageUrl) async {
+  Future<void> setLandscapeBackgroundImage(
+    String? imageUrl, {
+    bool fillScreen = false,
+  }) async {
     _landscapeBackgroundImage = imageUrl;
+    _landscapeBackgroundFillScreen =
+        imageUrl != null && imageUrl.isNotEmpty ? fillScreen : false;
     final prefs = await SharedPreferences.getInstance();
     if (imageUrl != null && imageUrl.isNotEmpty) {
       await prefs.setString(_landscapeBackgroundImageKey, imageUrl);
+      await prefs.setBool(
+          _landscapeBackgroundFillScreenKey, _landscapeBackgroundFillScreen);
     } else {
       await prefs.remove(_landscapeBackgroundImageKey);
+      await prefs.remove(_landscapeBackgroundFillScreenKey);
     }
     notifyListeners();
   }
@@ -142,9 +179,13 @@ class ThemeProvider extends ChangeNotifier {
   Future<void> clearBackground() async {
     _backgroundImage = null;
     _landscapeBackgroundImage = null;
+    _backgroundFillScreen = false;
+    _landscapeBackgroundFillScreen = false;
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_backgroundImageKey);
     await prefs.remove(_landscapeBackgroundImageKey);
+    await prefs.remove(_backgroundFillScreenKey);
+    await prefs.remove(_landscapeBackgroundFillScreenKey);
     notifyListeners();
   }
 

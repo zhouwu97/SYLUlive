@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'dart:ui';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -6,8 +5,6 @@ import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:image_picker/image_picker.dart';
 import 'package:image_cropper/image_cropper.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:path/path.dart' as path;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -1092,8 +1089,8 @@ class _ProfileScreenState extends State<ProfileScreen>
 
       if (cropped == null) return;
 
-      final length = File(cropped.path).lengthSync();
-      if (length > 10 * 1024 * 1024) {
+      final avatarBytes = await cropped.readAsBytes();
+      if (avatarBytes.length > 10 * 1024 * 1024) {
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -1103,12 +1100,7 @@ class _ProfileScreenState extends State<ProfileScreen>
         return;
       }
 
-      final appDir = await getApplicationDocumentsDirectory();
-      final fileName =
-          'avatar_${DateTime.now().millisecondsSinceEpoch}${path.extension(cropped.path)}';
-      final savedPath = path.join(appDir.path, fileName);
-      await File(cropped.path).copy(savedPath);
-      final result = await authProvider.updateAvatar(savedPath);
+      final result = await authProvider.updateAvatar(avatarBytes);
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text(

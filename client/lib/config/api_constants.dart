@@ -1,25 +1,30 @@
 import 'package:flutter/foundation.dart';
 
 class ApiConstants {
-  // Web 与 App 使用不同的编译参数，避免 HTTPS 网页误用 App 的明文 IP 接口。
+  // Web 与 App 使用不同的编译参数，避免网页和 App 误用对方的接口入口。
   // Web: --dart-define=WEB_API_URL=/api
-  // App: --dart-define=APP_API_URL=http://localhost:8080/api
-  // Web 生产环境默认走同源 /api，避免 HTTPS 页面请求明文 IP:8080 导致连接失败。
+  // App: --dart-define=APP_API_URL=http://156.233.229.232:8080/api
+  // 生产 App 默认直连服务器 IP；Web 默认走同源反代。
   static const String _webBaseUrl = String.fromEnvironment('WEB_API_URL');
   static const String _appBaseUrl = String.fromEnvironment('APP_API_URL');
   static const String _legacyBaseUrl = String.fromEnvironment('API_URL');
+  static const String _defaultAppBaseUrl = 'http://156.233.229.232:8080/api';
+
   static String get baseUrl {
     if (kIsWeb) return _webBaseUrl.isNotEmpty ? _webBaseUrl : '/api';
     if (_appBaseUrl.isNotEmpty) return _appBaseUrl;
     if (_legacyBaseUrl.isNotEmpty) return _legacyBaseUrl;
-    return 'http://156.233.229.232:8080/api';
+    return _defaultAppBaseUrl;
   }
 
   // Python 教务服务（绑定、课表、成绩）
-  static const String eduServiceUrl = String.fromEnvironment(
-    'EDU_URL',
-    defaultValue: 'http://101.42.27.44:8000',
-  );
+  // Web 走同源反代；App 默认也走生产 HTTPS 反代，避免手机端明文 HTTP 被拦。
+  static String get eduServiceUrl {
+    const configured = String.fromEnvironment('EDU_URL');
+    if (configured.isNotEmpty) return configured;
+    if (kIsWeb) return '/edu-api';
+    return 'https://sylu.zhouwu.ccwu.cc/edu-api';
+  }
 
   // 极光推送 AppKey
   static const String jpushAppKey = String.fromEnvironment(

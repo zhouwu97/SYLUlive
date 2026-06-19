@@ -121,7 +121,18 @@ class _ChatListScreenState extends State<ChatListScreen>
       itemBuilder: (context, index) {
         final conversation = provider.conversations[index];
         final targetUser = conversation.getOtherUser(currentUserId);
-        if (targetUser == null) return const SizedBox.shrink();
+        if (targetUser == null) {
+          debugPrint(
+            '私信会话数据异常: conversation=${conversation.id}, currentUser=$currentUserId, users=${conversation.user1Id}/${conversation.user2Id}',
+          );
+          return ListTile(
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
+            leading: Icon(Icons.error_outline, color: Colors.red.shade400),
+            title: const Text('会话数据异常'),
+            subtitle: Text('会话 ${conversation.id} 无法匹配当前用户'),
+          );
+        }
 
         final lastMessage = conversation.lastMessage;
         final preview = lastMessage == null

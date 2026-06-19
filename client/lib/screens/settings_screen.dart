@@ -72,10 +72,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
     String? bgPath = themeProvider.getBackgroundImageFor(context);
 
     if (bgPath != null && bgPath.isNotEmpty) {
-      final isAsset = !bgPath.startsWith('http') && !bgPath.startsWith('/');
+      final isAsset = ThemeProvider.isBundledAssetBackground(bgPath);
+      final isLocalFile = ThemeProvider.isLocalFileBackground(bgPath);
       final imageProvider = isAsset
-          ? AssetImage('assets/images/$bgPath') as ImageProvider
-          : bgPath.startsWith('/')
+          ? AssetImage(ThemeProvider.resolveBundledAssetPath(bgPath))
+              as ImageProvider
+          : isLocalFile
               ? FileImage(File(bgPath)) as ImageProvider
               : NetworkImage(bgPath) as ImageProvider;
       return Stack(fit: StackFit.expand, children: [
@@ -687,6 +689,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
       return;
     }
 
+    if (!context.read<AuthProvider>().isLoggedIn) {
+      _setBackground(
+        themeProvider,
+        isLandscape,
+        'wallpaper_thumbs/${path.basenameWithoutExtension(assetName)}.jpg',
+      );
+      return;
+    }
+
     try {
       final savedPath = await _downloadWallpaper(remoteUrl, assetName);
       _setBackground(themeProvider, isLandscape, savedPath);
@@ -729,9 +740,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     try {
       final remoteUrl = _remoteWallpaperUrl(assetName);
-      final sourcePath = remoteUrl != null
+      final useRemote =
+          remoteUrl != null && context.read<AuthProvider>().isLoggedIn;
+      final sourcePath = useRemote
           ? await _downloadWallpaper(remoteUrl, assetName)
-          : await _copyAssetToTempFile(assetName);
+          : await _copyAssetToTempFile(
+              'wallpaper_thumbs/${path.basenameWithoutExtension(assetName)}.jpg',
+            );
       final savedPath =
           await _cropAndSaveBackground(sourcePath, isLandscape: isLandscape);
       if (savedPath == null) return;
@@ -756,7 +771,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<String> _copyAssetToTempFile(String assetName) async {
-    final data = await rootBundle.load('assets/images/$assetName');
+    final data =
+        await rootBundle.load(ThemeProvider.resolveBundledAssetPath(assetName));
     final tempDir = await getTemporaryDirectory();
     final sourcePath = path.join(
       tempDir.path,

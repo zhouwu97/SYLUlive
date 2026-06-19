@@ -53,6 +53,26 @@ class ThemeProvider extends ChangeNotifier {
   /// 是否有自定义背景（全局生效）
   bool get isBackgroundVisible => hasBackground || hasLandscapeBackground;
 
+  static bool isNetworkBackground(String imagePath) {
+    return imagePath.startsWith('http://') || imagePath.startsWith('https://');
+  }
+
+  static bool isLocalFileBackground(String imagePath) {
+    return imagePath.startsWith('/') ||
+        imagePath.startsWith(r'\\') ||
+        RegExp(r'^[a-zA-Z]:[\\/]').hasMatch(imagePath);
+  }
+
+  static bool isBundledAssetBackground(String imagePath) {
+    return !isNetworkBackground(imagePath) && !isLocalFileBackground(imagePath);
+  }
+
+  static String resolveBundledAssetPath(String imagePath) {
+    return imagePath.startsWith('assets/')
+        ? imagePath
+        : 'assets/images/$imagePath';
+  }
+
   /// 获取当前环境适用的背景图片
   String? getBackgroundImageFor(BuildContext context) {
     if (ResponsiveUtil.useDesktopShell(context) && hasLandscapeBackground) {

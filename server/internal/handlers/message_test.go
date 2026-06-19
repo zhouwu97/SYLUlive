@@ -16,6 +16,31 @@ import (
 	"shenliyuan/internal/models"
 )
 
+type fakeMessageNotifier struct {
+	calls chan fakeMessageNotifyCall
+}
+
+type fakeMessageNotifyCall struct {
+	UserID  uint
+	Title   string
+	Content string
+	Extras  map[string]interface{}
+}
+
+func newFakeMessageNotifier() *fakeMessageNotifier {
+	return &fakeMessageNotifier{calls: make(chan fakeMessageNotifyCall, 4)}
+}
+
+func (n *fakeMessageNotifier) Notify(userID uint, title, content string, extras map[string]interface{}) error {
+	n.calls <- fakeMessageNotifyCall{
+		UserID:  userID,
+		Title:   title,
+		Content: content,
+		Extras:  extras,
+	}
+	return nil
+}
+
 func newMessageTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
@@ -183,6 +208,9 @@ func TestMessageConversationSummaryPaginationAndRead(t *testing.T) {
 		conversations[0].LastMessage.Content != "message-5" {
 		t.Fatalf("unexpected conversation response: %s", list.Body.String())
 	}
+	if strings.Contains(list.Body.String(), "student_id") {
+		t.Fatalf("conversation summary leaked full user fields: %s", list.Body.String())
+	}
 
 	page := performMessageRequest(
 		t,
@@ -202,6 +230,28 @@ func TestMessageConversationSummaryPaginationAndRead(t *testing.T) {
 	}
 	if len(messages) != 2 || messages[0].Content != "message-4" || messages[1].Content != "message-5" {
 		t.Fatalf("unexpected page: %s", page.Body.String())
+	}
+
+	afterPage := performMessageRequest(
+		t,
+		handler.GetMessages,
+		http.MethodGet,
+		fmt.Sprintf("/api/messages/conversations/%d?limit=10&after_id=2&before_id=5", conversation.ID),
+		gin.Params{{Key: "id", Value: fmt.Sprint(conversation.ID)}},
+		1,
+		"",
+	)
+	if afterPage.Code != http.StatusOK {
+		t.Fatalf("after page status=%d body=%s", afterPage.Code, afterPage.Body.String())
+	}
+	var afterMessages []models.Message
+	if err := json.Unmarshal(afterPage.Body.Bytes(), &afterMessages); err != nil {
+		t.Fatalf("decode after messages: %v", err)
+	}
+	if len(afterMessages) != 3 ||
+		afterMessages[0].Content != "message-3" ||
+		afterMessages[2].Content != "message-5" {
+		t.Fatalf("unexpected after page: %s", afterPage.Body.String())
 	}
 
 	read := performMessageRequest(
@@ -237,5 +287,91 @@ func TestMessageConversationSummaryPaginationAndRead(t *testing.T) {
 		!strings.Contains(unreadResponse.Body.String(), `"count":0`) {
 		t.Fatalf("unread response status=%d body=%s",
 			unreadResponse.Code, unreadResponse.Body.String())
+	}
+}
+
+func TestMessageSendRateLimit(t *testing.T) {
+	db := newMessageTestDB(t)
+	createMessageTestUser(t, db, 1, "Alice")
+	createMessageTestUser(t, db, 2, "Bob")
+	handler := NewMessageHandler(db)
+
+	for i := 0; i < maxPairMessagesPerMin; i++ {
+		response := performMessageRequest(
+			t,
+			handler.Send,
+			http.MethodPost,
+			"/api/messages/2",
+			gin.Params{{Key: "user_id", Value: "2"}},
+			1,
+			fmt.Sprintf(`{"content":"hello-%d"}`, i),
+		)
+		if response.Code != http.StatusCreated {
+			t.Fatalf("send %d status=%d body=%s", i, response.Code, response.Body.String())
+		}
+	}
+
+	limited := performMessageRequest(
+		t,
+		handler.Send,
+		http.MethodPost,
+		"/api/messages/2",
+		gin.Params{{Key: "user_id", Value: "2"}},
+		1,
+		`{"content":"too much"}`,
+	)
+	if limited.Code != http.StatusTooManyRequests {
+		t.Fatalf("limited status=%d body=%s", limited.Code, limited.Body.String())
+	}
+}
+
+func TestMessageSendImageResponseAndPush(t *testing.T) {
+	db := newMessageTestDB(t)
+	createMessageTestUser(t, db, 1, "Alice")
+	createMessageTestUser(t, db, 2, "Bob")
+	file := models.File{
+		Hash:     "image-hash",
+		Path:     "/uploads/image.png",
+		Size:     128,
+		MimeType: "image/png",
+	}
+	if err := db.Create(&file).Error; err != nil {
+		t.Fatalf("create file: %v", err)
+	}
+	notifier := newFakeMessageNotifier()
+	handler := NewMessageHandler(db, notifier)
+
+	response := performMessageRequest(
+		t,
+		handler.Send,
+		http.MethodPost,
+		"/api/messages/2",
+		gin.Params{{Key: "user_id", Value: "2"}},
+		1,
+		fmt.Sprintf(`{"content":"","file_id":%d}`, file.ID),
+	)
+	if response.Code != http.StatusCreated {
+		t.Fatalf("send image status=%d body=%s", response.Code, response.Body.String())
+	}
+	var message models.Message
+	if err := json.Unmarshal(response.Body.Bytes(), &message); err != nil {
+		t.Fatalf("decode image message: %v", err)
+	}
+	if message.File == nil || message.File.Path != file.Path {
+		t.Fatalf("expected response to include image file: %s", response.Body.String())
+	}
+
+	select {
+	case call := <-notifier.calls:
+		if call.UserID != 2 || call.Title != "Alice" || call.Content != "[图片]" {
+			t.Fatalf("unexpected push call: %#v", call)
+		}
+		if call.Extras["type"] != "private_message" ||
+			call.Extras["conversation_id"] == nil ||
+			call.Extras["sender_id"] != uint(1) {
+			t.Fatalf("unexpected push extras: %#v", call.Extras)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("expected private message push call")
 	}
 }

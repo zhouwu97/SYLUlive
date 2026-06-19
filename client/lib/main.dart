@@ -140,6 +140,28 @@ Future<void> _initializePrivateMessageNotifications() async {
           AndroidFlutterLocalNotificationsPlugin>()
       ?.createNotificationChannel(
         const AndroidNotificationChannel(
+          'developer-default',
+          '通知',
+          description: '评论、系统通知等',
+          importance: Importance.low,
+        ),
+      );
+  await _privateMessageNotifications
+      .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin>()
+      ?.createNotificationChannel(
+        const AndroidNotificationChannel(
+          'private_message_push',
+          '私信通知',
+          description: '收到新的私信时悬浮提醒',
+          importance: Importance.high,
+        ),
+      );
+  await _privateMessageNotifications
+      .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin>()
+      ?.createNotificationChannel(
+        const AndroidNotificationChannel(
           'private_messages',
           '私信通知',
           description: '收到新的私信时提醒',
@@ -284,6 +306,11 @@ Future<bool> _handleUpdateNotification(Map<String, dynamic> message) async {
 Map<String, dynamic> _extractJPushExtras(Map<String, dynamic> message) {
   final extras = message['extras'];
   if (extras is Map) {
+    // 极光会把自定义 extras 嵌套在 cn.jpush.android.EXTRA 里
+    final inner = extras['cn.jpush.android.EXTRA'];
+    if (inner is Map) {
+      return inner.map((key, value) => MapEntry(key.toString(), value));
+    }
     return extras.map((key, value) => MapEntry(key.toString(), value));
   }
 

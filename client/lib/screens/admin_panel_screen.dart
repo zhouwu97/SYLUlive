@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../config/api_constants.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
 import '../utils/app_feedback.dart';
@@ -1270,7 +1271,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
           ),
           Expanded(
               child: FutureBuilder(
-            future: context.read<AuthProvider>().dio.get('/announcements'),
+            future:
+                context.read<AuthProvider>().dio.get(ApiConstants.noticesPath),
             builder: (_, snap) {
               if (!snap.hasData)
                 return const Center(child: CircularProgressIndicator());
@@ -1316,9 +1318,11 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
                                 announcement: a);
                             setLocalState(() {});
                           } else if (v == 'pin') {
-                            await dio.put('/announcements/${a['id']}', data: {
-                              'is_pinned': !(a['is_pinned'] == true),
-                            });
+                            await dio.put(
+                                '${ApiConstants.noticesPath}/${a['id']}',
+                                data: {
+                                  'is_pinned': !(a['is_pinned'] == true),
+                                });
                             if (!mounted) return;
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
@@ -1329,7 +1333,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
                             );
                             setLocalState(() {});
                           } else if (v == 'delete') {
-                            await dio.delete('/announcements/${a['id']}');
+                            await dio.delete(
+                                '${ApiConstants.noticesPath}/${a['id']}');
                             if (!mounted) return;
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
@@ -1442,13 +1447,14 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
         (titleCtrl.text.isNotEmpty || contentCtrl.text.isNotEmpty)) {
       final dio = context.read<AuthProvider>().dio;
       if (isEditing) {
-        await dio.put('/announcements/${announcement['id']}', data: {
+        await dio
+            .put('${ApiConstants.noticesPath}/${announcement['id']}', data: {
           'title': titleCtrl.text,
           'content': contentCtrl.text,
           'is_pinned': isPinned,
         });
       } else {
-        await dio.post('/announcements', data: {
+        await dio.post(ApiConstants.noticesPath, data: {
           'title': titleCtrl.text,
           'content': contentCtrl.text,
           'is_pinned': isPinned,

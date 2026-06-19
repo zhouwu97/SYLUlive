@@ -141,7 +141,7 @@ Future<void> _initializePrivateMessageNotifications() async {
       ?.createNotificationChannel(
         const AndroidNotificationChannel(
           'developer-default',
-          '通知',
+          '系统通知',
           description: '评论、系统通知等',
           importance: Importance.low,
         ),
@@ -151,23 +151,17 @@ Future<void> _initializePrivateMessageNotifications() async {
           AndroidFlutterLocalNotificationsPlugin>()
       ?.createNotificationChannel(
         const AndroidNotificationChannel(
-          'private_message_push',
+          'private_messages',
           '私信通知',
-          description: '收到新的私信时悬浮提醒',
+          description: '收到新私信时悬浮提醒',
           importance: Importance.high,
         ),
       );
+  // Android 13+ 运行时通知权限
   await _privateMessageNotifications
       .resolvePlatformSpecificImplementation<
           AndroidFlutterLocalNotificationsPlugin>()
-      ?.createNotificationChannel(
-        const AndroidNotificationChannel(
-          'private_messages',
-          '私信通知',
-          description: '收到新的私信时提醒',
-          importance: Importance.high,
-        ),
-      );
+      ?.requestNotificationsPermission();
   _privateMessageNotificationsReady = true;
 }
 

@@ -165,6 +165,20 @@ Future<void> _initializePrivateMessageNotifications() async {
   _privateMessageNotificationsReady = true;
 }
 
+/// 首帧后请求通知权限（需要 Activity 已创建）
+Future<void> _requestNotificationPermissionIfNeeded() async {
+  try {
+    final plugin = _privateMessageNotifications
+        .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>();
+    if (plugin == null) return;
+    final granted = await plugin.requestNotificationsPermission();
+    debugPrint('通知权限请求结果: $granted');
+  } catch (e) {
+    debugPrint('请求通知权限失败: $e');
+  }
+}
+
 Future<bool> _handlePrivateMessageNotification(
   Map<String, dynamic> message, {
   required bool opened,
@@ -692,6 +706,9 @@ class _AuthWrapperState extends State<AuthWrapper> {
         if (authProvider.isLoggedIn && !_jpushSetup) {
           _jpushSetup = true;
           setupJPush(authProvider);
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _requestNotificationPermissionIfNeeded();
+          });
         }
 
         final tp = context.watch<ThemeProvider>();

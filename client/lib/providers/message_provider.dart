@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import '../models/conversation.dart';
@@ -5,6 +7,7 @@ import '../utils/app_feedback.dart';
 
 class MessageProvider extends ChangeNotifier {
   static const int _pageSize = 30;
+  static const int maxMessageLength = 2000;
 
   final Dio _dio;
 
@@ -19,6 +22,7 @@ class MessageProvider extends ChangeNotifier {
   String? _messageError;
   int? _currentConversationId;
   int _messageRequestVersion = 0;
+  final Map<int, String> _drafts = {};
 
   List<Conversation> get conversations => _conversations;
   List<Message> get messages => _messages;
@@ -32,6 +36,20 @@ class MessageProvider extends ChangeNotifier {
   int? get currentConversationId => _currentConversationId;
 
   MessageProvider(this._dio);
+
+  String draftFor(int targetUserId) => _drafts[targetUserId] ?? '';
+
+  void updateDraft(int targetUserId, String content) {
+    if (content.isEmpty) {
+      _drafts.remove(targetUserId);
+    } else {
+      _drafts[targetUserId] = content;
+    }
+  }
+
+  void clearDraft(int targetUserId) {
+    _drafts.remove(targetUserId);
+  }
 
   Future<void> loadConversations({bool silent = false}) async {
     _conversationError = null;
@@ -135,6 +153,7 @@ class MessageProvider extends ChangeNotifier {
 
   Future<void> loadOlderMessages() async {
     final conversationId = _currentConversationId;
+    final requestVersion = _messageRequestVersion;
     if (conversationId == null ||
         _loadingMore ||
         !_hasMore ||
@@ -144,15 +163,19 @@ class MessageProvider extends ChangeNotifier {
 
     _loadingMore = true;
     notifyListeners();
+    final oldestMessageId = _messages.first.id;
     try {
       final response = await _dio.get(
         '/messages/conversations/$conversationId',
         queryParameters: {
           'limit': _pageSize,
-          'before_id': _messages.first.id,
+          'before_id': oldestMessageId,
         },
       );
-      if (_currentConversationId != conversationId) return;
+      if (_currentConversationId != conversationId ||
+          requestVersion != _messageRequestVersion) {
+        return;
+      }
       final older = (response.data as List)
           .map((e) => Message.fromJson(Map<String, dynamic>.from(e as Map)))
           .toList();
@@ -160,26 +183,41 @@ class MessageProvider extends ChangeNotifier {
       _messages = [
         ...older.where((message) => !knownIds.contains(message.id)),
         ..._messages,
-      ];
+      ]..sort((a, b) => a.id.compareTo(b.id));
       _hasMore = older.length == _pageSize;
     } on DioException catch (e) {
-      _messageError = AppFeedback.dioErrorMessage(e, fallback: '加载更早消息失败');
+      if (requestVersion == _messageRequestVersion) {
+        _messageError = AppFeedback.dioErrorMessage(e, fallback: '加载更早消息失败');
+      }
     } finally {
-      _loadingMore = false;
-      notifyListeners();
+      if (requestVersion == _messageRequestVersion) {
+        _loadingMore = false;
+        notifyListeners();
+      }
     }
   }
 
   Future<void> refreshMessages() async {
     final conversationId = _currentConversationId;
     if (conversationId == null || _messageLoading) return;
+    if (_messages.isEmpty) {
+      await loadMessages(conversationId);
+      return;
+    }
 
+    final requestVersion = _messageRequestVersion;
+    final afterId = _messages.last.id;
     try {
       final response = await _dio.get(
         '/messages/conversations/$conversationId',
-        queryParameters: {'limit': _pageSize},
+        queryParameters: {
+          'limit': _pageSize,
+          'after_id': afterId,
+        },
       );
-      if (_currentConversationId != conversationId || response.data is! List) {
+      if (_currentConversationId != conversationId ||
+          requestVersion != _messageRequestVersion ||
+          response.data is! List) {
         return;
       }
       final latest = (response.data as List)
@@ -208,6 +246,13 @@ class MessageProvider extends ChangeNotifier {
     _sending = true;
     _messageError = null;
     notifyListeners();
+    Timer? sendingGuard;
+    sendingGuard = Timer(const Duration(seconds: 35), () {
+      if (!_sending) return;
+      _sending = false;
+      _messageError = '发送超时，请检查网络后重试';
+      notifyListeners();
+    });
     try {
       final response = await _dio.post('/messages/$targetUserId', data: {
         'content': trimmed,
@@ -219,7 +264,9 @@ class MessageProvider extends ChangeNotifier {
         _currentConversationId = message.conversationId;
         if (!_messages.any((item) => item.id == message.id)) {
           _messages.add(message);
+          _messages.sort((a, b) => a.id.compareTo(b.id));
         }
+        clearDraft(targetUserId);
         notifyListeners();
         await loadConversations(silent: true);
         return message;
@@ -230,8 +277,11 @@ class MessageProvider extends ChangeNotifier {
       _messageError = '发送消息失败';
       debugPrint('发送消息失败: $e');
     } finally {
-      _sending = false;
-      notifyListeners();
+      sendingGuard.cancel();
+      if (_sending) {
+        _sending = false;
+        notifyListeners();
+      }
     }
     return null;
   }

@@ -9,9 +9,9 @@ import (
 // Conversation 私信会话
 type Conversation struct {
 	ID            uint      `gorm:"primaryKey" json:"id"`
-	User1ID       uint      `gorm:"not null;index;uniqueIndex:idx_conversation_users" json:"user1_id"`
-	User2ID       uint      `gorm:"not null;index;uniqueIndex:idx_conversation_users" json:"user2_id"`
-	LastMessageAt time.Time `json:"last_message_at"`
+	User1ID       uint      `gorm:"not null;index;uniqueIndex:idx_conversation_users;index:idx_conversations_user1_last_message,priority:1" json:"user1_id"`
+	User2ID       uint      `gorm:"not null;index;uniqueIndex:idx_conversation_users;index:idx_conversations_user2_last_message,priority:1" json:"user2_id"`
+	LastMessageAt time.Time `gorm:"index:idx_conversations_user1_last_message,priority:2;index:idx_conversations_user2_last_message,priority:2" json:"last_message_at"`
 	CreatedAt     time.Time `json:"created_at"`
 	User1         User      `gorm:"foreignKey:User1ID" json:"user1"`
 	User2         User      `gorm:"foreignKey:User2ID" json:"user2"`
@@ -21,18 +21,21 @@ func (c *Conversation) BeforeSave(_ *gorm.DB) error {
 	if c.User1ID > c.User2ID {
 		c.User1ID, c.User2ID = c.User2ID, c.User1ID
 	}
+	if c.LastMessageAt.IsZero() {
+		c.LastMessageAt = time.Now()
+	}
 	return nil
 }
 
 // Message 私信消息
 type Message struct {
-	ID             uint       `gorm:"primaryKey" json:"id"`
-	ConversationID uint       `gorm:"not null;index" json:"conversation_id"`
-	SenderID       uint       `gorm:"not null" json:"sender_id"`
+	ID             uint       `gorm:"primaryKey;index:idx_messages_conversation_id_id,priority:2" json:"id"`
+	ConversationID uint       `gorm:"not null;index;index:idx_messages_conversation_id_id,priority:1;index:idx_messages_conversation_read_sender,priority:1" json:"conversation_id"`
+	SenderID       uint       `gorm:"not null;index:idx_messages_conversation_read_sender,priority:3" json:"sender_id"`
 	Content        string     `gorm:"type:text" json:"content"`
 	FileID         *uint      `json:"file_id"` // 可选图片
 	CreatedAt      time.Time  `json:"created_at"`
-	ReadAt         *time.Time `json:"read_at"`
+	ReadAt         *time.Time `gorm:"index:idx_messages_conversation_read_sender,priority:2" json:"read_at"`
 	Sender         User       `gorm:"foreignKey:SenderID" json:"sender"`
 	File           *File      `gorm:"foreignKey:FileID" json:"file"`
 }

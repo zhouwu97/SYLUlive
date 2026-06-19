@@ -36,6 +36,15 @@ android {
         manifestPlaceholders["JPUSH_CHANNEL"] = "developer-default"
     }
 
+    packaging {
+        jniLibs {
+            excludes += listOf(
+                "lib/armeabi-v7a/**",
+                "lib/x86/**",
+            )
+        }
+    }
+
     val keystorePropertiesFile = rootProject.file("key.properties")
     val keystoreProperties = Properties()
     if (keystorePropertiesFile.exists()) {
@@ -54,12 +63,18 @@ android {
     buildTypes {
         release {
             signingConfig = signingConfigs.getByName("release")
+            ndk {
+                abiFilters.add("arm64-v8a")
+            }
             isMinifyEnabled = false
             isShrinkResources = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
         debug {
             signingConfig = signingConfigs.getByName("debug")
+            ndk {
+                abiFilters.addAll(listOf("arm64-v8a", "x86_64"))
+            }
         }
     }
 }

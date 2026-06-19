@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:cookie_jar/cookie_jar.dart';
@@ -12,6 +13,7 @@ import '../models/user.dart';
 import '../config/api_constants.dart';
 import '../utils/app_feedback.dart';
 import '../utils/app_navigator.dart';
+import '../services/wallpaper_prefetch_service.dart';
 import '../widgets/auth_expired_overlay.dart';
 
 /// 认证结果，包含成功状态和错误信息
@@ -59,6 +61,10 @@ class AuthProvider extends ChangeNotifier {
     ));
     // 添加 401 拦截器：自动登出并提示重新登录
     _dio.interceptors.add(InterceptorsWrapper(
+      onRequest: (options, handler) {
+        _applyAuthHeader();
+        handler.next(options);
+      },
       onError: (error, handler) {
         if (error.response?.statusCode == 401 && _token != null) {
           // 无效令牌，自动登出
@@ -81,14 +87,21 @@ class AuthProvider extends ChangeNotifier {
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadStoredAuth());
   }
 
-  
+  void _applyAuthHeader() {
+    if (_token != null && _token!.isNotEmpty) {
+      _dio.options.headers['Authorization'] = 'Bearer $_token';
+    } else {
+      _dio.options.headers.remove('Authorization');
+    }
+  }
+
   Future<void> _initCookieJar() async {
     if (!kIsWeb && _cookieJar == null) {
       final appDocDir = await getApplicationDocumentsDirectory();
       final appDocPath = appDocDir.path;
       _cookieJar = PersistCookieJar(
         ignoreExpires: true,
-        storage: FileStorage(appDocPath + "/.cookies/"),
+        storage: FileStorage('$appDocPath/.cookies/'),
       );
       _dio.interceptors.add(CookieManager(_cookieJar!));
     }
@@ -112,11 +125,12 @@ class AuthProvider extends ChangeNotifier {
 
     if (token != null) {
       _token = token;
-      if (kIsWeb) { _dio.options.headers['Authorization'] = 'Bearer $_token'; }
+      _applyAuthHeader();
       if (userJson != null) {
         try {
           final Map<String, dynamic> json = jsonDecode(userJson);
           _user = User.fromJson(json);
+          WallpaperPrefetchService.start();
         } catch (e) {
           debugPrint('解析用户信息失败: $e');
         }
@@ -184,7 +198,8 @@ class AuthProvider extends ChangeNotifier {
       if (response.statusCode == 201) {
         _token = response.data['token'];
         _user = User.fromJson(response.data['user']);
-        if (kIsWeb) { _dio.options.headers['Authorization'] = 'Bearer $_token'; }
+        _applyAuthHeader();
+        WallpaperPrefetchService.start();
         await _saveAuth();
         notifyListeners();
         return AuthResult.success();
@@ -219,7 +234,8 @@ class AuthProvider extends ChangeNotifier {
       if (response.statusCode == 200) {
         _token = response.data['token'];
         _user = User.fromJson(response.data['user']);
-        if (kIsWeb) { _dio.options.headers['Authorization'] = 'Bearer $_token'; }
+        _applyAuthHeader();
+        WallpaperPrefetchService.start();
         await _saveAuth();
         notifyListeners();
         return AuthResult.success();
@@ -250,9 +266,8 @@ class AuthProvider extends ChangeNotifier {
     }
     _token = null;
     _user = null;
-    if (kIsWeb) {
-      _dio.options.headers.remove('Authorization');
-    } else if (_cookieJar != null) {
+    _applyAuthHeader();
+    if (!kIsWeb && _cookieJar != null) {
       await _cookieJar!.deleteAll();
     }
     await _clearStoredAuth();
@@ -321,16 +336,16 @@ class AuthProvider extends ChangeNotifier {
       String token, Map<String, dynamic> userJson) async {
     _token = token;
     _user = User.fromJson(userJson);
-    if (kIsWeb) { _dio.options.headers['Authorization'] = 'Bearer $_token'; }
+    _applyAuthHeader();
+    WallpaperPrefetchService.start();
     await _saveAuth();
     notifyListeners();
   }
 
-  Future<AuthResult> updateAvatar(String avatarPath) async {
+  Future<AuthResult> updateAvatar(Uint8List avatarBytes) async {
     try {
-      // 步骤1: 上传图片文件到服务器
       final uploadFormData = FormData.fromMap({
-        'file': await MultipartFile.fromFile(avatarPath),
+        'file': MultipartFile.fromBytes(avatarBytes, filename: 'avatar.jpg'),
       });
       final uploadResponse = await _dio.post('/upload', data: uploadFormData);
 
@@ -491,7 +506,7 @@ class AuthProvider extends ChangeNotifier {
       if (response.statusCode == 200) {
         _token = response.data['token'];
         _user = User.fromJson(response.data['user']);
-        if (kIsWeb) { _dio.options.headers['Authorization'] = 'Bearer $_token'; }
+        _applyAuthHeader();
         await _saveAuth();
         await _saveEduPassword(studentId, eduPassword);
         notifyListeners();
@@ -534,7 +549,7 @@ class AuthProvider extends ChangeNotifier {
       if (response.statusCode == 201) {
         _token = response.data['token'];
         _user = User.fromJson(response.data['user']);
-        if (kIsWeb) { _dio.options.headers['Authorization'] = 'Bearer $_token'; }
+        _applyAuthHeader();
         await _saveAuth();
         await _saveEduPassword(studentId, eduPassword);
         notifyListeners();
@@ -559,7 +574,8 @@ class AuthProvider extends ChangeNotifier {
   Future<void> updateDeviceToken(String registrationId) async {
     if (!isLoggedIn || registrationId.isEmpty) return;
     try {
-      await _dio.put('/user/device_token', data: {'device_token': registrationId});
+      await _dio
+          .put('/user/device_token', data: {'device_token': registrationId});
     } catch (e) {
       debugPrint('更新设备Token失败: $e');
     }
@@ -585,7 +601,7 @@ class AuthProvider extends ChangeNotifier {
       if (response.statusCode == 201) {
         _token = response.data['token'];
         _user = User.fromJson(response.data['user']);
-        if (kIsWeb) { _dio.options.headers['Authorization'] = 'Bearer $_token'; }
+        _applyAuthHeader();
         await _saveAuth();
         notifyListeners();
         return AuthResult.success();

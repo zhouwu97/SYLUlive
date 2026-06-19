@@ -730,11 +730,12 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
 
     try {
       setState(() => _isSaving = true);
-      // 复用 auth_provider 的图片上传接口 (也可以直接调 dio)
+      final croppedBytes = await cropped.readAsBytes();
+      final croppedName =
+          'background_${DateTime.now().millisecondsSinceEpoch}.jpg';
       FormData formData = FormData.fromMap({
-        'file': await MultipartFile.fromFile(cropped.path),
+        'file': MultipartFile.fromBytes(croppedBytes, filename: croppedName),
       });
-
       final uploadRes = await auth.dio.post('/upload', data: formData);
       if (uploadRes.statusCode == 200 && uploadRes.data['url'] != null) {
         final url = uploadRes.data['url'];

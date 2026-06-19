@@ -135,7 +135,7 @@ class _ProfileScreenState extends State<ProfileScreen>
 
   @override
   Widget build(BuildContext context) {
-    final authProvider = context.watch<AuthProvider>();
+final authProvider = context.watch<AuthProvider>();
     final themeProvider = context.watch<ThemeProvider>();
     final user = authProvider.user;
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -270,7 +270,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                   ),
                 ],
               ),
-              child: user?.avatar.isNotEmpty == true
+              child: user?.avatar.isNotEmpty == true 
                   ? ClipOval(
                       child: GestureDetector(
                         onLongPress: user?.avatar.isNotEmpty == true
@@ -278,6 +278,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                                 context, ApiConstants.fullUrl(user!.avatar))
                             : null,
                         child: CachedAvatar(
+              key: ValueKey(user?.avatar),
                           imageUrl: ApiConstants.fullUrl(user?.avatar ?? ''),
                           radius: 36,
                           fallbackText: user?.nickname,
@@ -1013,6 +1014,7 @@ class _ProfileScreenState extends State<ProfileScreen>
   }
 
   void _showAvatarPreview(BuildContext context, String url) {
+    debugPrint("[ProfileScreen] _showAvatarPreview: url=$url");
     showDialog(
       context: context,
       builder: (_) => Dialog(

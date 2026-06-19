@@ -74,17 +74,23 @@ func (h *UploadHandler) Upload(c *gin.Context) {
 	result := h.db.Where("hash = ?", hashStr).First(&existingFile)
 
 	if result.Error == nil {
-		// 文件已存在，增加引用计数
-		if err := h.db.Model(&existingFile).Update("ref_count", gorm.Expr("ref_count + 1")).Error; err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
+		// 文件已存在，检查磁盘上是否真实存在
+		filePath := filepath.Join(h.uploadDir, hashStr[:2], hashStr+ext)
+		if _, err := os.Stat(filePath); err == nil {
+			// 文件真实存在，增加引用计数
+			if err := h.db.Model(&existingFile).Update("ref_count", gorm.Expr("ref_count + 1")).Error; err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
+				return
+			}
+			c.JSON(http.StatusOK, gin.H{
+				"file_id": existingFile.ID,
+				"url":     existingFile.Path,
+				"hash":    hashStr,
+			})
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{
-			"file_id": existingFile.ID,
-			"url":     existingFile.Path,
-			"hash":    hashStr,
-		})
-		return
+		// 文件已丢失，删除旧 DB 记录，重新保存
+		h.db.Delete(&existingFile)
 	}
 
 	// 创建上传目录

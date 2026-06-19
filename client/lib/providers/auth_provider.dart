@@ -11,6 +11,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user.dart';
 import '../config/api_constants.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../utils/app_feedback.dart';
 import '../utils/app_navigator.dart';
 import '../services/wallpaper_prefetch_service.dart';
@@ -355,6 +356,8 @@ class AuthProvider extends ChangeNotifier {
       }
 
       final avatarUrl = uploadResponse.data['url'] as String;
+      debugPrint('[updateAvatar] upload response url: ' + avatarUrl);
+      debugPrint('[updateAvatar] full avatar URL: ' + ApiConstants.fullUrl(avatarUrl));
 
       // 步骤2: 更新用户头像URL
       final response =

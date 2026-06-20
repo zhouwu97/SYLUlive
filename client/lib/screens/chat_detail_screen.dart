@@ -256,7 +256,15 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
 
     return Scaffold(
       resizeToAvoidBottomInset: false,
-      appBar: AppBar(title: _buildTitle()),
+      backgroundColor: Colors.transparent,
+      extendBodyBehindAppBar: true,
+      appBar: AppBar(
+        title: _buildTitle(),
+        backgroundColor: Colors.white.withValues(alpha: 0.30),
+        foregroundColor: const Color(0xFF111827),
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+      ),
       body: body,
     );
   }
@@ -305,17 +313,20 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   }
 
   Widget _buildEmbeddedHeader() {
-    final divider = Theme.of(context).dividerColor.withValues(alpha: 0.36);
+    final divider = Colors.black.withValues(alpha: 0.08);
     return Container(
       height: 58,
       padding: const EdgeInsets.symmetric(horizontal: 18),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.92),
+        color: Colors.white.withValues(alpha: 0.46),
         border: Border(bottom: BorderSide(color: divider)),
       ),
       child: Align(
         alignment: Alignment.centerLeft,
-        child: _buildTitle(),
+        child: DefaultTextStyle.merge(
+          style: const TextStyle(color: Color(0xFF111827)),
+          child: _buildTitle(),
+        ),
       ),
     );
   }
@@ -369,7 +380,14 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     return _buildMessageBackdrop(
       ListView.builder(
         controller: _scrollController,
-        padding: const EdgeInsets.fromLTRB(12, 12, 12, 18),
+        padding: EdgeInsets.fromLTRB(
+          12,
+          widget.embedded
+              ? 12
+              : MediaQuery.paddingOf(context).top + kToolbarHeight + 12,
+          12,
+          18,
+        ),
         keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
         itemCount: provider.messages.length + (provider.loadingMore ? 1 : 0),
         itemBuilder: (context, index) {
@@ -411,15 +429,12 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   }
 
   Widget _buildMessageBackdrop(Widget child) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     if (widget.embedded) {
       return Stack(
         children: [
           Positioned.fill(
             child: ColoredBox(
-              color: isDark
-                  ? Colors.black.withValues(alpha: 0.18)
-                  : Colors.white.withValues(alpha: 0.18),
+              color: Colors.white.withValues(alpha: 0.18),
             ),
           ),
           child,
@@ -436,15 +451,10 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
-                colors: isDark
-                    ? [
-                        Colors.black.withValues(alpha: 0.48),
-                        Colors.black.withValues(alpha: 0.62),
-                      ]
-                    : [
-                        Colors.white.withValues(alpha: 0.34),
-                        Colors.white.withValues(alpha: 0.50),
-                      ],
+                colors: [
+                  Colors.white.withValues(alpha: 0.30),
+                  Colors.white.withValues(alpha: 0.46),
+                ],
               ),
             ),
           ),
@@ -456,7 +466,6 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
 
   Widget _buildChatBackground() {
     final themeProvider = context.watch<ThemeProvider>();
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     final bgPath = themeProvider.getBackgroundImageFor(context);
     final imageProvider = _chatBackgroundImageProvider(bgPath);
 
@@ -465,14 +474,11 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
       children: [
         _buildChatBackgroundImage(
           imageProvider: imageProvider,
-          isDark: isDark,
           fillScreen: bgPath != null &&
               themeProvider.getBackgroundFillScreenFor(context),
         ),
         Container(
-          color: isDark
-              ? Colors.black.withValues(alpha: 0.35)
-              : Colors.white.withValues(alpha: 0.25),
+          color: Colors.white.withValues(alpha: 0.22),
         ),
       ],
     );
@@ -498,18 +504,16 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
 
   Widget _buildChatBackgroundImage({
     required ImageProvider imageProvider,
-    required bool isDark,
     required bool fillScreen,
   }) {
-    final fallbackColor =
-        isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB);
+    const fallbackColor = Color(0xFFF4F6FB);
     if (fillScreen) {
       return Image(
         image: imageProvider,
         fit: BoxFit.cover,
         alignment: Alignment.center,
         gaplessPlayback: true,
-        errorBuilder: (_, __, ___) => ColoredBox(color: fallbackColor),
+        errorBuilder: (_, __, ___) => const ColoredBox(color: fallbackColor),
       );
     }
 
@@ -525,7 +529,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
               fit: BoxFit.cover,
               alignment: Alignment.center,
               gaplessPlayback: true,
-              errorBuilder: (_, __, ___) => ColoredBox(color: fallbackColor),
+              errorBuilder: (_, __, ___) =>
+                  const ColoredBox(color: fallbackColor),
             ),
           ),
         ),
@@ -680,10 +685,10 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
       child: Container(
         padding: const EdgeInsets.fromLTRB(12, 8, 10, 8),
         decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surface,
+          color: Colors.white,
           border: Border(
             top: BorderSide(
-              color: Theme.of(context).dividerColor.withValues(alpha: 0.4),
+              color: Colors.black.withValues(alpha: 0.06),
             ),
           ),
         ),
@@ -694,6 +699,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
               child: TextField(
                 controller: _textController,
                 onTap: _scrollToBottom,
+                style: const TextStyle(color: Color(0xFF111827)),
                 minLines: 1,
                 maxLines: 5,
                 textInputAction: TextInputAction.newline,
@@ -701,10 +707,10 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
                   hintText: '发送消息',
                   isDense: true,
                   filled: true,
-                  fillColor: Theme.of(context)
-                      .colorScheme
-                      .surfaceContainerHighest
-                      .withValues(alpha: 0.55),
+                  fillColor: const Color(0xFFF1F0F6),
+                  hintStyle: TextStyle(
+                    color: Colors.black.withValues(alpha: 0.46),
+                  ),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(20),
                     borderSide: BorderSide.none,

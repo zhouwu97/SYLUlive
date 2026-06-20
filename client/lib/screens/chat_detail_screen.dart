@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:io';
+import 'dart:ui';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
@@ -10,6 +12,7 @@ import '../models/conversation.dart';
 import '../models/user.dart';
 import '../providers/auth_provider.dart';
 import '../providers/message_provider.dart';
+import '../providers/theme_provider.dart';
 import '../utils/app_feedback.dart';
 import '../utils/app_time.dart';
 import '../widgets/cached_avatar.dart';
@@ -437,17 +440,88 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   }
 
   Widget _buildChatBackground() {
-    const fallback = 'assets/images/morenbeijing.jpeg';
-    final background = widget.targetUser.background;
-    if (background.isEmpty) {
-      return Image.asset(fallback, fit: BoxFit.cover);
+    final themeProvider = context.watch<ThemeProvider>();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bgPath = themeProvider.getBackgroundImageFor(context);
+    final imageProvider = _chatBackgroundImageProvider(bgPath);
+
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        _buildChatBackgroundImage(
+          imageProvider: imageProvider,
+          isDark: isDark,
+          fillScreen: bgPath != null &&
+              themeProvider.getBackgroundFillScreenFor(context),
+        ),
+        Container(
+          color: isDark
+              ? Colors.black.withValues(alpha: 0.35)
+              : Colors.white.withValues(alpha: 0.25),
+        ),
+      ],
+    );
+  }
+
+  ImageProvider _chatBackgroundImageProvider(String? bgPath) {
+    if (bgPath == null || bgPath.isEmpty) {
+      final isWide = MediaQuery.of(context).size.width >
+          MediaQuery.of(context).size.height;
+      return AssetImage(isWide
+          ? 'assets/images/tablet_default_landscape.png'
+          : 'assets/images/morenbeijing.jpeg');
     }
 
-    return CachedNetworkImage(
-      imageUrl: ApiConstants.fullUrl(background),
-      fit: BoxFit.cover,
-      placeholder: (_, __) => Image.asset(fallback, fit: BoxFit.cover),
-      errorWidget: (_, __, ___) => Image.asset(fallback, fit: BoxFit.cover),
+    if (ThemeProvider.isBundledAssetBackground(bgPath)) {
+      return AssetImage(ThemeProvider.resolveBundledAssetPath(bgPath));
+    }
+    if (ThemeProvider.isLocalFileBackground(bgPath)) {
+      return FileImage(File(bgPath));
+    }
+    return NetworkImage(bgPath);
+  }
+
+  Widget _buildChatBackgroundImage({
+    required ImageProvider imageProvider,
+    required bool isDark,
+    required bool fillScreen,
+  }) {
+    final fallbackColor =
+        isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB);
+    if (fillScreen) {
+      return Image(
+        image: imageProvider,
+        fit: BoxFit.cover,
+        alignment: Alignment.center,
+        gaplessPlayback: true,
+        errorBuilder: (_, __, ___) => ColoredBox(color: fallbackColor),
+      );
+    }
+
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        Transform.scale(
+          scale: 1.06,
+          child: ImageFiltered(
+            imageFilter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+            child: Image(
+              image: imageProvider,
+              fit: BoxFit.cover,
+              alignment: Alignment.center,
+              gaplessPlayback: true,
+              errorBuilder: (_, __, ___) => ColoredBox(color: fallbackColor),
+            ),
+          ),
+        ),
+        Image(
+          image: imageProvider,
+          fit: BoxFit.contain,
+          alignment: Alignment.center,
+          gaplessPlayback: true,
+          errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+        ),
+      ],
     );
   }
 

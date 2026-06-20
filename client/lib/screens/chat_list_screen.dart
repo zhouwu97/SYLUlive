@@ -5,6 +5,8 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../config/api_constants.dart';
+import '../models/conversation.dart';
+import '../models/user.dart';
 import '../providers/auth_provider.dart';
 import '../providers/message_provider.dart';
 import '../utils/app_time.dart';
@@ -21,6 +23,8 @@ class ChatListScreen extends StatefulWidget {
 class _ChatListScreenState extends State<ChatListScreen>
     with WidgetsBindingObserver {
   Timer? _refreshTimer;
+  int? _selectedConversationId;
+  User? _selectedTargetUser;
 
   @override
   void initState() {
@@ -63,17 +67,117 @@ class _ChatListScreenState extends State<ChatListScreen>
   Widget build(BuildContext context) {
     final currentUserId = context.watch<AuthProvider>().user?.id ?? 0;
     final provider = context.watch<MessageProvider>();
+    final isWide = MediaQuery.sizeOf(context).width >= 720;
+
+    if (isWide) {
+      _syncWideSelection(provider, currentUserId);
+      return _buildWideLayout(provider, currentUserId);
+    }
 
     return Scaffold(
       appBar: AppBar(title: const Text('私信')),
       body: RefreshIndicator(
         onRefresh: () => provider.loadConversations(),
-        child: _buildBody(provider, currentUserId),
+        child: _buildConversationList(provider, currentUserId),
       ),
     );
   }
 
-  Widget _buildBody(MessageProvider provider, int currentUserId) {
+  Widget _buildWideLayout(MessageProvider provider, int currentUserId) {
+    final width = MediaQuery.sizeOf(context).width >= 1000 ? 320.0 : 292.0;
+    return Scaffold(
+      appBar: AppBar(title: const Text('私信')),
+      body: Row(
+        children: [
+          SizedBox(
+            width: width,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surface,
+                border: Border(
+                  right: BorderSide(
+                    color:
+                        Theme.of(context).dividerColor.withValues(alpha: 0.4),
+                  ),
+                ),
+              ),
+              child: RefreshIndicator(
+                onRefresh: () => provider.loadConversations(),
+                child: _buildConversationList(
+                  provider,
+                  currentUserId,
+                  splitMode: true,
+                ),
+              ),
+            ),
+          ),
+          Expanded(child: _buildWideDetailPane(provider)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildWideDetailPane(MessageProvider provider) {
+    final selectedTarget = _selectedTargetUser;
+    if (selectedTarget == null) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.forum_outlined, size: 72, color: Colors.grey.shade400),
+            const SizedBox(height: 16),
+            Text('选择左侧会话开始聊天', style: TextStyle(color: Colors.grey.shade600)),
+          ],
+        ),
+      );
+    }
+
+    return ChatDetailScreen(
+      key: ValueKey(
+          'chat-detail-${_selectedConversationId ?? selectedTarget.id}'),
+      conversationId: _selectedConversationId,
+      targetUser: selectedTarget,
+      embedded: true,
+    );
+  }
+
+  void _syncWideSelection(MessageProvider provider, int currentUserId) {
+    if (provider.conversations.isEmpty) {
+      if (_selectedTargetUser != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          setState(() {
+            _selectedConversationId = null;
+            _selectedTargetUser = null;
+          });
+        });
+      }
+      return;
+    }
+
+    final currentSelectionExists = _selectedConversationId != null &&
+        provider.conversations.any(
+          (conversation) => conversation.id == _selectedConversationId,
+        );
+    if (currentSelectionExists) return;
+
+    final firstConversation = provider.conversations.first;
+    final firstTarget = firstConversation.getOtherUser(currentUserId);
+    if (firstTarget == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      setState(() {
+        _selectedConversationId = firstConversation.id;
+        _selectedTargetUser = firstTarget;
+      });
+    });
+  }
+
+  Widget _buildConversationList(
+    MessageProvider provider,
+    int currentUserId, {
+    bool splitMode = false,
+  }) {
     if (provider.conversationLoading && provider.conversations.isEmpty) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -134,87 +238,116 @@ class _ChatListScreenState extends State<ChatListScreen>
           );
         }
 
-        final lastMessage = conversation.lastMessage;
-        final preview = lastMessage == null
-            ? '暂无消息'
-            : lastMessage.content.trim().isNotEmpty
-                ? lastMessage.content.trim()
-                : lastMessage.file != null
-                    ? '[图片]'
-                    : '暂无消息';
-
-        return ListTile(
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
-          leading: CachedAvatar(
-            imageUrl: targetUser.avatar.isEmpty
-                ? null
-                : ApiConstants.fullUrl(targetUser.avatar),
-            radius: 25,
-            fallbackText: targetUser.nickname,
-          ),
-          title: Text(
-            targetUser.nickname.isEmpty
-                ? '用户${targetUser.id}'
-                : targetUser.nickname,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          subtitle: Text(
-            preview,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(color: Colors.grey.shade600),
-          ),
-          trailing: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(
-                _formatConversationTime(
-                    lastMessage?.createdAt ?? conversation.lastMessageAt),
-                style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
-              ),
-              const SizedBox(height: 6),
-              if (conversation.unreadCount > 0)
-                Container(
-                  constraints: const BoxConstraints(minWidth: 20),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: Colors.red.shade500,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Text(
-                    conversation.unreadCount > 99
-                        ? '99+'
-                        : '${conversation.unreadCount}',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(color: Colors.white, fontSize: 11),
-                  ),
-                ),
-            ],
-          ),
-          onTap: () async {
-            final messageProvider = context.read<MessageProvider>();
-            _refreshTimer?.cancel();
-            await Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => ChatDetailScreen(
-                  conversationId: conversation.id,
-                  targetUser: targetUser,
-                ),
-              ),
-            );
-            if (mounted) {
-              messageProvider.loadConversations(silent: true);
-              _startPolling();
-            }
-          },
+        return _buildConversationTile(
+          conversation,
+          targetUser,
+          splitMode: splitMode,
         );
       },
     );
+  }
+
+  Widget _buildConversationTile(
+    Conversation conversation,
+    User targetUser, {
+    required bool splitMode,
+  }) {
+    final lastMessage = conversation.lastMessage;
+    final preview = lastMessage == null
+        ? '暂无消息'
+        : lastMessage.content.trim().isNotEmpty
+            ? lastMessage.content.trim()
+            : lastMessage.file != null
+                ? '[图片]'
+                : '暂无消息';
+    final selected = splitMode && _selectedConversationId == conversation.id;
+
+    return ListTile(
+      selected: selected,
+      selectedTileColor:
+          Theme.of(context).colorScheme.primary.withValues(alpha: 0.10),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
+      leading: CachedAvatar(
+        imageUrl: targetUser.avatar.isEmpty
+            ? null
+            : ApiConstants.fullUrl(targetUser.avatar),
+        radius: 25,
+        fallbackText: targetUser.nickname,
+      ),
+      title: Text(
+        targetUser.nickname.isEmpty
+            ? '用户${targetUser.id}'
+            : targetUser.nickname,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      subtitle: Text(
+        preview,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(color: Colors.grey.shade600),
+      ),
+      trailing: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Text(
+            _formatConversationTime(
+              lastMessage?.createdAt ?? conversation.lastMessageAt,
+            ),
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+          ),
+          const SizedBox(height: 6),
+          if (conversation.unreadCount > 0)
+            Container(
+              constraints: const BoxConstraints(minWidth: 20),
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: Colors.red.shade500,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                conversation.unreadCount > 99
+                    ? '99+'
+                    : '${conversation.unreadCount}',
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.white, fontSize: 11),
+              ),
+            ),
+        ],
+      ),
+      onTap: () => _openConversation(conversation, targetUser, splitMode),
+    );
+  }
+
+  Future<void> _openConversation(
+    Conversation conversation,
+    User targetUser,
+    bool splitMode,
+  ) async {
+    if (splitMode) {
+      setState(() {
+        _selectedConversationId = conversation.id;
+        _selectedTargetUser = targetUser;
+      });
+      return;
+    }
+
+    final messageProvider = context.read<MessageProvider>();
+    _refreshTimer?.cancel();
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ChatDetailScreen(
+          conversationId: conversation.id,
+          targetUser: targetUser,
+        ),
+      ),
+    );
+    if (mounted) {
+      messageProvider.loadConversations(silent: true);
+      _startPolling();
+    }
   }
 
   String _formatConversationTime(DateTime time) {

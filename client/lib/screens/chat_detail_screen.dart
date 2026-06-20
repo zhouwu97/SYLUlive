@@ -18,11 +18,13 @@ import 'image_viewer_screen.dart';
 class ChatDetailScreen extends StatefulWidget {
   final int? conversationId;
   final User targetUser;
+  final bool embedded;
 
   const ChatDetailScreen({
     super.key,
     this.conversationId,
     required this.targetUser,
+    this.embedded = false,
   });
 
   @override
@@ -36,6 +38,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   Timer? _refreshTimer;
   int? _conversationId;
   bool _loadingOlder = false;
+  double _lastKeyboardInset = 0;
   DateTime _lastMessageActivity = DateTime.now();
 
   @override
@@ -72,7 +75,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
         }
       }
     } else {
-      await provider.loadMessages(_conversationId!);
+      await provider.loadMessages(_conversationId!, preferCache: true);
       if (!mounted) return;
       _scrollToBottom(jump: true);
     }
@@ -99,6 +102,20 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     } else {
       _refreshTimer?.cancel();
     }
+  }
+
+  @override
+  void didChangeMetrics() {
+    super.didChangeMetrics();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
+      final keyboardOpened = keyboardInset > _lastKeyboardInset;
+      _lastKeyboardInset = keyboardInset;
+      if (keyboardOpened) {
+        _scrollToBottom();
+      }
+    });
   }
 
   void _startPolling() {
@@ -218,108 +235,219 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<MessageProvider>();
-    final currentUserId = context.watch<AuthProvider>().user?.id ?? 0;
+    final currentUser = context.watch<AuthProvider>().user;
+    final currentUserId = currentUser?.id ?? 0;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Row(
+    final body = _buildConversationBody(provider, currentUserId, currentUser);
+    if (widget.embedded) {
+      return Material(
+        color: Theme.of(context).colorScheme.surface,
+        child: Column(
           children: [
-            CachedAvatar(
-              imageUrl: widget.targetUser.avatar.isEmpty
-                  ? null
-                  : ApiConstants.fullUrl(widget.targetUser.avatar),
-              radius: 17,
-              fallbackText: widget.targetUser.nickname,
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                widget.targetUser.nickname.isEmpty
-                    ? '用户${widget.targetUser.id}'
-                    : widget.targetUser.nickname,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
+            _buildEmbeddedHeader(),
+            Expanded(child: body),
           ],
         ),
-      ),
-      body: Column(
+      );
+    }
+
+    return Scaffold(
+      resizeToAvoidBottomInset: false,
+      appBar: AppBar(title: _buildTitle()),
+      body: body,
+    );
+  }
+
+  Widget _buildConversationBody(
+    MessageProvider provider,
+    int currentUserId,
+    User? currentUser,
+  ) {
+    return AnimatedPadding(
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOutCubic,
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+      child: Column(
         children: [
-          Expanded(child: _buildMessageArea(provider, currentUserId)),
+          Expanded(
+            child: _buildMessageArea(provider, currentUserId, currentUser),
+          ),
           _buildInputBar(provider),
         ],
       ),
     );
   }
 
-  Widget _buildMessageArea(MessageProvider provider, int currentUserId) {
+  Widget _buildTitle() {
+    return Row(
+      children: [
+        CachedAvatar(
+          imageUrl: widget.targetUser.avatar.isEmpty
+              ? null
+              : ApiConstants.fullUrl(widget.targetUser.avatar),
+          radius: 17,
+          fallbackText: widget.targetUser.nickname,
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            widget.targetUser.nickname.isEmpty
+                ? '用户${widget.targetUser.id}'
+                : widget.targetUser.nickname,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildEmbeddedHeader() {
+    final divider = Theme.of(context).dividerColor.withValues(alpha: 0.36);
+    return Container(
+      height: 58,
+      padding: const EdgeInsets.symmetric(horizontal: 18),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.92),
+        border: Border(bottom: BorderSide(color: divider)),
+      ),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: _buildTitle(),
+      ),
+    );
+  }
+
+  Widget _buildMessageArea(
+    MessageProvider provider,
+    int currentUserId,
+    User? currentUser,
+  ) {
     if (provider.messageLoading && provider.messages.isEmpty) {
-      return const Center(child: CircularProgressIndicator());
+      return _buildMessageBackdrop(
+        const Center(child: CircularProgressIndicator()),
+      );
     }
     if (provider.messageError != null && provider.messages.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(provider.messageError!),
-            const SizedBox(height: 12),
-            FilledButton.tonal(
-              onPressed: _initialize,
-              child: const Text('重新加载'),
-            ),
-          ],
+      return _buildMessageBackdrop(
+        Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(provider.messageError!),
+              const SizedBox(height: 12),
+              FilledButton.tonal(
+                onPressed: _initialize,
+                child: const Text('重新加载'),
+              ),
+            ],
+          ),
         ),
       );
     }
     if (provider.messages.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.waving_hand_outlined,
-                size: 56, color: Colors.grey.shade400),
-            const SizedBox(height: 14),
-            Text(
-              '向 ${widget.targetUser.nickname} 打个招呼吧',
-              style: TextStyle(color: Colors.grey.shade600),
-            ),
-          ],
+      return _buildMessageBackdrop(
+        Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.waving_hand_outlined,
+                  size: 56, color: Colors.grey.shade500),
+              const SizedBox(height: 14),
+              Text(
+                '向 ${widget.targetUser.nickname} 打个招呼吧',
+                style: TextStyle(color: Colors.grey.shade700),
+              ),
+            ],
+          ),
         ),
       );
     }
 
-    return ListView.builder(
-      controller: _scrollController,
-      padding: const EdgeInsets.fromLTRB(12, 12, 12, 18),
-      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-      itemCount: provider.messages.length + (provider.loadingMore ? 1 : 0),
-      itemBuilder: (context, index) {
-        if (provider.loadingMore && index == 0) {
-          return const Padding(
-            padding: EdgeInsets.all(12),
-            child: Center(
-              child: SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2),
+    return _buildMessageBackdrop(
+      ListView.builder(
+        controller: _scrollController,
+        padding: const EdgeInsets.fromLTRB(12, 12, 12, 18),
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+        itemCount: provider.messages.length + (provider.loadingMore ? 1 : 0),
+        itemBuilder: (context, index) {
+          if (provider.loadingMore && index == 0) {
+            return const Padding(
+              padding: EdgeInsets.all(12),
+              child: Center(
+                child: SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+            );
+          }
+          final messageIndex = index - (provider.loadingMore ? 1 : 0);
+          final message = provider.messages[messageIndex];
+          final previous =
+              messageIndex > 0 ? provider.messages[messageIndex - 1] : null;
+          final showTime = previous == null ||
+              message.createdAt
+                      .difference(previous.createdAt)
+                      .inMinutes
+                      .abs() >=
+                  5;
+          return Column(
+            children: [
+              if (showTime) _buildTimeLabel(message.createdAt),
+              _buildMessageBubble(
+                message,
+                message.senderId == currentUserId,
+                currentUser,
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildMessageBackdrop(Widget child) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Stack(
+      children: [
+        Positioned.fill(child: _buildChatBackground()),
+        Positioned.fill(
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: isDark
+                    ? [
+                        Colors.black.withValues(alpha: 0.48),
+                        Colors.black.withValues(alpha: 0.62),
+                      ]
+                    : [
+                        Colors.white.withValues(alpha: 0.34),
+                        Colors.white.withValues(alpha: 0.50),
+                      ],
               ),
             ),
-          );
-        }
-        final messageIndex = index - (provider.loadingMore ? 1 : 0);
-        final message = provider.messages[messageIndex];
-        final previous =
-            messageIndex > 0 ? provider.messages[messageIndex - 1] : null;
-        final showTime = previous == null ||
-            message.createdAt.difference(previous.createdAt).inMinutes.abs() >=
-                5;
-        return Column(
-          children: [
-            if (showTime) _buildTimeLabel(message.createdAt),
-            _buildMessageBubble(message, message.senderId == currentUserId),
-          ],
-        );
-      },
+          ),
+        ),
+        child,
+      ],
+    );
+  }
+
+  Widget _buildChatBackground() {
+    const fallback = 'assets/images/morenbeijing.jpeg';
+    final background = widget.targetUser.background;
+    if (background.isEmpty) {
+      return Image.asset(fallback, fit: BoxFit.cover);
+    }
+
+    return CachedNetworkImage(
+      imageUrl: ApiConstants.fullUrl(background),
+      fit: BoxFit.cover,
+      placeholder: (_, __) => Image.asset(fallback, fit: BoxFit.cover),
+      errorWidget: (_, __, ___) => Image.asset(fallback, fit: BoxFit.cover),
     );
   }
 
@@ -333,24 +461,34 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
       padding: const EdgeInsets.symmetric(vertical: 10),
       child: Text(
         DateFormat(sameDay ? 'HH:mm' : 'MM-dd HH:mm').format(local),
-        style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+        style: TextStyle(
+          fontSize: 12,
+          color: Colors.grey.shade700,
+          shadows: const [
+            Shadow(
+              color: Colors.white,
+              blurRadius: 6,
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildMessageBubble(Message message, bool isMine) {
+  Widget _buildMessageBubble(Message message, bool isMine, User? currentUser) {
     final imageUrl = message.imageUrl.isEmpty
         ? null
         : ApiConstants.fullUrl(message.imageUrl);
-    final bubbleColor = isMine
-        ? Theme.of(context).colorScheme.primary
-        : Theme.of(context).colorScheme.surfaceContainerHighest;
-    final textColor = isMine
-        ? Theme.of(context).colorScheme.onPrimary
-        : Theme.of(context).colorScheme.onSurface;
+    final sender = isMine ? currentUser : (message.sender ?? widget.targetUser);
+    final senderAvatar = sender?.avatar.isEmpty ?? true
+        ? null
+        : ApiConstants.fullUrl(sender!.avatar);
+    final senderName = sender?.nickname.isNotEmpty == true
+        ? sender!.nickname
+        : (isMine ? '我' : widget.targetUser.nickname);
 
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.symmetric(vertical: 5),
       child: Row(
         mainAxisAlignment:
             isMine ? MainAxisAlignment.end : MainAxisAlignment.start,
@@ -358,11 +496,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
         children: [
           if (!isMine) ...[
             CachedAvatar(
-              imageUrl: widget.targetUser.avatar.isEmpty
-                  ? null
-                  : ApiConstants.fullUrl(widget.targetUser.avatar),
+              imageUrl: senderAvatar,
               radius: 18,
-              fallbackText: widget.targetUser.nickname,
+              fallbackText: senderName,
             ),
             const SizedBox(width: 8),
           ],
@@ -375,13 +511,23 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
                   ? const EdgeInsets.symmetric(horizontal: 13, vertical: 9)
                   : const EdgeInsets.all(4),
               decoration: BoxDecoration(
-                color: bubbleColor,
+                color: Colors.white,
                 borderRadius: BorderRadius.only(
                   topLeft: const Radius.circular(16),
                   topRight: const Radius.circular(16),
                   bottomLeft: Radius.circular(isMine ? 16 : 4),
                   bottomRight: Radius.circular(isMine ? 4 : 16),
                 ),
+                border: Border.all(
+                  color: Colors.black.withValues(alpha: 0.04),
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.08),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -416,13 +562,24 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
                           : const EdgeInsets.fromLTRB(8, 7, 8, 6),
                       child: Text(
                         message.content,
-                        style: TextStyle(color: textColor, height: 1.35),
+                        style: const TextStyle(
+                          color: Color(0xFF111827),
+                          height: 1.35,
+                        ),
                       ),
                     ),
                 ],
               ),
             ),
           ),
+          if (isMine) ...[
+            const SizedBox(width: 8),
+            CachedAvatar(
+              imageUrl: senderAvatar,
+              radius: 18,
+              fallbackText: senderName,
+            ),
+          ],
         ],
       ),
     );
@@ -447,6 +604,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
             Expanded(
               child: TextField(
                 controller: _textController,
+                onTap: _scrollToBottom,
                 minLines: 1,
                 maxLines: 5,
                 textInputAction: TextInputAction.newline,

@@ -13,6 +13,7 @@ import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/edu_provider.dart';
 import '../providers/course_schedule_provider.dart';
+import '../providers/message_provider.dart';
 import '../utils/app_feedback.dart';
 import '../utils/update_checker.dart';
 import '../utils/responsive_util.dart';
@@ -1126,6 +1127,10 @@ class _ProfileScreenState extends State<ProfileScreen>
 
       final result = await authProvider.updateAvatar(avatarBytes);
       if (context.mounted) {
+        if (result.success) {
+          // 刷新聊天列表中的头像缓存
+          context.read<MessageProvider>().loadConversations(silent: true);
+        }
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text(
               result.success ? '头像更新成功' : (result.errorMessage ?? '头像更新失败')),

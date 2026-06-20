@@ -212,8 +212,9 @@ Future<bool> _handlePrivateMessageNotification(
 }
 
 void _openPrivateMessage(int conversationId, int senderId, String senderName) {
-  // 极光插件不自动唤醒 App，手动拉前台
-  const MethodChannel('shenliyuan/foreground').invokeMethod('bringToForeground').catchError((_) {});
+  // 尝试拉起 App
+  const channel = MethodChannel('shenliyuan/foreground');
+  channel.invokeMethod('bringToForeground').catchError((e) {});
   
   final navigator = appNavigatorKey.currentState;
   if (navigator == null) {

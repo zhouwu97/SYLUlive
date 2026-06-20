@@ -1,4 +1,3 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -7,11 +6,11 @@ import 'package:image_picker/image_picker.dart';
 import 'package:image_cropper/image_cropper.dart';
 import '../providers/auth_provider.dart';
 import '../config/api_constants.dart';
-import '../widgets/glass_container.dart';
 import '../models/user.dart';
 import '../models/post.dart';
 import '../providers/social_provider.dart';
 import '../widgets/post_card.dart';
+import '../widgets/cached_avatar.dart';
 import 'social_list_screen.dart';
 import 'image_viewer_screen.dart';
 import 'chat_detail_screen.dart';
@@ -278,21 +277,12 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                           );
                         }
                       },
-                      child: ClipOval(
-                        child: user.avatar.isNotEmpty
-                            ? CachedNetworkImage(
-                                imageUrl: ApiConstants.fullUrl(user.avatar),
-                                width: 64,
-                                height: 64,
-                                fit: BoxFit.cover,
-                              )
-                            : Container(
-                                width: 64,
-                                height: 64,
-                                color: Colors.grey[300],
-                                child: const Icon(Icons.person,
-                                    size: 30, color: Colors.white),
-                              ),
+                      child: CachedAvatar(
+                        imageUrl: user.avatar.isNotEmpty
+                            ? ApiConstants.fullUrl(user.avatar)
+                            : null,
+                        radius: 32,
+                        fallbackText: user.nickname,
                       ),
                     ),
                     const SizedBox(width: 16),

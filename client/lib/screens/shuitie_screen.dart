@@ -27,6 +27,7 @@ import 'market_screen.dart';
 import 'post_detail_screen.dart';
 import 'search_results_screen.dart';
 import 'toolbox_screen.dart';
+import 'user_home_screen.dart';
 
 class ShuitieScreen extends StatefulWidget {
   const ShuitieScreen({super.key});
@@ -54,6 +55,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   int _streakDays = 0;
   bool _checkInLoading = false;
   Post? _selectedPost;
+  int? _selectedUserId;
 
   static const _autoRefreshInterval = Duration(seconds: 60);
 
@@ -581,7 +583,6 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final authProvider = context.watch<AuthProvider>();
-    final themeProvider = context.watch<ThemeProvider>();
     final topPadding = MediaQuery.of(context).padding.top;
 
     // 透明沉浸式状态栏
@@ -636,7 +637,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
         ),
         // 右侧 Detail 详情
         Expanded(
-          child: _selectedPost == null
+          child: _selectedPost == null && _selectedUserId == null
               ? _buildEmptyDetailState(isDark)
               : _buildRightDetailContainer(isDark),
         ),
@@ -645,6 +646,17 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   }
 
   Widget _buildRightDetailContainer(bool isDark) {
+    final selectedUserId = _selectedUserId;
+    if (selectedUserId != null) {
+      return ColoredBox(
+        color: isDark ? const Color(0xFF131720) : Colors.white,
+        child: UserHomeScreen(
+          key: ValueKey('user-$selectedUserId'),
+          userId: selectedUserId,
+        ),
+      );
+    }
+
     final content = ClipRect(
       child: PostDetailScreen(
         key: ValueKey(_selectedPost!.id),
@@ -653,6 +665,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
         initialPost: _selectedPost,
         isDesktopSplitMode: true,
         hideBackButton: true,
+        onAuthorTap: _openUserInSplit,
       ),
     );
 
@@ -660,6 +673,22 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       color: isDark ? const Color(0xFF131720) : Colors.white,
       child: content,
     );
+  }
+
+  void _openPostInSplit(Post post) {
+    if (!mounted) return;
+    setState(() {
+      _selectedPost = post;
+      _selectedUserId = null;
+    });
+  }
+
+  void _openUserInSplit(int userId) {
+    if (!mounted) return;
+    setState(() {
+      _selectedPost = null;
+      _selectedUserId = userId;
+    });
   }
 
   Widget _buildEmptyDetailState(bool isDark) {
@@ -804,6 +833,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                                     final post = visiblePosts[index];
                                     final isSelected = _selectedPost?.id ==
                                             post.id &&
+                                        _selectedUserId == null &&
                                         ResponsiveUtil.useDesktopShell(context);
                                     return Padding(
                                       padding: const EdgeInsets.symmetric(
@@ -827,13 +857,11 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                                             : null,
                                         child: PostCard(
                                           post: post,
+                                          onAuthorTap: _openUserInSplit,
                                           onTap: () {
                                             if (ResponsiveUtil.useDesktopShell(
                                                 context)) {
-                                              if (mounted)
-                                                setState(() {
-                                                  _selectedPost = post;
-                                                });
+                                              _openPostInSplit(post);
                                             } else {
                                               Navigator.push(
                                                 context,

@@ -432,6 +432,7 @@ func (h *MessageHandler) pushPrivateMessage(targetUserID uint, sender models.Use
 		"type":            "private_message",
 		"conversation_id": message.ConversationID,
 		"sender_id":       sender.ID,
+		"sender_name":     title,
 	}
 	go func() {
 		if err := h.notifier.Notify(targetUserID, title, content, extras); err != nil {

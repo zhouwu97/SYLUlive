@@ -5,6 +5,7 @@ import '../providers/auth_provider.dart';
 import '../models/user.dart';
 import 'user_home_screen.dart';
 import '../config/api_constants.dart';
+import '../widgets/cached_avatar.dart';
 
 class SocialListScreen extends StatefulWidget {
   final int userId;
@@ -20,13 +21,15 @@ class SocialListScreen extends StatefulWidget {
   State<SocialListScreen> createState() => _SocialListScreenState();
 }
 
-class _SocialListScreenState extends State<SocialListScreen> with SingleTickerProviderStateMixin {
+class _SocialListScreenState extends State<SocialListScreen>
+    with SingleTickerProviderStateMixin {
   late TabController _tabController;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this, initialIndex: widget.initialIndex);
+    _tabController = TabController(
+        length: 2, vsync: this, initialIndex: widget.initialIndex);
   }
 
   @override
@@ -67,7 +70,7 @@ class _UserListState extends State<_UserList> {
   static final Map<String, List<User>> _usersCache = {};
   static final Map<String, int> _pageCache = {};
   static final Map<String, bool> _hasMoreCache = {};
-  
+
   String get _cacheKey => '${widget.userId}_${widget.type}';
 
   List<User> _users = [];
@@ -121,7 +124,7 @@ class _UserListState extends State<_UserList> {
 
     final items = result['items'] as List<dynamic>? ?? [];
     final total = result['total'] as int? ?? 0;
-    
+
     final List<User> loadedUsers = items.map((e) => User.fromJson(e)).toList();
 
     if (mounted) {
@@ -143,7 +146,7 @@ class _UserListState extends State<_UserList> {
         } else {
           _page++;
         }
-        
+
         _usersCache[_cacheKey] = _users;
         _pageCache[_cacheKey] = _page;
         _hasMoreCache[_cacheKey] = _hasMore;
@@ -185,7 +188,8 @@ class _UserListState extends State<_UserList> {
         itemBuilder: (context, index) {
           if (index == _users.length) {
             _loadData();
-            return const Center(child: Padding(
+            return const Center(
+                child: Padding(
               padding: EdgeInsets.all(8.0),
               child: CircularProgressIndicator(),
             ));
@@ -195,17 +199,23 @@ class _UserListState extends State<_UserList> {
           final isMe = currentUserId == user.id;
 
           return ListTile(
-            leading: CircleAvatar(
-              backgroundImage: user.avatar.isNotEmpty ? NetworkImage(ApiConstants.fullUrl(user.avatar)) : null,
-              child: user.avatar.isEmpty ? const Icon(Icons.person) : null,
+            leading: CachedAvatar(
+              imageUrl: user.avatar.isNotEmpty
+                  ? ApiConstants.fullUrl(user.avatar)
+                  : null,
+              radius: 20,
+              fallbackText:
+                  user.nickname.isNotEmpty ? user.nickname : '用户${user.id}',
             ),
-            title: Text(user.nickname.isNotEmpty ? user.nickname : '用户${user.id}'),
+            title:
+                Text(user.nickname.isNotEmpty ? user.nickname : '用户${user.id}'),
             subtitle: Text('Lv.${user.level}'),
             trailing: isMe ? null : _buildFollowButton(user),
             onTap: () {
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => UserHomeScreen(userId: user.id)),
+                MaterialPageRoute(
+                    builder: (_) => UserHomeScreen(userId: user.id)),
               );
             },
           );

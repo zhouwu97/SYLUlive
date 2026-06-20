@@ -1,6 +1,9 @@
 import 'dart:async';
+import 'dart:io';
+import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
@@ -9,6 +12,7 @@ import '../models/conversation.dart';
 import '../models/user.dart';
 import '../providers/auth_provider.dart';
 import '../providers/message_provider.dart';
+import '../providers/theme_provider.dart';
 import '../utils/app_time.dart';
 import '../widgets/cached_avatar.dart';
 import 'chat_detail_screen.dart';
@@ -85,44 +89,136 @@ class _ChatListScreenState extends State<ChatListScreen>
 
   Widget _buildWideLayout(MessageProvider provider, int currentUserId) {
     final width = MediaQuery.sizeOf(context).width >= 1000 ? 320.0 : 292.0;
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      appBar: AppBar(
-        title: const Text('私信'),
-        backgroundColor: Colors.transparent,
-        surfaceTintColor: Colors.transparent,
-        elevation: 0,
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle.dark.copyWith(
+        statusBarColor: Colors.transparent,
+        systemNavigationBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.dark,
+        systemNavigationBarIconBrightness: Brightness.dark,
       ),
-      body: Row(
+      child: Stack(
+        fit: StackFit.expand,
         children: [
-          SizedBox(
-            width: width,
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: Theme.of(context)
-                    .colorScheme
-                    .surface
-                    .withValues(alpha: 0.82),
-                border: Border(
-                  right: BorderSide(
-                    color:
-                        Theme.of(context).dividerColor.withValues(alpha: 0.4),
+          _buildPrivateMessageBackground(),
+          Scaffold(
+            backgroundColor: Colors.transparent,
+            appBar: AppBar(
+              title: const Text('私信'),
+              backgroundColor: Colors.white.withValues(alpha: 0.20),
+              foregroundColor: const Color(0xFF111827),
+              surfaceTintColor: Colors.transparent,
+              elevation: 0,
+            ),
+            body: Row(
+              children: [
+                SizedBox(
+                  width: width,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.72),
+                      border: Border(
+                        right: BorderSide(
+                          color: Colors.black.withValues(alpha: 0.08),
+                        ),
+                      ),
+                    ),
+                    child: RefreshIndicator(
+                      onRefresh: () => provider.loadConversations(),
+                      child: _buildConversationList(
+                        provider,
+                        currentUserId,
+                        splitMode: true,
+                      ),
+                    ),
                   ),
                 ),
-              ),
-              child: RefreshIndicator(
-                onRefresh: () => provider.loadConversations(),
-                child: _buildConversationList(
-                  provider,
-                  currentUserId,
-                  splitMode: true,
-                ),
-              ),
+                Expanded(child: _buildWideDetailPane(provider)),
+              ],
             ),
           ),
-          Expanded(child: _buildWideDetailPane(provider)),
         ],
       ),
+    );
+  }
+
+  Widget _buildPrivateMessageBackground() {
+    final themeProvider = context.watch<ThemeProvider>();
+    final bgPath = themeProvider.getBackgroundImageFor(context);
+    final fillScreen = bgPath != null &&
+        bgPath.isNotEmpty &&
+        themeProvider.getBackgroundFillScreenFor(context);
+    final imageProvider = _privateMessageBackgroundProvider(bgPath);
+
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        _buildPrivateMessageBackgroundImage(
+          imageProvider: imageProvider,
+          fillScreen: fillScreen,
+        ),
+        ColoredBox(color: Colors.white.withValues(alpha: 0.24)),
+      ],
+    );
+  }
+
+  ImageProvider _privateMessageBackgroundProvider(String? bgPath) {
+    if (bgPath == null || bgPath.isEmpty) {
+      final isWide = MediaQuery.of(context).size.width >
+          MediaQuery.of(context).size.height;
+      return AssetImage(isWide
+          ? 'assets/images/tablet_default_landscape.png'
+          : 'assets/images/morenbeijing.jpeg');
+    }
+
+    if (ThemeProvider.isBundledAssetBackground(bgPath)) {
+      return AssetImage(ThemeProvider.resolveBundledAssetPath(bgPath));
+    }
+    if (ThemeProvider.isLocalFileBackground(bgPath)) {
+      return FileImage(File(bgPath));
+    }
+    return NetworkImage(bgPath);
+  }
+
+  Widget _buildPrivateMessageBackgroundImage({
+    required ImageProvider imageProvider,
+    required bool fillScreen,
+  }) {
+    const fallbackColor = Color(0xFFF4F6FB);
+    if (fillScreen) {
+      return Image(
+        image: imageProvider,
+        fit: BoxFit.cover,
+        alignment: Alignment.center,
+        gaplessPlayback: true,
+        errorBuilder: (_, __, ___) => const ColoredBox(color: fallbackColor),
+      );
+    }
+
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        Transform.scale(
+          scale: 1.06,
+          child: ImageFiltered(
+            imageFilter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+            child: Image(
+              image: imageProvider,
+              fit: BoxFit.cover,
+              alignment: Alignment.center,
+              gaplessPlayback: true,
+              errorBuilder: (_, __, ___) =>
+                  const ColoredBox(color: fallbackColor),
+            ),
+          ),
+        ),
+        Image(
+          image: imageProvider,
+          fit: BoxFit.contain,
+          alignment: Alignment.center,
+          gaplessPlayback: true,
+          errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+        ),
+      ],
     );
   }
 

@@ -214,24 +214,33 @@ Future<bool> _handlePrivateMessageNotification(
 }
 
 void _openPrivateMessage(int conversationId, int senderId, String senderName) {
-  final navigator = appNavigatorKey.currentState;
-  if (navigator == null) return;
-  final displayName =
-      senderName.trim().isEmpty ? '用户$senderId' : senderName.trim();
-  navigator.popUntil((route) => route.isFirst);
-  navigator.push(
-    MaterialPageRoute(
-      builder: (_) => ChatDetailScreen(
-        conversationId: conversationId,
-        targetUser: User(
-          id: senderId,
-          studentId: '',
-          nickname: displayName,
-          createdAt: DateTime.now(),
+  int _retry = 0;
+  void navigate() {
+    final navigator = appNavigatorKey.currentState;
+    if (navigator == null && _retry < 50) {
+      _retry++;
+      WidgetsBinding.instance.addPostFrameCallback((_) => navigate());
+      return;
+    }
+    if (navigator == null) return;
+    final displayName =
+        senderName.trim().isEmpty ? '用户$senderId' : senderName.trim();
+    navigator.popUntil((route) => route.isFirst);
+    navigator.push(
+      MaterialPageRoute(
+        builder: (_) => ChatDetailScreen(
+          conversationId: conversationId,
+          targetUser: User(
+            id: senderId,
+            studentId: '',
+            nickname: displayName,
+            createdAt: DateTime.now(),
+          ),
         ),
       ),
-    ),
-  );
+    );
+  }
+  navigate();
 }
 
 int? _intFromExtra(dynamic value) {

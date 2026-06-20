@@ -1,12 +1,10 @@
-import 'dart:io';
 import 'dart:ui';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:image_picker/image_picker.dart';
+import 'package:image_cropper/image_cropper.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:path/path.dart' as path;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -15,22 +13,36 @@ import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/edu_provider.dart';
 import '../providers/course_schedule_provider.dart';
+import '../providers/message_provider.dart';
 import '../utils/app_feedback.dart';
 import '../utils/update_checker.dart';
+import '../utils/responsive_util.dart';
 import '../widgets/glass_container.dart';
+import '../widgets/cached_avatar.dart';
 import '../config/api_constants.dart';
+import '../config/privileged_accounts.dart';
 import 'edu_screen.dart';
 import 'exam_extract_screen.dart';
 import 'login_screen.dart';
 import 'my_content_screen.dart';
+import 'chat_list_screen.dart';
 import 'admin_panel_screen.dart';
 import 'super_admin_screen.dart';
 import 'admin_members_screen.dart';
+import 'oneclass_orders_screen.dart';
 import 'user_replies_screen.dart';
 import 'settings_screen.dart';
+import 'feedback_screen.dart';
+import 'user_home_screen.dart';
+import 'social_list_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
-  const ProfileScreen({super.key});
+  final bool isActive;
+
+  const ProfileScreen({
+    super.key,
+    this.isActive = true,
+  });
 
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
@@ -41,7 +53,9 @@ class _ProfileScreenState extends State<ProfileScreen>
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
   int _unreadReplyCount = 0;
+  int _unreadMessageCount = 0;
   bool _startOnTimetable = false;
+  int? _postCount;
 
   @override
   void initState() {
@@ -50,20 +64,56 @@ class _ProfileScreenState extends State<ProfileScreen>
       vsync: this,
       duration: const Duration(milliseconds: 800),
     );
-    _fadeAnimation = Tween<double>(begin: 0, end: 1).animate(
+    _fadeAnimation = Tween<double>(begin: 1, end: 1).animate(
       CurvedAnimation(parent: _animationController, curve: Curves.easeOut),
     );
-    _animationController.forward();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<AuthProvider>().refreshUser();
       _loadUnreadCount();
       _loadPrefs();
+      _fetchPostCount();
     });
+  }
+
+  @override
+  void didUpdateWidget(covariant ProfileScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isActive && !oldWidget.isActive) {
+      _loadUnreadCount();
+      _fetchPostCount();
+    }
+  }
+
+  Future<void> _fetchPostCount() async {
+    final auth = context.read<AuthProvider>();
+    if (!auth.isLoggedIn || auth.user == null) return;
+
+    // 如果有缓存，直接使用缓存秒开
+    if (MyContentScreen.globalPostCount != null) {
+      if (mounted) {
+        setState(() {
+          _postCount = MyContentScreen.globalPostCount;
+        });
+      }
+      // 不直接 return，在后台静默刷新以保证数据一致性
+    }
+
+    try {
+      final res = await auth.dio.get('/user/${auth.user!.id}/posts/count');
+      if (res.statusCode == 200 && mounted) {
+        setState(() {
+          _postCount = res.data['count'] ?? 0;
+          MyContentScreen.globalPostCount = _postCount; // 同步更新缓存
+        });
+      }
+    } catch (e) {
+      debugPrint('刷新我的内容数量失败: $e');
+    }
   }
 
   void _loadPrefs() {
     final tp = context.read<ThemeProvider>();
-    setState(() => _startOnTimetable = tp.startOnTimetable);
+    if (mounted) setState(() => _startOnTimetable = tp.startOnTimetable);
   }
 
   @override
@@ -76,11 +126,18 @@ class _ProfileScreenState extends State<ProfileScreen>
     final auth = context.read<AuthProvider>();
     if (!auth.isLoggedIn) return;
     try {
-      final resp = await auth.dio.get('/user/notifications/unread_count');
-      if (resp.statusCode == 200 && mounted) {
-        setState(() {
-          _unreadReplyCount = resp.data['count'] ?? 0;
-        });
+      final repliesFuture = auth.dio.get('/user/notifications/unread_count');
+      final messagesFuture = auth.dio.get('/messages/unread_count');
+      final responses = await Future.wait([repliesFuture, messagesFuture]);
+      if (mounted) {
+        final replyResp = responses[0];
+        final messageResp = responses[1];
+        if (replyResp.statusCode == 200 && messageResp.statusCode == 200) {
+          setState(() {
+            _unreadReplyCount = replyResp.data['count'] ?? 0;
+            _unreadMessageCount = messageResp.data['count'] ?? 0;
+          });
+        }
       }
     } catch (_) {}
   }
@@ -96,55 +153,55 @@ class _ProfileScreenState extends State<ProfileScreen>
       backgroundColor: Colors.transparent,
       body: Stack(
         children: [
-          // 背景
-          if (!themeProvider.isBackgroundVisible)
-            _buildDefaultBackground(isDark),
-
           // 内容
-          FadeTransition(
-            opacity: _fadeAnimation,
-            child: CustomScrollView(
-              physics: const BouncingScrollPhysics(),
-              slivers: [
-                SliverToBoxAdapter(
-                  child: SafeArea(
-                    bottom: false,
-                    child: _buildHeader(user, authProvider, isDark),
+          CustomScrollView(
+            physics: const BouncingScrollPhysics(),
+            slivers: [
+              SliverToBoxAdapter(
+                child: SafeArea(
+                  bottom: false,
+                  child: Column(
+                    children: [
+                      _buildHeader(user, authProvider, isDark),
+                      if (authProvider.isLoggedIn)
+                        _buildSocialStatsSection(context, user, isDark),
+                    ],
                   ),
                 ),
+              ),
 
-                // 管理入口（仅管理员可见）
-                if (user?.isAdmin == true)
-                  SliverToBoxAdapter(
-                      child: _buildAdminSection(context, user, isDark)),
-
-                // 收到邀请（所有用户）
-                if (authProvider.isLoggedIn)
-                  SliverToBoxAdapter(
-                      child: _buildInvitationSection(
-                          context, authProvider, isDark)),
-
-                // 教务版块（绑定状态 + 题库入口）
+              // 管理入口（仅管理员可见）
+              if (user?.isAdmin == true)
                 SliverToBoxAdapter(
-                  child: _buildEduSection(context, authProvider, isDark),
-                ),
+                    child: _buildAdminSection(context, user, isDark)),
 
-                // 我的内容
+              // 收到邀请（所有用户）
+              if (authProvider.isLoggedIn)
                 SliverToBoxAdapter(
-                  child: _buildMyContentSection(context, isDark),
-                ),
+                    child:
+                        _buildInvitationSection(context, authProvider, isDark)),
 
-                // 设置区域
-                SliverToBoxAdapter(
-                  child: _buildSettingsSection(
-                      context, themeProvider, authProvider, isDark),
-                ),
+              // 教务版块（绑定状态 + 题库入口）
+              SliverToBoxAdapter(
+                child: _buildEduSection(context, authProvider, isDark),
+              ),
 
-                const SliverToBoxAdapter(
-                  child: SizedBox(height: 100),
-                ),
-              ],
-            ),
+              // 我的内容
+              SliverToBoxAdapter(
+                child: _buildMyContentSection(context, isDark),
+              ),
+
+              // 设置区域
+              SliverToBoxAdapter(
+                child: _buildSettingsSection(
+                    context, themeProvider, authProvider, isDark),
+              ),
+
+              SliverToBoxAdapter(
+                child: SizedBox(
+                    height: MediaQuery.of(context).padding.bottom + 90),
+              ),
+            ],
           ),
         ],
       ),
@@ -190,10 +247,11 @@ class _ProfileScreenState extends State<ProfileScreen>
 
   Widget _buildHeader(user, AuthProvider authProvider, bool isDark) {
     return Container(
-      padding: const EdgeInsets.all(24),
-      child: Column(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          // 头像
+          // 左侧：头像
           GestureDetector(
             onTap: () {
               if (authProvider.isLoggedIn) {
@@ -203,147 +261,266 @@ class _ProfileScreenState extends State<ProfileScreen>
                     context,
                     PageRouteBuilder(
                       opaque: false,
-                      pageBuilder: (_, __, ___) => LoginScreen(),
+                      pageBuilder: (_, __, ___) => const LoginScreen(),
                     ));
               }
             },
-            child: GlassContainer(
-              padding: const EdgeInsets.all(6),
-              borderRadius: 100,
-              blur: 20,
-              opacity: 0.2,
-              child: Container(
-                width: 120,
-                height: 120,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      Theme.of(context).primaryColor,
-                      Theme.of(context).primaryColor.withOpacity(0.6),
-                    ],
+            child: Container(
+              width: 76,
+              height: 76,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 2),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.1),
+                    blurRadius: 10,
+                    spreadRadius: 2,
                   ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Theme.of(context).primaryColor.withOpacity(0.3),
-                      blurRadius: 30,
-                      spreadRadius: 5,
+                ],
+              ),
+              child: user?.avatar.isNotEmpty == true
+                  ? ClipOval(
+                      child: GestureDetector(
+                        onLongPress: user?.avatar.isNotEmpty == true
+                            ? () => _showAvatarPreview(
+                                context, ApiConstants.fullUrl(user!.avatar))
+                            : null,
+                        child: CachedAvatar(
+                          imageUrl: ApiConstants.fullUrl(user?.avatar ?? ''),
+                          radius: 36,
+                          fallbackText: user?.nickname,
+                        ),
+                      ),
+                    )
+                  : _buildAvatarPlaceholder(user),
+            ),
+          ),
+
+          const SizedBox(width: 16),
+
+          // 右侧：信息与箭头 (整个区域可点击进入主页)
+          Expanded(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () {
+                if (authProvider.isLoggedIn) {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const UserHomeScreen()),
+                  );
+                } else {
+                  Navigator.push(
+                    context,
+                    PageRouteBuilder(
+                      opaque: false,
+                      pageBuilder: (_, __, ___) => const LoginScreen(),
                     ),
-                  ],
-                ),
-                child: user?.avatar.isNotEmpty == true
-                    ? ClipOval(
-                        child: GestureDetector(
-                          onLongPress: user?.avatar.isNotEmpty == true
-                              ? () => _showAvatarPreview(
-                                  context, ApiConstants.fullUrl(user!.avatar))
-                              : null,
-                          child: CachedNetworkImage(
-                            imageUrl: ApiConstants.fullUrl(user?.avatar ?? ''),
-                            fit: BoxFit.cover,
-                            placeholder: (_, __) =>
-                                _buildAvatarPlaceholder(user),
-                            errorWidget: (_, __, ___) =>
-                                _buildAvatarPlaceholder(user),
-                            memCacheWidth: 256,
+                  );
+                }
+              },
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        // 第一行：昵称与编辑按钮
+                        GestureDetector(
+                          onTap: () {
+                            if (authProvider.isLoggedIn) {
+                              _showEditProfileDialog(context, authProvider);
+                            }
+                          },
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  user?.nickname ?? '未登录',
+                                  style: TextStyle(
+                                    fontSize: 22,
+                                    fontWeight: FontWeight.w700,
+                                    color:
+                                        isDark ? Colors.white : Colors.black87,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              if (authProvider.isLoggedIn) ...[
+                                const SizedBox(width: 6),
+                                Icon(Icons.edit,
+                                    size: 16,
+                                    color: isDark
+                                        ? Colors.white54
+                                        : Colors.black54),
+                              ],
+                            ],
                           ),
                         ),
-                      )
-                    : _buildAvatarPlaceholder(user),
-              ),
-            ),
-          ),
 
-          const SizedBox(height: 20),
+                        const SizedBox(height: 8),
 
-          GestureDetector(
-            onTap: () {
-              if (authProvider.isLoggedIn)
-                _showEditProfileDialog(context, authProvider);
-            },
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  user?.nickname ?? '未登录',
-                  style: const TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.bold,
-                       color: Colors.white),
-                ),
-                if (authProvider.isLoggedIn) ...[
-                  const SizedBox(width: 6),
-                  const Icon(Icons.edit, size: 16, color: Colors.white54),
-                ],
-              ],
-            ),
-          ),
+                        // 第二行：学院专业标签 (如果有)
+                        if (user?.eduCollege != null &&
+                            user!.eduCollege!.isNotEmpty) ...[
+                          Text(
+                            '${user.eduCollege} ${user.eduMajor}'.trim(),
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: isDark ? Colors.white54 : Colors.black45,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 6),
+                        ],
 
-          const SizedBox(height: 8),
-
-          if (user?.eduCollege != null || user?.eduMajor != null)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.2),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Text(
-                '${user?.eduCollege ?? ""} ${user?.eduMajor ?? ""}'.trim(),
-                style: const TextStyle(color: Colors.white70, fontSize: 14),
-              ),
-            ),
-
-          const SizedBox(height: 20),
-
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                _buildStatBadge(
-                  icon: Icons.verified,
-                  label: '诚信度',
-                  value: '${user?.creditScore ?? 100}%',
-                  color: Colors.green,
-                ),
-                const SizedBox(width: 8),
-                _buildStatBadge(
-                  icon: Icons.star,
-                  label: '经验',
-                  value: '${user?.exp ?? 0}',
-                  color: Colors.amber,
-                ),
-                const SizedBox(width: 8),
-                _buildStatBadge(
-                  icon: Icons.monetization_on,
-                  label: '代答积分',
-                  value: '${user?.credits ?? 0}',
-                  color: Colors.purpleAccent,
-                ),
-                if (user?.isAdmin == true) ...[
-                  const SizedBox(width: 8),
-                  _buildStatBadge(
-                    icon: Icons.admin_panel_settings,
-                    label: user?.isSuperAdmin == true ? '超级管理员' : '管理员',
-                    value: '${user?.adminExp ?? 0}',
-                    color: Colors.orange,
+                        // 第三行：数据统计 (等级、诚信、经验等)
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 4,
+                          children: [
+                            if (user != null)
+                              _buildTag(
+                                  user.levelLabel.startsWith('Lv')
+                                      ? user.levelLabel
+                                      : 'Lv.${user.levelLabel}',
+                                  icon: Icons.military_tech,
+                                  color: Color(user.levelColorValue),
+                                  isDark: isDark),
+                            _buildTag('诚信 ${user?.creditScore ?? 100}%',
+                                icon: Icons.verified_user,
+                                color: Colors.teal,
+                                isDark: isDark),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
+
+                  // 最右侧箭头
+                  if (authProvider.isLoggedIn)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 8.0, right: 4.0),
+                      child: Icon(Icons.arrow_forward_ios,
+                          size: 14,
+                          color: isDark ? Colors.white54 : Colors.black45),
+                    ),
                 ],
-              ],
+              ),
             ),
           ),
-
-          const SizedBox(height: 20),
         ],
       ),
     );
   }
 
+  Widget _buildTag(String text,
+      {IconData? icon, required Color color, required bool isDark}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withOpacity(isDark ? 0.2 : 0.15),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 12, color: color),
+            const SizedBox(width: 2),
+          ],
+          Text(
+            text,
+            style: TextStyle(
+                fontSize: 11, color: color, fontWeight: FontWeight.w500),
+          ),
+        ],
+      ),
+    );
+  }
 
+  Widget _buildSocialStatsSection(BuildContext context, user, bool isDark) {
+    if (user == null) return const SizedBox();
+    return Container(
+      margin: const EdgeInsets.only(left: 16, right: 16, top: 8, bottom: 24),
+      padding: const EdgeInsets.symmetric(vertical: 16),
+      decoration: BoxDecoration(
+        color: isDark
+            ? const Color(0xFF1E1E1E).withOpacity(0.6)
+            : Colors.white.withOpacity(0.6),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.02),
+            blurRadius: 10.0,
+            offset: const Offset(0, 2),
+          )
+        ],
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: [
+          _buildSocialStatItem(_postCount?.toString() ?? '-', '我的内容', isDark,
+              () async {
+            await Navigator.push(context,
+                MaterialPageRoute(builder: (_) => const MyContentScreen()));
+            if (mounted) {
+              await _fetchPostCount();
+            }
+          }),
+          _buildSocialStatItem(user.followingCount.toString(), '关注的人', isDark,
+              () {
+            Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) =>
+                        SocialListScreen(userId: user.id, initialIndex: 0)));
+          }),
+          _buildSocialStatItem(user.followersCount.toString(), '关注我的', isDark,
+              () {
+            Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) =>
+                        SocialListScreen(userId: user.id, initialIndex: 1)));
+          }),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSocialStatItem(
+      String count, String label, bool isDark, VoidCallback onTap) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            count,
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w600,
+              color: isDark ? Colors.white : Colors.black87,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              color: isDark ? Colors.white70 : Colors.black87,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _buildAvatarPlaceholder(user) {
     return Center(
@@ -396,67 +573,76 @@ class _ProfileScreenState extends State<ProfileScreen>
         final overview = snap.data ?? const {'admin': 0, 'super': 0};
         final adminTodo = overview['admin'] ?? 0;
         final superTodo = overview['super'] ?? 0;
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-          child: Column(
-            children: [
-              _buildAdminEntry(
-                context: context,
-                isDark: isDark,
-                icon: Icons.admin_panel_settings,
-                iconColor: Colors.red,
-                title: '管理处',
-                subtitle: adminTodo > 0
-                    ? '处理举报、审核教师和专业 · $adminTodo 条待办'
-                    : '处理举报、审核教师和专业',
-                badgeText: adminTodo > 0 ? '$adminTodo' : null,
-                onTap: () {
-                  Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                          builder: (_) => const AdminPanelScreen()));
-                },
-              ),
-              if (user?.isSuperAdmin == true) ...[
-                const SizedBox(height: 12),
-                _buildAdminEntry(
-                  context: context,
-                  isDark: isDark,
-                  icon: Icons.security,
-                  iconColor: Colors.deepPurple,
-                  title: '超级管理员',
-                  subtitle: superTodo > 0
-                      ? '管理用户、审批管理员邀请 · $superTodo 条待办'
-                      : '管理用户、审批管理员邀请',
-                  badgeText: superTodo > 0 ? '$superTodo' : null,
-                  onTap: () {
-                    Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (_) => const SuperAdminScreen()));
-                  },
-                ),
-              ],
-              const SizedBox(height: 12),
-              _buildAdminEntry(
-                context: context,
-                isDark: isDark,
-                icon: Icons.groups_2_outlined,
-                iconColor: Colors.indigo,
-                title: '管理人员',
-                subtitle: '查看管理员与超级管理员列表',
-                onTap: () {
-                  Navigator.push(
+        final items = [
+          _buildAdminEntry(
+            context: context,
+            isDark: isDark,
+            icon: Icons.admin_panel_settings,
+            iconColor: Colors.red,
+            title: '管理处',
+            subtitle: adminTodo > 0
+                ? '处理举报、审核教师和专业 · $adminTodo 条待办'
+                : '处理举报、审核教师和专业',
+            badgeText: adminTodo > 0 ? '$adminTodo' : null,
+            onTap: () {
+              Navigator.push(context,
+                  MaterialPageRoute(builder: (_) => const AdminPanelScreen()));
+            },
+          ),
+          if (user?.isSuperAdmin == true)
+            _buildAdminEntry(
+              context: context,
+              isDark: isDark,
+              icon: Icons.security,
+              iconColor: Colors.deepPurple,
+              title: '超级管理员',
+              subtitle: superTodo > 0
+                  ? '管理用户、审批管理员邀请 · $superTodo 条待办'
+                  : '管理用户、审批管理员邀请',
+              badgeText: superTodo > 0 ? '$superTodo' : null,
+              onTap: () {
+                Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (_) => const AdminMembersScreen(),
-                    ),
-                  );
-                },
-              ),
-            ],
+                        builder: (_) => const SuperAdminScreen()));
+              },
+            ),
+          _buildAdminEntry(
+            context: context,
+            isDark: isDark,
+            icon: Icons.groups_2_outlined,
+            iconColor: Colors.indigo,
+            title: '管理人员',
+            subtitle: '查看管理员与超级管理员列表',
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const AdminMembersScreen(),
+                ),
+              );
+            },
           ),
-        );
+          if (PrivilegedAccounts.canViewOneClassOrders(user?.studentId))
+            _buildAdminEntry(
+              context: context,
+              isDark: isDark,
+              icon: Icons.receipt_long,
+              iconColor: Colors.teal,
+              title: 'OneClass 订单',
+              subtitle: '查看 OneClass 支付、机器授权与签发状态',
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const OneClassOrdersScreen(),
+                  ),
+                );
+              },
+            ),
+        ];
+
+        return _buildSectionLayout(context, '管理员', items, isDark);
       },
     );
   }
@@ -473,12 +659,9 @@ class _ProfileScreenState extends State<ProfileScreen>
   }) {
     return GlassContainer(
       padding: const EdgeInsets.all(12),
-      borderRadius: 12,
+      borderRadius: 16,
       blur: 10,
       opacity: 0.15,
-      gradientColors: isDark
-          ? [Colors.red[800]!, Colors.red[900]!]
-          : [Colors.red[50]!, Colors.red[100]!],
       onTap: onTap,
       child: Row(
         children: [
@@ -562,17 +745,17 @@ class _ProfileScreenState extends State<ProfileScreen>
     return {'admin': adminCount, 'super': superCount};
   }
 
-  Widget _buildMyContentSection(BuildContext context, bool isDark) {
+  Widget _buildSectionLayout(
+      BuildContext context, String title, List<Widget> items, bool isDark) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 标题
           Padding(
             padding: const EdgeInsets.only(left: 4, bottom: 10),
             child: Text(
-              '我的内容',
+              title,
               style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
@@ -580,173 +763,189 @@ class _ProfileScreenState extends State<ProfileScreen>
               ),
             ),
           ),
-          _buildSettingsRow(child: _buildSettingsTile(
-            icon: Icons.article_outlined,
-            iconColor: const Color(0xFF6366F1),
-            title: '我的内容',
-            subtitle: '管理发布的帖子与集市物品',
-            isDark: isDark,
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const MyContentScreen()),
+          if (ResponsiveUtil.isDesktop(context))
+            LayoutBuilder(builder: (context, constraints) {
+              return Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                children: items
+                    .map((e) => SizedBox(
+                          width: (constraints.maxWidth - 12) / 2,
+                          child: e,
+                        ))
+                    .toList(),
               );
-            },
-          )),
-          _buildSettingsRow(child: _buildSettingsTile(
-            icon: Icons.notifications_active_outlined,
-            iconColor: Colors.orange,
-            title: '收到的回复',
-            subtitle: _unreadReplyCount > 0 ? '$_unreadReplyCount条新回复' : null,
-            trailing: _unreadReplyCount > 0
-                ? Container(
-                    width: 8,
-                    height: 8,
-                    margin: const EdgeInsets.only(right: 8),
-                    decoration: const BoxDecoration(
-                      color: Colors.red,
-                      shape: BoxShape.circle,
-                    ),
-                  )
-                : null,
-            isDark: isDark,
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const UserRepliesScreen()),
-              ).then((_) {
-                _loadUnreadCount();
-              });
-            },
-          )),
-          _buildSettingsRow(child: _buildSettingsTile(
-            icon: Icons.bug_report_outlined,
-            iconColor: Colors.green,
-            title: '功能建议 (Bug提交)',
-            subtitle: '提交的建议会发送至开发者邮箱',
-            isDark: isDark,
-            onTap: () => _showFeedbackDialog(context),
-          )),
+            })
+          else
+            Column(
+              children: [
+                for (int i = 0; i < items.length; i++) ...[
+                  if (i > 0) const SizedBox(height: 12),
+                  items[i],
+                ],
+              ],
+            ),
           const SizedBox(height: 8),
         ],
       ),
     );
   }
 
-  Widget _buildEduSection(BuildContext context, AuthProvider authProvider, bool isDark) {
-    final eduProvider = context.watch<EduProvider>();
+  Widget _buildMyContentSection(BuildContext context, bool isDark) {
+    final totalUnreadCount = _unreadReplyCount + _unreadMessageCount;
+    final items = [
+      _buildSettingsRow(
+          child: _buildSettingsTile(
+        icon: Icons.chat_outlined,
+        iconColor: const Color(0xFF10B981),
+        title: '私信',
+        subtitle: totalUnreadCount > 0
+            ? '共$totalUnreadCount条未读，含$_unreadMessageCount条私信'
+            : '查看私信与系统通知',
+        trailing: totalUnreadCount > 0
+            ? Container(
+                width: 8,
+                height: 8,
+                margin: const EdgeInsets.only(right: 8),
+                decoration: const BoxDecoration(
+                  color: Colors.red,
+                  shape: BoxShape.circle,
+                ),
+              )
+            : null,
+        isDark: isDark,
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const ChatListScreen()),
+          ).then((_) {
+            _loadUnreadCount();
+          });
+        },
+      )),
+      _buildSettingsRow(
+          child: _buildSettingsTile(
+        icon: Icons.notifications_active_outlined,
+        iconColor: Colors.orange,
+        title: '收到的回复',
+        subtitle: _unreadReplyCount > 0 ? '$_unreadReplyCount条新回复' : null,
+        trailing: _unreadReplyCount > 0
+            ? Container(
+                width: 8,
+                height: 8,
+                margin: const EdgeInsets.only(right: 8),
+                decoration: const BoxDecoration(
+                  color: Colors.red,
+                  shape: BoxShape.circle,
+                ),
+              )
+            : null,
+        isDark: isDark,
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const UserRepliesScreen()),
+          ).then((_) {
+            _loadUnreadCount();
+          });
+        },
+      )),
+      _buildSettingsRow(
+          child: _buildSettingsTile(
+        icon: Icons.bug_report_outlined,
+        iconColor: Colors.green,
+        title: '功能建议 (Bug提交)',
+        subtitle: '提交的建议会发送至开发者邮箱',
+        isDark: isDark,
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const FeedbackScreen()),
+        ),
+      )),
+    ];
+    return _buildSectionLayout(context, '我的内容', items, isDark);
+  }
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // 标题
-          Padding(
-            padding: const EdgeInsets.only(left: 4, bottom: 10),
-            child: Text(
-              '教务',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: isDark ? Colors.white54 : Colors.grey[600],
-              ),
-            ),
-          ),
-          _buildSettingsRow(child: _buildSettingsTile(
-            icon: Icons.school,
-            iconColor: eduProvider.isBound ? Colors.green : Colors.grey,
-            title: '教务',
-            subtitle: eduProvider.isBound
-                ? '${eduProvider.studentId} | ${eduProvider.college}'
-                : '绑定后可查询课表、成绩',
-            isDark: isDark,
-            onTap: () {
-              Navigator.push(context,
-                  MaterialPageRoute(builder: (_) => const EduScreen()));
+  Widget _buildEduSection(
+      BuildContext context, AuthProvider authProvider, bool isDark) {
+    final eduProvider = context.watch<EduProvider>();
+    final items = [
+      _buildSettingsRow(
+          child: _buildSettingsTile(
+        icon: Icons.school,
+        iconColor: eduProvider.isBound ? Colors.green : Colors.grey,
+        title: '教务',
+        subtitle: eduProvider.isBound
+            ? '${eduProvider.studentId} | ${eduProvider.college}'
+            : '绑定后可查询课表、成绩',
+        isDark: isDark,
+        onTap: () {
+          Navigator.push(
+              context, MaterialPageRoute(builder: (_) => const EduScreen()));
+        },
+      )),
+      _buildSettingsRow(
+        child: _buildSettingsTile(
+          icon: _startOnTimetable ? Icons.calendar_today : Icons.home_rounded,
+          iconColor: const Color(0xFF667EEA),
+          title: '下次直接进入课表',
+          subtitle: _startOnTimetable ? '已开启' : '已关闭',
+          isDark: isDark,
+          trailing: Switch(
+            value: _startOnTimetable,
+            activeColor: const Color(0xFF6366F1),
+            onChanged: (v) {
+              context.read<ThemeProvider>().setStartOnTimetable(v);
+              if (mounted) setState(() => _startOnTimetable = v);
             },
-          )),
-          // 下次启动默认进入的版块
-          _buildSettingsRow(
-            child: _buildSettingsTile(
-              icon: _startOnTimetable ? Icons.calendar_today : Icons.home_rounded,
-              iconColor: const Color(0xFF667EEA),
-              title: '下次启动默认进入课表',
-              subtitle: _startOnTimetable ? '打开：下次直接进入课表版块' : '关闭：下次直接进入首页版块',
-              isDark: isDark,
-              trailing: Switch(
-                value: _startOnTimetable,
-                activeColor: const Color(0xFF6366F1),
-                onChanged: (v) {
-                  context.read<ThemeProvider>().setStartOnTimetable(v);
-                  setState(() => _startOnTimetable = v);
-                },
-              ),
-            ),
           ),
-          _buildSettingsRow(child: _buildSettingsTile(
-            icon: Icons.auto_stories,
-            iconColor: const Color(0xFF667EEA),
-            title: '导入融智云考题库',
-            subtitle: '提取练习题，导出 Markdown',
-            isDark: isDark,
-            onTap: () {
-              if (!authProvider.isLoggedIn) {
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('请先登录')));
-                return;
-              }
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                    builder: (_) => const ExamExtractScreen()),
-              );
-            },
-          )),
-          const SizedBox(height: 8),
-        ],
+        ),
       ),
-    );
+      _buildSettingsRow(
+          child: _buildSettingsTile(
+        icon: Icons.auto_stories,
+        iconColor: const Color(0xFF667EEA),
+        title: '导入融智云考题库',
+        subtitle: '提取练习题，导出 Markdown',
+        isDark: isDark,
+        onTap: () {
+          if (!authProvider.isLoggedIn) {
+            ScaffoldMessenger.of(context)
+                .showSnackBar(const SnackBar(content: Text('请先登录')));
+            return;
+          }
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const ExamExtractScreen()),
+          );
+        },
+      )),
+    ];
+    return _buildSectionLayout(context, '教务', items, isDark);
   }
 
   Widget _buildSettingsSection(BuildContext context,
       ThemeProvider themeProvider, AuthProvider authProvider, bool isDark) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // 标题
-          Padding(
-            padding: const EdgeInsets.only(left: 4, bottom: 10),
-            child: Text(
-              '设置',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: isDark ? Colors.white54 : Colors.grey[600],
+    final items = [
+      _buildSettingsRow(
+        child: _buildSettingsTile(
+          icon: Icons.settings,
+          iconColor: Colors.blueGrey,
+          title: '设置',
+          subtitle: '主题外观、关于应用、账号设置等',
+          isDark: isDark,
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const SettingsScreen(),
               ),
-            ),
-          ),
-          _buildSettingsRow(
-            child: _buildSettingsTile(
-              icon: Icons.settings,
-              iconColor: Colors.blueGrey,
-              title: '设置',
-              subtitle: '主题外观、关于应用、账号设置等',
-              isDark: isDark,
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => const SettingsScreen(),
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
+            );
+          },
+        ),
       ),
-    );
+    ];
+    return _buildSectionLayout(context, '设置', items, isDark);
   }
 
   // removed update checker methods
@@ -828,7 +1027,8 @@ class _ProfileScreenState extends State<ProfileScreen>
               ),
               if (trailing != null) trailing,
               if (trailing == null && onTap != null)
-                Icon(Icons.chevron_right, size: 18,
+                Icon(Icons.chevron_right,
+                    size: 18,
                     color: isDark ? Colors.white30 : Colors.grey[400]),
             ],
           ),
@@ -836,9 +1036,6 @@ class _ProfileScreenState extends State<ProfileScreen>
       ),
     );
   }
-
-
-
 
   void _showAvatarPreview(BuildContext context, String url) {
     showDialog(
@@ -854,9 +1051,10 @@ class _ProfileScreenState extends State<ProfileScreen>
     );
   }
 
-  void _showEditProfileDialog(BuildContext context, AuthProvider authProvider) {
+  Future<void> _showEditProfileDialog(
+      BuildContext context, AuthProvider authProvider) async {
     final controller = TextEditingController(text: authProvider.user?.nickname);
-    showDialog(
+    await showDialog(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('编辑资料'),
@@ -884,8 +1082,8 @@ class _ProfileScreenState extends State<ProfileScreen>
         ],
       ),
     );
+    controller.dispose();
   }
-
 
   void _showAvatarOptions(BuildContext context, AuthProvider authProvider) {
     Future<void> pickAndUpload(ImageSource source) async {
@@ -893,23 +1091,46 @@ class _ProfileScreenState extends State<ProfileScreen>
       final image = await ImagePicker().pickImage(source: source);
       if (image == null) return;
 
-      final length = await image.length();
-      if (length > 10 * 1024 * 1024) {
+      final cropped = await ImageCropper().cropImage(
+        sourcePath: image.path,
+        aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
+        uiSettings: [
+          AndroidUiSettings(
+            toolbarTitle: '裁剪头像',
+            toolbarColor: Colors.black,
+            toolbarWidgetColor: Colors.white,
+            statusBarColor: Colors.black,
+            backgroundColor: Colors.black,
+            initAspectRatio: CropAspectRatioPreset.square,
+            lockAspectRatio: true,
+          ),
+          IOSUiSettings(
+            title: '裁剪头像',
+            aspectRatioLockEnabled: true,
+            resetButtonHidden: true,
+          ),
+        ],
+      );
+
+      if (cropped == null) return;
+
+      final avatarBytes = await cropped.readAsBytes();
+      if (avatarBytes.length > 10 * 1024 * 1024) {
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('头像大小不能超过 10MB'), backgroundColor: Colors.red),
+            const SnackBar(
+                content: Text('头像大小不能超过 10MB'), backgroundColor: Colors.red),
           );
         }
         return;
       }
 
-      final appDir = await getApplicationDocumentsDirectory();
-      final fileName =
-          'avatar_${DateTime.now().millisecondsSinceEpoch}${path.extension(image.path)}';
-      final savedPath = path.join(appDir.path, fileName);
-      await File(image.path).copy(savedPath);
-      final result = await authProvider.updateAvatar(savedPath);
+      final result = await authProvider.updateAvatar(avatarBytes);
       if (context.mounted) {
+        if (result.success) {
+          // 刷新聊天列表中的头像缓存
+          context.read<MessageProvider>().loadConversations(silent: true);
+        }
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text(
               result.success ? '头像更新成功' : (result.errorMessage ?? '头像更新失败')),
@@ -955,7 +1176,6 @@ class _ProfileScreenState extends State<ProfileScreen>
           ),
         ));
   }
-
 
   // ---- 邀请版块 ----
   Widget _buildInvitationSection(
@@ -1023,72 +1243,6 @@ class _ProfileScreenState extends State<ProfileScreen>
           ]),
         );
       },
-    );
-  }
-  void _showFeedbackDialog(BuildContext context) {
-    final controller = TextEditingController();
-    bool isSubmitting = false;
-
-    showDialog(
-      context: context,
-      builder: (dialogCtx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
-          title: const Text('功能建议与 Bug 提交'),
-          content: TextField(
-            controller: controller,
-            maxLines: 4,
-            decoration: const InputDecoration(
-              hintText: '请输入您的建议或遇到的问题...\n提交后会发送至开发者邮箱。',
-              border: OutlineInputBorder(),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: isSubmitting ? null : () => Navigator.pop(ctx),
-              child: const Text('取消'),
-            ),
-            ElevatedButton(
-              onPressed: isSubmitting
-                  ? null
-                  : () async {
-                      final text = controller.text.trim();
-                      if (text.isEmpty) {
-                        AppFeedback.showSnackBar(context, '内容不能为空');
-                        return;
-                      }
-                      setDialogState(() => isSubmitting = true);
-                      try {
-                        final auth = context.read<AuthProvider>();
-                        // 触发后端接口，后端会将邮件发送至 13514252317@163.com
-                        final response = await auth.dio.post('/feedback', data: {'content': text});
-                        if (response.statusCode == 200 || response.statusCode == 201) {
-                          if (ctx.mounted) {
-                            Navigator.pop(ctx);
-                            AppFeedback.showSnackBar(context, '反馈已提交，感谢您的建议！');
-                          }
-                        } else {
-                          if (ctx.mounted) {
-                            AppFeedback.showSnackBar(context, '提交失败，请稍后重试', isError: true);
-                            setDialogState(() => isSubmitting = false);
-                          }
-                        }
-                      } catch (e) {
-                        if (ctx.mounted) {
-                          AppFeedback.showSnackBar(context, '网络异常或接口未部署，反馈提交失败', isError: true);
-                          setDialogState(() => isSubmitting = false);
-                        }
-                      }
-                    },
-              child: isSubmitting
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Text('提交'),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

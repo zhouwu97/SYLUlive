@@ -1,6 +1,4 @@
 import 'dart:async';
-import 'dart:io' show File;
-
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -8,6 +6,8 @@ import '../models/post.dart';
 import '../providers/auth_provider.dart';
 import '../providers/post_provider.dart';
 import '../providers/theme_provider.dart';
+import '../utils/responsive_util.dart';
+import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/post_card.dart';
 import 'create_post_screen.dart';
@@ -64,18 +64,22 @@ class _MarketScreenState extends State<MarketScreen> {
     if (!mounted) return;
 
     if (query.isEmpty) {
-      setState(() {
-        _searchQuery = '';
-        _searchResults = [];
-        _isSearching = false;
-      });
+      if (mounted) {
+        setState(() {
+          _searchQuery = '';
+          _searchResults = [];
+          _isSearching = false;
+        });
+      }
       return;
     }
 
-    setState(() {
-      _searchQuery = query;
-      _isSearching = true;
-    });
+    if (mounted) {
+      setState(() {
+        _searchQuery = query;
+        _isSearching = true;
+      });
+    }
 
     final results = await context.read<PostProvider>().searchPosts(
           boardId: 2,
@@ -86,12 +90,14 @@ class _MarketScreenState extends State<MarketScreen> {
 
     if (!mounted || _searchQuery != query) return;
 
-    setState(() {
-      _searchResults = results
-          .where((post) => _allowedTypes.contains(post.postType))
-          .toList();
-      _isSearching = false;
-    });
+    if (mounted) {
+      setState(() {
+        _searchResults = results
+            .where((post) => _allowedTypes.contains(post.postType))
+            .toList();
+        _isSearching = false;
+      });
+    }
   }
 
   void _onSearchChanged(String value) {
@@ -110,10 +116,12 @@ class _MarketScreenState extends State<MarketScreen> {
   }
 
   void _changeSort(String sort) async {
-    setState(() {
-      _sortType = sort;
-      _isSearching = true;
-    });
+    if (mounted) {
+      setState(() {
+        _sortType = sort;
+        _isSearching = true;
+      });
+    }
     await _refreshCurrent();
     if (mounted) {
       setState(() {
@@ -126,61 +134,6 @@ class _MarketScreenState extends State<MarketScreen> {
     return allPosts.where((p) => _allowedTypes.contains(p.postType)).toList();
   }
 
-  Widget _buildDefaultBg(bool isDark) {
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        Image.asset(
-          'assets/images/morenbeijing.jpeg',
-          fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => Container(
-            color: isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
-          ),
-        ),
-        Container(
-          color: isDark
-              ? Colors.black.withValues(alpha: 0.34)
-              : Colors.white.withValues(alpha: 0.20),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildBackground(ThemeProvider themeProvider, bool isDark) {
-    final path = themeProvider.backgroundImage;
-    if (themeProvider.hasBackground && path != null && path.isNotEmpty) {
-      final isAsset = !path.startsWith('http') && !path.startsWith('/');
-      return Stack(
-        fit: StackFit.expand,
-        children: [
-          isAsset
-              ? Image.asset(
-                  'assets/images/$path',
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => _buildDefaultBg(isDark),
-                )
-              : path.startsWith('/')
-                  ? Image.file(
-                      File(path),
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => _buildDefaultBg(isDark),
-                    )
-                  : Image.network(
-                      path,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => _buildDefaultBg(isDark),
-                    ),
-          Container(
-            color: isDark
-                ? Colors.black.withValues(alpha: 0.34)
-                : Colors.white.withValues(alpha: 0.20),
-          ),
-        ],
-      );
-    }
-    return _buildDefaultBg(isDark);
-  }
-
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -188,13 +141,23 @@ class _MarketScreenState extends State<MarketScreen> {
     final topInset = MediaQuery.paddingOf(context).top + kToolbarHeight + 12;
 
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor:
+          isDark ? const Color(0xFF06080D) : const Color(0xFFF4F6FB),
       extendBodyBehindAppBar: true,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
         title: Text(widget.titleOverride ?? '集市'),
         actions: [
+          IconButton(
+            icon: Icon(themeProvider.marketIsListView
+                ? Icons.grid_view
+                : Icons.view_list),
+            onPressed: () {
+              themeProvider
+                  .setMarketIsListView(!themeProvider.marketIsListView);
+            },
+          ),
           if (widget.titleOverride != '失物招领')
             PopupMenuButton<String>(
               icon: const Icon(Icons.sort),
@@ -212,10 +175,30 @@ class _MarketScreenState extends State<MarketScreen> {
       ),
       body: Stack(
         children: [
-
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: isDark
+                      ? const [
+                          Color(0xFF06080D),
+                          Color(0xFF10131A),
+                          Color(0xFF06080D),
+                        ]
+                      : const [
+                          Color(0xFFF4F6FB),
+                          Color(0xFFEFF3F8),
+                          Color(0xFFF8FAFC),
+                        ],
+                ),
+              ),
+            ),
+          ),
           Consumer<PostProvider>(
             builder: (context, postProvider, child) {
-              final allPosts = postProvider.postsFor(2);
+              final allPosts = postProvider.postsFor(2, sort: _sortType);
               final exposurePosts = allPosts
                   .where((post) => post.postType == 'exposure')
                   .toList();
@@ -223,7 +206,8 @@ class _MarketScreenState extends State<MarketScreen> {
                   ? _searchResults
                   : _buildMarketPosts(allPosts);
 
-              if (postProvider.isLoadingFor(2) && allPosts.isEmpty) {
+              if (postProvider.isLoadingFor(2, sort: _sortType) &&
+                  allPosts.isEmpty) {
                 return const Center(child: CircularProgressIndicator());
               }
 
@@ -268,20 +252,27 @@ class _MarketScreenState extends State<MarketScreen> {
                           ),
                         ),
                       )
+                    else if (themeProvider.marketIsListView)
+                      SliverPadding(
+                        padding: const EdgeInsets.fromLTRB(12, 0, 12, 80),
+                        sliver: SliverList(
+                          delegate: SliverChildBuilderDelegate(
+                            (context, index) =>
+                                _buildMarketCard(marketPosts[index], false),
+                            childCount: marketPosts.length,
+                          ),
+                        ),
+                      )
                     else
                       SliverPadding(
                         padding: const EdgeInsets.fromLTRB(12, 0, 12, 80),
-                        sliver: SliverGrid(
-                          gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                            maxCrossAxisExtent: 300,
-                            mainAxisSpacing: 12,
-                            crossAxisSpacing: 12,
-                            mainAxisExtent: 360, // Fixed height for market cards
-                          ),
-                          delegate: SliverChildBuilderDelegate(
-                            (context, index) => _buildMarketCard(marketPosts[index], true),
-                            childCount: marketPosts.length,
-                          ),
+                        sliver: SliverMasonryGrid.extent(
+                          maxCrossAxisExtent: 300,
+                          mainAxisSpacing: 12,
+                          crossAxisSpacing: 12,
+                          childCount: marketPosts.length,
+                          itemBuilder: (context, index) =>
+                              _buildMarketCard(marketPosts[index], true),
                         ),
                       ),
                   ],
@@ -295,6 +286,7 @@ class _MarketScreenState extends State<MarketScreen> {
       floatingActionButton: Padding(
         padding: const EdgeInsets.only(bottom: 80),
         child: FloatingActionButton(
+          heroTag: 'market_fab',
           onPressed: () async {
             final authProvider = context.read<AuthProvider>();
             if (!authProvider.isLoggedIn) {
@@ -382,8 +374,8 @@ class _MarketScreenState extends State<MarketScreen> {
       ),
       child: GlassContainer(
         padding: const EdgeInsets.all(14),
-      borderRadius: 50,
-      blur: 12,
+        borderRadius: 50,
+        blur: 12,
         opacity: 0.18,
         backgroundColor:
             isDark ? const Color(0xA31C1620) : const Color(0xD9FFF4F2),
@@ -471,8 +463,8 @@ class _MarketScreenState extends State<MarketScreen> {
         Text(
           title,
           style: TextStyle(
-          fontSize: 16,
-          fontWeight: FontWeight.w700,
+            fontSize: 16,
+            fontWeight: FontWeight.w700,
             color: isDark ? Colors.white : Colors.black87,
           ),
         ),
@@ -495,16 +487,19 @@ class _MarketScreenState extends State<MarketScreen> {
       child: PostCard(
         post: post,
         showPrice: true,
-        onTap: () => Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => PostDetailScreen(
-              postId: post.id,
-              isMarket: true,
-              initialPost: post,
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => PostDetailScreen(
+                postId: post.id,
+                isMarket: true,
+                initialPost: post,
+                isDesktopSplitMode: ResponsiveUtil.isDesktop(context),
+              ),
             ),
-          ),
-        ),
+          );
+        },
       ),
     );
   }

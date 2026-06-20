@@ -29,6 +29,7 @@ class AppTheme {
     return ThemeData(
       useMaterial3: true,
       colorScheme: scheme,
+      fontFamily: 'NotoSansCJKsc',
       // 全局紧凑密度
       visualDensity: VisualDensity.compact,
       appBarTheme: AppBarTheme(
@@ -70,7 +71,8 @@ class AppTheme {
       // 输入框 — 紧凑
       inputDecorationTheme: InputDecorationTheme(
         isDense: true,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(borderRadius),
         ),

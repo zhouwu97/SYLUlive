@@ -15,10 +15,11 @@ import (
 	"strings"
 	"time"
 
+	"shenliyuan/internal/models"
+
 	"github.com/gin-gonic/gin"
 	"github.com/go-resty/resty/v2"
 	"gorm.io/gorm"
-	"shenliyuan/internal/models"
 )
 
 const (
@@ -84,7 +85,7 @@ func (h *EduHandler) BindEdu(c *gin.Context) {
 	client := resty.New()
 
 	// 获取csrf token
-	csrfToken, err := getIndexCookieAndCsrfToken(client)
+	csrfToken, err := getIndexCookieAndCsrfToken(client, 0)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "无法连接教务系统，请检查网络"})
 		return
@@ -112,7 +113,12 @@ func (h *EduHandler) BindEdu(c *gin.Context) {
 	}
 
 	// 构建cookie字符串（和学长项目一样，取 client.Cookies[1]）
-	cookieStr := buildCookieString(client.Cookies[1:2])
+	var cookieStr string
+	if len(client.Cookies) > 1 {
+		cookieStr = buildCookieString(client.Cookies[1:2])
+	} else if len(client.Cookies) == 1 {
+		cookieStr = buildCookieString(client.Cookies)
+	}
 
 	// 获取学生基本信息（年级、学院、专业）
 	grade, college, major, _ := getStudentInfo(client, cookieStr, input.StudentID)
@@ -200,7 +206,7 @@ func (h *EduHandler) PreVerify(c *gin.Context) {
 
 	// 尝试验证教务密码
 	client := resty.New()
-	csrfToken, err := getIndexCookieAndCsrfToken(client)
+	csrfToken, err := getIndexCookieAndCsrfToken(client, 0)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "无法连接教务系统", "success": false})
 		return
@@ -226,8 +232,8 @@ func (h *EduHandler) PreVerify(c *gin.Context) {
 
 	// 验证成功
 	c.JSON(http.StatusOK, gin.H{
-		"success":       true,
-		"message":       "验证通过",
+		"success":        true,
+		"message":        "验证通过",
 		"edu_student_id": input.StudentID,
 	})
 }
@@ -350,13 +356,16 @@ func (h *EduHandler) GetGrades(c *gin.Context) {
 
 // 以下是整合的教务系统登录和查询逻辑
 
-func getIndexCookieAndCsrfToken(client *resty.Client) (string, error) {
+func getIndexCookieAndCsrfToken(client *resty.Client, retryCount int) (string, error) {
+	if retryCount >= 5 {
+		return "", errors.New("教务系统连接超时，多次重试失败")
+	}
 	client.SetTimeout(3 * time.Second)
 
 	initResp, err := client.R().SetHeaders(baseHttpHeaders()).Get(indexUrl + "/login_slogin.html")
 	if err != nil {
 		if urlErr, ok := err.(*url.Error); ok && urlErr.Timeout() {
-			return getIndexCookieAndCsrfToken(client)
+			return getIndexCookieAndCsrfToken(client, retryCount+1)
 		}
 		return "", err
 	}
@@ -713,7 +722,7 @@ func (h *EduHandler) refreshCookie(userID uint) (string, error) {
 
 	client := resty.New()
 
-	csrfToken, err := getIndexCookieAndCsrfToken(client)
+	csrfToken, err := getIndexCookieAndCsrfToken(client, 0)
 	if err != nil {
 		return "", err
 	}
@@ -733,7 +742,12 @@ func (h *EduHandler) refreshCookie(userID uint) (string, error) {
 		return "", err
 	}
 
-	cookieStr := buildCookieString(client.Cookies[1:2])
+	var cookieStr string
+	if len(client.Cookies) > 1 {
+		cookieStr = buildCookieString(client.Cookies[1:2])
+	} else if len(client.Cookies) == 1 {
+		cookieStr = buildCookieString(client.Cookies)
+	}
 
 	h.db.Model(&user).Updates(map[string]interface{}{
 		"edu_cookie": cookieStr,

@@ -7,6 +7,7 @@ import '../providers/post_provider.dart';
 import '../providers/theme_provider.dart';
 import '../utils/app_feedback.dart';
 import '../widgets/glass_container.dart';
+import 'create_post_screen.dart';
 import 'post_detail_screen.dart';
 import 'dart:io' show File;
 
@@ -14,6 +15,9 @@ import 'dart:io' show File;
 /// 查看并管理自己发布的帖子、评论、集市物品，支持多选删除
 class MyContentScreen extends StatefulWidget {
   const MyContentScreen({super.key});
+
+  // 全局共享的帖子数量缓存，用于个人主页秒开显示
+  static int? globalPostCount;
 
   @override
   State<MyContentScreen> createState() => _MyContentScreenState();
@@ -25,7 +29,10 @@ class _MyContentScreenState extends State<MyContentScreen>
   bool _isSelectionMode = false;
   final Set<int> _selectedIds = {};
 
-  // 数据
+  // 数据缓存
+  static List<Post>? _cachedMyPosts;
+  static List<Post>? _cachedMyMarketPosts;
+
   List<Post> _myPosts = [];
   List<Post> _myMarketPosts = [];
   bool _isLoading = true;
@@ -35,8 +42,15 @@ class _MyContentScreenState extends State<MyContentScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+
+    if (_cachedMyPosts != null) {
+      _myPosts = _cachedMyPosts!;
+      _myMarketPosts = _cachedMyMarketPosts!;
+      _isLoading = false;
+    }
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _loadData();
+      _loadData(silent: _cachedMyPosts != null);
     });
   }
 
@@ -46,72 +60,79 @@ class _MyContentScreenState extends State<MyContentScreen>
     super.dispose();
   }
 
-  Future<void> _loadData() async {
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
+  Future<void> _loadData({bool silent = false}) async {
+    if (!silent && mounted)
+      setState(() {
+        _isLoading = true;
+        _errorMessage = null;
+      });
 
     try {
       final authProvider = context.read<AuthProvider>();
-      final postProvider = context.read<PostProvider>();
       final currentUserId = authProvider.user?.id;
       if (currentUserId == null) {
-        setState(() {
-          _isLoading = false;
-        });
+        if (mounted)
+          setState(() {
+            _isLoading = false;
+          });
         return;
       }
 
-      // 1. 加载水贴板块 (boardId=1) 的帖子
-      await postProvider.loadPosts(boardId: 1);
-      // 2. 加载集市板块 (boardId=2) 的帖子
-      await postProvider.loadPosts(boardId: 2);
+      // 直接从 API 获取用户所有帖子，不走 PostProvider 的 board 分页
+      final res = await authProvider.dio
+          .get('/user/$currentUserId/posts', queryParameters: {'limit': '999'});
+      final data = res.data is Map ? res.data['data'] : res.data;
+      final allPosts = (data as List)
+          .map((e) => Post.fromJson(e as Map<String, dynamic>))
+          .toList();
 
-      final posts1 = postProvider.postsFor(1);
-      final posts2 = postProvider.postsFor(2);
-
-      // 过滤我的帖子
-      _myPosts = posts1.where((p) => p.authorId == currentUserId).toList();
-      // 过滤我的集市物品
-      _myMarketPosts =
-          posts2.where((p) => p.authorId == currentUserId).toList();
-
-      setState(() {
-        _isLoading = false;
-      });
+      // 按 board 拆分
+      if (mounted)
+        setState(() {
+          _myPosts = allPosts.where((p) => p.boardId != 2).toList();
+          _myMarketPosts = allPosts.where((p) => p.boardId == 2).toList();
+          _cachedMyPosts = _myPosts;
+          _cachedMyMarketPosts = _myMarketPosts;
+          MyContentScreen.globalPostCount =
+              _myPosts.length + _myMarketPosts.length;
+          _isLoading = false;
+        });
     } catch (e) {
-      setState(() {
-        _isLoading = false;
-        _errorMessage = '加载失败: $e';
-      });
+      if (mounted)
+        setState(() {
+          _isLoading = false;
+          _errorMessage = '加载失败: $e';
+        });
     }
   }
 
   void _toggleSelectionMode() {
-    setState(() {
-      _isSelectionMode = !_isSelectionMode;
-      if (!_isSelectionMode) {
-        _selectedIds.clear();
-      }
-    });
+    if (mounted)
+      setState(() {
+        _isSelectionMode = !_isSelectionMode;
+        if (!_isSelectionMode) {
+          _selectedIds.clear();
+        }
+      });
   }
 
   void _toggleSelect(int id) {
-    setState(() {
-      if (_selectedIds.contains(id)) {
-        _selectedIds.remove(id);
-      } else {
-        _selectedIds.add(id);
-      }
-    });
+    if (mounted)
+      setState(() {
+        if (_selectedIds.contains(id)) {
+          _selectedIds.remove(id);
+        } else {
+          _selectedIds.add(id);
+        }
+      });
   }
 
   void _onLongPressItem(int id) {
-    setState(() {
-      _isSelectionMode = true;
-      _selectedIds.add(id);
-    });
+    if (mounted)
+      setState(() {
+        _isSelectionMode = true;
+        _selectedIds.add(id);
+      });
   }
 
   Future<void> _deleteSelected() async {
@@ -141,6 +162,9 @@ class _MyContentScreenState extends State<MyContentScreen>
     }
 
     if (mounted) {
+      _cachedMyPosts = List<Post>.from(_myPosts);
+      _cachedMyMarketPosts = List<Post>.from(_myMarketPosts);
+      MyContentScreen.globalPostCount = _myPosts.length + _myMarketPosts.length;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(errors.isEmpty
@@ -150,10 +174,43 @@ class _MyContentScreenState extends State<MyContentScreen>
               errors.isEmpty && deletedCount > 0 ? Colors.green : Colors.red,
         ),
       );
-      setState(() {
-        _selectedIds.clear();
-        _isSelectionMode = false;
-      });
+      if (mounted)
+        setState(() {
+          _selectedIds.clear();
+          _isSelectionMode = false;
+        });
+    }
+  }
+
+  Future<void> _openPostDetail(Post post, {bool isMarket = false}) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PostDetailScreen(
+          postId: post.id,
+          isMarket: isMarket,
+          initialPost: post,
+        ),
+      ),
+    );
+    if (mounted) {
+      await _loadData(silent: true);
+    }
+  }
+
+  Future<void> _editPost(Post post) async {
+    final updated = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => CreatePostScreen(
+          boardId: post.boardId,
+          defaultPostType: post.postType,
+          editingPost: post,
+        ),
+      ),
+    );
+    if (updated == true && mounted) {
+      await _loadData(silent: true);
     }
   }
 
@@ -244,8 +301,9 @@ class _MyContentScreenState extends State<MyContentScreen>
 
   Widget _buildBackground(ThemeProvider themeProvider, bool isDark) {
     // 使用全局背景设置，与 profile_screen 保持一致
-    if (themeProvider.hasBackground && themeProvider.backgroundImage != null) {
-      final bgPath = themeProvider.backgroundImage!;
+    if (themeProvider.isBackgroundVisible &&
+        themeProvider.getBackgroundImageFor(context) != null) {
+      final bgPath = themeProvider.getBackgroundImageFor(context)!;
       final isAsset = !bgPath.startsWith('http') && !bgPath.startsWith('/');
       return Stack(fit: StackFit.expand, children: [
         isAsset
@@ -370,15 +428,7 @@ class _MyContentScreenState extends State<MyContentScreen>
       opacity: isDark ? 0.12 : 0.35,
       onTap: _isSelectionMode
           ? () => _toggleSelect(post.id)
-          : () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) =>
-                      PostDetailScreen(postId: post.id, initialPost: post),
-                ),
-              );
-            },
+          : () => _openPostDetail(post),
       onLongPress: _isSelectionMode ? null : () => _onLongPressItem(post.id),
       child: Row(
         children: [
@@ -438,8 +488,19 @@ class _MyContentScreenState extends State<MyContentScreen>
             ),
           ),
           if (!_isSelectionMode)
-            Icon(Icons.chevron_right,
-                color: isDark ? Colors.white30 : Colors.grey[400]),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  tooltip: '编辑帖子',
+                  icon: Icon(Icons.edit_outlined,
+                      color: isDark ? Colors.white54 : Colors.grey[600]),
+                  onPressed: () => _editPost(post),
+                ),
+                Icon(Icons.chevron_right,
+                    color: isDark ? Colors.white30 : Colors.grey[400]),
+              ],
+            ),
         ],
       ),
     );
@@ -476,18 +537,7 @@ class _MyContentScreenState extends State<MyContentScreen>
       opacity: isDark ? 0.12 : 0.35,
       onTap: _isSelectionMode
           ? () => _toggleSelect(post.id)
-          : () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => PostDetailScreen(
-                    postId: post.id,
-                    isMarket: true,
-                    initialPost: post,
-                  ),
-                ),
-              );
-            },
+          : () => _openPostDetail(post, isMarket: true),
       onLongPress: _isSelectionMode ? null : () => _onLongPressItem(post.id),
       child: Row(
         children: [
@@ -571,8 +621,19 @@ class _MyContentScreenState extends State<MyContentScreen>
             ),
           ),
           if (!_isSelectionMode)
-            Icon(Icons.chevron_right,
-                color: isDark ? Colors.white30 : Colors.grey[400]),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  tooltip: '编辑帖子',
+                  icon: Icon(Icons.edit_outlined,
+                      color: isDark ? Colors.white54 : Colors.grey[600]),
+                  onPressed: () => _editPost(post),
+                ),
+                Icon(Icons.chevron_right,
+                    color: isDark ? Colors.white30 : Colors.grey[400]),
+              ],
+            ),
         ],
       ),
     );

@@ -28,23 +28,27 @@ type Config struct {
 
 // Load 从环境变量加载配置
 func Load() *Config {
-	// 强制读取 /opt/shenliyuan/.env
-	content, err := os.ReadFile("/opt/shenliyuan/.env")
+	content, err := os.ReadFile(".env")
+	if err != nil {
+		content, err = os.ReadFile("/opt/shenliyuan/.env")
+	}
 	if err == nil {
 		lines := strings.Split(string(content), "\n")
 		for _, line := range lines {
 			line = strings.TrimSpace(line)
-			if strings.HasPrefix(line, "DSN=") {
-				os.Setenv("DSN", strings.TrimPrefix(line, "DSN="))
-			} else if strings.HasPrefix(line, "JWT_SECRET=") {
-				os.Setenv("JWT_SECRET", strings.TrimPrefix(line, "JWT_SECRET="))
+			if line == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+			parts := strings.SplitN(line, "=", 2)
+			if len(parts) == 2 {
+				os.Setenv(strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1]))
 			}
 		}
 	}
 
 	jwtSecret := os.Getenv("JWT_SECRET")
 	if jwtSecret == "" {
-		jwtSecret = "dev-only-secret-do-not-use-in-production"
+		panic(fmt.Errorf("必须设置 JWT_SECRET 环境变量"))
 	}
 
 	dsn := os.Getenv("DSN")
@@ -70,7 +74,7 @@ func Load() *Config {
 
 	eduServiceURL := os.Getenv("EDU_SERVICE_URL")
 	if eduServiceURL == "" {
-		eduServiceURL = "http://101.42.27.44:8000"
+		eduServiceURL = "http://python-edu-service:8000"
 	}
 
 	smtpHost := os.Getenv("SMTP_HOST")
@@ -90,12 +94,12 @@ func Load() *Config {
 
 	superAdminID := os.Getenv("SUPER_ADMIN_ID")
 	if superAdminID == "" {
-		superAdminID = "admin" // 默认超级管理员账号
+		panic(fmt.Errorf("必须设置 SUPER_ADMIN_ID 环境变量"))
 	}
 
 	superAdminPass := os.Getenv("SUPER_ADMIN_PASSWORD")
 	if superAdminPass == "" {
-		superAdminPass = "admin123" // 默认超级管理员密码
+		panic(fmt.Errorf("必须设置 SUPER_ADMIN_PASSWORD 环境变量"))
 	}
 
 	deepSeekAPIKey := os.Getenv("DEEPSEEK_API_KEY")

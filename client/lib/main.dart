@@ -1,13 +1,16 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:ui';
 import 'dart:io' show File;
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:jpush_flutter/jpush_flutter.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'providers/auth_provider.dart';
 import 'providers/theme_provider.dart';
 import 'providers/post_provider.dart';
@@ -17,9 +20,14 @@ import 'providers/course_schedule_provider.dart';
 import 'providers/major_provider.dart';
 import 'providers/teacher_provider.dart';
 import 'providers/canteen_provider.dart';
+
+import 'providers/social_provider.dart';
+import 'models/user.dart';
+import 'screens/chat_detail_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/course_schedule_screen.dart';
+import 'screens/exam_schedule_screen.dart';
 import 'screens/user_replies_screen.dart';
 import 'services/course_reminder_service.dart';
 import 'theme/AppTheme.dart';
@@ -28,17 +36,32 @@ import 'utils/app_navigator.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // 强制沉浸式（Edge-to-Edge），解决悬浮底栏下方的系统黑条空挡问题
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+    systemNavigationBarColor: Colors.transparent,
+    statusBarColor: Colors.transparent,
+  ));
+
   await Hive.initFlutter();
   await CourseReminderService.instance.initialize();
+  await _initializePrivateMessageNotifications();
+
   runApp(const MyApp());
 }
 
 /// 极光推送初始化
 var jpush = JPush.newJPush();
+final FlutterLocalNotificationsPlugin _privateMessageNotifications =
+    FlutterLocalNotificationsPlugin();
+bool _privateMessageNotificationsReady = false;
+/// 冷启动时通知数据临时存放（navigator 未就绪前）
+Map<String, dynamic>? _pendingOpenNotification;
 
 Future<void> setupJPush(AuthProvider authProvider) async {
   jpush.setup(
-    appKey: 'fbbd87f741e919f39519afe6',
+    appKey: ApiConstants.jpushAppKey,
     channel: 'developer-default',
     production: false,
     debug: true,
@@ -46,9 +69,12 @@ Future<void> setupJPush(AuthProvider authProvider) async {
   jpush.addEventHandler(
     onReceiveNotification: (Map<String, dynamic> message) async {
       debugPrint('🔔 收到通知: $message');
+      await _handlePrivateMessageNotification(message, opened: false);
     },
     onOpenNotification: (Map<String, dynamic> message) async {
-      debugPrint('👆 用户点击通知: $message');
+      debugPrint('👆 点击通知原始数据: $message');
+      if (await _handleUpdateNotification(message)) return;
+      if (await _handlePrivateMessageNotification(message, opened: true)) return;
       if (appNavigatorKey.currentState != null) {
         appNavigatorKey.currentState!.popUntil((route) => route.isFirst);
         appNavigatorKey.currentState!.push(
@@ -59,11 +85,291 @@ Future<void> setupJPush(AuthProvider authProvider) async {
   );
   final rid = await jpush.getRegistrationID();
   debugPrint('🔥 JPush RegistrationID: $rid');
-  
-  if (rid != null && rid.isNotEmpty) {
+
+  if (rid.isNotEmpty) {
     await authProvider.updateDeviceToken(rid);
     debugPrint('✅ 成功上报 JPush Device Token: $rid');
   }
+  final userId = authProvider.user?.id;
+  if (userId != null) {
+    try {
+      await jpush.setAlias(userId.toString());
+      debugPrint('✅ 成功设置 JPush Alias: $userId');
+    } catch (e) {
+      debugPrint('设置 JPush Alias 失败: $e');
+    }
+  }
+}
+
+Future<void> _initializePrivateMessageNotifications() async {
+  if (_privateMessageNotificationsReady) return;
+  const android = AndroidInitializationSettings('@mipmap/ic_launcher');
+  const darwin = DarwinInitializationSettings(
+    requestAlertPermission: false,
+    requestBadgePermission: false,
+    requestSoundPermission: false,
+  );
+  const settings = InitializationSettings(android: android, iOS: darwin);
+  await _privateMessageNotifications.initialize(
+    settings,
+    onDidReceiveNotificationResponse: (response) {
+      final payload = response.payload;
+      if (payload == null || payload.isEmpty) return;
+      try {
+        final data = jsonDecode(payload);
+        if (data is Map) {
+          final extras =
+              data.map((key, value) => MapEntry(key.toString(), value));
+          final conversationId = _intFromExtra(extras['conversation_id']);
+          final senderId = _intFromExtra(extras['sender_id']);
+          final senderName = extras['sender_name']?.toString() ?? '';
+          if (conversationId != null && senderId != null) {
+            _openPrivateMessage(conversationId, senderId, senderName);
+          }
+        }
+      } catch (e) {
+        debugPrint('解析私信本地通知 payload 失败: $e');
+      }
+    },
+  );
+  await _privateMessageNotifications
+      .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin>()
+      ?.createNotificationChannel(
+        const AndroidNotificationChannel(
+          'developer-default',
+          '系统通知',
+          description: '评论、系统通知等',
+          importance: Importance.low,
+        ),
+      );
+  await _privateMessageNotifications
+      .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin>()
+      ?.createNotificationChannel(
+        const AndroidNotificationChannel(
+          'private_messages',
+          '私信通知',
+          description: '收到新私信时悬浮提醒',
+          importance: Importance.high,
+        ),
+      );
+  // Android 13+ 运行时通知权限
+  await _privateMessageNotifications
+      .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin>()
+      ?.requestNotificationsPermission();
+  _privateMessageNotificationsReady = true;
+}
+
+/// 首帧后请求通知权限（需要 Activity 已创建）
+Future<void> _requestNotificationPermissionIfNeeded() async {
+  try {
+    final plugin = _privateMessageNotifications
+        .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>();
+    if (plugin == null) return;
+    final granted = await plugin.requestNotificationsPermission();
+    debugPrint('通知权限请求结果: $granted');
+  } catch (e) {
+    debugPrint('请求通知权限失败: $e');
+  }
+}
+
+Future<bool> _handlePrivateMessageNotification(
+  Map<String, dynamic> message, {
+  required bool opened,
+}) async {
+  final extras = _extractJPushExtras(message);
+  debugPrint('📨 解析后extras: $extras');
+  if (extras['type']?.toString() != 'private_message') {
+    return false;
+  }
+
+  final conversationId = _intFromExtra(extras['conversation_id']);
+  final senderId = _intFromExtra(extras['sender_id']);
+  if (conversationId == null || senderId == null) {
+    debugPrint('私信推送缺少 conversation_id 或 sender_id: $message');
+    return true;
+  }
+
+  final title = _notificationTitle(message);
+  final content = _notificationContent(message);
+  if (opened) {
+    _openPrivateMessage(conversationId, senderId, title);
+    return true;
+  }
+
+  // 前台不做本地弹窗，全部交给极光 SDK 显示，避免双通知
+  final context = appNavigatorKey.currentContext;
+  final provider = context?.read<MessageProvider>();
+  if (provider?.currentConversationId == conversationId) {
+    await provider?.refreshMessages();
+  } else {
+    await provider?.loadConversations(silent: true);
+  }
+  return true;
+}
+
+void _openPrivateMessage(int conversationId, int senderId, String senderName) {
+  // 尝试拉起 App
+  const channel = MethodChannel('shenliyuan/foreground');
+  channel.invokeMethod('bringToForeground').catchError((e) {});
+  
+  final navigator = appNavigatorKey.currentState;
+  if (navigator == null) {
+    _pendingOpenNotification = {
+      'conversation_id': conversationId,
+      'sender_id': senderId,
+      'sender_name': senderName,
+    };
+    debugPrint('📌 冷启动缓冲通知跳转: conv=$conversationId sender=$senderId');
+    return;
+  }
+  debugPrint('🚪 navigator已就绪，直接跳转');
+  _navigateToPrivateMessage(conversationId, senderId, senderName);
+}
+
+void _navigateToPrivateMessage(int conversationId, int senderId, String senderName) {
+  final navigator = appNavigatorKey.currentState;
+  if (navigator == null) {
+    debugPrint('❌ navigate: navigator is null');
+    return;
+  }
+  debugPrint('🧭 navigate: popUntil+push conv=$conversationId sender=$senderId');
+  final displayName =
+      senderName.trim().isEmpty ? '用户$senderId' : senderName.trim();
+  try {
+    navigator.popUntil((route) => route.isFirst);
+    navigator.push(
+      MaterialPageRoute(
+        builder: (_) => ChatDetailScreen(
+          conversationId: conversationId,
+          targetUser: User(
+            id: senderId,
+            studentId: '',
+            nickname: displayName,
+            createdAt: DateTime.now(),
+          ),
+        ),
+      ),
+    );
+    debugPrint('✅ navigate: push 成功');
+  } catch (e) {
+    debugPrint('❌ navigate: push 失败 - $e');
+  }
+}
+
+void _processPendingOpenNotification() {
+  final data = _pendingOpenNotification;
+  if (data == null) return;
+  _pendingOpenNotification = null;
+  final conversationId = _intFromExtra(data['conversation_id']);
+  final senderId = _intFromExtra(data['sender_id']);
+  final senderName = data['sender_name']?.toString() ?? '';
+  if (conversationId != null && senderId != null) {
+    debugPrint('✅ 处理缓冲通知: conv=$conversationId sender=$senderId');
+    _navigateToPrivateMessage(conversationId, senderId, senderName);
+  }
+}
+
+int? _intFromExtra(dynamic value) {
+  if (value is int) return value;
+  if (value is num) return value.toInt();
+  return int.tryParse(value?.toString() ?? '');
+}
+
+String _notificationTitle(Map<String, dynamic> message) {
+  return message['title']?.toString() ??
+      message['notificationTitle']?.toString() ??
+      _androidNotificationValue(message, 'title') ??
+      '';
+}
+
+String _notificationContent(Map<String, dynamic> message) {
+  return message['alert']?.toString() ??
+      message['content']?.toString() ??
+      message['message']?.toString() ??
+      _androidNotificationValue(message, 'alert') ??
+      '';
+}
+
+String? _androidNotificationValue(Map<String, dynamic> message, String key) {
+  final android = message['android'];
+  if (android is Map && android[key] != null) {
+    return android[key].toString();
+  }
+  return null;
+}
+
+Future<bool> _handleUpdateNotification(Map<String, dynamic> message) async {
+  final extras = _extractJPushExtras(message);
+  if (extras['type']?.toString() != 'app_update') {
+    return false;
+  }
+
+  final downloadUrl = extras['download_url']?.toString() ?? '';
+  final uri = Uri.tryParse(downloadUrl);
+  if (uri == null || !uri.hasScheme || !uri.hasAuthority) {
+    debugPrint('更新推送缺少有效下载地址: $message');
+    return true;
+  }
+
+  try {
+    var launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!launched) {
+      launched = await launchUrl(uri, mode: LaunchMode.platformDefault);
+    }
+    if (!launched) {
+      debugPrint('无法打开更新下载地址: $downloadUrl');
+    }
+  } catch (e) {
+    debugPrint('打开更新下载地址失败: $e');
+  }
+  return true;
+}
+
+Map<String, dynamic> _extractJPushExtras(Map<String, dynamic> message) {
+  // 尝试从 extras 中提取（onReceiveNotification 格式）
+  final extras = message['extras'];
+  if (extras is Map) {
+    final inner = extras['cn.jpush.android.EXTRA'];
+    if (inner is Map) {
+      return inner.map((key, value) => MapEntry(key.toString(), value));
+    }
+    if (inner is String) {
+      try {
+        final decoded = jsonDecode(inner);
+        if (decoded is Map) {
+          return decoded.map((key, value) => MapEntry(key.toString(), value));
+        }
+      } catch (_) {}
+    }
+    return extras.map((key, value) => MapEntry(key.toString(), value));
+  }
+
+  // 尝试从顶层 android.extras 提取
+  final android = message['android'];
+  if (android is Map && android['extras'] is Map) {
+    final androidExtras = android['extras'] as Map;
+    return androidExtras.map((key, value) => MapEntry(key.toString(), value));
+  }
+
+  // 尝试从顶层 cn.jpush.android.EXTRA 提取（onOpenNotification 格式）
+  final rawExtra = message['cn.jpush.android.EXTRA'];
+  if (rawExtra is Map) {
+    return rawExtra.map((key, value) => MapEntry(key.toString(), value));
+  }
+  if (rawExtra is String) {
+    try {
+      final decoded = jsonDecode(rawExtra);
+      if (decoded is Map) {
+        return decoded.map((key, value) => MapEntry(key.toString(), value));
+      }
+    } catch (_) {}
+  }
+
+  return message.map((key, value) => MapEntry(key.toString(), value));
 }
 
 Dio? _sharedDio;
@@ -71,10 +377,10 @@ Dio? _sharedDio;
 Dio getSharedDio() {
   if (_sharedDio == null) {
     final dio = Dio(BaseOptions(
-      baseUrl:
-          kDebugMode ? ApiConstants.baseUrl : 'https://sylu.zhouwu.ccwu.cc/api',
+      baseUrl: ApiConstants.baseUrl,
       connectTimeout: ApiConstants.connectTimeout,
       receiveTimeout: ApiConstants.receiveTimeout,
+      sendTimeout: ApiConstants.sendTimeout,
     ));
 
     if (kDebugMode) {
@@ -87,7 +393,8 @@ Dio getSharedDio() {
 
     dio.interceptors.add(InterceptorsWrapper(
       onError: (error, handler) {
-        debugPrint('DioError [${error.response?.statusCode}]: ${error.requestOptions.uri}');
+        debugPrint(
+            'DioError [${error.response?.statusCode}]: ${error.requestOptions.uri}');
         handler.next(error);
       },
     ));
@@ -115,6 +422,7 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => TeacherProvider(dio)),
         ChangeNotifierProvider(create: (_) => MajorProvider(dio)),
         ChangeNotifierProvider(create: (_) => CanteenProvider(dio)),
+        ChangeNotifierProvider(create: (_) => SocialProvider(dio)),
       ],
       child: const _WidgetDeepLinkHandler(
         child: _AppContent(),
@@ -144,14 +452,19 @@ class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) => _checkDeepLink());
-    
+
     // 监听原生端主动推送的深度链接（瞬间响应，避免打断动画）
     _channel.setMethodCallHandler((call) async {
       if (call.method == 'onDeepLink') {
         final uri = call.arguments as String?;
-        if ((uri == 'widget_timetable' || uri == 'campus://timetable') && mounted) {
+        if ((uri == 'widget_timetable' || uri == 'campus://timetable') &&
+            mounted) {
           appNavigatorKey.currentState?.popUntil((route) => route.isFirst);
           widgetTabSwitch.value++;
+        } else if (uri != null && uri.startsWith('widget_exam') && mounted) {
+          appNavigatorKey.currentState?.popUntil((route) => route.isFirst);
+          appNavigatorKey.currentState?.push(
+              MaterialPageRoute(builder: (_) => const ExamScheduleScreen()));
         }
       }
     });
@@ -173,10 +486,15 @@ class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
   Future<void> _checkDeepLink() async {
     try {
       final uri = await _channel.invokeMethod<String>('getPendingDeepLink');
-      if ((uri == 'widget_timetable' || uri == 'campus://timetable') && mounted) {
+      if ((uri == 'widget_timetable' || uri == 'campus://timetable') &&
+          mounted) {
         appNavigatorKey.currentState?.popUntil((route) => route.isFirst);
         // 切换到底部导航的课程表 tab，不 push 新页面
         widgetTabSwitch.value++;
+      } else if (uri != null && uri.startsWith('widget_exam') && mounted) {
+        appNavigatorKey.currentState?.popUntil((route) => route.isFirst);
+        appNavigatorKey.currentState?.push(
+            MaterialPageRoute(builder: (_) => const ExamScheduleScreen()));
       }
     } catch (e) {
       debugPrint('深度链接检查失败: $e');
@@ -235,8 +553,8 @@ class _AppContent extends StatelessWidget {
   }
 }
 
-final GlobalKey<_BackgroundWrapperState> backgroundWrapperKey =
-    GlobalKey<_BackgroundWrapperState>();
+final GlobalKey<BackgroundWrapperState> backgroundWrapperKey =
+    GlobalKey<BackgroundWrapperState>();
 
 class GlobalBackgroundWrapper extends StatefulWidget {
   final Widget child;
@@ -247,17 +565,19 @@ class GlobalBackgroundWrapper extends StatefulWidget {
   });
 
   @override
-  State<GlobalBackgroundWrapper> createState() => _BackgroundWrapperState();
+  State<GlobalBackgroundWrapper> createState() => BackgroundWrapperState();
 }
 
-class _BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
+class BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
   String _currentScreen = 'shuitie';
 
   void updateScreen(String screen) {
     if (_currentScreen != screen) {
-      setState(() {
-        _currentScreen = screen;
-      });
+      if (mounted) {
+        setState(() {
+          _currentScreen = screen;
+        });
+      }
     }
   }
 
@@ -288,86 +608,102 @@ class _BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
   }
 
   Widget _buildBackgroundImageLayer(ThemeProvider themeProvider, bool isDark) {
-    final bgPath = themeProvider.backgroundImage!;
-    final isAsset = !bgPath.startsWith('http') && !bgPath.startsWith('/');
-    final resolvedPath = isAsset ? 'assets/images/$bgPath' : bgPath;
+    String? bgPath = themeProvider.getBackgroundImageFor(context);
+    if (bgPath == null) return _buildDefaultBackground(isDark);
+    final isAsset = ThemeProvider.isBundledAssetBackground(bgPath);
+    final isLocalFile = ThemeProvider.isLocalFileBackground(bgPath);
+    final resolvedPath =
+        isAsset ? ThemeProvider.resolveBundledAssetPath(bgPath) : bgPath;
 
+    const alignment = Alignment.center;
+    final fillScreen = themeProvider.getBackgroundFillScreenFor(context);
+
+    final imageProvider = isAsset
+        ? AssetImage(resolvedPath) as ImageProvider
+        : isLocalFile
+            ? FileImage(File(bgPath)) as ImageProvider
+            : NetworkImage(bgPath) as ImageProvider;
     return Stack(
       fit: StackFit.expand,
       children: [
-        // Background image
-        isAsset
-            ? Image.asset(
-                resolvedPath,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => _buildDefaultBackground(isDark),
-              )
-            : bgPath.startsWith('/')
-                ? Image.file(
-                    File(bgPath),
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) =>
-                        _buildDefaultBackground(isDark),
-                  )
-                : Image.network(
-                    bgPath,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) =>
-                        _buildDefaultBackground(isDark),
-                    loadingBuilder: (_, child, loadingProgress) {
-                      if (loadingProgress == null) return child;
-                      return _buildDefaultBackground(isDark);
-                    },
-                  ),
+        _buildBackgroundImage(
+          imageProvider: imageProvider,
+          alignment: alignment,
+          isDark: isDark,
+          fillScreen: fillScreen,
+        ),
         // Color overlay (fixed — componentOpacity controls GlassContainer, not background)
         Container(
           color: isDark
               ? Colors.black.withValues(alpha: 0.35)
               : Colors.white.withValues(alpha: 0.25),
         ),
-        // Blur overlay
-        if (themeProvider.backgroundBlur > 0 && themeProvider.liquidGlass)
-          BackdropFilter(
-            filter: ImageFilter.blur(
-              sigmaX: themeProvider.backgroundBlur,
-              sigmaY: themeProvider.backgroundBlur,
+      ],
+    );
+  }
+
+  Widget _buildBackgroundImage({
+    required ImageProvider imageProvider,
+    required Alignment alignment,
+    required bool isDark,
+    required bool fillScreen,
+  }) {
+    if (fillScreen) {
+      return Image(
+        image: imageProvider,
+        fit: BoxFit.cover,
+        alignment: alignment,
+        gaplessPlayback: true,
+        errorBuilder: (_, __, ___) => Container(
+          color: isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
+        ),
+      );
+    }
+
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        Transform.scale(
+          scale: 1.06,
+          child: ImageFiltered(
+            imageFilter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+            child: Image(
+              image: imageProvider,
+              fit: BoxFit.cover,
+              alignment: alignment,
+              gaplessPlayback: true,
+              errorBuilder: (_, __, ___) => Container(
+                color:
+                    isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
+              ),
             ),
-            child: Container(color: Colors.transparent),
           ),
+        ),
+        Image(
+          image: imageProvider,
+          fit: BoxFit.contain,
+          alignment: alignment,
+          gaplessPlayback: true,
+          errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+        ),
       ],
     );
   }
 
   Widget _buildDefaultBackground(bool isDark) {
+    final isWide =
+        MediaQuery.of(context).size.width > MediaQuery.of(context).size.height;
+    final defaultImage = isWide
+        ? 'assets/images/tablet_default_landscape.png'
+        : 'assets/images/morenbeijing.jpeg';
     return Stack(
       fit: StackFit.expand,
       children: [
-        Image(
-          image: ResizeImage(
-            const AssetImage('assets/images/morenbeijing.jpeg'),
-            width: 1080,
-          ),
-          fit: BoxFit.cover,
-          gaplessPlayback: true,
-          errorBuilder: (_, __, ___) => Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: isDark
-                    ? [
-                        const Color(0xFF1A1A2E),
-                        const Color(0xFF16213E),
-                        const Color(0xFF0F3460)
-                      ]
-                    : [
-                        const Color(0xFF667EEA),
-                        const Color(0xFF764BA2),
-                        const Color(0xFFF093FB)
-                      ],
-              ),
-            ),
-          ),
+        _buildBackgroundImage(
+          imageProvider: AssetImage(defaultImage),
+          alignment: Alignment.center,
+          isDark: isDark,
+          fillScreen: false,
         ),
         Container(
           color: isDark
@@ -402,6 +738,10 @@ class _AuthWrapperState extends State<AuthWrapper> {
         if (authProvider.isLoggedIn && !_jpushSetup) {
           _jpushSetup = true;
           setupJPush(authProvider);
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _requestNotificationPermissionIfNeeded();
+            _processPendingOpenNotification();
+          });
         }
 
         final tp = context.watch<ThemeProvider>();

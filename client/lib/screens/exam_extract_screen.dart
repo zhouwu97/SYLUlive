@@ -46,7 +46,7 @@ class _ExamExtractScreenState extends State<ExamExtractScreen> {
       final dio = getSharedDio();
       final resp = await dio.get('/tutorial/exam_extract');
       if (resp.statusCode == 200) {
-        setState(() {
+        if (mounted) setState(() {
           _tutorialTitle = resp.data['title'];
           _tutorialContent = resp.data['content'];
           _loading = false;
@@ -54,11 +54,11 @@ class _ExamExtractScreenState extends State<ExamExtractScreen> {
         return;
       }
     } catch (_) {}
-    setState(() => _loading = false);
+    if (mounted) setState(() => _loading = false);
   }
 
   Future<void> _shareFiles() async {
-    setState(() => _copyingProject = true);
+    if (mounted) setState(() => _copyingProject = true);
     try {
       final tempDir = await getTemporaryDirectory();
       
@@ -84,7 +84,7 @@ class _ExamExtractScreenState extends State<ExamExtractScreen> {
         SnackBar(content: Text('分享失败: $e'), backgroundColor: Colors.red),
       );
     }
-    setState(() => _copyingProject = false);
+    if (mounted) setState(() => _copyingProject = false);
   }
 
   Future<void> _importJson() async {
@@ -411,7 +411,7 @@ class _TutorialEditorState extends State<_TutorialEditor> {
   }
 
   Future<void> _save() async {
-    setState(() => _saving = true);
+    if (mounted) setState(() => _saving = true);
     try {
       final dio = getSharedDio();
       await dio.put('/tutorial/exam_extract',
@@ -427,7 +427,7 @@ class _TutorialEditorState extends State<_TutorialEditor> {
             SnackBar(content: Text('保存失败: $e'), backgroundColor: Colors.red));
       }
     }
-    setState(() => _saving = false);
+    if (mounted) setState(() => _saving = false);
   }
 
   @override

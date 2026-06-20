@@ -9,10 +9,11 @@ import (
 	"sync"
 	"time"
 
+	"shenliyuan/internal/models"
+
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
-	"shenliyuan/internal/models"
 )
 
 // PostHandler 帖子处理器
@@ -24,7 +25,6 @@ type PostHandler struct {
 func NewPostHandler(db *gorm.DB) *PostHandler {
 	return &PostHandler{db: db}
 }
-
 
 // Snapshot 帖子快照
 type Snapshot struct {
@@ -43,7 +43,7 @@ func (h *PostHandler) GetList(c *gin.Context) {
 	pageStr := c.DefaultQuery("page", "1")
 	limitStr := c.DefaultQuery("limit", "20")
 	sinceStr := c.Query("since")
-	
+
 	scene := c.Query("scene") // refresh 或 loadmore
 	sessionID := c.Query("session_id")
 	offsetStr := c.Query("offset")
@@ -57,7 +57,7 @@ func (h *PostHandler) GetList(c *gin.Context) {
 	if limit < 1 || limit > 50 {
 		limit = 20
 	}
-	
+
 	// 如果是常规分页（没有传入scene或者只是普通请求），默认使用 offset
 	if scene == "" && offset == 0 {
 		offset = (page - 1) * limit
@@ -78,11 +78,13 @@ func (h *PostHandler) GetList(c *gin.Context) {
 						end = len(snapshot.PostIDs)
 					}
 					targetIDs := snapshot.PostIDs[offset:end]
-					
+
 					if len(targetIDs) > 0 {
 						var rawPosts []models.Post
-						h.db.Model(&models.Post{}).Where("id IN ?", targetIDs).Preload("Author").Preload("Images").Preload("Images.File").Find(&rawPosts)
-						
+						if err := h.db.Model(&models.Post{}).Where("id IN ?", targetIDs).Preload("Author").Preload("Images").Preload("Images.File").Find(&rawPosts).Error; err != nil {
+							log.Printf("[DB_ERROR] GetList hot-feed Find failed: %v", err)
+						}
+
 						// 重组排序
 						postMap := make(map[uint]models.Post)
 						for _, p := range rawPosts {
@@ -94,14 +96,17 @@ func (h *PostHandler) GetList(c *gin.Context) {
 							}
 						}
 					}
-					
+
 					// 直接返回，不再走正常查询
 					h.fillLikes(c, posts)
+					if posts == nil {
+						posts = []models.Post{}
+					}
 					c.JSON(http.StatusOK, gin.H{
-						"posts": posts,
-						"total": len(snapshot.PostIDs),
-						"page":  page,
-						"limit": limit,
+						"posts":      posts,
+						"total":      len(snapshot.PostIDs),
+						"page":       page,
+						"limit":      limit,
 						"session_id": sessionID,
 					})
 					return
@@ -165,7 +170,7 @@ func (h *PostHandler) GetList(c *gin.Context) {
 	if scene == "refresh" && (sort == "all" || sort == "hot") && searchQuery == "" && sinceStr == "" {
 		isSnapshotting = true
 		if sort == "all" {
-			query = query.Order("(like_count*5 + reply_count*10 + view_count*0.2) / (((strftime('%s','now') - strftime('%s',created_at))/3600.0 + 2) * ((strftime('%s','now') - strftime('%s',created_at))/3600.0 + 2)) DESC")
+			query = query.Order("(10.0 + like_count*5 + reply_count*10 + view_count*0.2) / POWER((EXTRACT(EPOCH FROM (NOW() - created_at))/3600.0 + 2), 2) DESC")
 		} else if sort == "hot" {
 			query = query.Order("(view_count*1 + like_count*20 + reply_count*50) DESC")
 		}
@@ -197,18 +202,21 @@ func (h *PostHandler) GetList(c *gin.Context) {
 			snapshotQuery = snapshotQuery.Where("post_type = ?", postType)
 		}
 		if sort == "all" {
-			snapshotQuery = snapshotQuery.Order("(like_count*5 + reply_count*10 + view_count*0.2) / (((strftime('%s','now') - strftime('%s',created_at))/3600.0 + 2) * ((strftime('%s','now') - strftime('%s',created_at))/3600.0 + 2)) DESC")
+			snapshotQuery = snapshotQuery.Order("(10.0 + like_count*5 + reply_count*10 + view_count*0.2) / POWER((EXTRACT(EPOCH FROM (NOW() - created_at))/3600.0 + 2), 2) DESC")
 		} else if sort == "hot" {
 			snapshotQuery = snapshotQuery.Order("(view_count*1 + like_count*20 + reply_count*50) DESC")
 		}
-		snapshotQuery.Limit(500).Pluck("id", &allIDs)
+		if sort == "hot" {
+			snapshotQuery = snapshotQuery.Limit(500)
+		}
+		snapshotQuery.Pluck("id", &allIDs)
 
 		sessionID = fmt.Sprintf("%d", time.Now().UnixNano())
 		ActiveSnapshots.Store(sessionID, Snapshot{
 			PostIDs:   allIDs,
 			ExpiredAt: time.Now().Add(10 * time.Minute),
 		})
-		
+
 		// 自动销毁
 		time.AfterFunc(10*time.Minute, func() {
 			ActiveSnapshots.Delete(sessionID)
@@ -222,8 +230,10 @@ func (h *PostHandler) GetList(c *gin.Context) {
 		if len(allIDs) > 0 {
 			targetIDs := allIDs[:end]
 			var rawPosts []models.Post
-			h.db.Model(&models.Post{}).Where("id IN ?", targetIDs).Preload("Author").Preload("Images").Preload("Images.File").Find(&rawPosts)
-			
+			if err := h.db.Model(&models.Post{}).Where("id IN ?", targetIDs).Preload("Author").Preload("Images").Preload("Images.File").Find(&rawPosts).Error; err != nil {
+				log.Printf("[DB_ERROR] GetList common feed Find failed: %v", err)
+			}
+
 			postMap := make(map[uint]models.Post)
 			for _, p := range rawPosts {
 				postMap[p.ID] = p
@@ -236,16 +246,22 @@ func (h *PostHandler) GetList(c *gin.Context) {
 		}
 	} else {
 		// 普通查询分页
-		query.Offset(offset).Limit(limit).Find(&posts)
+		if err := query.Offset(offset).Limit(limit).Find(&posts).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "获取帖子列表失败"})
+			return
+		}
 	}
 
 	h.fillLikes(c, posts)
+	if posts == nil {
+		posts = []models.Post{}
+	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"posts": posts,
-		"total": total,
-		"page":  page,
-		"limit": limit,
+		"posts":      posts,
+		"total":      total,
+		"page":       page,
+		"limit":      limit,
 		"session_id": sessionID,
 	})
 }
@@ -380,7 +396,9 @@ func (h *PostHandler) Create(c *gin.Context) {
 		}
 	}
 
-	h.db.Preload("Author").Preload("Images").Preload("Images.File").First(&post, post.ID)
+	if err := h.db.Preload("Author").Preload("Images").Preload("Images.File").First(&post, post.ID).Error; err != nil {
+		log.Printf("[DB_WARN] Failed to re-fetch post with preloads after create: %v", err)
+	}
 
 	// 集市发帖通知所有用户
 	if post.BoardID == models.BoardMarket {
@@ -503,7 +521,9 @@ func (h *PostHandler) Update(c *gin.Context) {
 		}
 	}
 
-	h.db.Preload("Author").Preload("Images").Preload("Images.File").First(&post, id)
+	if err := h.db.Preload("Author").Preload("Images").Preload("Images.File").First(&post, id).Error; err != nil {
+		log.Printf("[DB_WARN] Failed to re-fetch post with preloads after update: %v", err)
+	}
 	c.JSON(http.StatusOK, post)
 }
 
@@ -530,18 +550,25 @@ func (h *PostHandler) Delete(c *gin.Context) {
 		return
 	}
 
-	h.db.Model(&post).Update("status", models.PostStatusDeleted)
+	if err := h.db.Model(&post).Update("status", models.PostStatusDeleted).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
+		return
+	}
 
 	// 记录管理员操作 & 增加管理员经验
 	if role == "admin" || role == "super_admin" {
 		var u models.User
 		h.db.Select("nickname").First(&u, userID)
-		h.db.Create(&models.AdminLog{
+		if err := h.db.Create(&models.AdminLog{
 			AdminID: userID.(uint), AdminName: u.Nickname,
 			Action: "删除帖子", Target: post.Title,
-		})
+		}).Error; err != nil {
+			log.Printf("[DB_WARN] Failed to write admin log: %v", err)
+		}
 		// 管理员每使用一次管理权限，经验+1
-		h.db.Model(&models.User{}).Where("id = ?", userID).UpdateColumn("admin_exp", gorm.Expr("COALESCE(admin_exp, 0) + 1"))
+		if err := h.db.Model(&models.User{}).Where("id = ?", userID).UpdateColumn("admin_exp", gorm.Expr("COALESCE(admin_exp, 0) + 1")).Error; err != nil {
+			log.Printf("[DB_WARN] Failed to update admin_exp: %v", err)
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})

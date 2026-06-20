@@ -47,6 +47,10 @@ Future<void> main() async {
   await Hive.initFlutter();
   await CourseReminderService.instance.initialize();
   await _initializePrivateMessageNotifications();
+
+  // 提前注册极光推送事件（冷启动点击通知跳转必须在 runApp 前就绪）
+  _setupJPushEarly();
+
   runApp(const MyApp());
 }
 
@@ -56,7 +60,9 @@ final FlutterLocalNotificationsPlugin _privateMessageNotifications =
     FlutterLocalNotificationsPlugin();
 bool _privateMessageNotificationsReady = false;
 
-Future<void> setupJPush(AuthProvider authProvider) async {
+/// 冷启动时就注册极光事件处理（app 被杀死时点击通知能跳转）
+void _setupJPushEarly() {
+  if (ApiConstants.jpushAppKey.isEmpty) return;
   jpush.setup(
     appKey: ApiConstants.jpushAppKey,
     channel: 'developer-default',
@@ -66,18 +72,12 @@ Future<void> setupJPush(AuthProvider authProvider) async {
   jpush.addEventHandler(
     onReceiveNotification: (Map<String, dynamic> message) async {
       debugPrint('🔔 收到通知: $message');
-      if (await _handlePrivateMessageNotification(message, opened: false)) {
-        return;
-      }
+      await _handlePrivateMessageNotification(message, opened: false);
     },
     onOpenNotification: (Map<String, dynamic> message) async {
-      debugPrint('👆 用户点击通知: $message');
-      if (await _handleUpdateNotification(message)) {
-        return;
-      }
-      if (await _handlePrivateMessageNotification(message, opened: true)) {
-        return;
-      }
+      debugPrint('👆 点击通知原始数据: $message');
+      if (await _handleUpdateNotification(message)) return;
+      if (await _handlePrivateMessageNotification(message, opened: true)) return;
       if (appNavigatorKey.currentState != null) {
         appNavigatorKey.currentState!.popUntil((route) => route.isFirst);
         appNavigatorKey.currentState!.push(
@@ -86,6 +86,10 @@ Future<void> setupJPush(AuthProvider authProvider) async {
       }
     },
   );
+}
+
+Future<void> setupJPush(AuthProvider authProvider) async {
+  // 极光 SDK 已在 _setupJPushEarly 初始化，这里只做 auth 相关操作
   final rid = await jpush.getRegistrationID();
   debugPrint('🔥 JPush RegistrationID: $rid');
 
@@ -184,6 +188,7 @@ Future<bool> _handlePrivateMessageNotification(
   required bool opened,
 }) async {
   final extras = _extractJPushExtras(message);
+  debugPrint('📨 解析后extras: $extras');
   if (extras['type']?.toString() != 'private_message') {
     return false;
   }
@@ -300,20 +305,43 @@ Future<bool> _handleUpdateNotification(Map<String, dynamic> message) async {
 }
 
 Map<String, dynamic> _extractJPushExtras(Map<String, dynamic> message) {
+  // 尝试从 extras 中提取（onReceiveNotification 格式）
   final extras = message['extras'];
   if (extras is Map) {
-    // 极光会把自定义 extras 嵌套在 cn.jpush.android.EXTRA 里
     final inner = extras['cn.jpush.android.EXTRA'];
     if (inner is Map) {
       return inner.map((key, value) => MapEntry(key.toString(), value));
     }
+    if (inner is String) {
+      try {
+        final decoded = jsonDecode(inner);
+        if (decoded is Map) {
+          return decoded.map((key, value) => MapEntry(key.toString(), value));
+        }
+      } catch (_) {}
+    }
     return extras.map((key, value) => MapEntry(key.toString(), value));
   }
 
+  // 尝试从顶层 android.extras 提取
   final android = message['android'];
   if (android is Map && android['extras'] is Map) {
     final androidExtras = android['extras'] as Map;
     return androidExtras.map((key, value) => MapEntry(key.toString(), value));
+  }
+
+  // 尝试从顶层 cn.jpush.android.EXTRA 提取（onOpenNotification 格式）
+  final rawExtra = message['cn.jpush.android.EXTRA'];
+  if (rawExtra is Map) {
+    return rawExtra.map((key, value) => MapEntry(key.toString(), value));
+  }
+  if (rawExtra is String) {
+    try {
+      final decoded = jsonDecode(rawExtra);
+      if (decoded is Map) {
+        return decoded.map((key, value) => MapEntry(key.toString(), value));
+      }
+    } catch (_) {}
   }
 
   return message.map((key, value) => MapEntry(key.toString(), value));

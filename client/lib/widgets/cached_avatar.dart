@@ -1,5 +1,37 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
+
+class AvatarCache {
+  AvatarCache._();
+
+  static final CacheManager manager = CacheManager(
+    Config(
+      'avatar_cache',
+      stalePeriod: const Duration(days: 30),
+      maxNrOfCacheObjects: 1000,
+    ),
+  );
+
+  static final Map<String, CachedNetworkImageProvider> _providers = {};
+
+  static CachedNetworkImageProvider provider(
+    String url, {
+    required double radius,
+  }) {
+    final size = (radius * 2 * 3).round().clamp(24, 512);
+    final key = '$url@$size';
+    return _providers.putIfAbsent(
+      key,
+      () => CachedNetworkImageProvider(
+        url,
+        cacheManager: manager,
+        maxWidth: size,
+        maxHeight: size,
+      ),
+    );
+  }
+}
 
 /// 统一的头像组件：自动缓存 + 内存尺寸限制，弱网秒开
 class CachedAvatar extends StatefulWidget {
@@ -31,19 +63,25 @@ class _CachedAvatarState extends State<CachedAvatar> {
   @override
   void didUpdateWidget(covariant CachedAvatar oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.imageUrl != widget.imageUrl) {
+    if (oldWidget.imageUrl != widget.imageUrl ||
+        oldWidget.radius != widget.radius) {
+      _providerUrl = null;
       _prepareImage();
     }
   }
 
   void _prepareImage() {
     final url = widget.imageUrl;
-    if (url == null || url.isEmpty || url == _providerUrl) return;
+    if (url == null || url.isEmpty) {
+      _providerUrl = null;
+      _imageProvider = null;
+      return;
+    }
+    if (url == _providerUrl && _imageProvider != null) return;
     _providerUrl = url;
-    _imageProvider = CachedNetworkImageProvider(
+    _imageProvider = AvatarCache.provider(
       url,
-      maxWidth: (widget.radius * 2 * 3).toInt(),
-      maxHeight: (widget.radius * 2 * 3).toInt(),
+      radius: widget.radius,
     );
     precacheImage(_imageProvider!, context).ignore();
   }
@@ -54,20 +92,7 @@ class _CachedAvatarState extends State<CachedAvatar> {
     final bgColor = isDark ? Colors.white12 : Colors.grey[200]!;
 
     if (widget.imageUrl == null || widget.imageUrl!.isEmpty) {
-      return CircleAvatar(
-        radius: widget.radius,
-        backgroundColor: bgColor,
-        child: widget.fallbackText != null && widget.fallbackText!.isNotEmpty
-            ? Text(
-                widget.fallbackText![0].toUpperCase(),
-                style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  fontSize: widget.radius * 0.6,
-                  color: isDark ? Colors.white60 : Colors.grey[600],
-                ),
-              )
-            : null,
-      );
+      return _buildFallbackAvatar(isDark, bgColor);
     }
 
     return CircleAvatar(
@@ -87,6 +112,23 @@ class _CachedAvatarState extends State<CachedAvatar> {
           },
         ),
       ),
+    );
+  }
+
+  Widget _buildFallbackAvatar(bool isDark, Color bgColor) {
+    return CircleAvatar(
+      radius: widget.radius,
+      backgroundColor: bgColor,
+      child: widget.fallbackText != null && widget.fallbackText!.isNotEmpty
+          ? Text(
+              widget.fallbackText![0].toUpperCase(),
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                fontSize: widget.radius * 0.6,
+                color: isDark ? Colors.white60 : Colors.grey[600],
+              ),
+            )
+          : const Icon(Icons.person, size: 14, color: Colors.grey),
     );
   }
 

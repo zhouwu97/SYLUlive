@@ -210,6 +210,80 @@ void main() {
     expect(provider.messages.last.id, 39);
   });
 
+  test('loadMessages can restore cached messages before refreshing latest',
+      () async {
+    final dio = Dio();
+    final seenConversationIds = <String>[];
+    final seenAfterIds = <dynamic>[];
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          if (options.method == 'GET' &&
+              options.path.startsWith('/messages/conversations/')) {
+            final conversationId = options.path.split('/').last;
+            final afterId = options.queryParameters['after_id'];
+            seenConversationIds.add(conversationId);
+            seenAfterIds.add(afterId);
+            handler.resolve(
+              Response(
+                requestOptions: options,
+                statusCode: 200,
+                data: conversationId == '42' && afterId == 1
+                    ? [
+                        {
+                          'id': 2,
+                          'conversation_id': 42,
+                          'sender_id': 8,
+                          'content': 'cached refresh',
+                          'created_at': '2026-06-14T08:15:00Z',
+                        },
+                      ]
+                    : [
+                        {
+                          'id': conversationId == '42' ? 1 : 100,
+                          'conversation_id': int.parse(conversationId),
+                          'sender_id': 3,
+                          'content': 'initial $conversationId',
+                          'created_at': '2026-06-14T08:14:00Z',
+                        },
+                      ],
+              ),
+            );
+            return;
+          }
+          if (options.method == 'POST' &&
+              options.path.startsWith('/messages/conversations/') &&
+              options.path.endsWith('/read')) {
+            handler.resolve(
+              Response(requestOptions: options, statusCode: 200),
+            );
+            return;
+          }
+          handler.reject(
+            DioException(
+              requestOptions: options,
+              message: 'Unexpected request: ${options.method} ${options.path}',
+            ),
+          );
+        },
+      ),
+    );
+
+    final provider = MessageProvider(dio);
+    await provider.loadMessages(42);
+    await provider.loadMessages(7);
+
+    final cachedLoad = provider.loadMessages(42, preferCache: true);
+    expect(provider.currentConversationId, 42);
+    expect(provider.messages.map((message) => message.id), [1]);
+
+    await cachedLoad;
+
+    expect(seenConversationIds, ['42', '7', '42']);
+    expect(seenAfterIds, [null, null, 1]);
+    expect(provider.messages.map((message) => message.id), [1, 2]);
+  });
+
   test('stores and clears message drafts by target user', () {
     final provider = MessageProvider(Dio());
 

@@ -69,24 +69,6 @@ func (h *UploadHandler) Upload(c *gin.Context) {
 	}
 	hashStr := hex.EncodeToString(hash.Sum(nil))
 
-	// 检查是否已存在相同哈希的文件
-	var existingFile models.File
-	result := h.db.Where("hash = ?", hashStr).First(&existingFile)
-
-	if result.Error == nil {
-		// 文件已存在，增加引用计数
-		if err := h.db.Model(&existingFile).Update("ref_count", gorm.Expr("ref_count + 1")).Error; err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
-			return
-		}
-		c.JSON(http.StatusOK, gin.H{
-			"file_id": existingFile.ID,
-			"url":     existingFile.Path,
-			"hash":    hashStr,
-		})
-		return
-	}
-
 	// 创建上传目录
 	dir1 := filepath.Join(h.uploadDir, hashStr[:2])
 	if err := os.MkdirAll(dir1, 0755); err != nil {
@@ -175,22 +157,6 @@ func (h *UploadHandler) UploadMultiple(c *gin.Context) {
 		io.Copy(hash, src)
 		src.Close()
 		hashStr := hex.EncodeToString(hash.Sum(nil))
-
-		// 检查是否已存在
-		var existingFile models.File
-		result := h.db.Where("hash = ?", hashStr).First(&existingFile)
-		if result.Error == nil {
-			if err := h.db.Model(&existingFile).Update("ref_count", gorm.Expr("ref_count + 1")).Error; err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
-				return
-			}
-			results = append(results, gin.H{
-				"file_id": existingFile.ID,
-				"url":     existingFile.Path,
-				"hash":    hashStr,
-			})
-			continue
-		}
 
 		// 创建上传目录
 		dir1 := filepath.Join(h.uploadDir, hashStr[:2])

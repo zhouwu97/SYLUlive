@@ -116,7 +116,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
       final keyboardOpened = keyboardInset > _lastKeyboardInset;
       _lastKeyboardInset = keyboardInset;
       if (keyboardOpened) {
-        _scrollToBottom();
+        _scrollToBottom(jump: true);
       }
     });
   }
@@ -255,7 +255,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     }
 
     return Scaffold(
-      resizeToAvoidBottomInset: false,
+      resizeToAvoidBottomInset: true,
       backgroundColor: Colors.transparent,
       extendBodyBehindAppBar: true,
       appBar: AppBar(

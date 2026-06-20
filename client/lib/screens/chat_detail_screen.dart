@@ -244,7 +244,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     final body = _buildConversationBody(provider, currentUserId, currentUser);
     if (widget.embedded) {
       return Material(
-        color: Theme.of(context).colorScheme.surface,
+        color: Colors.transparent,
         child: Column(
           children: [
             _buildEmbeddedHeader(),
@@ -412,6 +412,21 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
 
   Widget _buildMessageBackdrop(Widget child) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    if (widget.embedded) {
+      return Stack(
+        children: [
+          Positioned.fill(
+            child: ColoredBox(
+              color: isDark
+                  ? Colors.black.withValues(alpha: 0.18)
+                  : Colors.white.withValues(alpha: 0.18),
+            ),
+          ),
+          child,
+        ],
+      );
+    }
+
     return Stack(
       children: [
         Positioned.fill(child: _buildChatBackground()),

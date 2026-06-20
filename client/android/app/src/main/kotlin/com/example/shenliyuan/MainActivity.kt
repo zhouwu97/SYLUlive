@@ -140,16 +140,16 @@ class MainActivity : FlutterActivity() {
         // ── 唤起 App MethodChannel ──
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
-            "shenliyuan/app_control"
+            "shenliyuan/foreground"
         ).setMethodCallHandler { call, result ->
             if (call.method == "bringToForeground") {
-                val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
-                if (launchIntent != null) {
-                    launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                    startActivity(launchIntent)
+                try {
+                    val intent = Intent(this, MainActivity::class.java)
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                    startActivity(intent)
                     result.success(true)
-                } else {
-                    result.error("UNAVAILABLE", "Launch intent not found", null)
+                } catch (e: Exception) {
+                    result.error("FAILED", e.message, null)
                 }
             } else {
                 result.notImplemented()

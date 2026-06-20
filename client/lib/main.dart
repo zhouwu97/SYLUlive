@@ -48,9 +48,6 @@ Future<void> main() async {
   await CourseReminderService.instance.initialize();
   await _initializePrivateMessageNotifications();
 
-  // 提前注册极光推送事件（冷启动点击通知跳转必须在 runApp 前就绪）
-  _setupJPushEarly();
-
   runApp(const MyApp());
 }
 
@@ -59,10 +56,10 @@ var jpush = JPush.newJPush();
 final FlutterLocalNotificationsPlugin _privateMessageNotifications =
     FlutterLocalNotificationsPlugin();
 bool _privateMessageNotificationsReady = false;
+/// 冷启动时通知数据临时存放（navigator 未就绪前）
+Map<String, dynamic>? _pendingOpenNotification;
 
-/// 冷启动时就注册极光事件处理（app 被杀死时点击通知能跳转）
-void _setupJPushEarly() {
-  if (ApiConstants.jpushAppKey.isEmpty) return;
+Future<void> setupJPush(AuthProvider authProvider) async {
   jpush.setup(
     appKey: ApiConstants.jpushAppKey,
     channel: 'developer-default',
@@ -86,10 +83,6 @@ void _setupJPushEarly() {
       }
     },
   );
-}
-
-Future<void> setupJPush(AuthProvider authProvider) async {
-  // 极光 SDK 已在 _setupJPushEarly 初始化，这里只做 auth 相关操作
   final rid = await jpush.getRegistrationID();
   debugPrint('🔥 JPush RegistrationID: $rid');
 
@@ -219,33 +212,52 @@ Future<bool> _handlePrivateMessageNotification(
 }
 
 void _openPrivateMessage(int conversationId, int senderId, String senderName) {
-  int _retry = 0;
-  void navigate() {
-    final navigator = appNavigatorKey.currentState;
-    if (navigator == null && _retry < 50) {
-      _retry++;
-      WidgetsBinding.instance.addPostFrameCallback((_) => navigate());
-      return;
-    }
-    if (navigator == null) return;
-    final displayName =
-        senderName.trim().isEmpty ? '用户$senderId' : senderName.trim();
-    navigator.popUntil((route) => route.isFirst);
-    navigator.push(
-      MaterialPageRoute(
-        builder: (_) => ChatDetailScreen(
-          conversationId: conversationId,
-          targetUser: User(
-            id: senderId,
-            studentId: '',
-            nickname: displayName,
-            createdAt: DateTime.now(),
-          ),
+  final navigator = appNavigatorKey.currentState;
+  if (navigator == null) {
+    // 冷启动时 navigator 未就绪，暂存数据等首帧后处理
+    _pendingOpenNotification = {
+      'conversation_id': conversationId,
+      'sender_id': senderId,
+      'sender_name': senderName,
+    };
+    debugPrint('📌 冷启动缓冲通知跳转: conv=$conversationId sender=$senderId');
+    return;
+  }
+  _navigateToPrivateMessage(conversationId, senderId, senderName);
+}
+
+void _navigateToPrivateMessage(int conversationId, int senderId, String senderName) {
+  final navigator = appNavigatorKey.currentState;
+  if (navigator == null) return;
+  final displayName =
+      senderName.trim().isEmpty ? '用户$senderId' : senderName.trim();
+  navigator.popUntil((route) => route.isFirst);
+  navigator.push(
+    MaterialPageRoute(
+      builder: (_) => ChatDetailScreen(
+        conversationId: conversationId,
+        targetUser: User(
+          id: senderId,
+          studentId: '',
+          nickname: displayName,
+          createdAt: DateTime.now(),
         ),
       ),
-    );
+    ),
+  );
+}
+
+void _processPendingOpenNotification() {
+  final data = _pendingOpenNotification;
+  if (data == null) return;
+  _pendingOpenNotification = null;
+  final conversationId = _intFromExtra(data['conversation_id']);
+  final senderId = _intFromExtra(data['sender_id']);
+  final senderName = data['sender_name']?.toString() ?? '';
+  if (conversationId != null && senderId != null) {
+    debugPrint('✅ 处理缓冲通知: conv=$conversationId sender=$senderId');
+    _navigateToPrivateMessage(conversationId, senderId, senderName);
   }
-  navigate();
 }
 
 int? _intFromExtra(dynamic value) {
@@ -715,6 +727,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
           setupJPush(authProvider);
           WidgetsBinding.instance.addPostFrameCallback((_) {
             _requestNotificationPermissionIfNeeded();
+            _processPendingOpenNotification();
           });
         }
 

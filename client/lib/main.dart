@@ -576,15 +576,6 @@ class BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
               ? Colors.black.withValues(alpha: 0.35)
               : Colors.white.withValues(alpha: 0.25),
         ),
-        // Blur overlay
-        if (themeProvider.backgroundBlur > 0 && themeProvider.liquidGlass)
-          BackdropFilter(
-            filter: ImageFilter.blur(
-              sigmaX: themeProvider.backgroundBlur,
-              sigmaY: themeProvider.backgroundBlur,
-            ),
-            child: Container(color: Colors.transparent),
-          ),
       ],
     );
   }

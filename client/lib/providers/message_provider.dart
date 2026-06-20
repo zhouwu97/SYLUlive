@@ -13,6 +13,8 @@ class MessageProvider extends ChangeNotifier {
 
   List<Conversation> _conversations = [];
   List<Message> _messages = [];
+  final Map<int, List<Message>> _messageCache = {};
+  final Map<int, bool> _hasMoreCache = {};
   bool _conversationLoading = false;
   bool _messageLoading = false;
   bool _loadingMore = false;
@@ -81,8 +83,19 @@ class MessageProvider extends ChangeNotifier {
     required int currentUserId,
     required int targetUserId,
   }) async {
-    clearMessages();
+    _messageError = null;
+    final cachedConversation = _findConversation(currentUserId, targetUserId);
+    if (cachedConversation != null) {
+      await loadMessages(cachedConversation.id, preferCache: true);
+      return cachedConversation.id;
+    }
+
+    _messageRequestVersion++;
+    _currentConversationId = null;
+    _messages = [];
+    _hasMore = true;
     _messageLoading = true;
+    _loadingMore = false;
     notifyListeners();
     await loadConversations(silent: true);
 
@@ -93,30 +106,56 @@ class MessageProvider extends ChangeNotifier {
       return null;
     }
 
-    Conversation? existingConversation;
-    for (final conversation in _conversations) {
-      final matchesForward = conversation.user1Id == currentUserId &&
-          conversation.user2Id == targetUserId;
-      final matchesReverse = conversation.user1Id == targetUserId &&
-          conversation.user2Id == currentUserId;
-      if (matchesForward || matchesReverse) {
-        existingConversation = conversation;
-        break;
-      }
-    }
+    final existingConversation = _findConversation(currentUserId, targetUserId);
 
     if (existingConversation == null) {
       prepareNewConversation();
       return null;
     }
 
-    await loadMessages(existingConversation.id);
+    await loadMessages(existingConversation.id, preferCache: true);
     return existingConversation.id;
   }
 
-  Future<void> loadMessages(int conversationId) async {
+  Conversation? _findConversation(int currentUserId, int targetUserId) {
+    for (final conversation in _conversations) {
+      final matchesForward = conversation.user1Id == currentUserId &&
+          conversation.user2Id == targetUserId;
+      final matchesReverse = conversation.user1Id == targetUserId &&
+          conversation.user2Id == currentUserId;
+      if (matchesForward || matchesReverse) {
+        return conversation;
+      }
+    }
+    return null;
+  }
+
+  void _rememberMessages(int conversationId) {
+    _messageCache[conversationId] = List<Message>.of(_messages);
+    _hasMoreCache[conversationId] = _hasMore;
+  }
+
+  Future<void> loadMessages(
+    int conversationId, {
+    bool preferCache = false,
+  }) async {
     final requestVersion = ++_messageRequestVersion;
     _currentConversationId = conversationId;
+    final cachedMessages = _messageCache[conversationId];
+    if (preferCache && cachedMessages != null) {
+      _messages = List<Message>.of(cachedMessages);
+      _hasMore = _hasMoreCache[conversationId] ?? true;
+      _messageError = null;
+      _messageLoading = false;
+      _loadingMore = false;
+      notifyListeners();
+      await markRead(conversationId);
+      if (requestVersion == _messageRequestVersion) {
+        await refreshMessages();
+      }
+      return;
+    }
+
     _messages = [];
     _hasMore = true;
     _messageError = null;
@@ -134,6 +173,7 @@ class MessageProvider extends ChangeNotifier {
             .map((e) => Message.fromJson(Map<String, dynamic>.from(e as Map)))
             .toList();
         _hasMore = _messages.length == _pageSize;
+        _rememberMessages(conversationId);
         await markRead(conversationId);
       }
     } on DioException catch (e) {
@@ -185,6 +225,7 @@ class MessageProvider extends ChangeNotifier {
         ..._messages,
       ]..sort((a, b) => a.id.compareTo(b.id));
       _hasMore = older.length == _pageSize;
+      _rememberMessages(conversationId);
     } on DioException catch (e) {
       if (requestVersion == _messageRequestVersion) {
         _messageError = AppFeedback.dioErrorMessage(e, fallback: '加载更早消息失败');
@@ -228,6 +269,7 @@ class MessageProvider extends ChangeNotifier {
         for (final message in latest) message.id: message,
       };
       _messages = byId.values.toList()..sort((a, b) => a.id.compareTo(b.id));
+      _rememberMessages(conversationId);
       await markRead(conversationId);
       notifyListeners();
     } catch (e) {
@@ -265,6 +307,7 @@ class MessageProvider extends ChangeNotifier {
         if (!_messages.any((item) => item.id == message.id)) {
           _messages.add(message);
           _messages.sort((a, b) => a.id.compareTo(b.id));
+          _rememberMessages(message.conversationId);
         }
         clearDraft(targetUserId);
         notifyListeners();

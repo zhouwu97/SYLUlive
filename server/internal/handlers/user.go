@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"net/url"
 	"strconv"
 	"time"
 
@@ -92,11 +93,24 @@ func (h *UserHandler) UpdateAvatar(c *gin.Context) {
 		return
 	}
 
-	if err := h.db.Model(&models.User{}).Where("id = ?", userID).Update("avatar", input.Avatar).Error; err != nil {
+	avatar := versionedAvatarURL(input.Avatar)
+	if err := h.db.Model(&models.User{}).Where("id = ?", userID).Update("avatar", avatar).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "头像更新成功"})
+}
+
+func versionedAvatarURL(avatar string) string {
+	parsed, err := url.Parse(avatar)
+	if err != nil {
+		return avatar
+	}
+
+	query := parsed.Query()
+	query.Set("v", strconv.FormatInt(time.Now().UnixNano(), 10))
+	parsed.RawQuery = query.Encode()
+	return parsed.String()
 }
 
 // UpdateBackgroundInput 更新背景图输入

@@ -15,6 +15,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/course_schedule_provider.dart';
+import '../services/keep_alive_service.dart';
 import '../services/wallpaper_prefetch_service.dart';
 import '../utils/update_checker.dart';
 import '../widgets/glass_container.dart';
@@ -28,6 +29,34 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   static const String _wallpaperBaseUrl = WallpaperPrefetchService.baseUrl;
+  KeepAliveStatus _keepAliveStatus = const KeepAliveStatus.unsupported();
+  bool _keepAliveBusy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadKeepAliveStatus();
+  }
+
+  Future<void> _loadKeepAliveStatus() async {
+    final status = await KeepAliveService.instance.status();
+    if (!mounted) return;
+    setState(() => _keepAliveStatus = status);
+  }
+
+  Future<void> _setKeepAliveEnabled(bool enabled) async {
+    if (_keepAliveBusy) return;
+    setState(() => _keepAliveBusy = true);
+    final status = await KeepAliveService.instance.setEnabled(enabled);
+    if (!mounted) return;
+    setState(() {
+      _keepAliveStatus = status;
+      _keepAliveBusy = false;
+    });
+    if (enabled) {
+      await KeepAliveService.instance.openSettings();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -270,6 +299,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
         )),
         _buildSettingsRow(
             child: _buildSettingsTile(
+          icon: Icons.battery_saver,
+          iconColor: Colors.green,
+          title: '后台保活',
+          subtitle: _keepAliveSubtitle(),
+          trailing: Transform.scale(
+            scale: 0.8,
+            child: Switch(
+              value: _keepAliveStatus.supported && _keepAliveStatus.enabled,
+              onChanged: !_keepAliveStatus.supported || _keepAliveBusy
+                  ? null
+                  : _setKeepAliveEnabled,
+              activeThumbColor: Theme.of(context).primaryColor,
+            ),
+          ),
+          isDark: isDark,
+          onTap: _keepAliveStatus.supported
+              ? () => KeepAliveService.instance.openSettings()
+              : null,
+        )),
+        _buildSettingsRow(
+            child: _buildSettingsTile(
           icon: Icons.dark_mode,
           iconColor: isDark ? Colors.indigo : Colors.indigo,
           title: '夜间模式',
@@ -385,6 +435,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ],
       ],
     );
+  }
+
+  String _keepAliveSubtitle() {
+    if (!_keepAliveStatus.supported) return '当前平台不可用';
+    if (!_keepAliveStatus.enabled) return '开启常驻通知，让私信和课程提醒更稳定';
+    if (_keepAliveStatus.serviceRunning) {
+      return _keepAliveStatus.isIgnoringBatteryOptimizations
+          ? '运行中，已加入电池白名单'
+          : '运行中，建议允许后台运行';
+    }
+    return '已开启，等待系统启动服务';
   }
 
   /// 独立的设置卡片行（每个设置项单独一张毛玻璃卡片）

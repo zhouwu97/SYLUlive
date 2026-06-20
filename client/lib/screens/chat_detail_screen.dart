@@ -274,18 +274,32 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     int currentUserId,
     User? currentUser,
   ) {
-    return AnimatedPadding(
+    final content = AnimatedPadding(
       duration: const Duration(milliseconds: 180),
       curve: Curves.easeOutCubic,
       padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
       child: Column(
         children: [
           Expanded(
-            child: _buildMessageArea(provider, currentUserId, currentUser),
+            child: _buildMessageArea(
+              provider,
+              currentUserId,
+              currentUser,
+              includeBackdrop: widget.embedded,
+            ),
           ),
           _buildInputBar(provider),
         ],
       ),
+    );
+
+    if (widget.embedded) return content;
+
+    return Stack(
+      children: [
+        Positioned.fill(child: _buildStandaloneMessageBackdrop()),
+        content,
+      ],
     );
   }
 
@@ -334,15 +348,17 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   Widget _buildMessageArea(
     MessageProvider provider,
     int currentUserId,
-    User? currentUser,
-  ) {
+    User? currentUser, {
+    required bool includeBackdrop,
+  }) {
     if (provider.messageLoading && provider.messages.isEmpty) {
-      return _buildMessageBackdrop(
+      return _wrapMessageBackdrop(
         const Center(child: CircularProgressIndicator()),
+        includeBackdrop,
       );
     }
     if (provider.messageError != null && provider.messages.isEmpty) {
-      return _buildMessageBackdrop(
+      return _wrapMessageBackdrop(
         Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -356,10 +372,11 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
             ],
           ),
         ),
+        includeBackdrop,
       );
     }
     if (provider.messages.isEmpty) {
-      return _buildMessageBackdrop(
+      return _wrapMessageBackdrop(
         Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -374,10 +391,11 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
             ],
           ),
         ),
+        includeBackdrop,
       );
     }
 
-    return _buildMessageBackdrop(
+    return _wrapMessageBackdrop(
       ListView.builder(
         controller: _scrollController,
         padding: EdgeInsets.fromLTRB(
@@ -425,7 +443,12 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
           );
         },
       ),
+      includeBackdrop,
     );
+  }
+
+  Widget _wrapMessageBackdrop(Widget child, bool includeBackdrop) {
+    return includeBackdrop ? _buildMessageBackdrop(child) : child;
   }
 
   Widget _buildMessageBackdrop(Widget child) {
@@ -444,6 +467,15 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
 
     return Stack(
       children: [
+        Positioned.fill(child: _buildStandaloneMessageBackdrop()),
+        child,
+      ],
+    );
+  }
+
+  Widget _buildStandaloneMessageBackdrop() {
+    return Stack(
+      children: [
         Positioned.fill(child: _buildChatBackground()),
         Positioned.fill(
           child: DecoratedBox(
@@ -459,7 +491,6 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
             ),
           ),
         ),
-        child,
       ],
     );
   }

@@ -24,7 +24,7 @@ RUN mkdir -p /app/uploads
 
 EXPOSE 8080
 
-ENV DSN=host=postgres port=5432 user=postgres password=postgres123 dbname=shenliyuan sslmode=disable
+ENV DSN=host=postgres port=5432 user=postgres password=change_me_in_env dbname=shenliyuan sslmode=disable
 ENV UPLOAD_DIR=/app/uploads
 ENV GIN_MODE=release
 ENV JWT_SECRET=your-super-secret-jwt-key-change-this

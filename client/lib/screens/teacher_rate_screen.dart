@@ -1,15 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../models/teacher.dart';
+import '../providers/auth_provider.dart';
 import '../providers/major_provider.dart';
 import '../providers/teacher_provider.dart';
 import '../widgets/glass_container.dart';
 import '../providers/canteen_provider.dart';
+import '../config/api_constants.dart';
 import 'major_detail_screen.dart';
 import 'subject_ranking_detail_screen.dart';
 import 'canteen_detail_screen.dart';
 import '../widgets/image_upload_widget.dart';
+import '../utils/responsive_util.dart';
+import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 
 class TeacherRateScreen extends StatefulWidget {
   const TeacherRateScreen({super.key});
@@ -22,11 +27,12 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabCtrl;
   final _searchCtrl = TextEditingController();
-  bool _showDisclaimer = true;
+  bool _showDisclaimer = false;
 
   @override
   void initState() {
     super.initState();
+    _checkDisclaimer();
     _tabCtrl = TabController(length: 3, vsync: this);
     _tabCtrl.addListener(() {
       if (!_tabCtrl.indexIsChanging) {
@@ -34,6 +40,14 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
       }
     });
     WidgetsBinding.instance.addPostFrameCallback((_) => _refreshAll());
+  }
+
+  Future<void> _checkDisclaimer() async {
+    final prefs = await SharedPreferences.getInstance();
+    final hasShown = prefs.getBool('has_shown_teacher_disclaimer') ?? false;
+    if (!hasShown) {
+      if (mounted) setState(() => _showDisclaimer = true);
+    }
   }
 
   @override
@@ -145,6 +159,7 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
     return Padding(
       padding: EdgeInsets.only(bottom: bottomSafe > 0 ? bottomSafe : 0),
       child: FloatingActionButton(
+        heroTag: 'teacher_rate_fab',
         onPressed: _showAddDialog,
         backgroundColor: const Color(0xFF16A34A),
         elevation: 4,
@@ -182,7 +197,11 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
               ),
             ),
             GestureDetector(
-              onTap: () => setState(() => _showDisclaimer = false),
+              onTap: () async {
+                if (mounted) setState(() => _showDisclaimer = false);
+                final prefs = await SharedPreferences.getInstance();
+                await prefs.setBool('has_shown_teacher_disclaimer', true);
+              },
               child: const Icon(Icons.close, size: 16, color: Colors.grey),
             ),
           ],
@@ -242,45 +261,56 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
           );
         }
 
+        Widget buildCard(int index) {
+          final group = groups[index];
+          final topTeachers =
+              group.teachers.take(3).map((t) => t.name).join(' · ');
+          return _buildLeaderboardCard(
+            isDark: isDark,
+            rank: index + 1,
+            title: group.subject,
+            subtitle: topTeachers.isEmpty ? '暂无教师' : '代表教师 · $topTeachers',
+            average: group.averageStar,
+            count: group.ratingCount,
+            extraLabel: '${group.teachers.length} 位教师',
+            icon: Icons.auto_stories_outlined,
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => SubjectRankingDetailScreen(
+                  subjectName: group.subject,
+                  teachers: group.teachers,
+                ),
+              ),
+            ).then((changed) async {
+              if (changed != true || !mounted) return;
+              await context
+                  .read<TeacherProvider>()
+                  .loadTeachers(query: _currentQuery);
+            }),
+          );
+        }
+
         return RefreshIndicator(
           onRefresh: () async {
             await context
                 .read<TeacherProvider>()
                 .loadTeachers(query: _currentQuery);
           },
-          child: ListView.builder(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 80),
-            itemCount: groups.length,
-            itemBuilder: (_, index) {
-              final group = groups[index];
-              final topTeachers =
-                  group.teachers.take(3).map((t) => t.name).join(' · ');
-              return _buildLeaderboardCard(
-                isDark: isDark,
-                rank: index + 1,
-                title: group.subject,
-                subtitle: topTeachers.isEmpty ? '暂无教师' : '代表教师 · $topTeachers',
-                average: group.averageStar,
-                count: group.ratingCount,
-                extraLabel: '${group.teachers.length} 位教师',
-                icon: Icons.auto_stories_outlined,
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => SubjectRankingDetailScreen(
-                      subjectName: group.subject,
-                      teachers: group.teachers,
-                    ),
-                  ),
-                ).then((changed) async {
-                  if (changed != true || !mounted) return;
-                  await context
-                      .read<TeacherProvider>()
-                      .loadTeachers(query: _currentQuery);
-                }),
-              );
-            },
-          ),
+          child: ResponsiveUtil.isDesktop(context)
+              ? MasonryGridView.count(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
+                  crossAxisCount: MediaQuery.of(context).size.width > 900 ? 3 : 2,
+                  mainAxisSpacing: 16,
+                  crossAxisSpacing: 16,
+                  itemCount: groups.length,
+                  itemBuilder: (_, index) => buildCard(index),
+                )
+              : ListView.builder(
+                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 80),
+                  itemCount: groups.length,
+                  itemBuilder: (_, index) => buildCard(index),
+                ),
         );
       });
 
@@ -307,37 +337,48 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
           );
         }
 
+        Widget buildCard(int index) {
+          final major = majors[index];
+          return _buildLeaderboardCard(
+            isDark: isDark,
+            rank: index + 1,
+            title: major.name,
+            subtitle: major.level,
+            average: major.averageStar,
+            count: major.ratingCount,
+            extraLabel: '专业评分',
+            icon: Icons.school_outlined,
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => MajorDetailScreen(
+                  majorId: major.id,
+                  majorName: major.name,
+                ),
+              ),
+            ).then((_) {
+              if (!mounted) return;
+              context.read<MajorProvider>().loadMajors();
+            }),
+          );
+        }
+
         return RefreshIndicator(
           onRefresh: () => context.read<MajorProvider>().loadMajors(),
-          child: ListView.builder(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 80),
-            itemCount: majors.length,
-            itemBuilder: (_, index) {
-              final major = majors[index];
-              return _buildLeaderboardCard(
-                isDark: isDark,
-                rank: index + 1,
-                title: major.name,
-                subtitle: major.level,
-                average: major.averageStar,
-                count: major.ratingCount,
-                extraLabel: '专业评分',
-                icon: Icons.school_outlined,
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => MajorDetailScreen(
-                      majorId: major.id,
-                      majorName: major.name,
-                    ),
-                  ),
-                ).then((_) {
-                  if (!mounted) return;
-                  context.read<MajorProvider>().loadMajors();
-                }),
-              );
-            },
-          ),
+          child: ResponsiveUtil.isDesktop(context)
+              ? MasonryGridView.count(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
+                  crossAxisCount: MediaQuery.of(context).size.width > 900 ? 3 : 2,
+                  mainAxisSpacing: 16,
+                  crossAxisSpacing: 16,
+                  itemCount: majors.length,
+                  itemBuilder: (_, index) => buildCard(index),
+                )
+              : ListView.builder(
+                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 80),
+                  itemCount: majors.length,
+                  itemBuilder: (_, index) => buildCard(index),
+                ),
         );
       });
 
@@ -351,6 +392,8 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
     required String extraLabel,
     required IconData icon,
     required VoidCallback onTap,
+    VoidCallback? onLongPress,
+    String? imageUrl,
   }) {
     final accent = _rankColor(rank - 1);
     return GlassContainer(
@@ -364,6 +407,7 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
           ? Colors.white.withValues(alpha: 0.08)
           : Colors.white.withValues(alpha: 0.72),
       onTap: onTap,
+      onLongPress: onLongPress,
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Row(
@@ -374,22 +418,30 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
               decoration: BoxDecoration(
                 color: accent.withValues(alpha: 0.14),
                 borderRadius: BorderRadius.circular(16),
+                image: imageUrl != null && imageUrl.isNotEmpty
+                    ? DecorationImage(
+                        image: CachedNetworkImageProvider(imageUrl),
+                        fit: BoxFit.cover,
+                      )
+                    : null,
               ),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(icon, color: accent, size: 18),
-                  const SizedBox(height: 2),
-                  Text(
-                    '#$rank',
-                    style: TextStyle(
-                      color: accent,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w800,
+              child: imageUrl != null && imageUrl.isNotEmpty
+                  ? null
+                  : Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(icon, color: accent, size: 18),
+                        const SizedBox(height: 2),
+                        Text(
+                          '#$rank',
+                          style: TextStyle(
+                            color: accent,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                ],
-              ),
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -514,8 +566,11 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
     return groups;
   }
 
-  Widget _buildCanteenList(bool isDark) =>
-      Consumer<CanteenProvider>(builder: (_, provider, __) {
+  Widget _buildCanteenList(bool isDark) {
+      final user = context.watch<AuthProvider>().user;
+      final isAdmin = user?.role == 'admin' || user?.role == 'super_admin';
+      
+      return Consumer<CanteenProvider>(builder: (_, provider, __) {
         final query = _currentQuery?.toLowerCase();
         final canteens = query == null
             ? provider.canteens
@@ -537,41 +592,77 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
           );
         }
 
+        Widget buildCard(int index) {
+          final canteen = canteens[index];
+          return _buildLeaderboardCard(
+            isDark: isDark,
+            rank: index + 1,
+            title: canteen.name,
+            subtitle: '评分: ${canteen.averageStar.toStringAsFixed(1)}',
+            average: canteen.averageStar,
+            count: canteen.ratingCount,
+            extraLabel: '食堂评分',
+            icon: Icons.restaurant,
+            imageUrl: canteen.image != null && canteen.image.isNotEmpty ? ApiConstants.fullUrl(canteen.image) : null,
+            onLongPress: isAdmin ? () {
+              showDialog(
+                context: context,
+                builder: (ctx) => AlertDialog(
+                  title: const Text('删除店铺'),
+                  content: Text('确定要删除食堂/店铺 "${canteen.name}" 吗？'),
+                  actions: [
+                    TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+                    TextButton(
+                      onPressed: () async {
+                        Navigator.pop(ctx);
+                        final success = await context.read<CanteenProvider>().deleteCanteen(canteen.id);
+                        if (success && mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('删除成功')));
+                          context.read<CanteenProvider>().loadCanteens();
+                        }
+                      },
+                      child: const Text('删除', style: TextStyle(color: Colors.red)),
+                    ),
+                  ],
+                ),
+              );
+            } : null,
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => CanteenDetailScreen(
+                  canteenId: canteen.id,
+                  canteenName: canteen.name,
+                ),
+              ),
+            ).then((_) {
+              if (!mounted) return;
+              context.read<CanteenProvider>().loadCanteens();
+            }),
+          );
+        }
+
         return RefreshIndicator(
           onRefresh: () => context.read<CanteenProvider>().loadCanteens(),
-          child: ListView.builder(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 80),
-            itemCount: canteens.length,
-            itemBuilder: (_, index) {
-              final canteen = canteens[index];
-              return _buildLeaderboardCard(
-                isDark: isDark,
-                rank: index + 1,
-                title: canteen.name,
-                subtitle: '评分: ${canteen.averageStar.toStringAsFixed(1)}',
-                average: canteen.averageStar,
-                count: canteen.ratingCount,
-                extraLabel: '食堂评分',
-                icon: Icons.restaurant,
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => CanteenDetailScreen(
-                      canteenId: canteen.id,
-                      canteenName: canteen.name,
-                    ),
-                  ),
-                ).then((_) {
-                  if (!mounted) return;
-                  context.read<CanteenProvider>().loadCanteens();
-                }),
-              );
-            },
-          ),
+          child: ResponsiveUtil.isDesktop(context)
+              ? MasonryGridView.count(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
+                  crossAxisCount: MediaQuery.of(context).size.width > 900 ? 3 : 2,
+                  mainAxisSpacing: 16,
+                  crossAxisSpacing: 16,
+                  itemCount: canteens.length,
+                  itemBuilder: (_, index) => buildCard(index),
+                )
+              : ListView.builder(
+                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 80),
+                  itemCount: canteens.length,
+                  itemBuilder: (_, index) => buildCard(index),
+                ),
         );
       });
+  }
 
-  void _showAddDialog() {
+  Future<void> _showAddDialog() async {
     final nameCtrl = TextEditingController();
     final courseCtrl = TextEditingController();
     final levelCtrl = TextEditingController(text: '本科');
@@ -580,7 +671,7 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
     final isTeacher = _tabCtrl.index == 1;
     final isMajor = _tabCtrl.index == 2;
 
-    showDialog(
+    await showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text(isTeacher ? '添加教师' : (isMajor ? '添加专业' : '添加食堂')),
@@ -672,6 +763,10 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
         ],
       ),
     );
+
+    nameCtrl.dispose();
+    courseCtrl.dispose();
+    levelCtrl.dispose();
   }
 
   Color _rankColor(int index) {

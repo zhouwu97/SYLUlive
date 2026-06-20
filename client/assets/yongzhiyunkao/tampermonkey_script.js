@@ -361,12 +361,10 @@
         async function getRichText(element) {
             if (!element) return '';
             
-            // 【新增特性】检测复杂排版（例如连续3个以上的空格，这通常是化学方程式对齐），直接截图保留完美排版
             if (element.innerHTML.includes('&nbsp;&nbsp;&nbsp;') || element.innerHTML.includes('    ')) {
                 try {
                     await loadHtml2Canvas();
                     
-                    // 确保元素可见，如果祖先元素 display:none 则临时显示
                     const hiddenParents = [];
                     let curr = element;
                     while (curr && curr.nodeType === 1 && curr !== document.body) {
@@ -378,31 +376,26 @@
                         curr = curr.parentElement;
                     }
 
-                    // 如果是行内元素，转为 inline-block 防止截图大小为0
                     const origDisplay = element.style.display;
                     if (window.getComputedStyle(element).display === 'inline') {
                         element.style.display = 'inline-block';
                     }
 
-                    // 临时设置白色背景防止透明背景导致的黑色截图
                     const originalBg = element.style.background;
                     element.style.background = '#ffffff';
                     
-                    // 短暂延时确保DOM渲染完成
                     await new Promise(r => setTimeout(r, 100));
                     
                     const canvas = await window.html2canvas(element, { 
                         backgroundColor: '#ffffff',
-                        scale: 2 // 提高清晰度
+                        scale: 2
                     });
                     
                     element.style.background = originalBg;
                     element.style.display = origDisplay;
                     
-                    // 恢复隐藏状态
                     hiddenParents.forEach(p => p.el.style.display = p.origDisplay);
 
-                    // 只有截图成功且非空白(宽高>5)时才使用图片，否则继续执行下方的普通提取逻辑
                     if (canvas.width > 5 && canvas.height > 5) {
                         const dataUrl = canvas.toDataURL('image/png');
                         return `<img src="${dataUrl}" style="max-width: 100%; vertical-align: middle;">`;
@@ -413,7 +406,7 @@
                     console.error('html2canvas截图失败，降级为普通提取', e);
                 }
             }
-
+            
             const clone = element.cloneNode(true);
             
             clone.querySelectorAll('.MathJax, mjx-container, .katex').forEach(container => {
@@ -473,6 +466,7 @@
             });
             
             await Promise.all(imgPromises);
+            
             return clone.innerHTML.trim().replace(/[\u200B-\u200D\uFEFF]/g, '');
         }
 
@@ -513,34 +507,63 @@
             }
         }
 
-        if (question.questionType === '单选题' || question.questionType === '判断题') {
+        if (question.questionType.includes('单选') || question.questionType.includes('判断')) {
             question.score = '1.0';
-        } else if (question.questionType === '多选题') {
+        } else if (question.questionType.includes('多选')) {
             question.score = '2.0';
-        } else if (question.questionType === '计算题' || question.questionType === '简答题') {
+        } else if (question.questionType.includes('计算') || question.questionType.includes('简答')) {
             question.score = '10.0';
         }
 
-        if (question.questionType === '单选题' || question.questionType === '多选题') {
-            const optionElements = slideContent.querySelectorAll('.option_content li');
+        if (question.questionType.includes('单选') || question.questionType.includes('多选')) {
+            // 【修复】增强选择器，兼容云考网页DOM结构的变动
+            let optionElements = slideContent.querySelectorAll('.option_content li');
+            if (optionElements.length === 0) {
+                // 尝试其他常见的选项选择器 (如 element-ui 的 radio)
+                optionElements = slideContent.querySelectorAll('.el-radio, .el-checkbox, .option-item, .options li');
+            }
+
             const correctAnswers = [];
 
-            for (const li of optionElements) {
-                const letterElement = li.querySelector('.letterArr');
-                const textElement = li.querySelector('.txt');
-                const inputElement = li.querySelector('input[data-isright]');
+            for (let i = 0; i < optionElements.length; i++) {
+                const li = optionElements[i];
+                // 【修复核心】很多时候网页结构里根本没有A/B/C/D的DOM元素，它是用 CSS 画出来的。
+                // 因此我们直接根据索引(0,1,2,3)生成默认的 (A,B,C,D)
+                const autoLabel = String.fromCharCode(65 + i);
 
-                if (letterElement && textElement) {
-                    const optionLabel = letterElement.textContent.trim();
-                    const optionContent = await getRichText(textElement);
-                    question.options.push({
-                        label: optionLabel,
-                        text: optionContent
-                    });
+                const letterElement = li.querySelector('.letterArr, .option-letter, .letter, .el-radio__label span:first-child');
+                // 如果找不到专门装文本的容器，就把整个 li 作为文本容器（但要剔除干扰元素）
+                let textElement = li.querySelector('.txt, .option-text, .text, .el-radio__label span:last-child');
+                if (!textElement) {
+                    textElement = li;
+                }
 
-                    if (inputElement && inputElement.getAttribute('data-isright') === '1') {
-                        correctAnswers.push(optionLabel);
-                    }
+                const inputElement = li.querySelector('input[data-isright], input[type="radio"], input[type="checkbox"]');
+
+                let optionLabel = autoLabel;
+                if (letterElement) {
+                    const extracted = letterElement.textContent.replace(/[^A-Z]/g, '').trim();
+                    if (extracted) optionLabel = extracted;
+                }
+
+                const optionContent = await getRichText(textElement);
+                question.options.push({
+                    label: optionLabel,
+                    text: optionContent
+                });
+
+                // 判断是否为正确答案（结合您截图中的 right_ans_mark）
+                let isRight = false;
+                if (inputElement && inputElement.getAttribute('data-isright') === '1') {
+                    isRight = true;
+                } else if (li.classList.contains('is-right') || li.classList.contains('correct')) {
+                    isRight = true;
+                } else if (li.querySelector('.right_ans_mark') || li.querySelector('i.right')) {
+                    isRight = true;
+                }
+                
+                if (isRight) {
+                    correctAnswers.push(optionLabel);
                 }
             }
 
@@ -552,7 +575,7 @@
                     question.answer = await getRichText(answerText);
                 }
             }
-        } else if (question.questionType === '判断题') {
+        } else if (question.questionType.includes('判断')) {
             const correctInput = slideContent.querySelector('input[data-isright="1"]');
             if (correctInput) {
                 const parentLi = correctInput.closest('li');
@@ -573,7 +596,7 @@
                     }
                 }
             }
-        } else if (question.questionType === '填空题') {
+        } else if (question.questionType.includes('填空')) {
             const answers = [];
             const fillOptions = slideContent.querySelectorAll('.fill_option li .txt');
             if (fillOptions.length > 0) {
@@ -607,6 +630,17 @@
                     question.answer = await getRichText(answerSection);
                 }
             }
+        }
+        // --- 终极修复：使用容器上自带的 data-answer ---
+        const realDataAnswer = slideContent.getAttribute('data-answer');
+        if (realDataAnswer && realDataAnswer.trim() !== '') {
+            let parsedAnswer = realDataAnswer.trim();
+            // 针对判断题做统一转换
+            if (question.questionType.includes('判断')) {
+                if (parsedAnswer === '对' || parsedAnswer === 'A') parsedAnswer = '正确';
+                else if (parsedAnswer === '错' || parsedAnswer === 'B') parsedAnswer = '错误';
+            }
+            question.answer = parsedAnswer;
         }
 
         // 提取解析

@@ -1,7 +1,11 @@
 import 'dart:io';
 import 'dart:ui';
+import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show Clipboard, ClipboardData;
+import 'package:flutter/services.dart'
+    show Clipboard, ClipboardData, rootBundle;
+import 'package:image_cropper/image_cropper.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
@@ -11,6 +15,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/course_schedule_provider.dart';
+import '../services/wallpaper_prefetch_service.dart';
 import '../utils/update_checker.dart';
 import '../widgets/glass_container.dart';
 
@@ -22,6 +27,8 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
+  static const String _wallpaperBaseUrl = WallpaperPrefetchService.baseUrl;
+
   @override
   Widget build(BuildContext context) {
     final themeProvider = context.watch<ThemeProvider>();
@@ -38,44 +45,47 @@ class _SettingsScreenState extends State<SettingsScreen> {
         backgroundColor: Colors.transparent,
         extendBodyBehindAppBar: true,
         appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        title: const Text('设置'),
-      ),
-      body: Stack(
-        children: [
-          _buildBackground(themeProvider, isDark),
-          SafeArea(
-            child: ListView(
-              physics: const BouncingScrollPhysics(),
-              children: [
-                _buildSettingsSection(context, themeProvider, authProvider, isDark),
-                const SizedBox(height: 40),
-              ],
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          title: const Text('设置'),
+        ),
+        body: Stack(
+          children: [
+            _buildBackground(themeProvider, isDark),
+            SafeArea(
+              child: ListView(
+                physics: const BouncingScrollPhysics(),
+                children: [
+                  _buildSettingsSection(
+                      context, themeProvider, authProvider, isDark),
+                  const SizedBox(height: 40),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
-    ),
     );
   }
 
   Widget _buildBackground(ThemeProvider themeProvider, bool isDark) {
-    if (themeProvider.hasBackground && themeProvider.backgroundImage != null) {
-      final bgPath = themeProvider.backgroundImage!;
-      final isAsset = !bgPath.startsWith('http') && !bgPath.startsWith('/');
+    String? bgPath = themeProvider.getBackgroundImageFor(context);
+
+    if (bgPath != null && bgPath.isNotEmpty) {
+      final isAsset = ThemeProvider.isBundledAssetBackground(bgPath);
+      final isLocalFile = ThemeProvider.isLocalFileBackground(bgPath);
+      final imageProvider = isAsset
+          ? AssetImage(ThemeProvider.resolveBundledAssetPath(bgPath))
+              as ImageProvider
+          : isLocalFile
+              ? FileImage(File(bgPath)) as ImageProvider
+              : NetworkImage(bgPath) as ImageProvider;
       return Stack(fit: StackFit.expand, children: [
-        isAsset
-            ? Image.asset('assets/images/$bgPath',
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => _buildDefaultBackground(isDark))
-            : bgPath.startsWith('/')
-                ? Image.file(File(bgPath),
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => _buildDefaultBackground(isDark))
-                : Image.network(bgPath,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => _buildDefaultBackground(isDark)),
+        _buildBackgroundImage(
+          imageProvider: imageProvider,
+          isDark: isDark,
+          fillScreen: themeProvider.getBackgroundFillScreenFor(context),
+        ),
         Container(
             color: isDark
                 ? Colors.black.withValues(alpha: 0.4)
@@ -86,38 +96,72 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Widget _buildDefaultBackground(bool isDark) {
+    final isWide =
+        MediaQuery.of(context).size.width > MediaQuery.of(context).size.height;
+    final defaultImage = isWide
+        ? 'assets/images/tablet_default_landscape.png'
+        : 'assets/images/morenbeijing.jpeg';
     return Stack(
       fit: StackFit.expand,
       children: [
-        Image(
-          image: ResizeImage(
-              const AssetImage('assets/images/morenbeijing.jpeg'),
-              width: 1080),
-          fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: isDark
-                    ? [
-                        const Color(0xFF1A1A2E),
-                        const Color(0xFF16213E),
-                        const Color(0xFF0F3460)
-                      ]
-                    : [
-                        const Color(0xFF667EEA),
-                        const Color(0xFF764BA2),
-                        const Color(0xFFF093FB)
-                      ],
-              ),
-            ),
-          ),
+        _buildBackgroundImage(
+          imageProvider: AssetImage(defaultImage),
+          alignment: Alignment.center,
+          isDark: isDark,
+          fillScreen: false,
         ),
         Container(
             color: isDark
                 ? Colors.black.withValues(alpha: 0.35)
                 : Colors.white.withValues(alpha: 0.25)),
+      ],
+    );
+  }
+
+  Widget _buildBackgroundImage({
+    required ImageProvider imageProvider,
+    required bool isDark,
+    required bool fillScreen,
+    Alignment alignment = Alignment.center,
+  }) {
+    if (fillScreen) {
+      return Image(
+        image: imageProvider,
+        fit: BoxFit.cover,
+        alignment: alignment,
+        gaplessPlayback: true,
+        errorBuilder: (_, __, ___) => Container(
+          color: isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
+        ),
+      );
+    }
+
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        Transform.scale(
+          scale: 1.06,
+          child: ImageFiltered(
+            imageFilter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+            child: Image(
+              image: imageProvider,
+              fit: BoxFit.cover,
+              alignment: alignment,
+              gaplessPlayback: true,
+              errorBuilder: (_, __, ___) => Container(
+                color:
+                    isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
+              ),
+            ),
+          ),
+        ),
+        Image(
+          image: imageProvider,
+          fit: BoxFit.contain,
+          alignment: alignment,
+          gaplessPlayback: true,
+          errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+        ),
       ],
     );
   }
@@ -128,14 +172,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // 背景设置 — 独立卡片
-        _buildSettingsRow(child: _buildSettingsTile(
+        _buildSettingsRow(
+            child: _buildSettingsTile(
           icon: Icons.wallpaper,
           iconColor: Colors.purple,
           title: '自定义背景',
+          subtitle: '默认或竖屏时显示的背景',
           isDark: isDark,
-          onTap: () => _showBackgroundPicker(context, themeProvider),
+          onTap: () => _showBackgroundPicker(context, themeProvider, false),
         )),
-        _buildSettingsRow(child: _buildSettingsTile(
+        _buildSettingsRow(
+            child: _buildSettingsTile(
+          icon: Icons.landscape,
+          iconColor: Colors.purpleAccent,
+          title: '横屏自定义背景',
+          subtitle: '平板或宽屏下显示的专属横向背景',
+          isDark: isDark,
+          onTap: () => _showBackgroundPicker(context, themeProvider, true),
+        )),
+        _buildSettingsRow(
+            child: _buildSettingsTile(
           icon: Icons.opacity,
           iconColor: Colors.teal,
           title: '组件透明度',
@@ -152,7 +208,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           isDark: isDark,
         )),
-        _buildSettingsRow(child: _buildSettingsTile(
+        _buildSettingsRow(
+            child: _buildSettingsTile(
           icon: Icons.restore,
           iconColor: Colors.orange,
           title: '默认壁纸',
@@ -164,7 +221,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         const SizedBox(height: 8),
 
         // 视觉效果 — 独立卡片
-        _buildSettingsRow(child: _buildSettingsTile(
+        _buildSettingsRow(
+            child: _buildSettingsTile(
           icon: Icons.blur_on,
           iconColor: Colors.indigo,
           title: '液态玻璃效果',
@@ -172,13 +230,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
             scale: 0.8,
             child: Switch(
               value: themeProvider.liquidGlass,
-              onChanged: (v) => _showLiquidGlassWarningDialog(context, themeProvider, v),
+              onChanged: (v) =>
+                  _showLiquidGlassWarningDialog(context, themeProvider, v),
               activeColor: Theme.of(context).primaryColor,
             ),
           ),
           isDark: isDark,
         )),
-        _buildSettingsRow(child: _buildSettingsTile(
+        _buildSettingsRow(
+            child: _buildSettingsTile(
           icon: Icons.navigation,
           iconColor: Colors.orange,
           title: '悬浮底栏',
@@ -192,7 +252,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           isDark: isDark,
         )),
-        _buildSettingsRow(child: _buildSettingsTile(
+        _buildSettingsRow(
+            child: _buildSettingsTile(
           icon: Icons.swipe,
           iconColor: Colors.blue,
           title: '预测性返回手势',
@@ -207,7 +268,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           isDark: isDark,
         )),
-        _buildSettingsRow(child: _buildSettingsTile(
+        _buildSettingsRow(
+            child: _buildSettingsTile(
           icon: Icons.dark_mode,
           iconColor: isDark ? Colors.indigo : Colors.indigo,
           title: '夜间模式',
@@ -225,21 +287,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
         const SizedBox(height: 8),
 
         // 账号 — 独立卡片
-        _buildSettingsRow(child: _buildSettingsTile(
+        _buildSettingsRow(
+            child: _buildSettingsTile(
           icon: Icons.person,
           iconColor: Colors.blue,
           title: '编辑资料',
           isDark: isDark,
           onTap: () => _showEditProfileDialog(context, authProvider),
         )),
-        _buildSettingsRow(child: _buildSettingsTile(
+        _buildSettingsRow(
+            child: _buildSettingsTile(
           icon: Icons.lock,
           iconColor: Colors.orange,
           title: '修改密码',
           isDark: isDark,
           onTap: () => _showChangePasswordDialog(context, authProvider),
         )),
-        _buildSettingsRow(child: _buildSettingsTile(
+        _buildSettingsRow(
+            child: _buildSettingsTile(
           icon: Icons.info,
           iconColor: Colors.blue,
           title: '关于',
@@ -251,7 +316,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           child: SizedBox(
             width: double.infinity,
             child: OutlinedButton.icon(
-              onPressed: () => UpdateChecker.check(context, showNoUpdateToast: true),
+              onPressed: () =>
+                  UpdateChecker.check(context, showNoUpdateToast: true),
               icon: const Icon(Icons.system_update, size: 18),
               label: const Text('检查更新'),
               style: OutlinedButton.styleFrom(
@@ -388,7 +454,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
               if (trailing != null) trailing,
               if (trailing == null && onTap != null)
-                Icon(Icons.chevron_right, size: 18,
+                Icon(Icons.chevron_right,
+                    size: 18,
                     color: isDark ? Colors.white30 : Colors.grey[400]),
             ],
           ),
@@ -398,99 +465,450 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   void _showBackgroundPicker(
-      BuildContext context, ThemeProvider themeProvider) {
+      BuildContext context, ThemeProvider themeProvider, bool isLandscape) {
     final backgrounds = [
-      'bg-mobile.png',
-      'https://images.unsplash.com/photo-1579546929518-9e396f3cc809?w=800',
-      'https://images.unsplash.com/photo-1557682250-33bd709cbe85?w=800',
-      'https://images.unsplash.com/photo-1519681393784-d120267933ba?w=800',
-      'https://images.unsplash.com/photo-1507400492013-162706c8c05e?w=800',
-      'https://images.unsplash.com/photo-1518837695005-2083093ee35b?w=800',
+      if (isLandscape) ...[
+        'tablet_landscape_01.png',
+        'tablet_landscape_02.png',
+        'tablet_landscape_03.png',
+        'tablet_landscape_04.png',
+        'tablet_landscape_05.png',
+        'tablet_landscape_06.png',
+        'tablet_landscape_07.png',
+        'tablet_landscape_08.png',
+      ],
+      if (!isLandscape) ...[
+        'phone_wallpaper_01.png',
+        'phone_wallpaper_02.png',
+        'phone_wallpaper_03.png',
+        'phone_wallpaper_04.png',
+      ],
     ];
 
-    showModalBottomSheet(
+    showDialog(
       context: context,
-      backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: Theme.of(context).scaffoldBackgroundColor,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('选择背景',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: SizedBox(
-                    height: 120,
-                    child: ListView.builder(
-                      scrollDirection: Axis.horizontal,
-                      itemCount: backgrounds.length,
-                      itemBuilder: (context, index) {
-                        final isAsset = !backgrounds[index].startsWith('http');
-                        final imagePath = isAsset
-                            ? 'assets/images/${backgrounds[index]}'
-                            : backgrounds[index];
-                        return GestureDetector(
-                          onTap: () {
-                            themeProvider
-                                .setBackgroundImage(backgrounds[index]);
-                            Navigator.pop(context);
-                          },
-                          child: Container(
-                            width: 160,
-                            margin: const EdgeInsets.only(right: 12),
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(12),
-                              image: DecorationImage(
-                                image: isAsset
-                                    ? AssetImage(imagePath) as ImageProvider
-                                    : NetworkImage(backgrounds[index])
-                                        as ImageProvider,
-                                fit: BoxFit.cover,
-                              ),
+      barrierColor: Colors.black54,
+      builder: (context) {
+        final size = MediaQuery.of(context).size;
+        final maxDialogWidth = isLandscape ? 860.0 : 620.0;
+        final previewRatio = isLandscape ? 16 / 9 : 9 / 16;
+        final crossAxisCount = isLandscape
+            ? (size.width >= 900 ? 3 : 2)
+            : (size.width >= 760 ? 4 : 3);
+        final dialogWidth =
+            size.width < maxDialogWidth + 48 ? size.width - 48 : maxDialogWidth;
+        final gridMaxHeight = size.height * 0.58;
+
+        return Center(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: dialogWidth,
+              maxHeight: size.height * 0.86,
+            ),
+            child: Material(
+              color: Theme.of(context).scaffoldBackgroundColor,
+              elevation: 18,
+              shadowColor: Colors.black38,
+              borderRadius: BorderRadius.circular(24),
+              clipBehavior: Clip.antiAlias,
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            isLandscape ? '选择横屏背景' : '选择背景',
+                            style: const TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
                             ),
                           ),
-                        );
-                      },
+                        ),
+                        IconButton(
+                          tooltip: '关闭',
+                          onPressed: () => Navigator.pop(context),
+                          icon: const Icon(Icons.close),
+                        ),
+                      ],
                     ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: () async {
-                  final picker = ImagePicker();
-                  final image =
-                      await picker.pickImage(source: ImageSource.gallery);
-                  if (image != null) {
-                    final appDir = await getApplicationDocumentsDirectory();
-                    final fileName =
-                        'background_${DateTime.now().millisecondsSinceEpoch}${path.extension(image.path)}';
-                    final savedPath = path.join(appDir.path, fileName);
-                    await File(image.path).copy(savedPath);
-                    themeProvider.setBackgroundImage(savedPath);
-                    if (context.mounted) Navigator.pop(context);
-                  }
-                },
-                icon: const Icon(Icons.photo_library),
-                label: const Text('从相册选择'),
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
+                    const SizedBox(height: 14),
+                    Flexible(
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(maxHeight: gridMaxHeight),
+                        child: GridView.builder(
+                          shrinkWrap: true,
+                          gridDelegate:
+                              SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: crossAxisCount,
+                            crossAxisSpacing: 12,
+                            mainAxisSpacing: 12,
+                            childAspectRatio: previewRatio,
+                          ),
+                          itemCount: backgrounds.length,
+                          itemBuilder: (context, index) {
+                            final value = backgrounds[index];
+                            final imagePath = _wallpaperThumbnailAsset(value);
+                            return GestureDetector(
+                              onTap: () async {
+                                final navigator = Navigator.of(context);
+                                await _useBundledBackground(
+                                  context,
+                                  themeProvider,
+                                  value,
+                                  isLandscape,
+                                );
+                                if (navigator.mounted) navigator.pop();
+                              },
+                              child: Stack(
+                                fit: StackFit.expand,
+                                children: [
+                                  DecoratedBox(
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(12),
+                                      image: DecorationImage(
+                                        image: AssetImage(imagePath),
+                                        fit: BoxFit.cover,
+                                      ),
+                                    ),
+                                    child: const SizedBox.expand(),
+                                  ),
+                                  Positioned(
+                                    right: 8,
+                                    bottom: 8,
+                                    child: Material(
+                                      color: Colors.black.withOpacity(0.52),
+                                      borderRadius: BorderRadius.circular(18),
+                                      child: InkWell(
+                                        onTap: () => _editBundledBackground(
+                                          context,
+                                          themeProvider,
+                                          value,
+                                          isLandscape,
+                                        ),
+                                        borderRadius: BorderRadius.circular(18),
+                                        child: const Padding(
+                                          padding: EdgeInsets.all(8),
+                                          child: Icon(
+                                            Icons.crop,
+                                            color: Colors.white,
+                                            size: 18,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _pickerActionButton(
+                            label: '直接使用',
+                            icon: Icons.photo_library,
+                            onTap: () => _pickGalleryBackground(
+                              context,
+                              themeProvider,
+                              isLandscape,
+                              edit: false,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _pickerActionButton(
+                            label: '编辑图片',
+                            icon: Icons.crop,
+                            onTap: () => _pickGalleryBackground(
+                              context,
+                              themeProvider,
+                              isLandscape,
+                              edit: true,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
               ),
             ),
-            const SizedBox(height: 20),
-          ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _setBackground(
+    ThemeProvider themeProvider,
+    bool isLandscape,
+    String imagePath, {
+    bool fillScreen = false,
+  }) {
+    if (isLandscape) {
+      themeProvider.setLandscapeBackgroundImage(
+        imagePath,
+        fillScreen: fillScreen,
+      );
+    } else {
+      themeProvider.setBackgroundImage(imagePath, fillScreen: fillScreen);
+    }
+  }
+
+  String? _remoteWallpaperUrl(String assetName) {
+    if (!assetName.startsWith('tablet_landscape_') &&
+        !assetName.startsWith('phone_wallpaper_')) {
+      return null;
+    }
+    return '$_wallpaperBaseUrl/$assetName';
+  }
+
+  String _wallpaperThumbnailAsset(String assetName) {
+    return 'assets/images/wallpaper_thumbs/${path.basenameWithoutExtension(assetName)}.jpg';
+  }
+
+  Future<void> _useBundledBackground(BuildContext context,
+      ThemeProvider themeProvider, String assetName, bool isLandscape) async {
+    final remoteUrl = _remoteWallpaperUrl(assetName);
+    if (remoteUrl == null) {
+      _setBackground(themeProvider, isLandscape, assetName);
+      return;
+    }
+
+    if (kIsWeb) {
+      _setBackground(themeProvider, isLandscape, remoteUrl);
+      return;
+    }
+
+    if (!context.read<AuthProvider>().isLoggedIn) {
+      _setBackground(
+        themeProvider,
+        isLandscape,
+        'wallpaper_thumbs/${path.basenameWithoutExtension(assetName)}.jpg',
+      );
+      return;
+    }
+
+    try {
+      final savedPath = await _downloadWallpaper(remoteUrl, assetName);
+      _setBackground(themeProvider, isLandscape, savedPath);
+    } catch (e) {
+      debugPrint('Download wallpaper failed: $e');
+      _setBackground(
+        themeProvider,
+        isLandscape,
+        'wallpaper_thumbs/${path.basenameWithoutExtension(assetName)}.jpg',
+      );
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('高清壁纸下载失败，已使用内置压缩版')),
+        );
+      }
+    }
+  }
+
+  Future<String> _downloadWallpaper(String url, String fileName) async {
+    final savedPath = await WallpaperPrefetchService.localPathFor(fileName);
+    final file = File(savedPath);
+    if (await file.exists() && await file.length() > 0) return savedPath;
+
+    await Dio().download(
+      url,
+      savedPath,
+      options: Options(receiveTimeout: const Duration(seconds: 30)),
+    );
+    return savedPath;
+  }
+
+  Future<void> _editBundledBackground(BuildContext context,
+      ThemeProvider themeProvider, String assetName, bool isLandscape) async {
+    if (kIsWeb) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('网页版可直接使用内置壁纸，编辑请从相册选择图片')),
+      );
+      return;
+    }
+
+    try {
+      final remoteUrl = _remoteWallpaperUrl(assetName);
+      final useRemote =
+          remoteUrl != null && context.read<AuthProvider>().isLoggedIn;
+      final sourcePath = useRemote
+          ? await _downloadWallpaper(remoteUrl, assetName)
+          : await _copyAssetToTempFile(
+              'wallpaper_thumbs/${path.basenameWithoutExtension(assetName)}.jpg',
+            );
+      final savedPath =
+          await _cropAndSaveBackground(sourcePath, isLandscape: isLandscape);
+      if (savedPath == null) return;
+      _setBackground(
+        themeProvider,
+        isLandscape,
+        savedPath,
+        fillScreen: true,
+      );
+      if (context.mounted) Navigator.pop(context);
+    } catch (e) {
+      debugPrint('Edit bundled background failed: $e');
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('编辑背景失败'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<String> _copyAssetToTempFile(String assetName) async {
+    final data =
+        await rootBundle.load(ThemeProvider.resolveBundledAssetPath(assetName));
+    final tempDir = await getTemporaryDirectory();
+    final sourcePath = path.join(
+      tempDir.path,
+      'background_source_${DateTime.now().millisecondsSinceEpoch}_${path.basename(assetName)}',
+    );
+    await File(sourcePath).writeAsBytes(data.buffer.asUint8List());
+    return sourcePath;
+  }
+
+  Future<void> _pickGalleryBackground(
+    BuildContext context,
+    ThemeProvider themeProvider,
+    bool isLandscape, {
+    required bool edit,
+  }) async {
+    final picker = ImagePicker();
+    final image = await picker.pickImage(source: ImageSource.gallery);
+    if (image == null) return;
+
+    try {
+      final savedPath = edit
+          ? await _cropAndSaveBackground(image.path, isLandscape: isLandscape)
+          : await _saveBackgroundFile(image.path, isLandscape: isLandscape);
+      if (savedPath == null) return;
+      _setBackground(
+        themeProvider,
+        isLandscape,
+        savedPath,
+        fillScreen: edit,
+      );
+      if (context.mounted) Navigator.pop(context);
+    } catch (e) {
+      debugPrint('Pick gallery background failed: $e');
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('设置背景失败'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<String?> _cropAndSaveBackground(
+    String sourcePath, {
+    required bool isLandscape,
+  }) async {
+    final screenSize = MediaQuery.sizeOf(context);
+    final isWideScreen = screenSize.width > screenSize.height;
+    final targetRatioX = isLandscape
+        ? (isWideScreen ? screenSize.width : 16.0)
+        : (isWideScreen ? 9.0 : screenSize.width);
+    final targetRatioY = isLandscape
+        ? (isWideScreen ? screenSize.height : 9.0)
+        : (isWideScreen ? 16.0 : screenSize.height);
+    final cropped = await ImageCropper().cropImage(
+      sourcePath: sourcePath,
+      aspectRatio: CropAspectRatio(
+        ratioX: targetRatioX,
+        ratioY: targetRatioY,
+      ),
+      uiSettings: [
+        AndroidUiSettings(
+          toolbarTitle: isLandscape ? '裁剪横屏背景' : '裁剪竖屏背景',
+          toolbarColor: Colors.black,
+          toolbarWidgetColor: Colors.white,
+          statusBarColor: Colors.black,
+          backgroundColor: Colors.black,
+          initAspectRatio: isWideScreen || isLandscape
+              ? CropAspectRatioPreset.ratio16x9
+              : CropAspectRatioPreset.original,
+          lockAspectRatio: true,
+        ),
+        IOSUiSettings(
+          title: isLandscape ? '裁剪横屏背景' : '裁剪竖屏背景',
+          aspectRatioLockEnabled: true,
+          resetButtonHidden: true,
+        ),
+      ],
+    );
+    if (cropped == null) return null;
+    return _saveBackgroundFile(cropped.path, isLandscape: isLandscape);
+  }
+
+  Future<String> _saveBackgroundFile(
+    String sourcePath, {
+    required bool isLandscape,
+  }) async {
+    final appDir = await getApplicationDocumentsDirectory();
+    final extension = path.extension(sourcePath).isEmpty
+        ? '.jpg'
+        : path.extension(sourcePath);
+    final fileName =
+        '${isLandscape ? 'landscape_background' : 'background'}_${DateTime.now().millisecondsSinceEpoch}$extension';
+    final savedPath = path.join(appDir.path, fileName);
+    final xf = XFile(sourcePath);
+    final bytes = await xf.readAsBytes();
+    await File(savedPath).writeAsBytes(bytes);
+    return savedPath;
+  }
+
+  Widget _pickerActionButton({
+    required String label,
+    required IconData icon,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Ink(
+          padding: const EdgeInsets.symmetric(vertical: 13, horizontal: 16),
+          decoration: BoxDecoration(
+            color: Theme.of(context).primaryColor,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 18, color: Colors.white),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -564,9 +982,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  void _showEditProfileDialog(BuildContext context, AuthProvider authProvider) {
+  Future<void> _showEditProfileDialog(
+      BuildContext context, AuthProvider authProvider) async {
     final controller = TextEditingController(text: authProvider.user?.nickname);
-    showDialog(
+    await showDialog(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('编辑资料'),
@@ -594,13 +1013,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ],
       ),
     );
+    controller.dispose();
   }
 
-  void _showChangePasswordDialog(
-      BuildContext context, AuthProvider authProvider) {
+  Future<void> _showChangePasswordDialog(
+      BuildContext context, AuthProvider authProvider) async {
     final oldController = TextEditingController();
     final newController = TextEditingController();
-    showDialog(
+    await showDialog(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('修改密码'),
@@ -637,6 +1057,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ],
       ),
     );
+    oldController.dispose();
+    newController.dispose();
   }
 
   void _showAboutDialog(BuildContext context) async {
@@ -668,10 +1090,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
         child: Container(
           margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
           decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF1E1E2E).withOpacity(0.8) : Colors.white.withOpacity(0.9),
+            color: isDark
+                ? const Color(0xFF1E1E2E).withOpacity(0.8)
+                : Colors.white.withOpacity(0.9),
             borderRadius: BorderRadius.circular(32),
             border: Border.all(
-              color: isDark ? Colors.white.withOpacity(0.1) : Colors.white.withOpacity(0.5),
+              color: isDark
+                  ? Colors.white.withOpacity(0.1)
+                  : Colors.white.withOpacity(0.5),
               width: 1.5,
             ),
             boxShadow: [
@@ -685,213 +1111,234 @@ class _SettingsScreenState extends State<SettingsScreen> {
           child: SafeArea(
             top: false,
             child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(24, 0, 24, 32),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // 拖拽指示条
-                      Padding(
-                        padding: const EdgeInsets.only(top: 12, bottom: 24),
-                        child: Container(
-                          width: 48,
-                          height: 5,
-                          decoration: BoxDecoration(
-                            color: isDark ? Colors.white24 : Colors.grey[300],
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                        ),
+              padding: const EdgeInsets.fromLTRB(24, 0, 24, 32),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // 拖拽指示条
+                  Padding(
+                    padding: const EdgeInsets.only(top: 12, bottom: 24),
+                    child: Container(
+                      width: 48,
+                      height: 5,
+                      decoration: BoxDecoration(
+                        color: isDark ? Colors.white24 : Colors.grey[300],
+                        borderRadius: BorderRadius.circular(10),
                       ),
-                      // 动态 App 图标
-                      TweenAnimationBuilder<double>(
-                        tween: Tween(begin: 0.8, end: 1.0),
-                        duration: const Duration(milliseconds: 800),
-                        curve: Curves.elasticOut,
-                        builder: (context, scale, child) {
-                          return Transform.scale(
-                            scale: scale,
-                            child: child,
-                          );
-                        },
-                        child: Container(
-                          width: 90,
-                          height: 90,
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                              colors: [primary, primary.withOpacity(0.6)],
-                            ),
-                            borderRadius: BorderRadius.circular(28),
-                            boxShadow: [
-                              BoxShadow(
-                                color: primary.withOpacity(0.4),
-                                blurRadius: 20,
-                                offset: const Offset(0, 8),
-                              ),
-                            ],
-                          ),
-                          child: const Icon(Icons.school_rounded, color: Colors.white, size: 48),
+                    ),
+                  ),
+                  // 动态 App 图标
+                  TweenAnimationBuilder<double>(
+                    tween: Tween(begin: 0.8, end: 1.0),
+                    duration: const Duration(milliseconds: 800),
+                    curve: Curves.elasticOut,
+                    builder: (context, scale, child) {
+                      return Transform.scale(
+                        scale: scale,
+                        child: child,
+                      );
+                    },
+                    child: Container(
+                      width: 90,
+                      height: 90,
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [primary, primary.withOpacity(0.6)],
                         ),
-                      ),
-                      const SizedBox(height: 20),
-                      // 标题与版本号
-                      Text(
-                        '沈理校园',
-                        style: TextStyle(
-                          fontSize: 26,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 1.2,
-                          color: isDark ? Colors.white : const Color(0xFF2D3142),
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        '一款为沈理人写的开源校园工具',
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: isDark ? Colors.white54 : const Color(0xFF9094A6),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: primary.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: primary.withOpacity(0.2)),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.verified, size: 14, color: primary),
-                            const SizedBox(width: 6),
-                            Text(
-                              'Version $currentVersion',
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.bold,
-                                color: primary,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 32),
-
-                      // 开发者卡片 - 采用流光渐变设计
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(20),
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: isDark
-                                ? [Colors.white.withOpacity(0.05), Colors.white.withOpacity(0.02)]
-                                : [const Color(0xFFF4F7FC), const Color(0xFFEEF2F9)],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          ),
-                          borderRadius: BorderRadius.circular(24),
-                          border: Border.all(
-                            color: isDark ? Colors.white12 : Colors.black.withOpacity(0.05),
-                          ),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.all(8),
-                                  decoration: BoxDecoration(
-                                    color: primary.withOpacity(0.15),
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: Icon(Icons.code_rounded, size: 20, color: primary),
-                                ),
-                                const SizedBox(width: 12),
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      '开发者',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: isDark ? Colors.white54 : const Color(0xFF9094A6),
-                                      ),
-                                    ),
-                                    Text(
-                                      '纯合子',
-                                      style: TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.bold,
-                                        color: isDark ? Colors.white : const Color(0xFF2D3142),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 16),
-                            Text(
-                              '用爱发电，写个自己觉得好用的课表和论坛。',
-                              style: TextStyle(
-                                fontSize: 13,
-                                height: 1.6,
-                                color: isDark ? Colors.white70 : const Color(0xFF4F5568),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-
-                      // 联系与源码按钮组
-                      _aboutLink(
-                        context,
-                        Icons.device_hub_rounded,
-                        '开源仓库与源码',
-                        'https://github.com/zhouwu97/SYLUlive',
-                        isDark,
-                        primary,
-                      ),
-                      const SizedBox(height: 12),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _aboutLink(
-                              context,
-                              Icons.group_rounded,
-                              '加入群聊',
-                              null,
-                              isDark,
-                              Colors.blue,
-                              onTapOverride: () => _copyToClipboard(context, '1076639620', '复制成功'),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: _aboutLink(
-                              context,
-                              Icons.email_rounded,
-                              '联系作者',
-                              null,
-                              isDark,
-                              Colors.orange,
-                              onTapOverride: () => _copyToClipboard(context, '3170305904@qq.com', '邮箱已复制到剪贴板'),
-                            ),
+                        borderRadius: BorderRadius.circular(28),
+                        boxShadow: [
+                          BoxShadow(
+                            color: primary.withOpacity(0.4),
+                            blurRadius: 20,
+                            offset: const Offset(0, 8),
                           ),
                         ],
                       ),
+                      child: const Icon(Icons.school_rounded,
+                          color: Colors.white, size: 48),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  // 标题与版本号
+                  Text(
+                    '沈理校园',
+                    style: TextStyle(
+                      fontSize: 26,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 1.2,
+                      color: isDark ? Colors.white : const Color(0xFF2D3142),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    '一款为沈理人写的开源校园工具',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: isDark ? Colors.white54 : const Color(0xFF9094A6),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: primary.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: primary.withOpacity(0.2)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.verified, size: 14, color: primary),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Version $currentVersion',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: primary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 32),
+
+                  // 开发者卡片 - 采用流光渐变设计
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: isDark
+                            ? [
+                                Colors.white.withOpacity(0.05),
+                                Colors.white.withOpacity(0.02)
+                              ]
+                            : [
+                                const Color(0xFFF4F7FC),
+                                const Color(0xFFEEF2F9)
+                              ],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(
+                        color: isDark
+                            ? Colors.white12
+                            : Colors.black.withOpacity(0.05),
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: primary.withOpacity(0.15),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Icon(Icons.code_rounded,
+                                  size: 20, color: primary),
+                            ),
+                            const SizedBox(width: 12),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '开发者',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: isDark
+                                        ? Colors.white54
+                                        : const Color(0xFF9094A6),
+                                  ),
+                                ),
+                                Text(
+                                  '纯合子',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                    color: isDark
+                                        ? Colors.white
+                                        : const Color(0xFF2D3142),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          '用爱发电，写个自己觉得好用的课表和论坛。',
+                          style: TextStyle(
+                            fontSize: 13,
+                            height: 1.6,
+                            color: isDark
+                                ? Colors.white70
+                                : const Color(0xFF4F5568),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+
+                  // 联系与源码按钮组
+                  _aboutLink(
+                    context,
+                    Icons.device_hub_rounded,
+                    '开源仓库与源码',
+                    'https://github.com/zhouwu97/SYLUlive',
+                    isDark,
+                    primary,
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _aboutLink(
+                          context,
+                          Icons.group_rounded,
+                          '加入群聊',
+                          null,
+                          isDark,
+                          Colors.blue,
+                          onTapOverride: () =>
+                              _copyToClipboard(context, '1076639620', '复制成功'),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _aboutLink(
+                          context,
+                          Icons.email_rounded,
+                          '联系作者',
+                          null,
+                          isDark,
+                          Colors.orange,
+                          onTapOverride: () => _copyToClipboard(
+                              context, '3170305904@qq.com', '邮箱已复制到剪贴板'),
+                        ),
+                      ),
                     ],
                   ),
-                ),
+                ],
               ),
+            ),
+          ),
         ),
       ),
     );
   }
 
-  Widget _aboutLink(BuildContext context, IconData icon, String label, String? url, bool isDark, Color color, {VoidCallback? onTapOverride}) {
+  Widget _aboutLink(BuildContext context, IconData icon, String label,
+      String? url, bool isDark, Color color,
+      {VoidCallback? onTapOverride}) {
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -902,10 +1349,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           decoration: BoxDecoration(
-            color: isDark ? Colors.white.withOpacity(0.04) : Colors.black.withOpacity(0.03),
+            color: isDark
+                ? Colors.white.withOpacity(0.04)
+                : Colors.black.withOpacity(0.03),
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
-              color: isDark ? Colors.white.withOpacity(0.05) : Colors.black.withOpacity(0.05),
+              color: isDark
+                  ? Colors.white.withOpacity(0.05)
+                  : Colors.black.withOpacity(0.05),
             ),
           ),
           child: Row(
@@ -920,7 +1371,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
-                    color: isDark ? Colors.white.withOpacity(0.9) : const Color(0xFF2D3142),
+                    color: isDark
+                        ? Colors.white.withOpacity(0.9)
+                        : const Color(0xFF2D3142),
                   ),
                 ),
               ),

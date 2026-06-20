@@ -89,7 +89,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
     final academicYear = now.month >= 9 ? now.year + 1 : now.year;
     final currentYearStr = academicYear.toString();
     // 服务端的 school_date 可能返回旧年份，不要直接信任
-    setState(() {
+    if (mounted) setState(() {
       _currentYear = _yearData[currentYearStr] != null
           ? currentYearStr  // 当前学年有数据，优先用
           : _availableYears.firstWhere(
@@ -255,7 +255,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
       debugPrint('获取成绩失败: _userId 为空！');
       return;
     }
-    setState(() => _loadingYear = true);
+    if (mounted) setState(() => _loadingYear = true);
 
     // _token 登录返回已是 "userId:hash" 格式，直接用
     final authValue = _token ?? _userId!;
@@ -438,7 +438,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
                         fontWeight: FontWeight.w600,
                       ),
                       onSelected: (_) {
-                        setState(() => _currentYear = y);
+                        if (mounted) setState(() => _currentYear = y);
                         if (_yearData[y] == null) {
                           _fetchYear(y);
                         }

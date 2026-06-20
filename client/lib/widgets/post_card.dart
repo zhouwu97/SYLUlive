@@ -10,12 +10,14 @@ import 'cached_avatar.dart';
 import 'glass_container.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
+import '../screens/user_home_screen.dart';
 
-class PostCard extends StatelessWidget {
+class PostCard extends StatefulWidget {
   final Post post;
   final VoidCallback? onTap;
   final bool showPrice;
   final bool showWarning;
+  final bool disableAuthorNavigation;
 
   const PostCard({
     super.key,
@@ -23,19 +25,29 @@ class PostCard extends StatelessWidget {
     this.onTap,
     this.showPrice = false,
     this.showWarning = false,
+    this.disableAuthorNavigation = false,
   });
 
   @override
+  State<PostCard> createState() => _PostCardState();
+}
+
+class _PostCardState extends State<PostCard> with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
   Widget build(BuildContext context) {
+    super.build(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final screenWidth = MediaQuery.of(context).size.width;
     final isDesktop = screenWidth > 600;
 
     // 优先使用当前登录用户的最新资料
     final authUser = context.watch<AuthProvider>().user;
-    final isMyPost = authUser != null && post.author?.id == authUser.id;
-    final displayAvatar = isMyPost ? authUser.avatar : (post.author?.avatar ?? '');
-    final displayNickname = isMyPost ? authUser.nickname : (post.author?.nickname ?? '匿名');
+    final isMyPost = authUser != null && widget.post.author?.id == authUser.id;
+    final displayAvatar = isMyPost ? authUser.avatar : (widget.post.author?.avatar ?? '');
+    final displayNickname = isMyPost ? authUser.nickname : (widget.post.author?.nickname ?? '匿名');
 
     return GlassContainer(
       margin: EdgeInsets.only(bottom: isDesktop ? 16 : 8),
@@ -47,7 +59,7 @@ class PostCard extends StatelessWidget {
       borderColor: isDark
           ? Colors.white.withValues(alpha: 0.10)
           : Colors.white.withValues(alpha: 0.85),
-      onTap: onTap,
+      onTap: widget.onTap,
       child: Padding(
         padding: EdgeInsets.all(isDesktop ? 16 : 12),
         child: Column(
@@ -55,23 +67,35 @@ class PostCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                Container(
-                  padding: const EdgeInsets.all(2),
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: LinearGradient(
-                      colors: [
-                        Theme.of(context).primaryColor,
-                        Theme.of(context).primaryColor.withValues(alpha: 0.6),
-                      ],
+                GestureDetector(
+                  onTap: widget.disableAuthorNavigation ? null : () {
+                    if (widget.post.author != null) {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => UserHomeScreen(userId: widget.post.author!.id),
+                        ),
+                      );
+                    }
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.all(2),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: LinearGradient(
+                        colors: [
+                          Theme.of(context).primaryColor,
+                          Theme.of(context).primaryColor.withValues(alpha: 0.6),
+                        ],
+                      ),
                     ),
-                  ),
-                  child: CachedAvatar(
-                    radius: isDesktop ? 20 : 18,
-                    imageUrl: displayAvatar.isNotEmpty == true
-                        ? ApiConstants.fullUrl(displayAvatar)
-                        : null,
-                    fallbackText: displayNickname,
+                    child: CachedAvatar(
+                      radius: isDesktop ? 20 : 18,
+                      imageUrl: displayAvatar.isNotEmpty == true
+                          ? ApiConstants.fullUrl(displayAvatar)
+                          : null,
+                      fallbackText: displayNickname,
+                    ),
                   ),
                 ),
                 SizedBox(width: isDesktop ? 12 : 10),
@@ -79,26 +103,39 @@ class PostCard extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        children: [
-                          Flexible(
-                            child: Text(
-                              displayNickname,
-                              style: TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: isDesktop ? 15 : 13),
-                              overflow: TextOverflow.ellipsis,
+                      GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: widget.disableAuthorNavigation ? null : () {
+                          if (widget.post.author != null) {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => UserHomeScreen(userId: widget.post.author!.id),
+                              ),
+                            );
+                          }
+                        },
+                        child: Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                displayNickname,
+                                style: TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: isDesktop ? 15 : 13),
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
-                          ),
-                          if (post.author != null) ...[
-                            const SizedBox(width: 4),
-                            _buildLevelBadge(post.author!),
+                            if (widget.post.author != null) ...[
+                              const SizedBox(width: 4),
+                              _buildLevelBadge(widget.post.author!),
+                            ],
                           ],
-                        ],
+                        ),
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        _formatTime(post.createdAt),
+                        _formatTime(widget.post.createdAt),
                         style: TextStyle(
                           fontSize: isDesktop ? 12 : 11,
                           color: isDark ? Colors.white54 : Colors.grey[700],
@@ -107,14 +144,14 @@ class PostCard extends StatelessWidget {
                     ],
                   ),
                 ),
-              if (post.author != null)
+              if (widget.post.author != null)
                 Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 8,
                     vertical: 4,
                   ),
                   decoration: BoxDecoration(
-                    color: _getCreditColor(post.author!.creditScore)
+                    color: _getCreditColor(widget.post.author!.creditScore)
                         .withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(8),
                   ),
@@ -124,13 +161,13 @@ class PostCard extends StatelessWidget {
                       Icon(
                         Icons.verified,
                         size: isDesktop ? 14 : 12,
-                        color: _getCreditColor(post.author!.creditScore),
+                        color: _getCreditColor(widget.post.author!.creditScore),
                       ),
                       const SizedBox(width: 4),
                       Text(
-                        '${post.author!.creditScore}%',
+                        '${widget.post.author!.creditScore}%',
                         style: TextStyle(
-                          color: _getCreditColor(post.author!.creditScore),
+                          color: _getCreditColor(widget.post.author!.creditScore),
                           fontSize: isDesktop ? 12 : 11,
                           fontWeight: FontWeight.w600,
                         ),
@@ -140,10 +177,10 @@ class PostCard extends StatelessWidget {
                 ),
               ],
             ),
-            if (post.title.isNotEmpty) ...[
+            if (widget.post.title.isNotEmpty) ...[
               SizedBox(height: isDesktop ? 12 : 8),
               Text(
-                post.title,
+                widget.post.title,
                 style: TextStyle(
                   fontSize: isDesktop ? 17 : 15,
                   fontWeight: FontWeight.bold,
@@ -154,7 +191,7 @@ class PostCard extends StatelessWidget {
             ],
             SizedBox(height: isDesktop ? 8 : 6),
             Text(
-              post.content,
+              widget.post.content,
               maxLines: 4,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
@@ -163,17 +200,17 @@ class PostCard extends StatelessWidget {
                 fontSize: isDesktop ? 15 : 13,
               ),
             ),
-            if (post.images.isNotEmpty) ...[
+            if (widget.post.images.isNotEmpty) ...[
               SizedBox(height: isDesktop ? 12 : 8),
-              _buildImageGrid(context, post.images),
+              _buildImageGrid(context, widget.post.images),
             ],
-            if ((showPrice && post.price > 0) || showWarning) ...[
+            if ((widget.showPrice && widget.post.price > 0) || widget.showWarning) ...[
               const SizedBox(height: 8),
               _buildPriceOrWarningTag(context),
             ],
-            if (post.postType.isNotEmpty && !showWarning) ...[
+            if (widget.post.postType.isNotEmpty && !widget.showWarning) ...[
               const SizedBox(height: 6),
-              _buildTypeTag(post.postType),
+              _buildTypeTag(widget.post.postType),
             ],
             const SizedBox(height: 6),
             _buildBottomMeta(context),
@@ -184,7 +221,7 @@ class PostCard extends StatelessWidget {
   }
 
   Widget _buildPriceOrWarningTag(BuildContext context) {
-    if (showWarning) {
+    if (widget.showWarning) {
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
@@ -198,8 +235,8 @@ class PostCard extends StatelessWidget {
             const Icon(Icons.warning, color: Colors.red, size: 16),
             const SizedBox(width: 6),
             Text(
-              post.price > 0
-                  ? '涉案金额 ¥${post.price.toStringAsFixed(0)}'
+              widget.post.price > 0
+                  ? '涉案金额 ¥${widget.post.price.toStringAsFixed(0)}'
                   : '曝光举报',
               style: const TextStyle(
                 color: Colors.red,
@@ -212,7 +249,7 @@ class PostCard extends StatelessWidget {
       );
     }
 
-    if (showPrice && post.price > 0) {
+    if (widget.showPrice && widget.post.price > 0) {
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
@@ -225,7 +262,7 @@ class PostCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(8),
         ),
         child: Text(
-          '¥${post.price.toStringAsFixed(2)}',
+          '¥${widget.post.price.toStringAsFixed(2)}',
           style: TextStyle(
             color: Theme.of(context).primaryColor,
             fontWeight: FontWeight.bold,
@@ -319,12 +356,12 @@ class PostCard extends StatelessWidget {
           onTap: () => _openImageViewer(context, imageUrls, 0),
           child: Container(
             height: 220,
-            color: Colors.black.withValues(alpha: showPrice ? 0.04 : 0),
+            color: Colors.black.withValues(alpha: widget.showPrice ? 0.04 : 0),
             child: CachedNetworkImage(
               cacheManager: PostImageCache.manager,
               imageUrl: imageUrls[0],
               width: double.infinity,
-              fit: showPrice ? BoxFit.contain : BoxFit.cover,
+              fit: widget.showPrice ? BoxFit.contain : BoxFit.cover,
               placeholder: (_, __) => Container(color: Colors.grey[300]),
               errorWidget: (_, __, ___) => Container(
                 color: Colors.grey[300],
@@ -426,21 +463,21 @@ class PostCard extends StatelessWidget {
             color: isDark ? Colors.white30 : Colors.grey[400]),
         const SizedBox(width: 4),
         Text(
-          '${post.viewCount}',
+          '${widget.post.viewCount}',
           style: TextStyle(
             fontSize: 11,
             color: isDark ? Colors.white30 : Colors.grey[400],
           ),
         ),
         const SizedBox(width: 12),
-        Icon(post.isLiked ? Icons.thumb_up : Icons.thumb_up_outlined, size: 14,
-            color: post.isLiked ? const Color(0xFFFF6B6B) : (isDark ? Colors.white30 : Colors.grey[400])),
+        Icon(widget.post.isLiked ? Icons.thumb_up : Icons.thumb_up_outlined, size: 14,
+            color: widget.post.isLiked ? const Color(0xFFFF6B6B) : (isDark ? Colors.white30 : Colors.grey[400])),
         const SizedBox(width: 4),
         Text(
-          '${post.likeCount}',
+          '${widget.post.likeCount}',
           style: TextStyle(
             fontSize: 11,
-            color: post.isLiked ? const Color(0xFFFF6B6B) : (isDark ? Colors.white30 : Colors.grey[400]),
+            color: widget.post.isLiked ? const Color(0xFFFF6B6B) : (isDark ? Colors.white30 : Colors.grey[400]),
           ),
         ),
         const SizedBox(width: 12),
@@ -448,7 +485,7 @@ class PostCard extends StatelessWidget {
             color: isDark ? Colors.white30 : Colors.grey[400]),
         const SizedBox(width: 4),
         Text(
-          '${post.replyCount}',
+          '${widget.post.replyCount}',
           style: TextStyle(
             fontSize: 11,
             color: isDark ? Colors.white30 : Colors.grey[400],

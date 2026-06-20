@@ -81,7 +81,7 @@ class _SubjectRankingDetailScreenState
         return a.name.compareTo(b.name);
       });
 
-    setState(() {
+    if (mounted) setState(() {
       _teachers = refreshed;
     });
   }

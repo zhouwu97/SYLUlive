@@ -37,7 +37,7 @@ class _AdminMembersScreenState extends State<AdminMembersScreen> {
 
   Future<void> _refresh() async {
     final future = _loadMembers();
-    setState(() => _future = future);
+    if (mounted) setState(() => _future = future);
     await future;
   }
 

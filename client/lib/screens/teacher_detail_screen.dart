@@ -244,7 +244,7 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
               if (provider.myRating != null && !_isEditing)
                 TextButton(
                     onPressed: () {
-                      setState(() {
+                      if (mounted) setState(() {
                         _isEditing = true;
                         _star = provider.myRating!.star;
                         _commentCtrl.text = provider.myRating!.comment;
@@ -270,6 +270,23 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
                                     : Colors.grey[400]),
                           ))),
               const SizedBox(height: 12),
+              TextField(
+                controller: _commentCtrl,
+                maxLines: 3,
+                maxLength: 200,
+                decoration: InputDecoration(
+                  hintText: '写下对老师的评价（选填）',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide.none,
+                  ),
+                  filled: true,
+                  fillColor: isDark ? const Color(0x33FFFFFF) : const Color(0x0A000000),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                ),
+                style: TextStyle(fontSize: 14, color: isDark ? Colors.white : Colors.black87),
+              ),
+              const SizedBox(height: 12),
               // 提交按钮
               Row(mainAxisAlignment: MainAxisAlignment.end, children: [
                 if (_isEditing)
@@ -282,10 +299,10 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
                       ? null
                       : () async {
                           final ok = await provider.rateTeacher(
-                              widget.teacherId, _star, "");
+                              widget.teacherId, _star, _commentCtrl.text.trim());
                           if (ok && mounted) {
                             _didChange = true;
-                            setState(() => _isEditing = false);
+                            if (mounted) setState(() => _isEditing = false);
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
                                   content: Text('评价成功'),

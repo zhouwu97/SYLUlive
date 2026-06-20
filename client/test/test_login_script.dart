@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:shenliyuan/services/webvpn_service.dart';
 import 'package:shenliyuan/utils/sylu_client_crawler.dart';
 
@@ -7,7 +8,7 @@ void main() async {
 
   // Step 1: CAS 登录
   print('\n--- Step 1: CAS 统一认证登录 ---');
-  final success = await vpn.login('2403060128', '@Zhoukangwu0');
+  final success = await vpn.login(Platform.environment['TEST_USER'] ?? '', Platform.environment['TEST_PASS'] ?? '');
   print('登录结果: $success');
 
   if (!success) {
@@ -23,7 +24,7 @@ void main() async {
   final crawler = SyluClientCrawler(cookieJar: vpn.cookieJar);
 
   try {
-    final html = await crawler.login('2403060128', '@Zhoukangwu0', vpn.vpnCookie);
+    final html = await crawler.login(Platform.environment['TEST_USER'] ?? '', Platform.environment['TEST_PASS'] ?? '', vpn.vpnCookie);
     print('HTML 长度: ${html.length}');
 
     if (html.contains('<form') && html.contains('pubKey')) {

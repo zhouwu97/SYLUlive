@@ -36,7 +36,7 @@ class _TeacherRatingScreenState extends State<TeacherRatingScreen>
   }
 
   Future<void> _loadData() async {
-    setState(() => _loading = true);
+    if (mounted) setState(() => _loading = true);
     final dio = context.read<AuthProvider>().dio;
     final postProvider = context.read<PostProvider>();
     try {
@@ -84,6 +84,8 @@ class _TeacherRatingScreenState extends State<TeacherRatingScreen>
         ],
       ),
     );
+    nameCtrl.dispose();
+    deptCtrl.dispose();
     if (ok != true || nameCtrl.text.trim().isEmpty) return;
 
     try {
@@ -129,6 +131,7 @@ class _TeacherRatingScreenState extends State<TeacherRatingScreen>
         ],
       ),
     );
+    commentCtrl.dispose();
     if (rating == null) return;
 
     try {
@@ -218,8 +221,8 @@ class _TeacherRatingScreenState extends State<TeacherRatingScreen>
   }
 
   Widget _buildBg(ThemeProvider p, bool d) {
-    if (p.hasBackground && p.backgroundImage != null) {
-      final bg = p.backgroundImage!;
+    if (p.isBackgroundVisible && p.getBackgroundImageFor(context) != null) {
+      final bg = p.getBackgroundImageFor(context)!;
       final isAsset = !bg.startsWith('http') && !bg.startsWith('/');
       return Stack(fit: StackFit.expand, children: [
         isAsset

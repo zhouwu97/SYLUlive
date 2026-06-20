@@ -3,7 +3,7 @@ services:
   postgres:
     image: postgres:15-alpine
     environment:
-      - POSTGRES_PASSWORD=postgres123
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-postgres_change_me}
       - POSTGRES_DB=shenliyuan
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -17,6 +17,17 @@ services:
       retries: 5
 
   # Go后端服务
+
+  python-edu-service:
+    build:
+      context: ./python-edu-service
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    networks:
+      - shenliyuan_network
+
   server:
     build:
       context: ./server
@@ -25,15 +36,17 @@ services:
       - "8080:8080"
     environment:
       - JWT_SECRET=${JWT_SECRET:-your-super-secret-jwt-key-change-this}
-      - DSN=${DSN:-host=postgres port=5432 user=postgres password=postgres123 dbname=shenliyuan sslmode=disable}
+      - DSN=${DSN:-host=postgres port=5432 user=postgres password=${DB_PASSWORD:-postgres_change_me} dbname=shenliyuan sslmode=disable}
       - UPLOAD_DIR=${UPLOAD_DIR:-/app/uploads}
-      - SUPER_ADMIN_DEFAULT_PASSWORD=${SUPER_ADMIN_DEFAULT_PASSWORD:-super_admin_password_change_this}
+      - SUPER_ADMIN_ID=${SUPER_ADMIN_ID:-1234567890}
+      - SUPER_ADMIN_PASSWORD=${SUPER_ADMIN_PASSWORD:-super_admin_password_change_this}
+      - EDU_SERVICE_URL=http://python-edu-service:8000
       - GIN_MODE=release
     depends_on:
       postgres:
         condition: service_healthy
     volumes:
-      - server_data:/app
+      - server_data:/app/uploads
     restart: unless-stopped
     networks:
       - shenliyuan_network
@@ -45,3 +58,15 @@ volumes:
 networks:
   shenliyuan_network:
     driver: bridge
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/docker.conf:/etc/nginx/conf.d/default.conf
+      - ./client/build/web:/usr/share/nginx/html
+    depends_on:
+      - server
+    networks:
+      - shenliyuan_network

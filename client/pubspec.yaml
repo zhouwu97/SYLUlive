@@ -1,7 +1,7 @@
 name: shenliyuan
 description: 沈理校园 - 校园互助社交应用
 publish_to: 'none'
-version: 1.4.27+167
+version: 1.5.12+1512
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -20,6 +20,7 @@ dependencies:
   flutter_secure_storage: ^9.0.0
   image_picker: ^1.0.7
   photo_manager: ^3.0.0
+  image_cropper: ^8.0.2
   shared_preferences: ^2.2.2
   intl: ^0.19.0
   url_launcher: ^6.2.4
@@ -35,8 +36,8 @@ dependencies:
   jpush_flutter: ^3.4.5
   qr_flutter: ^4.1.0
   crypto: ^3.0.3
-  dio_cookie_manager: ^3.1.1
-  cookie_jar: ^4.0.8
+  dio_cookie_manager: ^3.4.0
+  cookie_jar: ^4.0.9
   encrypt: ^5.0.3
   pointycastle: ^3.9.1
   html: ^0.15.6
@@ -44,6 +45,8 @@ dependencies:
   asn1lib: ^1.6.5
   flutter_inappwebview: ^6.1.5
   add_2_calendar: ^3.0.1
+  flutter_staggered_grid_view: ^0.7.0
+  gal: ^2.3.2
 
 dev_dependencies:
   flutter_test:
@@ -53,6 +56,19 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
-    - assets/images/
+    - assets/images/bg-mobile.png
+    - assets/images/map.jpg
+    - assets/images/mingfeng.png
+    - assets/images/morenbeijing.jpeg
+    - assets/images/pcys.png
+    - assets/images/sjys.png
+    - assets/images/tablet_default_landscape.png
+    - assets/images/wallpaper_thumbs/
+    - assets/images/xiaoli.jpg
+    - assets/images/yuanshen.jpg
     - assets/scripts/
     - assets/yongzhiyunkao/
+  fonts:
+    - family: NotoSansCJKsc
+      fonts:
+        - asset: assets/fonts/NotoSansCJKsc-Regular.otf

@@ -212,9 +212,11 @@ Future<bool> _handlePrivateMessageNotification(
 }
 
 void _openPrivateMessage(int conversationId, int senderId, String senderName) {
+  // 极光插件不自动唤醒 App，手动拉前台
+  const MethodChannel('shenliyuan/foreground').invokeMethod('bringToForeground').catchError((_) {});
+  
   final navigator = appNavigatorKey.currentState;
   if (navigator == null) {
-    // 冷启动时 navigator 未就绪，暂存数据等首帧后处理
     _pendingOpenNotification = {
       'conversation_id': conversationId,
       'sender_id': senderId,
@@ -223,28 +225,38 @@ void _openPrivateMessage(int conversationId, int senderId, String senderName) {
     debugPrint('📌 冷启动缓冲通知跳转: conv=$conversationId sender=$senderId');
     return;
   }
+  debugPrint('🚪 navigator已就绪，直接跳转');
   _navigateToPrivateMessage(conversationId, senderId, senderName);
 }
 
 void _navigateToPrivateMessage(int conversationId, int senderId, String senderName) {
   final navigator = appNavigatorKey.currentState;
-  if (navigator == null) return;
+  if (navigator == null) {
+    debugPrint('❌ navigate: navigator is null');
+    return;
+  }
+  debugPrint('🧭 navigate: popUntil+push conv=$conversationId sender=$senderId');
   final displayName =
       senderName.trim().isEmpty ? '用户$senderId' : senderName.trim();
-  navigator.popUntil((route) => route.isFirst);
-  navigator.push(
-    MaterialPageRoute(
-      builder: (_) => ChatDetailScreen(
-        conversationId: conversationId,
-        targetUser: User(
-          id: senderId,
-          studentId: '',
-          nickname: displayName,
-          createdAt: DateTime.now(),
+  try {
+    navigator.popUntil((route) => route.isFirst);
+    navigator.push(
+      MaterialPageRoute(
+        builder: (_) => ChatDetailScreen(
+          conversationId: conversationId,
+          targetUser: User(
+            id: senderId,
+            studentId: '',
+            nickname: displayName,
+            createdAt: DateTime.now(),
+          ),
         ),
       ),
-    ),
-  );
+    );
+    debugPrint('✅ navigate: push 成功');
+  } catch (e) {
+    debugPrint('❌ navigate: push 失败 - $e');
+  }
 }
 
 void _processPendingOpenNotification() {

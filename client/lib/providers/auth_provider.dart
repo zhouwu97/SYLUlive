@@ -14,6 +14,7 @@ import '../config/api_constants.dart';
 import '../utils/app_feedback.dart';
 import '../utils/app_navigator.dart';
 import '../services/wallpaper_prefetch_service.dart';
+import '../services/keep_alive_service.dart';
 import '../widgets/auth_expired_overlay.dart';
 
 /// 认证结果，包含成功状态和错误信息
@@ -137,6 +138,7 @@ class AuthProvider extends ChangeNotifier {
       }
     }
     _initialized = true;
+    await KeepAliveService.instance.syncAuthToken(_token);
     notifyListeners();
   }
 
@@ -158,6 +160,7 @@ class AuthProvider extends ChangeNotifier {
         await storage.write(key: _userKey, value: jsonEncode(_user!.toJson()));
       }
     }
+    await KeepAliveService.instance.syncAuthToken(_token);
   }
 
   Future<void> _saveEduPassword(String studentId, String password) async {
@@ -284,6 +287,7 @@ class AuthProvider extends ChangeNotifier {
       await storage.delete(key: _tokenKey);
       await storage.delete(key: _userKey);
     }
+    await KeepAliveService.instance.syncAuthToken(null);
   }
 
   void _showAuthExpiredOverlay() {

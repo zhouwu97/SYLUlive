@@ -53,6 +53,11 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:scheme="timetable" android:host="home" />
             </intent-filter>
+            <!-- JPush 点击通知直接唤起 App -->
+            <intent-filter>
+                <action android:name="cn.jpush.android.intent.NOTIFICATION_OPENED" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->

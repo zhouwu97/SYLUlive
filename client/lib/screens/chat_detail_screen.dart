@@ -255,7 +255,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     }
 
     return Scaffold(
-      resizeToAvoidBottomInset: true,
+      resizeToAvoidBottomInset: false,
       backgroundColor: Colors.transparent,
       extendBodyBehindAppBar: true,
       appBar: AppBar(

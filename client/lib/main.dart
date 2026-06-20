@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:ui';
 import 'dart:io' show File;
 import 'package:dio/dio.dart';
@@ -33,6 +32,7 @@ import 'services/course_reminder_service.dart';
 import 'theme/AppTheme.dart';
 import 'config/api_constants.dart';
 import 'utils/app_navigator.dart';
+import 'utils/private_message_notification.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -56,8 +56,10 @@ var jpush = JPush.newJPush();
 final FlutterLocalNotificationsPlugin _privateMessageNotifications =
     FlutterLocalNotificationsPlugin();
 bool _privateMessageNotificationsReady = false;
+
 /// 冷启动时通知数据临时存放（navigator 未就绪前）
-Map<String, dynamic>? _pendingOpenNotification;
+final PendingPrivateMessageOpen _pendingPrivateMessageOpen =
+    PendingPrivateMessageOpen();
 
 Future<void> setupJPush(AuthProvider authProvider) async {
   jpush.setup(
@@ -74,7 +76,9 @@ Future<void> setupJPush(AuthProvider authProvider) async {
     onOpenNotification: (Map<String, dynamic> message) async {
       debugPrint('👆 点击通知原始数据: $message');
       if (await _handleUpdateNotification(message)) return;
-      if (await _handlePrivateMessageNotification(message, opened: true)) return;
+      if (await _handlePrivateMessageNotification(message, opened: true)) {
+        return;
+      }
       if (appNavigatorKey.currentState != null) {
         appNavigatorKey.currentState!.popUntil((route) => route.isFirst);
         appNavigatorKey.currentState!.push(
@@ -116,16 +120,9 @@ Future<void> _initializePrivateMessageNotifications() async {
       final payload = response.payload;
       if (payload == null || payload.isEmpty) return;
       try {
-        final data = jsonDecode(payload);
-        if (data is Map) {
-          final extras =
-              data.map((key, value) => MapEntry(key.toString(), value));
-          final conversationId = _intFromExtra(extras['conversation_id']);
-          final senderId = _intFromExtra(extras['sender_id']);
-          final senderName = extras['sender_name']?.toString() ?? '';
-          if (conversationId != null && senderId != null) {
-            _openPrivateMessage(conversationId, senderId, senderName);
-          }
+        final target = privateMessageTargetFromLocalPayload(payload);
+        if (target != null) {
+          _openPrivateMessage(target);
         }
       } catch (e) {
         debugPrint('解析私信本地通知 payload 失败: $e');
@@ -165,8 +162,8 @@ Future<void> _initializePrivateMessageNotifications() async {
 /// 首帧后请求通知权限（需要 Activity 已创建）
 Future<void> _requestNotificationPermissionIfNeeded() async {
   try {
-    final plugin = _privateMessageNotifications
-        .resolvePlatformSpecificImplementation<
+    final plugin =
+        _privateMessageNotifications.resolvePlatformSpecificImplementation<
             AndroidFlutterLocalNotificationsPlugin>();
     if (plugin == null) return;
     final granted = await plugin.requestNotificationsPermission();
@@ -180,30 +177,27 @@ Future<bool> _handlePrivateMessageNotification(
   Map<String, dynamic> message, {
   required bool opened,
 }) async {
-  final extras = _extractJPushExtras(message);
+  final extras = extractJPushExtras(message);
   debugPrint('📨 解析后extras: $extras');
   if (extras['type']?.toString() != 'private_message') {
     return false;
   }
 
-  final conversationId = _intFromExtra(extras['conversation_id']);
-  final senderId = _intFromExtra(extras['sender_id']);
-  if (conversationId == null || senderId == null) {
+  final target = privateMessageTargetFromJPushMessage(message);
+  if (target == null) {
     debugPrint('私信推送缺少 conversation_id 或 sender_id: $message');
     return true;
   }
 
-  final title = _notificationTitle(message);
-  final content = _notificationContent(message);
   if (opened) {
-    _openPrivateMessage(conversationId, senderId, title);
+    _openPrivateMessage(target);
     return true;
   }
 
   // 前台不做本地弹窗，全部交给极光 SDK 显示，避免双通知
   final context = appNavigatorKey.currentContext;
   final provider = context?.read<MessageProvider>();
-  if (provider?.currentConversationId == conversationId) {
+  if (provider?.currentConversationId == target.conversationId) {
     await provider?.refreshMessages();
   } else {
     await provider?.loadConversations(silent: true);
@@ -211,44 +205,42 @@ Future<bool> _handlePrivateMessageNotification(
   return true;
 }
 
-void _openPrivateMessage(int conversationId, int senderId, String senderName) {
+void _openPrivateMessage(PrivateMessageTarget target) {
   // 尝试拉起 App
   const channel = MethodChannel('shenliyuan/foreground');
   channel.invokeMethod('bringToForeground').catchError((e) {});
-  
+
   final navigator = appNavigatorKey.currentState;
   if (navigator == null) {
-    _pendingOpenNotification = {
-      'conversation_id': conversationId,
-      'sender_id': senderId,
-      'sender_name': senderName,
-    };
-    debugPrint('📌 冷启动缓冲通知跳转: conv=$conversationId sender=$senderId');
+    _pendingPrivateMessageOpen.store(target);
+    debugPrint(
+      '📌 冷启动缓冲通知跳转: conv=${target.conversationId} sender=${target.senderId}',
+    );
     return;
   }
   debugPrint('🚪 navigator已就绪，直接跳转');
-  _navigateToPrivateMessage(conversationId, senderId, senderName);
+  _navigateToPrivateMessage(target);
 }
 
-void _navigateToPrivateMessage(int conversationId, int senderId, String senderName) {
+void _navigateToPrivateMessage(PrivateMessageTarget target) {
   final navigator = appNavigatorKey.currentState;
   if (navigator == null) {
     debugPrint('❌ navigate: navigator is null');
     return;
   }
-  debugPrint('🧭 navigate: popUntil+push conv=$conversationId sender=$senderId');
-  final displayName =
-      senderName.trim().isEmpty ? '用户$senderId' : senderName.trim();
+  debugPrint(
+    '🧭 navigate: popUntil+push conv=${target.conversationId} sender=${target.senderId}',
+  );
   try {
     navigator.popUntil((route) => route.isFirst);
     navigator.push(
       MaterialPageRoute(
         builder: (_) => ChatDetailScreen(
-          conversationId: conversationId,
+          conversationId: target.conversationId,
           targetUser: User(
-            id: senderId,
+            id: target.senderId,
             studentId: '',
-            nickname: displayName,
+            nickname: target.displayName,
             createdAt: DateTime.now(),
           ),
         ),
@@ -261,49 +253,23 @@ void _navigateToPrivateMessage(int conversationId, int senderId, String senderNa
 }
 
 void _processPendingOpenNotification() {
-  final data = _pendingOpenNotification;
-  if (data == null) return;
-  _pendingOpenNotification = null;
-  final conversationId = _intFromExtra(data['conversation_id']);
-  final senderId = _intFromExtra(data['sender_id']);
-  final senderName = data['sender_name']?.toString() ?? '';
-  if (conversationId != null && senderId != null) {
-    debugPrint('✅ 处理缓冲通知: conv=$conversationId sender=$senderId');
-    _navigateToPrivateMessage(conversationId, senderId, senderName);
+  final now = DateTime.now();
+  _pendingPrivateMessageOpen.markReady(now);
+  if (appNavigatorKey.currentState == null) {
+    debugPrint('📌 等待 navigator 就绪后再处理私信通知');
+    return;
   }
-}
-
-int? _intFromExtra(dynamic value) {
-  if (value is int) return value;
-  if (value is num) return value.toInt();
-  return int.tryParse(value?.toString() ?? '');
-}
-
-String _notificationTitle(Map<String, dynamic> message) {
-  return message['title']?.toString() ??
-      message['notificationTitle']?.toString() ??
-      _androidNotificationValue(message, 'title') ??
-      '';
-}
-
-String _notificationContent(Map<String, dynamic> message) {
-  return message['alert']?.toString() ??
-      message['content']?.toString() ??
-      message['message']?.toString() ??
-      _androidNotificationValue(message, 'alert') ??
-      '';
-}
-
-String? _androidNotificationValue(Map<String, dynamic> message, String key) {
-  final android = message['android'];
-  if (android is Map && android[key] != null) {
-    return android[key].toString();
+  final target = _pendingPrivateMessageOpen.consume(now);
+  if (target != null) {
+    debugPrint(
+      '✅ 处理缓冲通知: conv=${target.conversationId} sender=${target.senderId}',
+    );
+    _navigateToPrivateMessage(target);
   }
-  return null;
 }
 
 Future<bool> _handleUpdateNotification(Map<String, dynamic> message) async {
-  final extras = _extractJPushExtras(message);
+  final extras = extractJPushExtras(message);
   if (extras['type']?.toString() != 'app_update') {
     return false;
   }
@@ -327,49 +293,6 @@ Future<bool> _handleUpdateNotification(Map<String, dynamic> message) async {
     debugPrint('打开更新下载地址失败: $e');
   }
   return true;
-}
-
-Map<String, dynamic> _extractJPushExtras(Map<String, dynamic> message) {
-  // 尝试从 extras 中提取（onReceiveNotification 格式）
-  final extras = message['extras'];
-  if (extras is Map) {
-    final inner = extras['cn.jpush.android.EXTRA'];
-    if (inner is Map) {
-      return inner.map((key, value) => MapEntry(key.toString(), value));
-    }
-    if (inner is String) {
-      try {
-        final decoded = jsonDecode(inner);
-        if (decoded is Map) {
-          return decoded.map((key, value) => MapEntry(key.toString(), value));
-        }
-      } catch (_) {}
-    }
-    return extras.map((key, value) => MapEntry(key.toString(), value));
-  }
-
-  // 尝试从顶层 android.extras 提取
-  final android = message['android'];
-  if (android is Map && android['extras'] is Map) {
-    final androidExtras = android['extras'] as Map;
-    return androidExtras.map((key, value) => MapEntry(key.toString(), value));
-  }
-
-  // 尝试从顶层 cn.jpush.android.EXTRA 提取（onOpenNotification 格式）
-  final rawExtra = message['cn.jpush.android.EXTRA'];
-  if (rawExtra is Map) {
-    return rawExtra.map((key, value) => MapEntry(key.toString(), value));
-  }
-  if (rawExtra is String) {
-    try {
-      final decoded = jsonDecode(rawExtra);
-      if (decoded is Map) {
-        return decoded.map((key, value) => MapEntry(key.toString(), value));
-      }
-    } catch (_) {}
-  }
-
-  return message.map((key, value) => MapEntry(key.toString(), value));
 }
 
 Dio? _sharedDio;

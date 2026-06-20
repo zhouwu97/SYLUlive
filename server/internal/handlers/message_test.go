@@ -368,7 +368,8 @@ func TestMessageSendImageResponseAndPush(t *testing.T) {
 		}
 		if call.Extras["type"] != "private_message" ||
 			call.Extras["conversation_id"] == nil ||
-			call.Extras["sender_id"] != uint(1) {
+			call.Extras["sender_id"] != uint(1) ||
+			call.Extras["sender_name"] != "Alice" {
 			t.Fatalf("unexpected push extras: %#v", call.Extras)
 		}
 	case <-time.After(time.Second):

@@ -3,9 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:dio/dio.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
-import 'dart:io' show File;
 import '../providers/auth_provider.dart';
-import '../providers/theme_provider.dart';
 import '../config/api_constants.dart';
 import '../models/post.dart';
 import '../models/reply.dart';
@@ -13,7 +11,6 @@ import '../models/user.dart';
 import '../providers/post_provider.dart';
 import '../utils/app_feedback.dart';
 import '../utils/post_image_cache.dart';
-import '../widgets/glass_container.dart';
 import '../widgets/report_sheet.dart';
 import '../widgets/cached_avatar.dart';
 import 'create_post_screen.dart';
@@ -28,6 +25,7 @@ class PostDetailScreen extends StatefulWidget {
   final int? targetReplyId;
   final bool isDesktopSplitMode;
   final bool hideBackButton;
+  final ValueChanged<int>? onAuthorTap;
 
   const PostDetailScreen(
       {super.key,
@@ -36,7 +34,8 @@ class PostDetailScreen extends StatefulWidget {
       this.initialPost,
       this.targetReplyId,
       this.isDesktopSplitMode = false,
-      this.hideBackButton = false});
+      this.hideBackButton = false,
+      this.onAuthorTap});
 
   @override
   State<PostDetailScreen> createState() => _PostDetailScreenState();
@@ -207,7 +206,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
     // 先保存 parentReplyId，后面 setState 会清空它
     final parentId = _parentReplyId;
-    final replyTo = _replyToName;
     final replyToUserId = _replyToUserId;
 
     // 乐观更新：立即在本地插入评论
@@ -352,7 +350,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final themeProvider = context.watch<ThemeProvider>();
     final currentUser = context.watch<AuthProvider>().user;
     final canDelete = _post != null &&
         currentUser != null &&
@@ -796,12 +793,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       behavior: HitTestBehavior.opaque,
       onTap: () {
         if (p.author != null) {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => UserHomeScreen(userId: p.author!.id),
-            ),
-          );
+          _openAuthorHome(p.author!.id);
         }
       },
       child: Container(
@@ -884,6 +876,20 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                   fontSize: 12,
                   color: isDark ? Colors.white30 : Colors.grey[400])),
         ]),
+      ),
+    );
+  }
+
+  void _openAuthorHome(int userId) {
+    final handler = widget.onAuthorTap;
+    if (handler != null) {
+      handler(userId);
+      return;
+    }
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => UserHomeScreen(userId: userId),
       ),
     );
   }
@@ -1353,10 +1359,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           GestureDetector(
             onTap: () {
               if (r.author != null) {
-                Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                        builder: (_) => UserHomeScreen(userId: r.author!.id)));
+                _openAuthorHome(r.author!.id);
               }
             },
             child: CachedAvatar(
@@ -1452,11 +1455,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               GestureDetector(
                 onTap: () {
                   if (r.author != null) {
-                    Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (_) =>
-                                UserHomeScreen(userId: r.author!.id)));
+                    _openAuthorHome(r.author!.id);
                   }
                 },
                 child: CachedAvatar(

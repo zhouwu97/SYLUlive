@@ -18,6 +18,7 @@ class PostCard extends StatefulWidget {
   final bool showPrice;
   final bool showWarning;
   final bool disableAuthorNavigation;
+  final ValueChanged<int>? onAuthorTap;
 
   const PostCard({
     super.key,
@@ -26,13 +27,15 @@ class PostCard extends StatefulWidget {
     this.showPrice = false,
     this.showWarning = false,
     this.disableAuthorNavigation = false,
+    this.onAuthorTap,
   });
 
   @override
   State<PostCard> createState() => _PostCardState();
 }
 
-class _PostCardState extends State<PostCard> with AutomaticKeepAliveClientMixin {
+class _PostCardState extends State<PostCard>
+    with AutomaticKeepAliveClientMixin {
   @override
   bool get wantKeepAlive => true;
 
@@ -46,8 +49,10 @@ class _PostCardState extends State<PostCard> with AutomaticKeepAliveClientMixin 
     // 优先使用当前登录用户的最新资料
     final authUser = context.watch<AuthProvider>().user;
     final isMyPost = authUser != null && widget.post.author?.id == authUser.id;
-    final displayAvatar = isMyPost ? authUser.avatar : (widget.post.author?.avatar ?? '');
-    final displayNickname = isMyPost ? authUser.nickname : (widget.post.author?.nickname ?? '匿名');
+    final displayAvatar =
+        isMyPost ? authUser.avatar : (widget.post.author?.avatar ?? '');
+    final displayNickname =
+        isMyPost ? authUser.nickname : (widget.post.author?.nickname ?? '匿名');
 
     return GlassContainer(
       margin: EdgeInsets.only(bottom: isDesktop ? 16 : 8),
@@ -68,16 +73,9 @@ class _PostCardState extends State<PostCard> with AutomaticKeepAliveClientMixin 
             Row(
               children: [
                 GestureDetector(
-                  onTap: widget.disableAuthorNavigation ? null : () {
-                    if (widget.post.author != null) {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => UserHomeScreen(userId: widget.post.author!.id),
-                        ),
-                      );
-                    }
-                  },
+                  onTap: widget.disableAuthorNavigation
+                      ? null
+                      : () => _openAuthor(context),
                   child: Container(
                     padding: const EdgeInsets.all(2),
                     decoration: BoxDecoration(
@@ -105,16 +103,9 @@ class _PostCardState extends State<PostCard> with AutomaticKeepAliveClientMixin 
                     children: [
                       GestureDetector(
                         behavior: HitTestBehavior.opaque,
-                        onTap: widget.disableAuthorNavigation ? null : () {
-                          if (widget.post.author != null) {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => UserHomeScreen(userId: widget.post.author!.id),
-                              ),
-                            );
-                          }
-                        },
+                        onTap: widget.disableAuthorNavigation
+                            ? null
+                            : () => _openAuthor(context),
                         child: Row(
                           children: [
                             Flexible(
@@ -144,37 +135,39 @@ class _PostCardState extends State<PostCard> with AutomaticKeepAliveClientMixin 
                     ],
                   ),
                 ),
-              if (widget.post.author != null)
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: _getCreditColor(widget.post.author!.creditScore)
-                        .withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.verified,
-                        size: isDesktop ? 14 : 12,
-                        color: _getCreditColor(widget.post.author!.creditScore),
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        '${widget.post.author!.creditScore}%',
-                        style: TextStyle(
-                          color: _getCreditColor(widget.post.author!.creditScore),
-                          fontSize: isDesktop ? 12 : 11,
-                          fontWeight: FontWeight.w600,
+                if (widget.post.author != null)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: _getCreditColor(widget.post.author!.creditScore)
+                          .withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.verified,
+                          size: isDesktop ? 14 : 12,
+                          color:
+                              _getCreditColor(widget.post.author!.creditScore),
                         ),
-                      ),
-                    ],
+                        const SizedBox(width: 4),
+                        Text(
+                          '${widget.post.author!.creditScore}%',
+                          style: TextStyle(
+                            color: _getCreditColor(
+                                widget.post.author!.creditScore),
+                            fontSize: isDesktop ? 12 : 11,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
               ],
             ),
             if (widget.post.title.isNotEmpty) ...[
@@ -204,7 +197,8 @@ class _PostCardState extends State<PostCard> with AutomaticKeepAliveClientMixin 
               SizedBox(height: isDesktop ? 12 : 8),
               _buildImageGrid(context, widget.post.images),
             ],
-            if ((widget.showPrice && widget.post.price > 0) || widget.showWarning) ...[
+            if ((widget.showPrice && widget.post.price > 0) ||
+                widget.showWarning) ...[
               const SizedBox(height: 8),
               _buildPriceOrWarningTag(context),
             ],
@@ -448,6 +442,22 @@ class _PostCardState extends State<PostCard> with AutomaticKeepAliveClientMixin 
     );
   }
 
+  void _openAuthor(BuildContext context) {
+    final author = widget.post.author;
+    if (author == null) return;
+    final handler = widget.onAuthorTap;
+    if (handler != null) {
+      handler(author.id);
+      return;
+    }
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => UserHomeScreen(userId: author.id),
+      ),
+    );
+  }
+
   Color _getCreditColor(int score) {
     if (score >= 90) return Colors.green;
     if (score >= 70) return Colors.orange;
@@ -459,8 +469,8 @@ class _PostCardState extends State<PostCard> with AutomaticKeepAliveClientMixin 
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Row(
       children: [
-        Icon(Icons.visibility_outlined, size: 14,
-            color: isDark ? Colors.white30 : Colors.grey[400]),
+        Icon(Icons.visibility_outlined,
+            size: 14, color: isDark ? Colors.white30 : Colors.grey[400]),
         const SizedBox(width: 4),
         Text(
           '${widget.post.viewCount}',
@@ -470,19 +480,24 @@ class _PostCardState extends State<PostCard> with AutomaticKeepAliveClientMixin 
           ),
         ),
         const SizedBox(width: 12),
-        Icon(widget.post.isLiked ? Icons.thumb_up : Icons.thumb_up_outlined, size: 14,
-            color: widget.post.isLiked ? const Color(0xFFFF6B6B) : (isDark ? Colors.white30 : Colors.grey[400])),
+        Icon(widget.post.isLiked ? Icons.thumb_up : Icons.thumb_up_outlined,
+            size: 14,
+            color: widget.post.isLiked
+                ? const Color(0xFFFF6B6B)
+                : (isDark ? Colors.white30 : Colors.grey[400])),
         const SizedBox(width: 4),
         Text(
           '${widget.post.likeCount}',
           style: TextStyle(
             fontSize: 11,
-            color: widget.post.isLiked ? const Color(0xFFFF6B6B) : (isDark ? Colors.white30 : Colors.grey[400]),
+            color: widget.post.isLiked
+                ? const Color(0xFFFF6B6B)
+                : (isDark ? Colors.white30 : Colors.grey[400]),
           ),
         ),
         const SizedBox(width: 12),
-        Icon(Icons.chat_bubble_outline, size: 14,
-            color: isDark ? Colors.white30 : Colors.grey[400]),
+        Icon(Icons.chat_bubble_outline,
+            size: 14, color: isDark ? Colors.white30 : Colors.grey[400]),
         const SizedBox(width: 4),
         Text(
           '${widget.post.replyCount}',

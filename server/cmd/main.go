@@ -1004,7 +1004,7 @@ func main() {
 
 		c.JSON(http.StatusOK, gin.H{
 
-			"version": "1.5.12",
+			"version": "1.5.13",
 
 			"min_version": "1.4.0", // 增加最低版本限制，低于此版本的客户端将被强制更新
 
@@ -1016,7 +1016,7 @@ func main() {
 
 			"gitee_download_url": "https://gitee.com/chunhezi/SYLUlive/releases",
 
-			"update_msg": "1.5.12 更新：修复输入法黑屏闪烁问题，极光私信推送唤醒逻辑更换为最稳的原生拉起。",
+			"update_msg": "1.5.13 更新：升级私信聊天体验，加入背景图、白色气泡、双方头像与消息缓存；修复软键盘顶起聊天背景的问题；新增后台保活、快捷开关和白名单提示；优化平板分栏，用户主页可在右侧内容区打开；关注/粉丝和个人主页头像加入缓存，减少反复加载。",
 		})
 
 	})

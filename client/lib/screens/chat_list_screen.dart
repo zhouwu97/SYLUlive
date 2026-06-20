@@ -86,14 +86,23 @@ class _ChatListScreenState extends State<ChatListScreen>
   Widget _buildWideLayout(MessageProvider provider, int currentUserId) {
     final width = MediaQuery.sizeOf(context).width >= 1000 ? 320.0 : 292.0;
     return Scaffold(
-      appBar: AppBar(title: const Text('私信')),
+      backgroundColor: Colors.transparent,
+      appBar: AppBar(
+        title: const Text('私信'),
+        backgroundColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+      ),
       body: Row(
         children: [
           SizedBox(
             width: width,
             child: DecoratedBox(
               decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surface,
+                color: Theme.of(context)
+                    .colorScheme
+                    .surface
+                    .withValues(alpha: 0.82),
                 border: Border(
                   right: BorderSide(
                     color:

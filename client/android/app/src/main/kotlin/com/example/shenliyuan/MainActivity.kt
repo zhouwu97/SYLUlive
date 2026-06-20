@@ -17,6 +17,7 @@ class MainActivity : FlutterActivity() {
         private const val WIDGET_CHANNEL = "shenliyuan/widget"
         private const val DEEPLINK_CHANNEL = "shenliyuan/deeplink"
         private const val FOREGROUND_CHANNEL = "shenliyuan/foreground"
+        private const val KEEP_ALIVE_CHANNEL = "shenliyuan/keep_alive"
     }
 
     private var pendingDeepLink: String? = null
@@ -137,22 +138,36 @@ class MainActivity : FlutterActivity() {
             }
         }
 
-        // ── 唤起 App MethodChannel ──
+        // ── 后台保活 MethodChannel ──
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
-            "shenliyuan/foreground"
+            KEEP_ALIVE_CHANNEL
         ).setMethodCallHandler { call, result ->
-            if (call.method == "bringToForeground") {
-                try {
-                    val intent = Intent(this, MainActivity::class.java)
-                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-                    startActivity(intent)
-                    result.success(true)
-                } catch (e: Exception) {
-                    result.error("FAILED", e.message, null)
+            try {
+                when (call.method) {
+                    "getKeepAliveStatus" -> {
+                        result.success(KeepAliveForegroundService.status(this))
+                    }
+                    "setKeepAliveEnabled" -> {
+                        val enabled = call.argument<Boolean>("enabled") ?: false
+                        result.success(KeepAliveForegroundService.setEnabled(this, enabled))
+                    }
+                    "openKeepAliveSettings" -> {
+                        result.success(
+                            CourseReminderLiveScheduler.openBackgroundKeepAliveSettings(this)
+                        )
+                    }
+                    "syncKeepAliveAuthToken" -> {
+                        KeepAliveForegroundService.syncAuthToken(
+                            this,
+                            call.argument<String>("token")
+                        )
+                        result.success(true)
+                    }
+                    else -> result.notImplemented()
                 }
-            } else {
-                result.notImplemented()
+            } catch (e: Exception) {
+                result.error("KEEP_ALIVE_FAILED", e.message, null)
             }
         }
 
@@ -221,7 +236,7 @@ class MainActivity : FlutterActivity() {
         // 私信渠道：悬浮弹窗
         manager.createNotificationChannel(
             NotificationChannel(
-                "private_message_push",
+                "private_messages",
                 "私信通知",
                 NotificationManager.IMPORTANCE_HIGH
             ).apply {
@@ -229,5 +244,17 @@ class MainActivity : FlutterActivity() {
                 enableVibration(true)
             }
         )
+        // 旧版本曾使用 private_message_push；保留渠道，不再作为新私信推送目标。
+        manager.createNotificationChannel(
+            NotificationChannel(
+                "private_message_push",
+                "私信通知",
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "兼容旧版本私信通知"
+                enableVibration(true)
+            }
+        )
+        KeepAliveForegroundService.ensureChannel(this)
     }
 }

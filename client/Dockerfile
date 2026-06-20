@@ -16,8 +16,8 @@ COPY assets ./assets
 # 确保 assets/images 目录存在
 RUN mkdir -p assets/images
 
-# 构建 Web
-RUN flutter build web --release
+# 构建 Web；静态资源随构建产物发布，避免运行时依赖 fonts.gstatic.com 等外部 CDN
+RUN flutter build web --release --no-web-resources-cdn
 
 # Nginx 运行阶段
 FROM nginx:alpine

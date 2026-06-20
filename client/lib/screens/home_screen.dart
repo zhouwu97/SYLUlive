@@ -11,10 +11,14 @@ import '../config/api_constants.dart';
 import '../main.dart';
 import '../providers/auth_provider.dart';
 import '../providers/post_provider.dart';
+import '../providers/theme_provider.dart';
 import '../utils/app_navigator.dart';
 import '../utils/post_image_cache.dart';
+import '../utils/screen_swipe.dart';
 import '../utils/update_checker.dart';
 import '../widgets/bottom_nav.dart';
+import '../widgets/glass_container.dart';
+import '../utils/responsive_util.dart';
 import 'shuitie_screen.dart';
 import 'market_screen.dart';
 import 'course_schedule_screen.dart';
@@ -34,6 +38,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   int _currentIndex = 0;
+  final GlobalKey _contentKey = GlobalKey(debugLabel: 'homeContentStack');
   Timer? _announcementTimer;
   String? _announcementAuthKey;
   bool _isCheckingAnnouncements = false;
@@ -41,6 +46,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final Set<int> _dismissedAnnouncementIds = {};
   final Set<int> _seenAnnouncementIds = {};
   String? _announcementSeenKey;
+  Offset? _navigationSwipeStart;
+  DateTime? _navigationSwipeStartTime;
+  int? _navigationSwipePointer;
 
   @override
   void initState() {
@@ -151,7 +159,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Future<List<dynamic>> _fetchAnnouncementsFallback(AuthProvider auth) async {
-    final resp = await auth.dio.get('/announcements');
+    final resp = await auth.dio.get(ApiConstants.noticesPath);
     final list = (resp.data as List?) ?? const [];
     return list
         .where((item) => !_seenAnnouncementIds.contains(_announcementId(item)))
@@ -160,14 +168,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   Future<List<dynamic>> _loadUnreadAnnouncements(AuthProvider auth) async {
     try {
-      final resp = await auth.dio.get('/announcements/unread');
+      final resp = await auth.dio.get('${ApiConstants.noticesPath}/unread');
       return (resp.data as List?) ?? const [];
     } on DioException catch (e) {
       final isBadUnreadRoute = e.response?.statusCode == 400 &&
           e.response?.data is Map &&
           (e.response!.data['error']?.toString().contains('无效的公告ID') ?? false);
       if (isBadUnreadRoute) {
-        debugPrint('未读公告接口异常，降级到 /announcements');
+        debugPrint('未读公告接口异常，降级到 ${ApiConstants.noticesPath}');
         return _fetchAnnouncementsFallback(auth);
       }
       rethrow;
@@ -602,10 +610,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       ElevatedButton.icon(
                         onPressed: () async {
                           try {
-                            await context
-                                .read<AuthProvider>()
-                                .dio
-                                .post('/announcements/${a['id']}/read');
+                            await context.read<AuthProvider>().dio.post(
+                                '${ApiConstants.noticesPath}/${a['id']}/read');
                           } catch (_) {}
                           await _markAnnouncementsSeen([a]);
                           if (current < unread.length - 1) {
@@ -648,13 +654,57 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   void _onTabTapped(int index) {
-    setState(() => _currentIndex = index);
+    if (mounted) setState(() => _currentIndex = index);
     final screenNames = ['shuitie', 'market', 'schedule', 'campus', 'profile'];
     backgroundWrapperKey.currentState?.updateScreen(screenNames[index]);
   }
 
+  void _startNavigationSwipe(PointerDownEvent event, double screenHeight) {
+    if (_navigationSwipePointer != null ||
+        !isBottomNavigationSwipeStart(event.position.dy, screenHeight)) {
+      return;
+    }
+    _navigationSwipePointer = event.pointer;
+    _navigationSwipeStart = event.position;
+    _navigationSwipeStartTime = DateTime.now();
+  }
+
+  void _finishNavigationSwipe(PointerUpEvent event) {
+    if (event.pointer != _navigationSwipePointer ||
+        _navigationSwipeStart == null ||
+        _navigationSwipeStartTime == null) {
+      return;
+    }
+
+    final direction = horizontalSwipeDirection(
+      start: _navigationSwipeStart!,
+      end: event.position,
+      elapsed: DateTime.now().difference(_navigationSwipeStartTime!),
+    );
+    _resetNavigationSwipe();
+    if (direction == 0) return;
+
+    final nextIndex = (_currentIndex + direction).clamp(0, 4);
+    if (nextIndex != _currentIndex) {
+      _onTabTapped(nextIndex);
+    }
+  }
+
+  void _cancelNavigationSwipe(PointerCancelEvent event) {
+    if (event.pointer == _navigationSwipePointer) {
+      _resetNavigationSwipe();
+    }
+  }
+
+  void _resetNavigationSwipe() {
+    _navigationSwipePointer = null;
+    _navigationSwipeStart = null;
+    _navigationSwipeStartTime = null;
+  }
+
   void _openCreatePost(BuildContext context) {
     final auth = context.read<AuthProvider>();
+    final postProvider = context.read<PostProvider>();
     if (!auth.isLoggedIn) {
       Navigator.push(
         context,
@@ -672,18 +722,26 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       ),
     ).then((_) {
       if (mounted) {
-        context.read<PostProvider>().refresh(boardId: 1, sort: 'time');
+        unawaited(Future.wait([
+          postProvider.refresh(boardId: 1, sort: 'time'),
+          postProvider.refresh(boardId: 1, sort: 'all'),
+          postProvider.refresh(boardId: 1, sort: 'hot'),
+        ]));
       }
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    final authProvider = context.watch<AuthProvider>();
     final bottomSafe = MediaQuery.of(context).padding.bottom;
-    final screenWidth = MediaQuery.of(context).size.width;
-    final isWideScreen = screenWidth > 600;
-    final isExtended = screenWidth > 840;
+    final useDesktopShell = ResponsiveUtil.useDesktopShell(context);
+    final themeProvider = context.watch<ThemeProvider>();
+    final authProvider = context.watch<AuthProvider>();
+
+    // 宽屏默认按 Pad 版处理；开启悬浮底栏时，宽屏也切到浮动导航。
+    final useSideRail = useDesktopShell && !themeProvider.floatingNavBar;
+    final useBottomNav = !useSideRail;
+    final showFloatingNavBar = themeProvider.floatingNavBar;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
@@ -691,87 +749,136 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       }
     });
 
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      extendBody: true,
-      extendBodyBehindAppBar: true,
-      body: isWideScreen
-          ? _buildWideLayout(bottomSafe, authProvider, isExtended)
-          : _buildNarrowLayout(bottomSafe, authProvider),
-      bottomNavigationBar: isWideScreen
-          ? null
-          : BottomNavWrapper(
-              currentIndex: _currentIndex,
-              onTap: _onTabTapped,
-              authProvider: authProvider,
-            ),
-      floatingActionButton: _currentIndex == 0 && !isWideScreen
-          ? Padding(
-              padding: EdgeInsets.only(bottom: 110 + bottomSafe),
-              child: FloatingActionButton(
-                onPressed: () => _openCreatePost(context),
-                backgroundColor: const Color(0xFF16A34A),
-                elevation: 4,
-                shape: const CircleBorder(),
-                child: const Icon(Icons.add, color: Colors.white, size: 32),
-              ),
-            )
+    final screenHeight = MediaQuery.sizeOf(context).height;
+    return Listener(
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: useBottomNav
+          ? (event) => _startNavigationSwipe(event, screenHeight)
           : null,
-      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+      onPointerUp: useBottomNav ? _finishNavigationSwipe : null,
+      onPointerCancel: useBottomNav ? _cancelNavigationSwipe : null,
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        extendBody: true,
+        extendBodyBehindAppBar: true,
+        body: Stack(
+          children: [
+            // 实际内容区
+            useSideRail
+                ? _buildWideLayout(bottomSafe, authProvider, false)
+                : _buildNarrowLayout(bottomSafe, authProvider),
+          ],
+        ),
+        bottomNavigationBar: useSideRail
+            ? null
+            : BottomNavWrapper(
+                currentIndex: _currentIndex,
+                onTap: _onTabTapped,
+                authProvider: authProvider,
+              ),
+        floatingActionButton: _currentIndex == 0 && useBottomNav
+            ? Padding(
+                padding: EdgeInsets.only(
+                  bottom: (showFloatingNavBar ? 110 : 80) + bottomSafe,
+                ),
+                child: FloatingActionButton(
+                  heroTag: 'home_fab',
+                  onPressed: () => _openCreatePost(context),
+                  backgroundColor: const Color(0xFF16A34A),
+                  elevation: 4,
+                  shape: const CircleBorder(),
+                  child: const Icon(Icons.add, color: Colors.white, size: 32),
+                ),
+              )
+            : null,
+        floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+      ),
     );
   }
 
-  Widget _buildWideLayout(double bottomSafe, AuthProvider authProvider, bool isExtended) {
+  Widget _buildWideLayout(
+      double bottomSafe, AuthProvider authProvider, bool isExtended) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Row(
       children: [
-        NavigationRail(
-          extended: isExtended,
-          selectedIndex: _currentIndex,
-          onDestinationSelected: (index) {
-            setState(() => _currentIndex = index);
-            final screenNames = ['shuitie', 'market', 'schedule', 'campus', 'profile'];
-            backgroundWrapperKey.currentState?.updateScreen(screenNames[index]);
-          },
-          labelType: isExtended ? NavigationRailLabelType.none : NavigationRailLabelType.all,
-          backgroundColor: Colors.transparent,
-          destinations: const [
-            NavigationRailDestination(
-              icon: Icon(Icons.home_rounded),
-              label: Text('首页'),
-            ),
-            NavigationRailDestination(
-              icon: Icon(Icons.storefront_rounded),
-              label: Text('集市'),
-            ),
-            NavigationRailDestination(
-              icon: Icon(Icons.calendar_month_rounded),
-              label: Text('课表'),
-            ),
-            NavigationRailDestination(
-              icon: Icon(Icons.apartment_rounded),
-              label: Text('校园'),
-            ),
-            NavigationRailDestination(
-              icon: Icon(Icons.person_rounded),
-              label: Text('我的'),
-            ),
-          ],
-        ),
-        const VerticalDivider(thickness: 1, width: 1),
-        Expanded(
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 1200),
-              child: IndexedStack(
-                index: _currentIndex,
-                children: const [
-                  ShuitieScreen(),
-                  MarketScreen(),
-                  CourseScheduleScreen(),
-                  CampusScreen(),
-                  ProfileScreen(),
+        // 美化 NavigationRail，增加 GlassContainer 包裹
+        SafeArea(
+          right: false,
+          child: Container(
+            margin: const EdgeInsets.fromLTRB(16, 16, 8, 16),
+            child: GlassContainer(
+              borderRadius: 24,
+              blur: 24,
+              backgroundColor: isDark
+                  ? const Color(0xFF111827).withValues(alpha: 0.5)
+                  : Colors.white.withValues(alpha: 0.5),
+              borderColor: isDark
+                  ? Colors.white.withValues(alpha: 0.1)
+                  : Colors.white.withValues(alpha: 0.5),
+              child: NavigationRail(
+                extended: false,
+                selectedIndex: _currentIndex,
+                onDestinationSelected: _onTabTapped,
+                labelType: NavigationRailLabelType.all,
+                backgroundColor: Colors.transparent,
+                indicatorColor:
+                    Theme.of(context).primaryColor.withValues(alpha: 0.15),
+                selectedIconTheme: IconThemeData(
+                    color: Theme.of(context).primaryColor, size: 28),
+                unselectedIconTheme: IconThemeData(
+                    color: isDark ? Colors.white60 : Colors.black54, size: 24),
+                selectedLabelTextStyle: TextStyle(
+                    color: Theme.of(context).primaryColor,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12),
+                unselectedLabelTextStyle: TextStyle(
+                    color: isDark ? Colors.white60 : Colors.black54,
+                    fontSize: 12),
+                groupAlignment: 0.0,
+                destinations: const [
+                  NavigationRailDestination(
+                    icon: Icon(Icons.home_outlined),
+                    selectedIcon: Icon(Icons.home_rounded),
+                    label: Text('水贴'),
+                  ),
+                  NavigationRailDestination(
+                    icon: Icon(Icons.storefront_outlined),
+                    selectedIcon: Icon(Icons.storefront_rounded),
+                    label: Text('集市'),
+                  ),
+                  NavigationRailDestination(
+                    icon: Icon(Icons.calendar_month_outlined),
+                    selectedIcon: Icon(Icons.calendar_month_rounded),
+                    label: Text('课表'),
+                  ),
+                  NavigationRailDestination(
+                    icon: Icon(Icons.apartment_outlined),
+                    selectedIcon: Icon(Icons.apartment_rounded),
+                    label: Text('校园'),
+                  ),
+                  NavigationRailDestination(
+                    icon: Icon(Icons.person_outline_rounded),
+                    selectedIcon: Icon(Icons.person_rounded),
+                    label: Text('我的'),
+                  ),
                 ],
               ),
+            ),
+          ),
+        ),
+        Expanded(
+          child: ClipRRect(
+            child: FadeIndexedStack(
+              contentKey: _contentKey,
+              index: _currentIndex,
+              children: [
+                const ShuitieScreen(),
+                const MarketScreen(),
+                const CourseScheduleScreen(),
+                const CampusScreen(),
+                ProfileScreen(isActive: _currentIndex == 4),
+              ],
             ),
           ),
         ),
@@ -780,15 +887,95 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Widget _buildNarrowLayout(double bottomSafe, AuthProvider authProvider) {
-    return IndexedStack(
+    return FadeIndexedStack(
+      contentKey: _contentKey,
       index: _currentIndex,
-      children: const [
-        ShuitieScreen(),
-        MarketScreen(),
-        CourseScheduleScreen(),
-        CampusScreen(),
-        ProfileScreen(),
+      children: [
+        const ShuitieScreen(),
+        const MarketScreen(),
+        const CourseScheduleScreen(),
+        const CampusScreen(),
+        ProfileScreen(isActive: _currentIndex == 4),
       ],
+    );
+  }
+}
+
+class FadeIndexedStack extends StatefulWidget {
+  final int index;
+  final List<Widget> children;
+  final Key? contentKey;
+  final Duration duration;
+
+  const FadeIndexedStack({
+    super.key,
+    required this.index,
+    required this.children,
+    this.contentKey,
+    this.duration = const Duration(milliseconds: 300),
+  });
+
+  @override
+  State<FadeIndexedStack> createState() => _FadeIndexedStackState();
+}
+
+class _FadeIndexedStackState extends State<FadeIndexedStack>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<Offset> _slideAnimation;
+  late Animation<double> _fadeAnimation;
+  int _direction = 1; // 1 = 向右滑入, -1 = 向左滑入
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(vsync: this, duration: widget.duration);
+    _setupAnimations();
+    _controller.forward();
+  }
+
+  void _setupAnimations() {
+    _fadeAnimation = CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeOut,
+    );
+    _slideAnimation = Tween<Offset>(
+      begin: Offset(0.15 * _direction, 0),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeOutCubic,
+    ));
+  }
+
+  @override
+  void didUpdateWidget(FadeIndexedStack oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.index != oldWidget.index) {
+      _direction = widget.index > oldWidget.index ? 1 : -1;
+      _setupAnimations();
+      _controller.forward(from: 0.0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SlideTransition(
+      position: _slideAnimation,
+      child: FadeTransition(
+        opacity: _fadeAnimation,
+        child: IndexedStack(
+          key: widget.contentKey,
+          index: widget.index,
+          children: widget.children,
+        ),
+      ),
     );
   }
 }

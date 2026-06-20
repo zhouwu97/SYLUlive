@@ -1,13 +1,15 @@
 package handlers
 
 import (
+	"log"
 	"net/http"
 	"strconv"
 	"time"
 
+	"shenliyuan/internal/models"
+
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
-	"shenliyuan/internal/models"
 )
 
 // AnnouncementHandler 公告处理器
@@ -23,14 +25,20 @@ func NewAnnouncementHandler(db *gorm.DB) *AnnouncementHandler {
 // GetList 获取公告列表
 func (h *AnnouncementHandler) GetList(c *gin.Context) {
 	var announcements []models.Announcement
-	h.db.Preload("Creator").Order("is_pinned DESC, created_at DESC").Find(&announcements)
+	if err := h.db.Preload("Creator").Order("is_pinned DESC, created_at DESC").Find(&announcements).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取公告列表失败"})
+		return
+	}
 	c.JSON(http.StatusOK, announcements)
 }
 
 // GetActive 获取置顶公告（用于首页展示）
 func (h *AnnouncementHandler) GetActive(c *gin.Context) {
 	var announcements []models.Announcement
-	h.db.Where("is_pinned = ?", true).Preload("Creator").Order("created_at DESC").Find(&announcements)
+	if err := h.db.Where("is_pinned = ?", true).Preload("Creator").Order("created_at DESC").Find(&announcements).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取公告列表失败"})
+		return
+	}
 	c.JSON(http.StatusOK, announcements)
 }
 
@@ -84,7 +92,9 @@ func (h *AnnouncementHandler) Create(c *gin.Context) {
 	// 管理员创建公告，经验+1
 	h.db.Model(&models.User{}).Where("id = ?", userID).UpdateColumn("admin_exp", gorm.Expr("COALESCE(admin_exp, 0) + 1"))
 
-	h.db.Preload("Creator").First(&announcement, announcement.ID)
+	if err := h.db.Preload("Creator").First(&announcement, announcement.ID).Error; err != nil {
+		log.Printf("[DB_WARN] Failed to re-fetch announcement with creator after create: %v", err)
+	}
 	c.JSON(http.StatusCreated, announcement)
 }
 
@@ -127,8 +137,13 @@ func (h *AnnouncementHandler) Update(c *gin.Context) {
 		updates["is_pinned"] = *input.IsPinned
 	}
 
-	h.db.Model(&announcement).Updates(updates)
-	h.db.Preload("Creator").First(&announcement, id)
+	if err := h.db.Model(&announcement).Updates(updates).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新公告失败"})
+		return
+	}
+	if err := h.db.Preload("Creator").First(&announcement, id).Error; err != nil {
+		log.Printf("[DB_WARN] Failed to re-fetch announcement with creator after update: %v", err)
+	}
 	c.JSON(http.StatusOK, announcement)
 }
 

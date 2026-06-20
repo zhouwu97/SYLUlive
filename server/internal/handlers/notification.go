@@ -2,12 +2,14 @@ package handlers
 
 import (
 	"fmt"
+	"log"
 	"net/http"
+
+	"shenliyuan/internal/models"
+	"shenliyuan/utils"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
-	"shenliyuan/internal/models"
-	"shenliyuan/utils"
 )
 
 // NotificationHandler 通知处理器
@@ -38,7 +40,9 @@ func (h *NotificationHandler) MarkAllRead(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 	uid := userID.(uint)
 
-	h.db.Model(&models.Notification{}).Where("user_id = ? AND is_read = ?", uid, false).Update("is_read", true)
+	if err := h.db.Model(&models.Notification{}).Where("user_id = ? AND is_read = ?", uid, false).Update("is_read", true).Error; err != nil {
+		log.Printf("[DB_WARN] Failed to write side-effect record: %v", err)
+	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "已全部标记为已读"})
 }
@@ -111,7 +115,10 @@ func CreateReplyNotificationFull(jpushAppKey, jpushMasterSecret string, db *gorm
 // CreateMarketPostNotification 集市发帖通知（发给所有用户，除了作者自己）
 func CreateMarketPostNotification(db *gorm.DB, postID uint, title string, price float64, authorID uint) {
 	var users []models.User
-	db.Select("id").Where("id != ?", authorID).Find(&users)
+	if err := db.Select("id").Where("id != ?", authorID).Find(&users).Error; err != nil {
+		log.Printf("[DB_WARN] CreateMarketPostNotification Find users failed: %v", err)
+		return
+	}
 
 	titlePreview := title
 	if len(titlePreview) > 50 {
@@ -124,13 +131,13 @@ func CreateMarketPostNotification(db *gorm.DB, postID uint, title string, price 
 
 	for _, user := range users {
 		notification := models.Notification{
-			UserID:  user.ID,
-			Type:    "market_post",
-			Content: content,
+			UserID:    user.ID,
+			Type:      "market_post",
+			Content:   content,
 			RelatedID: postID,
-			PostID:  postID,
-			FromUID: authorID,
-			IsRead: false,
+			PostID:    postID,
+			FromUID:   authorID,
+			IsRead:    false,
 		}
 		db.Create(&notification)
 	}

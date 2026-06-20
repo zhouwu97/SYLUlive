@@ -55,7 +55,7 @@ class _ReportSheetContentState extends State<_ReportSheetContent> {
       return;
     }
 
-    setState(() => _submitting = true);
+    if (mounted) setState(() => _submitting = true);
 
     try {
       final dio = context.read<AuthProvider>().dio;

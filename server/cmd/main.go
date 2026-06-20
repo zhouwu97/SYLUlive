@@ -1,23 +1,17 @@
 package main
 
-
-
 import (
-
+	"errors"
 	"log"
-
 	"net/http"
-
 	"os"
-
 	"strings"
+	"time"
 	_ "time/tzdata"
-
-
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/glebarez/sqlite"
+	"gorm.io/driver/sqlite"
 
 	"golang.org/x/crypto/bcrypt"
 
@@ -33,23 +27,20 @@ import (
 
 	"shenliyuan/internal/models"
 
-	"shenliyuan/internal/tasks"
+	"shenliyuan/internal/services"
 
+	"shenliyuan/internal/tasks"
 )
 
-
-
 func main() {
+	// 强制设置时区为东八区（北京时间），使用 FixedZone 确保在任何没有 tzdata 的系统上也能生效
+	time.Local = time.FixedZone("CST", 8*3600)
 
 	cfg := config.Load()
-
-
 
 	// 确保上传目录存在
 
 	os.MkdirAll(cfg.UploadDir, 0755)
-
-
 
 	var db *gorm.DB
 
@@ -70,14 +61,27 @@ func main() {
 	}
 
 	if err != nil {
-
 		log.Fatal("数据库连接失败:", err)
-
 	}
 
-
+	// 注册全局 GORM 错误日志钩子 (安全网)
+	logDBError := func(db *gorm.DB) {
+		if db.Error != nil && !errors.Is(db.Error, gorm.ErrRecordNotFound) {
+			log.Printf("[DB_ERROR] table=%s statement=%s err=%v", db.Statement.Table, db.Statement.SQL.String(), db.Error)
+		}
+	}
+	db.Callback().Query().After("gorm:query").Register("audit:log_errors_query", logDBError)
+	db.Callback().Create().After("gorm:create").Register("audit:log_errors_create", logDBError)
+	db.Callback().Update().After("gorm:update").Register("audit:log_errors_update", logDBError)
+	db.Callback().Delete().After("gorm:delete").Register("audit:log_errors_delete", logDBError)
+	db.Callback().Row().After("gorm:row").Register("audit:log_errors_row", logDBError)
+	db.Callback().Raw().After("gorm:raw").Register("audit:log_errors_raw", logDBError)
 
 	// 自动迁移
+
+	if err := models.NormalizeConversationPairs(db); err != nil {
+		log.Fatalf("failed to normalize legacy conversations: %v", err)
+	}
 
 	if err := db.AutoMigrate(
 
@@ -143,19 +147,37 @@ func main() {
 
 		&models.LotteryParticipant{},
 		&models.CachedQuestion{},
+		&models.AiUsageLog{},
 		&models.SystemConfig{},
 		&models.Canteen{},
 		&models.CanteenRating{},
+		&models.UserFollow{},
+		// 融智云考助手独立业务表
+		&models.YunkaoAiProvider{},
+		&models.YunkaoAiModel{},
+		&models.YunkaoWallet{},
+		&models.YunkaoRechargeOrder{},
+		&models.YunkaoUsageLog{},
+		&models.YunkaoQuestionCache{},
+		&models.YunkaoWrongReport{},
+		&models.YunkaoPayOrder{},
+		&models.OneClassPayOrder{},
+		&models.OneClassUpdate{},
 	); err != nil {
 
 		log.Fatal("数据库迁移失败:", err)
 
 	}
 
+	if err := models.EnsureConversationIndexes(db); err != nil {
+		log.Fatal("私信索引迁移失败:", err)
+	}
+
 	// 启动时自动修复可能不同步的评论数和点赞数
-	log.Println("正在同步帖子评论数与点赞数...")
+	log.Println("正在同步数据(评论数、帖子点赞、用户总获赞)...")
 	db.Exec(`UPDATE posts SET reply_count = (SELECT COUNT(*) FROM replies WHERE replies.post_id = posts.id AND replies.status = 'normal')`)
-	db.Exec(`UPDATE posts SET like_count = (SELECT COUNT(*) FROM likes WHERE likes.post_id = posts.id AND likes.target_type = 'post')`)
+	db.Exec(`UPDATE posts SET like_count = (SELECT COUNT(*) FROM likes WHERE likes.target_id = posts.id AND likes.target_type = 'post')`)
+	db.Exec(`UPDATE users SET total_likes_received = (SELECT COUNT(*) FROM likes WHERE target_type = 'post' AND target_id IN (SELECT id FROM posts WHERE author_id = users.id))`)
 	log.Println("同步完成")
 
 	// 确保默认超级管理员
@@ -167,13 +189,17 @@ func main() {
 
 	r := gin.Default()
 
-
-
 	// CORS中间件
 
 	r.Use(func(c *gin.Context) {
 
-		c.Header("Access-Control-Allow-Origin", "*")
+		origin := c.GetHeader("Origin")
+		if origin != "" {
+			c.Header("Access-Control-Allow-Origin", origin)
+			c.Header("Access-Control-Allow-Credentials", "true")
+		} else {
+			c.Header("Access-Control-Allow-Origin", "*")
+		}
 
 		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 
@@ -191,8 +217,6 @@ func main() {
 
 	})
 
-
-
 	// 初始化处理器
 
 	authHandler := handlers.NewAuthHandler(db, cfg.JWTSecret)
@@ -200,12 +224,13 @@ func main() {
 	userHandler := handlers.NewUserHandler(db)
 
 	postHandler := handlers.NewPostHandler(db)
+	searchHandler := handlers.NewSearchHandler(db, postHandler)
 
 	replyHandler := handlers.NewReplyHandler(db, cfg.JPushAppKey, cfg.JPushMasterSecret)
 
 	likeHandler := handlers.NewLikeHandler(db)
 
-	messageHandler := handlers.NewMessageHandler(db)
+	messageHandler := handlers.NewMessageHandler(db, services.NewNotificationService(cfg.JPushAppKey, cfg.JPushMasterSecret))
 
 	announcementHandler := handlers.NewAnnouncementHandler(db)
 
@@ -243,7 +268,17 @@ func main() {
 
 	lotteryHandler := handlers.NewLotteryHandler(db)
 
+	vipHandler := handlers.NewVipHandler(db, cfg.JPushAppKey, cfg.JPushMasterSecret)
 
+	// 融智云考助手独立业务处理器
+	yunkaoSolveHandler := handlers.NewYunkaoSolveHandler(db)
+	yunkaoWalletHandler := handlers.NewYunkaoWalletHandler(db)
+	yunkaoAdminHandler := handlers.NewYunkaoAdminHandler(db)
+	yunkaoPayHandler := handlers.NewYunkaoPayHandler(db)
+	oneClassPayHandler := handlers.NewOneClassPayHandler(db)
+
+	// 初始化融智云考助手默认提供商和模型
+	yunkaoAdminHandler.SeedDefaultProviders()
 
 	// 初始化教务服务配置
 
@@ -261,19 +296,13 @@ func main() {
 
 	handlers.SetMajorLogDB(db)
 
-
-
 	// 启动后台定时任务
 
 	tasks.StartLotteryCron(db)
 
-
-
 	// 静态文件服务
 
 	r.Static("/uploads", cfg.UploadDir)
-
-
 
 	// 认证路由
 
@@ -310,9 +339,102 @@ func main() {
 	ai.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
 	{
 		ai.POST("/solve", aiSolveHandler.Solve)
+		ai.POST("/mark_wrong", aiSolveHandler.MarkWrong)
+		ai.POST("/confirm_cache", aiSolveHandler.ConfirmCache)
 	}
 
+	// ============ 融智云考助手独立业务路由 ============
 
+	// 普通用户路由
+	yunkao := r.Group("/api/yunkao")
+	yunkao.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
+	{
+		yunkao.GET("/models", yunkaoSolveHandler.GetModels)
+		yunkao.GET("/wallet", yunkaoWalletHandler.GetWallet)
+		yunkao.GET("/wallet/logs", yunkaoWalletHandler.GetWalletLogs)
+		yunkao.POST("/solve", yunkaoSolveHandler.Solve)
+		yunkao.POST("/report-wrong", yunkaoSolveHandler.ReportWrong)
+		yunkao.POST("/rewrite", yunkaoSolveHandler.Rewrite)
+	}
+
+	// 管理员路由 (admin 和 super_admin)
+	yunkaoAdmin := r.Group("/api/yunkao/admin")
+	yunkaoAdmin.Use(middleware.AuthMiddleware(db, cfg.JWTSecret), middleware.AdminMiddleware())
+	{
+		// 提供商管理
+		yunkaoAdmin.GET("/providers", yunkaoAdminHandler.GetProviders)
+		yunkaoAdmin.POST("/providers", yunkaoAdminHandler.CreateProvider)
+		yunkaoAdmin.PUT("/providers/:id", yunkaoAdminHandler.UpdateProvider)
+		yunkaoAdmin.DELETE("/providers/:id", yunkaoAdminHandler.DeleteProvider)
+		yunkaoAdmin.GET("/providers/:id/remote-models", yunkaoAdminHandler.FetchProviderModels)
+
+		// 模型管理
+		yunkaoAdmin.GET("/models", yunkaoAdminHandler.GetModels)
+		yunkaoAdmin.POST("/models", yunkaoAdminHandler.CreateModel)
+		yunkaoAdmin.PUT("/models/:id", yunkaoAdminHandler.UpdateModel)
+		yunkaoAdmin.DELETE("/models/:id", yunkaoAdminHandler.DeleteModel)
+
+		// 用户钱包管理
+		yunkaoAdmin.GET("/wallets", yunkaoAdminHandler.GetUserWallets)
+		yunkaoAdmin.POST("/wallet/recharge", yunkaoAdminHandler.RechargeWallet)
+		yunkaoAdmin.POST("/wallet/deduct", yunkaoAdminHandler.DeductWallet)
+
+		// 错题审核
+		yunkaoAdmin.GET("/reports", yunkaoAdminHandler.GetWrongReports)
+		yunkaoAdmin.POST("/reports/:id/review", yunkaoAdminHandler.ReviewWrongReport)
+
+		// 使用日志
+		yunkaoAdmin.GET("/usage-logs", yunkaoAdminHandler.GetUsageLogs)
+
+		// 统计概览
+		yunkaoAdmin.GET("/stats", yunkaoAdminHandler.GetAdminStats)
+	}
+
+	// 支付路由（不需要 auth 的回调接口）
+	r.Any("/api/yunkao/pay/notify", yunkaoPayHandler.PayNotify)
+	r.Any("/api/yunkao/pay/vmq_notify", yunkaoPayHandler.VmqNotify)
+	r.GET("/api/yunkao/pay/recharge-page", yunkaoPayHandler.RechargePage)
+	r.GET("/api/yunkao/pay/checkout", yunkaoPayHandler.CheckoutPage)
+	r.GET("/api/yunkao/pay/status", yunkaoPayHandler.PayStatus)
+	r.GET("/api/yunkao/pay/start", yunkaoPayHandler.StartPayment)
+	r.GET("/api/yunkao/pay/qrcode", yunkaoPayHandler.PaymentQRCode)
+
+	// OneClass 公开购买路由（仅易支付）
+	r.Any("/api/oneclass/pay/notify", oneClassPayHandler.PayNotify)
+	r.GET("/api/oneclass/pay/buy", oneClassPayHandler.BuyPage)
+	r.POST("/api/oneclass/pay/create", middleware.AuthMiddleware(db, cfg.JWTSecret), oneClassPayHandler.CreateOrder)
+	r.POST("/api/oneclass/pay/sync", middleware.AuthMiddleware(db, cfg.JWTSecret), oneClassPayHandler.SyncLicense)
+	r.GET("/api/oneclass/pay/checkout", oneClassPayHandler.CheckoutPage)
+	r.GET("/api/oneclass/pay/status", oneClassPayHandler.PayStatus)
+	r.GET("/api/oneclass/pay/start", oneClassPayHandler.StartPayment)
+	r.GET("/api/oneclass/pay/qrcode", oneClassPayHandler.PaymentQRCode)
+	r.GET("/api/oneclass/client/version", oneClassPayHandler.ClientVersion)
+
+	oneClassAdmin := r.Group("/api/oneclass/admin")
+	oneClassAdmin.Use(middleware.AuthMiddleware(db, cfg.JWTSecret), middleware.AdminMiddleware())
+	{
+		oneClassAdmin.GET("/orders", oneClassPayHandler.AdminGetOrders)
+		oneClassAdmin.GET("/updates", oneClassPayHandler.AdminListUpdates)
+		oneClassAdmin.POST("/updates", oneClassPayHandler.AdminCreateUpdate)
+		oneClassAdmin.PUT("/updates/:id", oneClassPayHandler.AdminUpdateUpdate)
+	}
+
+	// 支付路由（需要 auth）
+	yunkaoPay := r.Group("/api/yunkao/pay")
+	yunkaoPay.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
+	{
+		yunkaoPay.POST("/create", yunkaoPayHandler.CreatePayOrder)
+		yunkaoPay.GET("/orders", yunkaoPayHandler.GetPayOrders)
+	}
+
+	// 管理员支付管理
+	yunkaoAdminPay := r.Group("/api/yunkao/admin/pay")
+	yunkaoAdminPay.Use(middleware.AuthMiddleware(db, cfg.JWTSecret), middleware.AdminMiddleware())
+	{
+		yunkaoAdminPay.GET("/orders", yunkaoPayHandler.AdminGetPayOrders)
+		yunkaoAdminPay.GET("/config", yunkaoPayHandler.GetPayConfig)
+		yunkaoAdminPay.PUT("/config", yunkaoPayHandler.UpdatePayConfig)
+	}
 
 	// 用户路由
 
@@ -350,11 +472,20 @@ func main() {
 
 		user.GET("/checkin/status", checkinHandler.GetStatus)
 
-		user.GET("/:id", userHandler.GetUserInfo)
-
+		user.POST("/:id/follow", userHandler.Follow)
+		user.DELETE("/:id/follow", userHandler.Unfollow)
+		user.GET("/:id/is-following", userHandler.IsFollowing)
 	}
 
-
+	userOptional := r.Group("/api/user")
+	userOptional.Use(middleware.OptionalAuthMiddleware(db, cfg.JWTSecret))
+	{
+		userOptional.GET("/:id", userHandler.GetUserInfo)
+		userOptional.GET("/:id/following", userHandler.GetFollowing)
+		userOptional.GET("/:id/followers", userHandler.GetFollowers)
+		userOptional.GET("/:id/posts/count", userHandler.GetUserPostCount)
+		userOptional.GET("/:id/posts", userHandler.GetUserPosts)
+	}
 
 	// 帖子路由
 
@@ -371,6 +502,8 @@ func main() {
 		posts.GET("/:id/replies", replyHandler.GetList)
 
 	}
+
+	r.GET("/api/search", middleware.OptionalAuthMiddleware(db, cfg.JWTSecret), searchHandler.Search)
 
 	postsAuth := r.Group("/api/posts")
 
@@ -390,8 +523,6 @@ func main() {
 
 	}
 
-
-
 	// 回复路由（带认证）
 
 	replies := r.Group("/api/replies")
@@ -405,8 +536,6 @@ func main() {
 		replies.GET("/me", replyHandler.GetMeList)
 
 	}
-
-
 
 	// 点赞路由
 
@@ -426,8 +555,6 @@ func main() {
 
 	}
 
-
-
 	// 私信路由
 
 	messages := r.Group("/api/messages")
@@ -442,11 +569,11 @@ func main() {
 
 		messages.POST("/:user_id", messageHandler.Send)
 
-		messages.DELETE("/conversations/:id", messageHandler.DeleteConversation)
+		messages.POST("/conversations/:id/read", messageHandler.MarkRead)
+
+		messages.GET("/unread_count", messageHandler.GetUnreadCount)
 
 	}
-
-
 
 	// 公告路由
 
@@ -488,7 +615,45 @@ func main() {
 
 	}
 
+	// 公告别名路由：App 直连公网 IP 时，部分网络会卡住包含
+	// "announcement" 的明文 HTTP 路径；保留旧路径兼容，客户端走 notices。
+	notices := r.Group("/api/notices")
 
+	{
+
+		notices.GET("", announcementHandler.GetList)
+
+		notices.GET("/active", announcementHandler.GetActive)
+
+	}
+
+	noticesAuth := notices.Group("")
+
+	noticesAuth.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
+
+	{
+
+		noticesAuth.GET("/unread", announcementHandler.GetUnread)
+
+		noticesAuth.GET("/:id", announcementHandler.GetOne)
+
+		noticesAuth.POST("/:id/read", announcementHandler.MarkRead)
+
+	}
+
+	noticesAdmin := notices.Group("")
+
+	noticesAdmin.Use(middleware.AuthMiddleware(db, cfg.JWTSecret), middleware.AdminMiddleware())
+
+	{
+
+		noticesAdmin.POST("", announcementHandler.Create)
+
+		noticesAdmin.PUT("/:id", announcementHandler.Update)
+
+		noticesAdmin.DELETE("/:id", announcementHandler.Delete)
+
+	}
 
 	// 举报路由
 
@@ -514,8 +679,6 @@ func main() {
 
 	}
 
-
-
 	// 申诉路由
 
 	appeals := r.Group("/api/appeals")
@@ -531,8 +694,6 @@ func main() {
 		appeals.POST("/:id/vote", appealHandler.Vote)
 
 	}
-
-
 
 	// 管理员邀请路由
 
@@ -566,15 +727,11 @@ func main() {
 
 	}
 
-
-
 	// 上传路由
 
 	r.POST("/api/upload", middleware.AuthMiddleware(db, cfg.JWTSecret), uploadHandler.Upload)
 
 	r.POST("/api/upload_multiple", middleware.AuthMiddleware(db, cfg.JWTSecret), uploadHandler.UploadMultiple)
-
-
 
 	// 教务系统路由
 
@@ -596,8 +753,6 @@ func main() {
 
 	}
 
-
-
 	// 超级管理员路由
 
 	superAdmin := r.Group("/api/super")
@@ -607,12 +762,15 @@ func main() {
 	{
 
 		superAdmin.GET("/users", superAdminHandler.GetUsers)
+		superAdmin.POST("/lottery", superAdminHandler.CreateLotteryEvent)
+		superAdmin.DELETE("/lottery/:id", superAdminHandler.DeleteLotteryEvent)
 		superAdmin.GET("/lottery/participants", superAdminHandler.GetLotteryParticipants)
 		superAdmin.DELETE("/lottery/participants/:event_id/:user_id", superAdminHandler.KickLotteryParticipant)
 
 		superAdmin.PUT("/users/:id/role", superAdminHandler.UpdateUserRole)
 
 		superAdmin.PUT("/users/:id/credit", superAdminHandler.UpdateUserCredit)
+		superAdmin.POST("/users/:id/ai_balance/recharge", superAdminHandler.RechargeAiBalance)
 
 		superAdmin.POST("/users/:id/reset_password", superAdminHandler.ResetUserPassword)
 
@@ -632,35 +790,33 @@ func main() {
 
 		superAdmin.POST("/invitations/:id/approve", invitationHandler.Approve)
 
+		// VIP 管理路由（超级管理员）
+		superAdmin.POST("/vip/grant", vipHandler.GrantVip)
+		superAdmin.DELETE("/vip/:user_id", vipHandler.RevokeVip)
+		superAdmin.POST("/vip/push_update", vipHandler.PushUpdateToVip)
+
 	}
 
-
+	// VIP 状态查询路由（普通用户，需登录）
+	r.GET("/api/vip/status", middleware.AuthMiddleware(db, cfg.JWTSecret), vipHandler.CheckVip)
 
 	// 题库提取路由
 
 	r.POST("/api/exam/extract", middleware.AuthMiddleware(db, cfg.JWTSecret), examHandler.Extract)
 
-
-
 	// 二课查询路由
 
 	r.POST("/api/erke/scores", middleware.AuthMiddleware(db, cfg.JWTSecret), erkeHandler.GetScores)
 
-
-
 	// 用户反馈路由
 
-	r.POST("/api/feedback", middleware.AuthMiddleware(db, cfg.JWTSecret), feedbackHandler.Submit)
-
-
+	r.POST("/api/feedback", middleware.OptionalAuthMiddleware(db, cfg.JWTSecret), feedbackHandler.Submit)
 
 	// 教程页面路由（公开读，管理员写）
 
 	r.GET("/api/tutorial/:key", tutorialHandler.Get)
 
 	r.PUT("/api/tutorial/:key", middleware.AuthMiddleware(db, cfg.JWTSecret), middleware.AdminMiddleware(), tutorialHandler.Update)
-
-
 
 	// 避雷版块 - 教师路由
 
@@ -718,8 +874,6 @@ func main() {
 
 	}
 
-
-
 	// 专业榜路由
 
 	major := r.Group("/api/majors")
@@ -760,8 +914,6 @@ func main() {
 
 	}
 
-
-
 	// 食堂榜路由
 
 	canteen := r.Group("/api/canteens")
@@ -796,8 +948,6 @@ func main() {
 
 	}
 
-
-
 	// 违规管理
 
 	violation := r.Group("/api/violations")
@@ -824,8 +974,6 @@ func main() {
 
 	}
 
-
-
 	// 抽奖路由
 
 	lotteryGroup := r.Group("/api/lottery")
@@ -842,7 +990,7 @@ func main() {
 
 	lotteryAdminGroup := r.Group("/api/admin/lottery")
 
-	lotteryAdminGroup.Use(middleware.AuthMiddleware(db, cfg.JWTSecret), middleware.AdminMiddleware())
+	lotteryAdminGroup.Use(middleware.AuthMiddleware(db, cfg.JWTSecret), middleware.SuperAdminMiddleware())
 
 	{
 
@@ -850,33 +998,28 @@ func main() {
 
 	}
 
-
-
 	// 版本信息
 
 	r.GET("/api/version", func(c *gin.Context) {
 
 		c.JSON(http.StatusOK, gin.H{
 
-			"version":             "1.4.0",
+			"version": "1.5.12",
 
-			"min_version":         "1.4.0", // 增加最低版本限制，低于此版本的客户端将被强制更新
+			"min_version": "1.4.0", // 增加最低版本限制，低于此版本的客户端将被强制更新
 
-			"force_update":        false, // 保留兼容旧版逻辑
+			"force_update": false, // 保留兼容旧版逻辑
 
-			"download_url":        "https://github.com/zhouwu97/SYLUlive/releases",
+			"download_url": "http://156.233.229.232:8080/uploads/app-release.apk",
 
 			"github_download_url": "https://github.com/zhouwu97/SYLUlive/releases",
 
-			"gitee_download_url":  "https://gitee.com/chunhezi/SYLUlive/releases",
+			"gitee_download_url": "https://gitee.com/chunhezi/SYLUlive/releases",
 
-			"update_msg":          "新版本可用，本次更新包含了重要功能，请务必更新。",
-
+			"update_msg": "1.5.12 更新：修复输入法黑屏闪烁问题，极光私信推送唤醒逻辑更换为最稳的原生拉起。",
 		})
 
 	})
-
-
 
 	log.Println("服务器启动在 :8080")
 
@@ -887,8 +1030,6 @@ func main() {
 	}
 
 }
-
-
 
 // ensureSystemSuperAdmin 确保系统只有指定超级管理员种子账号。
 
@@ -904,12 +1045,11 @@ func ensureSystemSuperAdmin(db *gorm.DB, studentID, password string) {
 
 			"password_hash": string(hashedPassword),
 
-			"nickname":      "超级管理员",
+			"nickname": "超级管理员",
 
-			"role":          models.RoleSuperAdmin,
+			"role": models.RoleSuperAdmin,
 
-			"credit_score":  100,
-
+			"credit_score": 100,
 		})
 
 	} else {
@@ -918,33 +1058,22 @@ func ensureSystemSuperAdmin(db *gorm.DB, studentID, password string) {
 
 		user := models.User{
 
-			StudentID:    studentID,
+			StudentID: studentID,
 
 			PasswordHash: string(hashedPassword),
 
-			Nickname:     "超级管理员",
+			Nickname: "超级管理员",
 
-			Role:         models.RoleSuperAdmin,
+			Role: models.RoleSuperAdmin,
 
-			CreditScore:  100,
-
+			CreditScore: 100,
 		}
 
 		db.Create(&user)
 
 	}
 
-
-
-	// 确保 20052403060128 也是超级管理员
-
-	db.Model(&models.User{}).
-
-		Where("student_id = ?", "20052403060128").
-
-		Update("role", models.RoleSuperAdmin)
-
-
+	// 已移除硬编码提升超级管理员代码
 
 	// 移除将其他超级管理员降级的代码，允许多个超级管理员共存
 
@@ -954,20 +1083,13 @@ func ensureSystemSuperAdmin(db *gorm.DB, studentID, password string) {
 
 	// 	Update("role", models.RoleUser)
 
-
-
 	db.Model(&models.User{}).
-
 		Where("student_id = ? AND role = ?", "admin", models.RoleAdmin).
-
 		Update("role", models.RoleUser)
 
-
-
-	log.Printf("系统超级管理员已就绪: %s 和 20052403060128", studentID)
+	log.Printf("系统超级管理员已就绪: %s", studentID)
 
 }
-
 
 // 注意：每次重启服务均会重置该配置，如需永久修改请直接更改此处硬编码
 // ensureInjectScript 确保数据库里有一份基础的拦截脚本
@@ -1162,16 +1284,29 @@ func ensureInjectScript(db *gorm.DB) {
                  let optionLabels = document.querySelectorAll('.option-item, .el-radio, .el-checkbox, .live-option-btn'); 
                  
                  lines.forEach(line => {
-                     // 剔除所有题号、选项前缀 (如 "1. ", "17. ", "A. ", "A、", "A: " 等)
-                     // 正则解释：匹配开头的数字或单个字母，后面跟着点、顿号、冒号或空格
+                     // 1. 尝试匹配完整的选项文字
                      let cleanAnswer = line.replace(/^(?:\\d+|[A-Z])[\\.\\:、\\s]+/, '').trim();
-                     if (!cleanAnswer) return;
+                     let letterMatch = line.match(/^(?:\\d+[\\.\\:、\\s]*)?([A-F])/);
+                     let letter = letterMatch ? letterMatch[1] : null;
+                     
+                     if (!cleanAnswer && !letter) return;
                      
                      optionLabels.forEach(label => {
-                         // 在对比时，也将网页上 DOM 的文本稍微清理一下前缀再比对，防止网页里的 "C. " 干扰
-                         let cleanLabel = label.innerText.replace(/^(?:\\d+|[A-Z])[\\.\\:、\\s]+/, '').trim();
-                         // 只要包含核心文字就点击！彻底无视 A/B/C/D 的乱序错位
-                         if(cleanLabel.includes(cleanAnswer) || cleanAnswer.includes(cleanLabel)) {
+                         let labelText = label.innerText.trim();
+                         let cleanLabel = labelText.replace(/^(?:\\d+|[A-Z])[\\.\\:、\\s]+/, '').trim();
+                         let labelLetterMatch = labelText.match(/^[0-9]*[\\.\\:、\\s]*([A-F])/);
+                         let labelLetter = labelLetterMatch ? labelLetterMatch[1] : null;
+                         
+                         let matched = false;
+                         if (cleanAnswer && cleanLabel && (cleanLabel.includes(cleanAnswer) || cleanAnswer.includes(cleanLabel))) {
+                             matched = true;
+                         } else if (letter && letter === labelLetter) {
+                             matched = true;
+                         } else if (letter && labelText === letter) {
+                             matched = true;
+                         }
+                         
+                         if(matched) {
                              label.click(); 
                              label.style.border = "2px solid #4CAF50";
                          }
@@ -1258,7 +1393,6 @@ func ensureInjectScript(db *gorm.DB) {
     window.XMLHttpRequest = newXHR;
 })();`
 
-	
 	var config models.SystemConfig
 	if err := db.Where("config_key = ?", "yuketang_inject_js").First(&config).Error; err != nil {
 		db.Create(&models.SystemConfig{

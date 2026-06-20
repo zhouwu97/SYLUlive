@@ -19,18 +19,24 @@ import '../widgets/cached_avatar.dart';
 import 'create_post_screen.dart';
 import 'image_viewer_screen.dart';
 
+import 'user_home_screen.dart';
+
 class PostDetailScreen extends StatefulWidget {
   final int postId;
   final bool isMarket;
   final Post? initialPost;
   final int? targetReplyId;
+  final bool isDesktopSplitMode;
+  final bool hideBackButton;
 
   const PostDetailScreen(
       {super.key,
       required this.postId,
       this.isMarket = false,
       this.initialPost,
-      this.targetReplyId});
+      this.targetReplyId,
+      this.isDesktopSplitMode = false,
+      this.hideBackButton = false});
 
   @override
   State<PostDetailScreen> createState() => _PostDetailScreenState();
@@ -52,6 +58,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   String? _replyToName;
   int? _replyToUserId;
   bool _isSending = false;
+  final Set<int> _expandedThreads = {};
 
   final Map<int, GlobalKey> _replyKeys = {};
   bool _hasScrolledToTarget = false;
@@ -75,10 +82,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   Future<void> _loadPost() async {
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
+    if (mounted)
+      setState(() {
+        _isLoading = true;
+        _errorMessage = null;
+      });
     try {
       final response = await _dio.get('/posts/${widget.postId}');
       final repliesResponse = await _dio.get('/posts/${widget.postId}/replies');
@@ -101,15 +109,16 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               createdAt: fetchedPost.createdAt,
             )
           : fetchedPost;
-      setState(() {
-        _replies = (repliesResponse.data as List)
-            .map((e) => Reply.fromJson(e))
-            .toList();
-        _post = mergedPost.copyWith(replyCount: _replies.length);
-        _liked = mergedPost.isLiked;
-        _likeCount = mergedPost.likeCount;
-        _isLoading = false;
-      });
+      if (mounted)
+        setState(() {
+          _replies = (repliesResponse.data as List)
+              .map((e) => Reply.fromJson(e))
+              .toList();
+          _post = mergedPost.copyWith(replyCount: _replies.length);
+          _liked = mergedPost.isLiked;
+          _likeCount = mergedPost.likeCount;
+          _isLoading = false;
+        });
       // 同步到外部列表以更新浏览量等数据
       if (mounted) {
         context.read<PostProvider>().updatePostInCache(_post!);
@@ -130,15 +139,17 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       }
     } on DioException catch (e) {
       final msg = AppFeedback.dioErrorMessage(e, fallback: '加载帖子失败');
-      setState(() {
-        _isLoading = false;
-        _errorMessage = msg;
-      });
+      if (mounted)
+        setState(() {
+          _isLoading = false;
+          _errorMessage = msg;
+        });
     } catch (e) {
-      setState(() {
-        _isLoading = false;
-        _errorMessage = '加载失败: $e';
-      });
+      if (mounted)
+        setState(() {
+          _isLoading = false;
+          _errorMessage = '加载失败: $e';
+        });
     }
   }
 
@@ -148,16 +159,17 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           .showSnackBar(const SnackBar(content: Text('请先登录')));
       return;
     }
-    setState(() {
-      _liked = !_liked;
-      _likeCount += _liked ? 1 : -1;
-      if (_post != null) {
-        _post = _post!.copyWith(
-          isLiked: _liked,
-          likeCount: _likeCount,
-        );
-      }
-    });
+    if (mounted)
+      setState(() {
+        _liked = !_liked;
+        _likeCount += _liked ? 1 : -1;
+        if (_post != null) {
+          _post = _post!.copyWith(
+            isLiked: _liked,
+            likeCount: _likeCount,
+          );
+        }
+      });
     if (_post != null) {
       context.read<PostProvider>().updatePostInCache(_post!);
     }
@@ -169,16 +181,17 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         await _dio.delete('/posts/${widget.postId}/like');
       }
     } catch (_) {
-      setState(() {
-        _liked = !_liked;
-        _likeCount += _liked ? 1 : -1;
-        if (_post != null) {
-          _post = _post!.copyWith(
-            isLiked: _liked,
-            likeCount: _likeCount,
-          );
-        }
-      });
+      if (mounted)
+        setState(() {
+          _liked = !_liked;
+          _likeCount += _liked ? 1 : -1;
+          if (_post != null) {
+            _post = _post!.copyWith(
+              isLiked: _liked,
+              likeCount: _likeCount,
+            );
+          }
+        });
       if (_post != null) {
         context.read<PostProvider>().updatePostInCache(_post!);
       }
@@ -190,7 +203,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final content = _replyController.text.trim();
     if (content.isEmpty) return;
 
-    setState(() => _isSending = true);
+    if (mounted) setState(() => _isSending = true);
 
     // 先保存 parentReplyId，后面 setState 会清空它
     final parentId = _parentReplyId;
@@ -222,12 +235,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
     _replyController.clear();
     _replyFocus.unfocus();
-    setState(() {
-      _isReplyComposerOpen = false;
-      _parentReplyId = null;
-      _replyToName = null;
-      _replyToUserId = null;
-    });
+    if (mounted)
+      setState(() {
+        _isReplyComposerOpen = false;
+        _parentReplyId = null;
+        _replyToName = null;
+        _replyToUserId = null;
+      });
 
     // 后台静默发送
     try {
@@ -238,8 +252,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       });
       await _dio.post('/posts/${widget.postId}/replies', data: formData);
       // 静默刷新获取真实 ID
-      final repliesResponse =
-          await _dio.get('/posts/${widget.postId}/replies');
+      final repliesResponse = await _dio.get('/posts/${widget.postId}/replies');
       if (mounted && repliesResponse.data is List) {
         setState(() {
           _replies = (repliesResponse.data as List)
@@ -344,17 +357,20 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final canDelete = _post != null &&
         currentUser != null &&
         (currentUser.id == _post!.authorId || currentUser.isAdmin);
-    final canEditMarket = widget.isMarket && _isCurrentUserPostOwner();
+    final canEdit = _isCurrentUserPostOwner();
 
     return Scaffold(
-      backgroundColor: isDark ? const Color(0xFF131720) : Colors.white,
+      backgroundColor: widget.isDesktopSplitMode
+          ? Colors.transparent
+          : (isDark ? const Color(0xFF131720) : Colors.white),
       extendBodyBehindAppBar: true,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        leading: const BackButton(),
+        automaticallyImplyLeading: !widget.hideBackButton,
+        leading: widget.hideBackButton ? null : const BackButton(),
         actions: [
-          if (canEditMarket)
+          if (canEdit)
             IconButton(
               icon: const Icon(Icons.edit_outlined),
               tooltip: '编辑帖子',
@@ -378,7 +394,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         children: [
           // 内容
           _isLoading
-              ? const SafeArea(child: Center(child: CircularProgressIndicator()))
+              ? const SafeArea(
+                  child: Center(child: CircularProgressIndicator()))
               : _errorMessage != null
                   ? SafeArea(child: _buildErrorView(isDark))
                   : _post == null
@@ -438,6 +455,128 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   Widget _buildMarketDetail(bool isDark) {
     final p = _post!;
+    if (widget.isDesktopSplitMode) {
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 左侧文本与评论区
+          Expanded(
+            flex: 5,
+            child: Column(
+              children: [
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(24, 24, 24, 80),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (p.title.isNotEmpty) ...[
+                          Text(p.title,
+                              style: TextStyle(
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.bold,
+                                  color:
+                                      isDark ? Colors.white : Colors.black87)),
+                          const SizedBox(height: 12),
+                        ],
+                        if (p.price > 0) ...[
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              const Text('¥ ',
+                                  style: TextStyle(
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.bold,
+                                      color: Color(0xFFFF6B6B))),
+                              Text(
+                                p.price.toStringAsFixed(
+                                    p.price.truncateToDouble() == p.price
+                                        ? 0
+                                        : 2),
+                                style: const TextStyle(
+                                    fontSize: 32,
+                                    fontWeight: FontWeight.w900,
+                                    color: Color(0xFFFF6B6B),
+                                    height: 1.0),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+                        ],
+                        Text(p.content,
+                            style: TextStyle(
+                                fontSize: 16,
+                                height: 1.6,
+                                color:
+                                    isDark ? Colors.white70 : Colors.black87)),
+                        const SizedBox(height: 24),
+                        _buildAuthorCard(p, isDark),
+                        if (p.contact.isNotEmpty) ...[
+                          const SizedBox(height: 24),
+                          GestureDetector(
+                            onTap: () {
+                              Clipboard.setData(ClipboardData(text: p.contact));
+                              AppFeedback.showSnackBar(context, '联系方式已复制到剪贴板');
+                            },
+                            child: _buildContactChip(p.contact, isDark),
+                          ),
+                        ],
+                        if (_canUseOwnerMarketActions()) ...[
+                          const SizedBox(height: 24),
+                          _buildOwnerMarketActions(isDark),
+                        ],
+                        const SizedBox(height: 32),
+                        _buildActionBar(isDark),
+                        const SizedBox(height: 24),
+                        _buildCommentsHeader(isDark),
+                        const SizedBox(height: 10),
+                        _buildCompactReplies(isDark),
+                      ],
+                    ),
+                  ),
+                ),
+                _buildReplyBar(isDark),
+              ],
+            ),
+          ),
+          // 右侧图片区域
+          Container(
+            width: 1,
+            color:
+                isDark ? Colors.white10 : Colors.black.withValues(alpha: 0.05),
+          ),
+          Expanded(
+            flex: 4,
+            child: p.images.isNotEmpty
+                ? _buildMarketHeroImage(p, isDark, forceFitHeight: true)
+                : Container(
+                    color: isDark
+                        ? const Color(0xFF131720)
+                        : const Color(0xFFF4F6FB),
+                    child: Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.image_not_supported_outlined,
+                              size: 64,
+                              color:
+                                  isDark ? Colors.white24 : Colors.grey[300]),
+                          const SizedBox(height: 16),
+                          Text('没有图片展示',
+                              style: TextStyle(
+                                  color: isDark
+                                      ? Colors.white38
+                                      : Colors.grey[500],
+                                  fontSize: 16)),
+                        ],
+                      ),
+                    ),
+                  ),
+          ),
+        ],
+      );
+    }
+
     return Column(children: [
       Expanded(
         child: SingleChildScrollView(
@@ -445,10 +584,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (p.images.isNotEmpty) 
+              if (p.images.isNotEmpty)
                 _buildMarketHeroImage(p, isDark)
               else
-                SizedBox(height: MediaQuery.of(context).padding.top + kToolbarHeight),
+                SizedBox(
+                    height:
+                        MediaQuery.of(context).padding.top + kToolbarHeight),
               Transform.translate(
                 offset: Offset(0, p.images.isNotEmpty ? -24 : 0),
                 child: Container(
@@ -462,6 +603,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      if (p.title.isNotEmpty) ...[
+                        Text(p.title,
+                            style: TextStyle(
+                                fontSize: 24,
+                                fontWeight: FontWeight.bold,
+                                color: isDark ? Colors.white : Colors.black87)),
+                        const SizedBox(height: 12),
+                      ],
                       if (p.price > 0) ...[
                         Row(
                           crossAxisAlignment: CrossAxisAlignment.end,
@@ -473,7 +622,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                     color: Color(0xFFFF6B6B))),
                             Text(
                               p.price.toStringAsFixed(
-                                  p.price.truncateToDouble() == p.price ? 0 : 2),
+                                  p.price.truncateToDouble() == p.price
+                                      ? 0
+                                      : 2),
                               style: const TextStyle(
                                   fontSize: 32,
                                   fontWeight: FontWeight.w900,
@@ -483,14 +634,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           ],
                         ),
                         const SizedBox(height: 16),
-                      ],
-                      if (p.title.isNotEmpty) ...[
-                        Text(p.title,
-                            style: TextStyle(
-                                fontSize: 24,
-                                fontWeight: FontWeight.bold,
-                                color: isDark ? Colors.white : Colors.black87)),
-                        const SizedBox(height: 12),
                       ],
                       Text(p.content,
                           style: TextStyle(
@@ -509,7 +652,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           child: _buildContactChip(p.contact, isDark),
                         ),
                       ],
-                      if (_isCurrentUserPostOwner()) ...[
+                      if (_canUseOwnerMarketActions()) ...[
                         const SizedBox(height: 24),
                         _buildOwnerMarketActions(isDark),
                       ],
@@ -531,15 +674,18 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     ]);
   }
 
-  Widget _buildMarketHeroImage(Post p, bool isDark) {
+  Widget _buildMarketHeroImage(Post p, bool isDark,
+      {bool forceFitHeight = false}) {
     final urls = _resolvedImageUrls(p);
     if (urls.isEmpty) return const SizedBox.shrink();
     return Stack(
       children: [
         Container(
           width: double.infinity,
-          height: 400,
-          color: isDark ? Colors.white.withValues(alpha: 0.06) : Colors.black.withValues(alpha: 0.04),
+          height: forceFitHeight ? double.infinity : 400,
+          color: isDark
+              ? Colors.white.withValues(alpha: 0.06)
+              : Colors.black.withValues(alpha: 0.04),
           child: PageView.builder(
             itemCount: urls.length,
             onPageChanged: (index) => setState(() => _marketImageIndex = index),
@@ -547,18 +693,21 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               onTap: () => Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (_) => ImageViewerScreen(imageUrls: urls, initialIndex: index),
+                  builder: (_) =>
+                      ImageViewerScreen(imageUrls: urls, initialIndex: index),
                 ),
               ),
               child: CachedNetworkImage(
                 cacheManager: PostImageCache.manager,
                 imageUrl: urls[index],
                 width: double.infinity,
-                fit: BoxFit.cover,
-                placeholder: (_, __) => Container(color: isDark ? Colors.white10 : Colors.grey[200]),
+                fit: forceFitHeight ? BoxFit.contain : BoxFit.cover,
+                placeholder: (_, __) => Container(
+                    color: isDark ? Colors.white10 : Colors.grey[200]),
                 errorWidget: (_, __, ___) => Container(
                   color: isDark ? Colors.white10 : Colors.grey[200],
-                  child: const Icon(Icons.broken_image, size: 40, color: Colors.grey),
+                  child: const Icon(Icons.broken_image,
+                      size: 40, color: Colors.grey),
                 ),
               ),
             ),
@@ -576,7 +725,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               ),
               child: Text(
                 '${_marketImageIndex + 1}/${urls.length}',
-                style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold),
               ),
             ),
           ),
@@ -640,70 +792,99 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   // ---- 作者卡片 ----
 
   Widget _buildAuthorCard(Post p, bool isDark) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0x99171B24) : const Color(0x0A000000),
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child: Row(children: [
-        CachedAvatar(
-          radius: 24,
-          imageUrl: p.author?.avatar.isNotEmpty == true
-              ? ApiConstants.fullUrl(p.author!.avatar)
-              : null,
-          fallbackText: p.author?.nickname,
-        ),
-        const SizedBox(width: 14),
-        Expanded(
-          child:
-              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Row(
-              children: [
-                Flexible(
-                  child: Text(p.author?.nickname ?? '匿名',
-                      style: TextStyle(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 16,
-                          color: isDark ? Colors.white : Colors.black87)),
-                ),
-                if (p.author != null) ...[
-                  const SizedBox(width: 6),
-                  _buildLevelBadge(p.author!, isDark),
-                ],
-              ],
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () {
+        if (p.author != null) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => UserHomeScreen(userId: p.author!.id),
             ),
-            const SizedBox(height: 4),
-            Row(children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                decoration: BoxDecoration(
-                  color: _creditColor(p.author?.creditScore ?? 100)
-                      .withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(6),
+          );
+        }
+      },
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0x99171B24) : const Color(0x0A000000),
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: Row(children: [
+          GestureDetector(
+            onTap: () {
+              if (p.author?.avatar.isNotEmpty == true) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => ImageViewerScreen(
+                      imageUrls: [ApiConstants.fullUrl(p.author!.avatar)],
+                    ),
+                  ),
+                );
+              }
+            },
+            child: CachedAvatar(
+              radius: 24,
+              imageUrl: p.author?.avatar.isNotEmpty == true
+                  ? ApiConstants.fullUrl(p.author!.avatar)
+                  : null,
+              fallbackText: p.author?.nickname,
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(
+                children: [
+                  Flexible(
+                    child: Text(p.author?.nickname ?? '匿名',
+                        style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 16,
+                            color: isDark ? Colors.white : Colors.black87)),
+                  ),
+                  if (p.author != null) ...[
+                    const SizedBox(width: 6),
+                    _buildLevelBadge(p.author!, isDark),
+                  ],
+                ],
+              ),
+              const SizedBox(height: 4),
+              Row(children: [
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: _creditColor(p.author?.creditScore ?? 100)
+                        .withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text('诚信 ${p.author?.creditScore ?? 100}%',
+                      style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: _creditColor(p.author?.creditScore ?? 100))),
                 ),
-                child: Text('诚信 ${p.author?.creditScore ?? 100}%',
+                const SizedBox(width: 8),
+                Icon(Icons.visibility_outlined,
+                    size: 13,
+                    color: isDark ? Colors.white30 : Colors.grey[400]),
+                const SizedBox(width: 3),
+                Text('${p.viewCount}',
                     style: TextStyle(
                         fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: _creditColor(p.author?.creditScore ?? 100))),
-              ),
-              const SizedBox(width: 8),
-              Icon(Icons.visibility_outlined, size: 13,
-                  color: isDark ? Colors.white30 : Colors.grey[400]),
-              const SizedBox(width: 3),
-              Text('${p.viewCount}',
-                  style: TextStyle(
-                      fontSize: 11,
-                      color: isDark ? Colors.white30 : Colors.grey[400])),
+                        color: isDark ? Colors.white30 : Colors.grey[400])),
+              ]),
             ]),
-          ]),
-        ),
-        Text(_formatTime(p.createdAt),
-            style: TextStyle(
-                fontSize: 12,
-                color: isDark ? Colors.white30 : Colors.grey[400])),
-      ]),
+          ),
+          Text(_formatTime(p.createdAt),
+              style: TextStyle(
+                  fontSize: 12,
+                  color: isDark ? Colors.white30 : Colors.grey[400])),
+        ]),
+      ),
     );
   }
 
@@ -788,7 +969,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     if (images.isEmpty) return const SizedBox.shrink();
     if (images.length == 1) return _buildHeroImage(p, isDark);
     final crossCount = images.length == 2 ? 2 : 3;
-    final displayImages = images.length > 4 ? images.sublist(0, 4) : images;
     return ClipRRect(
       borderRadius: BorderRadius.circular(16),
       child: GridView.builder(
@@ -799,7 +979,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             mainAxisSpacing: 3,
             crossAxisSpacing: 3,
             childAspectRatio: 1),
-        itemCount: displayImages.length,
+        itemCount: images.length,
         itemBuilder: (context, index) => GestureDetector(
           onTap: () => Navigator.push(
               context,
@@ -809,21 +989,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           child: Stack(fit: StackFit.expand, children: [
             CachedNetworkImage(
                 cacheManager: PostImageCache.manager,
-                imageUrl: displayImages[index],
+                imageUrl: images[index],
                 fit: BoxFit.cover,
                 placeholder: (_, __) => Container(color: Colors.grey[300]),
                 errorWidget: (_, __, ___) => Container(
                     color: Colors.grey[300],
                     child: const Icon(Icons.broken_image))),
-            if (index == 3 && images.length > 4)
-              Container(
-                  color: Colors.black54,
-                  alignment: Alignment.center,
-                  child: Text('+${images.length - 3}',
-                      style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold))),
           ]),
         ),
       ),
@@ -1015,7 +1186,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     if (_replies.isEmpty) return _buildNoComments(isDark);
     final threads = _buildThreads();
     return Column(
-      children: threads.take(4).map((t) => _buildReplyThread(t, isDark, compact: true, depth: 0)).toList(),
+      children: threads
+          .take(4)
+          .map((t) => _buildReplyThread(t, isDark, compact: true, depth: 0))
+          .toList(),
     );
   }
 
@@ -1023,7 +1197,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     if (_replies.isEmpty) return _buildNoComments(isDark);
     final threads = _buildThreads();
     return Column(
-      children: threads.map((t) => _buildReplyThread(t, isDark, compact: false, depth: 0)).toList(),
+      children: threads
+          .map((t) => _buildReplyThread(t, isDark, compact: false, depth: 0))
+          .toList(),
     );
   }
 
@@ -1073,7 +1249,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
-  Widget _buildReplyThread(_ReplyThread thread, bool isDark, {bool compact = false, int depth = 0}) {
+  Widget _buildReplyThread(_ReplyThread thread, bool isDark,
+      {bool compact = false, int depth = 0}) {
     // 获取该顶级评论的所有子回复（扁平化）
     final childMap = <int, List<Reply>>{};
     for (final r in _replies) {
@@ -1082,10 +1259,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       }
     }
     final allChildren = childMap[thread.parent.id] ?? [];
-    final visibleChildren = compact && depth == 0
-        ? allChildren.take(1).toList()
-        : allChildren;
-    final hasMore = compact && depth == 0 && allChildren.length > 1;
+    final isExpanded = _expandedThreads.contains(thread.parent.id);
+    final visibleChildren =
+        !isExpanded ? allChildren.take(2).toList() : allChildren;
+    final hasMore = !isExpanded && allChildren.length > 2;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
@@ -1112,13 +1289,21 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     (child) => _buildChildReply(child, isDark, depth: 0),
                   ),
                   if (hasMore)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 6),
-                      child: Text(
-                        '共${allChildren.length}条回复，点击查看',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Theme.of(context).primaryColor,
+                    GestureDetector(
+                      onTap: () {
+                        if (mounted)
+                          setState(() {
+                            _expandedThreads.add(thread.parent.id);
+                          });
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text(
+                          '共${allChildren.length}条回复，点击查看',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Theme.of(context).primaryColor,
+                          ),
                         ),
                       ),
                     ),
@@ -1131,7 +1316,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   /// 子回复线程：显示扁平化后的所有子回复（不再递归嵌套）
-  Widget _buildChildReplyThread(_ReplyThread thread, bool isDark, {bool compact = false, int depth = 0}) {
+  Widget _buildChildReplyThread(_ReplyThread thread, bool isDark,
+      {bool compact = false, int depth = 0}) {
     // 扁平化后：从 childMap 中获取该顶级评论的所有子回复
     final childMap = <int, List<Reply>>{};
     for (final r in _replies) {
@@ -1142,9 +1328,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final directChildren = childMap[thread.parent.id] ?? [];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: directChildren.map(
-        (child) => _buildChildReply(child, isDark, depth: 0),
-      ).toList(),
+      children: directChildren
+          .map(
+            (child) => _buildChildReply(child, isDark, depth: 0),
+          )
+          .toList(),
     );
   }
 
@@ -1156,15 +1344,28 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       r,
       isDark,
       GestureDetector(
-        onTap: () => _openReplyComposer(parentReplyId: r.id, replyToName: r.author?.nickname, replyToUserId: r.authorId),
+        onTap: () => _openReplyComposer(
+            parentReplyId: r.id,
+            replyToName: r.author?.nickname,
+            replyToUserId: r.authorId),
         onLongPress: () => _showReplyActionSheet(r, isOwn, isDark),
         child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          CachedAvatar(
-            radius: 16,
-            imageUrl: r.author?.avatar.isNotEmpty == true
-                ? ApiConstants.fullUrl(r.author!.avatar)
-                : null,
-            fallbackText: r.author?.nickname,
+          GestureDetector(
+            onTap: () {
+              if (r.author != null) {
+                Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => UserHomeScreen(userId: r.author!.id)));
+              }
+            },
+            child: CachedAvatar(
+              radius: 16,
+              imageUrl: r.author?.avatar.isNotEmpty == true
+                  ? ApiConstants.fullUrl(r.author!.avatar)
+                  : null,
+              fallbackText: r.author?.nickname,
+            ),
           ),
           const SizedBox(width: 10),
           Expanded(
@@ -1208,11 +1409,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 const SizedBox(height: 6),
                 Row(
                   children: [
-                    Icon(Icons.reply, size: 14,
+                    Icon(Icons.reply,
+                        size: 14,
                         color: isDark ? Colors.white30 : Colors.grey[400]),
                     const SizedBox(width: 4),
-                    Text('回复', style: TextStyle(fontSize: 11,
-                        color: isDark ? Colors.white30 : Colors.grey[400])),
+                    Text('回复',
+                        style: TextStyle(
+                            fontSize: 11,
+                            color: isDark ? Colors.white30 : Colors.grey[400])),
                   ],
                 ),
               ],
@@ -1235,19 +1439,33 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       r,
       isDark,
       GestureDetector(
-        onTap: () => _openReplyComposer(parentReplyId: threadParentId, replyToName: r.author?.nickname, replyToUserId: r.authorId),
+        onTap: () => _openReplyComposer(
+            parentReplyId: threadParentId,
+            replyToName: r.author?.nickname,
+            replyToUserId: r.authorId),
         onLongPress: () => _showReplyActionSheet(r, isOwn, isDark),
         child: Padding(
           padding: EdgeInsets.only(bottom: 8, left: depth * 4.0),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              CachedAvatar(
-                radius: 10,
-                imageUrl: r.author?.avatar.isNotEmpty == true
-                    ? ApiConstants.fullUrl(r.author!.avatar)
-                    : null,
-                fallbackText: r.author?.nickname,
+              GestureDetector(
+                onTap: () {
+                  if (r.author != null) {
+                    Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) =>
+                                UserHomeScreen(userId: r.author!.id)));
+                  }
+                },
+                child: CachedAvatar(
+                  radius: 10,
+                  imageUrl: r.author?.avatar.isNotEmpty == true
+                      ? ApiConstants.fullUrl(r.author!.avatar)
+                      : null,
+                  fallbackText: r.author?.nickname,
+                ),
               ),
               const SizedBox(width: 8),
               Expanded(
@@ -1270,10 +1488,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                       Text(_formatTime(r.createdAt),
                           style: TextStyle(
                               fontSize: 10,
-                              color: isDark ? Colors.white24 : Colors.grey[400])),
+                              color:
+                                  isDark ? Colors.white24 : Colors.grey[400])),
                       const Spacer(),
-                      Text('回复', style: TextStyle(fontSize: 10,
-                          color: isDark ? Colors.white24 : Colors.grey[400])),
+                      Text('回复',
+                          style: TextStyle(
+                              fontSize: 10,
+                              color:
+                                  isDark ? Colors.white24 : Colors.grey[400])),
                     ]),
                     const SizedBox(height: 2),
                     contentWidget,
@@ -1316,7 +1538,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final content = r.content;
     final atRegex = RegExp(r'^@(\S+)\s');
     final match = atRegex.firstMatch(content);
-    
+
     Widget textWidget;
     if (match != null) {
       final atName = match.group(1)!;
@@ -1378,7 +1600,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             GestureDetector(
               onTap: () {
                 _replyFocus.unfocus();
-                setState(() => _isReplyComposerOpen = false);
+                if (mounted) setState(() => _isReplyComposerOpen = false);
               },
               child: Container(
                 width: 36,
@@ -1403,7 +1625,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 controller: _replyController,
                 focusNode: _replyFocus,
                 decoration: InputDecoration(
-                  hintText: _replyToName != null ? '回复 @$_replyToName...' : '写下你的想法...',
+                  hintText: _replyToName != null
+                      ? '回复 @$_replyToName...'
+                      : '写下你的想法...',
                   hintStyle: TextStyle(
                       color: isDark ? Colors.white30 : Colors.grey[400],
                       fontSize: 14),
@@ -1501,10 +1725,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   bool _isCurrentUserPostOwner() {
     final post = _post;
     final currentUser = context.read<AuthProvider>().user;
-    return widget.isMarket &&
-        post != null &&
+    return post != null &&
         currentUser != null &&
         currentUser.id == post.authorId;
+  }
+
+  bool _canUseOwnerMarketActions() {
+    return widget.isMarket && _isCurrentUserPostOwner();
   }
 
   List<String> _resolvedImageUrls(Post post) {
@@ -1550,19 +1777,21 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
-  void _openReplyComposer({int? parentReplyId, String? replyToName, int? replyToUserId}) {
-    setState(() {
-      _isReplyComposerOpen = true;
-      _parentReplyId = parentReplyId;
-      _replyToName = replyToName;
-      _replyToUserId = replyToUserId;
-      if (replyToName != null && replyToName.isNotEmpty) {
-        _replyController.text = '@$replyToName ';
-        _replyController.selection = TextSelection.fromPosition(
-          TextPosition(offset: _replyController.text.length),
-        );
-      }
-    });
+  void _openReplyComposer(
+      {int? parentReplyId, String? replyToName, int? replyToUserId}) {
+    if (mounted)
+      setState(() {
+        _isReplyComposerOpen = true;
+        _parentReplyId = parentReplyId;
+        _replyToName = replyToName;
+        _replyToUserId = replyToUserId;
+        if (replyToName != null && replyToName.isNotEmpty) {
+          _replyController.text = '@$replyToName ';
+          _replyController.selection = TextSelection.fromPosition(
+            TextPosition(offset: _replyController.text.length),
+          );
+        }
+      });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _replyFocus.requestFocus();
@@ -1591,8 +1820,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               ),
             ),
             ListTile(
-              leading: Icon(Icons.copy, color: isDark ? Colors.white70 : Colors.black87),
-              title: Text('复制', style: TextStyle(color: isDark ? Colors.white70 : Colors.black87)),
+              leading: Icon(Icons.copy,
+                  color: isDark ? Colors.white70 : Colors.black87),
+              title: Text('复制',
+                  style: TextStyle(
+                      color: isDark ? Colors.white70 : Colors.black87)),
               onTap: () {
                 Clipboard.setData(ClipboardData(text: r.content));
                 Navigator.pop(ctx);
@@ -1626,9 +1858,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       if (mounted) {
         AppFeedback.showSnackBar(context, '已删除');
         if (_post != null && _post!.replyCount > 0) {
-          setState(() {
-            _post = _post!.copyWith(replyCount: _post!.replyCount - 1);
-          });
+          if (mounted)
+            setState(() {
+              _post = _post!.copyWith(replyCount: _post!.replyCount - 1);
+            });
           context.read<PostProvider>().updatePostInCache(_post!);
         }
         _loadReplies();
@@ -1644,11 +1877,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   Future<void> _loadReplies() async {
     try {
       final repliesResponse = await _dio.get('/posts/${widget.postId}/replies');
-      setState(() {
-        _replies = (repliesResponse.data as List)
-            .map((e) => Reply.fromJson(e))
-            .toList();
-      });
+      if (mounted)
+        setState(() {
+          _replies = (repliesResponse.data as List)
+              .map((e) => Reply.fromJson(e))
+              .toList();
+        });
     } on DioException catch (e) {
       final msg = AppFeedback.dioErrorMessage(e, fallback: '加载回复失败');
       if (mounted) {

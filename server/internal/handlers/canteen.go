@@ -2,12 +2,14 @@ package handlers
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 
+	"shenliyuan/internal/models"
+
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
-	"shenliyuan/internal/models"
 )
 
 type CanteenHandler struct {
@@ -20,38 +22,25 @@ func NewCanteenHandler(db *gorm.DB) *CanteenHandler {
 
 // GetList 获取食堂列表（按评分降序排列）
 func (h *CanteenHandler) GetList(c *gin.Context) {
-	var canteens []models.Canteen
-	if err := h.db.Where("verified = ?", true).Order("created_at DESC").Find(&canteens).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取食堂列表失败"})
-		return
-	}
-
 	type CanteenWithStats struct {
 		models.Canteen
 		RatingCount int     `json:"rating_count"`
 		AverageStar float64 `json:"average_star"`
 	}
-	result := make([]CanteenWithStats, len(canteens))
-	for i, ct := range canteens {
-		result[i].Canteen = ct
-		var count int64
-		var avg float64
-		h.db.Model(&models.CanteenRating{}).Where("canteen_id = ?", ct.ID).Count(&count)
-		if count > 0 {
-			h.db.Model(&models.CanteenRating{}).Where("canteen_id = ?", ct.ID).Select("AVG(CAST(star AS FLOAT))").Scan(&avg)
-		}
-		result[i].RatingCount = int(count)
-		result[i].AverageStar = avg
-	}
+	var result []CanteenWithStats
 
-	// 按平均分从高到低排序，如果分数相同按评价人数，再按ID
-	for i := 0; i < len(result); i++ {
-		for j := i + 1; j < len(result); j++ {
-			if result[j].AverageStar > result[i].AverageStar || 
-				(result[j].AverageStar == result[i].AverageStar && result[j].RatingCount > result[i].RatingCount) {
-				result[i], result[j] = result[j], result[i]
-			}
-		}
+	// 修复 N+1 查询，使用 LEFT JOIN 与 GROUP BY 一次性查出评分统计
+	err := h.db.Table("canteens").
+		Select("canteens.*, COUNT(canteen_ratings.id) as rating_count, COALESCE(AVG(CAST(canteen_ratings.star AS FLOAT)), 0) as average_star").
+		Joins("LEFT JOIN canteen_ratings ON canteen_ratings.canteen_id = canteens.id").
+		Where("canteens.verified = ?", true).
+		Group("canteens.id").
+		Order("average_star DESC, rating_count DESC, canteens.created_at DESC").
+		Find(&result).Error
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取食堂列表失败"})
+		return
 	}
 
 	c.JSON(http.StatusOK, result)
@@ -71,13 +60,15 @@ func (h *CanteenHandler) GetDetail(c *gin.Context) {
 	}
 
 	var ratings []models.CanteenRating
-	h.db.Where("canteen_id = ?", id).Order("created_at DESC").Find(&ratings)
+	if err := h.db.Where("canteen_id = ?", id).Preload("User").Order("created_at DESC").Find(&ratings).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取评价列表失败"})
+		return
+	}
 	for i := range ratings {
-		var user models.User
-		if err := h.db.Select("nickname, student_id, avatar").First(&user, ratings[i].UserID).Error; err == nil {
-			ratings[i].UserName = user.Nickname
-			ratings[i].UserStudentID = user.StudentID
-			ratings[i].UserAvatar = user.Avatar
+		if ratings[i].User != nil {
+			ratings[i].UserName = ratings[i].User.Nickname
+			ratings[i].UserStudentID = ratings[i].User.StudentID
+			ratings[i].UserAvatar = ratings[i].User.Avatar
 		}
 	}
 
@@ -92,6 +83,12 @@ func (h *CanteenHandler) GetDetail(c *gin.Context) {
 	if userID, exists := c.Get("user_id"); exists {
 		var rating models.CanteenRating
 		if err := h.db.Where("canteen_id = ? AND user_id = ?", id, userID).First(&rating).Error; err == nil {
+			var user models.User
+			if err := h.db.Select("nickname, student_id, avatar").First(&user, rating.UserID).Error; err == nil {
+				rating.UserName = user.Nickname
+				rating.UserStudentID = user.StudentID
+				rating.UserAvatar = user.Avatar
+			}
 			myRating = &rating
 		}
 	}
@@ -183,7 +180,10 @@ func (h *CanteenHandler) Rate(c *gin.Context) {
 			Comment:   input.Comment,
 			Images:    input.Images,
 		}
-		h.db.Create(&rating)
+		if err := h.db.Create(&rating).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
+			return
+		}
 		c.JSON(http.StatusCreated, gin.H{"message": "评价成功", "rating": rating})
 	}
 }
@@ -203,24 +203,35 @@ func (h *CanteenHandler) DeleteCanteen(c *gin.Context) {
 	}
 
 	// 扣除10经验 (保证不为负数可以做个判断，但简单处理直接减也可以，或者用 gorm expr 保证 > 0)
-	h.db.Exec("UPDATE users SET exp = CASE WHEN exp >= 10 THEN exp - 10 ELSE 0 END WHERE id = ?", canteen.CreatedBy)
+	if err := h.db.Exec("UPDATE users SET exp = CASE WHEN exp >= 10 THEN exp - 10 ELSE 0 END WHERE id = ?", canteen.CreatedBy).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
+		return
+	}
 
 	// 删除关联的评价
-	h.db.Where("canteen_id = ?", id).Delete(&models.CanteenRating{})
+	if err := h.db.Where("canteen_id = ?", id).Delete(&models.CanteenRating{}).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "删除关联评价失败"})
+		return
+	}
 	// 删除食堂
-	h.db.Delete(&canteen)
+	if err := h.db.Delete(&canteen).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
+		return
+	}
 
 	// 记录管理员操作
 	adminID, _ := c.Get("user_id")
 	var admin models.User
 	h.db.Select("nickname").First(&admin, adminID)
-	h.db.Create(&models.AdminLog{
+	if err := h.db.Create(&models.AdminLog{
 		AdminID:   adminID.(uint),
 		AdminName: admin.Nickname,
 		Action:    "删除食堂",
 		Target:    canteen.Name,
 		Detail:    fmt.Sprintf("驳回食堂提交，扣除用户 %d 的10点经验", canteen.CreatedBy),
-	})
+	}).Error; err != nil {
+		log.Printf("[DB_WARN] Failed to write admin log: %v", err)
+	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "已删除并驳回经验"})
 }

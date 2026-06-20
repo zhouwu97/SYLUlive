@@ -16,6 +16,7 @@ class _BoardState {
   bool hasCacheLoaded = false;
   String currentSort = 'time';
   String? sessionId;
+  int requestVersion = 0;
 }
 
 /// 创建帖子的返回结果
@@ -31,25 +32,60 @@ class DeletePostResult {
   const DeletePostResult({required this.success, this.errorMessage});
 }
 
+@visibleForTesting
+Map<String, dynamic> buildPostListParams({
+  required int boardId,
+  String? type,
+  required String sort,
+  required int page,
+  required int loadedCount,
+  String? sessionId,
+  int limit = 20,
+}) {
+  final params = <String, dynamic>{
+    'board': boardId,
+    'type': type,
+    'sort': sort,
+    'limit': limit,
+  };
+  final usesSnapshot = sessionId != null && (sort == 'all' || sort == 'hot');
+  if (usesSnapshot) {
+    params.addAll({
+      'scene': 'loadmore',
+      'session_id': sessionId,
+      'offset': loadedCount,
+    });
+  } else {
+    params['page'] = page;
+  }
+  return params;
+}
+
 class PostProvider extends ChangeNotifier {
   final Dio _dio;
+  final bool _enableCache;
 
-  final Map<int, _BoardState> _boards = {};
+  final Map<String, _BoardState> _boards = {};
   final int _activeBoardId = 1;
 
-  PostProvider(this._dio) {
-    _boards[1] = _BoardState();
-    _boards[2] = _BoardState();
-    _boards[3] = _BoardState();
-    _boards[4] = _BoardState();
-    // 启动后异步加载缓存（首页优先）
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _loadCachedThenRefresh(1, sort: 'time');
-    });
+  PostProvider(this._dio, {bool enableCache = true})
+      : _enableCache = enableCache;
+
+  String _stateKey(int boardId, String sort, String? type) {
+    return '$boardId|$sort|${type ?? ''}';
   }
 
-  _BoardState _ensureBoard(int boardId) {
-    return _boards.putIfAbsent(boardId, _BoardState.new);
+  _BoardState _ensureBoard(
+    int boardId, {
+    String sort = 'time',
+    String? type,
+  }) {
+    final key = _stateKey(boardId, sort, type);
+    return _boards.putIfAbsent(key, () {
+      final state = _BoardState();
+      state.currentSort = sort;
+      return state;
+    });
   }
 
   // ---- 当前活跃板块 ----
@@ -59,30 +95,72 @@ class PostProvider extends ChangeNotifier {
   bool get hasMore => _board.hasMore;
   bool get hasLoaded => _board.hasLoaded;
 
-  _BoardState get _board => _boards[_activeBoardId]!;
+  _BoardState get _board => _ensureBoard(_activeBoardId);
 
-  List<Post> postsFor(int boardId) => _boards[boardId]?.posts ?? [];
-  bool isLoadingFor(int boardId) => _boards[boardId]?.isLoading ?? false;
-  bool hasLoadedFor(int boardId) => _boards[boardId]?.hasLoaded ?? false;
+  List<Post> postsFor(
+    int boardId, {
+    String sort = 'time',
+    String? type,
+  }) =>
+      _ensureBoard(boardId, sort: sort, type: type).posts;
+  bool isLoadingFor(
+    int boardId, {
+    String sort = 'time',
+    String? type,
+  }) =>
+      _ensureBoard(boardId, sort: sort, type: type).isLoading;
+  bool hasLoadedFor(
+    int boardId, {
+    String sort = 'time',
+    String? type,
+  }) =>
+      _ensureBoard(boardId, sort: sort, type: type).hasLoaded;
+  bool hasMoreFor(
+    int boardId, {
+    String sort = 'time',
+    String? type,
+  }) =>
+      _ensureBoard(boardId, sort: sort, type: type).hasMore;
+
+  Future<void> _savePostsToCache(
+    int boardId,
+    String sort,
+    List<Post> posts,
+  ) async {
+    if (!_enableCache) return;
+    try {
+      await PostCacheService.savePosts(boardId, posts, sort: sort);
+    } catch (e) {
+      debugPrint('保存帖子缓存失败(board=$boardId, sort=$sort): $e');
+    }
+  }
 
   /// SWR 模式：先读缓存秒开 → 后台增量拉取
-  Future<void> _loadCachedThenRefresh(int boardId, {String? type, String sort = 'time'}) async {
-    final board = _ensureBoard(boardId);
+  Future<void> _loadCachedThenRefresh(int boardId,
+      {String? type, String sort = 'time'}) async {
+    final board = _ensureBoard(boardId, sort: sort, type: type);
     if (board.hasCacheLoaded) return;
     board.hasCacheLoaded = true;
+    board.currentSort = sort;
+    final requestVersion = ++board.requestVersion;
 
     // 第一步：极速上屏 — 读本地缓存
-    try {
-      final cached = await PostCacheService.loadPosts(boardId);
-      if (cached.isNotEmpty) {
-        board.posts = cached;
-        notifyListeners();
-      }
-    } catch (_) {}
+    if (_enableCache) {
+      try {
+        final cached = await PostCacheService.loadPosts(boardId, sort: sort);
+        if (requestVersion != board.requestVersion) return;
+        if (cached.isNotEmpty) {
+          board.posts = cached;
+          notifyListeners();
+        }
+      } catch (_) {}
+    }
 
     // 第二步 + 第三步：查找锚点，增量请求
     try {
-      final since = await PostCacheService.getLatestTimestamp(boardId);
+      final since = _enableCache && sort == 'time'
+          ? await PostCacheService.getLatestTimestamp(boardId, sort: sort)
+          : null;
       board.sessionId = null; // 清除老的会话快照
       final params = <String, dynamic>{
         'board': boardId,
@@ -97,21 +175,27 @@ class PostProvider extends ChangeNotifier {
       }
 
       final response = await _dio.get('/posts', queryParameters: params);
+      if (requestVersion != board.requestVersion) return;
       if (response.statusCode == 200) {
         final data = response.data;
         if (data['session_id'] != null) {
           board.sessionId = data['session_id'];
         }
-        final newPosts = (data['posts'] as List)
+        final newPosts = ((data['posts'] as List?) ?? [])
             .map((e) => Post.fromJson(e))
             .toList();
 
-        if (newPosts.isNotEmpty) {
+        if (sort != 'time') {
+          board.posts = newPosts;
+          await _savePostsToCache(boardId, sort, board.posts);
+        } else if (newPosts.isNotEmpty) {
           // 第四步：增量合并 — 更新已有帖子，插入新帖子
           bool changed = false;
-          final existingIndexMap = {for (var i = 0; i < board.posts.length; i++) board.posts[i].id: i};
+          final existingIndexMap = {
+            for (var i = 0; i < board.posts.length; i++) board.posts[i].id: i
+          };
           final uniqueNew = <Post>[];
-          
+
           for (final np in newPosts) {
             final idx = existingIndexMap[np.id];
             if (idx != null) {
@@ -121,19 +205,21 @@ class PostProvider extends ChangeNotifier {
               uniqueNew.add(np); // 全新帖子
             }
           }
-          
+
           if (uniqueNew.isNotEmpty) {
             board.posts = [...uniqueNew, ...board.posts];
             changed = true;
           }
-          
+
           if (changed) {
             // 写回缓存
-            await PostCacheService.savePosts(boardId, board.posts);
+            await _savePostsToCache(boardId, sort, board.posts);
           }
         }
 
-        board.hasMore = newPosts.length >= 20;
+        final total = (data['total'] as num?)?.toInt();
+        board.hasMore =
+            total != null ? board.posts.length < total : newPosts.length >= 20;
         board.currentPage = 2;
       }
     } on DioException catch (e) {
@@ -144,16 +230,13 @@ class PostProvider extends ChangeNotifier {
     }
 
     board.hasLoaded = true;
-    if (boardId == _activeBoardId) {
-      _boards[_activeBoardId] = board;
-    }
     notifyListeners();
   }
 
   /// 加载更多（翻页）
   Future<void> loadPosts(
       {int boardId = 1, String? type, String sort = 'time'}) async {
-    final board = _ensureBoard(boardId);
+    final board = _ensureBoard(boardId, sort: sort, type: type);
 
     // 首次加载走 SWR
     if (!board.hasCacheLoaded) {
@@ -161,34 +244,46 @@ class PostProvider extends ChangeNotifier {
       return;
     }
 
+    if (board.hasLoaded && board.currentSort != sort) {
+      await refresh(boardId: boardId, type: type, sort: sort);
+      return;
+    }
+
     if (board.isLoading || !board.hasMore) return;
     board.isLoading = true;
     board.error = null;
+    final requestVersion = board.requestVersion;
     notifyListeners();
 
     try {
-      final params = <String, dynamic>{
-        'board': boardId,
-        'type': type,
-        'sort': sort,
-        'page': board.currentPage,
-        'limit': 20,
-      };
+      final usesSnapshot =
+          board.sessionId != null && (sort == 'all' || sort == 'hot');
+      final params = buildPostListParams(
+        boardId: boardId,
+        type: type,
+        sort: sort,
+        page: board.currentPage,
+        loadedCount: board.posts.length,
+        sessionId: board.sessionId,
+      );
 
       final response = await _dio.get('/posts', queryParameters: params);
+      if (requestVersion != board.requestVersion) return;
       if (response.statusCode == 200) {
         final data = response.data;
         if (data['session_id'] != null) {
           board.sessionId = data['session_id'];
         }
-        final newPosts = (data['posts'] as List)
+        final newPosts = ((data['posts'] as List?) ?? [])
             .map((e) => Post.fromJson(e))
             .toList();
 
         if (board.currentPage == 1) {
           board.posts = newPosts;
         } else {
-          final existingIndexMap = {for (var i = 0; i < board.posts.length; i++) board.posts[i].id: i};
+          final existingIndexMap = {
+            for (var i = 0; i < board.posts.length; i++) board.posts[i].id: i
+          };
           for (final np in newPosts) {
             final idx = existingIndexMap[np.id];
             if (idx != null) {
@@ -199,8 +294,12 @@ class PostProvider extends ChangeNotifier {
           }
         }
 
-        board.hasMore = newPosts.length >= 20 && newPosts.isNotEmpty;
-        board.currentPage++;
+        final total = (data['total'] as num?)?.toInt();
+        board.hasMore =
+            total != null ? board.posts.length < total : newPosts.length >= 20;
+        if (!usesSnapshot) {
+          board.currentPage++;
+        }
       }
     } on DioException catch (e) {
       board.error = AppFeedback.dioErrorMessage(e);
@@ -208,21 +307,25 @@ class PostProvider extends ChangeNotifier {
       board.error = e.toString();
     }
 
-    board.isLoading = false;
-    board.hasLoaded = true;
-    if (boardId == _activeBoardId) {
-      _boards[_activeBoardId] = board;
+    if (requestVersion == board.requestVersion) {
+      board.isLoading = false;
+      board.hasLoaded = true;
+      notifyListeners();
     }
-    notifyListeners();
   }
 
   Future<void> refresh(
       {int boardId = 1, String? type, String sort = 'time'}) async {
-    final board = _ensureBoard(boardId);
-    bool isSortChanged = board.currentSort != sort;
+    final board = _ensureBoard(boardId, sort: sort, type: type);
+    final requestVersion = ++board.requestVersion;
     board.currentSort = sort;
     board.currentPage = 1;
     board.hasMore = true;
+
+    if (board.posts.isEmpty) {
+      board.isLoading = true;
+      notifyListeners();
+    }
 
     try {
       board.sessionId = null; // 清除老的会话快照
@@ -236,8 +339,10 @@ class PostProvider extends ChangeNotifier {
       };
 
       final response = await _dio.get('/posts', queryParameters: params);
+      if (requestVersion != board.requestVersion) return;
       if (response.statusCode == 200) {
-        final newPosts = (response.data['posts'] as List)
+        board.sessionId = response.data['session_id']?.toString();
+        final newPosts = ((response.data['posts'] as List?) ?? [])
             .map((e) => Post.fromJson(e))
             .toList();
 
@@ -245,18 +350,22 @@ class PostProvider extends ChangeNotifier {
         // 我们必须完全覆写当前列表，绝不能执行在原地更新旧帖的合并逻辑，
         // 否则将导致已存在的帖子依然呆在旧的索引位置，造成视觉上排序无效。
         board.posts = newPosts;
-        await PostCacheService.savePosts(boardId, board.posts);
-        
-        board.hasMore = newPosts.length >= 20;
+        await _savePostsToCache(boardId, sort, board.posts);
+
+        final total = (response.data['total'] as num?)?.toInt();
+        board.hasMore =
+            total != null ? newPosts.length < total : newPosts.length >= 20;
+        board.currentPage = 2;
       }
     } on DioException catch (e) {
       debugPrint('刷新失败(board=$boardId): ${e.message}');
     }
 
-    if (boardId == _activeBoardId) {
-      _boards[_activeBoardId] = board;
+    if (requestVersion == board.requestVersion) {
+      board.isLoading = false;
+      board.hasLoaded = true;
+      notifyListeners();
     }
-    notifyListeners();
   }
 
   Future<List<Post>> searchPosts({
@@ -281,7 +390,9 @@ class PostProvider extends ChangeNotifier {
 
       if (response.statusCode == 200) {
         final data = response.data;
-        return (data['posts'] as List).map((e) => Post.fromJson(e)).toList();
+        return ((data['posts'] as List?) ?? [])
+            .map((e) => Post.fromJson(e))
+            .toList();
       }
     } on DioException catch (e) {
       debugPrint('搜索帖子失败: ${AppFeedback.dioErrorMessage(e)}');
@@ -467,13 +578,15 @@ class PostProvider extends ChangeNotifier {
 
   void _replacePostInBoards(Post updated) {
     for (final entry in _boards.entries) {
-      final boardId = entry.key;
+      final keyParts = entry.key.split('|');
+      final boardId = int.tryParse(keyParts.first) ?? 0;
+      final sort = keyParts.length > 1 ? keyParts[1] : 'time';
       final board = entry.value;
       final index = board.posts.indexWhere((p) => p.id == updated.id);
       if (index >= 0) {
         board.posts[index] = updated;
         // 同步持久化到本地缓存，防止杀后台后数据(如浏览量)倒退
-        PostCacheService.savePosts(boardId, board.posts);
+        _savePostsToCache(boardId, sort, board.posts);
       }
     }
   }

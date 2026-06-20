@@ -13,12 +13,12 @@ void main() async {
   
   try {
     print('=== 1. 执行 VPN 登录 ===');
-    final success = await webVpn.login('2403060128', '@Zhoukangwu0');
+    final success = await webVpn.login(Platform.environment['TEST_USER'] ?? '', Platform.environment['TEST_PASS'] ?? '');
     final ticket = webVpn.vpnCookie;
     print('VPN 登录结果: $success, Ticket: $ticket');
 
     print('\n=== 2. 执行系统登录 ===');
-    final loginResult = await crawler.login('2403060128', '@Zhoukangwu0', ticket);
+    final loginResult = await crawler.login(Platform.environment['TEST_USER'] ?? '', Platform.environment['TEST_PASS'] ?? '', ticket);
     print('登录结果: $loginResult');
 
     if (loginResult == 'SUCCESS') {

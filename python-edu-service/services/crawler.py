@@ -92,7 +92,7 @@ class EduCrawler:
         self.client = httpx.AsyncClient(
             timeout=httpx.Timeout(self.timeout),
             follow_redirects=False,
-            verify=False,  # 禁用SSL验证（学校教务系统使用自签名证书）
+            verify=True,  # 启用SSL验证
             headers={
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
                 "Content-Type": "application/x-www-form-urlencoded;charset=utf-8",

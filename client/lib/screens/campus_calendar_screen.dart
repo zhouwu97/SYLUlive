@@ -73,7 +73,7 @@ class _CampusCalendarScreenState extends State<CampusCalendarScreen>
   }
 
   void _toggleControls() {
-    setState(() => _showControls = !_showControls);
+    if (mounted) setState(() => _showControls = !_showControls);
   }
 
   @override
@@ -93,7 +93,7 @@ class _CampusCalendarScreenState extends State<CampusCalendarScreen>
               minScale: 0.5,
               maxScale: 4.0,
               onInteractionUpdate: (details) {
-                setState(() {
+                if (mounted) setState(() {
                   _currentScale = details.scale;
                 });
               },

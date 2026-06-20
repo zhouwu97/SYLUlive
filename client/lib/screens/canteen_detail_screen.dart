@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../providers/auth_provider.dart';
 import '../providers/canteen_provider.dart';
 import '../providers/theme_provider.dart';
@@ -31,7 +32,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
   }
 
   Future<void> _loadData() async {
-    setState(() => _isLoading = true);
+    if (mounted) setState(() => _isLoading = true);
     final data = await context.read<CanteenProvider>().loadCanteenDetail(widget.canteenId);
     if (mounted) {
       setState(() {
@@ -80,12 +81,12 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
               : ListView(
                   padding: const EdgeInsets.only(bottom: 80),
                   children: [
-                    Image.network(
-                      ApiConstants.fullUrl(_canteenData!['canteen']['image']),
+                    CachedNetworkImage(
+                      imageUrl: ApiConstants.fullUrl(_canteenData!['canteen']['image']),
                       width: double.infinity,
-                      height: 240,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Container(width: double.infinity, height: 240, color: Colors.grey[300], child: const Icon(Icons.broken_image, size: 50, color: Colors.grey)),
+                      fit: BoxFit.fitWidth,
+                      placeholder: (context, url) => Container(width: double.infinity, height: 240, color: Colors.grey[200], child: const Center(child: CircularProgressIndicator())),
+                      errorWidget: (context, url, error) => Container(width: double.infinity, height: 240, color: Colors.grey[300], child: const Icon(Icons.broken_image, size: 50, color: Colors.grey)),
                     ),
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
@@ -172,7 +173,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
               radius: 14, 
               backgroundColor: const Color(0xFF6366F1), 
               backgroundImage: r['user_avatar'] != null && r['user_avatar'].toString().isNotEmpty
-                ? NetworkImage(ApiConstants.fullUrl(r['user_avatar']))
+                ? CachedNetworkImageProvider(ApiConstants.fullUrl(r['user_avatar']))
                 : null,
               child: r['user_avatar'] == null || r['user_avatar'].toString().isEmpty
                 ? Text(r['user_name'] != null && r['user_name'].toString().isNotEmpty ? r['user_name'][0] : '?', style: const TextStyle(color: Colors.white, fontSize: 12))
@@ -192,11 +193,13 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
                 runSpacing: 8,
                 children: imgList.map((url) => ClipRRect(
                   borderRadius: BorderRadius.circular(8),
-                  child: Image.network(
-                    ApiConstants.fullUrl(url),
+                  child: CachedNetworkImage(
+                    imageUrl: ApiConstants.fullUrl(url),
                     width: 80,
                     height: 80,
                     fit: BoxFit.cover,
+                    placeholder: (context, url) => Container(color: Colors.grey[200]),
+                    errorWidget: (context, url, error) => const Icon(Icons.broken_image, color: Colors.grey),
                   ),
                 )).toList(),
               ),
@@ -211,6 +214,14 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
     if (!auth.isLoggedIn) return const Card(child: Padding(padding: EdgeInsets.all(16), child: Center(child: Text('请先登录后评价'))));
     
     final myRating = _canteenData!['my_rating'];
+    if (myRating != null) {
+      if (myRating['user_name'] == null || myRating['user_name'].toString().isEmpty) {
+        myRating['user_name'] = auth.user?.nickname ?? '我';
+      }
+      if (myRating['user_avatar'] == null || myRating['user_avatar'].toString().isEmpty) {
+        myRating['user_avatar'] = auth.user?.avatar ?? '';
+      }
+    }
     
     return Card(color: isDark ? Colors.grey[850] : Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(padding: const EdgeInsets.all(16), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

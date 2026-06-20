@@ -360,7 +360,7 @@ class _ArticleReaderState extends State<_ArticleReader> {
 
   void _addComment() {
     if (_commentController.text.isEmpty) return;
-    setState(() {
+    if (mounted) setState(() {
       _comments.insert(
           0,
           _BlogComment(

@@ -17,12 +17,14 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
   List<dynamic> _pendingInvitations = [];
   List<dynamic> _adminLogs = [];
   String _searchQuery = '';
+  late Future<Response<dynamic>> _lotteryFuture;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
     _dio = context.read<AuthProvider>().dio;
+    _lotteryFuture = _loadLotteryParticipants();
     _loadAll();
   }
 
@@ -58,6 +60,18 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
       final res = await _dio.get('/super/invitations/pending');
       _pendingInvitations = res.data as List;
     } catch (_) {}
+  }
+
+  Future<Response<dynamic>> _loadLotteryParticipants() {
+    return _dio.get('/super/lottery/participants');
+  }
+
+  void _refreshLotteryTab() {
+    if (mounted) {
+      setState(() {
+        _lotteryFuture = _loadLotteryParticipants();
+      });
+    }
   }
 
   Future<void> _approveInvitation(dynamic inv, bool approve) async {
@@ -101,7 +115,9 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
       );
       if (mounted) {
         // 本地移除该代办
-        setState(() => _pendingInvitations.removeWhere((i) => i['id'] == inv['id']));
+        if (mounted)
+          setState(() =>
+              _pendingInvitations.removeWhere((i) => i['id'] == inv['id']));
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
               content: Text(approve ? '已提交同意审批' : '已驳回'),
@@ -199,11 +215,14 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
             Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text('学号: ${user['student_id']}'),
           Text('角色: ${user['role']} | 诚信: ${user['credit_score']}%'),
+          Text(
+              '云考余额: ¥${(((user['ai_balance_cents'] ?? 0) as num).toDouble() / 100).toStringAsFixed(2)}'),
         ]),
         isThreeLine: true,
         trailing: PopupMenuButton<String>(
           onSelected: (v) => _handleUserAction(user, v),
           itemBuilder: (_) => [
+            const PopupMenuItem(value: 'recharge', child: Text('云考充值')),
             const PopupMenuItem(value: 'role', child: Text('修改角色')),
             const PopupMenuItem(value: 'reset', child: Text('重置密码')),
             if (user['role'] != 'super_admin')
@@ -215,11 +234,96 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
   }
 
   void _handleUserAction(dynamic user, String action) {
-    if (action == 'role')
+    if (action == 'recharge')
+      _showRechargeDialog(user);
+    else if (action == 'role')
       _showChangeRoleDialog(user);
     else if (action == 'reset')
       _resetPassword(user['id']);
     else if (action == 'delete') _deleteUser(user['id']);
+  }
+
+  void _showRechargeDialog(dynamic user) {
+    final amountCtrl = TextEditingController();
+    final noteCtrl = TextEditingController(text: '云考余额充值');
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('云考余额充值'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text('用户: ${user['nickname']} (${user['student_id']})'),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: amountCtrl,
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(
+                labelText: '充值金额 (元)',
+                border: OutlineInputBorder(),
+                hintText: '例如 9.90',
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: noteCtrl,
+              maxLines: 2,
+              decoration: const InputDecoration(
+                labelText: '备注',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final messenger = ScaffoldMessenger.of(context);
+              final navigator = Navigator.of(ctx);
+              final yuan = double.tryParse(amountCtrl.text.trim());
+              if (yuan == null || yuan <= 0) {
+                return;
+              }
+              final cents = (yuan * 100).round();
+              try {
+                await _dio.post(
+                    '/super/users/${user['id']}/ai_balance/recharge',
+                    data: {
+                      'amount_cents': cents,
+                      'note': noteCtrl.text.trim(),
+                    });
+                if (!mounted) return;
+                messenger.showSnackBar(
+                  SnackBar(
+                      content: Text(
+                          '已为 ${user['nickname']} 充值 ¥${yuan.toStringAsFixed(2)}')),
+                );
+                if (navigator.mounted) navigator.pop();
+                _loadUsers();
+              } catch (_) {
+                if (mounted) {
+                  messenger.showSnackBar(
+                    const SnackBar(content: Text('充值失败')),
+                  );
+                }
+              }
+            },
+            child: const Text('确认充值'),
+          ),
+        ],
+      ),
+    ).then((_) {
+      amountCtrl.dispose();
+      noteCtrl.dispose();
+    });
   }
 
   Widget _buildApprovalsTab() {
@@ -362,11 +466,14 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
     }
   }
 
-
   Future<void> _showGlobalAiConfigDialog() async {
     final keyCtrl = TextEditingController();
     final urlCtrl = TextEditingController();
     final modelCtrl = TextEditingController();
+    final inputTokenCtrl = TextEditingController(text: '2');
+    final outputTokenCtrl = TextEditingController(text: '4');
+    final cacheHitCtrl = TextEditingController(text: '1');
+    final minLiveCtrl = TextEditingController(text: '2');
     String currentProvider = 'custom';
 
     // 先加载当前的配置
@@ -375,23 +482,37 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
       urlCtrl.text = res.data['base_url'] ?? '';
       keyCtrl.text = res.data['api_key'] ?? '';
       modelCtrl.text = res.data['model_name'] ?? '';
+      inputTokenCtrl.text =
+          (res.data['input_price_per_1k_cents'] ?? '2').toString();
+      outputTokenCtrl.text =
+          (res.data['output_price_per_1k_cents'] ?? '4').toString();
+      cacheHitCtrl.text = (res.data['cache_hit_price_cents'] ?? '1').toString();
+      minLiveCtrl.text = (res.data['min_live_price_cents'] ?? '2').toString();
 
       final url = urlCtrl.text.toLowerCase();
-      if (url.contains('deepseek')) currentProvider = 'deepseek';
-      else if (url.contains('moonshot')) currentProvider = 'kimi';
-      else if (url.contains('bigmodel.cn')) currentProvider = 'zhipu';
-      else if (url.contains('dashscope')) currentProvider = 'qwen';
+      if (url.contains('deepseek'))
+        currentProvider = 'deepseek';
+      else if (url.contains('moonshot'))
+        currentProvider = 'kimi';
+      else if (url.contains('bigmodel.cn'))
+        currentProvider = 'zhipu';
+      else if (url.contains('dashscope'))
+        currentProvider = 'qwen';
+      else if (url.contains('xiaomi') || url.contains('mimo'))
+        currentProvider = 'mimo';
       else if (url.contains('openai.com')) currentProvider = 'openai';
-
     } catch (_) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('加载配置失败')));
+      if (mounted)
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('加载配置失败')));
     }
 
-    
     bool isFetchingModels = false;
     Future<void> fetchModels(StateSetter setDialogState) async {
       if (urlCtrl.text.isEmpty || keyCtrl.text.isEmpty) {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('请先填写 Base URL 和 API Key')));
+        if (mounted)
+          ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('请先填写 Base URL 和 API Key')));
         return;
       }
       setDialogState(() => isFetchingModels = true);
@@ -403,7 +524,8 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
         }
         final res = await dio.get(
           url,
-          options: Options(headers: {'Authorization': 'Bearer ${keyCtrl.text.trim()}'}),
+          options: Options(
+              headers: {'Authorization': 'Bearer ${keyCtrl.text.trim()}'}),
         );
         if (res.statusCode == 200 && res.data['data'] != null) {
           final List data = res.data['data'];
@@ -427,13 +549,19 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
               );
             }
           } else {
-            if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('未获取到模型列表')));
+            if (mounted)
+              ScaffoldMessenger.of(context)
+                  .showSnackBar(const SnackBar(content: Text('未获取到模型列表')));
           }
         } else {
-          if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('获取失败')));
+          if (mounted)
+            ScaffoldMessenger.of(context)
+                .showSnackBar(const SnackBar(content: Text('获取失败')));
         }
       } catch (e) {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('请求失败: $e')));
+        if (mounted)
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text('请求失败: $e')));
       } finally {
         setDialogState(() => isFetchingModels = false);
       }
@@ -454,123 +582,216 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
         modelCtrl.text = 'qwen-turbo';
       } else if (provider == 'openai') {
         urlCtrl.text = 'https://api.openai.com/v1';
-        modelCtrl.text = 'gpt-3.5-turbo';
+        modelCtrl.text = 'gpt-4o-mini';
+      } else if (provider == 'mimo') {
+        urlCtrl.text = 'https://api.xiaomimimo.com/v1';
+        modelCtrl.text = 'mimo-v2.5-pro';
       }
     }
 
     if (!mounted) return;
 
-    showDialog(
+    await showDialog(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setDialogState) {
-          final isCustom = currentProvider == 'custom';
-          return AlertDialog(
-            title: const Text('系统全局 AI 兜底配置'),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('此配置为系统默认的大模型（积分池）。\n当用户未填写自定义 API Key 时，会走此配置并扣减积分。', style: TextStyle(fontSize: 12, color: Colors.grey)),
-                  const SizedBox(height: 16),
-                  DropdownButtonFormField<String>(
-                    value: currentProvider,
-                    decoration: const InputDecoration(
-                      labelText: '快速预设提供商',
-                      border: OutlineInputBorder(),
-                      isDense: true,
-                    ),
-                    items: const [
-                      DropdownMenuItem(value: 'deepseek', child: Text('DeepSeek')),
-                      DropdownMenuItem(value: 'kimi', child: Text('Kimi (月之暗面)')),
-                      DropdownMenuItem(value: 'zhipu', child: Text('智谱清言')),
-                      DropdownMenuItem(value: 'qwen', child: Text('通义千问')),
-                      DropdownMenuItem(value: 'openai', child: Text('OpenAI')),
-                      DropdownMenuItem(value: 'custom', child: Text('自定义 (Custom)')),
-                    ],
-                    onChanged: (val) {
-                      setDialogState(() {
-                        currentProvider = val!;
-                        applyProviderDefaults(currentProvider);
-                      });
-                    },
+      builder: (ctx) => StatefulBuilder(builder: (context, setDialogState) {
+        return AlertDialog(
+          title: const Text('系统全局 AI 兜底配置'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('此配置为系统默认的官方大模型。\n当用户未填写自定义 API Key 时，会走此配置并按余额扣费。',
+                    style: TextStyle(fontSize: 12, color: Colors.grey)),
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(10),
                   ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: keyCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'API Key (必填)',
-                      border: OutlineInputBorder(),
-                      isDense: true,
-                    ),
-                    obscureText: true,
+                  child: const Text(
+                    '建议把官方接口价格设置得低于市场直连价。\n缓存命中会走更低单价，未命中才按真实 token 结算。',
+                    style: TextStyle(fontSize: 12, color: Colors.black87),
                   ),
-
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: urlCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Base URL',
-                      border: OutlineInputBorder(),
-                      isDense: true,
-                    ),
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  value: currentProvider,
+                  decoration: const InputDecoration(
+                    labelText: '快速预设提供商',
+                    border: OutlineInputBorder(),
+                    isDense: true,
                   ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: modelCtrl,
-                          decoration: const InputDecoration(
-                            labelText: 'Model Name',
-                            border: OutlineInputBorder(),
-                            isDense: true,
-                          ),
+                  items: const [
+                    DropdownMenuItem(
+                        value: 'deepseek', child: Text('DeepSeek')),
+                    DropdownMenuItem(value: 'kimi', child: Text('Kimi (月之暗面)')),
+                    DropdownMenuItem(value: 'zhipu', child: Text('智谱清言')),
+                    DropdownMenuItem(value: 'qwen', child: Text('通义千问')),
+                    DropdownMenuItem(value: 'openai', child: Text('OpenAI')),
+                    DropdownMenuItem(value: 'mimo', child: Text('小米 MiMo')),
+                    DropdownMenuItem(
+                        value: 'custom', child: Text('自定义 (Custom)')),
+                  ],
+                  onChanged: (val) {
+                    setDialogState(() {
+                      currentProvider = val!;
+                      applyProviderDefaults(currentProvider);
+                    });
+                  },
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: keyCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'API Key (必填)',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  obscureText: true,
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: urlCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Base URL',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: modelCtrl,
+                        decoration: const InputDecoration(
+                          labelText: 'Model Name',
+                          border: OutlineInputBorder(),
+                          isDense: true,
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      isFetchingModels 
-                          ? const CircularProgressIndicator()
-                          : IconButton(
-                              icon: const Icon(Icons.sync),
-                              onPressed: () => fetchModels(setDialogState),
-                              tooltip: '获取可用模型',
-                            ),
-                    ],
-                  ),
-
-                ],
-              ),
+                    ),
+                    const SizedBox(width: 8),
+                    isFetchingModels
+                        ? const CircularProgressIndicator()
+                        : IconButton(
+                            icon: const Icon(Icons.sync),
+                            onPressed: () => fetchModels(setDialogState),
+                            tooltip: '获取可用模型',
+                          ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: inputTokenCtrl,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: '输入 1K token 单价 (分)',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: TextField(
+                        controller: outputTokenCtrl,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: '输出 1K token 单价 (分)',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: cacheHitCtrl,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: '缓存命中价格 (分)',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: TextField(
+                        controller: minLiveCtrl,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: '实时调用最低价格 (分)',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text('取消'),
-              ),
-              ElevatedButton(
-                onPressed: () async {
-                  try {
-                    await _dio.put('/super/ai_config', data: {
-                      'base_url': urlCtrl.text.trim(),
-                      'api_key': keyCtrl.text.trim(),
-                      'model_name': modelCtrl.text.trim(),
-                    });
-                    if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('系统 AI 配置已更新')));
-                    }
-                    Navigator.pop(ctx);
-                  } catch (_) {
-                    if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('更新失败')));
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('取消'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                final messenger = ScaffoldMessenger.of(context);
+                final navigator = Navigator.of(ctx);
+                try {
+                  await _dio.put('/super/ai_config', data: {
+                    'base_url': urlCtrl.text.trim(),
+                    'api_key': keyCtrl.text.trim(),
+                    'model_name': modelCtrl.text.trim(),
+                    'input_price_per_1k_cents':
+                        int.tryParse(inputTokenCtrl.text.trim()) ?? 2,
+                    'output_price_per_1k_cents':
+                        int.tryParse(outputTokenCtrl.text.trim()) ?? 4,
+                    'cache_hit_price_cents':
+                        int.tryParse(cacheHitCtrl.text.trim()) ?? 1,
+                    'min_live_price_cents':
+                        int.tryParse(minLiveCtrl.text.trim()) ?? 2,
+                  });
+                  if (!mounted) return;
+                  messenger.showSnackBar(
+                    const SnackBar(content: Text('系统 AI 配置已更新')),
+                  );
+                  if (navigator.mounted) navigator.pop();
+                } catch (_) {
+                  if (mounted) {
+                    messenger.showSnackBar(
+                      const SnackBar(content: Text('更新失败')),
+                    );
                   }
-                },
-                child: const Text('保存全局配置'),
-              ),
-            ],
-          );
-        }
-      ),
+                }
+              },
+              child: const Text('保存全局配置'),
+            ),
+          ],
+        );
+      }),
     );
+
+    keyCtrl.dispose();
+    urlCtrl.dispose();
+    modelCtrl.dispose();
+    inputTokenCtrl.dispose();
+    outputTokenCtrl.dispose();
+    cacheHitCtrl.dispose();
+    minLiveCtrl.dispose();
   }
   // ====== 管理员日志 Tab ======
 
@@ -616,7 +837,8 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
                   ),
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                   decoration: BoxDecoration(
                     color: Colors.orange.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(8),
@@ -647,7 +869,8 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
               Align(
                 alignment: Alignment.centerRight,
                 child: TextButton.icon(
-                  onPressed: () => _showRevokeExpDialog(adminId, adminName, adminExp),
+                  onPressed: () =>
+                      _showRevokeExpDialog(adminId, adminName, adminExp),
                   icon: const Icon(Icons.undo, size: 16, color: Colors.red),
                   label: const Text('追回经验',
                       style: TextStyle(color: Colors.red, fontSize: 12)),
@@ -697,9 +920,11 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
           ),
           FilledButton(
             onPressed: () async {
+              final messenger = ScaffoldMessenger.of(context);
+              final navigator = Navigator.of(ctx);
               final amount = int.tryParse(amountCtrl.text) ?? 0;
               if (amount <= 0) {
-                ScaffoldMessenger.of(context).showSnackBar(
+                messenger.showSnackBar(
                   const SnackBar(content: Text('请输入有效的追回数量')),
                 );
                 return;
@@ -710,17 +935,16 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
                   'amount': amount,
                   'reason': reasonCtrl.text.trim(),
                 });
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('经验已追回')),
-                  );
-                  _loadAdminLogs();
-                }
-                Navigator.pop(ctx);
+                if (!mounted) return;
+                messenger.showSnackBar(
+                  const SnackBar(content: Text('经验已追回')),
+                );
+                _loadAdminLogs();
+                if (navigator.mounted) navigator.pop();
               } on DioException catch (e) {
                 final msg = e.response?.data?['error'] ?? '操作失败';
                 if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
+                  messenger.showSnackBar(
                     SnackBar(content: Text(msg.toString())),
                   );
                 }
@@ -744,98 +968,380 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
     return '${dt.month}/${dt.day} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
   }
 
-
   Widget _buildLotteryTab() {
     return FutureBuilder(
-      future: _dio.get('/super/lottery/participants'),
+      future: _lotteryFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
         }
         if (snapshot.hasError) {
           if (snapshot.error.toString().contains('404')) {
-            return const Center(child: Text('暂无进行中的抽奖活动'));
+            return _buildLotteryEmptyState('暂无抽奖活动');
           }
           return Center(child: Text('加载失败: ${snapshot.error}'));
         }
         if (snapshot.data?.statusCode == 404) {
-          return const Center(child: Text('暂无抽奖活动'));
+          return _buildLotteryEmptyState('暂无抽奖活动');
         }
 
         final data = snapshot.data?.data;
-        if (data == null) return const Center(child: Text('暂无数据'));
+        if (data == null) return _buildLotteryEmptyState('暂无数据');
 
         final event = data['event'];
-        final participants = (data['participants'] as List).map((e) => e as Map<String, dynamic>).toList();
+        final eventID = event['id'];
+        final participants = (data['participants'] as List)
+            .map((e) => e as Map<String, dynamic>)
+            .toList();
 
         return Column(
           children: [
             Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Text(
-                '当前活动: ${event['name'] ?? ''} (奖品: ${event['prize_name'] ?? ''})',
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          '当前活动: ${event['title'] ?? ''}',
+                          style: const TextStyle(
+                              fontSize: 16, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: '刷新',
+                        onPressed: _refreshLotteryTab,
+                        icon: const Icon(Icons.refresh),
+                      ),
+                      FilledButton.icon(
+                        onPressed: _showCreateLotteryDialog,
+                        icon: const Icon(Icons.add),
+                        label: const Text('发布抽奖'),
+                      ),
+                      IconButton(
+                        tooltip: '删除当前抽奖',
+                        onPressed: eventID == null
+                            ? null
+                            : () => _deleteLotteryEvent(eventID),
+                        icon: const Icon(Icons.delete_outline),
+                        color: Colors.red,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text('奖品: ${event['prize_name'] ?? ''}'),
+                  Text('开奖时间: ${_formatLotteryDateTime(event['draw_time'])}'),
+                  Text('参与人数: ${participants.length}'),
+                ],
               ),
             ),
             Expanded(
-              child: ListView.builder(
-                itemCount: participants.length,
-                itemBuilder: (context, index) {
-                  final p = participants[index];
-                  final user = p['user'];
-                  return ListTile(
-                    leading: CircleAvatar(
-                      backgroundImage: user['avatar'] != null && user['avatar'].isNotEmpty
-                          ? NetworkImage(user['avatar'].startsWith('http') 
-                              ? user['avatar'] 
-                              : 'https://sylu.zhouwu.ccwu.cc')
-                          : null,
-                      child: user['avatar'] == null || user['avatar'].isEmpty
-                          ? Text(user['nickname'][0])
-                          : null,
-                    ),
-                    title: Text(user['nickname'] ?? '未知用户'),
-                    subtitle: Text('学号: ${user['student_id']} | 权重: ${p['weight']}'),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.remove_circle, color: Colors.red),
-                      tooltip: '踢出',
-                      onPressed: () async {
-                        final confirm = await showDialog<bool>(
-                          context: context,
-                          builder: (context) => AlertDialog(
-                            title: const Text('踢出用户'),
-                            content: Text('确定要将 ${user['nickname'] ?? user['student_id']} 踢出本次抽奖吗？'),
-                            actions: [
-                              TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('取消')),
-                              TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('踢出', style: TextStyle(color: Colors.red))),
-                            ],
+              child: participants.isEmpty
+                  ? const Center(child: Text('暂无参与者'))
+                  : ListView.builder(
+                      itemCount: participants.length,
+                      itemBuilder: (context, index) {
+                        final p = participants[index];
+                        final user = p['user'];
+                        final nickname = '${user['nickname'] ?? '未知用户'}';
+                        final avatar = '${user['avatar'] ?? ''}';
+                        return ListTile(
+                          leading: CircleAvatar(
+                            backgroundImage: avatar.isNotEmpty
+                                ? NetworkImage(avatar.startsWith('http')
+                                    ? avatar
+                                    : 'https://sylu.zhouwu.ccwu.cc$avatar')
+                                : null,
+                            child: avatar.isEmpty
+                                ? Text(nickname.isNotEmpty ? nickname[0] : '?')
+                                : null,
+                          ),
+                          title: Text(nickname),
+                          subtitle: Text(
+                              '学号: ${user['student_id']} | 权重: ${p['weight']}'),
+                          trailing: IconButton(
+                            icon: const Icon(Icons.remove_circle,
+                                color: Colors.red),
+                            tooltip: '踢出',
+                            onPressed: () => _kickLotteryParticipant(
+                              eventId: event['id'],
+                              userId: user['id'],
+                              userLabel: nickname,
+                            ),
                           ),
                         );
-
-                        if (confirm == true) {
-                          try {
-                            final res = await _dio.delete('/super/lottery/participants/${event['id']}/${user['id']}');
-                            if (res.statusCode == 200) {
-                              if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已踢出该用户')));
-                                setState(() {}); // 刷新列表
-                              }
-                            }
-                          } catch (e) {
-                            if (context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('踢出失败: $e')));
-                            }
-                          }
-                        }
                       },
                     ),
-                  );
-                },
-              ),
             ),
           ],
         );
       },
     );
+  }
+
+  Widget _buildLotteryEmptyState(String message) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(message),
+          const SizedBox(height: 16),
+          FilledButton.icon(
+            onPressed: _showCreateLotteryDialog,
+            icon: const Icon(Icons.add),
+            label: const Text('发布抽奖'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatLotteryDateTime(dynamic value) {
+    final text = '${value ?? ''}';
+    final dt = DateTime.tryParse(text);
+    if (dt == null) return text;
+    final beijing = dt.toUtc().add(const Duration(hours: 8));
+    return _formatBeijingWallTime(beijing);
+  }
+
+  String _formatBeijingWallTime(DateTime value) {
+    return '${value.year}-${value.month.toString().padLeft(2, '0')}-${value.day.toString().padLeft(2, '0')} '
+        '${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
+  }
+
+  DateTime _nowBeijingWallTime() {
+    final now = DateTime.now().toUtc().add(const Duration(hours: 8));
+    return DateTime(now.year, now.month, now.day, now.hour, now.minute);
+  }
+
+  bool _isFutureBeijingWallTime(DateTime value) {
+    return _beijingWallTimeToUtc(value).isAfter(DateTime.now().toUtc());
+  }
+
+  String _beijingWallTimeToRfc3339(DateTime value) {
+    final y = value.year.toString().padLeft(4, '0');
+    final m = value.month.toString().padLeft(2, '0');
+    final d = value.day.toString().padLeft(2, '0');
+    final h = value.hour.toString().padLeft(2, '0');
+    final min = value.minute.toString().padLeft(2, '0');
+    return '$y-$m-${d}T$h:$min:00+08:00';
+  }
+
+  DateTime _beijingWallTimeToUtc(DateTime value) {
+    return DateTime.utc(
+      value.year,
+      value.month,
+      value.day,
+      value.hour,
+      value.minute,
+    ).subtract(const Duration(hours: 8));
+  }
+
+  Future<void> _deleteLotteryEvent(dynamic eventId) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('删除抽奖'),
+        content: const Text('确定删除当前抽奖吗？参与记录也会一起删除，此操作不可恢复。'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('取消')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || confirm != true) return;
+
+    try {
+      await _dio.delete('/super/lottery/$eventId');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('抽奖已删除')));
+      _refreshLotteryTab();
+    } on DioException catch (e) {
+      final data = e.response?.data;
+      final msg = data is Map && data['error'] != null
+          ? data['error'].toString()
+          : '删除失败';
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(msg), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  Future<void> _kickLotteryParticipant({
+    required dynamic eventId,
+    required dynamic userId,
+    required String userLabel,
+  }) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('踢出用户'),
+        content: Text('确定要将 $userLabel 踢出本次抽奖吗？'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('取消')),
+          TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('踢出', style: TextStyle(color: Colors.red))),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+    try {
+      final res =
+          await _dio.delete('/super/lottery/participants/$eventId/$userId');
+      if (res.statusCode == 200 && mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('已踢出该用户')));
+        _refreshLotteryTab();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('踢出失败: $e')));
+      }
+    }
+  }
+
+  Future<void> _showCreateLotteryDialog() async {
+    final titleCtrl = TextEditingController();
+    final prizeCtrl = TextEditingController();
+    final descCtrl = TextEditingController();
+    final messenger = ScaffoldMessenger.of(context);
+    DateTime drawTime = _nowBeijingWallTime().add(const Duration(hours: 1));
+
+    final created = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('发布抽奖'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: titleCtrl,
+                  decoration: const InputDecoration(labelText: '抽奖标题'),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: prizeCtrl,
+                  decoration: const InputDecoration(labelText: '奖品名称'),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: descCtrl,
+                  maxLines: 3,
+                  decoration: const InputDecoration(labelText: '活动说明'),
+                ),
+                const SizedBox(height: 16),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.event),
+                  title: Text(_formatBeijingWallTime(drawTime)),
+                  subtitle: const Text('开奖时间'),
+                  onTap: () async {
+                    FocusManager.instance.primaryFocus?.unfocus();
+                    final date = await showDatePicker(
+                      context: ctx,
+                      initialDate: drawTime,
+                      firstDate: _nowBeijingWallTime(),
+                      lastDate:
+                          _nowBeijingWallTime().add(const Duration(days: 365)),
+                    );
+                    if (date == null) return;
+                    if (!ctx.mounted) return;
+                    final time = await showTimePicker(
+                      context: ctx,
+                      initialTime: TimeOfDay.fromDateTime(drawTime),
+                    );
+                    if (time == null) return;
+                    if (!ctx.mounted) return;
+                    setDialogState(() {
+                      drawTime = DateTime(
+                        date.year,
+                        date.month,
+                        date.day,
+                        time.hour,
+                        time.minute,
+                      );
+                    });
+                  },
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+                onPressed: () {
+                  FocusManager.instance.primaryFocus?.unfocus();
+                  Navigator.pop(ctx, false);
+                },
+                child: const Text('取消')),
+            FilledButton(
+              onPressed: () async {
+                final navigator = Navigator.of(ctx);
+                final title = titleCtrl.text.trim();
+                final prize = prizeCtrl.text.trim();
+                if (title.isEmpty || prize.isEmpty) {
+                  messenger.showSnackBar(
+                    const SnackBar(content: Text('请填写标题和奖品')),
+                  );
+                  return;
+                }
+                if (!_isFutureBeijingWallTime(drawTime)) {
+                  messenger.showSnackBar(
+                    const SnackBar(content: Text('开奖时间必须晚于当前时间')),
+                  );
+                  return;
+                }
+                try {
+                  await _dio.post('/super/lottery', data: {
+                    'title': title,
+                    'prize_name': prize,
+                    'description': descCtrl.text.trim(),
+                    'draw_time': _beijingWallTimeToRfc3339(drawTime),
+                  });
+                  FocusManager.instance.primaryFocus?.unfocus();
+                  if (navigator.mounted) navigator.pop(true);
+                } on DioException catch (e) {
+                  final data = e.response?.data;
+                  final msg = data is Map && data['error'] != null
+                      ? data['error'].toString()
+                      : '发布失败';
+                  messenger.showSnackBar(
+                    SnackBar(content: Text(msg), backgroundColor: Colors.red),
+                  );
+                }
+              },
+              child: const Text('发布'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    titleCtrl.dispose();
+    prizeCtrl.dispose();
+    descCtrl.dispose();
+
+    if (created == true && mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('抽奖已发布')));
+      _refreshLotteryTab();
+    }
   }
 }

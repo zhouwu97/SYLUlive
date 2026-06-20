@@ -7,7 +7,6 @@ import '../providers/auth_provider.dart';
 import '../utils/app_feedback.dart';
 import '../config/api_constants.dart';
 import '../widgets/cached_avatar.dart';
-import '../main.dart'; // for GlobalBackgroundWrapper
 
 class LotteryScreen extends StatefulWidget {
   const LotteryScreen({super.key});
@@ -24,6 +23,8 @@ class _LotteryScreenState extends State<LotteryScreen> {
   bool _joined = false;
   int _myWeight = 0;
   bool _isSubmitting = false;
+  bool _postDrawRefreshInFlight = false;
+  DateTime? _lastPostDrawRefreshAt;
 
   late Dio _dio;
   Timer? _countdownTimer;
@@ -41,11 +42,13 @@ class _LotteryScreenState extends State<LotteryScreen> {
     super.dispose();
   }
 
-  Future<void> _fetchLottery() async {
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
+  Future<void> _fetchLottery({bool silent = false}) async {
+    if (mounted && !silent) {
+      setState(() {
+        _isLoading = true;
+        _errorMessage = null;
+      });
+    }
     try {
       final response = await _dio.get('/lottery/current');
       if (mounted) {
@@ -56,34 +59,70 @@ class _LotteryScreenState extends State<LotteryScreen> {
           _myWeight = response.data['my_weight'] ?? 0;
           _isLoading = false;
         });
-        _startCountdown();
+        if (_event?.status == 0) {
+          if (_event!.drawTime.isAfter(DateTime.now())) {
+            _lastPostDrawRefreshAt = null;
+          }
+          _startCountdown();
+        } else {
+          _countdownTimer?.cancel();
+        }
       }
     } on DioException catch (e) {
       if (e.response?.statusCode == 404) {
-        setState(() {
-          _isLoading = false;
-          _errorMessage = "暂无抽奖活动";
-        });
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+            _errorMessage = "暂无抽奖活动";
+          });
+        }
       } else {
-        setState(() {
-          _isLoading = false;
-          _errorMessage = AppFeedback.dioErrorMessage(e, fallback: '加载失败');
-        });
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+            _errorMessage = AppFeedback.dioErrorMessage(e, fallback: '加载失败');
+          });
+        }
       }
     } catch (e) {
-      setState(() {
-        _isLoading = false;
-        _errorMessage = '发生未知错误';
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _errorMessage = '发生未知错误';
+        });
+      }
     }
   }
 
   void _startCountdown() {
     _countdownTimer?.cancel();
     _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      _refreshAfterDrawTimeIfNeeded();
       if (mounted) {
         setState(() {});
       }
+    });
+  }
+
+  void _refreshAfterDrawTimeIfNeeded() {
+    final event = _event;
+    if (event == null ||
+        event.status != 0 ||
+        event.drawTime.isAfter(DateTime.now())) {
+      return;
+    }
+
+    final now = DateTime.now();
+    if (_postDrawRefreshInFlight) return;
+    if (_lastPostDrawRefreshAt != null &&
+        now.difference(_lastPostDrawRefreshAt!) < const Duration(seconds: 15)) {
+      return;
+    }
+
+    _lastPostDrawRefreshAt = now;
+    _postDrawRefreshInFlight = true;
+    _fetchLottery(silent: true).whenComplete(() {
+      _postDrawRefreshInFlight = false;
     });
   }
 
@@ -101,25 +140,25 @@ class _LotteryScreenState extends State<LotteryScreen> {
 
   Future<void> _joinLottery() async {
     if (_event == null || _isSubmitting) return;
-    setState(() => _isSubmitting = true);
+    if (mounted) setState(() => _isSubmitting = true);
     try {
       final response = await _dio.post('/lottery/${_event!.id}/join');
+      if (!mounted) return;
       AppFeedback.showSnackBar(context, '参与成功！');
-      if (mounted) {
-        setState(() {
-          _joined = true;
-          _myWeight = response.data['weight'] ?? 0;
-          _participantCount++;
-          _isSubmitting = false;
-        });
-      }
+      setState(() {
+        _joined = true;
+        _myWeight = response.data['weight'] ?? 0;
+        _participantCount++;
+        _isSubmitting = false;
+      });
     } on DioException catch (e) {
+      if (!mounted) return;
       AppFeedback.showSnackBar(
         context,
         AppFeedback.dioErrorMessage(e, fallback: '参与失败'),
         isError: true,
       );
-      if (mounted) setState(() => _isSubmitting = false);
+      setState(() => _isSubmitting = false);
     }
   }
 
@@ -130,20 +169,23 @@ class _LotteryScreenState extends State<LotteryScreen> {
       title: '手动开奖',
       message: '确定要立即对该活动开奖吗？此操作不可逆，将立刻按权重抽取一名幸运儿。',
     );
+    if (!mounted) return;
     if (!confirm) return;
 
-    setState(() => _isSubmitting = true);
+    if (mounted) setState(() => _isSubmitting = true);
     try {
       await _dio.post('/admin/lottery/${_event!.id}/draw');
+      if (!mounted) return;
       AppFeedback.showSnackBar(context, '开奖成功！');
       _fetchLottery();
     } on DioException catch (e) {
+      if (!mounted) return;
       AppFeedback.showSnackBar(
         context,
         AppFeedback.dioErrorMessage(e, fallback: '开奖失败'),
         isError: true,
       );
-      if (mounted) setState(() => _isSubmitting = false);
+      setState(() => _isSubmitting = false);
     }
   }
 
@@ -152,78 +194,121 @@ class _LotteryScreenState extends State<LotteryScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final primary = Theme.of(context).primaryColor;
     final user = context.watch<AuthProvider>().user;
-    final isAdmin = user?.isAdmin == true;
+    final isSuperAdmin = user?.isSuperAdmin == true;
 
-    return GlobalBackgroundWrapper(
-      child: Scaffold(
+    return Scaffold(
+      backgroundColor:
+          isDark ? const Color(0xFF06080D) : const Color(0xFFF4F6FB),
+      appBar: AppBar(
+        title: const Text('官方抽奖'),
+        elevation: 0,
         backgroundColor: Colors.transparent,
-        appBar: AppBar(
-          title: const Text('官方抽奖'),
-          elevation: 0,
-          backgroundColor: Colors.transparent,
-        ),
-        extendBodyBehindAppBar: true,
-        body: SafeArea(
-          child: _isLoading
-              ? const Center(child: CircularProgressIndicator())
-              : _errorMessage != null
-                  ? Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.inbox_rounded,
-                              size: 80,
-                              color: isDark ? Colors.white30 : Colors.black26),
-                          const SizedBox(height: 16),
-                          Text(_errorMessage!,
-                              style: TextStyle(
-                                  fontSize: 16,
-                                  color: isDark ? Colors.white70 : Colors.black54)),
+      ),
+      extendBodyBehindAppBar: true,
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: isDark
+                      ? const [
+                          Color(0xFF06080D),
+                          Color(0xFF10131A),
+                          Color(0xFF06080D),
+                        ]
+                      : const [
+                          Color(0xFFF4F6FB),
+                          Color(0xFFEFF3F8),
+                          Color(0xFFF8FAFC),
                         ],
-                      ),
-                    )
-                  : _buildEventContent(context, primary, isDark, isAdmin),
-        ),
+                ),
+              ),
+            ),
+          ),
+          SafeArea(
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : _errorMessage != null
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.inbox_rounded,
+                                size: 80,
+                                color:
+                                    isDark ? Colors.white30 : Colors.black26),
+                            const SizedBox(height: 16),
+                            Text(_errorMessage!,
+                                style: TextStyle(
+                                    fontSize: 16,
+                                    color: isDark
+                                        ? Colors.white70
+                                        : Colors.black54)),
+                          ],
+                        ),
+                      )
+                    : _buildEventContent(
+                        context, primary, isDark, isSuperAdmin),
+          ),
+        ],
       ),
     );
   }
 
   Widget _buildEventContent(
-      BuildContext context, Color primary, bool isDark, bool isAdmin) {
+      BuildContext context, Color primary, bool isDark, bool isSuperAdmin) {
     final ev = _event!;
     final isOngoing = ev.status == 0;
-    
+    final titleColor = isDark ? Colors.white : const Color(0xFF111827);
+    final subtitleColor = isDark ? Colors.white70 : const Color(0xFF64748B);
+    final giftColor = isDark
+        ? Colors.white.withValues(alpha: 0.86)
+        : primary.withValues(alpha: 0.68);
+    final cardColor =
+        isDark ? const Color(0xCC111827) : Colors.white.withValues(alpha: 0.96);
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Column(
         children: [
           const SizedBox(height: 20),
-          Icon(Icons.card_giftcard, size: 100, color: Colors.white.withValues(alpha: 0.9)),
+          Icon(Icons.card_giftcard, size: 100, color: giftColor),
           const SizedBox(height: 24),
           Text(
             ev.title,
-            style: const TextStyle(
+            textAlign: TextAlign.center,
+            style: TextStyle(
               fontSize: 28,
               fontWeight: FontWeight.w900,
-              color: Colors.white,
-              shadows: [Shadow(color: Colors.black26, blurRadius: 10)],
+              color: titleColor,
+              shadows: isDark
+                  ? const [Shadow(color: Colors.black26, blurRadius: 10)]
+                  : null,
             ),
           ),
           const SizedBox(height: 12),
           Text(
             ev.description,
             textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 15, color: Colors.white70),
+            style: TextStyle(fontSize: 15, color: subtitleColor),
           ),
           const SizedBox(height: 32),
           Container(
             padding: const EdgeInsets.all(24),
             decoration: BoxDecoration(
-              color: isDark ? Colors.black45 : Colors.white.withValues(alpha: 0.8),
+              color: cardColor,
               borderRadius: BorderRadius.circular(24),
+              border: Border.all(
+                color: isDark
+                    ? Colors.white.withValues(alpha: 0.08)
+                    : Colors.black.withValues(alpha: 0.04),
+              ),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.1),
+                  color: Colors.black.withValues(alpha: isDark ? 0.24 : 0.08),
                   blurRadius: 20,
                   offset: const Offset(0, 10),
                 )
@@ -252,7 +337,10 @@ class _LotteryScreenState extends State<LotteryScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: [
                     _buildStatItem('当前参与', '$_participantCount人', isDark),
-                    _buildStatItem('预计开奖', isOngoing ? _formatCountdown(ev.drawTime) : '已结束', isDark),
+                    _buildStatItem(
+                        '预计开奖',
+                        isOngoing ? _formatCountdown(ev.drawTime) : '已结束',
+                        isDark),
                   ],
                 ),
               ],
@@ -262,11 +350,13 @@ class _LotteryScreenState extends State<LotteryScreen> {
           if (isOngoing) ...[
             if (_joined)
               Container(
-                padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
+                padding:
+                    const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
                 decoration: BoxDecoration(
                   color: Colors.green.withValues(alpha: 0.2),
                   borderRadius: BorderRadius.circular(100),
-                  border: Border.all(color: Colors.green.withValues(alpha: 0.5)),
+                  border:
+                      Border.all(color: Colors.green.withValues(alpha: 0.5)),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -310,14 +400,27 @@ class _LotteryScreenState extends State<LotteryScreen> {
             Container(
               padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
-                color: primary.withValues(alpha: 0.1),
+                color: isDark
+                    ? primary.withValues(alpha: 0.14)
+                    : Colors.white.withValues(alpha: 0.96),
                 borderRadius: BorderRadius.circular(20),
                 border: Border.all(color: primary.withValues(alpha: 0.3)),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: isDark ? 0.18 : 0.06),
+                    blurRadius: 18,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
               ),
               child: Column(
                 children: [
-                  const Text('🎉 中奖名单',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  Text('🎉 中奖名单',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: titleColor,
+                      )),
                   const SizedBox(height: 16),
                   if (ev.winner != null)
                     Row(
@@ -344,15 +447,17 @@ class _LotteryScreenState extends State<LotteryScreen> {
               ),
             ),
           ],
-          if (isAdmin && isOngoing) ...[
+          if (isSuperAdmin && isOngoing) ...[
             const SizedBox(height: 40),
             TextButton.icon(
               onPressed: _adminDraw,
               icon: const Icon(Icons.flash_on, color: Colors.orange),
-              label: const Text('管理员手动开奖', style: TextStyle(color: Colors.orange)),
+              label:
+                  const Text('管理员手动开奖', style: TextStyle(color: Colors.orange)),
               style: TextButton.styleFrom(
                 backgroundColor: Colors.orange.withValues(alpha: 0.1),
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
               ),
             ),
           ],

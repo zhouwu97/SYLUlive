@@ -36,8 +36,51 @@ func checkAndDrawLotteries(db *gorm.DB) {
 
 	for _, event := range events {
 		log.Printf("活动 [%s] 达到开奖时间，准备开奖...", event.Title)
-		ExecuteDraw(db, event.ID)
+		if err := ExecuteDraw(db, event.ID); err != nil {
+			log.Printf("活动 [%s] 自动开奖失败: %v", event.Title, err)
+		}
 	}
+}
+
+func ensureLotterySystemUser(tx *gorm.DB) (models.User, error) {
+	systemUser := models.User{
+		Nickname:     "系统自动发出",
+		StudentID:    "system_auto",
+		PasswordHash: "system_auto_no_login",
+		Role:         models.RoleAdmin,
+	}
+
+	var existing models.User
+	err := tx.Where("student_id = ?", systemUser.StudentID).First(&existing).Error
+	if err == nil {
+		updates := map[string]interface{}{}
+		if existing.Nickname == "" {
+			updates["nickname"] = systemUser.Nickname
+		}
+		if existing.PasswordHash == "" {
+			updates["password_hash"] = systemUser.PasswordHash
+		}
+		if existing.Role == "" {
+			updates["role"] = systemUser.Role
+		}
+		if len(updates) > 0 {
+			if err := tx.Model(&existing).Updates(updates).Error; err != nil {
+				return existing, err
+			}
+			if err := tx.First(&existing, existing.ID).Error; err != nil {
+				return existing, err
+			}
+		}
+		return existing, nil
+	}
+	if err != gorm.ErrRecordNotFound {
+		return models.User{}, err
+	}
+
+	if err := tx.Create(&systemUser).Error; err != nil {
+		return models.User{}, err
+	}
+	return systemUser, nil
 }
 
 // ExecuteDraw 独立出来的开奖逻辑，用于定时任务或管理员手动触发
@@ -100,18 +143,9 @@ func ExecuteDraw(db *gorm.DB, eventID uint) error {
 		}
 
 		// 2. 寻找或创建“系统自动发出”虚拟账号
-		var sysUser models.User
-		errSys := tx.Where("nickname = ?", "系统自动发出").First(&sysUser).Error
-		if errSys != nil {
-			// 如果不存在，创建这个虚拟账号
-			sysUser = models.User{
-				Nickname: "系统自动发出",
-				StudentID: "system_auto",
-				Role:     "admin",
-			}
-			if err := tx.Create(&sysUser).Error; err != nil {
-				return err
-			}
+		sysUser, err := ensureLotterySystemUser(tx)
+		if err != nil {
+			return err
 		}
 
 		// 3. 创建全服系统公告
@@ -121,14 +155,14 @@ func ExecuteDraw(db *gorm.DB, eventID uint) error {
 			winner.Nickname,
 			event.PrizeName,
 		)
-		
+
 		ann := models.Announcement{
 			Title:     fmt.Sprintf("🎉 【%s】自动开奖结果公示！", event.Title),
 			Content:   announcementContent,
 			CreatedBy: sysUser.ID,
-			IsPinned:  false,
+			IsPinned:  true,
 		}
-		
+
 		if err := tx.Create(&ann).Error; err != nil {
 			return err
 		}

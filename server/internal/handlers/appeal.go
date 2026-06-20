@@ -2,14 +2,16 @@ package handlers
 
 import (
 	"fmt"
+	"log"
 	"math/rand"
 	"net/http"
 	"strconv"
 	"time"
 
+	"shenliyuan/internal/models"
+
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
-	"shenliyuan/internal/models"
 )
 
 // AppealHandler 申诉处理器
@@ -92,17 +94,23 @@ func (h *AppealHandler) Create(c *gin.Context) {
 func (h *AppealHandler) selectJury(appealID uint, excludeUserID uint) {
 	var candidates []models.User
 	// 近90天举报数为0且诚信度>90%的普通用户（排除管理员和超管）
-	h.db.Where("id != ? AND report_count = 0 AND credit_score > 90 AND role = ?", excludeUserID, models.RoleUser).
-		Find(&candidates)
+	if err := h.db.Where("id != ? AND report_count = 0 AND credit_score > 90 AND role = ?", excludeUserID, models.RoleUser).
+		Find(&candidates).Error; err != nil {
+		log.Printf("[DB_ERROR] selectJury Find candidates failed: %v", err)
+	}
 
 	if len(candidates) < 10 {
 		// 如果候选人不足，随机选择
-		h.db.Where("id != ?", excludeUserID).Limit(10).Find(&candidates)
+		if err := h.db.Where("id != ?", excludeUserID).Limit(10).Find(&candidates).Error; err != nil {
+			log.Printf("[DB_ERROR] selectJury Find fallback candidates failed: %v", err)
+		}
 	}
 
 	// 如果还是没有候选人（系统里只有发帖人和超级管理员等情况），则自动分配超级管理员
 	if len(candidates) == 0 {
-		h.db.Where("role = ?", models.RoleSuperAdmin).First(&candidates)
+		if err := h.db.Where("role = ?", models.RoleSuperAdmin).First(&candidates).Error; err != nil {
+			log.Printf("[DB_WARN] selectJury failed to find fallback super_admin: %v", err)
+		}
 	}
 
 	// 随机选择最多10人
@@ -120,7 +128,10 @@ func (h *AppealHandler) selectJury(appealID uint, excludeUserID uint) {
 			VoterID:  candidates[i].ID,
 			Vote:     "",
 		}
-		h.db.Create(&vote)
+		if err := h.db.Create(&vote).Error; err != nil {
+			log.Printf("[DB_ERROR] Failed to create appeal vote: %v", err)
+			return
+		}
 	}
 }
 
@@ -135,7 +146,10 @@ func (h *AppealHandler) GetList(c *gin.Context) {
 	query.Order("created_at DESC")
 
 	var appeals []models.Appeal
-	query.Find(&appeals)
+	if err := query.Find(&appeals).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取申诉列表失败"})
+		return
+	}
 
 	c.JSON(http.StatusOK, appeals)
 }
@@ -158,7 +172,10 @@ func (h *AppealHandler) GetOne(c *gin.Context) {
 
 	// 获取投票信息
 	var votes []models.AppealVote
-	h.db.Where("appeal_id = ?", appealID).Preload("Voter").Find(&votes)
+	if err := h.db.Where("appeal_id = ?", appealID).Preload("Voter").Find(&votes).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取投票数据失败"})
+		return
+	}
 
 	// 检查当前用户是否已投票
 	hasVoted := false
@@ -233,7 +250,9 @@ func (h *AppealHandler) Vote(c *gin.Context) {
 
 		// 检查是否所有陪审员都已投票
 		var votes []models.AppealVote
-		tx.Where("appeal_id = ?", appealID).Find(&votes)
+		if err := tx.Where("appeal_id = ?", appealID).Find(&votes).Error; err != nil {
+			return err
+		}
 
 		allVoted := true
 		supportCount := 0

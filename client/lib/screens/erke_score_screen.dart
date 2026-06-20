@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io' show File;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -49,6 +50,31 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
       _studentIdCtrl.text = user.studentId;
     }
     _loadSavedPasswords();
+    _loadCache();
+  }
+
+  Future<void> _loadCache() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final scoresStr = prefs.getString('erke_scores_cache');
+      final summaryStr = prefs.getString('erke_summary_cache');
+      if (scoresStr != null && summaryStr != null) {
+        if (mounted) {
+          setState(() {
+            _scores = json.decode(scoresStr);
+            _summary = json.decode(summaryStr);
+          });
+        }
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _saveCache(List<dynamic> scores, List<dynamic> summary) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('erke_scores_cache', json.encode(scores));
+      await prefs.setString('erke_summary_cache', json.encode(summary));
+    } catch (_) {}
   }
 
   Future<void> _loadSavedPasswords() async {
@@ -121,13 +147,13 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
     final studentId = _studentIdCtrl.text.trim();
 
     if (casPwd.isEmpty || erkePwd.isEmpty || studentId.isEmpty) {
-      AppFeedback.showSnackBar(context, '请填写完整信息');
+      AppFeedback.showSnackBar(context, '请填写完整信息，或先点击"切换账号/修改密码"输入密码');
       return;
     }
 
     _savePasswords(casPwd, erkePwd);
 
-    setState(() {
+    if (mounted) setState(() {
       _isLoading = true;
       _loadingMessage = _loadingMessages.first;
     });
@@ -138,6 +164,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
       final ok = await _vpn.login(studentId, casPwd);
       if (!ok) {
         AppFeedback.showSnackBar(context, '统一认证登录失败，请检查密码', isError: true);
+        if (mounted) setState(() => _scores = null);
         return;
       }
 
@@ -147,15 +174,29 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
       final data = crawler.parseErkeData(htmlStr);
 
       if (data['scores'].isNotEmpty) {
-        setState(() {
+        if (mounted) setState(() {
           _scores = data['scores'];
           _summary = data['summary'];
         });
+        _saveCache(data['scores'], data['summary']);
+        AppFeedback.showSnackBar(context, '查询并缓存成功');
       } else {
-        AppFeedback.showSnackBar(context, '查询成功，但未解析到成绩数据或账号密码错误', isError: true);
+        AppFeedback.showSnackBar(context, '查询成功，但未解析到成绩数据或二课密码错误', isError: true);
+        if (mounted) setState(() => _scores = null);
       }
     } catch (e) {
-      AppFeedback.showSnackBar(context, '查询失败: $e', isError: true);
+      String errMsg = '未知网络错误或解析异常';
+      final errStr = e.toString().toLowerCase();
+      if (errStr.contains('timeout')) {
+        errMsg = '网络请求超时，请稍后再试';
+      } else if (errStr.contains('handshake') || errStr.contains('certificate')) {
+        errMsg = '校园网证书异常，连接被拒绝';
+      } else if (errStr.contains('socketexception') || errStr.contains('connection')) {
+        errMsg = '网络连接失败，请检查您的网络';
+      } else if (errStr.contains('500') || errStr.contains('502') || errStr.contains('503') || errStr.contains('504')) {
+        errMsg = '学校服务器响应异常';
+      }
+      AppFeedback.showSnackBar(context, '查询失败: $errMsg', isError: true);
     } finally {
       _stopMessageRotation();
       if (mounted) setState(() => _isLoading = false);
@@ -193,11 +234,49 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
         title: const Text('二课成绩查询'),
         backgroundColor: Colors.transparent,
         elevation: 0,
+        actions: [
+          if (_scores != null)
+            TextButton(
+              onPressed: _isLoading ? null : _queryScores,
+              child: _isLoading
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('重新拉取', style: TextStyle(fontWeight: FontWeight.bold)),
+            ),
+        ],
       ),
       body: SafeArea(
-        child: _scores == null
-            ? _buildLoginForm()
-            : _buildScoreList(isDark),
+        child: Stack(
+          children: [
+            _scores == null ? _buildLoginForm() : _buildScoreList(isDark),
+            if (_isLoading && _scores != null)
+              Positioned.fill(
+                child: Container(
+                  color: Colors.black54,
+                  child: Center(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                      decoration: BoxDecoration(
+                        color: isDark ? Colors.grey[850] : Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const CircularProgressIndicator(),
+                          const SizedBox(height: 16),
+                          Text(_loadingMessage, style: TextStyle(color: isDark ? Colors.white : Colors.black87)),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -400,7 +479,13 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
                 style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
               const Spacer(),
-              TextButton(onPressed: () => setState(() { _scores = null; _filterCategory = null; }), child: const Text('重新查询')),
+              TextButton(
+                onPressed: () => setState(() {
+                  _scores = null;
+                  _filterCategory = null;
+                }),
+                child: const Text('切换账号/密码'),
+              ),
             ],
           ),
         ),

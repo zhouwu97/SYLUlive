@@ -26,3 +26,12 @@ server/*.exe
 server/*.exe~
 *.apk
 *.aab
+*.exe
+__pycache__/
+.idea/
+temp*.py
+fix.dart
+scratch.go
+repl.go
+patch*.py
+check_apk.py

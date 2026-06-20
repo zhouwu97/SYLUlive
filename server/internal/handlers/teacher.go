@@ -2,14 +2,16 @@ package handlers
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
+	"shenliyuan/internal/models"
+
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
-	"shenliyuan/internal/models"
 )
 
 type TeacherHandler struct {
@@ -23,33 +25,30 @@ func NewTeacherHandler(db *gorm.DB) *TeacherHandler {
 // GetList 教师列表（只显示已审核的，按添加时间倒序）
 func (h *TeacherHandler) GetList(c *gin.Context) {
 	q := c.Query("q")
-	query := h.db.Where("verified = ?", true).Order("created_at DESC")
-	if q != "" {
-		query = query.Where("name LIKE ?", "%"+q+"%")
-	}
-	var teachers []models.Teacher
-	if err := query.Find(&teachers).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取教师列表失败"})
-		return
-	}
 
 	type TeacherWithStats struct {
 		models.Teacher
 		RatingCount int     `json:"rating_count"`
 		AverageStar float64 `json:"average_star"`
 	}
-	result := make([]TeacherWithStats, len(teachers))
-	for i, t := range teachers {
-		result[i].Teacher = t
-		var count int64
-		var avg float64
-		h.db.Model(&models.TeacherRating{}).Where("teacher_id = ?", t.ID).Count(&count)
-		if count > 0 {
-			h.db.Model(&models.TeacherRating{}).Where("teacher_id = ?", t.ID).Select("AVG(CAST(star AS FLOAT))").Scan(&avg)
-		}
-		result[i].RatingCount = int(count)
-		result[i].AverageStar = avg
+	var result []TeacherWithStats
+
+	query := h.db.Table("teachers").
+		Select("teachers.*, COUNT(teacher_ratings.id) as rating_count, COALESCE(AVG(CAST(teacher_ratings.star AS FLOAT)), 0) as average_star").
+		Joins("LEFT JOIN teacher_ratings ON teacher_ratings.teacher_id = teachers.id").
+		Where("teachers.verified = ?", true).
+		Group("teachers.id").
+		Order("teachers.created_at DESC")
+
+	if q != "" {
+		query = query.Where("teachers.name LIKE ?", "%"+q+"%")
 	}
+
+	if err := query.Find(&result).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取教师列表失败"})
+		return
+	}
+
 	c.JSON(http.StatusOK, result)
 }
 
@@ -66,12 +65,14 @@ func (h *TeacherHandler) GetDetail(c *gin.Context) {
 		return
 	}
 	var ratings []models.TeacherRating
-	h.db.Where("teacher_id = ?", id).Order("created_at DESC").Find(&ratings)
+	if err := h.db.Where("teacher_id = ?", id).Preload("User").Order("created_at DESC").Find(&ratings).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取评价列表失败"})
+		return
+	}
 	for i := range ratings {
-		var user models.User
-		if err := h.db.Select("nickname, student_id").First(&user, ratings[i].UserID).Error; err == nil {
-			ratings[i].UserName = user.Nickname
-			ratings[i].UserStudentID = user.StudentID
+		if ratings[i].User != nil {
+			ratings[i].UserName = ratings[i].User.Nickname
+			ratings[i].UserStudentID = ratings[i].User.StudentID
 		}
 	}
 	var count int64
@@ -142,12 +143,7 @@ func (h *TeacherHandler) Rate(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	
-	// 取消文字评价，只保留打分系统。拦截旧版本带文字的请求
-	if strings.TrimSpace(input.Comment) != "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "系统已取消教师文字评价功能，请清空文字后重新打分，或更新至最新版App。"})
-		return
-	}
+
 	// 教师存在？
 	var teacher models.Teacher
 	if err := h.db.First(&teacher, tid).Error; err != nil {
@@ -167,7 +163,10 @@ func (h *TeacherHandler) Rate(c *gin.Context) {
 			TeacherID: uint(tid), UserID: userID.(uint),
 			Star: input.Star, Comment: input.Comment,
 		}
-		h.db.Create(&rating)
+		if err := h.db.Create(&rating).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
+			return
+		}
 		c.JSON(http.StatusCreated, gin.H{"message": "评价成功", "rating": rating})
 	}
 }
@@ -175,9 +174,15 @@ func (h *TeacherHandler) Rate(c *gin.Context) {
 // Verify 管理员审核教师
 func (h *TeacherHandler) Verify(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
-	h.db.Model(&models.Teacher{}).Where("id = ?", id).Update("verified", true)
+	if err := h.db.Model(&models.Teacher{}).Where("id = ?", id).Update("verified", true).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
+		return
+	}
 	var t models.Teacher
-	h.db.First(&t, id)
+	if err := h.db.First(&t, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "教师不存在"})
+		return
+	}
 	h.logAdmin(c, "审核通过教师", t.Name, "")
 	c.JSON(http.StatusOK, gin.H{"message": "已审核通过"})
 }
@@ -186,8 +191,14 @@ func (h *TeacherHandler) Verify(c *gin.Context) {
 func (h *TeacherHandler) RejectTeacher(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	var t models.Teacher
-	h.db.First(&t, id)
-	h.db.Delete(&t)
+	if err := h.db.First(&t, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "教师不存在"})
+		return
+	}
+	if err := h.db.Delete(&t).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
+		return
+	}
 	h.logAdmin(c, "拒绝教师", t.Name, "")
 	c.JSON(http.StatusOK, gin.H{"message": "已拒绝"})
 }
@@ -205,7 +216,10 @@ func (h *TeacherHandler) GetPending(c *gin.Context) {
 // GetLogs 获取管理员操作日志
 func (h *TeacherHandler) GetLogs(c *gin.Context) {
 	var logs []models.AdminLog
-	h.db.Preload("Admin").Order("created_at DESC").Limit(100).Find(&logs)
+	if err := h.db.Preload("Admin").Order("created_at DESC").Limit(100).Find(&logs).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取管理日志失败"})
+		return
+	}
 	c.JSON(http.StatusOK, logs)
 }
 
@@ -214,12 +228,16 @@ func (h *TeacherHandler) logAdmin(c *gin.Context, action, target, detail string)
 	userID, _ := c.Get("user_id")
 	var user models.User
 	h.db.Select("nickname").First(&user, userID)
-	h.db.Create(&models.AdminLog{
+	if err := h.db.Create(&models.AdminLog{
 		AdminID: userID.(uint), AdminName: user.Nickname,
 		Action: action, Target: target, Detail: detail,
-	})
+	}).Error; err != nil {
+		log.Printf("[DB_WARN] Failed to write admin log: %v", err)
+	}
 	// 管理员操作经验+1
-	h.db.Model(&models.User{}).Where("id = ?", userID).UpdateColumn("admin_exp", gorm.Expr("COALESCE(admin_exp, 0) + 1"))
+	if err := h.db.Model(&models.User{}).Where("id = ?", userID).UpdateColumn("admin_exp", gorm.Expr("COALESCE(admin_exp, 0) + 1")).Error; err != nil {
+		log.Printf("[DB_WARN] Failed to update admin_exp: %v", err)
+	}
 }
 
 // DeleteRating 删除自己的评价
@@ -293,7 +311,10 @@ func (h *TeacherHandler) VoteRemoveAdmin(c *gin.Context) {
 	h.db.Model(&models.AdminRemovalVote{}).Where("target_admin_id = ?", adminID).Count(&votes)
 
 	if votes > totalAdmins/2 {
-		h.db.Model(&models.User{}).Where("id = ?", adminID).Update("role", models.RoleUser)
+		if err := h.db.Model(&models.User{}).Where("id = ?", adminID).Update("role", models.RoleUser).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
+			return
+		}
 		h.db.Where("target_admin_id = ?", adminID).Delete(&models.AdminRemovalVote{})
 		h.logAdmin(c, "投票罢免管理员", admin.Nickname, input.Reason)
 		c.JSON(http.StatusOK, gin.H{"message": "投票过半，管理员已被罢免"})
@@ -339,7 +360,10 @@ func (h *TeacherHandler) GetRemovalRequests(c *gin.Context) {
 		}
 
 		var votes []models.AdminRemovalVote
-		h.db.Where("target_admin_id = ?", row.TargetAdminID).Preload("Voter").Order("created_at ASC").Find(&votes)
+		if err := h.db.Where("target_admin_id = ?", row.TargetAdminID).Preload("Voter").Order("created_at ASC").Find(&votes).Error; err != nil {
+			log.Printf("[DB_ERROR] RemoveAdmin Find votes failed: %v", err)
+			continue
+		}
 		if len(votes) == 0 {
 			continue
 		}
@@ -380,7 +404,10 @@ func (h *TeacherHandler) GetViolations(c *gin.Context) {
 	if userIDStr != "" {
 		query = query.Where("user_id = ?", userIDStr)
 	}
-	query.Order("created_at DESC").Find(&violations)
+	if err := query.Order("created_at DESC").Find(&violations).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取违规记录失败"})
+		return
+	}
 	c.JSON(http.StatusOK, violations)
 }
 
@@ -429,7 +456,10 @@ func (h *TeacherHandler) AppealViolation(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "记录不存在"})
 		return
 	}
-	h.db.Model(&v).Update("appealed", true)
+	if err := h.db.Model(&v).Update("appealed", true).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{"message": "申诉已提交"})
 }
 
@@ -448,11 +478,17 @@ func (h *TeacherHandler) HandleAppeal(c *gin.Context) {
 		return
 	}
 	if input.Approved {
-		h.db.Delete(&v)
+		if err := h.db.Delete(&v).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
+			return
+		}
 		h.logAdmin(c, "申诉通过", fmt.Sprintf("违规%d", id), "")
 		c.JSON(http.StatusOK, gin.H{"message": "申诉成功，违规记录已删除"})
 	} else {
-		h.db.Model(&v).Update("appealed", false)
+		if err := h.db.Model(&v).Update("appealed", false).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
+			return
+		}
 		h.logAdmin(c, "申诉驳回", fmt.Sprintf("违规%d", id), "")
 		c.JSON(http.StatusOK, gin.H{"message": "申诉被驳回"})
 	}

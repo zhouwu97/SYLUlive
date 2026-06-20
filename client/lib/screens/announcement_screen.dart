@@ -5,6 +5,7 @@ import 'package:flutter/gestures.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../config/api_constants.dart';
 import '../models/announcement.dart' as model;
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
@@ -43,7 +44,7 @@ class _AnnouncementScreenState extends State<AnnouncementScreen>
   Future<void> _loadAnnouncements() async {
     final authProvider = context.read<AuthProvider>();
     try {
-      final response = await authProvider.dio.get('/announcements');
+      final response = await authProvider.dio.get(ApiConstants.noticesPath);
       if (response.statusCode == 200) {
         final list = (response.data as List)
             .map((e) => model.Announcement.fromJson(e))
@@ -54,16 +55,18 @@ class _AnnouncementScreenState extends State<AnnouncementScreen>
             }
             return b.createdAt.compareTo(a.createdAt);
           });
-        setState(() {
-          _announcements = list;
-          _isLoading = false;
-        });
+        if (mounted)
+          setState(() {
+            _announcements = list;
+            _isLoading = false;
+          });
       }
     } catch (e) {
       debugPrint('加载公告失败: $e');
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted)
+        setState(() {
+          _isLoading = false;
+        });
     }
   }
 
@@ -88,8 +91,8 @@ class _AnnouncementScreenState extends State<AnnouncementScreen>
   }
 
   Widget _buildBackground(ThemeProvider themeProvider, bool isDark) {
-    final path = themeProvider.backgroundImage;
-    if (themeProvider.hasBackground && path != null && path.isNotEmpty) {
+    final path = themeProvider.getBackgroundImageFor(context);
+    if (themeProvider.isBackgroundVisible && path != null && path.isNotEmpty) {
       final isAsset = !path.startsWith('http') && !path.startsWith('/');
       return Stack(
         fit: StackFit.expand,
@@ -176,7 +179,8 @@ class _AnnouncementScreenState extends State<AnnouncementScreen>
                                   isDark: isDark,
                                   index: index,
                                   emphasized: true,
-                                  timeText: _formatTime(pinned[index].createdAt),
+                                  timeText:
+                                      _formatTime(pinned[index].createdAt),
                                 ),
                               ),
                               const SizedBox(height: 6),
@@ -347,16 +351,21 @@ class _AnnouncementCardState extends State<_AnnouncementCard> {
         blur: 10,
         opacity: widget.isDark ? 0.15 : 0.3,
         backgroundColor: widget.emphasized
-            ? (widget.isDark ? const Color(0x99A32020) : const Color(0xFFFDF0F0))
+            ? (widget.isDark
+                ? const Color(0x99A32020)
+                : const Color(0xFFFDF0F0))
             : null,
         borderColor: widget.emphasized
             ? Colors.red.withValues(alpha: widget.isDark ? 0.35 : 0.22)
             : null,
-        onTap: widget.emphasized ? () {
-          setState(() {
-            _expanded = !_expanded;
-          });
-        } : null,
+        onTap: widget.emphasized
+            ? () {
+                if (mounted)
+                  setState(() {
+                    _expanded = !_expanded;
+                  });
+              }
+            : null,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -364,7 +373,8 @@ class _AnnouncementCardState extends State<_AnnouncementCard> {
               children: [
                 if (widget.announcement.isPinned) ...[
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
                       color: Colors.red.withValues(alpha: 0.2),
                       borderRadius: BorderRadius.circular(8),
@@ -434,7 +444,11 @@ class _AnnouncementCardState extends State<_AnnouncementCard> {
     final urlRegex = RegExp(r'(https?://[^\s]+)');
     final matches = urlRegex.allMatches(text);
     if (matches.isEmpty) {
-      return Text(text, style: TextStyle(fontSize: 14, color: isDark ? Colors.white70 : Colors.black87, height: 1.5));
+      return Text(text,
+          style: TextStyle(
+              fontSize: 14,
+              color: isDark ? Colors.white70 : Colors.black87,
+              height: 1.5));
     }
 
     final spans = <TextSpan>[];
@@ -446,7 +460,8 @@ class _AnnouncementCardState extends State<_AnnouncementCard> {
       final url = match.group(1)!;
       spans.add(TextSpan(
         text: url,
-        style: TextStyle(color: Colors.blue[400], decoration: TextDecoration.underline),
+        style: TextStyle(
+            color: Colors.blue[400], decoration: TextDecoration.underline),
         recognizer: TapGestureRecognizer()..onTap = () => _openUrl(url),
       ));
       lastEnd = match.end;
@@ -457,7 +472,10 @@ class _AnnouncementCardState extends State<_AnnouncementCard> {
 
     return RichText(
       text: TextSpan(
-        style: TextStyle(fontSize: 14, color: isDark ? Colors.white70 : Colors.black87, height: 1.5),
+        style: TextStyle(
+            fontSize: 14,
+            color: isDark ? Colors.white70 : Colors.black87,
+            height: 1.5),
         children: spans,
       ),
     );

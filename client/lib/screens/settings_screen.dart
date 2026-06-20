@@ -54,7 +54,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _keepAliveBusy = false;
     });
     if (enabled) {
-      await KeepAliveService.instance.openSettings();
+      await _showKeepAliveGuideDialog();
     }
   }
 
@@ -439,13 +439,39 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   String _keepAliveSubtitle() {
     if (!_keepAliveStatus.supported) return '当前平台不可用';
-    if (!_keepAliveStatus.enabled) return '开启常驻通知，让私信和课程提醒更稳定';
+    if (!_keepAliveStatus.enabled) return '隐藏后台卡片，开启后按提示加入后台白名单';
     if (_keepAliveStatus.serviceRunning) {
       return _keepAliveStatus.isIgnoringBatteryOptimizations
-          ? '运行中，已加入电池白名单'
-          : '运行中，建议允许后台运行';
+          ? '运行中，最近任务卡片已隐藏'
+          : '运行中，请允许自启动和后台无限制';
     }
-    return '已开启，等待系统启动服务';
+    return '已开启，最近任务卡片已隐藏';
+  }
+
+  Future<void> _showKeepAliveGuideDialog() async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('后台保活提示'),
+        content: const Text(
+          '请在接下来的系统页面里允许自启动、后台运行，并把电池策略设为无限制。最近任务卡片已隐藏，保活状态请看常驻通知或快捷设置开关。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('稍后'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              Navigator.pop(dialogContext);
+              await KeepAliveService.instance.openSettings();
+            },
+            child: const Text('去设置'),
+          ),
+        ],
+      ),
+    );
   }
 
   /// 独立的设置卡片行（每个设置项单独一张毛玻璃卡片）

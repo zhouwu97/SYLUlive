@@ -1004,19 +1004,19 @@ func main() {
 
 		c.JSON(http.StatusOK, gin.H{
 
-			"version": "1.5.5",
+			"version": "1.5.10",
 
 			"min_version": "1.4.0", // 增加最低版本限制，低于此版本的客户端将被强制更新
 
 			"force_update": false, // 保留兼容旧版逻辑
 
-			"download_url": "https://github.com/zhouwu97/SYLUlive/releases",
+			"download_url": "http://156.233.229.232:8080/uploads/app-release.apk",
 
 			"github_download_url": "https://github.com/zhouwu97/SYLUlive/releases",
 
 			"gitee_download_url": "https://gitee.com/chunhezi/SYLUlive/releases",
 
-			"update_msg": "1.5.5 更新：优化平板与网页版横屏布局，恢复帖子详情的移动端背景观感；新增手机/平板内置壁纸，支持完整显示、直接使用和裁剪编辑；裁剪后的背景可全屏铺满，网页版完整显示改为居中；修复部分按钮在 Web 首次加载后不可见或不可点的问题；移动端接口默认改为 HTTPS 域名代理，提升手机网络可用性。",
+			"update_msg": "1.5.10 更新：升级私信聊天体验，聊天详情页支持非纯色背景、双方头像和统一白色气泡；优化软键盘弹出时消息上移；新增消息缓存与增量刷新；平板端私信改为左侧会话列表、右侧聊天内容的分栏布局。",
 		})
 
 	})

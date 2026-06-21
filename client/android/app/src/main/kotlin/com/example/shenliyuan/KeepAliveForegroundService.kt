@@ -144,6 +144,7 @@ class KeepAliveForegroundService : Service() {
         private const val NOTIFICATION_ID = 41002
         private const val PREFS_NAME = "FlutterSharedPreferences"
         private const val KEY_ENABLED = "flutter.keep_alive_enabled"
+        private const val KEY_HIDE_RECENTS = "flutter.hide_recents_enabled"
         private const val KEY_AUTH_TOKEN = "flutter.keep_alive_auth_token"
         private const val ACTION_START =
             "com.example.shenliyuan.action.START_KEEP_ALIVE"
@@ -169,6 +170,16 @@ class KeepAliveForegroundService : Service() {
             return status(appContext)
         }
 
+        fun setHideRecentsEnabled(context: Context, enabled: Boolean) {
+            prefs(context.applicationContext)
+                .edit()
+                .putBoolean(KEY_HIDE_RECENTS, enabled)
+                .apply()
+        }
+
+        fun isHideRecentsEnabled(context: Context): Boolean =
+            prefs(context.applicationContext).getBoolean(KEY_HIDE_RECENTS, false)
+
         fun startIfEnabled(context: Context) {
             val appContext = context.applicationContext
             if (isEnabled(appContext)) {
@@ -192,6 +203,7 @@ class KeepAliveForegroundService : Service() {
                 "supported" to true,
                 "enabled" to isEnabled(appContext),
                 "serviceRunning" to isRunning,
+                "hideRecentsEnabled" to isHideRecentsEnabled(appContext),
                 "manufacturer" to Build.MANUFACTURER.orEmpty(),
                 "sdkInt" to Build.VERSION.SDK_INT,
                 "isIgnoringBatteryOptimizations" to

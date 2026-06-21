@@ -5,6 +5,7 @@ class KeepAliveStatus {
   final bool supported;
   final bool enabled;
   final bool serviceRunning;
+  final bool hideRecentsEnabled;
   final String manufacturer;
   final int sdkInt;
   final bool isIgnoringBatteryOptimizations;
@@ -13,6 +14,7 @@ class KeepAliveStatus {
     required this.supported,
     required this.enabled,
     required this.serviceRunning,
+    required this.hideRecentsEnabled,
     required this.manufacturer,
     required this.sdkInt,
     required this.isIgnoringBatteryOptimizations,
@@ -22,6 +24,7 @@ class KeepAliveStatus {
       : supported = false,
         enabled = false,
         serviceRunning = false,
+        hideRecentsEnabled = false,
         manufacturer = '',
         sdkInt = 0,
         isIgnoringBatteryOptimizations = true;
@@ -32,6 +35,7 @@ class KeepAliveStatus {
       supported: map['supported'] == true,
       enabled: map['enabled'] == true,
       serviceRunning: map['serviceRunning'] == true,
+      hideRecentsEnabled: map['hideRecentsEnabled'] == true,
       manufacturer: map['manufacturer']?.toString() ?? '',
       sdkInt: (map['sdkInt'] as num?)?.toInt() ?? 0,
       isIgnoringBatteryOptimizations:
@@ -66,6 +70,19 @@ class KeepAliveService {
     try {
       final result = await _channel.invokeMapMethod<dynamic, dynamic>(
         'setKeepAliveEnabled',
+        {'enabled': enabled},
+      );
+      return KeepAliveStatus.fromMap(result);
+    } catch (_) {
+      return const KeepAliveStatus.unsupported();
+    }
+  }
+
+  Future<KeepAliveStatus> setHideRecentsEnabled(bool enabled) async {
+    if (!_isAndroid) return const KeepAliveStatus.unsupported();
+    try {
+      final result = await _channel.invokeMapMethod<dynamic, dynamic>(
+        'setHideRecentsEnabled',
         {'enabled': enabled},
       );
       return KeepAliveStatus.fromMap(result);

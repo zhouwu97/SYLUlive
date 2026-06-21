@@ -15,6 +15,7 @@ void main() {
             'message_id': '99',
             'sender_id': '7',
             'sender_name': 'Alice',
+            'sender_avatar': '/uploads/alice.png',
           }),
         },
       });
@@ -23,6 +24,7 @@ void main() {
       expect(target?.messageId, 99);
       expect(target?.senderId, 7);
       expect(target?.senderName, 'Alice');
+      expect(target?.senderAvatar, '/uploads/alice.png');
       expect(target?.displayName, 'Alice');
     });
 
@@ -60,11 +62,13 @@ void main() {
       'message_id': 77,
       'sender_id': '11',
       'sender_name': 'Carol',
+      'sender_avatar': '/uploads/carol.png',
     }));
 
     expect(target?.conversationId, 31);
     expect(target?.messageId, 77);
     expect(target?.senderId, 11);
+    expect(target?.senderAvatar, '/uploads/carol.png');
     expect(target?.displayName, 'Carol');
   });
 

@@ -4,12 +4,14 @@ class PrivateMessageTarget {
   final int conversationId;
   final int senderId;
   final String senderName;
+  final String senderAvatar;
   final int? messageId;
 
   const PrivateMessageTarget({
     required this.conversationId,
     required this.senderId,
     required this.senderName,
+    this.senderAvatar = '',
     this.messageId,
   });
 
@@ -20,6 +22,19 @@ class PrivateMessageTarget {
 
   bool sameConversation(PrivateMessageTarget other) {
     return conversationId == other.conversationId && senderId == other.senderId;
+  }
+
+  PrivateMessageTarget copyWith({
+    String? senderName,
+    String? senderAvatar,
+  }) {
+    return PrivateMessageTarget(
+      conversationId: conversationId,
+      senderId: senderId,
+      senderName: senderName ?? this.senderName,
+      senderAvatar: senderAvatar ?? this.senderAvatar,
+      messageId: messageId,
+    );
   }
 }
 
@@ -78,11 +93,16 @@ PrivateMessageTarget? privateMessageTargetFromJPushMessage(
     notificationTitle(message),
     '用户$senderId',
   ]);
+  final senderAvatar = _firstNonEmpty([
+    extras['sender_avatar']?.toString(),
+    extras['avatar']?.toString(),
+  ]);
 
   return PrivateMessageTarget(
     conversationId: conversationId,
     senderId: senderId,
     senderName: senderName,
+    senderAvatar: senderAvatar,
     messageId: messageId,
   );
 }
@@ -100,10 +120,15 @@ PrivateMessageTarget? privateMessageTargetFromLocalPayload(String payload) {
     extras['sender_name']?.toString(),
     '用户$senderId',
   ]);
+  final senderAvatar = _firstNonEmpty([
+    extras['sender_avatar']?.toString(),
+    extras['avatar']?.toString(),
+  ]);
   return PrivateMessageTarget(
     conversationId: conversationId,
     senderId: senderId,
     senderName: senderName,
+    senderAvatar: senderAvatar,
     messageId: messageId,
   );
 }

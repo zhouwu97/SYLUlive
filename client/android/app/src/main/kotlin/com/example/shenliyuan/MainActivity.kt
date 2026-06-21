@@ -2,8 +2,10 @@ package com.example.shenliyuan
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.ActivityManager
 import android.appwidget.AppWidgetManager
 import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -29,6 +31,17 @@ class MainActivity : FlutterActivity() {
     override fun onCreate(savedInstanceState: android.os.Bundle?) {
         super.onCreate(savedInstanceState)
         createHighPriorityNotificationChannels()
+        applyExcludeFromRecents(KeepAliveForegroundService.isHideRecentsEnabled(this))
+    }
+
+    override fun onResume() {
+        super.onResume()
+        PrivateMessageNotificationState.setAppForeground(this, true)
+    }
+
+    override fun onPause() {
+        PrivateMessageNotificationState.setAppForeground(this, false)
+        super.onPause()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -153,6 +166,14 @@ class MainActivity : FlutterActivity() {
                     clearPrivateMessageNotifications(conversationId)
                     result.success(true)
                 }
+                "setCurrentConversation" -> {
+                    val conversationId = call.argument<Number>("conversationId")?.toLong()
+                    PrivateMessageNotificationState.setCurrentConversationId(
+                        this,
+                        conversationId,
+                    )
+                    result.success(true)
+                }
                 else -> result.notImplemented()
             }
         }
@@ -170,6 +191,12 @@ class MainActivity : FlutterActivity() {
                     "setKeepAliveEnabled" -> {
                         val enabled = call.argument<Boolean>("enabled") ?: false
                         result.success(KeepAliveForegroundService.setEnabled(this, enabled))
+                    }
+                    "setHideRecentsEnabled" -> {
+                        val enabled = call.argument<Boolean>("enabled") ?: false
+                        KeepAliveForegroundService.setHideRecentsEnabled(this, enabled)
+                        applyExcludeFromRecents(enabled)
+                        result.success(KeepAliveForegroundService.status(this))
                     }
                     "openKeepAliveSettings" -> {
                         result.success(
@@ -192,6 +219,14 @@ class MainActivity : FlutterActivity() {
 
         // ── 一次性初始化：启动 WorkManager 定期刷新 ──
         WidgetUpdateWorker.enqueue(this)
+    }
+
+    private fun applyExcludeFromRecents(enabled: Boolean) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) return
+        val activityManager = getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+        activityManager?.appTasks?.forEach { task ->
+            task.setExcludeFromRecents(enabled)
+        }
     }
 
     /** 立即刷新所有桌面 widget 实例 */

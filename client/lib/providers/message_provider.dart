@@ -138,11 +138,14 @@ class MessageProvider extends ChangeNotifier {
   Future<void> loadMessages(
     int conversationId, {
     bool preferCache = false,
+    int? aroundMessageId,
   }) async {
     final requestVersion = ++_messageRequestVersion;
     _currentConversationId = conversationId;
     final cachedMessages = _messageCache[conversationId];
-    if (preferCache && cachedMessages != null) {
+    final cacheContainsTarget = aroundMessageId == null ||
+        cachedMessages?.any((message) => message.id == aroundMessageId) == true;
+    if (preferCache && cachedMessages != null && cacheContainsTarget) {
       _messages = List<Message>.of(cachedMessages);
       _hasMore = _hasMoreCache[conversationId] ?? true;
       _messageError = null;
@@ -151,7 +154,10 @@ class MessageProvider extends ChangeNotifier {
       notifyListeners();
       await markRead(conversationId);
       if (requestVersion == _messageRequestVersion) {
-        await refreshMessages();
+        await refreshLatestMessages();
+        if (aroundMessageId != null && !containsMessage(aroundMessageId)) {
+          await loadAroundMessage(aroundMessageId);
+        }
       }
       return;
     }
@@ -165,7 +171,10 @@ class MessageProvider extends ChangeNotifier {
     try {
       final response = await _dio.get(
         '/messages/conversations/$conversationId',
-        queryParameters: {'limit': _pageSize},
+        queryParameters: {
+          'limit': _pageSize,
+          if (aroundMessageId != null) 'around_id': aroundMessageId,
+        },
       );
       if (requestVersion != _messageRequestVersion) return;
       if (response.statusCode == 200 && response.data is List) {
@@ -189,6 +198,10 @@ class MessageProvider extends ChangeNotifier {
         notifyListeners();
       }
     }
+  }
+
+  bool containsMessage(int messageId) {
+    return _messages.any((message) => message.id == messageId);
   }
 
   Future<void> loadOlderMessages() async {
@@ -274,6 +287,73 @@ class MessageProvider extends ChangeNotifier {
       notifyListeners();
     } catch (e) {
       debugPrint('刷新消息失败: $e');
+    }
+  }
+
+  Future<void> refreshLatestMessages() async {
+    final conversationId = _currentConversationId;
+    if (conversationId == null || _messageLoading) return;
+
+    final requestVersion = _messageRequestVersion;
+    try {
+      final response = await _dio.get(
+        '/messages/conversations/$conversationId',
+        queryParameters: {'limit': _pageSize},
+      );
+      if (_currentConversationId != conversationId ||
+          requestVersion != _messageRequestVersion ||
+          response.data is! List) {
+        return;
+      }
+      final latest = (response.data as List)
+          .map((e) => Message.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList();
+      final byId = <int, Message>{
+        for (final message in _messages) message.id: message,
+        for (final message in latest) message.id: message,
+      };
+      _messages = byId.values.toList()..sort((a, b) => a.id.compareTo(b.id));
+      _hasMore = _hasMore || latest.length == _pageSize;
+      _rememberMessages(conversationId);
+      await markRead(conversationId);
+      notifyListeners();
+    } catch (e) {
+      debugPrint('刷新最新消息失败: $e');
+    }
+  }
+
+  Future<void> loadAroundMessage(int messageId) async {
+    final conversationId = _currentConversationId;
+    if (conversationId == null || _messageLoading) return;
+
+    final requestVersion = _messageRequestVersion;
+    try {
+      final response = await _dio.get(
+        '/messages/conversations/$conversationId',
+        queryParameters: {
+          'limit': _pageSize,
+          'around_id': messageId,
+        },
+      );
+      if (_currentConversationId != conversationId ||
+          requestVersion != _messageRequestVersion ||
+          response.data is! List) {
+        return;
+      }
+      final around = (response.data as List)
+          .map((e) => Message.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList();
+      final byId = <int, Message>{
+        for (final message in _messages) message.id: message,
+        for (final message in around) message.id: message,
+      };
+      _messages = byId.values.toList()..sort((a, b) => a.id.compareTo(b.id));
+      _hasMore = _hasMore || around.length == _pageSize;
+      _rememberMessages(conversationId);
+      await markRead(conversationId);
+      notifyListeners();
+    } catch (e) {
+      debugPrint('加载目标消息失败: $e');
     }
   }
 

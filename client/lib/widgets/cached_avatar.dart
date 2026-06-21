@@ -19,17 +19,19 @@ class AvatarCache {
     String url, {
     required double radius,
   }) {
-    final size = (radius * 2 * 3).round().clamp(24, 512);
-    final key = '$url@$size';
     return _providers.putIfAbsent(
-      key,
+      url,
       () => CachedNetworkImageProvider(
         url,
         cacheManager: manager,
-        maxWidth: size,
-        maxHeight: size,
       ),
     );
+  }
+
+  static Future<void> evict(String url) async {
+    final provider = _providers.remove(url);
+    await provider?.evict();
+    await manager.removeFile(url).catchError((_) {});
   }
 }
 
@@ -53,6 +55,9 @@ class CachedAvatar extends StatefulWidget {
 class _CachedAvatarState extends State<CachedAvatar> {
   CachedNetworkImageProvider? _imageProvider;
   String? _providerUrl;
+  String? _sourceUrl;
+  int _retryAttempt = 0;
+  bool _retryScheduled = false;
 
   @override
   void didChangeDependencies() {
@@ -66,6 +71,9 @@ class _CachedAvatarState extends State<CachedAvatar> {
     if (oldWidget.imageUrl != widget.imageUrl ||
         oldWidget.radius != widget.radius) {
       _providerUrl = null;
+      _sourceUrl = null;
+      _retryAttempt = 0;
+      _retryScheduled = false;
       _prepareImage();
     }
   }
@@ -74,16 +82,57 @@ class _CachedAvatarState extends State<CachedAvatar> {
     final url = widget.imageUrl;
     if (url == null || url.isEmpty) {
       _providerUrl = null;
+      _sourceUrl = null;
       _imageProvider = null;
       return;
     }
-    if (url == _providerUrl && _imageProvider != null) return;
-    _providerUrl = url;
+    if (_sourceUrl != url) {
+      _sourceUrl = url;
+      _retryAttempt = 0;
+      _retryScheduled = false;
+    }
+    final effectiveUrl = _effectiveUrl(url);
+    if (effectiveUrl == _providerUrl && _imageProvider != null) return;
+    _providerUrl = effectiveUrl;
     _imageProvider = AvatarCache.provider(
-      url,
+      effectiveUrl,
       radius: widget.radius,
     );
-    precacheImage(_imageProvider!, context).ignore();
+    precacheImage(_imageProvider!, context).catchError((_) {
+      _scheduleRetryAfterError();
+    });
+  }
+
+  String _effectiveUrl(String url) {
+    if (_retryAttempt == 0) return url;
+    final uri = Uri.tryParse(url);
+    if (uri == null || !uri.hasScheme) return url;
+    final params = Map<String, String>.from(uri.queryParameters);
+    params['_avatar_retry'] = _retryAttempt.toString();
+    return uri.replace(queryParameters: params).toString();
+  }
+
+  void _scheduleRetryAfterError() {
+    final sourceUrl = widget.imageUrl;
+    if (sourceUrl == null ||
+        sourceUrl.isEmpty ||
+        _retryAttempt >= 1 ||
+        _retryScheduled) {
+      return;
+    }
+    _retryScheduled = true;
+    AvatarCache.evict(sourceUrl).whenComplete(() {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || widget.imageUrl != sourceUrl) return;
+        setState(() {
+          _retryScheduled = false;
+          _retryAttempt++;
+          _providerUrl = null;
+          _imageProvider = null;
+          _prepareImage();
+        });
+      });
+    });
   }
 
   @override
@@ -105,7 +154,10 @@ class _CachedAvatarState extends State<CachedAvatar> {
           height: widget.radius * 2,
           fit: BoxFit.cover,
           gaplessPlayback: true,
-          errorBuilder: (_, __, ___) => _buildFallback(isDark, bgColor),
+          errorBuilder: (_, __, ___) {
+            _scheduleRetryAfterError();
+            return _buildFallback(isDark, bgColor);
+          },
           frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
             if (frame != null || wasSynchronouslyLoaded) return child;
             return _buildFallback(isDark, bgColor);

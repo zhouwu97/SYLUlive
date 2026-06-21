@@ -464,17 +464,22 @@ class MessageProvider extends ChangeNotifier {
 
     final lastMarkedId = _lastMarkedReadMessageIds[conversationId];
     if (latestIncomingId == lastMarkedId) return;
-    _lastMarkedReadMessageIds[conversationId] = latestIncomingId;
-    markRead(conversationId);
+    // Don't record yet – only record after the API call succeeds.
+    markRead(conversationId, markedMessageId: latestIncomingId);
   }
 
-  Future<void> markRead(int conversationId) async {
+  Future<void> markRead(
+    int conversationId, {
+    int? markedMessageId,
+  }) async {
     try {
-      // Update per-conversation tracking
-      if (_messages.isNotEmpty) {
+      await _dio.post('/messages/conversations/$conversationId/read');
+      // Only record after success so that a failed request gets retried.
+      if (markedMessageId != null) {
+        _lastMarkedReadMessageIds[conversationId] = markedMessageId;
+      } else if (_messages.isNotEmpty) {
         _lastMarkedReadMessageIds[conversationId] = _messages.last.id;
       }
-      await _dio.post('/messages/conversations/$conversationId/read');
       final index = _conversations
           .indexWhere((conversation) => conversation.id == conversationId);
       if (index >= 0 && _conversations[index].unreadCount != 0) {

@@ -363,6 +363,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   }
 
   bool _ensureMessageVisible(int targetMessageId) {
+    if (_initialLoadFinished) return false;
     final targetContext = _messageKeys[targetMessageId]?.currentContext;
     if (targetContext == null) return false;
     Scrollable.ensureVisible(

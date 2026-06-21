@@ -1,4 +1,5 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
     package="com.example.shenliyuan">
 
     <!-- 网络权限 — Release 包在部分设备上必须显式声明，否则 socket 连接被拒 (errno=1 EPERM) -->
@@ -33,7 +34,7 @@
             android:launchMode="singleTop"
             android:taskAffinity=""
             android:theme="@style/LaunchTheme"
-            android:excludeFromRecents="true"
+            android:excludeFromRecents="false"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
             android:hardwareAccelerated="true"
             android:resizeableActivity="true"
@@ -67,6 +68,17 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <receiver
+            android:name="com.jiguang.jpush.JPushEventReceiver"
+            tools:node="remove" />
+        <receiver
+            android:name=".PrivateMessageJPushReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="cn.jpush.android.intent.RECEIVER_MESSAGE" />
+                <category android:name="${applicationId}" />
+            </intent-filter>
+        </receiver>
         <receiver
             android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver"
             android:exported="false" />

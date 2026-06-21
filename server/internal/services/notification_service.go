@@ -25,6 +25,7 @@ func (s *NotificationService) Notify(userID uint, title, content string, extras 
 		return nil
 	}
 	alias := strconv.FormatUint(uint64(userID), 10)
+	overrideMsgID, _ := extras["override_msg_id"].(string)
 	return utils.NewJPushClient(s.jpushAppKey, s.jpushMasterSecret).
-		SendAliasNotification(alias, title, content, extras)
+		SendAliasNotification(alias, title, content, extras, overrideMsgID)
 }

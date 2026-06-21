@@ -254,6 +254,28 @@ func TestMessageConversationSummaryPaginationAndRead(t *testing.T) {
 		t.Fatalf("unexpected after page: %s", afterPage.Body.String())
 	}
 
+	aroundPage := performMessageRequest(
+		t,
+		handler.GetMessages,
+		http.MethodGet,
+		fmt.Sprintf("/api/messages/conversations/%d?limit=2&around_id=4", conversation.ID),
+		gin.Params{{Key: "id", Value: fmt.Sprint(conversation.ID)}},
+		1,
+		"",
+	)
+	if aroundPage.Code != http.StatusOK {
+		t.Fatalf("around page status=%d body=%s", aroundPage.Code, aroundPage.Body.String())
+	}
+	var aroundMessages []models.Message
+	if err := json.Unmarshal(aroundPage.Body.Bytes(), &aroundMessages); err != nil {
+		t.Fatalf("decode around messages: %v", err)
+	}
+	if len(aroundMessages) != 2 ||
+		aroundMessages[0].Content != "message-3" ||
+		aroundMessages[1].Content != "message-4" {
+		t.Fatalf("unexpected around page: %s", aroundPage.Body.String())
+	}
+
 	read := performMessageRequest(
 		t,
 		handler.MarkRead,
@@ -366,10 +388,14 @@ func TestMessageSendImageResponseAndPush(t *testing.T) {
 		if call.UserID != 2 || call.Title != "Alice" || call.Content != "[图片]" {
 			t.Fatalf("unexpected push call: %#v", call)
 		}
+		conversationID := call.Extras["conversation_id"]
 		if call.Extras["type"] != "private_message" ||
-			call.Extras["conversation_id"] == nil ||
+			conversationID == nil ||
+			call.Extras["message_id"] == nil ||
 			call.Extras["sender_id"] != uint(1) ||
-			call.Extras["sender_name"] != "Alice" {
+			call.Extras["sender_name"] != "Alice" ||
+			call.Extras["sender_avatar"] == nil ||
+			call.Extras["override_msg_id"] != fmt.Sprintf("private_message_conversation_%v", conversationID) {
 			t.Fatalf("unexpected push extras: %#v", call.Extras)
 		}
 	case <-time.After(time.Second):

@@ -31,6 +31,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   static const String _wallpaperBaseUrl = WallpaperPrefetchService.baseUrl;
   KeepAliveStatus _keepAliveStatus = const KeepAliveStatus.unsupported();
   bool _keepAliveBusy = false;
+  bool _hideRecentsBusy = false;
 
   @override
   void initState() {
@@ -56,6 +57,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (enabled) {
       await _showKeepAliveGuideDialog();
     }
+  }
+
+  Future<void> _setHideRecentsEnabled(bool enabled) async {
+    if (_hideRecentsBusy) return;
+    setState(() => _hideRecentsBusy = true);
+    final status = await KeepAliveService.instance.setHideRecentsEnabled(
+      enabled,
+    );
+    if (!mounted) return;
+    setState(() {
+      _keepAliveStatus = status;
+      _hideRecentsBusy = false;
+    });
   }
 
   @override
@@ -320,6 +334,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
         )),
         _buildSettingsRow(
             child: _buildSettingsTile(
+          icon: Icons.layers_clear,
+          iconColor: Colors.deepPurple,
+          title: '隐藏后台卡片',
+          subtitle: _hideRecentsSubtitle(),
+          trailing: Transform.scale(
+            scale: 0.8,
+            child: Switch(
+              value: _keepAliveStatus.supported &&
+                  _keepAliveStatus.hideRecentsEnabled,
+              onChanged: !_keepAliveStatus.supported || _hideRecentsBusy
+                  ? null
+                  : _setHideRecentsEnabled,
+              activeThumbColor: Theme.of(context).primaryColor,
+            ),
+          ),
+          isDark: isDark,
+        )),
+        _buildSettingsRow(
+            child: _buildSettingsTile(
           icon: Icons.dark_mode,
           iconColor: isDark ? Colors.indigo : Colors.indigo,
           title: '夜间模式',
@@ -439,13 +472,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   String _keepAliveSubtitle() {
     if (!_keepAliveStatus.supported) return '当前平台不可用';
-    if (!_keepAliveStatus.enabled) return '隐藏后台卡片，开启后按提示加入后台白名单';
+    if (!_keepAliveStatus.enabled) return '开启后按提示加入后台白名单，提升提醒稳定性';
     if (_keepAliveStatus.serviceRunning) {
       return _keepAliveStatus.isIgnoringBatteryOptimizations
-          ? '运行中，最近任务卡片已隐藏'
+          ? '运行中，后台提醒更稳定'
           : '运行中，请允许自启动和后台无限制';
     }
-    return '已开启，最近任务卡片已隐藏';
+    return '已开启，等待系统启动保活服务';
+  }
+
+  String _hideRecentsSubtitle() {
+    if (!_keepAliveStatus.supported) return '当前平台不可用';
+    return _keepAliveStatus.hideRecentsEnabled
+        ? '已隐藏最近任务卡片，默认关闭，可随时关掉'
+        : '默认关闭，开启后应用不会显示在最近任务列表';
   }
 
   Future<void> _showKeepAliveGuideDialog() async {
@@ -455,7 +495,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       builder: (dialogContext) => AlertDialog(
         title: const Text('后台保活提示'),
         content: const Text(
-          '请在接下来的系统页面里允许自启动、后台运行，并把电池策略设为无限制。最近任务卡片已隐藏，保活状态请看常驻通知或快捷设置开关。',
+          '请在接下来的系统页面里允许自启动、后台运行，并把电池策略设为无限制。保活状态请看常驻通知或快捷设置开关。',
         ),
         actions: [
           TextButton(
@@ -805,14 +845,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<String> _downloadWallpaper(String url, String fileName) async {
     final savedPath = await WallpaperPrefetchService.localPathFor(fileName);
-    final file = File(savedPath);
-    if (await file.exists() && await file.length() > 0) return savedPath;
-
-    await Dio().download(
-      url,
-      savedPath,
-      options: Options(receiveTimeout: const Duration(seconds: 30)),
-    );
+    await WallpaperPrefetchService.downloadAndVerifyImage(
+        Dio(), url, savedPath);
     return savedPath;
   }
 
@@ -829,13 +863,42 @@ class _SettingsScreenState extends State<SettingsScreen> {
       final remoteUrl = _remoteWallpaperUrl(assetName);
       final useRemote =
           remoteUrl != null && context.read<AuthProvider>().isLoggedIn;
-      final sourcePath = useRemote
-          ? await _downloadWallpaper(remoteUrl, assetName)
-          : await _copyAssetToTempFile(
-              'wallpaper_thumbs/${path.basenameWithoutExtension(assetName)}.jpg',
-            );
-      final savedPath =
-          await _cropAndSaveBackground(sourcePath, isLandscape: isLandscape);
+
+      String? sourcePath;
+      if (useRemote) {
+        try {
+          sourcePath = await _downloadWallpaper(remoteUrl, assetName);
+        } catch (e) {
+          debugPrint('Download wallpaper for edit failed: $e');
+        }
+      }
+
+      sourcePath ??= await _copyAssetToTempFile(
+        'wallpaper_thumbs/${path.basenameWithoutExtension(assetName)}.jpg',
+      );
+
+      String? savedPath;
+      try {
+        savedPath =
+            await _cropAndSaveBackground(sourcePath, isLandscape: isLandscape);
+      } catch (e) {
+        debugPrint('Crop failed, possibly corrupted file: $e');
+        if (useRemote &&
+            sourcePath.isNotEmpty &&
+            !sourcePath.contains('background_source_')) {
+          try {
+            await File(sourcePath).delete();
+          } catch (_) {}
+          final fallbackSource = await _copyAssetToTempFile(
+            'wallpaper_thumbs/${path.basenameWithoutExtension(assetName)}.jpg',
+          );
+          savedPath = await _cropAndSaveBackground(fallbackSource,
+              isLandscape: isLandscape);
+        } else {
+          rethrow;
+        }
+      }
+
       if (savedPath == null) return;
       _setBackground(
         themeProvider,

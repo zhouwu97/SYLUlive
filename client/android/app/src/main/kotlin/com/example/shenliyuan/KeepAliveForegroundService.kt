@@ -74,8 +74,6 @@ class KeepAliveForegroundService : Service() {
         }
 
         try {
-            JPushInterface.setDebugMode(BuildConfig.DEBUG)
-
             // Flutter 进程已被清理时，重新启动极光服务
             JPushInterface.init(applicationContext)
             JPushInterface.resumePush(applicationContext)

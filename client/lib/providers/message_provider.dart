@@ -19,13 +19,13 @@ class MessageProvider extends ChangeNotifier {
   bool _messageLoading = false;
   bool _loadingMore = false;
   bool _sending = false;
-  bool _refreshing = false;
   bool _hasMore = true;
   String? _conversationError;
   String? _messageError;
   int? _currentConversationId;
   int _messageRequestVersion = 0;
-  int? _lastMarkedReadMessageId;
+  final Set<int> _refreshingConversationIds = {};
+  final Map<int, int> _lastMarkedReadMessageIds = {};
   final Map<int, String> _drafts = {};
 
   List<Conversation> get conversations => _conversations;
@@ -253,15 +253,15 @@ class MessageProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> refreshMessages() async {
+  Future<void> refreshMessages({int? currentUserId}) async {
     final conversationId = _currentConversationId;
-    if (conversationId == null || _messageLoading || _refreshing) return;
+    if (conversationId == null || _messageLoading) return;
+    if (!_refreshingConversationIds.add(conversationId)) return;
 
     if (_messages.isEmpty) {
       // Don't fall through to loadMessages – that would set _messageLoading
       // and trigger the full-screen spinner during a background poll.
       // Instead, do a silent fetch inline.
-      _refreshing = true;
       try {
         final requestVersion = _messageRequestVersion;
         final response = await _dio.get(
@@ -278,17 +278,16 @@ class MessageProvider extends ChangeNotifier {
             .toList();
         _hasMore = _messages.length == _pageSize;
         _rememberMessages(conversationId);
-        _markReadIfNeeded(conversationId);
+        _markReadIfNeeded(conversationId, currentUserId: currentUserId);
         notifyListeners();
       } catch (e) {
         debugPrint('静默刷新消息失败: $e');
       } finally {
-        _refreshing = false;
+        _refreshingConversationIds.remove(conversationId);
       }
       return;
     }
 
-    _refreshing = true;
     final requestVersion = _messageRequestVersion;
     final afterId = _messages.last.id;
     try {
@@ -314,13 +313,13 @@ class MessageProvider extends ChangeNotifier {
         };
         _messages = byId.values.toList()..sort((a, b) => a.id.compareTo(b.id));
         _rememberMessages(conversationId);
-        _markReadIfNeeded(conversationId);
+        _markReadIfNeeded(conversationId, currentUserId: currentUserId);
         notifyListeners();
       }
     } catch (e) {
       debugPrint('刷新消息失败: $e');
     } finally {
-      _refreshing = false;
+      _refreshingConversationIds.remove(conversationId);
     }
   }
 
@@ -443,19 +442,37 @@ class MessageProvider extends ChangeNotifier {
     return null;
   }
 
-  /// Only sends a /read request when the latest message ID has changed.
-  void _markReadIfNeeded(int conversationId) {
+  /// Only sends a /read request when the latest incoming message ID has changed
+  /// for this conversation. Skips if the latest message is from the current user.
+  void _markReadIfNeeded(int conversationId, {int? currentUserId}) {
     if (_messages.isEmpty) return;
-    final latestId = _messages.last.id;
-    if (latestId == _lastMarkedReadMessageId) return;
-    _lastMarkedReadMessageId = latestId;
+
+    // Find the latest incoming message (not from current user).
+    // If currentUserId is unknown, fall back to using the latest message ID.
+    int? latestIncomingId;
+    if (currentUserId != null) {
+      for (var i = _messages.length - 1; i >= 0; i--) {
+        if (_messages[i].senderId != currentUserId) {
+          latestIncomingId = _messages[i].id;
+          break;
+        }
+      }
+      if (latestIncomingId == null) return; // All messages are from self
+    } else {
+      latestIncomingId = _messages.last.id;
+    }
+
+    final lastMarkedId = _lastMarkedReadMessageIds[conversationId];
+    if (latestIncomingId == lastMarkedId) return;
+    _lastMarkedReadMessageIds[conversationId] = latestIncomingId;
     markRead(conversationId);
   }
 
   Future<void> markRead(int conversationId) async {
     try {
+      // Update per-conversation tracking
       if (_messages.isNotEmpty) {
-        _lastMarkedReadMessageId = _messages.last.id;
+        _lastMarkedReadMessageIds[conversationId] = _messages.last.id;
       }
       await _dio.post('/messages/conversations/$conversationId/read');
       final index = _conversations

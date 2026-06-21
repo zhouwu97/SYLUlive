@@ -707,11 +707,40 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      // App 回到前台时，如果极光还没初始化成功则重试
       final authProvider = context.read<AuthProvider>();
       if (authProvider.isLoggedIn) {
         _ensureJPush(authProvider);
+        _checkNativePrivateMessage();
       }
+    }
+  }
+
+  bool _checkingNativePrivateMessage = false;
+
+  Future<void> _checkNativePrivateMessage() async {
+    if (_checkingNativePrivateMessage) return;
+    _checkingNativePrivateMessage = true;
+
+    try {
+      final payload =
+          await _privateMessageNotificationChannel.invokeMethod<String>(
+        'getPendingPrivateMessage',
+      );
+
+      if (payload == null || payload.isEmpty) return;
+
+      final target = privateMessageTargetFromLocalPayload(payload);
+      if (target == null) {
+        debugPrint('原生私信通知参数解析失败: $payload');
+        return;
+      }
+
+      await _clearPrivateMessageNotifications(target.conversationId);
+      _openPrivateMessage(target);
+    } catch (e) {
+      debugPrint('读取原生待处理私信失败: $e');
+    } finally {
+      _checkingNativePrivateMessage = false;
     }
   }
 
@@ -741,11 +770,14 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
           );
         }
 
-        if (authProvider.isLoggedIn && !_jpushSetup && !_jpushSettingUp) {
+        if (authProvider.isLoggedIn) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            _ensureJPush(authProvider);
-            _requestNotificationPermissionIfNeeded();
-            _processPendingOpenNotification();
+            if (!_jpushSetup && !_jpushSettingUp) {
+              _ensureJPush(authProvider);
+              _requestNotificationPermissionIfNeeded();
+              _processPendingOpenNotification();
+            }
+            _checkNativePrivateMessage();
           });
         }
 

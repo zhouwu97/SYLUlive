@@ -14,6 +14,7 @@ import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
 import android.util.Log
+import cn.jpush.android.api.JPushInterface
 import java.net.HttpURLConnection
 import java.net.URL
 
@@ -27,6 +28,7 @@ class KeepAliveForegroundService : Service() {
     override fun onCreate() {
         super.onCreate()
         ensureChannel(this)
+        restoreJPush()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -59,6 +61,33 @@ class KeepAliveForegroundService : Service() {
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
+
+    /**
+     * 系统通过 START_STICKY 重新拉起保活服务时，Flutter 进程可能已被杀死，
+     * 极光长连接和别名注册随之丢失。在此重新初始化极光 SDK，恢复推送能力。
+     */
+    private fun restoreJPush() {
+        // 没登录时不启动推送，维持"登录后才初始化"的逻辑
+        if (authToken(this).isNullOrBlank()) {
+            Log.d(TAG, "skip JPush restore: user not logged in")
+            return
+        }
+
+        try {
+            JPushInterface.setDebugMode(BuildConfig.DEBUG)
+
+            // Flutter 进程已被清理时，重新启动极光服务
+            JPushInterface.init(applicationContext)
+            JPushInterface.resumePush(applicationContext)
+
+            handler.postDelayed({
+                val rid = JPushInterface.getRegistrationID(applicationContext)
+                Log.i(TAG, "JPush restored, registrationId=$rid")
+            }, 3000L)
+        } catch (e: Exception) {
+            Log.e(TAG, "restore JPush failed", e)
+        }
+    }
 
     private fun scheduleHeartbeat(immediate: Boolean) {
         handler.removeCallbacks(heartbeatRunnable)

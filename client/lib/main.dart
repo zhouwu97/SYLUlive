@@ -688,8 +688,48 @@ class AuthWrapper extends StatefulWidget {
   State<AuthWrapper> createState() => _AuthWrapperState();
 }
 
-class _AuthWrapperState extends State<AuthWrapper> {
+class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
   bool _jpushSetup = false;
+  bool _jpushSettingUp = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // App 回到前台时，如果极光还没初始化成功则重试
+      final authProvider = context.read<AuthProvider>();
+      if (authProvider.isLoggedIn) {
+        _ensureJPush(authProvider);
+      }
+    }
+  }
+
+  Future<void> _ensureJPush(AuthProvider authProvider) async {
+    if (_jpushSetup || _jpushSettingUp) return;
+
+    _jpushSettingUp = true;
+    try {
+      await setupJPush(authProvider);
+      _jpushSetup = true;
+      debugPrint('✅ JPush 初始化成功');
+    } catch (e, stack) {
+      debugPrint('JPush 初始化失败，将在下次恢复时重试: $e');
+      debugPrintStack(stackTrace: stack);
+    } finally {
+      _jpushSettingUp = false;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -701,10 +741,9 @@ class _AuthWrapperState extends State<AuthWrapper> {
           );
         }
 
-        if (authProvider.isLoggedIn && !_jpushSetup) {
-          _jpushSetup = true;
-          setupJPush(authProvider);
+        if (authProvider.isLoggedIn && !_jpushSetup && !_jpushSettingUp) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
+            _ensureJPush(authProvider);
             _requestNotificationPermissionIfNeeded();
             _processPendingOpenNotification();
           });

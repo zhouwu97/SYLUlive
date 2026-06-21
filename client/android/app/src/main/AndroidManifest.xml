@@ -73,9 +73,10 @@
             tools:node="remove" />
         <receiver
             android:name=".PrivateMessageJPushReceiver"
+            android:enabled="true"
             android:exported="false">
             <intent-filter>
-                <action android:name="cn.jpush.android.intent.RECEIVER_MESSAGE" />
+                <action android:name="cn.jpush.android.intent.RECEIVE_MESSAGE" />
                 <category android:name="${applicationId}" />
             </intent-filter>
         </receiver>

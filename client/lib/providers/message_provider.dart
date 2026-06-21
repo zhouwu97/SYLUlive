@@ -19,11 +19,13 @@ class MessageProvider extends ChangeNotifier {
   bool _messageLoading = false;
   bool _loadingMore = false;
   bool _sending = false;
+  bool _refreshing = false;
   bool _hasMore = true;
   String? _conversationError;
   String? _messageError;
   int? _currentConversationId;
   int _messageRequestVersion = 0;
+  int? _lastMarkedReadMessageId;
   final Map<int, String> _drafts = {};
 
   List<Conversation> get conversations => _conversations;
@@ -253,12 +255,40 @@ class MessageProvider extends ChangeNotifier {
 
   Future<void> refreshMessages() async {
     final conversationId = _currentConversationId;
-    if (conversationId == null || _messageLoading) return;
+    if (conversationId == null || _messageLoading || _refreshing) return;
+
     if (_messages.isEmpty) {
-      await loadMessages(conversationId);
+      // Don't fall through to loadMessages – that would set _messageLoading
+      // and trigger the full-screen spinner during a background poll.
+      // Instead, do a silent fetch inline.
+      _refreshing = true;
+      try {
+        final requestVersion = _messageRequestVersion;
+        final response = await _dio.get(
+          '/messages/conversations/$conversationId',
+          queryParameters: {'limit': _pageSize},
+        );
+        if (_currentConversationId != conversationId ||
+            requestVersion != _messageRequestVersion ||
+            response.data is! List) {
+          return;
+        }
+        _messages = (response.data as List)
+            .map((e) => Message.fromJson(Map<String, dynamic>.from(e as Map)))
+            .toList();
+        _hasMore = _messages.length == _pageSize;
+        _rememberMessages(conversationId);
+        _markReadIfNeeded(conversationId);
+        notifyListeners();
+      } catch (e) {
+        debugPrint('静默刷新消息失败: $e');
+      } finally {
+        _refreshing = false;
+      }
       return;
     }
 
+    _refreshing = true;
     final requestVersion = _messageRequestVersion;
     final afterId = _messages.last.id;
     try {
@@ -277,16 +307,20 @@ class MessageProvider extends ChangeNotifier {
       final latest = (response.data as List)
           .map((e) => Message.fromJson(Map<String, dynamic>.from(e as Map)))
           .toList();
-      final byId = <int, Message>{
-        for (final message in _messages) message.id: message,
-        for (final message in latest) message.id: message,
-      };
-      _messages = byId.values.toList()..sort((a, b) => a.id.compareTo(b.id));
-      _rememberMessages(conversationId);
-      await markRead(conversationId);
-      notifyListeners();
+      if (latest.isNotEmpty) {
+        final byId = <int, Message>{
+          for (final message in _messages) message.id: message,
+          for (final message in latest) message.id: message,
+        };
+        _messages = byId.values.toList()..sort((a, b) => a.id.compareTo(b.id));
+        _rememberMessages(conversationId);
+        _markReadIfNeeded(conversationId);
+        notifyListeners();
+      }
     } catch (e) {
       debugPrint('刷新消息失败: $e');
+    } finally {
+      _refreshing = false;
     }
   }
 
@@ -315,7 +349,7 @@ class MessageProvider extends ChangeNotifier {
       _messages = byId.values.toList()..sort((a, b) => a.id.compareTo(b.id));
       _hasMore = _hasMore || latest.length == _pageSize;
       _rememberMessages(conversationId);
-      await markRead(conversationId);
+      _markReadIfNeeded(conversationId);
       notifyListeners();
     } catch (e) {
       debugPrint('刷新最新消息失败: $e');
@@ -350,7 +384,7 @@ class MessageProvider extends ChangeNotifier {
       _messages = byId.values.toList()..sort((a, b) => a.id.compareTo(b.id));
       _hasMore = _hasMore || around.length == _pageSize;
       _rememberMessages(conversationId);
-      await markRead(conversationId);
+      _markReadIfNeeded(conversationId);
       notifyListeners();
     } catch (e) {
       debugPrint('加载目标消息失败: $e');
@@ -409,8 +443,20 @@ class MessageProvider extends ChangeNotifier {
     return null;
   }
 
+  /// Only sends a /read request when the latest message ID has changed.
+  void _markReadIfNeeded(int conversationId) {
+    if (_messages.isEmpty) return;
+    final latestId = _messages.last.id;
+    if (latestId == _lastMarkedReadMessageId) return;
+    _lastMarkedReadMessageId = latestId;
+    markRead(conversationId);
+  }
+
   Future<void> markRead(int conversationId) async {
     try {
+      if (_messages.isNotEmpty) {
+        _lastMarkedReadMessageId = _messages.last.id;
+      }
       await _dio.post('/messages/conversations/$conversationId/read');
       final index = _conversations
           .indexWhere((conversation) => conversation.id == conversationId);

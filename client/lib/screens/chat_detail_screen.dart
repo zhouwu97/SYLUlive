@@ -198,8 +198,11 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   Future<void> _refreshMessages() async {
     if (!mounted || _conversationId == null) return;
     final wasNearBottom = _isNearBottom;
+    final currentUserId = context.read<AuthProvider>().user?.id;
     final oldLastId = context.read<MessageProvider>().messages.lastOrNull?.id;
-    await context.read<MessageProvider>().refreshMessages();
+    await context.read<MessageProvider>().refreshMessages(
+      currentUserId: currentUserId,
+    );
     if (!mounted) return;
     final newLastId = context.read<MessageProvider>().messages.lastOrNull?.id;
     if (wasNearBottom && oldLastId != newLastId) {
@@ -331,7 +334,11 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     var targetFound = false;
     for (var attempt = 0; attempt < 5; attempt++) {
       await WidgetsBinding.instance.endOfFrame;
-      if (!mounted || requestVersion != _positionRequestVersion) return;
+      if (!mounted ||
+          requestVersion != _positionRequestVersion ||
+          _initialLoadFinished) {
+        return;
+      }
 
       if (targetMessageId != null && _ensureMessageVisible(targetMessageId)) {
         targetFound = true;
@@ -344,7 +351,11 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
       await Future<void>.delayed(const Duration(milliseconds: 45));
     }
 
-    if (!mounted || requestVersion != _positionRequestVersion) return;
+    if (!mounted ||
+        requestVersion != _positionRequestVersion ||
+        _initialLoadFinished) {
+      return;
+    }
     if (!targetFound && targetMessageId != null) {
       _jumpToBottom();
     }

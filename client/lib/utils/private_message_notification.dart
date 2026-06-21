@@ -4,11 +4,13 @@ class PrivateMessageTarget {
   final int conversationId;
   final int senderId;
   final String senderName;
+  final int? messageId;
 
   const PrivateMessageTarget({
     required this.conversationId,
     required this.senderId,
     required this.senderName,
+    this.messageId,
   });
 
   String get displayName {
@@ -68,6 +70,7 @@ PrivateMessageTarget? privateMessageTargetFromJPushMessage(
 
   final conversationId = intFromNotificationExtra(extras['conversation_id']);
   final senderId = intFromNotificationExtra(extras['sender_id']);
+  final messageId = intFromNotificationExtra(extras['message_id']);
   if (conversationId == null || senderId == null) return null;
 
   final senderName = _firstNonEmpty([
@@ -80,6 +83,7 @@ PrivateMessageTarget? privateMessageTargetFromJPushMessage(
     conversationId: conversationId,
     senderId: senderId,
     senderName: senderName,
+    messageId: messageId,
   );
 }
 
@@ -90,6 +94,7 @@ PrivateMessageTarget? privateMessageTargetFromLocalPayload(String payload) {
   final extras = decoded.map((key, value) => MapEntry(key.toString(), value));
   final conversationId = intFromNotificationExtra(extras['conversation_id']);
   final senderId = intFromNotificationExtra(extras['sender_id']);
+  final messageId = intFromNotificationExtra(extras['message_id']);
   if (conversationId == null || senderId == null) return null;
   final senderName = _firstNonEmpty([
     extras['sender_name']?.toString(),
@@ -99,6 +104,7 @@ PrivateMessageTarget? privateMessageTargetFromLocalPayload(String payload) {
     conversationId: conversationId,
     senderId: senderId,
     senderName: senderName,
+    messageId: messageId,
   );
 }
 

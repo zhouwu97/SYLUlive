@@ -1,6 +1,12 @@
+import 'dart:io';
+
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hive_flutter/hive_flutter.dart';
+import 'package:shenliyuan/models/post.dart';
+import 'package:shenliyuan/models/user.dart';
 import 'package:shenliyuan/providers/post_provider.dart';
+import 'package:shenliyuan/services/post_cache_service.dart';
 
 Map<String, dynamic> _postJson(int id) {
   return {
@@ -26,6 +32,20 @@ Response<dynamic> _response(RequestOptions options, int postId) {
 }
 
 void main() {
+  late Directory hiveDir;
+
+  setUpAll(() async {
+    hiveDir = await Directory.systemTemp.createTemp('post-cache-test-');
+    Hive.init(hiveDir.path);
+  });
+
+  tearDownAll(() async {
+    await Hive.close();
+    if (await hiveDir.exists()) {
+      await hiveDir.delete(recursive: true);
+    }
+  });
+
   test('different feed sorts keep independent results', () async {
     final dio = Dio();
     dio.interceptors.add(
@@ -99,5 +119,72 @@ void main() {
     ]);
 
     expect(provider.postsFor(1, sort: 'hot').single.id, 2);
+  });
+
+  test('cached first load refreshes latest page without since anchor',
+      () async {
+    final oldAuthor = User(
+      id: 7,
+      studentId: 'old',
+      nickname: 'Old',
+      createdAt: DateTime.utc(2026, 6, 14),
+    );
+    await PostCacheService.savePosts(
+      99,
+      [
+        Post(
+          id: 1,
+          content: 'cached',
+          boardId: 99,
+          authorId: oldAuthor.id,
+          author: oldAuthor,
+          createdAt: DateTime.utc(2026, 6, 14, 8),
+        ),
+      ],
+      sort: 'time',
+    );
+
+    final dio = Dio();
+    final seenSinceParams = <dynamic>[];
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          seenSinceParams.add(options.queryParameters['since']);
+          handler.resolve(
+            Response(
+              requestOptions: options,
+              statusCode: 200,
+              data: {
+                'posts': [
+                  {
+                    'id': 1,
+                    'title': 'post-1',
+                    'content': 'cached',
+                    'board_id': 99,
+                    'author_id': 7,
+                    'created_at': '2026-06-14T08:00:00Z',
+                    'author': {
+                      'id': 7,
+                      'student_id': 'new',
+                      'nickname': 'New',
+                      'avatar': '/uploads/new-avatar.jpg',
+                      'created_at': '2026-06-14T08:00:00Z',
+                    },
+                  },
+                ],
+                'total': 1,
+              },
+            ),
+          );
+        },
+      ),
+    );
+
+    final provider = PostProvider(dio);
+    await provider.loadPosts(boardId: 99, sort: 'time');
+
+    expect(seenSinceParams, [null]);
+    expect(provider.postsFor(99, sort: 'time').single.author?.avatar,
+        '/uploads/new-avatar.jpg');
   });
 }

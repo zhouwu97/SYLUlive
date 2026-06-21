@@ -4,6 +4,7 @@ import 'dart:ui';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
@@ -22,12 +23,14 @@ class ChatDetailScreen extends StatefulWidget {
   final int? conversationId;
   final User targetUser;
   final bool embedded;
+  final int? initialMessageId;
 
   const ChatDetailScreen({
     super.key,
     this.conversationId,
     required this.targetUser,
     this.embedded = false,
+    this.initialMessageId,
   });
 
   @override
@@ -40,14 +43,21 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   final ScrollController _scrollController = ScrollController();
   Timer? _refreshTimer;
   int? _conversationId;
+  int? _initialMessageId;
   bool _loadingOlder = false;
+  bool _initialPositionSettled = false;
+  int _positionRequestVersion = 0;
   double _lastKeyboardInset = 0;
   DateTime _lastMessageActivity = DateTime.now();
+  final Map<int, GlobalKey> _messageKeys = {};
+  static const MethodChannel _privateMessageNotificationsChannel =
+      MethodChannel('shenliyuan/private_message_notifications');
 
   @override
   void initState() {
     super.initState();
     _conversationId = widget.conversationId;
+    _initialMessageId = widget.initialMessageId;
     WidgetsBinding.instance.addObserver(this);
     _scrollController.addListener(_handleScroll);
     _textController.addListener(_saveDraft);
@@ -57,6 +67,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   Future<void> _initialize() async {
     if (!mounted) return;
     final provider = context.read<MessageProvider>();
+    _initialPositionSettled = false;
     final draft = provider.draftFor(widget.targetUser.id);
     if (draft.isNotEmpty && _textController.text.isEmpty) {
       _textController.text = draft;
@@ -74,20 +85,39 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
         if (!mounted) return;
         _conversationId = conversationId;
         if (conversationId != null) {
-          _scrollToBottom(jump: true);
+          await _markReadAndClearNotifications(conversationId);
+          _settleInitialPosition();
         }
       }
     } else {
       await provider.loadMessages(_conversationId!, preferCache: true);
       if (!mounted) return;
-      _scrollToBottom(jump: true);
+      await _markReadAndClearNotifications(_conversationId!);
+      _settleInitialPosition();
     }
     _startPolling();
   }
 
   @override
+  void didUpdateWidget(covariant ChatDetailScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final changedConversation =
+        oldWidget.conversationId != widget.conversationId ||
+            oldWidget.targetUser.id != widget.targetUser.id;
+    if (changedConversation ||
+        oldWidget.initialMessageId != widget.initialMessageId) {
+      _conversationId = widget.conversationId;
+      _initialMessageId = widget.initialMessageId;
+      _initialPositionSettled = false;
+      _positionRequestVersion++;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _initialize());
+    }
+  }
+
+  @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _positionRequestVersion++;
     _refreshTimer?.cancel();
     _scrollController
       ..removeListener(_handleScroll)
@@ -116,7 +146,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
       final keyboardOpened = keyboardInset > _lastKeyboardInset;
       _lastKeyboardInset = keyboardInset;
       if (keyboardOpened) {
-        _scrollToBottom(jump: true);
+        _scrollToBottom(jump: true, stable: true);
       }
     });
   }
@@ -145,7 +175,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     final newLastId = context.read<MessageProvider>().messages.lastOrNull?.id;
     if (wasNearBottom && oldLastId != newLastId) {
       _lastMessageActivity = DateTime.now();
-      _scrollToBottom();
+      _scrollToBottom(stable: true);
     }
   }
 
@@ -157,6 +187,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   }
 
   void _handleScroll() {
+    if (!_initialPositionSettled) return;
     if (_scrollController.hasClients &&
         _scrollController.position.pixels <= 80) {
       _loadOlderMessages();
@@ -209,7 +240,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     _lastMessageActivity = DateTime.now();
     _textController.clear();
     _startPolling();
-    _scrollToBottom();
+    _scrollToBottom(stable: true);
   }
 
   void _saveDraft() {
@@ -219,7 +250,83 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
         .updateDraft(widget.targetUser.id, _textController.text);
   }
 
-  void _scrollToBottom({bool jump = false}) {
+  Future<void> _markReadAndClearNotifications(int conversationId) async {
+    await context.read<MessageProvider>().markRead(conversationId);
+    try {
+      await _privateMessageNotificationsChannel.invokeMethod(
+        'clearConversationNotifications',
+        {'conversationId': conversationId},
+      );
+    } catch (e) {
+      debugPrint('清理私信通知失败: $e');
+    }
+  }
+
+  GlobalKey _messageKeyFor(int messageId) {
+    return _messageKeys.putIfAbsent(messageId, GlobalKey.new);
+  }
+
+  void _settleInitialPosition() {
+    final targetMessageId = _initialMessageId;
+    final requestVersion = ++_positionRequestVersion;
+    _settlePosition(
+      requestVersion: requestVersion,
+      targetMessageId: targetMessageId,
+      jumpToBottomWhenMissing: true,
+    );
+  }
+
+  Future<void> _settlePosition({
+    required int requestVersion,
+    int? targetMessageId,
+    bool jumpToBottomWhenMissing = false,
+  }) async {
+    var targetFound = false;
+    for (var attempt = 0; attempt < 5; attempt++) {
+      await WidgetsBinding.instance.endOfFrame;
+      if (!mounted || requestVersion != _positionRequestVersion) return;
+
+      if (targetMessageId != null && _ensureMessageVisible(targetMessageId)) {
+        targetFound = true;
+        continue;
+      }
+
+      if (targetMessageId == null || jumpToBottomWhenMissing) {
+        _jumpToBottom();
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 45));
+    }
+
+    if (!mounted || requestVersion != _positionRequestVersion) return;
+    if (!targetFound && targetMessageId != null) {
+      _jumpToBottom();
+    }
+    _initialPositionSettled = true;
+  }
+
+  bool _ensureMessageVisible(int targetMessageId) {
+    final targetContext = _messageKeys[targetMessageId]?.currentContext;
+    if (targetContext == null) return false;
+    Scrollable.ensureVisible(
+      targetContext,
+      duration: Duration.zero,
+      alignment: 0.72,
+      curve: Curves.easeOut,
+    );
+    return true;
+  }
+
+  void _jumpToBottom() {
+    if (!mounted || !_scrollController.hasClients) return;
+    _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+  }
+
+  void _scrollToBottom({bool jump = false, bool stable = false}) {
+    if (stable) {
+      final requestVersion = ++_positionRequestVersion;
+      _settlePosition(requestVersion: requestVersion);
+      return;
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_scrollController.hasClients) return;
       final target = _scrollController.position.maxScrollExtent;
@@ -432,6 +539,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
                       .abs() >=
                   5;
           return Column(
+            key: _messageKeyFor(message.id),
             children: [
               if (showTime) _buildTimeLabel(message.createdAt),
               _buildMessageBubble(

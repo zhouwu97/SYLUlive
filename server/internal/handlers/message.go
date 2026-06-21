@@ -253,7 +253,9 @@ func (h *MessageHandler) GetMessages(c *gin.Context) {
 	query := h.db.Where("conversation_id = ?", convID)
 	order := "id DESC"
 	reverse := true
-	if afterID, err := strconv.ParseUint(c.Query("after_id"), 10, 64); err == nil && afterID > 0 {
+	if aroundID, err := strconv.ParseUint(c.Query("around_id"), 10, 64); err == nil && aroundID > 0 {
+		query = query.Where("id <= ?", aroundID)
+	} else if afterID, err := strconv.ParseUint(c.Query("after_id"), 10, 64); err == nil && afterID > 0 {
 		query = query.Where("id > ?", afterID)
 		order = "id ASC"
 		reverse = false
@@ -431,8 +433,11 @@ func (h *MessageHandler) pushPrivateMessage(targetUserID uint, sender models.Use
 	extras := map[string]interface{}{
 		"type":            "private_message",
 		"conversation_id": message.ConversationID,
+		"message_id":      message.ID,
 		"sender_id":       sender.ID,
 		"sender_name":     title,
+		"sender_avatar":   sender.Avatar,
+		"override_msg_id": fmt.Sprintf("private_message_conversation_%d", message.ConversationID),
 	}
 	go func() {
 		if err := h.notifier.Notify(targetUserID, title, content, extras); err != nil {

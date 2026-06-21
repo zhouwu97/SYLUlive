@@ -215,6 +215,7 @@ void main() {
     final dio = Dio();
     final seenConversationIds = <String>[];
     final seenAfterIds = <dynamic>[];
+    final requestCounts = <String, int>{};
     dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) {
@@ -222,13 +223,17 @@ void main() {
               options.path.startsWith('/messages/conversations/')) {
             final conversationId = options.path.split('/').last;
             final afterId = options.queryParameters['after_id'];
+            requestCounts[conversationId] =
+                (requestCounts[conversationId] ?? 0) + 1;
             seenConversationIds.add(conversationId);
             seenAfterIds.add(afterId);
+            final isSecondConversation42Request =
+                conversationId == '42' && requestCounts[conversationId] == 2;
             handler.resolve(
               Response(
                 requestOptions: options,
                 statusCode: 200,
-                data: conversationId == '42' && afterId == 1
+                data: isSecondConversation42Request
                     ? [
                         {
                           'id': 2,
@@ -280,8 +285,91 @@ void main() {
     await cachedLoad;
 
     expect(seenConversationIds, ['42', '7', '42']);
-    expect(seenAfterIds, [null, null, 1]);
+    expect(seenAfterIds, [null, null, null]);
     expect(provider.messages.map((message) => message.id), [1, 2]);
+  });
+
+  test('loadMessages fetches around target message when cache misses it',
+      () async {
+    final dio = Dio();
+    final seenConversationIds = <String>[];
+    final seenAroundIds = <dynamic>[];
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          if (options.method == 'GET' &&
+              options.path.startsWith('/messages/conversations/')) {
+            final conversationId = options.path.split('/').last;
+            final aroundId = options.queryParameters['around_id'];
+            seenConversationIds.add(conversationId);
+            seenAroundIds.add(aroundId);
+            handler.resolve(
+              Response(
+                requestOptions: options,
+                statusCode: 200,
+                data: aroundId == 9
+                    ? [
+                        {
+                          'id': 7,
+                          'conversation_id': 42,
+                          'sender_id': 3,
+                          'content': 'before target',
+                          'created_at': '2026-06-14T08:12:00Z',
+                        },
+                        {
+                          'id': 8,
+                          'conversation_id': 42,
+                          'sender_id': 8,
+                          'content': 'near target',
+                          'created_at': '2026-06-14T08:13:00Z',
+                        },
+                        {
+                          'id': 9,
+                          'conversation_id': 42,
+                          'sender_id': 3,
+                          'content': 'target',
+                          'created_at': '2026-06-14T08:14:00Z',
+                        },
+                      ]
+                    : [
+                        {
+                          'id': conversationId == '42' ? 1 : 100,
+                          'conversation_id': int.parse(conversationId),
+                          'sender_id': 3,
+                          'content': 'initial $conversationId',
+                          'created_at': '2026-06-14T08:10:00Z',
+                        },
+                      ],
+              ),
+            );
+            return;
+          }
+          if (options.method == 'POST' &&
+              options.path.startsWith('/messages/conversations/') &&
+              options.path.endsWith('/read')) {
+            handler.resolve(
+              Response(requestOptions: options, statusCode: 200),
+            );
+            return;
+          }
+          handler.reject(
+            DioException(
+              requestOptions: options,
+              message: 'Unexpected request: ${options.method} ${options.path}',
+            ),
+          );
+        },
+      ),
+    );
+
+    final provider = MessageProvider(dio);
+    await provider.loadMessages(42);
+    await provider.loadMessages(7);
+    await provider.loadMessages(42, preferCache: true, aroundMessageId: 9);
+
+    expect(seenConversationIds, ['42', '7', '42']);
+    expect(seenAroundIds, [null, null, 9]);
+    expect(provider.messages.map((message) => message.id), [7, 8, 9]);
   });
 
   test('stores and clears message drafts by target user', () {

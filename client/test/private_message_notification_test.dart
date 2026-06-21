@@ -12,15 +12,19 @@ void main() {
           'cn.jpush.android.EXTRA': jsonEncode({
             'type': 'private_message',
             'conversation_id': '12',
+            'message_id': '99',
             'sender_id': '7',
             'sender_name': 'Alice',
+            'sender_avatar': '/uploads/alice.png',
           }),
         },
       });
 
       expect(target?.conversationId, 12);
+      expect(target?.messageId, 99);
       expect(target?.senderId, 7);
       expect(target?.senderName, 'Alice');
+      expect(target?.senderAvatar, '/uploads/alice.png');
       expect(target?.displayName, 'Alice');
     });
 
@@ -55,12 +59,16 @@ void main() {
   test('privateMessageTargetFromLocalPayload parses click payload', () {
     final target = privateMessageTargetFromLocalPayload(jsonEncode({
       'conversation_id': '31',
+      'message_id': 77,
       'sender_id': '11',
       'sender_name': 'Carol',
+      'sender_avatar': '/uploads/carol.png',
     }));
 
     expect(target?.conversationId, 31);
+    expect(target?.messageId, 77);
     expect(target?.senderId, 11);
+    expect(target?.senderAvatar, '/uploads/carol.png');
     expect(target?.displayName, 'Carol');
   });
 
@@ -71,11 +79,13 @@ void main() {
         conversationId: 1,
         senderId: 2,
         senderName: 'First',
+        messageId: 11,
       );
       const second = PrivateMessageTarget(
         conversationId: 3,
         senderId: 4,
         senderName: 'Second',
+        messageId: 22,
       );
 
       final now = DateTime(2026, 6, 20, 12);
@@ -83,7 +93,9 @@ void main() {
       pending.store(second);
       pending.markReady(now);
 
-      expect(pending.consume(now.add(const Duration(seconds: 1))), second);
+      final consumed = pending.consume(now.add(const Duration(seconds: 1)));
+      expect(consumed, second);
+      expect(consumed?.messageId, 22);
       expect(pending.target, isNull);
     });
 
@@ -95,6 +107,7 @@ void main() {
         conversationId: 1,
         senderId: 2,
         senderName: 'Alice',
+        messageId: 33,
       );
 
       final now = DateTime(2026, 6, 20, 12);

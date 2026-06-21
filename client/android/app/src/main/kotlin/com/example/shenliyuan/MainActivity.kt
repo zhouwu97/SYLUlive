@@ -2,14 +2,18 @@ package com.example.shenliyuan
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.ActivityManager
 import android.appwidget.AppWidgetManager
 import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.plugin.common.MethodChannel
+import org.json.JSONObject
+import java.util.zip.Adler32
 
 class MainActivity : FlutterActivity() {
 
@@ -18,6 +22,8 @@ class MainActivity : FlutterActivity() {
         private const val DEEPLINK_CHANNEL = "shenliyuan/deeplink"
         private const val FOREGROUND_CHANNEL = "shenliyuan/foreground"
         private const val KEEP_ALIVE_CHANNEL = "shenliyuan/keep_alive"
+        private const val PRIVATE_MESSAGE_NOTIFICATION_CHANNEL =
+            "shenliyuan/private_message_notifications"
     }
 
     private var pendingDeepLink: String? = null
@@ -25,6 +31,17 @@ class MainActivity : FlutterActivity() {
     override fun onCreate(savedInstanceState: android.os.Bundle?) {
         super.onCreate(savedInstanceState)
         createHighPriorityNotificationChannels()
+        applyExcludeFromRecents(KeepAliveForegroundService.isHideRecentsEnabled(this))
+    }
+
+    override fun onResume() {
+        super.onResume()
+        PrivateMessageNotificationState.setAppForeground(this, true)
+    }
+
+    override fun onPause() {
+        PrivateMessageNotificationState.setAppForeground(this, false)
+        super.onPause()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -138,6 +155,29 @@ class MainActivity : FlutterActivity() {
             }
         }
 
+        // ── 私信通知清理 MethodChannel ──
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            PRIVATE_MESSAGE_NOTIFICATION_CHANNEL
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "clearConversationNotifications" -> {
+                    val conversationId = call.argument<Number>("conversationId")?.toLong()
+                    clearPrivateMessageNotifications(conversationId)
+                    result.success(true)
+                }
+                "setCurrentConversation" -> {
+                    val conversationId = call.argument<Number>("conversationId")?.toLong()
+                    PrivateMessageNotificationState.setCurrentConversationId(
+                        this,
+                        conversationId,
+                    )
+                    result.success(true)
+                }
+                else -> result.notImplemented()
+            }
+        }
+
         // ── 后台保活 MethodChannel ──
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
@@ -151,6 +191,12 @@ class MainActivity : FlutterActivity() {
                     "setKeepAliveEnabled" -> {
                         val enabled = call.argument<Boolean>("enabled") ?: false
                         result.success(KeepAliveForegroundService.setEnabled(this, enabled))
+                    }
+                    "setHideRecentsEnabled" -> {
+                        val enabled = call.argument<Boolean>("enabled") ?: false
+                        KeepAliveForegroundService.setHideRecentsEnabled(this, enabled)
+                        applyExcludeFromRecents(enabled)
+                        result.success(KeepAliveForegroundService.status(this))
                     }
                     "openKeepAliveSettings" -> {
                         result.success(
@@ -173,6 +219,14 @@ class MainActivity : FlutterActivity() {
 
         // ── 一次性初始化：启动 WorkManager 定期刷新 ──
         WidgetUpdateWorker.enqueue(this)
+    }
+
+    private fun applyExcludeFromRecents(enabled: Boolean) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) return
+        val activityManager = getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+        activityManager?.appTasks?.forEach { task ->
+            task.setExcludeFromRecents(enabled)
+        }
     }
 
     /** 立即刷新所有桌面 widget 实例 */
@@ -217,6 +271,84 @@ class MainActivity : FlutterActivity() {
                 pendingDeepLink = "widget_exam"
             }
         }
+    }
+
+    private fun clearPrivateMessageNotifications(conversationId: Long?) {
+        val manager = getSystemService(NotificationManager::class.java) ?: return
+        val expectedId = conversationId?.let {
+            jpushNotificationId("private_message_conversation_$it")
+        }
+        if (expectedId != null && expectedId > 0) {
+            manager.cancel(expectedId)
+        }
+
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
+        manager.activeNotifications
+            ?.filter { it.packageName == packageName }
+            ?.filter { isPrivateMessageNotification(it.notification) }
+            ?.filter { notification ->
+                conversationId == null ||
+                    notification.id == expectedId ||
+                    notificationMatchesConversation(notification.notification, conversationId)
+            }
+            ?.forEach { notification ->
+                if (notification.tag != null) {
+                    manager.cancel(notification.tag, notification.id)
+                } else {
+                    manager.cancel(notification.id)
+                }
+            }
+    }
+
+    private fun isPrivateMessageNotification(notification: android.app.Notification): Boolean {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            return notification.channelId == "private_messages" ||
+                notification.channelId == "private_message_push"
+        }
+        return true
+    }
+
+    private fun notificationMatchesConversation(
+        notification: android.app.Notification,
+        conversationId: Long
+    ): Boolean {
+        val extras = notification.extras ?: return false
+        val directKeys = listOf(
+            "conversation_id",
+            "cn.jpush.android.CONVERSATION_ID",
+            "cn.jpush.android.EXTRA_CONVERSATION_ID"
+        )
+        for (key in directKeys) {
+            if (extras.get(key)?.toString()?.toLongOrNull() == conversationId) {
+                return true
+            }
+        }
+
+        val jsonKeys = listOf(
+            "cn.jpush.android.EXTRA",
+            "cn.jpush.android.EXTRA_EXTRA",
+            "android.extra.TEXT"
+        )
+        for (key in jsonKeys) {
+            val raw = extras.get(key)?.toString() ?: continue
+            try {
+                val json = JSONObject(raw)
+                if (json.optString("conversation_id").toLongOrNull() == conversationId) {
+                    return true
+                }
+            } catch (_: Exception) {
+            }
+        }
+        return false
+    }
+
+    private fun jpushNotificationId(messageId: String): Int {
+        if (messageId.isEmpty()) return 0
+        messageId.toIntOrNull()?.let { return it }
+        val adler32 = Adler32()
+        adler32.update(messageId.toByteArray())
+        val value = adler32.value.toInt()
+        return if (value < 0) kotlin.math.abs(value) else value
     }
 
     /** 在 JPush SDK 初始化前创建高优先级通知渠道，实现悬浮弹窗 */

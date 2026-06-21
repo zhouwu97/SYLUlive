@@ -431,8 +431,10 @@ func (h *MessageHandler) pushPrivateMessage(targetUserID uint, sender models.Use
 	extras := map[string]interface{}{
 		"type":            "private_message",
 		"conversation_id": message.ConversationID,
+		"message_id":      message.ID,
 		"sender_id":       sender.ID,
 		"sender_name":     title,
+		"override_msg_id": fmt.Sprintf("private_message_conversation_%d", message.ConversationID),
 	}
 	go func() {
 		if err := h.notifier.Notify(targetUserID, title, content, extras); err != nil {

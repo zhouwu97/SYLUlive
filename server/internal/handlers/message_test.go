@@ -366,10 +366,13 @@ func TestMessageSendImageResponseAndPush(t *testing.T) {
 		if call.UserID != 2 || call.Title != "Alice" || call.Content != "[图片]" {
 			t.Fatalf("unexpected push call: %#v", call)
 		}
+		conversationID := call.Extras["conversation_id"]
 		if call.Extras["type"] != "private_message" ||
-			call.Extras["conversation_id"] == nil ||
+			conversationID == nil ||
+			call.Extras["message_id"] == nil ||
 			call.Extras["sender_id"] != uint(1) ||
-			call.Extras["sender_name"] != "Alice" {
+			call.Extras["sender_name"] != "Alice" ||
+			call.Extras["override_msg_id"] != fmt.Sprintf("private_message_conversation_%v", conversationID) {
 			t.Fatalf("unexpected push extras: %#v", call.Extras)
 		}
 	case <-time.After(time.Second):

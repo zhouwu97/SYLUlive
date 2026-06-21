@@ -56,6 +56,8 @@ var jpush = JPush.newJPush();
 final FlutterLocalNotificationsPlugin _privateMessageNotifications =
     FlutterLocalNotificationsPlugin();
 bool _privateMessageNotificationsReady = false;
+const MethodChannel _privateMessageNotificationChannel =
+    MethodChannel('shenliyuan/private_message_notifications');
 
 /// 冷启动时通知数据临时存放（navigator 未就绪前）
 final PendingPrivateMessageOpen _pendingPrivateMessageOpen =
@@ -122,6 +124,7 @@ Future<void> _initializePrivateMessageNotifications() async {
       try {
         final target = privateMessageTargetFromLocalPayload(payload);
         if (target != null) {
+          _clearPrivateMessageNotifications(target.conversationId).ignore();
           _openPrivateMessage(target);
         }
       } catch (e) {
@@ -190,6 +193,7 @@ Future<bool> _handlePrivateMessageNotification(
   }
 
   if (opened) {
+    await _clearPrivateMessageNotifications(target.conversationId);
     _openPrivateMessage(target);
     return true;
   }
@@ -198,11 +202,24 @@ Future<bool> _handlePrivateMessageNotification(
   final context = appNavigatorKey.currentContext;
   final provider = context?.read<MessageProvider>();
   if (provider?.currentConversationId == target.conversationId) {
+    await _clearPrivateMessageNotifications(target.conversationId);
     await provider?.refreshMessages();
+    await provider?.markRead(target.conversationId);
   } else {
     await provider?.loadConversations(silent: true);
   }
   return true;
+}
+
+Future<void> _clearPrivateMessageNotifications(int conversationId) async {
+  try {
+    await _privateMessageNotificationChannel.invokeMethod(
+      'clearConversationNotifications',
+      {'conversationId': conversationId},
+    );
+  } catch (e) {
+    debugPrint('清理私信通知失败: $e');
+  }
 }
 
 void _openPrivateMessage(PrivateMessageTarget target) {
@@ -237,6 +254,7 @@ void _navigateToPrivateMessage(PrivateMessageTarget target) {
       MaterialPageRoute(
         builder: (_) => ChatDetailScreen(
           conversationId: target.conversationId,
+          initialMessageId: target.messageId,
           targetUser: User(
             id: target.senderId,
             studentId: '',

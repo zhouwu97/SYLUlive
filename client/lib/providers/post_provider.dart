@@ -156,11 +156,10 @@ class PostProvider extends ChangeNotifier {
       } catch (_) {}
     }
 
-    // 第二步 + 第三步：查找锚点，增量请求
+    // 第二步：重新拉取最新第一页，刷新作者头像、图片、统计等完整数据。
+    // 只按 since 增量拉取会让旧缓存里的作者资料长期停留在过期状态，
+    // 杀后台重启后就容易看到文字头像或旧头像。
     try {
-      final since = _enableCache && sort == 'time'
-          ? await PostCacheService.getLatestTimestamp(boardId, sort: sort)
-          : null;
       board.sessionId = null; // 清除老的会话快照
       final params = <String, dynamic>{
         'board': boardId,
@@ -170,9 +169,6 @@ class PostProvider extends ChangeNotifier {
         'limit': 20,
         'scene': 'refresh',
       };
-      if (since != null) {
-        params['since'] = since;
-      }
 
       final response = await _dio.get('/posts', queryParameters: params);
       if (requestVersion != board.requestVersion) return;

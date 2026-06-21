@@ -845,14 +845,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<String> _downloadWallpaper(String url, String fileName) async {
     final savedPath = await WallpaperPrefetchService.localPathFor(fileName);
-    final file = File(savedPath);
-    if (await file.exists() && await file.length() > 0) return savedPath;
-
-    await Dio().download(
-      url,
-      savedPath,
-      options: Options(receiveTimeout: const Duration(seconds: 30)),
-    );
+    await WallpaperPrefetchService.downloadAndVerifyImage(
+        Dio(), url, savedPath);
     return savedPath;
   }
 
@@ -869,13 +863,42 @@ class _SettingsScreenState extends State<SettingsScreen> {
       final remoteUrl = _remoteWallpaperUrl(assetName);
       final useRemote =
           remoteUrl != null && context.read<AuthProvider>().isLoggedIn;
-      final sourcePath = useRemote
-          ? await _downloadWallpaper(remoteUrl, assetName)
-          : await _copyAssetToTempFile(
-              'wallpaper_thumbs/${path.basenameWithoutExtension(assetName)}.jpg',
-            );
-      final savedPath =
-          await _cropAndSaveBackground(sourcePath, isLandscape: isLandscape);
+
+      String? sourcePath;
+      if (useRemote) {
+        try {
+          sourcePath = await _downloadWallpaper(remoteUrl, assetName);
+        } catch (e) {
+          debugPrint('Download wallpaper for edit failed: $e');
+        }
+      }
+
+      sourcePath ??= await _copyAssetToTempFile(
+        'wallpaper_thumbs/${path.basenameWithoutExtension(assetName)}.jpg',
+      );
+
+      String? savedPath;
+      try {
+        savedPath =
+            await _cropAndSaveBackground(sourcePath, isLandscape: isLandscape);
+      } catch (e) {
+        debugPrint('Crop failed, possibly corrupted file: $e');
+        if (useRemote &&
+            sourcePath.isNotEmpty &&
+            !sourcePath.contains('background_source_')) {
+          try {
+            await File(sourcePath).delete();
+          } catch (_) {}
+          final fallbackSource = await _copyAssetToTempFile(
+            'wallpaper_thumbs/${path.basenameWithoutExtension(assetName)}.jpg',
+          );
+          savedPath = await _cropAndSaveBackground(fallbackSource,
+              isLandscape: isLandscape);
+        } else {
+          rethrow;
+        }
+      }
+
       if (savedPath == null) return;
       _setBackground(
         themeProvider,

@@ -75,6 +75,10 @@ Future<void> setupJPush(AuthProvider authProvider) async {
       debugPrint('🔔 收到通知: $message');
       await _handlePrivateMessageNotification(message, opened: false);
     },
+    onNotifyMessageUnShow: (Map<String, dynamic> message) async {
+      debugPrint('🔕 通知已被原生拦截: $message');
+      await _handlePrivateMessageNotification(message, opened: false);
+    },
     onOpenNotification: (Map<String, dynamic> message) async {
       debugPrint('👆 点击通知原始数据: $message');
       if (await _handleUpdateNotification(message)) return;
@@ -245,20 +249,22 @@ void _navigateToPrivateMessage(PrivateMessageTarget target) {
     debugPrint('❌ navigate: navigator is null');
     return;
   }
+  final resolvedTarget = _resolvePrivateMessageTarget(target);
   debugPrint(
-    '🧭 navigate: popUntil+push conv=${target.conversationId} sender=${target.senderId}',
+    '🧭 navigate: popUntil+push conv=${resolvedTarget.conversationId} sender=${resolvedTarget.senderId}',
   );
   try {
     navigator.popUntil((route) => route.isFirst);
     navigator.push(
       MaterialPageRoute(
         builder: (_) => ChatDetailScreen(
-          conversationId: target.conversationId,
-          initialMessageId: target.messageId,
+          conversationId: resolvedTarget.conversationId,
+          initialMessageId: resolvedTarget.messageId,
           targetUser: User(
-            id: target.senderId,
+            id: resolvedTarget.senderId,
             studentId: '',
-            nickname: target.displayName,
+            nickname: resolvedTarget.displayName,
+            avatar: resolvedTarget.senderAvatar,
             createdAt: DateTime.now(),
           ),
         ),
@@ -268,6 +274,25 @@ void _navigateToPrivateMessage(PrivateMessageTarget target) {
   } catch (e) {
     debugPrint('❌ navigate: push 失败 - $e');
   }
+}
+
+PrivateMessageTarget _resolvePrivateMessageTarget(PrivateMessageTarget target) {
+  final context = appNavigatorKey.currentContext;
+  final authProvider = context?.read<AuthProvider>();
+  final messageProvider = context?.read<MessageProvider>();
+  final currentUserId = authProvider?.user?.id;
+  if (currentUserId == null || messageProvider == null) return target;
+
+  for (final conversation in messageProvider.conversations) {
+    if (conversation.id != target.conversationId) continue;
+    final user = conversation.getOtherUser(currentUserId);
+    if (user == null) break;
+    return target.copyWith(
+      senderName: user.nickname.isNotEmpty ? user.nickname : target.senderName,
+      senderAvatar: user.avatar.isNotEmpty ? user.avatar : target.senderAvatar,
+    );
+  }
+  return target;
 }
 
 void _processPendingOpenNotification() {

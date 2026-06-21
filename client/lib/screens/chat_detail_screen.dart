@@ -46,6 +46,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   int? _initialMessageId;
   bool _loadingOlder = false;
   bool _initialPositionSettled = false;
+  bool _initialLoadFinished = false;
   int _positionRequestVersion = 0;
   int? _syncedPlatformConversationId;
   double _lastKeyboardInset = 0;
@@ -69,44 +70,57 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     if (!mounted) return;
     final provider = context.read<MessageProvider>();
     _initialPositionSettled = false;
+    _initialLoadFinished = false;
     final draft = provider.draftFor(widget.targetUser.id);
     if (draft.isNotEmpty && _textController.text.isEmpty) {
       _textController.text = draft;
       _textController.selection = TextSelection.collapsed(offset: draft.length);
     }
-    if (_conversationId == null) {
-      final currentUserId = context.read<AuthProvider>().user?.id;
-      if (currentUserId == null) {
-        provider.prepareNewConversation();
+    try {
+      if (_conversationId == null) {
+        final currentUserId = context.read<AuthProvider>().user?.id;
+        if (currentUserId == null) {
+          provider.prepareNewConversation();
+        } else {
+          final conversationId = await provider.openConversationWithUser(
+            currentUserId: currentUserId,
+            targetUserId: widget.targetUser.id,
+          );
+          if (!mounted) return;
+          _conversationId = conversationId;
+          if (conversationId != null) {
+            _syncCurrentConversationToPlatform(conversationId).ignore();
+            await _markReadAndClearNotifications(conversationId);
+            await _settleInitialPosition();
+          }
+        }
       } else {
-        final conversationId = await provider.openConversationWithUser(
-          currentUserId: currentUserId,
-          targetUserId: widget.targetUser.id,
+        _syncCurrentConversationToPlatform(_conversationId).ignore();
+        await provider.loadMessages(
+          _conversationId!,
+          preferCache: true,
+          aroundMessageId: _initialMessageId,
         );
         if (!mounted) return;
-        _conversationId = conversationId;
-        if (conversationId != null) {
-          _syncCurrentConversationToPlatform(conversationId).ignore();
-          await _markReadAndClearNotifications(conversationId);
-          _settleInitialPosition();
+        final initialMessageId = _initialMessageId;
+        if (initialMessageId != null &&
+            !provider.containsMessage(initialMessageId)) {
+          await provider.refreshLatestMessages();
+          if (!mounted) return;
         }
+        await _markReadAndClearNotifications(_conversationId!);
+        await _settleInitialPosition();
       }
-    } else {
-      _syncCurrentConversationToPlatform(_conversationId).ignore();
-      await provider.loadMessages(
-        _conversationId!,
-        preferCache: true,
-        aroundMessageId: _initialMessageId,
-      );
-      if (!mounted) return;
-      final initialMessageId = _initialMessageId;
-      if (initialMessageId != null &&
-          !provider.containsMessage(initialMessageId)) {
-        await provider.refreshLatestMessages();
-        if (!mounted) return;
+    } catch (error, stackTrace) {
+      debugPrint('初始化聊天页面失败: $error');
+      debugPrintStack(stackTrace: stackTrace);
+    } finally {
+      if (mounted) {
+        setState(() {
+          _initialLoadFinished = true;
+          _initialPositionSettled = true;
+        });
       }
-      await _markReadAndClearNotifications(_conversationId!);
-      _settleInitialPosition();
     }
     _startPolling();
   }
@@ -122,6 +136,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
       _conversationId = widget.conversationId;
       _initialMessageId = widget.initialMessageId;
       _initialPositionSettled = false;
+      _initialLoadFinished = false;
       _positionRequestVersion++;
       WidgetsBinding.instance.addPostFrameCallback((_) => _initialize());
     }
@@ -183,8 +198,11 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   Future<void> _refreshMessages() async {
     if (!mounted || _conversationId == null) return;
     final wasNearBottom = _isNearBottom;
+    final currentUserId = context.read<AuthProvider>().user?.id;
     final oldLastId = context.read<MessageProvider>().messages.lastOrNull?.id;
-    await context.read<MessageProvider>().refreshMessages();
+    await context.read<MessageProvider>().refreshMessages(
+      currentUserId: currentUserId,
+    );
     if (!mounted) return;
     final newLastId = context.read<MessageProvider>().messages.lastOrNull?.id;
     if (wasNearBottom && oldLastId != newLastId) {
@@ -295,13 +313,16 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     return _messageKeys.putIfAbsent(messageId, GlobalKey.new);
   }
 
-  void _settleInitialPosition() {
+  Future<void> _settleInitialPosition() async {
     final targetMessageId = _initialMessageId;
     final requestVersion = ++_positionRequestVersion;
-    _settlePosition(
+    await _settlePosition(
       requestVersion: requestVersion,
       targetMessageId: targetMessageId,
       jumpToBottomWhenMissing: true,
+    ).timeout(
+      const Duration(seconds: 2),
+      onTimeout: () {},
     );
   }
 
@@ -313,7 +334,11 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     var targetFound = false;
     for (var attempt = 0; attempt < 5; attempt++) {
       await WidgetsBinding.instance.endOfFrame;
-      if (!mounted || requestVersion != _positionRequestVersion) return;
+      if (!mounted ||
+          requestVersion != _positionRequestVersion ||
+          _initialLoadFinished) {
+        return;
+      }
 
       if (targetMessageId != null && _ensureMessageVisible(targetMessageId)) {
         targetFound = true;
@@ -326,7 +351,11 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
       await Future<void>.delayed(const Duration(milliseconds: 45));
     }
 
-    if (!mounted || requestVersion != _positionRequestVersion) return;
+    if (!mounted ||
+        requestVersion != _positionRequestVersion ||
+        _initialLoadFinished) {
+      return;
+    }
     if (!targetFound && targetMessageId != null) {
       _jumpToBottom();
     }
@@ -334,6 +363,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   }
 
   bool _ensureMessageVisible(int targetMessageId) {
+    if (_initialLoadFinished) return false;
     final targetContext = _messageKeys[targetMessageId]?.currentContext;
     if (targetContext == null) return false;
     Scrollable.ensureVisible(
@@ -487,7 +517,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     User? currentUser, {
     required bool includeBackdrop,
   }) {
-    if (provider.messageLoading && provider.messages.isEmpty) {
+    if (provider.messageLoading && !_initialLoadFinished && provider.messages.isEmpty) {
       return _wrapMessageBackdrop(
         const Center(child: CircularProgressIndicator()),
         includeBackdrop,

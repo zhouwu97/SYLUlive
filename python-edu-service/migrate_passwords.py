@@ -18,6 +18,18 @@ async def migrate_passwords():
     
     try:
         async with engine.begin() as conn:
+            # Check if table has raw_password column
+            pragma_result = await conn.execute(text("PRAGMA table_info(edu_users)"))
+            columns = [row[1] for row in pragma_result.fetchall()]
+            
+            if "raw_password" not in columns:
+                print("No raw_password column found in edu_users table. Migration not needed.")
+                return
+
+            if "encrypted_password" not in columns:
+                print("No encrypted_password column found in edu_users table. Cannot migrate.")
+                return
+            
             result = await conn.execute(text("SELECT id, raw_password, encrypted_password FROM edu_users WHERE raw_password IS NOT NULL AND raw_password != ''"))
             rows = result.fetchall()
             
@@ -32,11 +44,19 @@ async def migrate_passwords():
                 raw_pwd = row[1]
                 enc_pwd = row[2]
                 
-                # Make sure it's idempotent
+                # If encrypted password already exists, just clear raw_password
                 if enc_pwd and len(enc_pwd) > 0:
+                    await conn.execute(
+                        text("UPDATE edu_users SET raw_password = '' WHERE id = :id"),
+                        {"id": user_id}
+                    )
                     continue
                 
-                encrypted = encrypt_credential(raw_pwd)
+                try:
+                    encrypted = encrypt_credential(raw_pwd)
+                except Exception as e:
+                    print(f"Failed to encrypt password for user {user_id}. Rolling back.", file=sys.stderr)
+                    raise e
                 
                 await conn.execute(
                     text("UPDATE edu_users SET encrypted_password = :enc, raw_password = '' WHERE id = :id"),

@@ -92,7 +92,15 @@ class ErkeClient {
       final res = await _webVpnClient.getProxied(ErkeEndpoints.domain, ErkeEndpoints.activityPath);
       final html = CampusResponseDecoder.decodeResponseBytes(res);
       CampusResponseDecoder.interceptHtmlErrors(html, realUri: res.realUri);
-      return ErkeParser.parseActivities(html);
+      final page = ErkeParser.parseActivities(html);
+      
+      if (page.totalPages > 0 && page.currentPage != pageNumber) {
+        throw ErkePageChangedException(
+          '请求第 $pageNumber 页，但服务器返回第 ${page.currentPage} 页',
+        );
+      }
+      
+      return page;
     } else {
       // Next page
       final formData = <String, String>{

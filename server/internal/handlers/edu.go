@@ -72,12 +72,11 @@ func (h *EduHandler) BindEdu(c *gin.Context) {
 	// 更新用户教务信息，不再存储明文密码，也不在Go端保存cookie
 	err = h.db.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]interface{}{
 		"edu_student_id": bindResp.StudentID,
-		"edu_password":   "",
-		"edu_cookie":     "",
 		"edu_bound":      true,
 		"edu_grade":      bindResp.Grade,
 		"edu_college":    bindResp.College,
 		"edu_major":      bindResp.Major,
+		"edu_name":       bindResp.Name,
 	}).Error
 
 	if err != nil {
@@ -104,18 +103,21 @@ func (h *EduHandler) UnbindEdu(c *gin.Context) {
 
 	client := NewEduServiceClient()
 	// 通知 Python 服务解绑 (补偿逻辑也复用此接口，必须幂等)
-	client.Delete("/api/edu/bind", map[string]string{
+	resp, err := client.Delete("/api/edu/bind", map[string]string{
 		"user_id": fmt.Sprintf("%d", userID),
 	})
+	if err != nil || resp.StatusCode() != 200 {
+		fmt.Printf("[WARN] 通知Python服务解绑失败: userID=%v, err=%v\n", userID, err)
+		// 但我们仍继续解绑Go端，因为解绑必须具有破坏性兜底能力
+	}
 
 	h.db.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]interface{}{
 		"edu_student_id": "",
-		"edu_password":   "",
-		"edu_cookie":     "",
 		"edu_bound":      false,
 		"edu_grade":      "",
 		"edu_college":    "",
 		"edu_major":      "",
+		"edu_name":       "",
 	})
 
 	c.JSON(http.StatusOK, gin.H{"message": "解绑成功"})
@@ -137,6 +139,7 @@ func (h *EduHandler) GetEduStatus(c *gin.Context) {
 		"edu_grade":      user.EduGrade,
 		"edu_college":    user.EduCollege,
 		"edu_major":      user.EduMajor,
+		"edu_name":       user.EduName,
 	})
 }
 
@@ -237,7 +240,11 @@ func (h *EduHandler) GetCourses(c *gin.Context) {
 	}
 
 	if resp.StatusCode() != 200 {
-		c.JSON(resp.StatusCode(), gin.H{"error": ExtractError(resp)})
+		errMsg := ExtractError(resp)
+		if resp.StatusCode() == 401 || resp.StatusCode() == 404 {
+			h.db.Model(&models.User{}).Where("id = ?", userID).Update("edu_bound", false)
+		}
+		c.JSON(resp.StatusCode(), gin.H{"error": errMsg})
 		return
 	}
 
@@ -276,7 +283,11 @@ func (h *EduHandler) SyncCourses(c *gin.Context) {
 	}
 
 	if resp.StatusCode() != 200 {
-		c.JSON(resp.StatusCode(), gin.H{"error": ExtractError(resp)})
+		errMsg := ExtractError(resp)
+		if resp.StatusCode() == 401 || resp.StatusCode() == 404 {
+			h.db.Model(&models.User{}).Where("id = ?", userID).Update("edu_bound", false)
+		}
+		c.JSON(resp.StatusCode(), gin.H{"error": errMsg})
 		return
 	}
 
@@ -321,7 +332,11 @@ func (h *EduHandler) GetGrades(c *gin.Context) {
 	}
 
 	if resp.StatusCode() != 200 {
-		c.JSON(resp.StatusCode(), gin.H{"error": ExtractError(resp)})
+		errMsg := ExtractError(resp)
+		if resp.StatusCode() == 401 || resp.StatusCode() == 404 {
+			h.db.Model(&models.User{}).Where("id = ?", userID).Update("edu_bound", false)
+		}
+		c.JSON(resp.StatusCode(), gin.H{"error": errMsg})
 		return
 	}
 

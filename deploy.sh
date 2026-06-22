@@ -125,7 +125,7 @@ check_system() {
     fi
   done
 
-  for cmd in psql pg_dump pg_restore pg_dumpall; do
+  for cmd in psql pg_dump pg_restore pg_dumpall docker; do
     require_command "$cmd"
   done
 }
@@ -337,45 +337,55 @@ backup_postgres() {
   fi
 }
 
-backup_legacy_sqlite() {
+backup_sqlite() {
   local timestamp
   timestamp="$(date +%Y%m%d_%H%M%S)"
+  install -d -m 0700 "$BACKUP_DIR"
 
   local db_file="${APP_DIR}/shenliyuan.db"
   if [ -f "$db_file" ]; then
     log_step "执行 SQLite 遗留数据库备份..."
-
-    install -d -m 0700 "$BACKUP_DIR"
-
     local temp_sqlite="${BACKUP_DIR}/.shenliyuan-${timestamp}.db.tmp"
     TEMP_FILES+=("$temp_sqlite")
     local final_sqlite="${BACKUP_DIR}/shenliyuan-${timestamp}.db"
-
     log_info "备份 SQLite 遗留数据库..."
-
-    if ! sqlite3 "$db_file" ".backup '${temp_sqlite}'"; then
-      log_error "SQLite 备份失败，拒绝继续部署"
+    if sqlite3 "$db_file" ".backup '${temp_sqlite}'"; then
+      local integrity
+      integrity="$(sqlite3 "$temp_sqlite" 'PRAGMA integrity_check;')"
+      if [ "$integrity" = "ok" ]; then
+        mv "$temp_sqlite" "$final_sqlite"
+        chmod 0600 "$final_sqlite"
+        ls -t "${BACKUP_DIR}"/shenliyuan-*.db 2>/dev/null | tail -n +6 | xargs -r rm -f || true
+        log_info "SQLite 备份完成: $final_sqlite"
+      else
+        log_error "SQLite 遗留备份完整性检查失败"
+        exit 1
+      fi
+    else
+      log_error "SQLite 遗留备份失败"
       exit 1
     fi
+  fi
 
-    local integrity
-    integrity="$(sqlite3 "$temp_sqlite" 'PRAGMA integrity_check;')"
-    if [ "$integrity" != "ok" ]; then
-      log_error "SQLite 备份完整性检查失败"
-      exit 1
-    fi
-
-    mv "$temp_sqlite" "$final_sqlite"
-    chmod 0600 "$final_sqlite"
-
-    # 保留最近 5 个 SQLite 备份
-    ls -t "${BACKUP_DIR}"/*.db 2>/dev/null |
-      tail -n +6 |
-      xargs -r rm -f || true
-
-    log_info "SQLite 备份完成: $final_sqlite"
+  local edu_db_dir="${APP_DIR}/python-edu-service/database"
+  local edu_db_file="${edu_db_dir}/edu.db"
+  if [ -f "$edu_db_file" ]; then
+    log_step "执行 Python 教务数据库备份..."
+    local edu_backup_file="${BACKUP_DIR}/edu-${timestamp}.db"
+    log_info "备份 Python 教务数据库..."
+    
+    cp -a "$edu_db_file" "${edu_backup_file}"
+    [ -f "${edu_db_file}-wal" ] && cp -a "${edu_db_file}-wal" "${edu_backup_file}-wal"
+    [ -f "${edu_db_file}-shm" ] && cp -a "${edu_db_file}-shm" "${edu_backup_file}-shm"
+    
+    chmod 0600 "${edu_backup_file}"*
+    ls -t "${BACKUP_DIR}"/edu-*.db 2>/dev/null | tail -n +6 | xargs -r rm -f || true
+    ls -t "${BACKUP_DIR}"/edu-*.db-wal 2>/dev/null | tail -n +6 | xargs -r rm -f || true
+    ls -t "${BACKUP_DIR}"/edu-*.db-shm 2>/dev/null | tail -n +6 | xargs -r rm -f || true
+    log_info "Python 教务数据库备份完成: $edu_backup_file"
   fi
 }
+
 
 # ===================== 拉取/更新代码 =====================
 sync_code() {
@@ -398,7 +408,8 @@ sync_code() {
     shenliyuan.db \
     backups \
     .env \
-    logs
+    logs \
+    python-edu-service/database
   do
     if git -C "${APP_DIR}" ls-files -- "${protected}" |
         grep -q .; then
@@ -417,7 +428,8 @@ sync_code() {
     -e backups/ \
     -e 'shenliyuan.bak.*' \
     -e .env \
-    -e logs/
+    -e logs/ \
+    -e python-edu-service/database/
 }
 
 # ===================== 环境变量辅助函数 =====================
@@ -440,38 +452,35 @@ setup_env() {
   local env_file="${APP_DIR}/.env"
   local jwt_secret=""
   local admin_pass=""
+  local internal_key=""
+  local credential_key=""
 
-  # 从现有 .env 精确提取
   if [ -f "$env_file" ]; then
-    jwt_secret="$(
-      sed -n 's/^JWT_SECRET=//p' "$env_file" |
-        tail -n 1
-    )"
-
-    admin_pass="$(
-      sed -n 's/^SUPER_ADMIN_DEFAULT_PASSWORD=//p' "$env_file" |
-        tail -n 1
-    )"
+    jwt_secret="$(sed -n 's/^JWT_SECRET=//p' "$env_file" | tail -n 1)"
+    admin_pass="$(sed -n 's/^SUPER_ADMIN_PASSWORD=//p' "$env_file" | tail -n 1)"
+    if [ -z "$admin_pass" ]; then
+       admin_pass="$(sed -n 's/^SUPER_ADMIN_DEFAULT_PASSWORD=//p' "$env_file" | tail -n 1)"
+    fi
+    internal_key="$(sed -n 's/^INTERNAL_SERVICE_KEY=//p' "$env_file" | tail -n 1)"
+    credential_key="$(sed -n 's/^EDU_CREDENTIAL_KEY=//p' "$env_file" | tail -n 1)"
   fi
 
-  # 仅在值为空或默认占位符时生成新值
-  if [ -z "${jwt_secret:-}" ] ||
-     [ "$jwt_secret" = "dev-secret-change-me" ] ||
-     [ "$jwt_secret" = "change_me_to_random_string_at_least_32_chars" ]; then
+  if [ -z "${jwt_secret:-}" ] || [ "$jwt_secret" = "dev-secret-change-me" ]; then
     jwt_secret="$(openssl rand -base64 32)"
   fi
 
-  if [ -z "${admin_pass:-}" ] ||
-     [ "$admin_pass" = "dev-password-change-me" ] ||
-     [ "$admin_pass" = "change_me_strong_password" ]; then
-    admin_pass="$(
-      openssl rand -base64 18 |
-        tr -dc 'a-zA-Z0-9' |
-        head -c 20
-    )"
+  if [ -z "${admin_pass:-}" ] || [ "$admin_pass" = "dev-password-change-me" ]; then
+    admin_pass="$(openssl rand -base64 18 | tr -dc 'a-zA-Z0-9' | head -c 20)"
   fi
 
-  # 使用 upsert 保留未知配置项
+  if [ -z "${internal_key:-}" ] || [ "$internal_key" = "dev_internal_key" ]; then
+    internal_key="$(openssl rand -hex 32)"
+  fi
+
+  if [ -z "${credential_key:-}" ] || [ "$credential_key" = "dev_credential_key" ]; then
+    credential_key="$(head -c 32 /dev/urandom | base64 | tr '+/' '-_')"
+  fi
+
   local temp_env="${env_file}.tmp"
   TEMP_FILES+=("$temp_env")
   if [ -f "$env_file" ]; then
@@ -481,11 +490,15 @@ setup_env() {
   fi
 
   upsert_env_key "$temp_env" "JWT_SECRET" "$jwt_secret"
-  upsert_env_key "$temp_env" "DSN" \
-    "host=127.0.0.1 port=5432 user=${DB_USER} password=${DB_PASS} dbname=${DB_NAME} sslmode=disable"
+  upsert_env_key "$temp_env" "DSN" "host=127.0.0.1 port=5432 user=${DB_USER} password=${DB_PASS} dbname=${DB_NAME} sslmode=disable"
   upsert_env_key "$temp_env" "UPLOAD_DIR" "./uploads"
-  upsert_env_key "$temp_env" "SUPER_ADMIN_DEFAULT_PASSWORD" "$admin_pass"
+  upsert_env_key "$temp_env" "SUPER_ADMIN_PASSWORD" "$admin_pass"
+  upsert_env_key "$temp_env" "INTERNAL_SERVICE_KEY" "$internal_key"
+  upsert_env_key "$temp_env" "EDU_CREDENTIAL_KEY" "$credential_key"
+  upsert_env_key "$temp_env" "EDU_SERVICE_URL" "http://127.0.0.1:8000"
   upsert_env_key "$temp_env" "GIN_MODE" "release"
+  
+  sed -i '/^SUPER_ADMIN_DEFAULT_PASSWORD=/d' "$temp_env"
 
   chmod 0600 "$temp_env"
   mv "$temp_env" "$env_file"
@@ -538,7 +551,8 @@ setup_service() {
   cat >"$SERVICE_FILE" <<EOF
 [Unit]
 Description=Shenliyuan Backend Service
-After=network.target postgresql.service
+After=network-online.target postgresql.service docker.service
+Wants=network-online.target docker.service
 Requires=postgresql.service
 
 [Service]
@@ -546,6 +560,7 @@ Type=simple
 User=root
 WorkingDirectory=${APP_DIR}
 EnvironmentFile=${APP_DIR}/.env
+ExecStartPre=/usr/bin/curl --fail --retry 20 --retry-delay 2 http://127.0.0.1:8000/health
 ExecStart=${CURRENT_BINARY}
 Restart=always
 RestartSec=5
@@ -635,16 +650,51 @@ print_summary() {
   echo ""
 }
 
+
+# ===================== 部署 Python 服务 =====================
+deploy_python() {
+  log_step "部署 Python 服务..."
+
+  mkdir -p "${APP_DIR}/python-edu-service/database"
+  
+  local compose_cmd=(docker compose --project-directory "${APP_DIR}" --env-file "${APP_DIR}/.env" -f "${APP_DIR}/docker-compose.edu.yml")
+
+  log_info "构建 Python 镜像..."
+  "${compose_cmd[@]}" build python-edu-service
+
+  log_info "执行 Python 数据迁移..."
+  "${compose_cmd[@]}" run --rm --no-deps python-edu-service python migrate_passwords.py
+
+  log_info "启动 Python 容器..."
+  "${compose_cmd[@]}" up -d python-edu-service
+
+  log_info "等待 Python 服务健康..."
+  local health_url="http://127.0.0.1:8000/health"
+  local attempts=15
+  for ((i = 1; i <= attempts; i++)); do
+    if curl --fail --silent --show-error --max-time 3 "$health_url" >/dev/null; then
+      log_info "Python 服务已就绪"
+      return 0
+    fi
+    sleep 2
+  done
+  
+  log_error "Python 服务未能在超时时间内就绪"
+  "${compose_cmd[@]}" logs python-edu-service
+  exit 1
+}
+
 # ===================== 主流程 =====================
 acquire_deploy_lock
 
 check_system
-setup_go
+systemctl start docker || true
 
 load_existing_db_password
 setup_postgres
-
 backup_postgres
+
+backup_sqlite
 
 if systemctl is-active --quiet "$APP_NAME" 2>/dev/null; then
   SERVICE_WAS_ACTIVE=1
@@ -653,10 +703,8 @@ if systemctl is-active --quiet "$APP_NAME" 2>/dev/null; then
   SERVICE_WAS_STOPPED=1
 fi
 
-backup_legacy_sqlite
 sync_code
 
-# 复制最新 deploy.sh 到部署目录（覆盖 repo 中的旧版本）
 SCRIPT_PATH="$(readlink -f "$0")"
 if [ -f "$SCRIPT_PATH" ] && [ "$SCRIPT_PATH" != "${APP_DIR}/deploy.sh" ]; then
   cp "$SCRIPT_PATH" "${APP_DIR}/deploy.sh"
@@ -665,11 +713,29 @@ fi
 
 mkdir -p "${APP_DIR}/uploads"
 setup_env
+
+deploy_python
+
+setup_go
 build_app
+
+log_step "执行 Go 数据清理迁移..."
+(
+  cd "${APP_DIR}/server"
+  export PATH=$PATH:/usr/local/go/bin
+  export GOPATH=/root/go
+  set -a
+  source "${APP_DIR}/.env"
+  set +a
+  go run cmd/migrate/main.go || {
+    log_error "Go 迁移脚本执行失败！"
+    exit 1
+  }
+)
+
 setup_service
 start_service
 health_check
 
 DEPLOY_SUCCEEDED=1
-
 print_summary

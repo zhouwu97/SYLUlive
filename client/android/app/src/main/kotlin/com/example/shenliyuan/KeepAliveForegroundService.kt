@@ -54,8 +54,18 @@ class KeepAliveForegroundService : Service() {
             detail = "action=${intent?.action ?: "null"}\nflags=$flags\nstartId=$startId\nenabled=${isEnabled(this)}\npid=${android.os.Process.myPid()}\nbatteryOptimized=${!isIgnoringBatteryOptimizations(this)}"
         )
 
-        prefs(this).edit().putBoolean(KEY_ENABLED, true).apply()
-        isRunning = true
+        if (!isEnabled(this)) {
+            DiagnosticLogStore.warning(
+                this,
+                source = "保活",
+                type = "无效启动请求",
+                summary = "收到服务启动请求，但用户保活开关已关闭",
+            )
+            isRunning = false
+            stopSelf()
+            return START_NOT_STICKY
+        }
+
         val notification = buildNotification()
         
         try {
@@ -74,6 +84,7 @@ class KeepAliveForegroundService : Service() {
                 type = "前台运行",
                 summary = "前台保活通知已建立",
             )
+            isRunning = true
         } catch (e: Exception) {
             DiagnosticLogStore.error(
                 this,
@@ -133,14 +144,32 @@ class KeepAliveForegroundService : Service() {
 
             handler.postDelayed({
                 val rid = JPushInterface.getRegistrationID(applicationContext)
-                Log.i(TAG, "JPush restored, registrationId=$rid")
-                DiagnosticLogStore.info(
-                    applicationContext,
-                    source = "推送",
-                    type = "JPush 恢复",
-                    summary = "极光推送服务已重新初始化",
-                    detail = "registrationId=$rid"
-                )
+                val safeRid = if (rid.isNotBlank()) {
+                    "***${rid.takeLast(6)}"
+                } else {
+                    "empty"
+                }
+
+                if (rid.isBlank()) {
+                    Log.w(TAG, "JPush initialized but registrationId is empty")
+
+                    DiagnosticLogStore.warning(
+                        applicationContext,
+                        source = "推送",
+                        type = "JPush 未注册",
+                        summary = "极光推送已初始化，但 RegistrationID 为空",
+                    )
+                } else {
+                    Log.i(TAG, "JPush restored, registrationId=$safeRid")
+
+                    DiagnosticLogStore.info(
+                        applicationContext,
+                        source = "推送",
+                        type = "JPush 恢复",
+                        summary = "极光推送连接已恢复",
+                        detail = "registrationId=$safeRid",
+                    )
+                }
             }, 3000L)
         } catch (e: Exception) {
             Log.e(TAG, "restore JPush failed", e)
@@ -200,26 +229,43 @@ class KeepAliveForegroundService : Service() {
     }
 
     private var lastHeartbeatHealthy: Boolean? = null
+    private var lastHeartbeatFailure: String? = null
 
     private fun reportHeartbeat(success: Boolean, detail: String) {
-        val previous = lastHeartbeatHealthy
+        val previousHealthy = lastHeartbeatHealthy
+        val previousFailure = lastHeartbeatFailure
+
         lastHeartbeatHealthy = success
 
-        if (!success && previous != false) {
-            DiagnosticLogStore.warning(
-                this,
-                source = "保活",
-                type = "心跳异常",
-                summary = "后台心跳请求失败",
-                detail = detail,
-            )
-        } else if (success && previous == false) {
+        if (!success) {
+            val reasonChanged = previousFailure != detail
+            lastHeartbeatFailure = detail
+
+            if (previousHealthy != false || reasonChanged) {
+                DiagnosticLogStore.warning(
+                    this,
+                    source = "保活",
+                    type = "心跳异常",
+                    summary = if (reasonChanged && previousHealthy == false) {
+                        "后台心跳失败原因发生变化"
+                    } else {
+                        "后台心跳请求失败"
+                    },
+                    detail = detail,
+                )
+            }
+            return
+        }
+
+        lastHeartbeatFailure = null
+
+        if (previousHealthy == false) {
             DiagnosticLogStore.info(
                 this,
                 source = "保活",
                 type = "心跳恢复",
                 summary = "后台心跳已恢复正常",
-                detail = detail
+                detail = detail,
             )
         }
     }

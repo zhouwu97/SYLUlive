@@ -119,6 +119,13 @@ class ErkeClient {
       final html = CampusResponseDecoder.decodeResponseBytes(res);
       CampusResponseDecoder.interceptHtmlErrors(html, realUri: res.realUri);
       final page = ErkeParser.parseActivities(html);
+      
+      if (page.currentPage != pageNumber && page.totalPages > 1) {
+        throw ErkePageChangedException(
+          '请求第 $pageNumber 页，但服务器返回第 ${page.currentPage} 页',
+        );
+      }
+      
       return ErkeActivitiesPage(
         activities: page.activities,
         currentPage: pageNumber,

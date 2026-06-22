@@ -284,6 +284,7 @@ func main() {
 	// 初始化教务服务配置
 
 	handlers.EduServiceConfig.BaseURL = cfg.EduServiceURL
+	handlers.EduServiceConfig.InternalKey = cfg.InternalServiceKey
 
 	handlers.VerifyCodeConfig.SMTPHost = cfg.SMTPHost
 

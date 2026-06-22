@@ -6,6 +6,7 @@ from sqlalchemy import select
 from models.database import EduUser, get_db
 from models.schemas import BindInput, BindResponse, UnbindResponse, EduStatusResponse, ErrorResponse, PreVerifyResponse, PreVerifyInput, LoginEduInput, LoginEduResponse
 from services.crawler import EduCrawler, CookieLapseError, LoginFailedError, NetworkError
+from services.credential_crypto import encrypt_credential, decrypt_credential
 
 router = APIRouter(prefix="/api/edu", tags=["认证"])
 
@@ -77,7 +78,7 @@ async def bind_edu_account(
                 # 更新
                 existing_user.student_id = input.student_id
                 existing_user.name = student_info.name
-                existing_user.raw_password = input.password
+                existing_user.encrypted_password = encrypt_credential(input.password)
                 existing_user.cookie = cookie
                 existing_user.grade = student_info.grade
                 existing_user.college = student_info.college
@@ -89,7 +90,7 @@ async def bind_edu_account(
                     user_id=input.user_id,
                     student_id=input.student_id,
                     name=student_info.name,
-                    raw_password=input.password,
+                    encrypted_password=encrypt_credential(input.password),
                     cookie=cookie,
                     grade=student_info.grade,
                     college=student_info.college,
@@ -136,6 +137,14 @@ async def unbind_edu_account(
     if not edu_user:
         return UnbindResponse(success=True, message="未绑定，无需解绑")
 
+    # Clear sensitive data instead of deleting row? 
+    # The requirement said: "Python 删除密码、Cookie、bound 状态"
+    edu_user.encrypted_password = ""
+    edu_user.cookie = ""
+    edu_user.bound = False
+    
+    # Or db.delete(edu_user)? "删除密码、Cookie、bound 状态" implies updating. 
+    # But db.delete is also fine. I will update it just in case:
     await db.delete(edu_user)
     await db.commit()
 
@@ -180,12 +189,17 @@ async def refresh_cookie(
     if not edu_user or not edu_user.bound:
         raise HTTPException(status_code=400, detail="未绑定教务账号")
 
-    if not edu_user.raw_password:
-        raise HTTPException(status_code=400, detail="无法刷新Cookie，密码已丢失")
+    if not edu_user.encrypted_password:
+        raise HTTPException(status_code=401, detail="无有效的凭据，请重新绑定教务账号")
+
+    try:
+        password = decrypt_credential(edu_user.encrypted_password)
+    except Exception:
+        raise HTTPException(status_code=401, detail="凭据解密失败，请重新绑定教务账号")
 
     async with EduCrawler() as crawler:
         try:
-            new_cookie = await crawler.login(edu_user.student_id, edu_user.raw_password)
+            new_cookie = await crawler.login(edu_user.student_id, password)
             edu_user.cookie = new_cookie
             await db.commit()
             return {"success": True, "message": "Cookie刷新成功"}

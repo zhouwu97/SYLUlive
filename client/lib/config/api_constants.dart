@@ -17,15 +17,6 @@ class ApiConstants {
     return _defaultAppBaseUrl;
   }
 
-  // Python 教务服务（绑定、课表、成绩）
-  // Web 走同源反代；App 默认也走生产 HTTPS 反代，避免手机端明文 HTTP 被拦。
-  static String get eduServiceUrl {
-    const configured = String.fromEnvironment('EDU_URL');
-    if (configured.isNotEmpty) return configured;
-    if (kIsWeb) return '/edu-api';
-    return 'https://sylu.zhouwu.ccwu.cc/edu-api';
-  }
-
   // 极光推送 AppKey
   static const String jpushAppKey = String.fromEnvironment(
     'JPUSH_APP_KEY',

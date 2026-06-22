@@ -7,8 +7,10 @@ import android.util.AtomicFile
 import android.util.Log
 import org.json.JSONObject
 import java.io.File
+import java.io.FileNotFoundException
 import java.util.UUID
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 object DiagnosticLogStore {
     private const val TAG = "DiagnosticLogStore"
@@ -34,10 +36,26 @@ object DiagnosticLogStore {
         record(context, "error", source, type, summary, detail)
     }
 
+    fun critical(
+        context: Context,
+        level: String,
+        source: String,
+        type: String,
+        summary: String,
+        detail: String = ""
+    ) {
+        val task = executor.submit {
+            recordInternal(context, level, source, type, summary, detail)
+        }
+        runCatching {
+            task.get(500, TimeUnit.MILLISECONDS)
+        }
+    }
+
     private fun sanitize(value: String): String {
         return value
             .replace(Regex("""(?i)Bearer\s+[A-Za-z0-9\-._~+/]+=*"""), "Bearer ***")
-            .replace(Regex("""(?i)(token|password|cookie)=\S+"""), "$1=***")
+            .replace(Regex("""(?i)("?(?:token|password|cookie|authorization)"?\s*[:=]\s*"?)[^"\s,}]+"""), "$1***")
             // registration id
             .replace(Regex("""registrationId=([a-zA-Z0-9]+)""")) { matchResult ->
                 val rid = matchResult.groupValues[1]
@@ -62,32 +80,33 @@ object DiagnosticLogStore {
         summary: String,
         detail: String
     ) {
+        executor.execute {
+            recordInternal(context, level, source, type, summary, detail)
+        }
+    }
+
+    private fun recordInternal(
+        context: Context,
+        level: String,
+        source: String,
+        type: String,
+        summary: String,
+        detail: String
+    ) {
         val appContext = context.applicationContext
         val timestamp = System.currentTimeMillis()
         val elapsedRealtime = SystemClock.elapsedRealtime()
 
-        val safeSource = source.take(32)
-        val safeType = type.take(80)
-        val safeSummary = summary.take(500)
+        val safeSource = sanitize(source).take(32)
+        val safeType = sanitize(type).take(80)
+        val safeSummary = sanitize(summary).take(500)
         val safeDetail = truncateDetail(sanitize(detail))
 
-        executor.execute {
-            try {
+        try {
                 val file = File(appContext.filesDir, "diagnostic_logs.jsonl")
                 val atomicFile = AtomicFile(file)
 
-                val entries = mutableListOf<JSONObject>()
-                if (file.exists()) {
-                    file.useLines { lines ->
-                        lines.forEach { line ->
-                            try {
-                                entries.add(JSONObject(line))
-                            } catch (e: Exception) {
-                                // ignore broken lines
-                            }
-                        }
-                    }
-                }
+                val entries = readEntriesAtomically(atomicFile)
 
                 // Filter out old logs
                 val cutoff = timestamp - RETENTION_MS
@@ -146,19 +165,7 @@ object DiagnosticLogStore {
                 }
 
                 // Write atomically
-                val stream = atomicFile.startWrite()
-                try {
-                    stream.bufferedWriter().use { writer ->
-                        for (entry in entries) {
-                            writer.write(entry.toString())
-                            writer.newLine()
-                        }
-                    }
-                    atomicFile.finishWrite(stream)
-                } catch (e: Exception) {
-                    atomicFile.failWrite(stream)
-                    Log.e(TAG, "Failed to write diagnostic logs", e)
-                }
+                writeEntriesAtomically(atomicFile, entries)
 
                 // Check size
                 if (file.length() > MAX_FILE_SIZE) {
@@ -166,67 +173,87 @@ object DiagnosticLogStore {
                     while (entries.size > MAX_ENTRIES / 2) {
                         entries.removeAt(0)
                     }
-                    val streamSize = atomicFile.startWrite()
-                    try {
-                        streamSize.bufferedWriter().use { writer ->
-                            for (entry in entries) {
-                                writer.write(entry.toString())
-                                writer.newLine()
-                            }
-                        }
-                        atomicFile.finishWrite(streamSize)
-                    } catch (e: Exception) {
-                        atomicFile.failWrite(streamSize)
-                    }
+                    writeEntriesAtomically(atomicFile, entries)
                 }
 
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to update diagnostic logs", e)
             }
         }
-    }
 
-    fun getLogs(context: Context, callback: (List<Map<String, Any?>>) -> Unit) {
-        val appContext = context.applicationContext
-        executor.execute {
-            val file = File(appContext.filesDir, "diagnostic_logs.jsonl")
-            val list = mutableListOf<Map<String, Any?>>()
-            if (file.exists()) {
-                file.useLines { lines ->
-                    lines.forEach { line ->
-                        try {
-                            val json = JSONObject(line)
-                            val map = mutableMapOf<String, Any?>()
-                            val keys = json.keys()
-                            while (keys.hasNext()) {
-                                val key = keys.next()
-                                map[key] = json.get(key)
-                            }
-                            list.add(map)
-                        } catch (e: Exception) {
-                            // ignore broken
-                        }
-                    }
+    private fun readEntriesAtomically(atomicFile: AtomicFile): MutableList<JSONObject> {
+        return try {
+            atomicFile.openRead()
+                .bufferedReader(Charsets.UTF_8)
+                .useLines { lines ->
+                    lines.mapNotNull { line ->
+                        runCatching { JSONObject(line) }.getOrNull()
+                    }.toMutableList()
                 }
-            }
-            list.reverse()
-            callback(list)
+        } catch (_: FileNotFoundException) {
+            mutableListOf()
         }
     }
 
-    fun clearLogs(context: Context, callback: () -> Unit) {
+    private fun writeEntriesAtomically(atomicFile: AtomicFile, entries: List<JSONObject>) {
+        val stream = atomicFile.startWrite()
+        try {
+            val writer = stream.bufferedWriter(Charsets.UTF_8)
+            for (entry in entries) {
+                writer.write(entry.toString())
+                writer.newLine()
+            }
+            writer.flush()
+            atomicFile.finishWrite(stream)
+        } catch (e: Exception) {
+            atomicFile.failWrite(stream)
+            throw e
+        }
+    }
+
+    fun getLogs(context: Context, onSuccess: (List<Map<String, Any?>>) -> Unit, onError: (Exception) -> Unit) {
         val appContext = context.applicationContext
         executor.execute {
-            val file = File(appContext.filesDir, "diagnostic_logs.jsonl")
-            val atomicFile = AtomicFile(file)
-            val stream = atomicFile.startWrite()
             try {
-                atomicFile.finishWrite(stream)
+                val file = File(appContext.filesDir, "diagnostic_logs.jsonl")
+                val atomicFile = AtomicFile(file)
+                val entries = readEntriesAtomically(atomicFile)
+                val list = mutableListOf<Map<String, Any?>>()
+                for (json in entries) {
+                    val map = mutableMapOf<String, Any?>()
+                    val keys = json.keys()
+                    while (keys.hasNext()) {
+                        val key = keys.next()
+                        map[key] = json.get(key)
+                    }
+                    list.add(map)
+                }
+                list.reverse()
+                onSuccess(list)
             } catch (e: Exception) {
-                atomicFile.failWrite(stream)
+                onError(e)
             }
-            callback()
-            record(appContext, "info", "系统", "清理记录", "日志已清空", "")
+        }
+    }
+
+    fun clearLogs(context: Context, onSuccess: () -> Unit, onError: (Exception) -> Unit) {
+        val appContext = context.applicationContext
+        executor.execute {
+            try {
+                val file = File(appContext.filesDir, "diagnostic_logs.jsonl")
+                val atomicFile = AtomicFile(file)
+                val stream = atomicFile.startWrite()
+                try {
+                    atomicFile.finishWrite(stream)
+                } catch (e: Exception) {
+                    atomicFile.failWrite(stream)
+                    throw e
+                }
+                onSuccess()
+                recordInternal(appContext, "info", "系统", "清理记录", "日志已清空", "")
+            } catch (e: Exception) {
+                onError(e)
+            }
         }
     }
 

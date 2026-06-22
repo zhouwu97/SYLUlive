@@ -65,8 +65,11 @@ func (h *EduHandler) BindEdu(c *gin.Context) {
 		Major     string `json:"major"`
 	}
 	if err := json.Unmarshal(resp.Body(), &bindResp); err != nil {
-		_ = compensateUnbind(client, userID.(uint))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "解析服务响应失败"})
+		if rollbackErr := compensateUnbind(client, userID.(uint)); rollbackErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "解析教务服务响应失败，且补偿解绑失败: " + rollbackErr.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "解析教务服务响应失败，绑定已回滚"})
 		return
 	}
 	if !bindResp.Success {

@@ -33,9 +33,58 @@ import 'theme/AppTheme.dart';
 import 'config/api_constants.dart';
 import 'utils/app_navigator.dart';
 import 'utils/private_message_notification.dart';
+import 'services/diagnostic_log_service.dart';
+import 'package:crypto/crypto.dart';
+import 'dart:convert';
+
+String _hashError(String level, String source, String type, String summary, String detail) {
+  final bytes = utf8.encode('$level$source$type$summary$detail');
+  return md5.convert(bytes).toString();
+}
+
+String? _lastErrorHash;
+int _lastErrorTime = 0;
+
+void _safeRecordError(String source, String type, String summary, String detail) {
+  final now = DateTime.now().millisecondsSinceEpoch;
+  final hash = _hashError('error', source, type, summary, detail);
+  if (hash == _lastErrorHash && now - _lastErrorTime < 2000) {
+    return; // deduplicate same error within 2 seconds
+  }
+  _lastErrorHash = hash;
+  _lastErrorTime = now;
+  
+  DiagnosticLogService.instance.recordError(
+    source: source,
+    type: type,
+    summary: summary,
+    detail: detail,
+  );
+}
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  FlutterError.onError = (FlutterErrorDetails details) {
+    FlutterError.presentError(details);
+
+    _safeRecordError(
+      'Flutter',
+      details.exception.runtimeType.toString(),
+      details.exceptionAsString(),
+      details.toString(),
+    );
+  };
+
+  PlatformDispatcher.instance.onError = (error, stack) {
+    _safeRecordError(
+      'Flutter',
+      error.runtimeType.toString(),
+      error.toString(),
+      '$error\n\n$stack',
+    );
+    return true;
+  };
 
   // 强制沉浸式（Edge-to-Edge），解决悬浮底栏下方的系统黑条空挡问题
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
@@ -44,11 +93,22 @@ Future<void> main() async {
     statusBarColor: Colors.transparent,
   ));
 
-  await Hive.initFlutter();
-  await CourseReminderService.instance.initialize();
-  await _initializePrivateMessageNotifications();
-
-  runApp(const MyApp());
+  await runZonedGuarded(
+    () async {
+      await Hive.initFlutter();
+      await CourseReminderService.instance.initialize();
+      await _initializePrivateMessageNotifications();
+      runApp(const MyApp());
+    },
+    (error, stack) {
+      _safeRecordError(
+        'Dart',
+        error.runtimeType.toString(),
+        error.toString(),
+        '$error\n\n$stack',
+      );
+    },
+  );
 }
 
 /// 极光推送初始化

@@ -50,6 +50,24 @@ class MainActivity : FlutterActivity() {
         
         createHighPriorityNotificationChannels()
         applyExcludeFromRecents(KeepAliveForegroundService.isHideRecentsEnabled(this))
+
+        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+            val status = KeepAliveForegroundService.status(this)
+            val enabled = status["enabled"] == true
+            val running = status["serviceRunning"] == true
+
+            if (enabled && !running) {
+                DiagnosticLogStore.warning(
+                    this,
+                    source = "保活",
+                    type = "状态脱节",
+                    summary = "保活开关已开启，但服务未运行",
+                    detail = status.entries.joinToString("\n") {
+                        "${it.key}=${it.value}"
+                    },
+                )
+            }
+        }, 1500L)
     }
 
     override fun onResume() {
@@ -243,6 +261,39 @@ class MainActivity : FlutterActivity() {
                         KeepAliveForegroundService.syncAuthToken(
                             this,
                             call.argument<String>("token")
+                        )
+                        result.success(true)
+                    }
+                    "getDiagnosticLogs" -> {
+                        DiagnosticLogStore.getLogs(this) { logs ->
+                            runOnUiThread {
+                                result.success(logs)
+                            }
+                        }
+                    }
+                    "clearDiagnosticLogs" -> {
+                        DiagnosticLogStore.clearLogs(this) {
+                            runOnUiThread {
+                                result.success(true)
+                            }
+                        }
+                    }
+                    "writeDiagnosticLog" -> {
+                        val level = call.argument<String>("level") ?: "info"
+                        val source = call.argument<String>("source") ?: "Flutter"
+                        val type = call.argument<String>("type") ?: "日志"
+                        val summary = call.argument<String>("summary") ?: ""
+                        val detail = call.argument<String>("detail") ?: ""
+                        
+                        val safeLevel = if (level in listOf("info", "warning", "error")) level else "info"
+                        
+                        DiagnosticLogStore.writeFromFlutter(
+                            this,
+                            safeLevel,
+                            source,
+                            type,
+                            summary,
+                            detail
                         )
                         result.success(true)
                     }

@@ -52,9 +52,10 @@ void main() {
 
     test('parseLoginForm gets viewstate', () {
       final html =
-          '<html><body><input type="hidden" name="__VIEWSTATE" id="__VIEWSTATE" value="/wEPDwUKTEST123" /></body></html>';
+          '<html><body><input type="hidden" name="__VIEWSTATE" id="__VIEWSTATE" value="/wEPDwUKTEST123" /><span id="code-box">abcd</span></body></html>';
       final res = ErkeParser.parseLoginForm(html);
       expect(res['__VIEWSTATE'], '/wEPDwUKTEST123');
+      expect(res['codeInput'], 'abcd');
     });
 
     test('parsePublicKey extracts key from pubKey field', () {

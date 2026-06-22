@@ -14,19 +14,23 @@ class WebVpnClient {
   /// Throws [CasLoginFailedException] if credentials are wrong.
   Future<void> login(String username, String password) async {
     // 1. Initiate login
-    final initResponse = await _dio.get<List<int>>(
-      'https://webvpn.sylu.edu.cn/login',
-      options: Options(responseType: ResponseType.bytes),
+    Response<List<int>> response = await _dio.get<List<int>>(
+      'https://webvpn.sylu.edu.cn/',
+      options: Options(
+        responseType: ResponseType.bytes,
+        followRedirects: true,
+        validateStatus: (status) => status != null && status < 400,
+      ),
     );
 
-    final html = CampusResponseDecoder.decodeResponseBytes(initResponse);
-    CampusResponseDecoder.interceptHtmlErrors(html, realUri: initResponse.realUri);
+    String html = CampusResponseDecoder.decodeResponseBytes(response);
+    CampusResponseDecoder.interceptHtmlErrors(html, realUri: response.realUri);
 
     // Parse the form
-    final doc = html_parser.parse(html);
-    final saltNode = doc.getElementById('pwdEncryptSalt');
-    final execNode = doc.getElementById('execution');
-    final formNode = doc.getElementById('casLoginForm');
+    var doc = html_parser.parse(html);
+    var saltNode = doc.getElementById('pwdEncryptSalt');
+    var execNode = doc.getElementById('execution');
+    var formNode = doc.getElementById('casLoginForm');
 
     if (saltNode == null || execNode == null || formNode == null) {
       throw const ErkePageChangedException('未能解析 WebVPN CAS 登录表单');
@@ -44,7 +48,7 @@ class WebVpnClient {
     final encryptedPassword = CasCrypto.encryptPassword(salt, password);
 
     // 3. Submit login
-    final submitUrl = 'https://webvpn.sylu.edu.cn\$action';
+    final submitUri = response.realUri.resolve(action);
     final formData = {
       'username': username,
       'password': encryptedPassword,
@@ -54,7 +58,7 @@ class WebVpnClient {
     };
 
     final submitResponse = await _dio.post<List<int>>(
-      submitUrl,
+      submitUri.toString(),
       data: Uri(queryParameters: formData).query,
       options: Options(
         responseType: ResponseType.bytes,

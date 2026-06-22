@@ -46,10 +46,6 @@ class ErkeRepository extends ChangeNotifier {
       // Clear sessions first
       await _session.cookieJar.clearWebvpnSession();
 
-      // 1. WebVPN login
-      await _webVpnClient.login(webvpnUser, webvpnPass);
-      await _secureStore.saveWebvpnCredentials(webvpnUser, webvpnPass);
-
       // 2. Erke login
       await _erkeClient.login(
           webvpnUser, erkePass); // Erke username is the same
@@ -66,7 +62,12 @@ class ErkeRepository extends ChangeNotifier {
 
       void addActivities(List<ErkeActivity> acts) {
         for (final act in acts) {
-          final key = '\${act.name}|\${act.date}|\${act.organizer}|\${act.score}';
+          final key = Object.hash(
+            act.name.trim(),
+            act.date.trim(),
+            act.organizer.trim(),
+            act.score,
+          ).toString();
           if (!seen.contains(key)) {
             seen.add(key);
             allActs.add(act);
@@ -84,14 +85,9 @@ class ErkeRepository extends ChangeNotifier {
       var currentHiddenFields = page.hiddenFields;
 
       for (var p = 2; p <= totalPages; p++) {
-        try {
-          final nextPage = await _erkeClient.getActivitiesPage(p, hiddenFields: currentHiddenFields);
-          addActivities(nextPage.activities);
-          currentHiddenFields = nextPage.hiddenFields;
-        } catch (e) {
-          // If a page fails, we stop fetching but keep what we have so far
-          break;
-        }
+        final nextPage = await _erkeClient.getActivitiesPage(p, hiddenFields: currentHiddenFields);
+        addActivities(nextPage.activities);
+        currentHiddenFields = nextPage.hiddenFields;
       }
 
       await _cacheStore.saveActivities(allActs);
@@ -105,10 +101,10 @@ class ErkeRepository extends ChangeNotifier {
     }
   }
 
-  /// Performs a full logout
   Future<void> logout() async {
     await _session.cookieJar.clearAll();
     await _secureStore.clearWebvpnCredentials();
+    await _secureStore.deleteErkePassword();
     await _cacheStore.clearAll();
     notifyListeners();
   }

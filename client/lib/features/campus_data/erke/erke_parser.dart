@@ -39,7 +39,7 @@ class ErkeParser {
     form['__VIEWSTATE'] = viewState;
 
     // Try to get captcha from the DOM
-    var captcha = 'aaaa'; // Fallback
+    String? captcha;
     final codeNodes = [
       doc.getElementById('code-box'),
       doc.querySelector('.code-img'),
@@ -54,6 +54,10 @@ class ErkeParser {
           break;
         }
       }
+    }
+
+    if (captcha == null || captcha.length != 4) {
+      throw const ErkePageChangedException('二课登录页验证码节点缺失或格式异常');
     }
 
     form['codeInput'] = captcha;
@@ -149,11 +153,11 @@ class ErkeParser {
         date: columns[2].text.trim(),
         category: category,
         role: columns[4].text.trim(),
-        participantCount: participantCount ?? 0,
-        score: score ?? 0.0,
+        participantCount: participantCount,
+        score: score,
       );
 
-      if (activity.name.isNotEmpty && (activity.score != 0 || activity.date.isNotEmpty)) {
+      if (activity.name.isNotEmpty && ((activity.score ?? 0) != 0 || activity.date.isNotEmpty)) {
         activities.add(activity);
       }
     }

@@ -14,9 +14,14 @@ from models.schemas import (
 )
 from services.crawler import (
     EduCrawler, CookieLapseError, CourseNotOpenError,
-    NetworkError, parse_weeks, parse_time_sections
+    NetworkError, LoginFailedError, parse_weeks, parse_time_sections
 )
 from services.credential_crypto import decrypt_credential
+from services.error_codes import (
+    EDU_CREDENTIAL_EXPIRED,
+    EDU_NOT_BOUND,
+    coded_http_exception,
+)
 
 router = APIRouter(prefix="/api/edu/courses", tags=["课程"])
 
@@ -40,10 +45,10 @@ async def fetch_courses(
     edu_user = result.scalar_one_or_none()
 
     if not edu_user or not edu_user.bound:
-        raise HTTPException(status_code=400, detail="请先绑定教务账号")
+        raise coded_http_exception(400, EDU_NOT_BOUND, "请先绑定教务账号")
 
     if not edu_user.cookie:
-        raise HTTPException(status_code=401, detail="Cookie已失效，请重新绑定")
+        raise coded_http_exception(401, EDU_CREDENTIAL_EXPIRED, "Cookie已失效，请重新绑定")
 
     async with EduCrawler() as crawler:
         cookie = edu_user.cookie
@@ -53,21 +58,21 @@ async def fetch_courses(
                 raw_courses = await crawler.fetch_courses(cookie, input.year, input.semester)
             except CookieLapseError:
                 if attempt == 1:
-                    raise HTTPException(status_code=401, detail="Cookie已失效且自动登录失败，请重新绑定教务账号")
+                    raise coded_http_exception(401, EDU_CREDENTIAL_EXPIRED, "Cookie已失效且自动登录失败，请重新绑定教务账号")
                 if not edu_user.encrypted_password:
-                    raise HTTPException(status_code=401, detail="Cookie已失效，请重新绑定教务账号")
+                    raise coded_http_exception(401, EDU_CREDENTIAL_EXPIRED, "Cookie已失效，请重新绑定教务账号")
                 print(f"  [AUTO] Cookie过期，使用存储密码自动重新登录...")
                 try:
                     password = decrypt_credential(edu_user.encrypted_password)
                 except Exception:
-                    raise HTTPException(status_code=401, detail="凭据解密失败，请重新绑定教务账号")
+                    raise coded_http_exception(401, EDU_CREDENTIAL_EXPIRED, "凭据解密失败，请重新绑定教务账号")
                 try:
                     cookie = await crawler.login(edu_user.student_id, password)
                     edu_user.cookie = cookie
                     await db.commit()
                     print(f"  [AUTO] 重新登录成功，重试抓取...")
                 except LoginFailedError as e:
-                    raise HTTPException(status_code=401, detail=f"账号密码可能已变更: {e}")
+                    raise coded_http_exception(401, EDU_CREDENTIAL_EXPIRED, f"账号密码可能已变更: {e}")
                 continue
             except CourseNotOpenError as e:
                 return CourseFetchResponse(
@@ -115,7 +120,7 @@ async def sync_courses(
     edu_user = result.scalar_one_or_none()
 
     if not edu_user or not edu_user.bound:
-        raise HTTPException(status_code=400, detail="请先绑定教务账号")
+        raise coded_http_exception(400, EDU_NOT_BOUND, "请先绑定教务账号")
 
     try:
         # 解析原始JSON

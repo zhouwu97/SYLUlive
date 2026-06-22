@@ -2,6 +2,9 @@ import 'package:dio/dio.dart';
 import 'package:dio_cookie_manager/dio_cookie_manager.dart';
 import 'package:shenliyuan/features/campus_data/storage/campus_cookie_jar.dart';
 
+import 'campus_http_session_certificate_stub.dart'
+    if (dart.library.io) 'campus_http_session_certificate_io.dart';
+
 class CampusHttpSession {
   final Dio _dio;
   final CampusCookieJar _cookieJar;
@@ -17,6 +20,8 @@ class CampusHttpSession {
               followRedirects: true,
               validateStatus: (status) => status != null && status < 500,
             )) {
+    configureDebugWebVpnCertificateDiagnostics(_dio);
+
     _dio.interceptors.add(CookieManager(_cookieJar.innerJar));
 
     // Add User-Agent matching standard browser to prevent bot blocks

@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:dio/dio.dart';
 import 'package:shenliyuan/features/campus_data/common/campus_data_exception.dart';
 import 'package:shenliyuan/features/campus_data/common/campus_http_session.dart';
 import 'package:shenliyuan/features/campus_data/common/webvpn_client.dart';
@@ -113,11 +114,13 @@ class ErkeRepository extends ChangeNotifier {
       var currentHiddenFields = page.hiddenFields;
 
       for (var p = 2; p <= totalPages; p++) {
-        final nextPage = await _erkeClient.getActivitiesPage(p, hiddenFields: currentHiddenFields);
-        
+        final nextPage = await _erkeClient.getActivitiesPage(p,
+            hiddenFields: currentHiddenFields);
+
         String currFingerprint = pageFingerprint(nextPage.activities);
-        if (currFingerprint == prevFingerprint && nextPage.activities.isNotEmpty) {
-           throw ErkeDuplicatePageException('二课分页异常：请求第$p页，实际返回内容与上页重复');
+        if (currFingerprint == prevFingerprint &&
+            nextPage.activities.isNotEmpty) {
+          throw ErkeDuplicatePageException('二课分页异常：请求第$p页，实际返回内容与上页重复');
         }
         prevFingerprint = currFingerprint;
 
@@ -129,6 +132,15 @@ class ErkeRepository extends ChangeNotifier {
       await _cacheStore.saveSnapshot(s, allActs);
     } on CampusDataException catch (e) {
       _errorMsg = e.message;
+      rethrow;
+    } on DioException catch (e) {
+      if (e.type == DioExceptionType.badCertificate ||
+          e.toString().contains('CERTIFICATE_VERIFY_FAILED')) {
+        _errorMsg = 'WebVPN HTTPS 证书无法验证，请换用真机或稳定版模拟器测试；这不是二课密码错误。';
+      } else {
+        _errorMsg =
+            e.message?.trim().isNotEmpty == true ? e.message : 'WebVPN 网络请求失败';
+      }
       rethrow;
     } catch (e) {
       _errorMsg = e.toString();

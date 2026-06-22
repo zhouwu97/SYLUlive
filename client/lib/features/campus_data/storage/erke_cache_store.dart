@@ -16,11 +16,19 @@ class ErkeCacheStore {
     }
   }
 
+  Box<String>? get _openedBox {
+    if (!Hive.isBoxOpen(_boxName)) {
+      return null;
+    }
+    return Hive.box<String>(_boxName);
+  }
+
   /// Saves both summary and activities atomically in a single snapshot.
   Future<void> saveSnapshot(
     ErkeSummary summary,
     List<ErkeActivity> activities,
   ) async {
+    await init();
     final box = Hive.box<String>(_boxName);
     await box.put(
       _keySnapshot,
@@ -33,7 +41,9 @@ class ErkeCacheStore {
 
   /// Retrieves the cached ErkeSummary, if any.
   ErkeSummary? getSummary() {
-    final box = Hive.box<String>(_boxName);
+    final box = _openedBox;
+    if (box == null) return null;
+
     final snapshotData = box.get(_keySnapshot);
     if (snapshotData != null) {
       try {
@@ -43,7 +53,7 @@ class ErkeCacheStore {
         }
       } catch (_) {}
     }
-    
+
     // Fallback to legacy key
     final data = box.get(_keySummary);
     if (data == null) return null;
@@ -57,7 +67,9 @@ class ErkeCacheStore {
 
   /// Retrieves the cached activities, if any.
   List<ErkeActivity>? getActivities() {
-    final box = Hive.box<String>(_boxName);
+    final box = _openedBox;
+    if (box == null) return null;
+
     final snapshotData = box.get(_keySnapshot);
     if (snapshotData != null) {
       try {
@@ -86,6 +98,7 @@ class ErkeCacheStore {
 
   /// Clears all cached Erke data.
   Future<void> clearAll() async {
+    await init();
     final box = Hive.box<String>(_boxName);
     await box.clear();
   }

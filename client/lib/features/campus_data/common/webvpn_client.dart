@@ -14,7 +14,7 @@ class WebVpnClient {
   /// Throws [CasLoginFailedException] if credentials are wrong.
   Future<void> login(String username, String password) async {
     // 1. Initiate login
-    final initResponse = await _dio.get(
+    final initResponse = await _dio.get<List<int>>(
       'https://webvpn.sylu.edu.cn/login',
       options: Options(responseType: ResponseType.bytes),
     );
@@ -53,7 +53,7 @@ class WebVpnClient {
       'geolocation': '',
     };
 
-    final submitResponse = await _dio.post(
+    final submitResponse = await _dio.post<List<int>>(
       submitUrl,
       data: FormData.fromMap(formData),
       options: Options(

@@ -28,7 +28,7 @@ class KeepAliveBootReceiver : BroadcastReceiver() {
                         summary = "系统广播恢复保活服务失败",
                         detail = android.util.Log.getStackTraceString(e),
                     )
-                    throw e
+                    return
                 }
             }
         }

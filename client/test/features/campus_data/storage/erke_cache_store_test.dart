@@ -24,7 +24,7 @@ void main() {
     });
 
     test('saves and retrieves summary', () async {
-      final summary = ErkeSummary(
+      const summary = ErkeSummary(
         categoryA: 1.0,
         categoryB: 2.0,
         categoryC: 3.0,
@@ -34,7 +34,7 @@ void main() {
       );
 
       expect(store.getSummary(), isNull);
-      await store.saveSummary(summary);
+      await store.saveSnapshot(summary, const []);
 
       final retrieved = store.getSummary();
       expect(retrieved, isNotNull);
@@ -42,7 +42,7 @@ void main() {
     });
 
     test('saves and retrieves activities', () async {
-      final activity = ErkeActivity(
+      const activity = ErkeActivity(
         name: 'test',
         organizer: 'org',
         date: '2026',
@@ -53,12 +53,29 @@ void main() {
       );
 
       expect(store.getActivities(), isNull);
-      await store.saveActivities([activity]);
+      await store.saveSnapshot(
+        const ErkeSummary(
+          categoryA: 0,
+          categoryB: 0,
+          categoryC: 0,
+          categoryD: 0,
+          categoryE: 0,
+          total: 0,
+        ),
+        [activity],
+      );
 
       final retrieved = store.getActivities();
       expect(retrieved, isNotNull);
       expect(retrieved!.length, 1);
       expect(retrieved.first.name, 'test');
+    });
+
+    test('returns null instead of throwing before box is opened', () async {
+      await Hive.box<String>('erke_cache_box').close();
+
+      expect(store.getSummary(), isNull);
+      expect(store.getActivities(), isNull);
     });
   });
 }

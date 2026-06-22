@@ -38,6 +38,10 @@ SERVICE_WAS_STOPPED=0
 BINARY_REPLACED=0
 NEW_SERVICE_STARTED=0
 DEPLOY_SUCCEEDED=0
+PYTHON_WAS_RUNNING=0
+PYTHON_STOPPED=0
+PYTHON_IMAGE_BACKED_UP=0
+PYTHON_DB_BACKUP_FILE=""
 TEMP_FILES=()
 
 echo ""
@@ -61,6 +65,65 @@ restore_previous_binary() {
   fi
 }
 
+compose_cmd() {
+  docker compose --project-directory "${APP_DIR}" --env-file "${APP_DIR}/.env" -f "${APP_DIR}/docker-compose.edu.yml" "$@"
+}
+
+stop_python_service_for_deploy() {
+  if [ ! -f "${APP_DIR}/docker-compose.edu.yml" ] || [ ! -f "${APP_DIR}/.env" ]; then
+    return
+  fi
+
+  local cid=""
+  cid="$(compose_cmd ps -q python-edu-service 2>/dev/null || true)"
+  if [ -n "$cid" ] && docker inspect -f '{{.State.Running}}' "$cid" 2>/dev/null | grep -q '^true$'; then
+    PYTHON_WAS_RUNNING=1
+    log_info "停止旧 Python 教务容器..."
+    compose_cmd stop python-edu-service
+    PYTHON_STOPPED=1
+  fi
+}
+
+backup_python_image_for_recovery() {
+  if [ ! -f "${APP_DIR}/docker-compose.edu.yml" ] || [ ! -f "${APP_DIR}/.env" ]; then
+    return
+  fi
+
+  local image_id=""
+  image_id="$(compose_cmd images -q python-edu-service 2>/dev/null | head -n 1 || true)"
+  if [ -n "$image_id" ]; then
+    docker tag "$image_id" "${APP_NAME}-python-edu-service:previous"
+    PYTHON_IMAGE_BACKED_UP=1
+  fi
+}
+
+restore_python_database() {
+  local edu_db_file="${APP_DIR}/python-edu-service/database/edu.db"
+  if [ -n "${PYTHON_DB_BACKUP_FILE:-}" ] && [ -s "$PYTHON_DB_BACKUP_FILE" ]; then
+    log_warn "恢复上一版 Python 教务数据库..."
+    mkdir -p "$(dirname "$edu_db_file")"
+    cp -a "$PYTHON_DB_BACKUP_FILE" "$edu_db_file"
+    rm -f "${edu_db_file}-wal" "${edu_db_file}-shm"
+  fi
+}
+
+restore_python_service() {
+  if [ ! -f "${APP_DIR}/docker-compose.edu.yml" ] || [ ! -f "${APP_DIR}/.env" ]; then
+    return
+  fi
+
+  restore_python_database
+  if [ "$PYTHON_IMAGE_BACKED_UP" -eq 1 ]; then
+    log_warn "恢复上一版 Python 教务镜像标签..."
+    docker tag "${APP_NAME}-python-edu-service:previous" "${APP_NAME}-python-edu-service:latest" || true
+  fi
+
+  if [ "$PYTHON_WAS_RUNNING" -eq 1 ] || [ "$PYTHON_STOPPED" -eq 1 ]; then
+    log_warn "部署失败，尝试恢复 Python 教务容器..."
+    compose_cmd up -d python-edu-service || log_error "Python 教务容器恢复失败，需要立即人工处理"
+  fi
+}
+
 cleanup_on_exit() {
   local exit_code=$?
 
@@ -72,6 +135,8 @@ cleanup_on_exit() {
     if [ "$BINARY_REPLACED" -eq 1 ]; then
       restore_previous_binary
     fi
+
+    restore_python_service
 
     if [ "$SERVICE_WAS_ACTIVE" -eq 1 ] && [ "$SERVICE_WAS_STOPPED" -eq 1 ]; then
       log_warn "部署失败，尝试恢复原服务..."
@@ -128,6 +193,11 @@ check_system() {
   for cmd in psql pg_dump pg_restore pg_dumpall docker; do
     require_command "$cmd"
   done
+
+  if ! docker compose version >/dev/null 2>&1; then
+    log_error "缺少 Docker Compose 插件：docker compose version 不可用"
+    exit 1
+  fi
 }
 
 # ===================== 安装 Go =====================
@@ -371,17 +441,27 @@ backup_sqlite() {
   local edu_db_file="${edu_db_dir}/edu.db"
   if [ -f "$edu_db_file" ]; then
     log_step "执行 Python 教务数据库备份..."
+    local edu_temp_file="${BACKUP_DIR}/.edu-${timestamp}.db.tmp"
     local edu_backup_file="${BACKUP_DIR}/edu-${timestamp}.db"
+    TEMP_FILES+=("$edu_temp_file")
     log_info "备份 Python 教务数据库..."
-    
-    cp -a "$edu_db_file" "${edu_backup_file}"
-    [ -f "${edu_db_file}-wal" ] && cp -a "${edu_db_file}-wal" "${edu_backup_file}-wal"
-    [ -f "${edu_db_file}-shm" ] && cp -a "${edu_db_file}-shm" "${edu_backup_file}-shm"
-    
-    chmod 0600 "${edu_backup_file}"*
+
+    if sqlite3 "$edu_db_file" ".backup '${edu_temp_file}'"; then
+      local integrity
+      integrity="$(sqlite3 "$edu_temp_file" 'PRAGMA integrity_check;')"
+      if [ "$integrity" != "ok" ]; then
+        log_error "Python 教务数据库备份完整性检查失败"
+        exit 1
+      fi
+      mv "$edu_temp_file" "$edu_backup_file"
+      chmod 0600 "$edu_backup_file"
+      PYTHON_DB_BACKUP_FILE="$edu_backup_file"
+    else
+      log_error "Python 教务数据库备份失败"
+      exit 1
+    fi
+
     ls -t "${BACKUP_DIR}"/edu-*.db 2>/dev/null | tail -n +6 | xargs -r rm -f || true
-    ls -t "${BACKUP_DIR}"/edu-*.db-wal 2>/dev/null | tail -n +6 | xargs -r rm -f || true
-    ls -t "${BACKUP_DIR}"/edu-*.db-shm 2>/dev/null | tail -n +6 | xargs -r rm -f || true
     log_info "Python 教务数据库备份完成: $edu_backup_file"
   fi
 }
@@ -656,17 +736,15 @@ deploy_python() {
   log_step "部署 Python 服务..."
 
   mkdir -p "${APP_DIR}/python-edu-service/database"
-  
-  local compose_cmd=(docker compose --project-directory "${APP_DIR}" --env-file "${APP_DIR}/.env" -f "${APP_DIR}/docker-compose.edu.yml")
 
   log_info "构建 Python 镜像..."
-  "${compose_cmd[@]}" build python-edu-service
+  compose_cmd build python-edu-service
 
   log_info "执行 Python 数据迁移..."
-  "${compose_cmd[@]}" run --rm --no-deps python-edu-service python migrate_passwords.py
+  compose_cmd run --rm --no-deps python-edu-service python migrate_passwords.py
 
   log_info "启动 Python 容器..."
-  "${compose_cmd[@]}" up -d python-edu-service
+  compose_cmd up -d python-edu-service
 
   log_info "等待 Python 服务健康..."
   local health_url="http://127.0.0.1:8000/health"
@@ -680,7 +758,7 @@ deploy_python() {
   done
   
   log_error "Python 服务未能在超时时间内就绪"
-  "${compose_cmd[@]}" logs python-edu-service
+  compose_cmd logs python-edu-service
   exit 1
 }
 
@@ -688,13 +766,15 @@ deploy_python() {
 acquire_deploy_lock
 
 check_system
-systemctl start docker || true
+systemctl start docker
 
 load_existing_db_password
 setup_postgres
 backup_postgres
 
+stop_python_service_for_deploy
 backup_sqlite
+backup_python_image_for_recovery
 
 if systemctl is-active --quiet "$APP_NAME" 2>/dev/null; then
   SERVICE_WAS_ACTIVE=1

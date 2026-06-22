@@ -8,6 +8,7 @@ import (
 	"shenliyuan/internal/models"
 
 	"github.com/gin-gonic/gin"
+	"github.com/go-resty/resty/v2"
 	"gorm.io/gorm"
 )
 
@@ -58,14 +59,18 @@ func (h *EduHandler) BindEdu(c *gin.Context) {
 		Success   bool   `json:"success"`
 		Message   string `json:"message"`
 		StudentID string `json:"student_id"`
-		Cookie    string `json:"cookie"`
 		Name      string `json:"name"`
 		Grade     string `json:"grade"`
 		College   string `json:"college"`
 		Major     string `json:"major"`
 	}
 	if err := json.Unmarshal(resp.Body(), &bindResp); err != nil {
+		_ = compensateUnbind(client, userID.(uint))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "解析服务响应失败"})
+		return
+	}
+	if !bindResp.Success {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "教务绑定失败: " + bindResp.Message})
 		return
 	}
 
@@ -80,20 +85,22 @@ func (h *EduHandler) BindEdu(c *gin.Context) {
 	}).Error
 
 	if err != nil {
-		// 补偿逻辑：Go更新失败，则主动去Python端解绑
-		client.Delete("/api/edu/bind", map[string]string{
-			"user_id": fmt.Sprintf("%d", userID),
-		})
+		if rollbackErr := compensateUnbind(client, userID.(uint)); rollbackErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库更新失败，且教务侧回滚失败: " + rollbackErr.Error()})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库更新失败，绑定已回滚"})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"message":        "绑定成功",
-		"edu_student_id": bindResp.StudentID,
-		"edu_grade":      bindResp.Grade,
-		"edu_college":    bindResp.College,
-		"edu_major":      bindResp.Major,
+		"success":    true,
+		"message":    "绑定成功",
+		"student_id": bindResp.StudentID,
+		"name":       bindResp.Name,
+		"grade":      bindResp.Grade,
+		"college":    bindResp.College,
+		"major":      bindResp.Major,
 	})
 }
 
@@ -106,21 +113,24 @@ func (h *EduHandler) UnbindEdu(c *gin.Context) {
 	resp, err := client.Delete("/api/edu/bind", map[string]string{
 		"user_id": fmt.Sprintf("%d", userID),
 	})
-	if err != nil || resp.StatusCode() != 200 {
-		fmt.Printf("[WARN] 通知Python服务解绑失败: userID=%v, err=%v\n", userID, err)
-		// 但我们仍继续解绑Go端，因为解绑必须具有破坏性兜底能力
+	if err := ensureEduServiceSuccess(resp, err, "教务侧解绑"); err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+		return
 	}
 
-	h.db.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]interface{}{
+	if err := h.db.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]interface{}{
 		"edu_student_id": "",
 		"edu_bound":      false,
 		"edu_grade":      "",
 		"edu_college":    "",
 		"edu_major":      "",
 		"edu_name":       "",
-	})
+	}).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库更新失败"})
+		return
+	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "解绑成功"})
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "解绑成功"})
 }
 
 // GetEduStatus 获取教务绑定状态
@@ -140,7 +150,21 @@ func (h *EduHandler) GetEduStatus(c *gin.Context) {
 		"edu_college":    user.EduCollege,
 		"edu_major":      user.EduMajor,
 		"edu_name":       user.EduName,
+		"bound":          user.EduBound,
+		"student_id":     user.EduStudentID,
+		"grade":          user.EduGrade,
+		"college":        user.EduCollege,
+		"major":          user.EduMajor,
+		"name":           user.EduName,
 	})
+}
+
+func (h *EduHandler) clearEduBoundIfRecoverable(userID interface{}, resp *resty.Response) error {
+	code := ExtractErrorCode(resp)
+	if code != "EDU_NOT_BOUND" && code != "EDU_CREDENTIAL_EXPIRED" {
+		return nil
+	}
+	return h.db.Model(&models.User{}).Where("id = ?", userID).Update("edu_bound", false).Error
 }
 
 type PreVerifyInput struct {
@@ -241,8 +265,9 @@ func (h *EduHandler) GetCourses(c *gin.Context) {
 
 	if resp.StatusCode() != 200 {
 		errMsg := ExtractError(resp)
-		if resp.StatusCode() == 401 || resp.StatusCode() == 404 {
-			h.db.Model(&models.User{}).Where("id = ?", userID).Update("edu_bound", false)
+		if err := h.clearEduBoundIfRecoverable(userID, resp); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "教务状态自愈失败"})
+			return
 		}
 		c.JSON(resp.StatusCode(), gin.H{"error": errMsg})
 		return
@@ -305,8 +330,9 @@ func (h *EduHandler) SyncCourses(c *gin.Context) {
 
 	if resp.StatusCode() != 200 {
 		errMsg := ExtractError(resp)
-		if resp.StatusCode() == 401 || resp.StatusCode() == 404 {
-			h.db.Model(&models.User{}).Where("id = ?", userID).Update("edu_bound", false)
+		if err := h.clearEduBoundIfRecoverable(userID, resp); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "教务状态自愈失败"})
+			return
 		}
 		c.JSON(resp.StatusCode(), gin.H{"error": errMsg})
 		return
@@ -354,8 +380,9 @@ func (h *EduHandler) GetGrades(c *gin.Context) {
 
 	if resp.StatusCode() != 200 {
 		errMsg := ExtractError(resp)
-		if resp.StatusCode() == 401 || resp.StatusCode() == 404 {
-			h.db.Model(&models.User{}).Where("id = ?", userID).Update("edu_bound", false)
+		if err := h.clearEduBoundIfRecoverable(userID, resp); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "教务状态自愈失败"})
+			return
 		}
 		c.JSON(resp.StatusCode(), gin.H{"error": errMsg})
 		return

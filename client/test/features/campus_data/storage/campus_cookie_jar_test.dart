@@ -42,7 +42,7 @@ void main() {
     test('clearAll clears all cookies', () async {
       final campusJar = CampusCookieJar();
       final url = Uri.parse('https://webvpn.sylu.edu.cn');
-      
+
       await campusJar.innerJar.saveFromResponse(url, [
         Cookie('some_cookie', 'val'),
       ]);

@@ -18,7 +18,7 @@ class CampusHttpSession {
               validateStatus: (status) => status != null && status < 500,
             )) {
     _dio.interceptors.add(CookieManager(_cookieJar.innerJar));
-    
+
     // Add User-Agent matching standard browser to prevent bot blocks
     _dio.interceptors.add(InterceptorsWrapper(onRequest: (options, handler) {
       options.headers['User-Agent'] =

@@ -10,7 +10,7 @@ class ErkeRepository extends ChangeNotifier {
   final CampusHttpSession _session;
   final CampusSecureStore _secureStore;
   final ErkeCacheStore _cacheStore;
-  
+
   late final WebVpnClient _webVpnClient;
   late final ErkeClient _erkeClient;
 
@@ -35,7 +35,8 @@ class ErkeRepository extends ChangeNotifier {
   List<ErkeActivity>? get activities => _cacheStore.getActivities();
 
   /// Logs into the systems and fetches the data.
-  Future<void> loginAndFetch(String webvpnUser, String webvpnPass, String erkePass) async {
+  Future<void> loginAndFetch(
+      String webvpnUser, String webvpnPass, String erkePass) async {
     _setLoading(true);
     _errorMsg = null;
     notifyListeners();
@@ -43,37 +44,37 @@ class ErkeRepository extends ChangeNotifier {
     try {
       // Clear sessions first
       await _session.cookieJar.clearWebvpnSession();
-      
+
       // 1. WebVPN login
       await _webVpnClient.login(webvpnUser, webvpnPass);
       await _secureStore.saveWebvpnCredentials(webvpnUser, webvpnPass);
-      
+
       // 2. Erke login
-      await _erkeClient.login(webvpnUser, erkePass); // Erke username is the same
-      
+      await _erkeClient.login(
+          webvpnUser, erkePass); // Erke username is the same
+
       // 3. Fetch summary
       final s = await _erkeClient.getSummary();
       await _cacheStore.saveSummary(s);
 
       // 4. Fetch activities (First page only for now, can be expanded)
       final page = await _erkeClient.getActivities();
-      
+
       // We will loop to fetch all pages
       final allActs = <ErkeActivity>[];
       allActs.addAll(page.activities);
-      
+
       var hasNext = page.hasNext;
       var viewState = page.nextViewState;
-      
-      while(hasNext && viewState != null) {
-         final nextPage = await _erkeClient.getActivities(viewState: viewState);
-         allActs.addAll(nextPage.activities);
-         hasNext = nextPage.hasNext;
-         viewState = nextPage.nextViewState;
-      }
-      
-      await _cacheStore.saveActivities(allActs);
 
+      while (hasNext && viewState != null) {
+        final nextPage = await _erkeClient.getActivities(viewState: viewState);
+        allActs.addAll(nextPage.activities);
+        hasNext = nextPage.hasNext;
+        viewState = nextPage.nextViewState;
+      }
+
+      await _cacheStore.saveActivities(allActs);
     } catch (e) {
       _errorMsg = e.toString();
     } finally {
@@ -81,7 +82,7 @@ class ErkeRepository extends ChangeNotifier {
       notifyListeners();
     }
   }
-  
+
   /// Performs a full logout
   Future<void> logout() async {
     await _session.cookieJar.clearAll();

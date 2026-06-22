@@ -31,10 +31,10 @@ void main() {
     test('generates different random prefixes and ivs', () {
       final salt = '1234567890abcdef'; // Must be 16 bytes for AES key
       final pw = 'password123';
-      
+
       final e1 = CasCrypto.encryptPassword(salt, pw);
       final e2 = CasCrypto.encryptPassword(salt, pw);
-      
+
       expect(e1, isNot(equals(e2)));
     });
   });

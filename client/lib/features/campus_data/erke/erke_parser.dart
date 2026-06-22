@@ -8,7 +8,7 @@ class ErkeParser {
     final doc = html_parser.parse(html);
     final keyNode = doc.getElementById('pubKey');
     if (keyNode == null) {
-      throw const ErkeDecodeException('未能在页面中找到 RSA 公钥');
+      throw const ErkePageChangedException('未能找到 RSA 公钥');
     }
     return keyNode.attributes['value'] ?? '';
   }
@@ -16,17 +16,18 @@ class ErkeParser {
   /// Parses hidden fields for login
   static Map<String, String> parseLoginHiddenFields(String html) {
     final doc = html_parser.parse(html);
-    final viewState = doc.getElementById('__VIEWSTATE')?.attributes['value'] ?? '';
-    final viewStateGen =
+    final viewState =
+        doc.getElementById('__VIEWSTATE')?.attributes['value'] ?? '';
+    final viewStateGenerator =
         doc.getElementById('__VIEWSTATEGENERATOR')?.attributes['value'] ?? '';
 
     if (viewState.isEmpty) {
-      throw const ErkeDecodeException('未找到 __VIEWSTATE');
+      throw const ErkePageChangedException('未找到 __VIEWSTATE');
     }
 
     return {
       '__VIEWSTATE': viewState,
-      '__VIEWSTATEGENERATOR': viewStateGen,
+      '__VIEWSTATEGENERATOR': viewStateGenerator,
     };
   }
 
@@ -43,27 +44,27 @@ class ErkeParser {
       'total': 'SunCount1',
     };
 
-    double extract(String key) {
+    double getScore(String key) {
       final id = ids[key]!;
       final node = doc.getElementById(id);
       if (node == null) {
-        throw ErkeDecodeException('成绩页面结构异常：缺少节点 $id');
+        throw ErkePageChangedException('成绩页面结构异常：缺少节点 $id');
       }
       final valStr = node.text.trim();
       final val = double.tryParse(valStr);
       if (val == null) {
-        throw ErkeDecodeException('成绩页面结构异常：节点 $id 数值无法解析 ($valStr)');
+        throw ErkePageChangedException('成绩页面结构异常：节点 $id 数值无法解析 ($valStr)');
       }
       return val;
     }
 
     return ErkeSummary(
-      categoryA: extract('categoryA'),
-      categoryB: extract('categoryB'),
-      categoryC: extract('categoryC'),
-      categoryD: extract('categoryD'),
-      categoryE: extract('categoryE'),
-      total: extract('total'),
+      categoryA: getScore('categoryA'),
+      categoryB: getScore('categoryB'),
+      categoryC: getScore('categoryC'),
+      categoryD: getScore('categoryD'),
+      categoryE: getScore('categoryE'),
+      total: getScore('total'),
     );
   }
 
@@ -71,14 +72,12 @@ class ErkeParser {
   static ErkeActivitiesPage parseActivities(String html) {
     final doc = html_parser.parse(html);
 
-    var table = doc.getElementById('GridView1') ?? doc.getElementById('GV');
-    
-    // Fallback heuristic if no ID matches
+    var table = doc.getElementById('GridView1');
     if (table == null) {
-      final tables = doc.querySelectorAll('table');
-      for (final t in tables) {
-        final text = t.text;
-        if (text.contains('活动名称') && text.contains('申请单位')) {
+      // Try alternate heuristic for finding the activity table
+      final allTables = doc.querySelectorAll('table');
+      for (final t in allTables) {
+        if (t.text.contains('活动项目名称') && t.text.contains('获取分数')) {
           table = t;
           break;
         }
@@ -87,12 +86,12 @@ class ErkeParser {
 
     if (table == null) {
       // If table doesn't exist, it might be an empty page, but more likely a structure change
-      throw const ErkeDecodeException('活动页面结构异常：未找到活动列表');
+      throw const ErkePageChangedException('活动页面结构异常：未找到活动列表');
     }
 
     final rows = table.querySelectorAll('tr');
     if (rows.isEmpty) {
-      throw const ErkeDecodeException('活动页面结构异常：列表无行');
+      throw const ErkePageChangedException('活动页面结构异常：列表无行');
     }
 
     final activities = <ErkeActivity>[];
@@ -118,7 +117,7 @@ class ErkeParser {
     }
 
     final viewState = doc.getElementById('__VIEWSTATE')?.attributes['value'];
-    
+
     // Check if there is a next page
     final nextBtn = doc.querySelector('a[href*="TPaged1\$GotoPage"]');
     bool hasNext = nextBtn != null;

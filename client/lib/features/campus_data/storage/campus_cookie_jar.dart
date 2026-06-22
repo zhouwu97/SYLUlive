@@ -3,7 +3,8 @@ import 'package:cookie_jar/cookie_jar.dart';
 class CampusCookieJar {
   final CookieJar _cookieJar;
 
-  CampusCookieJar({CookieJar? cookieJar}) : _cookieJar = cookieJar ?? CookieJar();
+  CampusCookieJar({CookieJar? cookieJar})
+      : _cookieJar = cookieJar ?? CookieJar();
 
   CookieJar get innerJar => _cookieJar;
 
@@ -21,13 +22,17 @@ class CampusCookieJar {
         'CASTGC',
         'JSESSIONID',
       ];
-      
-      final newCookies = cookies.where((c) => !cookiesToRemove.contains(c.name)).toList();
-      
+
+      final newCookies =
+          cookies.where((c) => !cookiesToRemove.contains(c.name)).toList();
+
       // Delete old cookies by setting maxAge = 0
       final deletedCookies = cookies
           .where((c) => cookiesToRemove.contains(c.name))
-          .map((c) => Cookie(c.name, '')..maxAge = 0..domain = c.domain..path = c.path)
+          .map((c) => Cookie(c.name, '')
+            ..maxAge = 0
+            ..domain = c.domain
+            ..path = c.path)
           .toList();
 
       await _cookieJar.saveFromResponse(url, deletedCookies);

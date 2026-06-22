@@ -38,6 +38,7 @@ type User struct {
 
 	// 教务系统绑定信息（整合学长项目）
 	EduStudentID string `gorm:"size:20" json:"edu_student_id"`  // 教务学号
+	EduName      string `gorm:"size:100" json:"edu_name"`       // 教务姓名
 	EduBound     bool   `gorm:"default:false" json:"edu_bound"` // 是否已绑定教务
 	EduGrade     string `gorm:"size:20" json:"edu_grade"`       // 年级
 	EduCollege   string `gorm:"size:100" json:"edu_college"`    // 学院

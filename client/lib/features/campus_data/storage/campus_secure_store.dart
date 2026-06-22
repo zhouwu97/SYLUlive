@@ -8,7 +8,7 @@ class CampusSecureStore {
 
   static const _keyWebvpnUsername = 'webvpn_username';
   static const _keyWebvpnPassword = 'webvpn_password';
-  
+
   // Note: Erke credentials are NOT saved according to the new plan.
   // Erke uses SSO/Cookie復用, no need to store Erke password anymore.
   // "不再保存校园密码" mostly applies to the legacy way, but we still need WebVPN credentials

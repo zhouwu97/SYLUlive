@@ -36,6 +36,57 @@ class MainActivity : FlutterActivity() {
     private val pendingLock = Any()
     private var pendingPrivateMessageJson: String? = null
 
+    private val keepAliveHandler = android.os.Handler(android.os.Looper.getMainLooper())
+
+    private val keepAliveHealRunnable = Runnable {
+        val status = KeepAliveForegroundService.status(this)
+        if (status["enabled"] == true && status["serviceRunning"] != true) {
+            DiagnosticLogStore.warning(
+                this,
+                source = "保活",
+                type = "前台自愈",
+                summary = "检测到保活服务未运行，正在尝试恢复",
+                detail = status.entries.joinToString("\n") {
+                    "${it.key}=${it.value}"
+                },
+            )
+
+            try {
+                KeepAliveForegroundService.startIfEnabled(this)
+                keepAliveHandler.postDelayed({
+                    val newStatus = KeepAliveForegroundService.status(this)
+                    if (newStatus["serviceRunning"] == true) {
+                        DiagnosticLogStore.info(
+                            this,
+                            source = "保活",
+                            type = "前台自愈成功",
+                            summary = "前台服务已恢复运行",
+                            detail = "当前状态: $newStatus",
+                        )
+                    } else {
+                        DiagnosticLogStore.critical(
+                            this,
+                            level = "error",
+                            source = "保活",
+                            type = "前台自愈失败",
+                            summary = "恢复服务后仍未运行",
+                            detail = "当前状态: $newStatus",
+                        )
+                    }
+                }, 1500L)
+            } catch (e: Exception) {
+                DiagnosticLogStore.critical(
+                    this,
+                    level = "error",
+                    source = "保活",
+                    type = e.javaClass.simpleName,
+                    summary = "前台自动恢复保活服务失败",
+                    detail = android.util.Log.getStackTraceString(e),
+                )
+            }
+        }
+    }
+
     private fun consumePendingPrivateMessage(): String? =
         synchronized(pendingLock) {
             pendingPrivateMessageJson.also {
@@ -50,29 +101,6 @@ class MainActivity : FlutterActivity() {
         
         createHighPriorityNotificationChannels()
         applyExcludeFromRecents(KeepAliveForegroundService.isHideRecentsEnabled(this))
-
-        checkKeepAliveDetached()
-    }
-
-    private fun checkKeepAliveDetached() {
-        val first = KeepAliveForegroundService.status(this)
-        if (first["enabled"] != true || first["serviceRunning"] == true) return
-
-        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-            val second = KeepAliveForegroundService.status(this)
-
-            if (second["enabled"] == true &&
-                second["serviceRunning"] != true
-            ) {
-                DiagnosticLogStore.warning(
-                    this,
-                    source = "保活",
-                    type = "疑似状态脱节",
-                    summary = "连续两次检测到保活开关已开启，但服务未运行",
-                    detail = "first=$first\nsecond=$second",
-                )
-            }
-        }, 1500L)
     }
 
     override fun onResume() {
@@ -87,37 +115,13 @@ class MainActivity : FlutterActivity() {
 
     override fun onStart() {
         super.onStart()
+        keepAliveHandler.removeCallbacks(keepAliveHealRunnable)
+        keepAliveHandler.postDelayed(keepAliveHealRunnable, 1500L)
+    }
 
-        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-            val status = KeepAliveForegroundService.status(this)
-            val enabled = status["enabled"] == true
-            val running = status["serviceRunning"] == true
-
-            if (enabled && !running) {
-                DiagnosticLogStore.warning(
-                    this,
-                    source = "保活",
-                    type = "前台自愈",
-                    summary = "检测到保活服务未运行，正在尝试恢复",
-                    detail = status.entries.joinToString("\n") {
-                        "${it.key}=${it.value}"
-                    },
-                )
-
-                try {
-                    KeepAliveForegroundService.startIfEnabled(this)
-                } catch (e: Exception) {
-                    DiagnosticLogStore.critical(
-                        this,
-                        level = "error",
-                        source = "保活",
-                        type = e.javaClass.simpleName,
-                        summary = "前台自动恢复保活服务失败",
-                        detail = android.util.Log.getStackTraceString(e),
-                    )
-                }
-            }
-        }, 1500L)
+    override fun onStop() {
+        keepAliveHandler.removeCallbacks(keepAliveHealRunnable)
+        super.onStop()
     }
 
     override fun onNewIntent(intent: Intent) {

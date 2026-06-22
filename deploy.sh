@@ -22,7 +22,7 @@ log_step()  { echo -e "${BLUE}[STEP]${NC}  $1"; }
 APP_NAME="shenliyuan"
 APP_DIR="/opt/${APP_NAME}"
 SERVICE_FILE="/etc/systemd/system/${APP_NAME}.service"
-BACKUP_DIR="${APP_DIR}/backups"
+BACKUP_DIR="/var/backups/${APP_NAME}"
 DB_NAME="shenliyuan"
 DB_USER="shenliyuan"
 DB_PASS=""
@@ -116,32 +116,63 @@ setup_postgres() {
 
 # ===================== 拉取/更新代码 =====================
 sync_code() {
-    if [ -f "${APP_DIR}/server/go.mod" ]; then
-        log_step "拉取最新代码..."
-        git -C "${APP_DIR}" fetch origin fwqtest
-        git -C "${APP_DIR}" reset --hard origin/fwqtest
-        # 警告: 绝对不要在自动化脚本中使用无差别的 git clean -fd
-        # 必须显式保护所有可能的生产环境数据和备份
-        git -C "${APP_DIR}" clean -fd \
-          -e uploads/ \
-          -e shenliyuan.db \
-          -e 'shenliyuan.bak.*' \
-          -e .env \
-          -e logs/
-    else
-        log_step "克隆项目..."
-        rm -rf "$APP_DIR"
-        git clone -b fwqtest https://github.com/zhouwu97/SYLUlive.git "$APP_DIR"
+  if [ ! -e "${APP_DIR}" ]; then
+    log_step "首次克隆项目..."
+    git clone -b fwqtest \
+      https://github.com/zhouwu97/SYLUlive.git \
+      "${APP_DIR}"
+    return
+  fi
+
+  if [ ! -d "${APP_DIR}/.git" ] ||
+     [ ! -f "${APP_DIR}/server/go.mod" ]; then
+    log_error "${APP_DIR} 已存在但不是完整项目，拒绝自动删除"
+    exit 1
+  fi
+
+  for protected in \
+    uploads \
+    shenliyuan.db \
+    backups \
+    .env \
+    logs
+  do
+    if git -C "${APP_DIR}" ls-files -- "${protected}" |
+        grep -q .; then
+      log_error "生产数据被 Git 跟踪，拒绝部署: ${protected}"
+      exit 1
     fi
+  done
+
+  log_step "拉取最新代码..."
+  git -C "${APP_DIR}" fetch origin fwqtest
+  git -C "${APP_DIR}" reset --hard origin/fwqtest
+
+  git -C "${APP_DIR}" clean -fd \
+    -e uploads/ \
+    -e shenliyuan.db \
+    -e backups/ \
+    -e 'shenliyuan.bak.*' \
+    -e .env \
+    -e logs/
 }
 
 # ===================== 备份 =====================
 backup_db() {
+    mkdir -p "$BACKUP_DIR"
+
     local db_file="${APP_DIR}/shenliyuan.db"
     if [ -f "$db_file" ]; then
-        mkdir -p "$BACKUP_DIR"
         cp "$db_file" "${BACKUP_DIR}/shenliyuan-$(date +%Y%m%d_%H%M%S).db"
         ls -t "${BACKUP_DIR}"/*.db 2>/dev/null | tail -n +6 | xargs -r rm -f
+    fi
+
+    if command -v pg_dump &>/dev/null; then
+        sudo -u postgres pg_dump \
+          --format=custom \
+          --file="${BACKUP_DIR}/shenliyuan-$(date +%Y%m%d_%H%M%S).dump" \
+          shenliyuan || true
+        ls -t "${BACKUP_DIR}"/*.dump 2>/dev/null | tail -n +6 | xargs -r rm -f
     fi
 }
 

@@ -120,20 +120,8 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                 scrolledUnderElevation: 0,
                 surfaceTintColor: Colors.transparent,
                 backgroundColor: pageBackground,
+                toolbarHeight: 0,
                 automaticallyImplyLeading: false,
-                leading: Container(
-                  margin: const EdgeInsets.all(8),
-                  decoration: const BoxDecoration(
-                    color: Colors.black26,
-                    shape: BoxShape.circle,
-                  ),
-                  child: IconButton(
-                    icon: const Icon(Icons.arrow_back,
-                        color: Colors.white, size: 20),
-                    padding: EdgeInsets.zero,
-                    onPressed: () => Navigator.maybePop(context),
-                  ),
-                ),
                 flexibleSpace: FlexibleSpaceBar(
                   collapseMode: CollapseMode.parallax,
                   background: Stack(
@@ -172,11 +160,40 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                         ),
                       ),
 
+                      // 顶部按钮行（返回 + 私信）
+                      Positioned(
+                        top: MediaQuery.of(context).padding.top + 8,
+                        left: 12,
+                        right: 12,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            _buildCircleButton(
+                              icon: Icons.arrow_back,
+                              onTap: () => Navigator.maybePop(context),
+                            ),
+                            if (!isMe)
+                              _buildCircleButton(
+                                icon: Icons.mail_outline,
+                                onTap: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) =>
+                                          ChatDetailScreen(targetUser: user),
+                                    ),
+                                  );
+                                },
+                              ),
+                          ],
+                        ),
+                      ),
+
                       // 所有资料覆盖在背景图下半部分
                       Positioned(
                         left: 20,
                         right: 20,
-                        bottom: 76,
+                        bottom: 64,
                         child: _buildProfileOverlay(
                           context,
                           user,
@@ -189,9 +206,9 @@ class _UserHomeScreenState extends State<UserHomeScreen>
 
                 // 底部圆角标签栏
                 bottom: PreferredSize(
-                  preferredSize: const Size.fromHeight(58),
+                  preferredSize: const Size.fromHeight(46),
                   child: Container(
-                    height: 58,
+                    height: 46,
                     width: double.infinity,
                     decoration: BoxDecoration(
                       color: panelColor,
@@ -208,7 +225,6 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                     ),
                     child: TabBar(
                       controller: _tabController,
-                      isScrollable: true,
                       indicatorSize: TabBarIndicatorSize.label,
                       indicatorWeight: 3,
                       indicatorColor:
@@ -225,8 +241,6 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                         fontSize: 16,
                         fontWeight: FontWeight.w500,
                       ),
-                      labelPadding:
-                          const EdgeInsets.symmetric(horizontal: 24),
                       tabs: [
                         Tab(text: '帖子 ${_posts.length}'),
                         const Tab(text: '智能体 0'),
@@ -234,50 +248,6 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                     ),
                   ),
                 ),
-
-                // 非本人主页的菜单
-                actions: [
-                  if (!isMe)
-                    Container(
-                      margin: const EdgeInsets.all(4),
-                      decoration: const BoxDecoration(
-                        color: Colors.black26,
-                        shape: BoxShape.circle,
-                      ),
-                      child: PopupMenuButton<String>(
-                        icon: const Icon(Icons.more_vert,
-                            color: Colors.white, size: 20),
-                        padding: EdgeInsets.zero,
-                        offset: const Offset(0, 40),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12)),
-                        onSelected: (value) {
-                          if (value == 'message') {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) =>
-                                    ChatDetailScreen(targetUser: user),
-                              ),
-                            );
-                          }
-                        },
-                        itemBuilder: (context) => [
-                          const PopupMenuItem(
-                            value: 'message',
-                            child: Row(
-                              children: [
-                                Icon(Icons.mail_outline, size: 20),
-                                SizedBox(width: 12),
-                                Text('私信'),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  const SizedBox(width: 8),
-                ],
               ),
             ];
           },
@@ -303,6 +273,26 @@ class _UserHomeScreenState extends State<UserHomeScreen>
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  // ============ 顶部圆形按钮 ============
+
+  Widget _buildCircleButton({
+    required IconData icon,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 36,
+        height: 36,
+        decoration: const BoxDecoration(
+          color: Colors.black26,
+          shape: BoxShape.circle,
+        ),
+        child: Icon(icon, color: Colors.white, size: 20),
       ),
     );
   }
@@ -727,7 +717,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
 
     final cropped = await ImageCropper().cropImage(
       sourcePath: picked.path,
-      aspectRatio: const CropAspectRatio(ratioX: 16, ratioY: 9),
+      aspectRatio: const CropAspectRatio(ratioX: 3, ratioY: 4),
       uiSettings: [
         AndroidUiSettings(
           toolbarTitle: '裁剪背景图',
@@ -735,7 +725,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
           toolbarWidgetColor: Colors.white,
           statusBarColor: Colors.black,
           backgroundColor: Colors.black,
-          initAspectRatio: CropAspectRatioPreset.ratio16x9,
+          initAspectRatio: CropAspectRatioPreset.ratio3x2,
           lockAspectRatio: true,
         ),
         IOSUiSettings(title: '裁剪背景图', aspectRatioLockEnabled: true),

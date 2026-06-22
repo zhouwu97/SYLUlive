@@ -46,6 +46,9 @@ class ErkeRepository extends ChangeNotifier {
       // Clear sessions first
       await _session.cookieJar.clearWebvpnSession();
 
+      // 1. WebVPN login
+      await _webVpnClient.login(webvpnUser, webvpnPass);
+
       // 2. Erke login
       await _erkeClient.login(
           webvpnUser, erkePass); // Erke username is the same
@@ -78,8 +81,9 @@ class ErkeRepository extends ChangeNotifier {
       addActivities(page.activities);
 
       int totalPages = page.totalPages;
-      if (totalPages > 20) {
-        totalPages = 20; // Hard limit
+      const maxSafePages = 100;
+      if (totalPages > maxSafePages) {
+        throw ErkePageChangedException('二课活动页数异常：$totalPages');
       }
 
       var currentHiddenFields = page.hiddenFields;

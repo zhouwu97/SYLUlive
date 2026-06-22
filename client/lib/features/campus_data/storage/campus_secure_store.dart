@@ -27,18 +27,20 @@ class CampusSecureStore {
     if (oldCas != null && oldCas.isNotEmpty) {
       await _storage.write(key: _keyWebvpnPassword, value: oldCas);
       // Wait for write success before removing
-      final verify = await _storage.read(key: _keyWebvpnPassword);
-      if (verify == oldCas) {
-        await prefs.remove('erke_cas_pwd');
+      final confirmed = await _storage.read(key: _keyWebvpnPassword);
+      if (confirmed != oldCas) {
+        throw const CampusStorageException('统一认证密码迁移验证失败');
       }
+      await prefs.remove('erke_cas_pwd');
     }
     
     if (oldErke != null && oldErke.isNotEmpty) {
       await saveErkePassword(oldErke);
-      final verify = await getErkePassword();
-      if (verify == oldErke) {
-        await prefs.remove('erke_erke_pwd');
+      final verified = await getErkePassword();
+      if (verified != oldErke) {
+        throw const CampusStorageException('二课密码迁移验证失败');
       }
+      await prefs.remove('erke_erke_pwd');
     }
 
     await _storage.write(key: _keyMigrationCompleted, value: 'true');

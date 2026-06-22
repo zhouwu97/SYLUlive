@@ -36,3 +36,8 @@ final class ErkePageChangedException extends CampusDataException {
 final class ErkeDecodeException extends CampusDataException {
   const ErkeDecodeException([super.message]);
 }
+
+final class CampusStorageException extends CampusDataException {
+  const CampusStorageException([super.message]);
+}
+

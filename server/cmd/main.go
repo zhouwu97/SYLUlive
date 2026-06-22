@@ -776,6 +776,8 @@ func main() {
 		edu.DELETE("/bind", middleware.AuthMiddleware(db, cfg.JWTSecret), eduHandler.UnbindEdu)
 
 		edu.POST("/courses", middleware.AuthMiddleware(db, cfg.JWTSecret), eduHandler.GetCourses)
+		
+		edu.POST("/courses/sync", middleware.AuthMiddleware(db, cfg.JWTSecret), eduHandler.SyncCourses)
 
 		edu.POST("/grades", middleware.AuthMiddleware(db, cfg.JWTSecret), eduHandler.GetGrades)
 

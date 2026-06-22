@@ -313,6 +313,9 @@ class EduCrawler:
         if zy_match:
             major = zy_match.group(1).strip()
 
+        if not name.strip():
+            raise LoginFailedError("无法确认学生身份信息")
+
         return StudentInfo(name=name, grade=grade, college=college, major=major)
 
     # ============== 课表相关 ==============
@@ -340,7 +343,7 @@ class EduCrawler:
                     week_day=str(item.get("xqj", "1")),
                     week_str=item.get("zcd", "")
                 )
-                key = (course.name, course.week_day, course.time, course.week_str)
+                key = (course.name, course.teacher, course.location, course.week_day, course.time, course.week_str)
                 if key not in seen:
                     seen.add(key)
                     all_courses.append(course)
@@ -392,12 +395,26 @@ class EduCrawler:
                     headers=base_headers,
                     timeout=10.0
                 )
+                if resp.status_code in (302, 901):
+                    raise CookieLapseError("教务登录状态已失效")
+                
+                content_type = resp.headers.get("content-type", "").lower()
+                if "text/html" in content_type:
+                    raise CookieLapseError("教务返回登录页面")
+
                 if resp.status_code == 200 and resp.text.strip() not in ("null", ""):
-                    data = resp.json()
+                    try:
+                        data = resp.json()
+                    except ValueError as exc:
+                        raise NetworkError("移动端课表响应格式异常") from exc
                     kb_list = data.get("kbList", [])
                     _add_from_kblist(kb_list, "MOBILE")
+            except CookieLapseError:
+                raise
+            except EduError:
+                raise
             except Exception as e:
-                print(f"  [MOBILE] 失败: {e}")
+                raise NetworkError(f"移动端课表请求异常: {e}") from e
 
         if not all_courses:
             raise CourseNotOpenError("当前学期课表暂未开放")

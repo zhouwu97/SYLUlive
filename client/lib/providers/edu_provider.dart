@@ -129,6 +129,7 @@ class EduProvider extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('edu_bound_$_userId', _isBound);
     await prefs.setString('edu_student_id_$_userId', _studentId);
+    await prefs.setString('edu_name_$_userId', _name);
     await prefs.setString('edu_grade_$_userId', _grade);
     await prefs.setString('edu_college_$_userId', _college);
     await prefs.setString('edu_major_$_userId', _major);
@@ -138,6 +139,7 @@ class EduProvider extends ChangeNotifier {
     if (_userId == null) return false;
     final prefs = await SharedPreferences.getInstance();
     _studentId = prefs.getString('edu_student_id_$_userId') ?? '';
+    _name = prefs.getString('edu_name_$_userId') ?? '';
     _grade = prefs.getString('edu_grade_$_userId') ?? '';
     _college = prefs.getString('edu_college_$_userId') ?? '';
     _major = prefs.getString('edu_major_$_userId') ?? '';
@@ -277,19 +279,19 @@ class EduProvider extends ChangeNotifier {
 
       if (response.statusCode == 200) {
         final data = response.data;
-        if (data['courses'] != null) {
-          return OperationResult.ok(
-              List<Map<String, dynamic>>.from(data['courses']));
-        }
-        final errorMsg =
-            (data['error'] ?? data['message'] ?? data['detail'] ?? '')
-                .toString();
-        if (errorMsg.isNotEmpty) {
+        if (data['success'] == false) {
+          final errorMsg =
+              (data['message'] ?? data['error'] ?? data['detail'] ?? '获取课表失败')
+                  .toString();
           return OperationResult.fail(errorMsg);
         }
-        if (data['success'] == false) {
-          return OperationResult.fail(data['message'] ?? '获取课表失败');
+        
+        final courses = data['courses'];
+        if (courses is List) {
+          return OperationResult.ok(
+              List<Map<String, dynamic>>.from(courses));
         }
+        return OperationResult.fail('课表响应格式异常');
       }
       return OperationResult.fail('获取课表失败');
     } on DioException catch (e) {

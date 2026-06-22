@@ -21,10 +21,10 @@ from services.credential_crypto import decrypt_credential
 router = APIRouter(prefix="/api/edu/courses", tags=["课程"])
 
 
-def _generate_course_code(name: str, weekday: str, time: str) -> str:
+def _generate_course_code(name: str, teacher: str, location: str, weekday: str, time: str, week_str: str) -> str:
     """生成课程代码（用于关联原始数据和自定义数据）"""
     import hashlib
-    raw = f"{name}_{weekday}_{time}"
+    raw = f"{name.strip()}_{teacher.strip()}_{location.strip()}_{weekday.strip()}_{time.strip()}_{week_str.strip()}"
     return hashlib.md5(raw.encode()).hexdigest()[:12]
 
 
@@ -163,7 +163,7 @@ async def sync_courses(
             weekday_str = item.get("xqj", "1")
             week_str = item.get("zcd", "")
 
-            course_code = _generate_course_code(name, weekday_str, time_str)
+            course_code = _generate_course_code(name, teacher, location, weekday_str, time_str, week_str)
 
             # 检查是否有用户自定义设置
             custom = next(

@@ -18,7 +18,6 @@ class BindResponse(BaseModel):
     success: bool
     message: str
     student_id: str
-    cookie: Optional[str] = None  # 登录Cookie，供Go服务器存储
     name: Optional[str] = None
     grade: Optional[str] = None
     college: Optional[str] = None

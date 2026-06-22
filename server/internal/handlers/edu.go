@@ -172,7 +172,7 @@ func (h *EduHandler) PreVerify(c *gin.Context) {
 	}
 
 	if resp.StatusCode() != 200 {
-		c.JSON(resp.StatusUnauthorized, gin.H{"error": ExtractError(resp), "success": false})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": ExtractError(resp), "success": false})
 		return
 	}
 

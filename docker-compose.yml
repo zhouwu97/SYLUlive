@@ -22,8 +22,6 @@ services:
     build:
       context: ./python-edu-service
       dockerfile: Dockerfile
-    ports:
-      - "8000:8000"
     restart: unless-stopped
     networks:
       - shenliyuan_network

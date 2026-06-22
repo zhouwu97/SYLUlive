@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:fast_gbk/fast_gbk.dart';
@@ -20,10 +19,14 @@ class CampusResponseDecoder {
         response.headers.value('content-type')?.toLowerCase() ?? '';
     final bytes = response.data ?? <int>[];
 
-    final match = RegExp(r'charset\s*=\s*([-\w]+)', caseSensitive: false).firstMatch(contentType);
+    final match = RegExp(r'charset\s*=\s*([-\w]+)', caseSensitive: false)
+        .firstMatch(contentType);
     final charset = match?.group(1);
 
-    if (charset == null || charset.isEmpty || charset == 'iso-8859-1' || charset == 'latin-1') {
+    if (charset == null ||
+        charset.isEmpty ||
+        charset == 'iso-8859-1' ||
+        charset == 'latin-1') {
       try {
         return utf8.decode(bytes);
       } catch (_) {
@@ -52,12 +55,17 @@ class CampusResponseDecoder {
   }
 
   /// Scans the HTML string for known error markers and throws the corresponding exceptions.
-  static void interceptHtmlErrors(String html, {required Uri realUri, CampusResponseContext context = CampusResponseContext.accessingProtectedResource}) {
+  static void interceptHtmlErrors(String html,
+      {required Uri realUri,
+      CampusResponseContext context =
+          CampusResponseContext.accessingProtectedResource}) {
     if (html.contains('The website you are visiting is protected by WebVPN')) {
       throw const WebVpnSessionExpiredException('WebVPN 访问被拒绝，可能处于未登录状态');
     }
-    
-    if (context == CampusResponseContext.accessingProtectedResource && realUri.path.toLowerCase().endsWith('/login') && html.contains('pwdEncryptSalt')) {
+
+    if (context == CampusResponseContext.accessingProtectedResource &&
+        realUri.path.toLowerCase().endsWith('/login') &&
+        html.contains('pwdEncryptSalt')) {
       throw const WebVpnSessionExpiredException('统一认证登录会话失效或被重定向至登录页');
     }
 
@@ -66,7 +74,10 @@ class CampusResponseDecoder {
       throw const WebVpnAccessDeniedException('WebVPN 已认证，但当前账号无权访问目标内网资源。');
     }
 
-    if (context == CampusResponseContext.accessingProtectedResource && html.contains('WebVPN') && html.contains('pwdEncryptSalt') && html.contains('casLoginForm')) {
+    if (context == CampusResponseContext.accessingProtectedResource &&
+        html.contains('WebVPN') &&
+        html.contains('pwdEncryptSalt') &&
+        (html.contains('pwdFromId') || html.contains('casLoginForm'))) {
       throw const WebVpnSessionExpiredException('WebVPN Session 已过期或无效');
     }
 
@@ -80,15 +91,17 @@ class CampusResponseDecoder {
     }
 
     // Check for Erke errors
-    final layerAlertMatch = RegExp(r"""layer\.alert\(\s*['"]([^'"]+)['"]""").firstMatch(html);
+    final layerAlertMatch =
+        RegExp(r"""layer\.alert\(\s*['"]([^'"]+)['"]""").firstMatch(html);
     if (layerAlertMatch != null) {
       final msg = layerAlertMatch.group(1)!;
       if (msg.contains('密码错误') || msg.contains('不存在')) {
         throw ErkeLoginFailedException(msg);
       }
     }
-    
-    final alertMatch = RegExp(r"""alert\(\s*['"]([^'"]+)['"]\s*\)""").firstMatch(html);
+
+    final alertMatch =
+        RegExp(r"""alert\(\s*['"]([^'"]+)['"]\s*\)""").firstMatch(html);
     if (alertMatch != null) {
       final msg = alertMatch.group(1)!;
       if (msg.contains('密码错误') || msg.contains('不存在')) {

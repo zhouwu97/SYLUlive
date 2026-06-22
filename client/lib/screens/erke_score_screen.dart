@@ -120,7 +120,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
   }
 
   Future<void> _savePasswords(String casPwd, String erkePwd) async {
-    await _secureStore.saveWebvpnPassword(casPwd);
+    await _secureStore.saveWebvpnCredentials(_studentIdCtrl.text.trim(), casPwd);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('erke_erke_pwd', erkePwd); // 暂时保留二课密码在 SharedPreferences 中，后续根据冷启动测试结果决定是否存入 secure store
   }

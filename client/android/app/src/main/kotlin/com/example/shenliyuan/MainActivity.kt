@@ -38,6 +38,34 @@ class MainActivity : FlutterActivity() {
 
     private val keepAliveHandler = android.os.Handler(android.os.Looper.getMainLooper())
 
+    private var keepAliveVerifyPending = false
+
+    private val keepAliveVerifyRunnable = Runnable {
+        if (!keepAliveVerifyPending) return@Runnable
+        keepAliveVerifyPending = false
+
+        val status = KeepAliveForegroundService.status(this)
+
+        if (status["serviceRunning"] == true) {
+            DiagnosticLogStore.info(
+                this,
+                source = "保活",
+                type = "前台自愈成功",
+                summary = "前台服务已恢复运行",
+                detail = "当前状态: $status",
+            )
+        } else {
+            DiagnosticLogStore.critical(
+                this,
+                level = "error",
+                source = "保活",
+                type = "前台自愈失败",
+                summary = "恢复服务后仍未运行",
+                detail = "当前状态: $status",
+            )
+        }
+    }
+
     private val keepAliveHealRunnable = Runnable {
         val status = KeepAliveForegroundService.status(this)
         if (status["enabled"] == true && status["serviceRunning"] != true) {
@@ -53,27 +81,9 @@ class MainActivity : FlutterActivity() {
 
             try {
                 KeepAliveForegroundService.startIfEnabled(this)
-                keepAliveHandler.postDelayed({
-                    val newStatus = KeepAliveForegroundService.status(this)
-                    if (newStatus["serviceRunning"] == true) {
-                        DiagnosticLogStore.info(
-                            this,
-                            source = "保活",
-                            type = "前台自愈成功",
-                            summary = "前台服务已恢复运行",
-                            detail = "当前状态: $newStatus",
-                        )
-                    } else {
-                        DiagnosticLogStore.critical(
-                            this,
-                            level = "error",
-                            source = "保活",
-                            type = "前台自愈失败",
-                            summary = "恢复服务后仍未运行",
-                            detail = "当前状态: $newStatus",
-                        )
-                    }
-                }, 1500L)
+                keepAliveVerifyPending = true
+                keepAliveHandler.removeCallbacks(keepAliveVerifyRunnable)
+                keepAliveHandler.postDelayed(keepAliveVerifyRunnable, 1500L)
             } catch (e: Exception) {
                 DiagnosticLogStore.critical(
                     this,
@@ -116,12 +126,21 @@ class MainActivity : FlutterActivity() {
     override fun onStart() {
         super.onStart()
         keepAliveHandler.removeCallbacks(keepAliveHealRunnable)
+        keepAliveHandler.removeCallbacks(keepAliveVerifyRunnable)
+        keepAliveVerifyPending = false
         keepAliveHandler.postDelayed(keepAliveHealRunnable, 1500L)
     }
 
     override fun onStop() {
         keepAliveHandler.removeCallbacks(keepAliveHealRunnable)
+        keepAliveHandler.removeCallbacks(keepAliveVerifyRunnable)
+        keepAliveVerifyPending = false
         super.onStop()
+    }
+
+    override fun onDestroy() {
+        keepAliveHandler.removeCallbacksAndMessages(null)
+        super.onDestroy()
     }
 
     override fun onNewIntent(intent: Intent) {

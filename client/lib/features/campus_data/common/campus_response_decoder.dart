@@ -6,6 +6,11 @@ import 'package:fast_gbk/fast_gbk.dart';
 import 'package:html/parser.dart' as html_parser;
 import 'package:shenliyuan/features/campus_data/common/campus_data_exception.dart';
 
+enum CampusResponseContext {
+  requestingCasLoginPage,
+  accessingProtectedResource,
+}
+
 class CampusResponseDecoder {
   /// Decodes a Dio Response containing raw bytes (ResponseBody).
   /// Inspects `Content-Type` for charset. If it contains `gb2312` or `gbk`, uses `fast_gbk`.
@@ -47,22 +52,21 @@ class CampusResponseDecoder {
   }
 
   /// Scans the HTML string for known error markers and throws the corresponding exceptions.
-  static void interceptHtmlErrors(String html, {Uri? realUri}) {
+  static void interceptHtmlErrors(String html, {required Uri realUri, CampusResponseContext context = CampusResponseContext.accessingProtectedResource}) {
+    if (html.contains('The website you are visiting is protected by WebVPN')) {
+      throw const WebVpnSessionExpiredException('WebVPN 访问被拒绝，可能处于未登录状态');
+    }
+    
+    if (context == CampusResponseContext.accessingProtectedResource && realUri.path.toLowerCase().endsWith('/login') && html.contains('pwdEncryptSalt')) {
+      throw const WebVpnSessionExpiredException('统一认证登录会话失效或被重定向至登录页');
+    }
+
     // Check for WebVPN Access Denied
     if (html.contains('没有权限访问该资源') || html.contains('Access Denied')) {
       throw const WebVpnAccessDeniedException('WebVPN 已认证，但当前账号无权访问目标内网资源。');
     }
 
-    if (realUri != null) {
-      final path = realUri.path.toLowerCase();
-      // Ticket 失效时常被送回 WebVPN 登录页
-      if (path.endsWith('/login') && html.contains('pwdEncryptSalt')) {
-        throw const WebVpnSessionExpiredException('WebVPN Session 已过期或无效');
-      }
-    }
-
-    // Check for WebVPN Session Expired directly in HTML if URI isn't provided
-    if (html.contains('WebVPN') && html.contains('pwdEncryptSalt') && html.contains('casLoginForm')) {
+    if (context == CampusResponseContext.accessingProtectedResource && html.contains('WebVPN') && html.contains('pwdEncryptSalt') && html.contains('casLoginForm')) {
       throw const WebVpnSessionExpiredException('WebVPN Session 已过期或无效');
     }
 

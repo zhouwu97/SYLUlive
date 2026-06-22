@@ -29,7 +29,8 @@ class ErkeRepository extends ChangeNotifier {
   })  : _session = session,
         _secureStore = secureStore,
         _cacheStore = cacheStore {
-    _webVpnClient = WebVpnClient(dio: _session.dio);
+    _webVpnClient =
+        WebVpnClient(dio: _session.dio, cookieJar: _session.cookieJar.innerJar);
     _erkeClient = ErkeClient(webVpnClient: _webVpnClient);
   }
 

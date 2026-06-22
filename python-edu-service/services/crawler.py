@@ -255,14 +255,6 @@ class EduCrawler:
                 error_match = re.search(r'alert\("([^"]+)"\)', resp.text)
                 if error_match:
                     raise LoginFailedError(error_match.group(1))
-            # 尝试获取JSESSIONID
-            set_cookie = resp.headers.get("set-cookie", "")
-            if 'JSESSIONID' in set_cookie:
-                for part in set_cookie.split(','):
-                    if 'JSESSIONID' in part:
-                        match = re.search(r'JSESSIONID=([^;]+)', part)
-                        if match:
-                            return f"JSESSIONID={match.group(1)}"
             raise LoginFailedError("登录失败，请检查账号密码")
         elif resp.status_code == 200:
             error_match = re.search(r'alert\("([^"]+)"\)', resp.text)
@@ -292,6 +284,8 @@ class EduCrawler:
             raise CookieLapseError("获取学生信息失败，Cookie可能已失效")
 
         body = resp.text
+        if "登录" in body and "login_slogin.html" in body:
+            raise CookieLapseError("获取学生信息失败，Cookie验证不通过，被重定向至登录页")
 
         # 解析学生信息（HTML结构：id="col_xxx"下有<p>标签）
         name = ""
@@ -346,7 +340,7 @@ class EduCrawler:
                     week_day=str(item.get("xqj", "1")),
                     week_str=item.get("zcd", "")
                 )
-                key = (course.name, course.week_day, course.time)
+                key = (course.name, course.week_day, course.time, course.week_str)
                 if key not in seen:
                     seen.add(key)
                     all_courses.append(course)
@@ -454,30 +448,38 @@ class EduCrawler:
 # ============== 辅助函数 ==============
 
 def parse_weeks(week_str: str) -> List[int]:
-    """解析周数字符串，如 '1-16周,18周' -> [1,2,3,...,16,18]"""
+    """解析周数字符串，如 '1-16周,18周', '(单)1-15周', '(双)2-16周'"""
     weeks = []
     if not week_str:
         return weeks
 
-    # 移除"周"字
-    week_str = week_str.replace("周", "")
+    is_odd = "(单)" in week_str or "单" in week_str
+    is_even = "(双)" in week_str or "双" in week_str
 
-    # 按逗号分割
+    week_str = week_str.replace("周", "").replace("(单)", "").replace("(双)", "").replace("单", "").replace("双", "")
+
     parts = week_str.split(",")
     for part in parts:
         part = part.strip()
         if "-" in part:
-            # 范围，如 "1-16"
             try:
-                start, end = part.split("-")
-                for i in range(int(start), int(end) + 1):
+                start, end = map(int, part.split("-"))
+                for i in range(start, end + 1):
+                    if is_odd and i % 2 == 0:
+                        continue
+                    if is_even and i % 2 != 0:
+                        continue
                     weeks.append(i)
             except ValueError:
                 continue
         else:
-            # 单周
             try:
-                weeks.append(int(part))
+                i = int(part)
+                if is_odd and i % 2 == 0:
+                    continue
+                if is_even and i % 2 != 0:
+                    continue
+                weeks.append(i)
             except ValueError:
                 continue
 

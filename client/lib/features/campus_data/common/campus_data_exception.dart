@@ -41,3 +41,7 @@ final class CampusStorageException extends CampusDataException {
   const CampusStorageException([super.message]);
 }
 
+final class ErkeDuplicatePageException extends CampusDataException {
+  const ErkeDuplicatePageException([super.message]);
+}
+

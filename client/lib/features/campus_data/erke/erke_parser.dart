@@ -163,9 +163,27 @@ class ErkeParser {
     }
 
     // Extract pagination details
+    int currentPage = 1;
     int totalPages = 1;
     final pager = doc.getElementById('TPaged1');
     if (pager != null) {
+      // Try to extract current page
+      final text = pager.text.replaceAll(RegExp(r'\s+'), '');
+      final currentMatch = RegExp(r'(?:第|当前页[：:])(\d+)(?:页|/)').firstMatch(text);
+      if (currentMatch != null) {
+        currentPage = int.tryParse(currentMatch.group(1)!) ?? 1;
+      } else {
+        final currentSpan = pager.querySelector('span');
+        if (currentSpan != null && int.tryParse(currentSpan.text.trim()) != null) {
+           currentPage = int.tryParse(currentSpan.text.trim())!;
+        } else {
+           final redFonts = pager.querySelectorAll('font[color="red"]');
+           if (redFonts.isNotEmpty && int.tryParse(redFonts.first.text.trim()) != null) {
+             currentPage = int.tryParse(redFonts.first.text.trim())!;
+           }
+        }
+      }
+
       final fonts = pager.querySelectorAll('font');
       for (final font in fonts.reversed) {
         final val = int.tryParse(font.text.trim());
@@ -175,7 +193,6 @@ class ErkeParser {
         }
       }
       if (totalPages == 1) {
-        final text = pager.text.replaceAll(RegExp(r'\s+'), '');
         final match = RegExp(r'(?:共|/|总页数[：:])(\d+)(?:页)?').firstMatch(text);
         if (match != null) {
           totalPages = int.tryParse(match.group(1)!) ?? 1;
@@ -183,6 +200,7 @@ class ErkeParser {
       }
     }
     totalPages = totalPages < 1 ? 1 : totalPages;
+    currentPage = currentPage < 1 ? 1 : currentPage;
 
     final hiddenFields = <String, String>{};
     for (final hidden in ['__VIEWSTATE', '__VIEWSTATEGENERATOR', '__EVENTVALIDATION', '__VIEWSTATEENCRYPTED']) {
@@ -194,7 +212,7 @@ class ErkeParser {
 
     return ErkeActivitiesPage(
       activities: activities,
-      currentPage: 1, // Caller sets this properly if needed
+      currentPage: currentPage,
       totalPages: totalPages,
       hiddenFields: hiddenFields,
     );

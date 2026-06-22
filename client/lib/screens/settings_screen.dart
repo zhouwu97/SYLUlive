@@ -503,7 +503,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
       builder: (dialogContext) => AlertDialog(
         title: const Text('后台保活提示'),
         content: const Text(
-          '请在接下来的系统页面里允许自启动、后台运行，并把电池策略设为无限制。保活状态请看常驻通知或快捷设置开关。',
+          '请在接下来的系统页面里开启以下权限或设置：\n\n'
+          '• 电池使用：无限制\n'
+          '• 允许应用自启动\n'
+          '• 允许后台活动\n'
+          '• 最近任务中锁定应用\n\n'
+          '保活状态请看常驻通知或快捷设置开关。',
         ),
         actions: [
           TextButton(

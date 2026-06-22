@@ -19,9 +19,9 @@ web/favicon.png
 *.db
 server/uploads/*
 !server/uploads/.gitkeep
-shenliyuan
-shenliyuan.exe
-shenliyuan.exe~
+/shenliyuan
+/shenliyuan.exe
+/shenliyuan.exe~
 server/*.exe
 server/*.exe~
 *.apk

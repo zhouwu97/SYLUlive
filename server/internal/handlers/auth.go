@@ -747,7 +747,12 @@ func (h *AuthHandler) RegisterWithEdu(c *gin.Context) {
 		College string `json:"college"`
 		Major   string `json:"major"`
 	}
-	json.Unmarshal(resp.Body(), &bindResult)
+	if err := json.Unmarshal(resp.Body(), &bindResult); err != nil {
+		tx.Rollback()
+		compensateUnbind(client, user.ID)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "解析教务绑定结果失败"})
+		return
+	}
 
 	if !bindResult.Success {
 		tx.Rollback()
@@ -761,19 +766,25 @@ func (h *AuthHandler) RegisterWithEdu(c *gin.Context) {
 		"edu_grade":   bindResult.Grade,
 		"edu_college": bindResult.College,
 		"edu_major":   bindResult.Major,
+		"edu_name":    bindResult.Name,
 	}).Error; err != nil {
 		tx.Rollback()
-		// 尽力补偿解绑
-		client.Delete("/api/edu/bind", map[string]string{"user_id": strconv.FormatUint(uint64(user.ID), 10)})
+		compensateUnbind(client, user.ID)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新教务状态失败"})
 		return
 	}
-	
-	tx.Commit()
+
+	if err := tx.Commit().Error; err != nil {
+		compensateUnbind(client, user.ID)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "事务提交失败"})
+		return
+	}
+
 	user.EduBound = true
 	user.EduGrade = bindResult.Grade
 	user.EduCollege = bindResult.College
 	user.EduMajor = bindResult.Major
+	user.EduName = bindResult.Name
 
 	token, err := middleware.GenerateToken(user.ID, string(user.Role), user.TokenVersion, h.jwtSecret)
 	if err != nil {
@@ -1106,4 +1117,28 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 	c.SetSameSite(http.SameSiteLaxMode)
 	c.SetCookie("jwt", "", -1, "/api", "", secure, true)
 	c.JSON(http.StatusOK, gin.H{"message": "已退出登录"})
+}
+
+func compensateUnbind(client *EduServiceClient, userID uint) {
+	resp, err := client.Delete("/api/edu/bind", map[string]string{
+		"user_id": strconv.FormatUint(uint64(userID), 10),
+	})
+	if err != nil {
+		fmt.Printf("[ERROR] 补偿解绑失败 (Network Error): userID=%d, err=%v\n", userID, err)
+		return
+	}
+	if resp.StatusCode() != http.StatusOK {
+		fmt.Printf("[ERROR] 补偿解绑失败 (HTTP Status %d): userID=%d, response=%s\n", resp.StatusCode(), userID, string(resp.Body()))
+		return
+	}
+	var res struct {
+		Success bool `json:"success"`
+	}
+	if err := json.Unmarshal(resp.Body(), &res); err != nil {
+		fmt.Printf("[ERROR] 补偿解绑失败 (Parse JSON): userID=%d, err=%v\n", userID, err)
+		return
+	}
+	if !res.Success {
+		fmt.Printf("[ERROR] 补偿解绑失败 (Business Error): userID=%d, response=%s\n", userID, string(resp.Body()))
+	}
 }

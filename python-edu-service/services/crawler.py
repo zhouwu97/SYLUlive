@@ -370,9 +370,10 @@ class EduCrawler:
                 timeout=10.0
             )
             print(f"  [DESK] status={resp.status_code}, len={len(resp.text)}")
-            # 901 = session expired; 302 = redirected to login page
             if resp.status_code in (901, 302):
                 raise CookieLapseError("Cookie已过期 (DESK)")
+            if resp.status_code != 200:
+                raise NetworkError(f"获取课表(DESK)请求失败，状态码: {resp.status_code}")
             if resp.status_code == 200 and resp.text.strip() not in ("null", ""):
                 data = resp.json()
                 kb_list = data.get("kbList", [])
@@ -397,6 +398,8 @@ class EduCrawler:
                 )
                 if resp.status_code in (302, 901):
                     raise CookieLapseError("教务登录状态已失效")
+                if resp.status_code != 200:
+                    raise NetworkError(f"获取课表(MOBILE)请求失败，状态码: {resp.status_code}")
                 
                 content_type = resp.headers.get("content-type", "").lower()
                 if "text/html" in content_type:
@@ -444,7 +447,9 @@ class EduCrawler:
         )
 
         if resp.status_code != 200:
-            raise CookieLapseError("获取成绩失败，Cookie可能已失效")
+            if resp.status_code in (302, 901):
+                raise CookieLapseError("获取成绩失败，Cookie可能已失效")
+            raise NetworkError(f"获取成绩失败，状态码: {resp.status_code}")
 
         content_type = resp.headers.get("Content-Type", "")
         if "text/html" in content_type:

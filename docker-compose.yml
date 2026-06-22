@@ -16,15 +16,7 @@ services:
       timeout: 5s
       retries: 5
 
-  # Go后端服务
 
-  python-edu-service:
-    build:
-      context: ./python-edu-service
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    networks:
-      - shenliyuan_network
 
   server:
     build:
@@ -49,14 +41,6 @@ services:
     networks:
       - shenliyuan_network
 
-volumes:
-  server_data:
-  postgres_data:
-
-networks:
-  shenliyuan_network:
-    driver: bridge
-
   nginx:
     image: nginx:alpine
     ports:
@@ -68,3 +52,11 @@ networks:
       - server
     networks:
       - shenliyuan_network
+
+volumes:
+  server_data:
+  postgres_data:
+
+networks:
+  shenliyuan_network:
+    driver: bridge

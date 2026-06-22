@@ -66,9 +66,16 @@ class _DiagnosticLogScreenState extends State<DiagnosticLogScreen> {
     );
 
     if (confirm == true) {
-      await DiagnosticLogService.instance.clearLogs();
-      if (!mounted) return;
-      await _loadLogs();
+      try {
+        await DiagnosticLogService.instance.clearLogs();
+        if (!mounted) return;
+        await _loadLogs();
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('日志清理失败: $e')),
+        );
+      }
     }
   }
 

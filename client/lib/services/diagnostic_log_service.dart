@@ -24,7 +24,8 @@ class DiagnosticLogService {
     await _channel.invokeMethod('clearDiagnosticLogs');
   }
 
-  Future<void> recordError({
+  Future<void> record({
+    required String level,
     required String source,
     required String type,
     required String summary,
@@ -32,15 +33,29 @@ class DiagnosticLogService {
   }) async {
     try {
       await _channel.invokeMethod('writeDiagnosticLog', {
-        'level': 'error',
+        'level': level,
         'source': source,
         'type': type,
         'summary': summary,
         'detail': detail,
       });
     } catch (e) {
-      // Ignore
       debugPrint('写入诊断日志失败: $e');
     }
+  }
+
+  Future<void> recordError({
+    required String source,
+    required String type,
+    required String summary,
+    required String detail,
+  }) async {
+    return record(
+      level: 'error',
+      source: source,
+      type: type,
+      summary: summary,
+      detail: detail,
+    );
   }
 }

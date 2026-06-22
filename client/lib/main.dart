@@ -42,70 +42,127 @@ String _hashError(String level, String source, String type, String summary, Stri
   return md5.convert(bytes).toString();
 }
 
-String? _lastErrorHash;
-int _lastErrorTime = 0;
+final Map<String, int> _dedupTimes = {};
 
-void _safeRecordError(String source, String type, String summary, String detail) {
+void _safeRecord({
+  required String level,
+  required String source,
+  required String type,
+  required String summary,
+  required String detail,
+  required String dedupKey,
+  required int dedupMs,
+}) {
   final now = DateTime.now().millisecondsSinceEpoch;
-  final hash = _hashError('error', source, type, summary, detail);
-  if (hash == _lastErrorHash && now - _lastErrorTime < 2000) {
-    return; // deduplicate same error within 2 seconds
-  }
-  _lastErrorHash = hash;
-  _lastErrorTime = now;
+  final lastTime = _dedupTimes[dedupKey] ?? 0;
   
-  DiagnosticLogService.instance.recordError(
-    source: source,
-    type: type,
-    summary: summary,
-    detail: detail,
-  );
+  if (now - lastTime < dedupMs) {
+    return; // Deduplicate
+  }
+  _dedupTimes[dedupKey] = now;
+  
+  // Clean up old entries to prevent memory leak
+  if (_dedupTimes.length > 100) {
+    _dedupTimes.removeWhere((_, time) => now - time > 60 * 60 * 1000);
+  }
+
+  if (level == 'warning') {
+    DiagnosticLogService.instance.record(
+      level: 'warning',
+      source: source,
+      type: type,
+      summary: summary,
+      detail: detail,
+    );
+  } else {
+    DiagnosticLogService.instance.recordError(
+      source: source,
+      type: type,
+      summary: summary,
+      detail: detail,
+    );
+  }
 }
 
 Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-
-  FlutterError.onError = (FlutterErrorDetails details) {
-    FlutterError.presentError(details);
-
-    _safeRecordError(
-      'Flutter',
-      details.exception.runtimeType.toString(),
-      details.exceptionAsString(),
-      details.toString(),
-    );
-  };
-
-  PlatformDispatcher.instance.onError = (error, stack) {
-    _safeRecordError(
-      'Flutter',
-      error.runtimeType.toString(),
-      error.toString(),
-      '$error\n\n$stack',
-    );
-    return true;
-  };
-
-  // 强制沉浸式（Edge-to-Edge），解决悬浮底栏下方的系统黑条空挡问题
-  SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-    systemNavigationBarColor: Colors.transparent,
-    statusBarColor: Colors.transparent,
-  ));
-
-  await runZonedGuarded(
+  await runZonedGuarded<Future<void>>(
     () async {
+      WidgetsFlutterBinding.ensureInitialized();
+
+      FlutterError.onError = (FlutterErrorDetails details) {
+        FlutterError.presentError(details);
+
+        final exceptionText = details.exceptionAsString();
+
+        if (exceptionText.contains('_ClientSocketException') &&
+            details.library == 'image resource service') {
+          
+          final hostMatch = RegExp(r'address\s*=\s*([^\s,:]+)').firstMatch(exceptionText);
+          final host = hostMatch?.group(1) ?? 'unknown';
+          
+          _safeRecord(
+            level: 'warning',
+            source: '图片',
+            type: '图片加载失败',
+            summary: '图片连接被中途断开',
+            detail: exceptionText,
+            dedupKey: 'image_error_$host',
+            dedupMs: 10 * 60 * 1000, // 10 minutes
+          );
+          return;
+        }
+
+        final fullString = details.toString();
+        _safeRecord(
+          level: 'error',
+          source: 'Flutter',
+          type: details.exception.runtimeType.toString(),
+          summary: exceptionText,
+          detail: fullString,
+          dedupKey: _hashError('error', 'Flutter', details.exception.runtimeType.toString(), exceptionText, fullString),
+          dedupMs: 2000,
+        );
+      };
+
+      PlatformDispatcher.instance.onError = (error, stack) {
+        final exceptionText = error.toString();
+        final fullString = '$error\n\n$stack';
+
+        _safeRecord(
+          level: 'error',
+          source: 'Flutter',
+          type: error.runtimeType.toString(),
+          summary: exceptionText,
+          detail: fullString,
+          dedupKey: _hashError('error', 'Flutter', error.runtimeType.toString(), exceptionText, fullString),
+          dedupMs: 2000,
+        );
+        return true;
+      };
+
+      // 强制沉浸式（Edge-to-Edge），解决悬浮底栏下方的系统黑条空挡问题
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+      SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+        systemNavigationBarColor: Colors.transparent,
+        statusBarColor: Colors.transparent,
+      ));
+
       await Hive.initFlutter();
       await CourseReminderService.instance.initialize();
       await _initializePrivateMessageNotifications();
       runApp(const MyApp());
     },
     (error, stack) {
-      _safeRecordError(
-        'Dart',
-        error.runtimeType.toString(),
-        error.toString(),
-        '$error\n\n$stack',
+      final exceptionText = error.toString();
+      final fullString = '$error\n\n$stack';
+      _safeRecord(
+        level: 'error',
+        source: 'Dart',
+        type: error.runtimeType.toString(),
+        summary: exceptionText,
+        detail: fullString,
+        dedupKey: _hashError('error', 'Dart', error.runtimeType.toString(), exceptionText, fullString),
+        dedupMs: 2000,
       );
     },
   );

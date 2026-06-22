@@ -85,6 +85,41 @@ class MainActivity : FlutterActivity() {
         super.onPause()
     }
 
+    override fun onStart() {
+        super.onStart()
+
+        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+            val status = KeepAliveForegroundService.status(this)
+            val enabled = status["enabled"] == true
+            val running = status["serviceRunning"] == true
+
+            if (enabled && !running) {
+                DiagnosticLogStore.warning(
+                    this,
+                    source = "保活",
+                    type = "前台自愈",
+                    summary = "检测到保活服务未运行，正在尝试恢复",
+                    detail = status.entries.joinToString("\n") {
+                        "${it.key}=${it.value}"
+                    },
+                )
+
+                try {
+                    KeepAliveForegroundService.startIfEnabled(this)
+                } catch (e: Exception) {
+                    DiagnosticLogStore.critical(
+                        this,
+                        level = "error",
+                        source = "保活",
+                        type = e.javaClass.simpleName,
+                        summary = "前台自动恢复保活服务失败",
+                        detail = android.util.Log.getStackTraceString(e),
+                    )
+                }
+            }
+        }, 1500L)
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)

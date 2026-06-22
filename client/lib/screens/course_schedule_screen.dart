@@ -1448,8 +1448,13 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       builder: (dialogContext) => AlertDialog(
         title: const Text('后台保活授权'),
         content: const Text(
-          '请在系统页面允许忽略电池优化、精确闹钟、自启动或后台运行。'
-          '这样即使从任务卡片清除应用，课程提醒也能由系统闹钟唤起。'
+          '请在系统页面开启以下权限或设置：\n\n'
+          '• 电池使用：无限制（忽略电池优化）\n'
+          '• 允许精确闹钟\n'
+          '• 允许应用自启动\n'
+          '• 允许后台活动\n'
+          '• 最近任务中锁定应用\n\n'
+          '这样即使从任务卡片清除应用，课程提醒也能由系统闹钟唤起。\n'
           '如果在系统设置里强行停止应用，Android 会禁止所有提醒。',
         ),
         actions: [

@@ -251,6 +251,27 @@ func (h *EduHandler) GetCourses(c *gin.Context) {
 	c.Data(http.StatusOK, "application/json", resp.Body())
 }
 
+// GetLocalCourses 获取本地已美化课表
+func (h *EduHandler) GetLocalCourses(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+
+	client := NewEduServiceClient()
+	resp, err := client.Get(fmt.Sprintf("/api/edu/courses/local?user_id=%v", userID))
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "无法连接教务服务"})
+		return
+	}
+
+	if resp.StatusCode() != 200 {
+		errMsg := ExtractError(resp)
+		c.JSON(resp.StatusCode(), gin.H{"error": errMsg})
+		return
+	}
+
+	c.Data(http.StatusOK, "application/json", resp.Body())
+}
+
 type SyncCourseInput struct {
 	Year           string                   `json:"year" binding:"required"`
 	Semester       int                      `json:"semester" binding:"required"`

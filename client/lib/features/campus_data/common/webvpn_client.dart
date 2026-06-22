@@ -24,7 +24,7 @@ class WebVpnClient {
     );
 
     String html = CampusResponseDecoder.decodeResponseBytes(response);
-    CampusResponseDecoder.interceptHtmlErrors(html, realUri: response.realUri);
+    CampusResponseDecoder.interceptHtmlErrors(html, realUri: response.realUri, context: CampusResponseContext.requestingCasLoginPage);
 
     // Parse the form
     var doc = html_parser.parse(html);

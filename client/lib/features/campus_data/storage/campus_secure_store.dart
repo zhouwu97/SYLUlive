@@ -12,21 +12,36 @@ class CampusSecureStore {
   static const _keyWebvpnUsername = 'webvpn_username';
   static const _keyWebvpnPassword = 'webvpn_password';
   static const _keyErkePassword = 'erke_password';
+  static const _keyMigrationCompleted = 'campus_credentials_migration_v1';
 
   Future<void> migrateOldPasswords() async {
+    final migrationStatus = await _storage.read(key: _keyMigrationCompleted);
+    if (migrationStatus == 'true') {
+      return;
+    }
+
     final prefs = await SharedPreferences.getInstance();
     final oldCas = prefs.getString('erke_cas_pwd');
     final oldErke = prefs.getString('erke_erke_pwd');
     
     if (oldCas != null && oldCas.isNotEmpty) {
       await _storage.write(key: _keyWebvpnPassword, value: oldCas);
-      await prefs.remove('erke_cas_pwd');
+      // Wait for write success before removing
+      final verify = await _storage.read(key: _keyWebvpnPassword);
+      if (verify == oldCas) {
+        await prefs.remove('erke_cas_pwd');
+      }
     }
     
     if (oldErke != null && oldErke.isNotEmpty) {
       await saveErkePassword(oldErke);
-      await prefs.remove('erke_erke_pwd');
+      final verify = await getErkePassword();
+      if (verify == oldErke) {
+        await prefs.remove('erke_erke_pwd');
+      }
     }
+
+    await _storage.write(key: _keyMigrationCompleted, value: 'true');
   }
 
   Future<void> saveWebvpnCredentials(String username, String password) async {

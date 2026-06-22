@@ -1,8 +1,7 @@
-import 'dart:convert';
+﻿import 'dart:convert';
 import 'dart:io' show File;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
 import '../utils/app_feedback.dart';
@@ -38,10 +37,10 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
   String _realErkePwd = '';
 
   static const _loadingMessages = [
-    '正在穿透学校内网，请稍候…',
-    '正在通过统一认证…',
-    '正在进入二课平台…',
-    '正在抓取成绩数据…',
+    '姝ｅ湪绌块€忓鏍″唴缃戯紝璇风◢鍊欌€?,
+    '姝ｅ湪閫氳繃缁熶竴璁よ瘉鈥?,
+    '姝ｅ湪杩涘叆浜岃骞冲彴鈥?,
+    '姝ｅ湪鎶撳彇鎴愮哗鏁版嵁鈥?,
   ];
 
   @override
@@ -72,9 +71,10 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
   Future<void> _initStorage() async {
     await _cacheStore.init();
     await _secureStore.migrateOldPasswords();
-    _loadSavedPasswords();
-    if (_repository.summary != null) {
-      if (mounted) setState(() {});
+    await _loadSavedPasswords();
+
+    if (_repository.summary != null && mounted) {
+      setState(() {});
     }
   }
 
@@ -84,21 +84,21 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
     try {
       final casPwd = await _secureStore.getWebvpnPassword() ?? '';
       final erkePwd = await _secureStore.getErkePassword() ?? '';
-      
+
       _realCasPwd = casPwd;
       _realErkePwd = erkePwd;
-      
-      _casPwdCtrl.text = casPwd.isNotEmpty ? '•' * casPwd.length : '';
-      _erkePwdCtrl.text = erkePwd.isNotEmpty ? '•' * erkePwd.length : '';
-      
+
+      _casPwdCtrl.text = casPwd.isEmpty ? '' : '鈥? * casPwd.length;
+      _erkePwdCtrl.text = erkePwd.isEmpty ? '' : '鈥? * erkePwd.length;
+
       if (mounted) setState(() {});
     } catch (_) {}
   }
 
   void _onCasPwdChanged(String val) {
-    final placeholder = '•' * _realCasPwd.length;
+    final placeholder = '鈥? * _realCasPwd.length;
     if (_realCasPwd.isNotEmpty && val != placeholder) {
-      final newText = val.replaceAll('•', '');
+      final newText = val.replaceAll('鈥?, '');
       _realCasPwd = '';
       _casPwdCtrl.value = TextEditingValue(
         text: newText,
@@ -108,9 +108,9 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
   }
 
   void _onErkePwdChanged(String val) {
-    final placeholder = '•' * _realErkePwd.length;
+    final placeholder = '鈥? * _realErkePwd.length;
     if (_realErkePwd.isNotEmpty && val != placeholder) {
-      final newText = val.replaceAll('•', '');
+      final newText = val.replaceAll('鈥?, '');
       _realErkePwd = '';
       _erkePwdCtrl.value = TextEditingValue(
         text: newText,
@@ -136,19 +136,19 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
   Future<void> _queryScores() async {
     final auth = context.read<AuthProvider>();
     if (!auth.isLoggedIn) {
-      AppFeedback.showSnackBar(context, '请先在「我的」页面登录后再查询', isError: true);
+      AppFeedback.showSnackBar(context, '璇峰厛鍦ㄣ€屾垜鐨勩€嶉〉闈㈢櫥褰曞悗鍐嶆煡璇?, isError: true);
       return;
     }
 
     final inputCasPwd = _casPwdCtrl.text;
     final inputErkePwd = _erkePwdCtrl.text;
     
-    final casPwd = inputCasPwd == ('•' * _realCasPwd.length) ? _realCasPwd : inputCasPwd;
-    final erkePwd = inputErkePwd == ('•' * _realErkePwd.length) ? _realErkePwd : inputErkePwd;
+    final casPwd = inputCasPwd == ('鈥? * _realCasPwd.length) ? _realCasPwd : inputCasPwd;
+    final erkePwd = inputErkePwd == ('鈥? * _realErkePwd.length) ? _realErkePwd : inputErkePwd;
     final studentId = _studentIdCtrl.text.trim();
 
     if (casPwd.isEmpty || erkePwd.isEmpty || studentId.isEmpty) {
-      AppFeedback.showSnackBar(context, '请填写完整信息，或先点击"切换账号/修改密码"输入密码');
+      AppFeedback.showSnackBar(context, '璇峰～鍐欏畬鏁翠俊鎭紝鎴栧厛鐐瑰嚮"鍒囨崲璐﹀彿/淇敼瀵嗙爜"杈撳叆瀵嗙爜');
       return;
     }
 
@@ -156,10 +156,11 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
 
     if (mounted) {
       if (_repository.errorMsg != null) {
-        AppFeedback.showSnackBar(context, '查询失败: ${_repository.errorMsg}', isError: true);
+        AppFeedback.showSnackBar(context, '鏌ヨ澶辫触: ${_repository.errorMsg}', isError: true);
       } else {
-        await _savePasswords(casPwd, erkePwd);
-        AppFeedback.showSnackBar(context, '查询成功');
+        await _secureStore.saveWebvpnCredentials(studentId, casPwd);
+        await _secureStore.saveErkePassword(erkePwd);
+        AppFeedback.showSnackBar(context, '鏌ヨ鎴愬姛');
       }
     }
   }
@@ -171,7 +172,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
     return Scaffold(
       backgroundColor: isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
       appBar: AppBar(
-        title: const Text('二课成绩查询'),
+        title: const Text('浜岃鎴愮哗鏌ヨ'),
         backgroundColor: Colors.transparent,
         elevation: 0,
         actions: [
@@ -184,7 +185,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
                       height: 16,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Text('重新拉取', style: TextStyle(fontWeight: FontWeight.bold)),
+                  : const Text('閲嶆柊鎷夊彇', style: TextStyle(fontWeight: FontWeight.bold)),
             ),
         ],
       ),
@@ -208,7 +209,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
                         children: [
                           const CircularProgressIndicator(),
                           const SizedBox(height: 16),
-                          Text('正在更新数据...', style: TextStyle(color: isDark ? Colors.white : Colors.black87)),
+                          Text('姝ｅ湪鏇存柊鏁版嵁...', style: TextStyle(color: isDark ? Colors.white : Colors.black87)),
                         ],
                       ),
                     ),
@@ -223,7 +224,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
 
   Widget _buildLoginForm() {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final studentId = _studentIdCtrl.text.isNotEmpty ? _studentIdCtrl.text : '未登录';
+    final studentId = _studentIdCtrl.text.isNotEmpty ? _studentIdCtrl.text : '鏈櫥褰?;
     
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
@@ -238,7 +239,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    '学号 $studentId 已自动识别，请完成双重密码验证',
+                    '瀛﹀彿 $studentId 宸茶嚜鍔ㄨ瘑鍒紝璇峰畬鎴愬弻閲嶅瘑鐮侀獙璇?,
                     style: TextStyle(fontSize: 13, color: isDark ? Colors.white70 : Colors.black87),
                   ),
                 ),
@@ -257,9 +258,9 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
                   children: [
                     const Icon(Icons.security, color: Colors.blue, size: 22),
                     const SizedBox(width: 10),
-                    const Text('1. 统一认证密码', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                    const Text('1. 缁熶竴璁よ瘉瀵嗙爜', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
                     const Spacer(),
-                    Text('VPN 穿透专用', style: TextStyle(fontSize: 10, color: isDark ? Colors.white38 : Colors.grey[500])),
+                    Text('VPN 绌块€忎笓鐢?, style: TextStyle(fontSize: 10, color: isDark ? Colors.white38 : Colors.grey[500])),
                   ],
                 ),
                 const SizedBox(height: 16),
@@ -269,7 +270,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
                   obscureText: _obscureCas,
                   style: const TextStyle(fontSize: 14),
                   decoration: InputDecoration(
-                    hintText: '输入统一身份认证密码',
+                    hintText: '杈撳叆缁熶竴韬唤璁よ瘉瀵嗙爜',
                     prefixIcon: const Icon(Icons.lock_outline, size: 18),
                     suffixIcon: IconButton(
                       icon: Icon(_obscureCas ? Icons.visibility_off : Icons.visibility, size: 18),
@@ -295,9 +296,9 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
                   children: [
                     const Icon(Icons.school, color: Colors.green, size: 22),
                     const SizedBox(width: 10),
-                    const Text('2. 二课查询密码', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                    const Text('2. 浜岃鏌ヨ瀵嗙爜', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
                     const Spacer(),
-                    Text('系统登录专用', style: TextStyle(fontSize: 10, color: isDark ? Colors.white38 : Colors.grey[500])),
+                    Text('绯荤粺鐧诲綍涓撶敤', style: TextStyle(fontSize: 10, color: isDark ? Colors.white38 : Colors.grey[500])),
                   ],
                 ),
                 const SizedBox(height: 16),
@@ -307,7 +308,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
                   obscureText: _obscureErke,
                   style: const TextStyle(fontSize: 14),
                   decoration: InputDecoration(
-                    hintText: '输入二课平台登录密码',
+                    hintText: '杈撳叆浜岃骞冲彴鐧诲綍瀵嗙爜',
                     prefixIcon: const Icon(Icons.vpn_key_outlined, size: 18),
                     suffixIcon: IconButton(
                       icon: Icon(_obscureErke ? Icons.visibility_off : Icons.visibility, size: 18),
@@ -340,21 +341,21 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
                       children: [
                         SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)),
                         SizedBox(width: 12),
-                        Text('查询中...', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                        Text('鏌ヨ涓?..', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                       ],
                     )
-                  : const Text('开始查询', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  : const Text('寮€濮嬫煡璇?, style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             ),
           ),
           
           if (_repository.isLoading) ...[
             const SizedBox(height: 16),
-            Text('正在查询二课成绩，请耐心等待...', style: TextStyle(fontSize: 12, color: isDark ? Colors.white54 : Colors.grey[600], fontStyle: FontStyle.italic)),
+            Text('姝ｅ湪鏌ヨ浜岃鎴愮哗锛岃鑰愬績绛夊緟...', style: TextStyle(fontSize: 12, color: isDark ? Colors.white54 : Colors.grey[600], fontStyle: FontStyle.italic)),
           ],
           
           const SizedBox(height: 30),
           Text(
-            '提示：系统将自动完成 WebVPN 穿透，在校外也可无障碍查询成绩。',
+            '鎻愮ず锛氱郴缁熷皢鑷姩瀹屾垚 WebVPN 绌块€忥紝鍦ㄦ牎澶栦篃鍙棤闅滅鏌ヨ鎴愮哗銆?,
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 11, color: isDark ? Colors.white38 : Colors.grey[500]),
           ),
@@ -366,7 +367,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
   Widget _buildScoreList(bool isDark) {
     final activities = _repository.activities ?? [];
     
-    // 收集所有类别用于筛选
+    // 鏀堕泦鎵€鏈夌被鍒敤浜庣瓫閫?
     final categoryList = <String>[];
     for (final a in activities) {
       if (a.category.isNotEmpty && !categoryList.contains(a.category)) {
@@ -374,7 +375,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
       }
     }
 
-    // 按筛选过滤
+    // 鎸夌瓫閫夎繃婊?
     final filtered = activities.where((a) {
       if (_filterCategory == null) return true;
       return a.category == _filterCategory;
@@ -383,7 +384,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
     return Column(
       children: [
         if (_repository.summary != null) _buildSummaryHeader(isDark),
-        // 筛选条
+        // 绛涢€夋潯
         if (categoryList.isNotEmpty)
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
@@ -391,7 +392,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
               scrollDirection: Axis.horizontal,
               child: Row(
                 children: [
-                  _filterChip('全部', _filterCategory == null,
+                  _filterChip('鍏ㄩ儴', _filterCategory == null,
                       onTap: () => setState(() => _filterCategory = null)),
                   ...categoryList.map((c) => _filterChip(c, _filterCategory == c,
                       onTap: () => setState(() => _filterCategory = c))),
@@ -404,7 +405,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
           child: Row(
             children: [
               Text(
-                '${_filterCategory ?? '查询结果'} (${filtered.length})',
+                '${_filterCategory ?? '鏌ヨ缁撴灉'} (${filtered.length})',
                 style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
               const Spacer(),
@@ -415,7 +416,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
                     _filterCategory = null;
                   });
                 },
-                child: const Text('退出账号'),
+                child: const Text('閫€鍑鸿处鍙?),
               ),
             ],
           ),
@@ -423,7 +424,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
         Expanded(
           child: filtered.isEmpty
               ? Center(
-                  child: Text('该分类暂无数据',
+                  child: Text('璇ュ垎绫绘殏鏃犳暟鎹?,
                       style: TextStyle(fontSize: 14, color: isDark ? Colors.white54 : Colors.grey[600])))
               : ListView.builder(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -457,11 +458,11 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
     final totalScore = summary.total;
     
     final cats = [
-      {'name': '思想政治素质与道德修养', 'score': summary.categoryA},
-      {'name': '社会实践与志愿服务', 'score': summary.categoryB},
-      {'name': '学术科技与创新创业', 'score': summary.categoryC},
-      {'name': '文化艺术与身心发展', 'score': summary.categoryD},
-      {'name': '社团活动与社会工作', 'score': summary.categoryE},
+      {'name': '鎬濇兂鏀挎不绱犺川涓庨亾寰蜂慨鍏?, 'score': summary.categoryA},
+      {'name': '绀句細瀹炶返涓庡織鎰挎湇鍔?, 'score': summary.categoryB},
+      {'name': '瀛︽湳绉戞妧涓庡垱鏂板垱涓?, 'score': summary.categoryC},
+      {'name': '鏂囧寲鑹烘湳涓庤韩蹇冨彂灞?, 'score': summary.categoryD},
+      {'name': '绀惧洟娲诲姩涓庣ぞ浼氬伐浣?, 'score': summary.categoryE},
     ];
 
     return Padding(
@@ -469,7 +470,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 分类卡片横向滚动
+          // 鍒嗙被鍗＄墖妯悜婊氬姩
           SizedBox(
             height: 106,
             child: ListView.builder(
@@ -508,7 +509,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          '实际得分',
+                          '瀹為檯寰楀垎',
                           style: TextStyle(
                             fontSize: 11,
                             color: isDark ? Colors.white54 : Colors.grey[700],
@@ -523,13 +524,13 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
             ),
           ),
           const SizedBox(height: 10),
-          // 总计行
+          // 鎬昏琛?
           GlassContainer(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             borderRadius: 12,
             child: Row(
               children: [
-                const Text('总计得分', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                const Text('鎬昏寰楀垎', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
                 const Spacer(),
                 Text(
                   totalScore.toStringAsFixed(totalScore == totalScore.roundToDouble() ? 0 : 1),

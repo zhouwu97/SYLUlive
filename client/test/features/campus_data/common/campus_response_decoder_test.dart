@@ -39,7 +39,7 @@ void main() {
     test('intercepts WebVPN Access Denied', () {
       final html = '<html><body>对不起，您没有权限访问该资源</body></html>';
       expect(
-        () => CampusResponseDecoder.interceptHtmlErrors(html),
+        () => CampusResponseDecoder.interceptHtmlErrors(html, realUri: Uri.parse('https://webvpn.sylu.edu.cn/login')),
         throwsA(isA<WebVpnAccessDeniedException>()),
       );
     });
@@ -48,7 +48,7 @@ void main() {
       final html =
           '<html><body><div id="msg" class="errors">密码错误或账户不存在</div></body></html>';
       expect(
-        () => CampusResponseDecoder.interceptHtmlErrors(html),
+        () => CampusResponseDecoder.interceptHtmlErrors(html, realUri: Uri.parse('https://webvpn.sylu.edu.cn/login')),
         throwsA(isA<CasLoginFailedException>()),
       );
     });

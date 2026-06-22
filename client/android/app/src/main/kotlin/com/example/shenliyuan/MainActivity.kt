@@ -51,20 +51,25 @@ class MainActivity : FlutterActivity() {
         createHighPriorityNotificationChannels()
         applyExcludeFromRecents(KeepAliveForegroundService.isHideRecentsEnabled(this))
 
-        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-            val status = KeepAliveForegroundService.status(this)
-            val enabled = status["enabled"] == true
-            val running = status["serviceRunning"] == true
+        checkKeepAliveDetached()
+    }
 
-            if (enabled && !running) {
+    private fun checkKeepAliveDetached() {
+        val first = KeepAliveForegroundService.status(this)
+        if (first["enabled"] != true || first["serviceRunning"] == true) return
+
+        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+            val second = KeepAliveForegroundService.status(this)
+
+            if (second["enabled"] == true &&
+                second["serviceRunning"] != true
+            ) {
                 DiagnosticLogStore.warning(
                     this,
                     source = "保活",
-                    type = "状态脱节",
-                    summary = "保活开关已开启，但服务未运行",
-                    detail = status.entries.joinToString("\n") {
-                        "${it.key}=${it.value}"
-                    },
+                    type = "疑似状态脱节",
+                    summary = "连续两次检测到保活开关已开启，但服务未运行",
+                    detail = "first=$first\nsecond=$second",
                 )
             }
         }, 1500L)

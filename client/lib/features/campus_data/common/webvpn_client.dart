@@ -72,11 +72,15 @@ class WebVpnClient {
 
     final resultHtml =
         CampusResponseDecoder.decodeResponseBytes(submitResponse);
-    CampusResponseDecoder.interceptHtmlErrors(resultHtml, realUri: submitResponse.realUri);
+    CampusResponseDecoder.interceptHtmlErrors(
+      resultHtml,
+      realUri: submitResponse.realUri,
+      context: CampusResponseContext.requestingCasLoginPage,
+    );
 
     // Verify if we actually logged in by checking if we hit the success page or an index
     if (submitResponse.realUri.path.toLowerCase().endsWith('/login') && resultHtml.contains('pwdEncryptSalt')) {
-      throw const CasLoginFailedException('统一认证登录失败，可能密码错误或认证失效');
+      throw const CasLoginFailedException('统一认证登录失败，请检查账号或密码');
     }
   }
 

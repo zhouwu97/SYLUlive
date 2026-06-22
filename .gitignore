@@ -25,6 +25,7 @@ server/uploads/*
 server/*.exe
 server/*.exe~
 *.apk
+backups.tar/
 *.aab
 *.exe
 __pycache__/

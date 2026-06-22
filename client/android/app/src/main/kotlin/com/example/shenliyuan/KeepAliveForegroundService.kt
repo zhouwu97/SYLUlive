@@ -86,8 +86,9 @@ class KeepAliveForegroundService : Service() {
             )
             isRunning = true
         } catch (e: Exception) {
-            DiagnosticLogStore.error(
+            DiagnosticLogStore.critical(
                 this,
+                level = "error",
                 source = "保活",
                 type = e.javaClass.simpleName,
                 summary = "前台保活通知建立失败",
@@ -101,8 +102,9 @@ class KeepAliveForegroundService : Service() {
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
-        DiagnosticLogStore.warning(
+        DiagnosticLogStore.critical(
             this,
+            level = "warning",
             source = "保活",
             type = "后台任务移除",
             summary = "应用最近任务卡片已被划掉",
@@ -112,8 +114,9 @@ class KeepAliveForegroundService : Service() {
     }
 
     override fun onDestroy() {
-        DiagnosticLogStore.warning(
+        DiagnosticLogStore.critical(
             this,
+            level = "warning",
             source = "保活",
             type = "服务销毁",
             summary = "后台保活服务生命周期结束",
@@ -419,7 +422,6 @@ class KeepAliveForegroundService : Service() {
                 source = "保活",
                 type = "启动请求",
                 summary = "准备启动后台保活服务",
-                detail = "foreground=${Build.VERSION.SDK_INT >= Build.VERSION_CODES.O}",
             )
             
             try {
@@ -429,14 +431,14 @@ class KeepAliveForegroundService : Service() {
                     context.startService(intent)
                 }
             } catch (e: Exception) {
-                DiagnosticLogStore.error(
+                DiagnosticLogStore.critical(
                     context,
+                    level = "error",
                     source = "保活",
                     type = e.javaClass.simpleName,
-                    summary = "提交保活服务启动请求失败",
+                    summary = "请求启动前台服务被系统拒绝",
                     detail = Log.getStackTraceString(e),
                 )
-                throw e
             }
         }
 

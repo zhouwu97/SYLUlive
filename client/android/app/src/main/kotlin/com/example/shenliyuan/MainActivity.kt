@@ -270,18 +270,42 @@ class MainActivity : FlutterActivity() {
                         result.success(true)
                     }
                     "getDiagnosticLogs" -> {
-                        DiagnosticLogStore.getLogs(this) { logs ->
-                            runOnUiThread {
-                                result.success(logs)
+                        DiagnosticLogStore.getLogs(
+                            this,
+                            onSuccess = { logs ->
+                                runOnUiThread {
+                                    result.success(logs)
+                                }
+                            },
+                            onError = { error ->
+                                runOnUiThread {
+                                    result.error(
+                                        "DIAGNOSTIC_LOG_READ_FAILED",
+                                        error.message,
+                                        null
+                                    )
+                                }
                             }
-                        }
+                        )
                     }
                     "clearDiagnosticLogs" -> {
-                        DiagnosticLogStore.clearLogs(this) {
-                            runOnUiThread {
-                                result.success(true)
+                        DiagnosticLogStore.clearLogs(
+                            this,
+                            onSuccess = {
+                                runOnUiThread {
+                                    result.success(true)
+                                }
+                            },
+                            onError = { error ->
+                                runOnUiThread {
+                                    result.error(
+                                        "DIAGNOSTIC_LOG_CLEAR_FAILED",
+                                        error.message,
+                                        null
+                                    )
+                                }
                             }
-                        }
+                        )
                     }
                     "writeDiagnosticLog" -> {
                         val level = call.argument<String>("level") ?: "info"

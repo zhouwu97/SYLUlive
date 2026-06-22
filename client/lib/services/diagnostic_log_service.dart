@@ -21,11 +21,7 @@ class DiagnosticLogService {
   }
 
   Future<void> clearLogs() async {
-    try {
-      await _channel.invokeMethod('clearDiagnosticLogs');
-    } catch (e) {
-      // Ignore
-    }
+    await _channel.invokeMethod('clearDiagnosticLogs');
   }
 
   Future<void> recordError({

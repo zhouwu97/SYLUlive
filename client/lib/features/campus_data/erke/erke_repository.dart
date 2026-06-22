@@ -35,8 +35,26 @@ class ErkeRepository extends ChangeNotifier {
   ErkeSummary? get summary => _cacheStore.getSummary();
   List<ErkeActivity>? get activities => _cacheStore.getActivities();
 
-  /// Logs into the systems and fetches the data.
+  Future<void>? _activeRequest;
+
   Future<void> loginAndFetch(
+      String webvpnUser, String webvpnPass, String erkePass) {
+    final active = _activeRequest;
+    if (active != null) {
+      return active;
+    }
+
+    final request = _doLoginAndFetch(webvpnUser, webvpnPass, erkePass);
+    _activeRequest = request;
+
+    return request.whenComplete(() {
+      if (identical(_activeRequest, request)) {
+        _activeRequest = null;
+      }
+    });
+  }
+
+  Future<void> _doLoginAndFetch(
       String webvpnUser, String webvpnPass, String erkePass) async {
     _setLoading(true);
     _errorMsg = null;
@@ -55,7 +73,6 @@ class ErkeRepository extends ChangeNotifier {
 
       // 3. Fetch summary
       final s = await _erkeClient.getSummary();
-      await _cacheStore.saveSummary(s);
 
       // 4. Fetch activities
       final page = await _erkeClient.getActivitiesPage(1);
@@ -86,19 +103,36 @@ class ErkeRepository extends ChangeNotifier {
         throw ErkePageChangedException('二课活动页数异常：$totalPages');
       }
 
+      String pageFingerprint(List<ErkeActivity> activities) {
+        return activities
+            .map((e) => '${e.name}|${e.date}|${e.score}|${e.organizer}')
+            .join('\n');
+      }
+
+      String prevFingerprint = pageFingerprint(page.activities);
       var currentHiddenFields = page.hiddenFields;
 
       for (var p = 2; p <= totalPages; p++) {
         final nextPage = await _erkeClient.getActivitiesPage(p, hiddenFields: currentHiddenFields);
+        
+        String currFingerprint = pageFingerprint(nextPage.activities);
+        if (currFingerprint == prevFingerprint && nextPage.activities.isNotEmpty) {
+           throw ErkeDuplicatePageException('二课分页异常：请求第$p页，实际返回内容与上页重复');
+        }
+        prevFingerprint = currFingerprint;
+
         addActivities(nextPage.activities);
         currentHiddenFields = nextPage.hiddenFields;
       }
 
-      await _cacheStore.saveActivities(allActs);
+      // 5. Save all data atomically
+      await _cacheStore.saveSnapshot(s, allActs);
     } on CampusDataException catch (e) {
       _errorMsg = e.message;
+      rethrow;
     } catch (e) {
       _errorMsg = e.toString();
+      rethrow;
     } finally {
       _setLoading(false);
       notifyListeners();

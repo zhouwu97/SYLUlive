@@ -7,6 +7,8 @@ class ErkeCacheStore {
   static const _keySummary = 'summary';
   static const _keyActivities = 'activities';
 
+  static const _keySnapshot = 'snapshot';
+
   /// Initializes the Hive box (must be called after Hive.init)
   Future<void> init() async {
     if (!Hive.isBoxOpen(_boxName)) {
@@ -14,17 +16,35 @@ class ErkeCacheStore {
     }
   }
 
-  /// Saves the ErkeSummary.
-  /// Converts to JSON string to avoid requiring Hive TypeAdapters,
-  /// ensuring we don't accidentally save complex objects incorrectly.
-  Future<void> saveSummary(ErkeSummary summary) async {
+  /// Saves both summary and activities atomically in a single snapshot.
+  Future<void> saveSnapshot(
+    ErkeSummary summary,
+    List<ErkeActivity> activities,
+  ) async {
     final box = Hive.box<String>(_boxName);
-    await box.put(_keySummary, jsonEncode(summary.toJson()));
+    await box.put(
+      _keySnapshot,
+      jsonEncode({
+        'summary': summary.toJson(),
+        'activities': activities.map((e) => e.toJson()).toList(),
+      }),
+    );
   }
 
   /// Retrieves the cached ErkeSummary, if any.
   ErkeSummary? getSummary() {
     final box = Hive.box<String>(_boxName);
+    final snapshotData = box.get(_keySnapshot);
+    if (snapshotData != null) {
+      try {
+        final map = jsonDecode(snapshotData) as Map<String, dynamic>;
+        if (map['summary'] != null) {
+          return ErkeSummary.fromJson(map['summary'] as Map<String, dynamic>);
+        }
+      } catch (_) {}
+    }
+    
+    // Fallback to legacy key
     final data = box.get(_keySummary);
     if (data == null) return null;
     try {
@@ -35,16 +55,23 @@ class ErkeCacheStore {
     }
   }
 
-  /// Saves the list of ErkeActivity.
-  Future<void> saveActivities(List<ErkeActivity> activities) async {
-    final box = Hive.box<String>(_boxName);
-    final list = activities.map((a) => a.toJson()).toList();
-    await box.put(_keyActivities, jsonEncode(list));
-  }
-
   /// Retrieves the cached activities, if any.
   List<ErkeActivity>? getActivities() {
     final box = Hive.box<String>(_boxName);
+    final snapshotData = box.get(_keySnapshot);
+    if (snapshotData != null) {
+      try {
+        final map = jsonDecode(snapshotData) as Map<String, dynamic>;
+        if (map['activities'] != null) {
+          final list = map['activities'] as List<dynamic>;
+          return list
+              .map((e) => ErkeActivity.fromJson(e as Map<String, dynamic>))
+              .toList();
+        }
+      } catch (_) {}
+    }
+
+    // Fallback to legacy key
     final data = box.get(_keyActivities);
     if (data == null) return null;
     try {

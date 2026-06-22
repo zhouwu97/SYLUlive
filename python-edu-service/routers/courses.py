@@ -16,6 +16,7 @@ from services.crawler import (
     EduCrawler, CookieLapseError, CourseNotOpenError,
     NetworkError, parse_weeks, parse_time_sections
 )
+from services.credential_crypto import decrypt_credential
 
 router = APIRouter(prefix="/api/edu/courses", tags=["课程"])
 
@@ -53,11 +54,15 @@ async def fetch_courses(
             except CookieLapseError:
                 if attempt == 1:
                     raise HTTPException(status_code=401, detail="Cookie已失效且自动登录失败，请重新绑定教务账号")
-                if not edu_user.raw_password:
+                if not edu_user.encrypted_password:
                     raise HTTPException(status_code=401, detail="Cookie已失效，请重新绑定教务账号")
                 print(f"  [AUTO] Cookie过期，使用存储密码自动重新登录...")
                 try:
-                    cookie = await crawler.login(edu_user.student_id, edu_user.raw_password)
+                    password = decrypt_credential(edu_user.encrypted_password)
+                except Exception:
+                    raise HTTPException(status_code=401, detail="凭据解密失败，请重新绑定教务账号")
+                try:
+                    cookie = await crawler.login(edu_user.student_id, password)
                     edu_user.cookie = cookie
                     await db.commit()
                     print(f"  [AUTO] 重新登录成功，重试抓取...")
@@ -116,19 +121,25 @@ async def sync_courses(
         # 解析原始JSON
         raw_data = json.loads(input.raw_json)
 
-        # 删除旧原始数据（如果有）
-        await db.execute(
-            delete(CourseRaw).where(
+        # Find old raw entries for this semester
+        result = await db.execute(
+            select(CourseRaw.id).where(
                 CourseRaw.user_id == input.user_id,
                 CourseRaw.year == input.year,
                 CourseRaw.semester == input.semester
             )
         )
+        old_raw_ids = [row[0] for row in result.fetchall()]
 
-        # 删除旧自定义数据（如果有）
-        await db.execute(
-            delete(CourseCustom).where(CourseCustom.user_id == input.user_id)
-        )
+        if old_raw_ids:
+            # Delete CourseCustom belonging to this semester's raw data
+            await db.execute(
+                delete(CourseCustom).where(CourseCustom.raw_id.in_(old_raw_ids))
+            )
+            # Then delete CourseRaw for this semester
+            await db.execute(
+                delete(CourseRaw).where(CourseRaw.id.in_(old_raw_ids))
+            )
 
         # 存储原始数据
         course_raw = CourseRaw(

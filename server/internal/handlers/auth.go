@@ -43,10 +43,10 @@ import (
 
 var EduServiceConfig = struct {
 	BaseURL string
+	InternalKey string
 }{
-
-	BaseURL: "", // 浠巆onfig鍔犺浇
-
+	BaseURL: "", // 从 config 加载
+	InternalKey: "", // 从 config 加载
 }
 
 var VerifyCodeConfig = struct {

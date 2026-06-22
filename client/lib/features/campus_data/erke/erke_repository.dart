@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:shenliyuan/features/campus_data/common/campus_data_exception.dart';
 import 'package:shenliyuan/features/campus_data/common/campus_http_session.dart';
 import 'package:shenliyuan/features/campus_data/common/webvpn_client.dart';
 import 'package:shenliyuan/features/campus_data/erke/erke_client.dart';
@@ -57,24 +58,45 @@ class ErkeRepository extends ChangeNotifier {
       final s = await _erkeClient.getSummary();
       await _cacheStore.saveSummary(s);
 
-      // 4. Fetch activities (First page only for now, can be expanded)
-      final page = await _erkeClient.getActivities();
+      // 4. Fetch activities
+      final page = await _erkeClient.getActivitiesPage(1);
 
-      // We will loop to fetch all pages
       final allActs = <ErkeActivity>[];
-      allActs.addAll(page.activities);
+      final seen = <String>{};
 
-      var hasNext = page.hasNext;
-      var viewState = page.nextViewState;
+      void addActivities(List<ErkeActivity> acts) {
+        for (final act in acts) {
+          final key = '\${act.name}|\${act.date}|\${act.organizer}|\${act.score}';
+          if (!seen.contains(key)) {
+            seen.add(key);
+            allActs.add(act);
+          }
+        }
+      }
 
-      while (hasNext && viewState != null) {
-        final nextPage = await _erkeClient.getActivities(viewState: viewState);
-        allActs.addAll(nextPage.activities);
-        hasNext = nextPage.hasNext;
-        viewState = nextPage.nextViewState;
+      addActivities(page.activities);
+
+      int totalPages = page.totalPages;
+      if (totalPages > 20) {
+        totalPages = 20; // Hard limit
+      }
+
+      var currentHiddenFields = page.hiddenFields;
+
+      for (var p = 2; p <= totalPages; p++) {
+        try {
+          final nextPage = await _erkeClient.getActivitiesPage(p, hiddenFields: currentHiddenFields);
+          addActivities(nextPage.activities);
+          currentHiddenFields = nextPage.hiddenFields;
+        } catch (e) {
+          // If a page fails, we stop fetching but keep what we have so far
+          break;
+        }
       }
 
       await _cacheStore.saveActivities(allActs);
+    } on CampusDataException catch (e) {
+      _errorMsg = e.message;
     } catch (e) {
       _errorMsg = e.toString();
     } finally {

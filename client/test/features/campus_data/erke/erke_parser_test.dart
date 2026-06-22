@@ -50,10 +50,10 @@ void main() {
       // and we can print/check
     });
 
-    test('parseLoginHiddenFields gets viewstate', () {
+    test('parseLoginForm gets viewstate', () {
       final html =
           '<html><body><input type="hidden" name="__VIEWSTATE" id="__VIEWSTATE" value="/wEPDwUKTEST123" /></body></html>';
-      final res = ErkeParser.parseLoginHiddenFields(html);
+      final res = ErkeParser.parseLoginForm(html);
       expect(res['__VIEWSTATE'], '/wEPDwUKTEST123');
     });
 

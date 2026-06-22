@@ -42,8 +42,8 @@ class ErkeActivity {
   final String date;
   final String category;
   final String role;
-  final int participantCount;
-  final double score;
+  final int? participantCount;
+  final double? score;
 
   const ErkeActivity({
     required this.name,
@@ -51,8 +51,8 @@ class ErkeActivity {
     required this.date,
     required this.category,
     required this.role,
-    required this.participantCount,
-    required this.score,
+    this.participantCount,
+    this.score,
   });
 
   factory ErkeActivity.fromJson(Map<String, dynamic> json) {
@@ -62,8 +62,8 @@ class ErkeActivity {
       date: json['date'] as String,
       category: json['category'] as String,
       role: json['role'] as String,
-      participantCount: json['participantCount'] as int,
-      score: (json['score'] as num).toDouble(),
+      participantCount: json['participantCount'] as int?,
+      score: json['score'] != null ? (json['score'] as num).toDouble() : null,
     );
   }
 
@@ -80,12 +80,14 @@ class ErkeActivity {
 
 class ErkeActivitiesPage {
   final List<ErkeActivity> activities;
-  final bool hasNext;
-  final String? nextViewState;
+  final int currentPage;
+  final int totalPages;
+  final Map<String, String> hiddenFields;
 
   const ErkeActivitiesPage({
     required this.activities,
-    required this.hasNext,
-    this.nextViewState,
+    required this.currentPage,
+    required this.totalPages,
+    required this.hiddenFields,
   });
 }

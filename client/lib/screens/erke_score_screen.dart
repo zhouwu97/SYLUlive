@@ -71,6 +71,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
 
   Future<void> _initStorage() async {
     await _cacheStore.init();
+    await _secureStore.migrateOldPasswords();
     _loadSavedPasswords();
     if (_repository.summary != null) {
       if (mounted) setState(() {});
@@ -82,8 +83,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
   Future<void> _loadSavedPasswords() async {
     try {
       final casPwd = await _secureStore.getWebvpnPassword() ?? '';
-      final prefs = await SharedPreferences.getInstance();
-      final erkePwd = prefs.getString('erke_erke_pwd') ?? ''; // Fallback for erke pwd
+      final erkePwd = await _secureStore.getErkePassword() ?? '';
       
       _realCasPwd = casPwd;
       _realErkePwd = erkePwd;
@@ -121,8 +121,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
 
   Future<void> _savePasswords(String casPwd, String erkePwd) async {
     await _secureStore.saveWebvpnCredentials(_studentIdCtrl.text.trim(), casPwd);
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('erke_erke_pwd', erkePwd); // 暂时保留二课密码在 SharedPreferences 中，后续根据冷启动测试结果决定是否存入 secure store
+    await _secureStore.saveErkePassword(erkePwd);
   }
 
   @override
@@ -153,14 +152,13 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
       return;
     }
 
-    _savePasswords(casPwd, erkePwd);
-
     await _repository.loginAndFetch(studentId, casPwd, erkePwd);
 
     if (mounted) {
       if (_repository.errorMsg != null) {
         AppFeedback.showSnackBar(context, '查询失败: ${_repository.errorMsg}', isError: true);
       } else {
+        await _savePasswords(casPwd, erkePwd);
         AppFeedback.showSnackBar(context, '查询成功');
       }
     }

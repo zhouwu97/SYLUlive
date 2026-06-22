@@ -6,6 +6,9 @@ import 'package:shenliyuan/features/campus_data/common/webvpn_client.dart';
 import 'package:shenliyuan/features/campus_data/erke/erke_crypto.dart';
 import 'package:shenliyuan/features/campus_data/erke/erke_models.dart';
 import 'package:shenliyuan/features/campus_data/erke/erke_parser.dart';
+import 'package:shenliyuan/features/campus_data/common/webvpn_url_codec.dart';
+
+import 'package:shenliyuan/features/campus_data/common/erke_endpoints.dart';
 
 class ErkeClient {
   final WebVpnClient _webVpnClient;
@@ -16,32 +19,45 @@ class ErkeClient {
   /// Logs into the Erke system using the provided credentials.
   /// Throws [ErkeLoginFailedException] on failure.
   Future<void> login(String username, String password) async {
-    // 1. Fetch login page to get viewstate and public key
-    final initRes =
-        await _webVpnClient.getProxied('dekt.sylu.edu.cn', '/login.aspx');
-    final html = CampusResponseDecoder.decodeResponseBytes(initRes);
+    // 1. Fetch login page
+    String? finalHtml;
+    String? currentPath;
+    
+    for (final path in ErkeEndpoints.loginPaths) {
+      final res = await _webVpnClient.getProxied(ErkeEndpoints.domain, path);
+      final html = CampusResponseDecoder.decodeResponseBytes(res);
+      
+      if (html.contains('UserName') && html.contains('code-box')) {
+        finalHtml = html;
+        currentPath = path;
+        break;
+      }
+    }
+    
+    if (finalHtml == null || currentPath == null) {
+      throw const ErkePageChangedException('未找到二课登录页面或页面已失效');
+    }
 
-    final hiddenFields = ErkeParser.parseLoginHiddenFields(html);
-    final pubKeyBase64 = ErkeParser.parsePublicKey(html);
+    final formData = ErkeParser.parseLoginForm(finalHtml);
+    final pubKeyBase64 = ErkeParser.parsePublicKey(finalHtml);
 
     // 2. Encrypt password
-    final encryptedPassword =
-        ErkeCrypto.encryptPassword(password, pubKeyBase64);
+    final encryptedPassword = ErkeCrypto.encryptPassword(password, pubKeyBase64);
 
     // 3. Post login
-    final formData = <String, String>{
-      ...hiddenFields,
-      'tbId': username,
-      'tbPwd': encryptedPassword,
-      'queryBtn': '跳 转', // "跳 转" in Chinese
-    };
+    formData['UserName'] = username;
+    formData['Password'] = password;
+    formData['pwd'] = encryptedPassword;
+    formData['pubKey'] = pubKeyBase64;
+    // captcha is already set to codeInput in parseLoginForm
+    // queryBtn is also dynamically read by parseLoginForm if present
 
     final bodyBytes = Gb18030FormEncoder.encodeFormBody(formData);
 
     final res = await _webVpnClient.proxyRequest(
       'POST',
-      'dekt.sylu.edu.cn',
-      '/login.aspx',
+      ErkeEndpoints.domain,
+      currentPath,
       data: bodyBytes,
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
@@ -49,60 +65,66 @@ class ErkeClient {
     );
 
     final resultHtml = CampusResponseDecoder.decodeResponseBytes(res);
-    CampusResponseDecoder.interceptHtmlErrors(resultHtml);
+    CampusResponseDecoder.interceptHtmlErrors(resultHtml, realUri: res.realUri);
 
-    if (resultHtml.contains('密码错误') || resultHtml.contains('用户名不存在')) {
-      throw const ErkeLoginFailedException('用户名或密码错误');
-    }
-
-    // Check if we hit the actual system (e.g. MyInfo or similar menu)
-    if (!resultHtml.contains('党政联席管理办公系统') && !resultHtml.contains('退出系统')) {
-      // It might be a redirect or something else
-      // Let's just trust it for now if no error
+    // Check by fetching summary page instead of relying on redirect
+    try {
+      await getSummary();
+    } catch (e) {
+      throw ErkeLoginFailedException('二课登录失败: 无法访问受保护的成绩页面 ($e)');
     }
   }
 
   /// Gets the user's score summary
   Future<ErkeSummary> getSummary() async {
-    final res =
-        await _webVpnClient.getProxied('dekt.sylu.edu.cn', '/Stu/MyInfo.aspx');
+    final res = await _webVpnClient.getProxied(ErkeEndpoints.domain, ErkeEndpoints.summaryPath);
     final html = CampusResponseDecoder.decodeResponseBytes(res);
-    CampusResponseDecoder.interceptHtmlErrors(html);
+    CampusResponseDecoder.interceptHtmlErrors(html, realUri: res.realUri);
     return ErkeParser.parseSummary(html);
   }
 
   /// Gets a specific page of activities
-  Future<ErkeActivitiesPage> getActivities({String? viewState}) async {
-    if (viewState == null) {
+  Future<ErkeActivitiesPage> getActivitiesPage(int pageNumber, {Map<String, String>? hiddenFields}) async {
+    if (pageNumber == 1 || hiddenFields == null) {
       // First page
-      final res = await _webVpnClient.getProxied(
-          'dekt.sylu.edu.cn', '/Stu/MyActivitySearch.aspx');
+      final res = await _webVpnClient.getProxied(ErkeEndpoints.domain, ErkeEndpoints.activityPath);
       final html = CampusResponseDecoder.decodeResponseBytes(res);
-      CampusResponseDecoder.interceptHtmlErrors(html);
+      CampusResponseDecoder.interceptHtmlErrors(html, realUri: res.realUri);
       return ErkeParser.parseActivities(html);
     } else {
       // Next page
       final formData = <String, String>{
-        '__VIEWSTATE': viewState,
-        'TPaged1\$GotoPage': '',
-        'TPaged1\$Jump': '', // Some forms need this
+        ...hiddenFields,
+        'YearTime': '',
+        'ActivityType': '',
+        'OrgNo': '',
+        'ActivityName': '',
+        'TPaged1\$GotoPage': pageNumber.toString(),
+        'TPaged1\$Jump': '跳 转',
       };
 
       final bodyBytes = Gb18030FormEncoder.encodeFormBody(formData);
 
       final res = await _webVpnClient.proxyRequest(
         'POST',
-        'dekt.sylu.edu.cn',
-        '/Stu/MyActivitySearch.aspx',
+        ErkeEndpoints.domain,
+        ErkeEndpoints.activityPath,
         data: bodyBytes,
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
+          'Referer': WebVpnUrlCodec.buildHttpUrl(domain: ErkeEndpoints.domain, path: ErkeEndpoints.activityPath).toString(),
         },
       );
 
       final html = CampusResponseDecoder.decodeResponseBytes(res);
-      CampusResponseDecoder.interceptHtmlErrors(html);
-      return ErkeParser.parseActivities(html);
+      CampusResponseDecoder.interceptHtmlErrors(html, realUri: res.realUri);
+      final page = ErkeParser.parseActivities(html);
+      return ErkeActivitiesPage(
+        activities: page.activities,
+        currentPage: pageNumber,
+        totalPages: page.totalPages,
+        hiddenFields: page.hiddenFields,
+      );
     }
   }
 }

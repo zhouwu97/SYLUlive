@@ -1,4 +1,5 @@
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class CampusSecureStore {
   final FlutterSecureStorage _storage;
@@ -8,11 +9,23 @@ class CampusSecureStore {
 
   static const _keyWebvpnUsername = 'webvpn_username';
   static const _keyWebvpnPassword = 'webvpn_password';
+  static const _keyErkePassword = 'erke_password';
 
-  // Note: Erke credentials are NOT saved according to the new plan.
-  // Erke uses SSO/Cookie復用, no need to store Erke password anymore.
-  // "不再保存校园密码" mostly applies to the legacy way, but we still need WebVPN credentials
-  // to auto-login. Actually, if we use pure SSO, maybe WebVPN password is the only one we need.
+  Future<void> migrateOldPasswords() async {
+    final prefs = await SharedPreferences.getInstance();
+    final oldCas = prefs.getString('erke_cas_pwd');
+    final oldErke = prefs.getString('erke_erke_pwd');
+    
+    if (oldCas != null && oldCas.isNotEmpty) {
+      await saveWebvpnCredentials('', oldCas); // Dummy username
+      await prefs.remove('erke_cas_pwd');
+    }
+    
+    if (oldErke != null && oldErke.isNotEmpty) {
+      await saveErkePassword(oldErke);
+      await prefs.remove('erke_erke_pwd');
+    }
+  }
 
   Future<void> saveWebvpnCredentials(String username, String password) async {
     await _storage.write(key: _keyWebvpnUsername, value: username);
@@ -25,6 +38,22 @@ class CampusSecureStore {
 
   Future<String?> getWebvpnPassword() async {
     return await _storage.read(key: _keyWebvpnPassword);
+  }
+
+  Future<void> deleteWebvpnPassword() async {
+    await _storage.delete(key: _keyWebvpnPassword);
+  }
+
+  Future<void> saveErkePassword(String password) async {
+    await _storage.write(key: _keyErkePassword, value: password);
+  }
+
+  Future<String?> getErkePassword() async {
+    return await _storage.read(key: _keyErkePassword);
+  }
+
+  Future<void> deleteErkePassword() async {
+    await _storage.delete(key: _keyErkePassword);
   }
 
   Future<void> clearWebvpnCredentials() async {

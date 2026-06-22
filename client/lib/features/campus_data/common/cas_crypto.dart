@@ -40,7 +40,7 @@ class CasCrypto {
 
   static String _generateRandomString(int length) {
     final rand = Random.secure();
-    return List.generate(
-        length, (index) => _chars[rand.nextInt(_chars.length)]).join();
+    return List.generate(length, (index) => _chars[rand.nextInt(_chars.length)])
+        .join();
   }
 }

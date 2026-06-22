@@ -9,7 +9,7 @@ void main() {
     test('ignores graduation requirements and parses actual user scores', () {
       final file = File('test/fixtures/campus_data/erke_score_page.html');
       final html = file.readAsStringSync();
-      
+
       final summary = ErkeParser.parseSummary(html);
 
       // Verify it parsed the expected actual scores, not the graduation requirements
@@ -29,35 +29,37 @@ void main() {
       final html = '<html><body><span id="SunCount1">10.0</span></body></html>';
       expect(
         () => ErkeParser.parseSummary(html),
-        throwsA(isA<ErkeDecodeException>()),
+        throwsA(isA<ErkePageChangedException>()),
       );
     });
 
     test('parseActivities parses list correctly and detects pagination', () {
       final file = File('test/fixtures/campus_data/erke_activity_page_1.html');
       final html = file.readAsStringSync();
-      
+
       final page = ErkeParser.parseActivities(html);
-      
+
       expect(page.activities.length, greaterThan(0));
-      
+
       final first = page.activities.first;
       expect(first.name, isNotEmpty);
       expect(first.organizer, isNotEmpty);
-      
+
       // Page 1 should have a next button if there's a pager
       // Wait, whether it has next depends on the fixture, let's just test it runs
       // and we can print/check
     });
 
     test('parseLoginHiddenFields gets viewstate', () {
-      final html = '<html><body><input type="hidden" name="__VIEWSTATE" id="__VIEWSTATE" value="/wEPDwUKTEST123" /></body></html>';
+      final html =
+          '<html><body><input type="hidden" name="__VIEWSTATE" id="__VIEWSTATE" value="/wEPDwUKTEST123" /></body></html>';
       final res = ErkeParser.parseLoginHiddenFields(html);
       expect(res['__VIEWSTATE'], '/wEPDwUKTEST123');
     });
 
     test('parsePublicKey extracts key from pubKey field', () {
-      final html = '<html><body><input type="hidden" id="pubKey" value="MIGfMA0GCS..." /></body></html>';
+      final html =
+          '<html><body><input type="hidden" id="pubKey" value="MIGfMA0GCS..." /></body></html>';
       final key = ErkeParser.parsePublicKey(html);
       expect(key, 'MIGfMA0GCS...');
     });

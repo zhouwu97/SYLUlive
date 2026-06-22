@@ -45,7 +45,8 @@ void main() {
     });
 
     test('intercepts CAS Login Failed', () {
-      final html = '<html><body><div id="msg" class="errors">密码错误或账户不存在</div></body></html>';
+      final html =
+          '<html><body><div id="msg" class="errors">密码错误或账户不存在</div></body></html>';
       expect(
         () => CampusResponseDecoder.interceptHtmlErrors(html),
         throwsA(isA<CasLoginFailedException>()),

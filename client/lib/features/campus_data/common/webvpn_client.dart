@@ -66,7 +66,8 @@ class WebVpnClient {
       ),
     );
 
-    final resultHtml = CampusResponseDecoder.decodeResponseBytes(submitResponse);
+    final resultHtml =
+        CampusResponseDecoder.decodeResponseBytes(submitResponse);
     CampusResponseDecoder.interceptHtmlErrors(resultHtml);
 
     // At this point, Dio + CookieJar automatically saved the JSESSIONID, CASTGC and wengine_vpn_ticket.
@@ -102,11 +103,11 @@ class WebVpnClient {
         validateStatus: (status) => status != null && status < 500,
       ),
     );
-    
+
     // Check if we hit an access denied
     final html = CampusResponseDecoder.decodeResponseBytes(response);
     CampusResponseDecoder.interceptHtmlErrors(html);
-    
+
     return response;
   }
 }

@@ -24,9 +24,11 @@ class Gb18030FormEncoder {
           (byte >= 0x30 && byte <= 0x39) || // 0-9
           byte == 0x5F || // _
           byte == 0x2E || // .
-          byte == 0x2D) { // -
+          byte == 0x2D) {
+        // -
         buffer.writeCharCode(byte);
-      } else if (byte == 0x20) { // space
+      } else if (byte == 0x20) {
+        // space
         buffer.writeCharCode(0x2B); // +
       } else {
         buffer.write('%');

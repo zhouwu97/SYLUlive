@@ -67,8 +67,10 @@ class ErkeCrypto {
       final asn1Parser = ASN1Parser(keyBytes);
       final topLevelSeq = asn1Parser.nextObject() as ASN1Sequence;
 
-      final modulus = (topLevelSeq.elements[0] as ASN1Integer).valueAsBigInteger;
-      final exponent = (topLevelSeq.elements[1] as ASN1Integer).valueAsBigInteger;
+      final modulus =
+          (topLevelSeq.elements[0] as ASN1Integer).valueAsBigInteger;
+      final exponent =
+          (topLevelSeq.elements[1] as ASN1Integer).valueAsBigInteger;
 
       return RSAPublicKey(modulus, exponent);
     } catch (_) {

@@ -11,7 +11,8 @@ class CampusResponseDecoder {
   /// Inspects `Content-Type` for charset. If it contains `gb2312` or `gbk`, uses `fast_gbk`.
   /// Otherwise uses UTF-8.
   static String decodeResponseBytes(Response<List<int>> response) {
-    final contentType = response.headers.value('content-type')?.toLowerCase() ?? '';
+    final contentType =
+        response.headers.value('content-type')?.toLowerCase() ?? '';
     final bytes = response.data ?? <int>[];
 
     if (contentType.contains('gb2312') || contentType.contains('gbk')) {
@@ -32,7 +33,9 @@ class CampusResponseDecoder {
     // Check for WebVPN Session Expired or Redirect to login
     // Usually, CAS login form contains specific inputs, but an explicit WebVPN timeout
     // can be detected if it redirects back to WebVPN login page.
-    if (html.contains('WebVPN') && html.contains('用户登录') && !html.contains('pwdEncryptSalt')) {
+    if (html.contains('WebVPN') &&
+        html.contains('用户登录') &&
+        !html.contains('pwdEncryptSalt')) {
       // It might be a WebVPN timeout page, but let's be careful.
     }
 
@@ -42,15 +45,15 @@ class CampusResponseDecoder {
     final errorNode = document.querySelector('#msg');
     if (errorNode != null && errorNode.text.trim().isNotEmpty) {
       if (errorNode.text.contains('密码错误') || errorNode.text.contains('不存在')) {
-         throw CasLoginFailedException(errorNode.text.trim());
+        throw CasLoginFailedException(errorNode.text.trim());
       }
     }
 
     // Check for Erke Login failed
     // Example: alert('登录失败'); or specific span
     if (html.contains('密码错误') || html.contains('用户名不存在')) {
-       // Just a broad check for Erke since they use simple alerts sometimes
-       // throw const ErkeLoginFailedException('用户名或密码错误');
+      // Just a broad check for Erke since they use simple alerts sometimes
+      // throw const ErkeLoginFailedException('用户名或密码错误');
     }
   }
 }

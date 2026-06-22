@@ -10,20 +10,23 @@ import 'package:shenliyuan/features/campus_data/erke/erke_parser.dart';
 class ErkeClient {
   final WebVpnClient _webVpnClient;
 
-  ErkeClient({required WebVpnClient webVpnClient}) : _webVpnClient = webVpnClient;
+  ErkeClient({required WebVpnClient webVpnClient})
+      : _webVpnClient = webVpnClient;
 
   /// Logs into the Erke system using the provided credentials.
   /// Throws [ErkeLoginFailedException] on failure.
   Future<void> login(String username, String password) async {
     // 1. Fetch login page to get viewstate and public key
-    final initRes = await _webVpnClient.getProxied('dekt.sylu.edu.cn', '/login.aspx');
+    final initRes =
+        await _webVpnClient.getProxied('dekt.sylu.edu.cn', '/login.aspx');
     final html = CampusResponseDecoder.decodeResponseBytes(initRes);
 
     final hiddenFields = ErkeParser.parseLoginHiddenFields(html);
     final pubKeyBase64 = ErkeParser.parsePublicKey(html);
 
     // 2. Encrypt password
-    final encryptedPassword = ErkeCrypto.encryptPassword(password, pubKeyBase64);
+    final encryptedPassword =
+        ErkeCrypto.encryptPassword(password, pubKeyBase64);
 
     // 3. Post login
     final formData = <String, String>{
@@ -51,7 +54,7 @@ class ErkeClient {
     if (resultHtml.contains('密码错误') || resultHtml.contains('用户名不存在')) {
       throw const ErkeLoginFailedException('用户名或密码错误');
     }
-    
+
     // Check if we hit the actual system (e.g. MyInfo or similar menu)
     if (!resultHtml.contains('党政联席管理办公系统') && !resultHtml.contains('退出系统')) {
       // It might be a redirect or something else
@@ -61,7 +64,8 @@ class ErkeClient {
 
   /// Gets the user's score summary
   Future<ErkeSummary> getSummary() async {
-    final res = await _webVpnClient.getProxied('dekt.sylu.edu.cn', '/Stu/MyInfo.aspx');
+    final res =
+        await _webVpnClient.getProxied('dekt.sylu.edu.cn', '/Stu/MyInfo.aspx');
     final html = CampusResponseDecoder.decodeResponseBytes(res);
     CampusResponseDecoder.interceptHtmlErrors(html);
     return ErkeParser.parseSummary(html);
@@ -71,7 +75,8 @@ class ErkeClient {
   Future<ErkeActivitiesPage> getActivities({String? viewState}) async {
     if (viewState == null) {
       // First page
-      final res = await _webVpnClient.getProxied('dekt.sylu.edu.cn', '/Stu/MyActivitySearch.aspx');
+      final res = await _webVpnClient.getProxied(
+          'dekt.sylu.edu.cn', '/Stu/MyActivitySearch.aspx');
       final html = CampusResponseDecoder.decodeResponseBytes(res);
       CampusResponseDecoder.interceptHtmlErrors(html);
       return ErkeParser.parseActivities(html);
@@ -94,7 +99,7 @@ class ErkeClient {
           'Content-Type': 'application/x-www-form-urlencoded',
         },
       );
-      
+
       final html = CampusResponseDecoder.decodeResponseBytes(res);
       CampusResponseDecoder.interceptHtmlErrors(html);
       return ErkeParser.parseActivities(html);

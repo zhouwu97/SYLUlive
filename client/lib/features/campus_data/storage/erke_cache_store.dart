@@ -15,7 +15,7 @@ class ErkeCacheStore {
   }
 
   /// Saves the ErkeSummary.
-  /// Converts to JSON string to avoid requiring Hive TypeAdapters, 
+  /// Converts to JSON string to avoid requiring Hive TypeAdapters,
   /// ensuring we don't accidentally save complex objects incorrectly.
   Future<void> saveSummary(ErkeSummary summary) async {
     final box = Hive.box<String>(_boxName);
@@ -49,7 +49,9 @@ class ErkeCacheStore {
     if (data == null) return null;
     try {
       final list = jsonDecode(data) as List<dynamic>;
-      return list.map((e) => ErkeActivity.fromJson(e as Map<String, dynamic>)).toList();
+      return list
+          .map((e) => ErkeActivity.fromJson(e as Map<String, dynamic>))
+          .toList();
     } catch (_) {
       return null;
     }

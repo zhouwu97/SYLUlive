@@ -17,7 +17,8 @@ class WebVpnUrlCodec {
     final iv = utf8.encode(_ivStr);
     final plaintext = utf8.encode(domain);
 
-    final cipher = CFBBlockCipher(AESEngine(), 16); // 16 bytes = 128 bit block size for CFB
+    final cipher = CFBBlockCipher(
+        AESEngine(), 16); // 16 bytes = 128 bit block size for CFB
     cipher.init(
         true,
         ParametersWithIV(

@@ -19,6 +19,7 @@ import '../services/keep_alive_service.dart';
 import '../services/wallpaper_prefetch_service.dart';
 import '../utils/update_checker.dart';
 import '../widgets/glass_container.dart';
+import 'diagnostic_log_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -372,11 +373,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
         // 账号 — 独立卡片
         _buildSettingsRow(
             child: _buildSettingsTile(
-          icon: Icons.person,
+          icon: Icons.receipt_long_rounded,
           iconColor: Colors.blue,
-          title: '编辑资料',
+          title: '查看日志',
+          subtitle: '查看保活、推送和异常记录',
           isDark: isDark,
-          onTap: () => _showEditProfileDialog(context, authProvider),
+          onTap: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => const DiagnosticLogScreen(),
+              ),
+            );
+          },
         )),
         _buildSettingsRow(
             child: _buildSettingsTile(

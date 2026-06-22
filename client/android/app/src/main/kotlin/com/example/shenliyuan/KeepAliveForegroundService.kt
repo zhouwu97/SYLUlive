@@ -27,6 +27,13 @@ class KeepAliveForegroundService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        DiagnosticLogStore.info(
+            this,
+            source = "保活",
+            type = "服务创建",
+            summary = "后台保活服务进程已创建",
+            detail = "pid=${android.os.Process.myPid()}"
+        )
         ensureChannel(this)
         restoreJPush()
     }
@@ -38,23 +45,69 @@ class KeepAliveForegroundService : Service() {
             return START_NOT_STICKY
         }
 
+        val systemRestart = intent == null
+        DiagnosticLogStore.info(
+            this,
+            source = "保活",
+            type = if (systemRestart) "系统无 Intent 重建" else "服务启动",
+            summary = if (systemRestart) "系统通过 START_STICKY 重新拉起保活服务" else "收到保活服务启动请求",
+            detail = "action=${intent?.action ?: "null"}\nflags=$flags\nstartId=$startId\nenabled=${isEnabled(this)}\npid=${android.os.Process.myPid()}\nbatteryOptimized=${!isIgnoringBatteryOptimizations(this)}"
+        )
+
         prefs(this).edit().putBoolean(KEY_ENABLED, true).apply()
         isRunning = true
         val notification = buildNotification()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(
-                NOTIFICATION_ID,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
+        
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(
+                    NOTIFICATION_ID,
+                    notification,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
+                )
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+            }
+            DiagnosticLogStore.info(
+                this,
+                source = "保活",
+                type = "前台运行",
+                summary = "前台保活通知已建立",
             )
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
+        } catch (e: Exception) {
+            DiagnosticLogStore.error(
+                this,
+                source = "保活",
+                type = e.javaClass.simpleName,
+                summary = "前台保活通知建立失败",
+                detail = Log.getStackTraceString(e),
+            )
+            throw e
         }
+        
         scheduleHeartbeat(immediate = true)
         return START_STICKY
     }
 
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        DiagnosticLogStore.warning(
+            this,
+            source = "保活",
+            type = "后台任务移除",
+            summary = "应用最近任务卡片已被划掉",
+            detail = "enabled=${isEnabled(this)}\nserviceRunning=$isRunning\npid=${android.os.Process.myPid()}"
+        )
+        super.onTaskRemoved(rootIntent)
+    }
+
     override fun onDestroy() {
+        DiagnosticLogStore.warning(
+            this,
+            source = "保活",
+            type = "服务销毁",
+            summary = "后台保活服务生命周期结束",
+            detail = "enabled=${isEnabled(this)}\nserviceRunning=$isRunning\npid=${android.os.Process.myPid()}"
+        )
         handler.removeCallbacks(heartbeatRunnable)
         isRunning = false
         super.onDestroy()
@@ -81,9 +134,23 @@ class KeepAliveForegroundService : Service() {
             handler.postDelayed({
                 val rid = JPushInterface.getRegistrationID(applicationContext)
                 Log.i(TAG, "JPush restored, registrationId=$rid")
+                DiagnosticLogStore.info(
+                    applicationContext,
+                    source = "推送",
+                    type = "JPush 恢复",
+                    summary = "极光推送服务已重新初始化",
+                    detail = "registrationId=$rid"
+                )
             }, 3000L)
         } catch (e: Exception) {
             Log.e(TAG, "restore JPush failed", e)
+            DiagnosticLogStore.error(
+                applicationContext,
+                source = "推送",
+                type = "JPush 恢复异常",
+                summary = "恢复极光推送服务失败",
+                detail = Log.getStackTraceString(e)
+            )
         }
     }
 
@@ -105,19 +172,56 @@ class KeepAliveForegroundService : Service() {
 
         Thread {
             var connection: HttpURLConnection? = null
+            var success = false
+            var detailMsg = ""
             try {
                 connection = URL(HEARTBEAT_URL).openConnection() as HttpURLConnection
                 connection.requestMethod = "GET"
                 connection.connectTimeout = 8000
                 connection.readTimeout = 8000
                 connection.setRequestProperty("Authorization", "Bearer $token")
-                connection.inputStream.use { it.readBytes() }
+                val code = connection.responseCode
+                success = code in 200..299
+                detailMsg = "HTTP $code"
+                if (success) {
+                    connection.inputStream.use { it.readBytes() }
+                } else {
+                    connection.errorStream?.use { it.readBytes() }
+                }
             } catch (e: Exception) {
+                success = false
+                detailMsg = e.javaClass.simpleName + ": " + e.message
                 Log.d(TAG, "heartbeat skipped: ${e.message}")
             } finally {
                 connection?.disconnect()
+                reportHeartbeat(success, detailMsg)
             }
         }.start()
+    }
+
+    private var lastHeartbeatHealthy: Boolean? = null
+
+    private fun reportHeartbeat(success: Boolean, detail: String) {
+        val previous = lastHeartbeatHealthy
+        lastHeartbeatHealthy = success
+
+        if (!success && previous != false) {
+            DiagnosticLogStore.warning(
+                this,
+                source = "保活",
+                type = "心跳异常",
+                summary = "后台心跳请求失败",
+                detail = detail,
+            )
+        } else if (success && previous == false) {
+            DiagnosticLogStore.info(
+                this,
+                source = "保活",
+                type = "心跳恢复",
+                summary = "后台心跳已恢复正常",
+                detail = detail
+            )
+        }
     }
 
     private fun buildNotification(): Notification {
@@ -187,6 +291,12 @@ class KeepAliveForegroundService : Service() {
 
         fun setEnabled(context: Context, enabled: Boolean): Map<String, Any> {
             val appContext = context.applicationContext
+            DiagnosticLogStore.info(
+                appContext,
+                source = "保活",
+                type = "用户操作",
+                summary = if (enabled) "用户开启了后台保活" else "用户关闭了后台保活",
+            )
             prefs(appContext).edit().putBoolean(KEY_ENABLED, enabled).apply()
             if (enabled) {
                 start(appContext)
@@ -257,10 +367,30 @@ class KeepAliveForegroundService : Service() {
             val intent = Intent(context, KeepAliveForegroundService::class.java).apply {
                 action = ACTION_START
             }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(intent)
-            } else {
-                context.startService(intent)
+            
+            DiagnosticLogStore.info(
+                context,
+                source = "保活",
+                type = "启动请求",
+                summary = "准备启动后台保活服务",
+                detail = "foreground=${Build.VERSION.SDK_INT >= Build.VERSION_CODES.O}",
+            )
+            
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    context.startForegroundService(intent)
+                } else {
+                    context.startService(intent)
+                }
+            } catch (e: Exception) {
+                DiagnosticLogStore.error(
+                    context,
+                    source = "保活",
+                    type = e.javaClass.simpleName,
+                    summary = "提交保活服务启动请求失败",
+                    detail = Log.getStackTraceString(e),
+                )
+                throw e
             }
         }
 

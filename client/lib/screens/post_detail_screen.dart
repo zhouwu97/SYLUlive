@@ -357,7 +357,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final canEdit = _isCurrentUserPostOwner();
 
     return Scaffold(
-      backgroundColor: widget.isDesktopSplitMode
+      backgroundColor: widget.isDesktopSplitMode && widget.hideBackButton
           ? Colors.transparent
           : (isDark ? const Color(0xFF131720) : Colors.white),
       extendBodyBehindAppBar: true,

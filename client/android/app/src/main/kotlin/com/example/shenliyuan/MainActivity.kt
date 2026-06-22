@@ -46,6 +46,17 @@ class MainActivity : FlutterActivity() {
 
         val status = KeepAliveForegroundService.status(this)
 
+        if (status["enabled"] != true) {
+            DiagnosticLogStore.info(
+                this,
+                source = "保活",
+                type = "前台自愈验证取消",
+                summary = "用户已关闭后台保活，不再验证服务恢复状态",
+                detail = "当前状态: $status",
+            )
+            return@Runnable
+        }
+
         if (status["serviceRunning"] == true) {
             DiagnosticLogStore.info(
                 this,

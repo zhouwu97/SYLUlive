@@ -22,18 +22,18 @@ class ErkeClient {
     // 1. Fetch login page
     String? finalHtml;
     String? currentPath;
-    
+
     for (final path in ErkeEndpoints.loginPaths) {
       final res = await _webVpnClient.getProxied(ErkeEndpoints.domain, path);
       final html = CampusResponseDecoder.decodeResponseBytes(res);
-      
+
       if (html.contains('UserName') && html.contains('code-box')) {
         finalHtml = html;
         currentPath = path;
         break;
       }
     }
-    
+
     if (finalHtml == null || currentPath == null) {
       throw const ErkePageChangedException('未找到二课登录页面或页面已失效');
     }
@@ -42,7 +42,8 @@ class ErkeClient {
     final pubKeyBase64 = ErkeParser.parsePublicKey(finalHtml);
 
     // 2. Encrypt password
-    final encryptedPassword = ErkeCrypto.encryptPassword(password, pubKeyBase64);
+    final encryptedPassword =
+        ErkeCrypto.encryptPassword(password, pubKeyBase64);
 
     // 3. Post login
     formData['UserName'] = username;
@@ -79,27 +80,30 @@ class ErkeClient {
 
   /// Gets the user's score summary
   Future<ErkeSummary> getSummary() async {
-    final res = await _webVpnClient.getProxied(ErkeEndpoints.domain, ErkeEndpoints.summaryPath);
+    final res = await _webVpnClient.getProxied(
+        ErkeEndpoints.domain, ErkeEndpoints.summaryPath);
     final html = CampusResponseDecoder.decodeResponseBytes(res);
     CampusResponseDecoder.interceptHtmlErrors(html, realUri: res.realUri);
     return ErkeParser.parseSummary(html);
   }
 
   /// Gets a specific page of activities
-  Future<ErkeActivitiesPage> getActivitiesPage(int pageNumber, {Map<String, String>? hiddenFields}) async {
+  Future<ErkeActivitiesPage> getActivitiesPage(int pageNumber,
+      {Map<String, String>? hiddenFields}) async {
     if (pageNumber == 1 || hiddenFields == null) {
       // First page
-      final res = await _webVpnClient.getProxied(ErkeEndpoints.domain, ErkeEndpoints.activityPath);
+      final res = await _webVpnClient.getProxied(
+          ErkeEndpoints.domain, ErkeEndpoints.activityPath);
       final html = CampusResponseDecoder.decodeResponseBytes(res);
       CampusResponseDecoder.interceptHtmlErrors(html, realUri: res.realUri);
       final page = ErkeParser.parseActivities(html);
-      
-      if (page.totalPages > 0 && page.currentPage != pageNumber) {
+
+      if (page.currentPage != pageNumber) {
         throw ErkePageChangedException(
           '请求第 $pageNumber 页，但服务器返回第 ${page.currentPage} 页',
         );
       }
-      
+
       return page;
     } else {
       // Next page
@@ -122,20 +126,23 @@ class ErkeClient {
         data: bodyBytes,
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
-          'Referer': WebVpnUrlCodec.buildHttpUrl(domain: ErkeEndpoints.domain, path: ErkeEndpoints.activityPath).toString(),
+          'Referer': WebVpnUrlCodec.buildHttpUrl(
+                  domain: ErkeEndpoints.domain,
+                  path: ErkeEndpoints.activityPath)
+              .toString(),
         },
       );
 
       final html = CampusResponseDecoder.decodeResponseBytes(res);
       CampusResponseDecoder.interceptHtmlErrors(html, realUri: res.realUri);
       final page = ErkeParser.parseActivities(html);
-      
+
       if (page.currentPage != pageNumber) {
         throw ErkePageChangedException(
           '请求第 $pageNumber 页，但服务器返回第 ${page.currentPage} 页',
         );
       }
-      
+
       return ErkeActivitiesPage(
         activities: page.activities,
         currentPage: pageNumber,

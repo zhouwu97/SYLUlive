@@ -40,10 +40,10 @@ import (
 // EduServiceConfig 鏁欏姟鏈嶅姟閰嶇疆
 
 var EduServiceConfig = struct {
-	BaseURL string
+	BaseURL     string
 	InternalKey string
 }{
-	BaseURL: "", // 从 config 加载
+	BaseURL:     "", // 从 config 加载
 	InternalKey: "", // 从 config 加载
 }
 
@@ -749,7 +749,10 @@ func (h *AuthHandler) RegisterWithEdu(c *gin.Context) {
 	}
 	if err := json.Unmarshal(resp.Body(), &bindResult); err != nil {
 		tx.Rollback()
-		compensateUnbind(client, user.ID)
+		if rollbackErr := compensateUnbind(client, user.ID); rollbackErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "解析教务绑定结果失败，且教务侧回滚失败: " + rollbackErr.Error()})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "解析教务绑定结果失败"})
 		return
 	}
@@ -769,13 +772,19 @@ func (h *AuthHandler) RegisterWithEdu(c *gin.Context) {
 		"edu_name":    bindResult.Name,
 	}).Error; err != nil {
 		tx.Rollback()
-		compensateUnbind(client, user.ID)
+		if rollbackErr := compensateUnbind(client, user.ID); rollbackErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "更新教务状态失败，且教务侧回滚失败: " + rollbackErr.Error()})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新教务状态失败"})
 		return
 	}
 
 	if err := tx.Commit().Error; err != nil {
-		compensateUnbind(client, user.ID)
+		if rollbackErr := compensateUnbind(client, user.ID); rollbackErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "事务提交失败，且教务侧回滚失败: " + rollbackErr.Error()})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "事务提交失败"})
 		return
 	}
@@ -1119,26 +1128,9 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "已退出登录"})
 }
 
-func compensateUnbind(client *EduServiceClient, userID uint) {
+func compensateUnbind(client *EduServiceClient, userID uint) error {
 	resp, err := client.Delete("/api/edu/bind", map[string]string{
 		"user_id": strconv.FormatUint(uint64(userID), 10),
 	})
-	if err != nil {
-		fmt.Printf("[ERROR] 补偿解绑失败 (Network Error): userID=%d, err=%v\n", userID, err)
-		return
-	}
-	if resp.StatusCode() != http.StatusOK {
-		fmt.Printf("[ERROR] 补偿解绑失败 (HTTP Status %d): userID=%d, response=%s\n", resp.StatusCode(), userID, string(resp.Body()))
-		return
-	}
-	var res struct {
-		Success bool `json:"success"`
-	}
-	if err := json.Unmarshal(resp.Body(), &res); err != nil {
-		fmt.Printf("[ERROR] 补偿解绑失败 (Parse JSON): userID=%d, err=%v\n", userID, err)
-		return
-	}
-	if !res.Success {
-		fmt.Printf("[ERROR] 补偿解绑失败 (Business Error): userID=%d, response=%s\n", userID, string(resp.Body()))
-	}
+	return ensureEduServiceSuccess(resp, err, "补偿解绑")
 }

@@ -7,6 +7,7 @@ from models.database import EduUser, get_db
 from models.schemas import BindInput, BindResponse, UnbindResponse, EduStatusResponse, ErrorResponse, PreVerifyResponse, PreVerifyInput, LoginEduInput, LoginEduResponse
 from services.crawler import EduCrawler, CookieLapseError, LoginFailedError, NetworkError
 from services.credential_crypto import encrypt_credential, decrypt_credential
+from services.error_codes import EDU_CREDENTIAL_EXPIRED, EDU_NOT_BOUND, coded_http_exception
 
 router = APIRouter(prefix="/api/edu", tags=["认证"])
 
@@ -186,15 +187,15 @@ async def refresh_cookie(
     edu_user = result.scalar_one_or_none()
 
     if not edu_user or not edu_user.bound:
-        raise HTTPException(status_code=400, detail="未绑定教务账号")
+        raise coded_http_exception(400, EDU_NOT_BOUND, "未绑定教务账号")
 
     if not edu_user.encrypted_password:
-        raise HTTPException(status_code=401, detail="无有效的凭据，请重新绑定教务账号")
+        raise coded_http_exception(401, EDU_CREDENTIAL_EXPIRED, "无有效的凭据，请重新绑定教务账号")
 
     try:
         password = decrypt_credential(edu_user.encrypted_password)
     except Exception:
-        raise HTTPException(status_code=401, detail="凭据解密失败，请重新绑定教务账号")
+        raise coded_http_exception(401, EDU_CREDENTIAL_EXPIRED, "凭据解密失败，请重新绑定教务账号")
 
     async with EduCrawler() as crawler:
         try:
@@ -203,7 +204,7 @@ async def refresh_cookie(
             await db.commit()
             return {"success": True, "message": "Cookie刷新成功"}
         except (LoginFailedError, CookieLapseError, NetworkError) as e:
-            raise HTTPException(status_code=401, detail=str(e))
+            raise coded_http_exception(401, EDU_CREDENTIAL_EXPIRED, str(e))
 
 
 @router.post("/login_edu", response_model=LoginEduResponse)

@@ -21,8 +21,9 @@ class KeepAliveBootReceiver : BroadcastReceiver() {
                 try {
                     KeepAliveForegroundService.startIfEnabled(context)
                 } catch (e: Exception) {
-                    DiagnosticLogStore.error(
+                    DiagnosticLogStore.critical(
                         context,
+                        level = "error",
                         source = "保活",
                         type = e.javaClass.simpleName,
                         summary = "系统广播恢复保活服务失败",

@@ -12,11 +12,13 @@ from services.credential_crypto import encrypt_credential
 async def migrate_passwords():
     print("Starting password encryption migration...")
     
-    async with engine.begin() as conn:
-        # Check if raw_password column exists first (SQLite pragma or try-except)
-        try:
-            from sqlalchemy import text
-            result = await conn.execute(text("SELECT id, raw_password FROM edu_users WHERE raw_password IS NOT NULL AND raw_password != ''"))
+    # We should use an AsyncSession to handle commits/rollbacks properly
+    from sqlalchemy.ext.asyncio import AsyncSession
+    from sqlalchemy import text
+    
+    try:
+        async with engine.begin() as conn:
+            result = await conn.execute(text("SELECT id, raw_password, encrypted_password FROM edu_users WHERE raw_password IS NOT NULL AND raw_password != ''"))
             rows = result.fetchall()
             
             if not rows:
@@ -28,6 +30,11 @@ async def migrate_passwords():
             for row in rows:
                 user_id = row[0]
                 raw_pwd = row[1]
+                enc_pwd = row[2]
+                
+                # Make sure it's idempotent
+                if enc_pwd and len(enc_pwd) > 0:
+                    continue
                 
                 encrypted = encrypt_credential(raw_pwd)
                 
@@ -35,10 +42,14 @@ async def migrate_passwords():
                     text("UPDATE edu_users SET encrypted_password = :enc, raw_password = '' WHERE id = :id"),
                     {"enc": encrypted, "id": user_id}
                 )
-                
+            
             print("Migration completed successfully.")
-        except Exception as e:
-            print(f"Migration error (column might not exist or other issue): {e}")
+    except Exception as e:
+        print(f"Migration error: {e}", file=sys.stderr)
+        sys.exit(1)
 
 if __name__ == "__main__":
-    asyncio.run(migrate_passwords())
+    try:
+        asyncio.run(migrate_passwords())
+    except KeyboardInterrupt:
+        sys.exit(1)

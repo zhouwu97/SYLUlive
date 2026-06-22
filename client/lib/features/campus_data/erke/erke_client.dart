@@ -70,6 +70,8 @@ class ErkeClient {
     // Check by fetching summary page instead of relying on redirect
     try {
       await getSummary();
+    } on CampusDataException {
+      rethrow;
     } catch (e) {
       throw ErkeLoginFailedException('二课登录失败: 无法访问受保护的成绩页面 ($e)');
     }
@@ -120,7 +122,7 @@ class ErkeClient {
       CampusResponseDecoder.interceptHtmlErrors(html, realUri: res.realUri);
       final page = ErkeParser.parseActivities(html);
       
-      if (page.currentPage != pageNumber && page.totalPages > 1) {
+      if (page.currentPage != pageNumber) {
         throw ErkePageChangedException(
           '请求第 $pageNumber 页，但服务器返回第 ${page.currentPage} 页',
         );

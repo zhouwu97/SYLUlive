@@ -79,8 +79,8 @@ func Load() *Config {
 	}
 
 	internalServiceKey := os.Getenv("INTERNAL_SERVICE_KEY")
-	if internalServiceKey == "" {
-		internalServiceKey = "dev_internal_key" // fallback for development
+	if internalServiceKey == "" || internalServiceKey == "dev_internal_key" {
+		panic(fmt.Errorf("必须设置安全的 INTERNAL_SERVICE_KEY 环境变量，不能为默认值或空"))
 	}
 
 	smtpHost := os.Getenv("SMTP_HOST")

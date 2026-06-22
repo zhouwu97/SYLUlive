@@ -94,11 +94,16 @@ class _UserHomeScreenState extends State<UserHomeScreen>
         ? const Color(0xFF111214)
         : Theme.of(context).scaffoldBackgroundColor;
 
+    // 标签栏和内容区共用的面板色
+    final panelColor = isDark
+        ? const Color(0xFF1A1B1E)
+        : Colors.white;
+
     final screenWidth = MediaQuery.sizeOf(context).width;
     final heroHeight = (screenWidth * 1.03).clamp(390.0, 480.0);
 
     return Scaffold(
-      backgroundColor: pageBackground,
+      backgroundColor: panelColor,
       body: RefreshIndicator(
         onRefresh: () async {
           await _loadData();
@@ -115,8 +120,20 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                 scrolledUnderElevation: 0,
                 surfaceTintColor: Colors.transparent,
                 backgroundColor: pageBackground,
-                foregroundColor: Colors.white,
-                iconTheme: const IconThemeData(color: Colors.white),
+                automaticallyImplyLeading: false,
+                leading: Container(
+                  margin: const EdgeInsets.all(8),
+                  decoration: const BoxDecoration(
+                    color: Colors.black26,
+                    shape: BoxShape.circle,
+                  ),
+                  child: IconButton(
+                    icon: const Icon(Icons.arrow_back,
+                        color: Colors.white, size: 20),
+                    padding: EdgeInsets.zero,
+                    onPressed: () => Navigator.maybePop(context),
+                  ),
+                ),
                 flexibleSpace: FlexibleSpaceBar(
                   collapseMode: CollapseMode.parallax,
                   background: Stack(
@@ -177,10 +194,17 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                     height: 58,
                     width: double.infinity,
                     decoration: BoxDecoration(
-                      color: pageBackground,
+                      color: panelColor,
                       borderRadius: const BorderRadius.vertical(
                         top: Radius.circular(22),
                       ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.08),
+                          blurRadius: 8,
+                          offset: const Offset(0, -2),
+                        ),
+                      ],
                     ),
                     child: TabBar(
                       controller: _tabController,

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import '../models/diagnostic_log_entry.dart';
 
@@ -8,17 +9,15 @@ class DiagnosticLogService {
   static const MethodChannel _channel = MethodChannel('shenliyuan/keep_alive');
 
   Future<List<DiagnosticLogEntry>> getLogs() async {
-    try {
-      final result = await _channel.invokeMethod<List<dynamic>>('getDiagnosticLogs');
-      if (result == null) return [];
-      
-      return result
-          .map((item) => item as Map<Object?, Object?>)
-          .map((map) => DiagnosticLogEntry.fromMap(map))
-          .toList();
-    } catch (e) {
-      return [];
-    }
+    final result =
+        await _channel.invokeMethod<List<dynamic>>('getDiagnosticLogs');
+
+    if (result == null) return const [];
+
+    return result
+        .whereType<Map<Object?, Object?>>()
+        .map(DiagnosticLogEntry.fromMap)
+        .toList();
   }
 
   Future<void> clearLogs() async {
@@ -45,6 +44,7 @@ class DiagnosticLogService {
       });
     } catch (e) {
       // Ignore
+      debugPrint('写入诊断日志失败: $e');
     }
   }
 }

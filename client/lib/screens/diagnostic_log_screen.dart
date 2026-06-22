@@ -23,12 +23,27 @@ class _DiagnosticLogScreenState extends State<DiagnosticLogScreen> {
   }
 
   Future<void> _loadLogs() async {
-    setState(() => _isLoading = true);
-    final logs = await DiagnosticLogService.instance.getLogs();
-    setState(() {
-      _logs = logs;
-      _isLoading = false;
-    });
+    if (mounted) {
+      setState(() => _isLoading = true);
+    }
+    
+    try {
+      final logs = await DiagnosticLogService.instance.getLogs();
+      if (!mounted) return;
+      setState(() {
+        _logs = logs;
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _logs = [];
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('日志读取失败: $e\n点击重试')),
+      );
+    }
   }
 
   Future<void> _clearLogs() async {
@@ -52,7 +67,8 @@ class _DiagnosticLogScreenState extends State<DiagnosticLogScreen> {
 
     if (confirm == true) {
       await DiagnosticLogService.instance.clearLogs();
-      _loadLogs();
+      if (!mounted) return;
+      await _loadLogs();
     }
   }
 
@@ -70,7 +86,22 @@ class _DiagnosticLogScreenState extends State<DiagnosticLogScreen> {
       );
       sb.writeln('[$timeStr] [${log.level.toUpperCase()}] [${log.source}] ${log.type}');
       sb.writeln('Summary: ${log.summary}');
-      sb.writeln('SessionId: ${log.sessionId} | PID: ${log.pid} | Repeat: ${log.repeatCount}');
+      sb.writeln(
+        'App: ${log.appVersion} | '
+        'Device: ${log.manufacturer} ${log.model} | '
+        'SDK: ${log.sdkInt}',
+      );
+      sb.writeln(
+        'Session: ${log.sessionId} | PID: ${log.pid} | '
+        'Elapsed: ${log.elapsedRealtime}',
+      );
+      final formatTime = (int ms) => DateFormat('MM-dd HH:mm:ss')
+          .format(DateTime.fromMillisecondsSinceEpoch(ms));
+      sb.writeln(
+        'FirstSeen: ${formatTime(log.firstSeenAt)} | '
+        'LastSeen: ${formatTime(log.lastSeenAt)} | '
+        'Repeat: ${log.repeatCount}',
+      );
       if (log.detail.isNotEmpty) {
         sb.writeln('Detail: \n${log.detail}');
       }
@@ -214,7 +245,22 @@ class _LogEntryCardState extends State<_LogEntryCard> {
     final sb = StringBuffer();
     sb.writeln('[$timeStr] [${log.level.toUpperCase()}] [${log.source}] ${log.type}');
     sb.writeln('Summary: ${log.summary}');
-    sb.writeln('SessionId: ${log.sessionId} | PID: ${log.pid} | Repeat: ${log.repeatCount}');
+    sb.writeln(
+      'App: ${log.appVersion} | '
+      'Device: ${log.manufacturer} ${log.model} | '
+      'SDK: ${log.sdkInt}',
+    );
+    sb.writeln(
+      'Session: ${log.sessionId} | PID: ${log.pid} | '
+      'Elapsed: ${log.elapsedRealtime}',
+    );
+    final formatTime = (int ms) => DateFormat('MM-dd HH:mm:ss')
+        .format(DateTime.fromMillisecondsSinceEpoch(ms));
+    sb.writeln(
+      'FirstSeen: ${formatTime(log.firstSeenAt)} | '
+      'LastSeen: ${formatTime(log.lastSeenAt)} | '
+      'Repeat: ${log.repeatCount}',
+    );
     if (log.detail.isNotEmpty) {
       sb.writeln('Detail: \n${log.detail}');
     }

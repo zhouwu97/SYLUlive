@@ -118,7 +118,9 @@ setup_postgres() {
 sync_code() {
     if [ -f "${APP_DIR}/server/go.mod" ]; then
         log_step "拉取最新代码..."
-        git -C "${APP_DIR}" pull origin fwqtest
+        git -C "${APP_DIR}" fetch origin fwqtest
+        git -C "${APP_DIR}" reset --hard origin/fwqtest
+        git -C "${APP_DIR}" clean -fd
     else
         log_step "克隆项目..."
         rm -rf "$APP_DIR"

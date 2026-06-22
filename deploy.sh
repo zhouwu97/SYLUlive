@@ -120,7 +120,14 @@ sync_code() {
         log_step "拉取最新代码..."
         git -C "${APP_DIR}" fetch origin fwqtest
         git -C "${APP_DIR}" reset --hard origin/fwqtest
-        git -C "${APP_DIR}" clean -fd
+        # 警告: 绝对不要在自动化脚本中使用无差别的 git clean -fd
+        # 必须显式保护所有可能的生产环境数据和备份
+        git -C "${APP_DIR}" clean -fd \
+          -e uploads/ \
+          -e shenliyuan.db \
+          -e 'shenliyuan.bak.*' \
+          -e .env \
+          -e logs/
     else
         log_step "克隆项目..."
         rm -rf "$APP_DIR"

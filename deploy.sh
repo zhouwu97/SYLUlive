@@ -35,7 +35,10 @@ NEW_BINARY="${APP_DIR}/.${APP_NAME}.new"
 # ===================== 部署状态 =====================
 SERVICE_WAS_ACTIVE=0
 SERVICE_WAS_STOPPED=0
+BINARY_REPLACED=0
+NEW_SERVICE_STARTED=0
 DEPLOY_SUCCEEDED=0
+TEMP_FILES=()
 
 echo ""
 echo "================================================"
@@ -61,13 +64,26 @@ restore_previous_binary() {
 cleanup_on_exit() {
   local exit_code=$?
 
-  if [ "$DEPLOY_SUCCEEDED" -ne 1 ] &&
-     [ "$SERVICE_WAS_ACTIVE" -eq 1 ] &&
-     [ "$SERVICE_WAS_STOPPED" -eq 1 ]; then
-    restore_previous_binary
-    log_warn "部署失败，尝试恢复原服务..."
-    systemctl start "$APP_NAME" || log_error "旧服务恢复失败，需要立即人工处理"
+  if [ "$DEPLOY_SUCCEEDED" -ne 1 ]; then
+    if [ "$NEW_SERVICE_STARTED" -eq 1 ]; then
+      systemctl stop "$APP_NAME" || true
+    fi
+
+    if [ "$BINARY_REPLACED" -eq 1 ]; then
+      restore_previous_binary
+    fi
+
+    if [ "$SERVICE_WAS_ACTIVE" -eq 1 ] && [ "$SERVICE_WAS_STOPPED" -eq 1 ]; then
+      log_warn "部署失败，尝试恢复原服务..."
+      systemctl start "$APP_NAME" || log_error "旧服务恢复失败，需要立即人工处理"
+    fi
   fi
+
+  for f in "${TEMP_FILES[@]}"; do
+    if [ -f "$f" ]; then
+      rm -f "$f"
+    fi
+  done
 
   exit "$exit_code"
 }
@@ -89,6 +105,15 @@ acquire_deploy_lock() {
   fi
 }
 
+# ===================== 命令检查 =====================
+require_command() {
+  local name="$1"
+  if ! command -v "$name" >/dev/null 2>&1; then
+    log_error "缺少必要命令：${name}"
+    exit 1
+  fi
+}
+
 # ===================== 检查系统 =====================
 check_system() {
   log_step "检查系统依赖..."
@@ -98,6 +123,10 @@ check_system() {
     if ! command -v "$pkg" >/dev/null 2>&1; then
       apt-get install -y -qq "$pkg"
     fi
+  done
+
+  for cmd in psql pg_dump pg_restore pg_dumpall; do
+    require_command "$cmd"
   done
 }
 
@@ -135,10 +164,18 @@ setup_go() {
 # ===================== 加载现有数据库密码 =====================
 load_existing_db_password() {
   local env_file="${APP_DIR}/.env"
+  local deploy_env="/etc/shenliyuan/deploy.env"
 
   if [ -f "$env_file" ]; then
     DB_PASS="$(
       sed -n 's/^DSN=.* password=\([^ ]*\).*$/\1/p' "$env_file" |
+        tail -n 1
+    )"
+  fi
+
+  if [ -z "${DB_PASS:-}" ] && [ -f "$deploy_env" ]; then
+    DB_PASS="$(
+      sed -n "s/^DB_PASS='\(.*\)'$/\1/p" "$deploy_env" |
         tail -n 1
     )"
   fi
@@ -191,6 +228,15 @@ setup_postgres() {
       )"
     fi
 
+    # 保存密码到持久化文件，确保第一次创建角色后不会丢失
+    install -d -m 0700 /etc/shenliyuan
+    local deploy_env="/etc/shenliyuan/deploy.env"
+    if [ ! -f "$deploy_env" ]; then
+      touch "$deploy_env"
+      chmod 0600 "$deploy_env"
+    fi
+    echo "DB_PASS='${DB_PASS}'" > "$deploy_env"
+
     sudo -u postgres psql -v ON_ERROR_STOP=1 \
       -c "CREATE USER ${DB_USER} WITH PASSWORD '${DB_PASS}';"
     sudo -u postgres psql -v ON_ERROR_STOP=1 \
@@ -203,7 +249,7 @@ setup_postgres() {
   elif [ "$db_exists" -eq 1 ] && [ "$role_exists" -eq 1 ]; then
     # 已部署环境：保留现有密码，不执行 ALTER USER
     if [ -z "${DB_PASS:-}" ]; then
-      log_error "数据库已存在，但无法从 .env 中取得密码"
+      log_error "数据库已存在，但无法取得现有密码"
       exit 1
     fi
     log_info "数据库和用户已存在，保留现有配置"
@@ -227,66 +273,66 @@ backup_postgres() {
   local timestamp
   timestamp="$(date +%Y%m%d_%H%M%S)"
 
-  if command -v pg_dump >/dev/null 2>&1; then
-    local pg_db_exists=0
-    if sudo -u postgres psql -tAc \
-        "SELECT 1 FROM pg_database WHERE datname='${DB_NAME}'" 2>/dev/null |
-        grep -q '^1$'; then
-      pg_db_exists=1
+  local pg_db_exists=0
+  if sudo -u postgres psql -tAc \
+      "SELECT 1 FROM pg_database WHERE datname='${DB_NAME}'" 2>/dev/null |
+      grep -q '^1$'; then
+    pg_db_exists=1
+  fi
+
+  if [ "$pg_db_exists" -eq 1 ]; then
+    local temp_file final_file
+    final_file="${BACKUP_DIR}/${APP_NAME}-${timestamp}.dump"
+    temp_file="$(mktemp "${BACKUP_DIR}/.${APP_NAME}-${timestamp}.XXXXXX")"
+    TEMP_FILES+=("$temp_file")
+
+    log_info "备份 PostgreSQL 数据库..."
+
+    # 重定向由当前 root shell 打开，postgres 不需要目录写权限
+    if ! sudo -u postgres pg_dump \
+        --format=custom \
+        "$DB_NAME" >"$temp_file"; then
+      log_error "PostgreSQL 备份失败，拒绝继续部署"
+      exit 1
     fi
 
-    if [ "$pg_db_exists" -eq 1 ]; then
-      local temp_file final_file
-      final_file="${BACKUP_DIR}/${APP_NAME}-${timestamp}.dump"
-      temp_file="$(mktemp "${BACKUP_DIR}/.${APP_NAME}-${timestamp}.XXXXXX")"
+    if [ ! -s "$temp_file" ]; then
+      log_error "PostgreSQL 备份为空，拒绝继续部署"
+      exit 1
+    fi
 
-      log_info "备份 PostgreSQL 数据库..."
+    # 校验备份文件非空且 PostgreSQL Archive 目录可读取
+    if ! pg_restore --list "$temp_file" >/dev/null 2>&1; then
+      log_error "PostgreSQL 备份 Archive 目录不可读取"
+      exit 1
+    fi
 
-      # 重定向由当前 root shell 打开，postgres 不需要目录写权限
-      if ! sudo -u postgres pg_dump \
-          --format=custom \
-          "$DB_NAME" >"$temp_file"; then
-        rm -f "$temp_file"
-        log_error "PostgreSQL 备份失败，拒绝继续部署"
-        exit 1
-      fi
+    mv "$temp_file" "$final_file"
+    chmod 0600 "$final_file"
 
-      if [ ! -s "$temp_file" ]; then
-        rm -f "$temp_file"
-        log_error "PostgreSQL 备份为空，拒绝继续部署"
-        exit 1
-      fi
+    # 保留最近 5 个 PostgreSQL 备份
+    ls -t "${BACKUP_DIR}"/*.dump 2>/dev/null |
+      tail -n +6 |
+      xargs -r rm -f || true
 
-      # 校验备份文件非空且 PostgreSQL Archive 目录可读取
-      if ! pg_restore --list "$temp_file" >/dev/null 2>&1; then
-        rm -f "$temp_file"
-        log_error "PostgreSQL 备份 Archive 目录不可读取"
-        exit 1
-      fi
+    log_info "PostgreSQL 备份完成: $final_file"
 
-      mv "$temp_file" "$final_file"
-      chmod 0600 "$final_file"
+    # 备份全局对象（角色等），失败仅警告
+    local globals_temp
+    globals_temp="$(mktemp "${BACKUP_DIR}/.postgres-globals-${timestamp}.XXXXXX")"
+    TEMP_FILES+=("$globals_temp")
+    local globals_file="${BACKUP_DIR}/postgres-globals-${timestamp}.sql"
 
-      # 保留最近 5 个 PostgreSQL 备份
-      ls -t "${BACKUP_DIR}"/*.dump 2>/dev/null |
+    if sudo -u postgres pg_dumpall \
+        --globals-only >"$globals_temp" 2>/dev/null; then
+      mv "$globals_temp" "$globals_file"
+      chmod 0600 "$globals_file"
+      ls -t "${BACKUP_DIR}"/postgres-globals-*.sql 2>/dev/null |
         tail -n +6 |
         xargs -r rm -f || true
-
-      log_info "PostgreSQL 备份完成: $final_file"
-
-      # 备份全局对象（角色等），失败仅警告
-      local globals_file="${BACKUP_DIR}/postgres-globals-${timestamp}.sql"
-      if sudo -u postgres pg_dumpall \
-          --globals-only >"$globals_file" 2>/dev/null; then
-        chmod 0600 "$globals_file"
-        ls -t "${BACKUP_DIR}"/postgres-globals-*.sql 2>/dev/null |
-          tail -n +6 |
-          xargs -r rm -f || true
-        log_info "PostgreSQL 全局对象备份完成"
-      else
-        rm -f "$globals_file"
-        log_warn "PostgreSQL 全局对象备份失败（不影响部署）"
-      fi
+      log_info "PostgreSQL 全局对象备份完成"
+    else
+      log_warn "PostgreSQL 全局对象备份失败（不影响部署）"
     fi
   fi
 }
@@ -302,12 +348,12 @@ backup_legacy_sqlite() {
     install -d -m 0700 "$BACKUP_DIR"
 
     local temp_sqlite="${BACKUP_DIR}/.shenliyuan-${timestamp}.db.tmp"
+    TEMP_FILES+=("$temp_sqlite")
     local final_sqlite="${BACKUP_DIR}/shenliyuan-${timestamp}.db"
 
     log_info "备份 SQLite 遗留数据库..."
 
     if ! sqlite3 "$db_file" ".backup '${temp_sqlite}'"; then
-      rm -f "$temp_sqlite"
       log_error "SQLite 备份失败，拒绝继续部署"
       exit 1
     fi
@@ -315,7 +361,6 @@ backup_legacy_sqlite() {
     local integrity
     integrity="$(sqlite3 "$temp_sqlite" 'PRAGMA integrity_check;')"
     if [ "$integrity" != "ok" ]; then
-      rm -f "$temp_sqlite"
       log_error "SQLite 备份完整性检查失败"
       exit 1
     fi
@@ -428,6 +473,7 @@ setup_env() {
 
   # 使用 upsert 保留未知配置项
   local temp_env="${env_file}.tmp"
+  TEMP_FILES+=("$temp_env")
   if [ -f "$env_file" ]; then
     cp "$env_file" "$temp_env"
   else
@@ -452,6 +498,7 @@ build_app() {
   log_step "编译应用..."
 
   rm -f -- "$NEW_BINARY"
+  TEMP_FILES+=("$NEW_BINARY")
 
   (
     cd "${APP_DIR}/server"
@@ -480,6 +527,7 @@ build_app() {
   fi
 
   mv -f "$NEW_BINARY" "$CURRENT_BINARY"
+  BINARY_REPLACED=1
   log_info "编译完成: $CURRENT_BINARY"
 }
 
@@ -516,6 +564,7 @@ start_service() {
 
   systemctl enable "$APP_NAME"
   systemctl restart "$APP_NAME"
+  NEW_SERVICE_STARTED=1
   sleep 3
 
   if systemctl is-active --quiet "$APP_NAME"; then

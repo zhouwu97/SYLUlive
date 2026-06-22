@@ -21,6 +21,10 @@ final class WebVpnSessionExpiredException extends CampusDataException {
   const WebVpnSessionExpiredException([super.message]);
 }
 
+final class WebVpnPageChangedException extends CampusDataException {
+  const WebVpnPageChangedException([super.message]);
+}
+
 final class CasLoginFailedException extends CampusDataException {
   const CasLoginFailedException([super.message]);
 }
@@ -44,4 +48,3 @@ final class CampusStorageException extends CampusDataException {
 final class ErkeDuplicatePageException extends CampusDataException {
   const ErkeDuplicatePageException([super.message]);
 }
-

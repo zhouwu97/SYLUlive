@@ -13,22 +13,51 @@ class ErkeParser {
     return keyNode.attributes['value'] ?? '';
   }
 
-  /// Parses hidden fields for login
-  static Map<String, String> parseLoginHiddenFields(String html) {
+  /// Parse all input[name] from the login form and find the captcha text
+  static Map<String, String> parseLoginForm(String html) {
     final doc = html_parser.parse(html);
-    final viewState =
-        doc.getElementById('__VIEWSTATE')?.attributes['value'] ?? '';
-    final viewStateGenerator =
-        doc.getElementById('__VIEWSTATEGENERATOR')?.attributes['value'] ?? '';
+    final form = <String, String>{};
 
+    for (final input in doc.querySelectorAll('form input[name]')) {
+      final name = input.attributes['name']?.trim() ?? '';
+      if (name.isEmpty) continue;
+
+      final type = (input.attributes['type'] ?? 'text').toLowerCase();
+      if (type == 'button' || type == 'reset' || type == 'file') continue;
+
+      if (type == 'checkbox' || type == 'radio') {
+        if (!input.attributes.containsKey('checked')) continue;
+      }
+
+      form[name] = input.attributes['value'] ?? '';
+    }
+
+    final viewState = doc.getElementById('__VIEWSTATE')?.attributes['value'] ?? '';
     if (viewState.isEmpty) {
       throw const ErkePageChangedException('未找到 __VIEWSTATE');
     }
+    form['__VIEWSTATE'] = viewState;
 
-    return {
-      '__VIEWSTATE': viewState,
-      '__VIEWSTATEGENERATOR': viewStateGenerator,
-    };
+    // Try to get captcha from the DOM
+    var captcha = 'aaaa'; // Fallback
+    final codeNodes = [
+      doc.getElementById('code-box'),
+      doc.querySelector('.code-img'),
+      doc.querySelector('[id*="code-box"]'),
+    ];
+    
+    for (final node in codeNodes) {
+      if (node != null) {
+        final text = node.text.replaceAll(RegExp(r'[^0-9A-Za-z]'), '');
+        if (text.length == 4) {
+          captcha = text;
+          break;
+        }
+      }
+    }
+
+    form['codeInput'] = captcha;
+    return form;
   }
 
   /// Parses the actual user scores from the summary page, NOT the graduation requirements.
@@ -102,30 +131,68 @@ class ErkeParser {
       if (row.className == 'Pager') {
         continue;
       }
-      final cells = row.querySelectorAll('td');
-      if (cells.length < 8) continue;
+      final columns = row.querySelectorAll('td');
+      if (columns.length < 8) continue;
 
-      activities.add(ErkeActivity(
-        name: cells[0].text.trim(),
-        organizer: cells[1].text.trim(),
-        date: cells[2].text.trim(),
-        category: cells[3].text.trim(),
-        role: cells[4].text.trim(),
-        participantCount: int.tryParse(cells[6].text.trim()) ?? 0,
-        score: double.tryParse(cells[7].text.trim()) ?? 0.0,
-      ));
+      var category = columns[3].text.trim();
+      if (category == '技能特长') {
+        category = '文体活动';
+      }
+
+      // Column 5 is participants, 7 is score
+      final participantCount = int.tryParse(columns[5].text.replaceAll(',', '').trim());
+      final score = double.tryParse(columns[7].text.replaceAll(',', '').trim());
+
+      final activity = ErkeActivity(
+        name: columns[0].text.trim(),
+        organizer: columns[1].text.trim(),
+        date: columns[2].text.trim(),
+        category: category,
+        role: columns[4].text.trim(),
+        participantCount: participantCount ?? 0,
+        score: score ?? 0.0,
+      );
+
+      if (activity.name.isNotEmpty && (activity.score != 0 || activity.date.isNotEmpty)) {
+        activities.add(activity);
+      }
     }
 
-    final viewState = doc.getElementById('__VIEWSTATE')?.attributes['value'];
+    // Extract pagination details
+    int totalPages = 1;
+    final pager = doc.getElementById('TPaged1');
+    if (pager != null) {
+      final fonts = pager.querySelectorAll('font');
+      for (final font in fonts.reversed) {
+        final val = int.tryParse(font.text.trim());
+        if (val != null) {
+          totalPages = val > totalPages ? val : totalPages;
+          break;
+        }
+      }
+      if (totalPages == 1) {
+        final text = pager.text.replaceAll(RegExp(r'\s+'), '');
+        final match = RegExp(r'(?:共|/|总页数[：:])(\d+)(?:页)?').firstMatch(text);
+        if (match != null) {
+          totalPages = int.tryParse(match.group(1)!) ?? 1;
+        }
+      }
+    }
+    totalPages = totalPages < 1 ? 1 : totalPages;
 
-    // Check if there is a next page
-    final nextBtn = doc.querySelector('a[href*="TPaged1\$GotoPage"]');
-    bool hasNext = nextBtn != null;
+    final hiddenFields = <String, String>{};
+    for (final hidden in ['__VIEWSTATE', '__VIEWSTATEGENERATOR', '__EVENTVALIDATION', '__VIEWSTATEENCRYPTED']) {
+      final node = doc.getElementById(hidden);
+      if (node != null) {
+        hiddenFields[hidden] = node.attributes['value'] ?? '';
+      }
+    }
 
     return ErkeActivitiesPage(
       activities: activities,
-      hasNext: hasNext,
-      nextViewState: viewState,
+      currentPage: 1, // Caller sets this properly if needed
+      totalPages: totalPages,
+      hiddenFields: hiddenFields,
     );
   }
 }

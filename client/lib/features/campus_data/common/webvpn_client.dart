@@ -20,7 +20,7 @@ class WebVpnClient {
     );
 
     final html = CampusResponseDecoder.decodeResponseBytes(initResponse);
-    CampusResponseDecoder.interceptHtmlErrors(html);
+    CampusResponseDecoder.interceptHtmlErrors(html, realUri: initResponse.realUri);
 
     // Parse the form
     final doc = html_parser.parse(html);
@@ -29,7 +29,7 @@ class WebVpnClient {
     final formNode = doc.getElementById('casLoginForm');
 
     if (saltNode == null || execNode == null || formNode == null) {
-      throw const ErkeDecodeException('未能解析 WebVPN CAS 登录表单');
+      throw const ErkePageChangedException('未能解析 WebVPN CAS 登录表单');
     }
 
     final salt = saltNode.attributes['value'] ?? '';
@@ -37,7 +37,7 @@ class WebVpnClient {
     final action = formNode.attributes['action'] ?? '';
 
     if (salt.isEmpty || execution.isEmpty || action.isEmpty) {
-      throw const ErkeDecodeException('CAS 登录表单缺少必要参数');
+      throw const ErkePageChangedException('CAS 登录表单缺少必要参数');
     }
 
     // 2. Encrypt password
@@ -55,7 +55,7 @@ class WebVpnClient {
 
     final submitResponse = await _dio.post<List<int>>(
       submitUrl,
-      data: FormData.fromMap(formData),
+      data: Uri(queryParameters: formData).query,
       options: Options(
         responseType: ResponseType.bytes,
         followRedirects: true,
@@ -68,13 +68,11 @@ class WebVpnClient {
 
     final resultHtml =
         CampusResponseDecoder.decodeResponseBytes(submitResponse);
-    CampusResponseDecoder.interceptHtmlErrors(resultHtml);
+    CampusResponseDecoder.interceptHtmlErrors(resultHtml, realUri: submitResponse.realUri);
 
-    // At this point, Dio + CookieJar automatically saved the JSESSIONID, CASTGC and wengine_vpn_ticket.
-    // If it didn't throw CasLoginFailedException from interceptHtmlErrors, we assume success.
-    // We can also verify we are back at the webvpn index or the cookie is present.
-    if (resultHtml.contains('密码错误')) {
-      throw const CasLoginFailedException('密码错误');
+    // Verify if we actually logged in by checking if we hit the success page or an index
+    if (submitResponse.realUri.path.toLowerCase().endsWith('/login') && resultHtml.contains('pwdEncryptSalt')) {
+      throw const CasLoginFailedException('统一认证登录失败，可能密码错误或认证失效');
     }
   }
 
@@ -106,7 +104,7 @@ class WebVpnClient {
 
     // Check if we hit an access denied
     final html = CampusResponseDecoder.decodeResponseBytes(response);
-    CampusResponseDecoder.interceptHtmlErrors(html);
+    CampusResponseDecoder.interceptHtmlErrors(html, realUri: response.realUri);
 
     return response;
   }

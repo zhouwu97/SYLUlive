@@ -1,5 +1,7 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:shenliyuan/features/campus_data/common/campus_data_exception.dart';
 
 class CampusSecureStore {
   final FlutterSecureStorage _storage;
@@ -17,7 +19,7 @@ class CampusSecureStore {
     final oldErke = prefs.getString('erke_erke_pwd');
     
     if (oldCas != null && oldCas.isNotEmpty) {
-      await saveWebvpnCredentials('', oldCas); // Dummy username
+      await _storage.write(key: _keyWebvpnPassword, value: oldCas);
       await prefs.remove('erke_cas_pwd');
     }
     

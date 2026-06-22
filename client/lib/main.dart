@@ -501,7 +501,7 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => PostProvider(dio)),
         ChangeNotifierProvider(create: (_) => MessageProvider(dio)),
         ChangeNotifierProvider(create: (_) => EduProvider(dio)),
-        ChangeNotifierProvider(create: (_) => CourseScheduleProvider()),
+        ChangeNotifierProvider(create: (_) => CourseScheduleProvider(dio)),
         ChangeNotifierProvider(create: (_) => TeacherProvider(dio)),
         ChangeNotifierProvider(create: (_) => MajorProvider(dio)),
         ChangeNotifierProvider(create: (_) => CanteenProvider(dio)),

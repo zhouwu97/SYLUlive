@@ -90,65 +90,128 @@ class _UserHomeScreenState extends State<UserHomeScreen>
     final isMe = widget.userId == null ||
         widget.userId == context.read<AuthProvider>().user?.id;
 
+    final pageBackground = isDark
+        ? const Color(0xFF111214)
+        : Theme.of(context).scaffoldBackgroundColor;
+
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final heroHeight = (screenWidth * 1.03).clamp(390.0, 480.0);
+
     return Scaffold(
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      backgroundColor: pageBackground,
       body: RefreshIndicator(
         onRefresh: () async {
-          // 模拟下拉刷新数据
-          await Future.delayed(const Duration(seconds: 1));
+          await _loadData();
         },
         child: NestedScrollView(
           controller: _scrollController,
           headerSliverBuilder: (BuildContext context, bool innerBoxIsScrolled) {
             return <Widget>[
               SliverAppBar(
-                expandedHeight: 200.0,
-                floating: false,
+                expandedHeight: heroHeight,
                 pinned: true,
-                backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+                floating: false,
+                elevation: 0,
+                scrolledUnderElevation: 0,
+                surfaceTintColor: Colors.transparent,
+                backgroundColor: pageBackground,
+                foregroundColor: Colors.white,
+                iconTheme: const IconThemeData(color: Colors.white),
                 flexibleSpace: FlexibleSpaceBar(
                   collapseMode: CollapseMode.parallax,
                   background: Stack(
-                    clipBehavior: Clip.none,
+                    fit: StackFit.expand,
                     children: [
-                      Positioned.fill(
-                        child: GestureDetector(
-                          onTap: () {
-                            if (widget.userId == null ||
-                                widget.userId ==
-                                    context.read<AuthProvider>().user?.id) {
-                              _showEditSheet(context, user);
-                            }
-                          },
-                          child: user.background.isNotEmpty
-                              ? CachedNetworkImage(
-                                  imageUrl:
-                                      ApiConstants.fullUrl(user.background),
-                                  fit: BoxFit.cover,
-                                )
-                              : Image.asset(
-                                  'assets/images/morenbeijing.jpeg',
-                                  fit: BoxFit.cover,
-                                ),
+                      // 背景图
+                      GestureDetector(
+                        onTap: isMe
+                            ? () => _showEditSheet(context, user)
+                            : null,
+                        child: user.background.isNotEmpty
+                            ? CachedNetworkImage(
+                                imageUrl:
+                                    ApiConstants.fullUrl(user.background),
+                                fit: BoxFit.cover,
+                              )
+                            : Image.asset(
+                                'assets/images/morenbeijing.jpeg',
+                                fit: BoxFit.cover,
+                              ),
+                      ),
+
+                      // 下部渐暗遮罩
+                      const DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            stops: [0.0, 0.42, 1.0],
+                            colors: [
+                              Colors.transparent,
+                              Color(0x22000000),
+                              Color(0xDD000000),
+                            ],
+                          ),
                         ),
                       ),
-                      Positioned.fill(
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              colors: [
-                                Colors.transparent,
-                                isDark ? Colors.black87 : Colors.black54
-                              ],
-                            ),
-                          ),
+
+                      // 所有资料覆盖在背景图下半部分
+                      Positioned(
+                        left: 20,
+                        right: 20,
+                        bottom: 76,
+                        child: _buildProfileOverlay(
+                          context,
+                          user,
+                          isMe,
                         ),
                       ),
                     ],
                   ),
                 ),
+
+                // 底部圆角标签栏
+                bottom: PreferredSize(
+                  preferredSize: const Size.fromHeight(58),
+                  child: Container(
+                    height: 58,
+                    width: double.infinity,
+                    decoration: BoxDecoration(
+                      color: pageBackground,
+                      borderRadius: const BorderRadius.vertical(
+                        top: Radius.circular(22),
+                      ),
+                    ),
+                    child: TabBar(
+                      controller: _tabController,
+                      isScrollable: true,
+                      indicatorSize: TabBarIndicatorSize.label,
+                      indicatorWeight: 3,
+                      indicatorColor:
+                          Theme.of(context).colorScheme.primary,
+                      labelColor:
+                          Theme.of(context).colorScheme.primary,
+                      unselectedLabelColor:
+                          isDark ? Colors.white60 : Colors.black54,
+                      labelStyle: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      unselectedLabelStyle: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      labelPadding:
+                          const EdgeInsets.symmetric(horizontal: 24),
+                      tabs: [
+                        Tab(text: '帖子 ${_posts.length}'),
+                        const Tab(text: '智能体 0'),
+                      ],
+                    ),
+                  ),
+                ),
+
+                // 非本人主页的菜单
                 actions: [
                   if (!isMe)
                     Container(
@@ -192,34 +255,6 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                   const SizedBox(width: 8),
                 ],
               ),
-
-              // 个人信息区域
-              SliverToBoxAdapter(
-                child: _buildProfileInfo(context, user, isDark),
-              ),
-
-              // 标签栏
-              SliverPersistentHeader(
-                pinned: true,
-                delegate: _SliverAppBarDelegate(
-                  TabBar(
-                    controller: _tabController,
-                    indicatorSize: TabBarIndicatorSize.label,
-                    labelColor: Theme.of(context).primaryColor,
-                    unselectedLabelColor:
-                        isDark ? Colors.white54 : Colors.black54,
-                    indicatorColor: Theme.of(context).primaryColor,
-                    indicatorWeight: 3,
-                    tabs: [
-                      Tab(text: '帖子 ${_posts.length}'),
-                      const Tab(text: '智能体 0'),
-                    ],
-                  ),
-                  isDark
-                      ? Theme.of(context).scaffoldBackgroundColor
-                      : Colors.white,
-                ),
-              ),
             ];
           },
           body: TabBarView(
@@ -230,13 +265,14 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                   : _posts.isEmpty
                       ? const Center(child: Text('暂无帖子'))
                       : ListView.builder(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 8),
+                          padding:
+                              const EdgeInsets.fromLTRB(12, 10, 12, 24),
                           itemCount: _posts.length,
                           itemBuilder: (context, index) {
                             return PostCard(
-                                post: _posts[index],
-                                disableAuthorNavigation: true);
+                              post: _posts[index],
+                              disableAuthorNavigation: true,
+                            );
                           },
                         ),
               const Center(child: Text('暂无智能体')),
@@ -247,284 +283,353 @@ class _UserHomeScreenState extends State<UserHomeScreen>
     );
   }
 
-  Widget _buildProfileInfo(BuildContext context, User user, bool isDark) {
-    final isMe = widget.userId == null ||
-        widget.userId == context.read<AuthProvider>().user?.id;
+  // ============ 覆盖在背景上的个人资料 ============
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const SizedBox(height: 16),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Expanded(
-                child: Row(
-                  children: [
-                    GestureDetector(
-                      onTap: () {
-                        if (user.avatar.isNotEmpty) {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => ImageViewerScreen(
-                                imageUrls: [ApiConstants.fullUrl(user.avatar)],
-                              ),
-                            ),
-                          );
-                        }
-                      },
-                      child: CachedAvatar(
-                        imageUrl: user.avatar.isNotEmpty
-                            ? ApiConstants.fullUrl(user.avatar)
-                            : null,
-                        radius: 32,
-                        fallbackText: user.nickname,
+  Widget _buildProfileOverlay(
+    BuildContext context,
+    User user,
+    bool isMe,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // 第一行：头像 + 编辑/关注按钮
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            GestureDetector(
+              onTap: () {
+                if (user.avatar.isNotEmpty) {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => ImageViewerScreen(
+                        imageUrls: [ApiConstants.fullUrl(user.avatar)],
                       ),
                     ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Flexible(
-                                child: Text(
-                                  user.nickname,
-                                  style: const TextStyle(
-                                    fontSize: 22,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 6),
-                          // 性别、ID、吧龄、归属地
-                          Wrap(
-                            spacing: 6,
-                            runSpacing: 4,
-                            crossAxisAlignment: WrapCrossAlignment.center,
-                            children: [
-                              Icon(
-                                user.gender == 'female'
-                                    ? Icons.female
-                                    : Icons.male,
-                                size: 12,
-                                color: user.gender == 'female'
-                                    ? Colors.pink[300]
-                                    : Colors.blue[300],
-                              ),
-                              Text('ID ${user.studentId}',
-                                  style: TextStyle(
-                                      fontSize: 11,
-                                      color: isDark
-                                          ? Colors.white54
-                                          : Colors.black54)),
-                              Text(
-                                  user.eduCollege.isNotEmpty
-                                      ? user.eduCollege
-                                      : '未知归属',
-                                  style: TextStyle(
-                                      fontSize: 11,
-                                      color: isDark
-                                          ? Colors.white54
-                                          : Colors.black54)),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+                  );
+                }
+              },
+              child: Container(
+                padding: const EdgeInsets.all(2),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.9),
+                    width: 2,
+                  ),
+                ),
+                child: CachedAvatar(
+                  imageUrl: user.avatar.isNotEmpty
+                      ? ApiConstants.fullUrl(user.avatar)
+                      : null,
+                  radius: 38,
+                  fallbackText: user.nickname,
                 ),
               ),
-              const SizedBox(width: 8),
-              if (isMe)
-                OutlinedButton(
-                  onPressed: () {
-                    _showEditSheet(context, user);
-                  },
-                  style: OutlinedButton.styleFrom(
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    side: BorderSide(
-                        color: isDark ? Colors.white30 : Colors.black26),
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
-                    minimumSize: const Size(0, 32),
-                  ),
-                  child: Text('编辑资料',
-                      style: TextStyle(
-                          fontSize: 12,
-                          color: isDark ? Colors.white : Colors.black87)),
-                )
-              else if (user.isFollowing)
-                OutlinedButton(
-                  onPressed: () async {
-                    final success =
-                        await context.read<SocialProvider>().unfollow(user.id);
-                    if (success && mounted) {
-                      setState(() {
-                        _user!.isFollowing = false;
-                        _user!.followersCount =
-                            (_user!.followersCount - 1).clamp(0, 999999);
-                      });
-                      context.read<AuthProvider>().refreshUser();
-                    }
-                  },
-                  child: const Text('已关注'),
-                )
-              else
-                ElevatedButton(
-                  onPressed: () async {
-                    final success =
-                        await context.read<SocialProvider>().follow(user.id);
-                    if (success && mounted) {
-                      setState(() {
-                        _user!.isFollowing = true;
-                        _user!.followersCount++;
-                      });
-                      context.read<AuthProvider>().refreshUser();
-                    }
-                  },
-                  child: const Text('关注'),
+            ),
+            const Spacer(),
+            if (isMe)
+              _buildOverlayButton(
+                text: '编辑资料',
+                onPressed: () => _showEditSheet(context, user),
+              )
+            else
+              _buildFollowButton(context, user),
+          ],
+        ),
+
+        // 第二行：昵称 + 等级
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            Flexible(
+              child: Text(
+                user.nickname,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 24,
+                  fontWeight: FontWeight.w700,
                 ),
-            ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 9,
+                vertical: 3,
+              ),
+              decoration: BoxDecoration(
+                color: Color(user.levelColorValue),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                user.levelLabel,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+
+        // 第三行：性别、ID、学院
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Icon(
+              user.gender == 'female' ? Icons.female : Icons.male,
+              size: 15,
+              color: user.gender == 'female'
+                  ? Colors.pinkAccent
+                  : Colors.lightBlueAccent,
+            ),
+            const SizedBox(width: 5),
+            Flexible(
+              child: Text(
+                'ID ${user.studentId}  ${user.eduCollege.isNotEmpty ? user.eduCollege : '未知归属'}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Colors.white70,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+          ],
+        ),
+
+        // 统计数据：获赞、关注、粉丝
+        const SizedBox(height: 14),
+        Row(
+          children: [
+            _buildOverlayStat(
+              user.totalLikesReceived.toString(),
+              '获赞',
+              null,
+            ),
+            const SizedBox(width: 28),
+            _buildOverlayStat(
+              user.followingCount.toString(),
+              '关注',
+              isMe
+                  ? () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => SocialListScreen(
+                            userId: user.id,
+                            initialIndex: 0,
+                          ),
+                        ),
+                      );
+                    }
+                  : null,
+            ),
+            const SizedBox(width: 28),
+            _buildOverlayStat(
+              user.followersCount.toString(),
+              '粉丝',
+              isMe
+                  ? () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => SocialListScreen(
+                            userId: user.id,
+                            initialIndex: 1,
+                          ),
+                        ),
+                      );
+                    }
+                  : null,
+            ),
+          ],
+        ),
+
+        // 等级进度 + 积分半透明条
+        const SizedBox(height: 14),
+        Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: 14,
+            vertical: 12,
           ),
-
-          const SizedBox(height: 16),
-
-          // 等级卡片取代简介，紧凑左对齐
-          _buildLevelCard(context, user, isDark),
-
-          const SizedBox(height: 16),
-
-          // 统计数据区 (极其精简版)
-          Row(
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.14),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.18),
+            ),
+          ),
+          child: Row(
             children: [
-              _buildStatItem(
-                  user.totalLikesReceived.toString(), '获赞', isDark, null),
-              const SizedBox(width: 32),
-              _buildStatItem(
-                  user.followingCount.toString(),
-                  '关注',
-                  isDark,
-                  isMe
-                      ? () {
-                          Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                  builder: (_) => SocialListScreen(
-                                      userId: user.id, initialIndex: 0)));
-                        }
-                      : null),
-              const SizedBox(width: 32),
-              _buildStatItem(
-                  user.followersCount.toString(),
-                  '粉丝',
-                  isDark,
-                  isMe
-                      ? () {
-                          Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                  builder: (_) => SocialListScreen(
-                                      userId: user.id, initialIndex: 1)));
-                        }
-                      : null),
+              Text(
+                user.levelLabel,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                    value: user.levelProgress,
+                    minHeight: 6,
+                    backgroundColor: Colors.white24,
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      Color(user.levelColorValue),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                '${user.exp}/${user.expToNextLevel}',
+                style: const TextStyle(
+                  color: Colors.white70,
+                  fontSize: 11,
+                ),
+              ),
+              const SizedBox(width: 14),
+              const Icon(
+                Icons.monetization_on,
+                color: Colors.amber,
+                size: 16,
+              ),
+              const SizedBox(width: 4),
+              Text(
+                '${user.credits}',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             ],
           ),
+        ),
+      ],
+    );
+  }
 
-          const SizedBox(height: 20),
-        ],
+  // ============ 覆盖层辅助组件 ============
+
+  Widget _buildOverlayButton({
+    required String text,
+    required VoidCallback onPressed,
+  }) {
+    return Material(
+      color: Colors.white.withValues(alpha: 0.18),
+      borderRadius: BorderRadius.circular(22),
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(22),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: 18,
+            vertical: 9,
+          ),
+          child: Text(
+            text,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
       ),
     );
   }
 
-  Widget _buildStatItem(
-      String countStr, String label, bool isDark, VoidCallback? onTap) {
-    int count = int.tryParse(countStr) ?? 0;
+  Widget _buildFollowButton(BuildContext context, User user) {
+    if (user.isFollowing) {
+      return _buildOverlayButton(
+        text: '已关注',
+        onPressed: () async {
+          final success =
+              await context.read<SocialProvider>().unfollow(user.id);
+          if (success && mounted) {
+            setState(() {
+              _user!.isFollowing = false;
+              _user!.followersCount =
+                  (_user!.followersCount - 1).clamp(0, 999999);
+            });
+            context.read<AuthProvider>().refreshUser();
+          }
+        },
+      );
+    } else {
+      return Material(
+        color: Theme.of(context).colorScheme.primary,
+        borderRadius: BorderRadius.circular(22),
+        child: InkWell(
+          onTap: () async {
+            final success =
+                await context.read<SocialProvider>().follow(user.id);
+            if (success && mounted) {
+              setState(() {
+                _user!.isFollowing = true;
+                _user!.followersCount++;
+              });
+              context.read<AuthProvider>().refreshUser();
+            }
+          },
+          borderRadius: BorderRadius.circular(22),
+          child: const Padding(
+            padding: EdgeInsets.symmetric(
+              horizontal: 22,
+              vertical: 9,
+            ),
+            child: Text(
+              '关注',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+  }
+
+  Widget _buildOverlayStat(
+    String count,
+    String label,
+    VoidCallback? onTap,
+  ) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(4),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.baseline,
-        textBaseline: TextBaseline.alphabetic,
-        children: [
-          AnimatedCount(
-            count: count,
-            style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(width: 4),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 11,
-              color: isDark ? Colors.white54 : Colors.grey,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildLevelCard(BuildContext context, User user, bool isDark) {
-    final nextExp = user.expToNextLevel;
-    final progress = user.levelProgress;
-
-    return Row(
-      children: [
-        Text(
-          user.levelLabel,
-          style: TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.bold,
-            fontStyle: FontStyle.italic,
-            color: Color(user.levelColorValue),
-          ),
-        ),
-        const SizedBox(width: 12),
-        SizedBox(
-          width: 100,
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: LinearProgressIndicator(
-              value: progress,
-              backgroundColor:
-                  isDark ? Colors.white12 : const Color(0xFFEEEEEE),
-              valueColor: AlwaysStoppedAnimation<Color>(
-                Color(user.levelColorValue),
+      child: Text.rich(
+        TextSpan(
+          children: [
+            TextSpan(
+              text: count,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 17,
+                fontWeight: FontWeight.w700,
               ),
-              minHeight: 6,
             ),
-          ),
+            TextSpan(
+              text: ' $label',
+              style: const TextStyle(
+                color: Colors.white70,
+                fontSize: 13,
+              ),
+            ),
+          ],
         ),
-        const SizedBox(width: 12),
-        Text(
-          '${user.exp}/${nextExp}',
-          style: TextStyle(
-            fontSize: 12,
-            color: isDark ? Colors.white54 : Colors.black54,
-          ),
-        ),
-        const SizedBox(width: 16),
-        const Icon(Icons.monetization_on, size: 14, color: Colors.amber),
-        const SizedBox(width: 4),
-        Text(
-          '${user.credits}',
-          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
-        ),
-        const Icon(Icons.chevron_right, size: 14, color: Colors.grey),
-      ],
+      ),
     );
   }
 
@@ -537,80 +642,6 @@ class _UserHomeScreenState extends State<UserHomeScreen>
         insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
         child: _EditProfileSheet(user: user, onSaved: _loadData),
       ),
-    );
-  }
-}
-
-class MockPostListTab extends StatefulWidget {
-  final bool isDark;
-  const MockPostListTab({super.key, required this.isDark});
-
-  @override
-  State<MockPostListTab> createState() => _MockPostListTabState();
-}
-
-class _MockPostListTabState extends State<MockPostListTab>
-    with AutomaticKeepAliveClientMixin {
-  @override
-  bool get wantKeepAlive => true;
-
-  @override
-  Widget build(BuildContext context) {
-    super.build(context);
-    return ListView.builder(
-      padding: const EdgeInsets.only(top: 8),
-      itemCount: 20, // 增加到20以测试滚动保持
-      itemBuilder: (context, index) {
-        return Container(
-          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: widget.isDark
-                ? const Color(0xFF1E1E1E).withOpacity(0.9)
-                : Colors.white.withOpacity(0.95),
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.02),
-                blurRadius: 10.0,
-                offset: const Offset(0, 2),
-              )
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '这是一个动态占位内容 $index',
-                style:
-                    const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                '这里是动态内容的摘要部分。在这个设计中，我们采用了贴吧风格的列表展示...',
-                style: TextStyle(
-                    color: widget.isDark ? Colors.white70 : Colors.black87),
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Icon(Icons.thumb_up_alt_outlined,
-                      size: 16, color: Colors.grey[500]),
-                  const SizedBox(width: 4),
-                  Text('12',
-                      style: TextStyle(color: Colors.grey[500], fontSize: 12)),
-                  const SizedBox(width: 16),
-                  Icon(Icons.chat_bubble_outline,
-                      size: 16, color: Colors.grey[500]),
-                  const SizedBox(width: 4),
-                  Text('4',
-                      style: TextStyle(color: Colors.grey[500], fontSize: 12)),
-                ],
-              )
-            ],
-          ),
-        );
-      },
     );
   }
 }
@@ -634,32 +665,6 @@ class AnimatedCount extends StatelessWidget {
         );
       },
     );
-  }
-}
-
-class _SliverAppBarDelegate extends SliverPersistentHeaderDelegate {
-  _SliverAppBarDelegate(this._tabBar, this.backgroundColor);
-
-  final TabBar _tabBar;
-  final Color backgroundColor;
-
-  @override
-  double get minExtent => _tabBar.preferredSize.height;
-  @override
-  double get maxExtent => _tabBar.preferredSize.height;
-
-  @override
-  Widget build(
-      BuildContext context, double shrinkOffset, bool overlapsContent) {
-    return Container(
-      color: backgroundColor,
-      child: _tabBar,
-    );
-  }
-
-  bool shouldRebuild(_SliverAppBarDelegate oldDelegate) {
-    return _tabBar != oldDelegate._tabBar ||
-        backgroundColor != oldDelegate.backgroundColor;
   }
 }
 

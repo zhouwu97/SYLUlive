@@ -19,11 +19,7 @@ class MarketScreen extends StatefulWidget {
   final List<String>? onlyPostTypes;
   final String? titleOverride;
 
-  const MarketScreen({
-    super.key,
-    this.onlyPostTypes,
-    this.titleOverride,
-  });
+  const MarketScreen({super.key, this.onlyPostTypes, this.titleOverride});
 
   @override
   State<MarketScreen> createState() => _MarketScreenState();
@@ -41,8 +37,8 @@ class _MarketScreenState extends State<MarketScreen> {
 
   List<String> get _allowedTypes =>
       widget.onlyPostTypes == null || widget.onlyPostTypes!.isEmpty
-          ? _marketPostTypes
-          : widget.onlyPostTypes!;
+      ? _marketPostTypes
+      : widget.onlyPostTypes!;
 
   @override
   void initState() {
@@ -82,11 +78,11 @@ class _MarketScreenState extends State<MarketScreen> {
     }
 
     final results = await context.read<PostProvider>().searchPosts(
-          boardId: 2,
-          sort: _sortType,
-          query: query,
-          limit: 100,
-        );
+      boardId: 2,
+      sort: _sortType,
+      query: query,
+      limit: 100,
+    );
 
     if (!mounted || _searchQuery != query) return;
 
@@ -141,8 +137,9 @@ class _MarketScreenState extends State<MarketScreen> {
     final topInset = MediaQuery.paddingOf(context).top + kToolbarHeight + 12;
 
     return Scaffold(
-      backgroundColor:
-          isDark ? const Color(0xFF06080D) : const Color(0xFFF4F6FB),
+      backgroundColor: isDark
+          ? const Color(0xFF06080D)
+          : const Color(0xFFF4F6FB),
       extendBodyBehindAppBar: true,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
@@ -150,12 +147,15 @@ class _MarketScreenState extends State<MarketScreen> {
         title: Text(widget.titleOverride ?? '集市'),
         actions: [
           IconButton(
-            icon: Icon(themeProvider.marketIsListView
-                ? Icons.grid_view
-                : Icons.view_list),
+            icon: Icon(
+              themeProvider.marketIsListView
+                  ? Icons.grid_view
+                  : Icons.view_list,
+            ),
             onPressed: () {
-              themeProvider
-                  .setMarketIsListView(!themeProvider.marketIsListView);
+              themeProvider.setMarketIsListView(
+                !themeProvider.marketIsListView,
+              );
             },
           ),
           if (widget.titleOverride != '失物招领')
@@ -247,8 +247,8 @@ class _MarketScreenState extends State<MarketScreen> {
                             _searchQuery.isNotEmpty
                                 ? '换个关键词试试'
                                 : (widget.titleOverride == '失物招领'
-                                    ? '发布一条失物或招领信息吧'
-                                    : '发布你的第一条商品吧'),
+                                      ? '发布一条失物或招领信息吧'
+                                      : '发布你的第一条商品吧'),
                           ),
                         ),
                       )
@@ -290,9 +290,9 @@ class _MarketScreenState extends State<MarketScreen> {
           onPressed: () async {
             final authProvider = context.read<AuthProvider>();
             if (!authProvider.isLoggedIn) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('请先登录')),
-              );
+              ScaffoldMessenger.of(
+                context,
+              ).showSnackBar(const SnackBar(content: Text('请先登录')));
               Navigator.push(
                 context,
                 PageRouteBuilder(
@@ -307,7 +307,8 @@ class _MarketScreenState extends State<MarketScreen> {
               MaterialPageRoute(
                 builder: (_) => CreatePostScreen(
                   boardId: 2,
-                  defaultPostType: widget.onlyPostTypes != null &&
+                  defaultPostType:
+                      widget.onlyPostTypes != null &&
                           widget.onlyPostTypes!.contains('lost')
                       ? 'lost'
                       : 'sell',
@@ -331,8 +332,9 @@ class _MarketScreenState extends State<MarketScreen> {
       borderRadius: 12,
       blur: 12,
       opacity: 0.18,
-      backgroundColor:
-          isDark ? const Color(0x99171B24) : const Color(0xCCFFFFFF),
+      backgroundColor: isDark
+          ? const Color(0x99171B24)
+          : const Color(0xCCFFFFFF),
       borderColor: isDark
           ? Colors.white.withValues(alpha: 0.08)
           : Colors.white.withValues(alpha: 0.72),
@@ -377,8 +379,9 @@ class _MarketScreenState extends State<MarketScreen> {
         borderRadius: 50,
         blur: 12,
         opacity: 0.18,
-        backgroundColor:
-            isDark ? const Color(0xA31C1620) : const Color(0xD9FFF4F2),
+        backgroundColor: isDark
+            ? const Color(0xA31C1620)
+            : const Color(0xD9FFF4F2),
         borderColor: isDark ? const Color(0x66FF8A80) : const Color(0x88FFD5D0),
         child: Row(
           children: [
@@ -389,8 +392,11 @@ class _MarketScreenState extends State<MarketScreen> {
                 color: const Color(0xFFFF6B6B).withValues(alpha: 0.14),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: const Icon(Icons.gpp_maybe_outlined,
-                  color: Color(0xFFFF6B6B), size: 20),
+              child: const Icon(
+                Icons.gpp_maybe_outlined,
+                color: Color(0xFFFF6B6B),
+                size: 20,
+              ),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -410,10 +416,13 @@ class _MarketScreenState extends State<MarketScreen> {
                       const SizedBox(width: 8),
                       Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 3),
+                          horizontal: 8,
+                          vertical: 3,
+                        ),
                         decoration: BoxDecoration(
-                          color:
-                              const Color(0xFFFF6B6B).withValues(alpha: 0.14),
+                          color: const Color(
+                            0xFFFF6B6B,
+                          ).withValues(alpha: 0.14),
                           borderRadius: BorderRadius.circular(999),
                         ),
                         child: Text(
@@ -432,8 +441,8 @@ class _MarketScreenState extends State<MarketScreen> {
                     latest == null
                         ? '单独查看曝光内容，不打断正常逛集市'
                         : (latest.title.isNotEmpty
-                            ? latest.title
-                            : latest.content),
+                              ? latest.title
+                              : latest.content),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
@@ -456,8 +465,9 @@ class _MarketScreenState extends State<MarketScreen> {
   }
 
   Widget _buildSectionHeader(bool isDark, int count) {
-    final title =
-        _searchQuery.isNotEmpty ? '搜索结果' : (widget.titleOverride ?? '商品列表');
+    final title = _searchQuery.isNotEmpty
+        ? '搜索结果'
+        : (widget.titleOverride ?? '商品列表');
     return Row(
       children: [
         Text(
@@ -510,8 +520,9 @@ class _MarketScreenState extends State<MarketScreen> {
       borderRadius: 12,
       blur: 12,
       opacity: 0.18,
-      backgroundColor:
-          isDark ? const Color(0x99171B24) : const Color(0xCCFFFFFF),
+      backgroundColor: isDark
+          ? const Color(0x99171B24)
+          : const Color(0xCCFFFFFF),
       borderColor: isDark
           ? Colors.white.withValues(alpha: 0.08)
           : Colors.white.withValues(alpha: 0.72),

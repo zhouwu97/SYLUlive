@@ -1,9 +1,19 @@
 package handlers
 
 import (
+	"crypto/rand"
+	"crypto/rsa"
+	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"math/big"
 	"net/http"
+	"net/url"
+	"regexp"
+	"strconv"
+	"strings"
+	"time"
 
 	"shenliyuan/internal/models"
 
@@ -11,6 +21,25 @@ import (
 	"github.com/go-resty/resty/v2"
 	"gorm.io/gorm"
 )
+
+const (
+	indexUrl  = "https://jxw.sylu.edu.cn/xtgl"
+	courseUrl = "https://jxw.sylu.edu.cn/kbcx"
+	gradeUrl  = "https://jxw.sylu.edu.cn/cjcx"
+)
+
+var (
+	Error302          = errors.New("post redirect disabled")
+	ErrorLapse        = errors.New("cookie已失效")
+	ErrorCourseNoOpen = errors.New("当前学期课表暂未开放")
+	ErrorGradesNoOpen = errors.New("当前学期暂无成绩")
+)
+
+// PublicKey 公钥结构
+type PublicKey struct {
+	Modulus  string `json:"modulus"`
+	Exponent string `json:"exponent"`
+}
 
 // EduHandler 教务处理器
 type EduHandler struct {
@@ -22,6 +51,21 @@ func NewEduHandler(db *gorm.DB) *EduHandler {
 	return &EduHandler{db: db}
 }
 
+// baseHttpHeaders 请求头
+func baseHttpHeaders() map[string]string {
+	return map[string]string{
+		"User-Agent":    "Mozilla/5.0 (Windows NT 6.1; WOW64; rv:29.0) Gecko/20100101 Firefox/29.0",
+		"Content-Type":  "application/x-www-form-urlencoded;charset=uft-8",
+		"Cache-Control": "no-cache",
+	}
+}
+
+// nowTime 获取当前时间戳
+func nowTime() string {
+	return strconv.FormatInt(time.Now().UnixMilli(), 10)
+}
+
+// BindEduInput 绑定教务输入
 type BindEduInput struct {
 	StudentID string `json:"student_id" binding:"required,len=10"`
 	Password  string `json:"password" binding:"required"`
@@ -37,73 +81,68 @@ func (h *EduHandler) BindEdu(c *gin.Context) {
 		return
 	}
 
-	client := NewEduServiceClient()
+	// 创建 resty 客户端
+	client := resty.New()
 
-	resp, err := client.Post("/api/edu/bind", map[string]interface{}{
-		"user_id":    fmt.Sprintf("%d", userID),
-		"student_id": input.StudentID,
-		"password":   input.Password,
+	// 获取csrf token
+	csrfToken, err := getIndexCookieAndCsrfToken(client, 0)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "无法连接教务系统，请检查网络"})
+		return
+	}
+
+	// 获取公钥
+	publicKey, err := getPublicKey(client)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取加密密钥失败，教务系统可能正在维护"})
+		return
+	}
+
+	// RSA加密密码
+	encryptedPassword, err := rsaByPublicKey(input.Password, publicKey)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "密码加密失败"})
+		return
+	}
+
+	// 尝试登录
+	_, err = syluLogin(client, input.StudentID, encryptedPassword, csrfToken)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	// 构建cookie字符串（和学长项目一样，取 client.Cookies[1]）
+	var cookieStr string
+	if len(client.Cookies) > 1 {
+		cookieStr = buildCookieString(client.Cookies[1:2])
+	} else if len(client.Cookies) == 1 {
+		cookieStr = buildCookieString(client.Cookies)
+	}
+
+	// 获取学生基本信息（年级、学院、专业）
+	grade, college, major, _ := getStudentInfo(client, cookieStr, input.StudentID)
+
+	// 存储原始密码（需要明文密码用于后续Cookie刷新时的RSA加密）
+	// 注意：EduPassword字段的json标签为"-"，不会暴露给API响应
+
+	// 更新用户教务信息
+	h.db.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]interface{}{
+		"edu_student_id": input.StudentID,
+		"edu_password":   input.Password, // 存储明文密码用于refreshCookie
+		"edu_cookie":     cookieStr,
+		"edu_bound":      true,
+		"edu_grade":      grade,
+		"edu_college":    college,
+		"edu_major":      major,
 	})
 
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "无法连接教务服务，请检查网络"})
-		return
-	}
-
-	if resp.StatusCode() != 200 {
-		c.JSON(resp.StatusCode(), gin.H{"error": ExtractError(resp)})
-		return
-	}
-
-	var bindResp struct {
-		Success   bool   `json:"success"`
-		Message   string `json:"message"`
-		StudentID string `json:"student_id"`
-		Name      string `json:"name"`
-		Grade     string `json:"grade"`
-		College   string `json:"college"`
-		Major     string `json:"major"`
-	}
-	if err := json.Unmarshal(resp.Body(), &bindResp); err != nil {
-		if rollbackErr := compensateUnbind(client, userID.(uint)); rollbackErr != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "解析教务服务响应失败，且补偿解绑失败: " + rollbackErr.Error()})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "解析教务服务响应失败，绑定已回滚"})
-		return
-	}
-	if !bindResp.Success {
-		c.JSON(http.StatusBadGateway, gin.H{"error": "教务绑定失败: " + bindResp.Message})
-		return
-	}
-
-	// 更新用户教务信息，不再存储明文密码，也不在Go端保存cookie
-	err = h.db.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]interface{}{
-		"edu_student_id": bindResp.StudentID,
-		"edu_bound":      true,
-		"edu_grade":      bindResp.Grade,
-		"edu_college":    bindResp.College,
-		"edu_major":      bindResp.Major,
-		"edu_name":       bindResp.Name,
-	}).Error
-
-	if err != nil {
-		if rollbackErr := compensateUnbind(client, userID.(uint)); rollbackErr != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库更新失败，且教务侧回滚失败: " + rollbackErr.Error()})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库更新失败，绑定已回滚"})
-		return
-	}
-
 	c.JSON(http.StatusOK, gin.H{
-		"success":    true,
-		"message":    "绑定成功",
-		"student_id": bindResp.StudentID,
-		"name":       bindResp.Name,
-		"grade":      bindResp.Grade,
-		"college":    bindResp.College,
-		"major":      bindResp.Major,
+		"message":        "绑定成功",
+		"edu_student_id": input.StudentID,
+		"edu_grade":      grade,
+		"edu_college":    college,
+		"edu_major":      major,
 	})
 }
 
@@ -111,29 +150,17 @@ func (h *EduHandler) BindEdu(c *gin.Context) {
 func (h *EduHandler) UnbindEdu(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 
-	client := NewEduServiceClient()
-	// 通知 Python 服务解绑 (补偿逻辑也复用此接口，必须幂等)
-	resp, err := client.Delete("/api/edu/bind", map[string]string{
-		"user_id": fmt.Sprintf("%d", userID),
-	})
-	if err := ensureEduServiceSuccess(resp, err, "教务侧解绑"); err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
-		return
-	}
-
-	if err := h.db.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]interface{}{
+	h.db.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]interface{}{
 		"edu_student_id": "",
+		"edu_password":   "",
+		"edu_cookie":     "",
 		"edu_bound":      false,
 		"edu_grade":      "",
 		"edu_college":    "",
 		"edu_major":      "",
-		"edu_name":       "",
-	}).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库更新失败"})
-		return
-	}
+	})
 
-	c.JSON(http.StatusOK, gin.H{"success": true, "message": "解绑成功"})
+	c.JSON(http.StatusOK, gin.H{"message": "解绑成功"})
 }
 
 // GetEduStatus 获取教务绑定状态
@@ -152,30 +179,16 @@ func (h *EduHandler) GetEduStatus(c *gin.Context) {
 		"edu_grade":      user.EduGrade,
 		"edu_college":    user.EduCollege,
 		"edu_major":      user.EduMajor,
-		"edu_name":       user.EduName,
-		"bound":          user.EduBound,
-		"student_id":     user.EduStudentID,
-		"grade":          user.EduGrade,
-		"college":        user.EduCollege,
-		"major":          user.EduMajor,
-		"name":           user.EduName,
 	})
 }
 
-func (h *EduHandler) clearEduBoundIfRecoverable(userID interface{}, resp *resty.Response) error {
-	code := ExtractErrorCode(resp)
-	if code != "EDU_NOT_BOUND" && code != "EDU_CREDENTIAL_EXPIRED" {
-		return nil
-	}
-	return h.db.Model(&models.User{}).Where("id = ?", userID).Update("edu_bound", false).Error
-}
-
+// PreVerifyInput 注册前验证教务输入
 type PreVerifyInput struct {
 	StudentID string `json:"student_id" binding:"required,len=10"`
 	Password  string `json:"password" binding:"required"`
 }
 
-// PreVerify 注册前验证教务账号
+// PreVerify 注册前验证教务账号（不依赖用户登录状态）
 func (h *EduHandler) PreVerify(c *gin.Context) {
 	var input PreVerifyInput
 	if err := c.ShouldBindJSON(&input); err != nil {
@@ -183,6 +196,7 @@ func (h *EduHandler) PreVerify(c *gin.Context) {
 		return
 	}
 
+	// 检查学号是否已被注册
 	var count int64
 	h.db.Model(&models.User{}).Where("student_id = ?", input.StudentID).Count(&count)
 	if count > 0 {
@@ -190,51 +204,47 @@ func (h *EduHandler) PreVerify(c *gin.Context) {
 		return
 	}
 
-	client := NewEduServiceClient()
-	resp, err := client.Post("/api/edu/pre_verify", map[string]interface{}{
-		"student_id": input.StudentID,
-		"password":   input.Password,
-	})
-
+	// 尝试验证教务密码
+	client := resty.New()
+	csrfToken, err := getIndexCookieAndCsrfToken(client, 0)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "无法连接教务系统", "success": false})
 		return
 	}
 
-	if resp.StatusCode() != 200 {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": ExtractError(resp), "success": false})
+	publicKey, err := getPublicKey(client)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取加密密钥失败", "success": false})
 		return
 	}
 
-	var verifyResp struct {
-		Success bool   `json:"success"`
-		Message string `json:"message"`
-		Name    string `json:"name"`
-	}
-	if err := json.Unmarshal(resp.Body(), &verifyResp); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "解析服务响应失败", "success": false})
+	encryptedPassword, err := rsaByPublicKey(input.Password, publicKey)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "密码加密失败", "success": false})
 		return
 	}
 
-	if !verifyResp.Success {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": verifyResp.Message, "success": false})
+	_, err = syluLogin(client, input.StudentID, encryptedPassword, csrfToken)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "教务密码错误", "success": false})
 		return
 	}
 
+	// 验证成功
 	c.JSON(http.StatusOK, gin.H{
 		"success":        true,
 		"message":        "验证通过",
 		"edu_student_id": input.StudentID,
-		"name":           verifyResp.Name,
 	})
 }
 
+// CourseInput 课表查询输入
 type CourseInput struct {
 	Year     string `json:"year" binding:"required"`
 	Semester int    `json:"semester" binding:"required,oneof=3 12"`
 }
 
-// GetCourses 获取课表
+// GetCourses 获取课表（通过Python服务访问教务系统）
 func (h *EduHandler) GetCourses(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 
@@ -243,6 +253,7 @@ func (h *EduHandler) GetCourses(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
 		return
 	}
+
 	if !user.EduBound {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "请先绑定教务账号"})
 		return
@@ -254,102 +265,53 @@ func (h *EduHandler) GetCourses(c *gin.Context) {
 		return
 	}
 
-	client := NewEduServiceClient()
-	resp, err := client.Post("/api/edu/courses/fetch", map[string]interface{}{
-		"user_id":  fmt.Sprintf("%d", userID),
-		"year":     input.Year,
-		"semester": input.Semester,
-	})
+	// 通过Python服务获取课表（Go在香港无法直接访问教务系统）
+	client := resty.New()
+	client.SetTimeout(30 * time.Second)
+
+	resp, err := client.R().
+		SetHeader("Content-Type", "application/json").
+		SetBody(map[string]interface{}{
+			"user_id":  fmt.Sprintf("%d", userID),
+			"year":     input.Year,
+			"semester": input.Semester,
+		}).
+		Post(EduServiceConfig.BaseURL + "/api/edu/courses/fetch")
 
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "无法连接教务服务"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "无法连接教务服务，请检查网络"})
 		return
 	}
 
 	if resp.StatusCode() != 200 {
-		errMsg := ExtractError(resp)
-		if err := h.clearEduBoundIfRecoverable(userID, resp); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "教务状态自愈失败"})
-			return
+		// 解析Python返回的错误
+		var errResp struct {
+			Detail string `json:"detail"`
+			Error  string `json:"error"`
 		}
-		c.JSON(resp.StatusCode(), gin.H{"error": errMsg})
-		return
-	}
-
-	c.Data(http.StatusOK, "application/json", resp.Body())
-}
-
-// GetLocalCourses 获取本地已美化课表
-func (h *EduHandler) GetLocalCourses(c *gin.Context) {
-	userID, _ := c.Get("user_id")
-
-	client := NewEduServiceClient()
-	resp, err := client.Get(fmt.Sprintf("/api/edu/courses/local?user_id=%v", userID))
-
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "无法连接教务服务"})
-		return
-	}
-
-	if resp.StatusCode() != 200 {
-		errMsg := ExtractError(resp)
-		c.JSON(resp.StatusCode(), gin.H{"error": errMsg})
-		return
-	}
-
-	c.Data(http.StatusOK, "application/json", resp.Body())
-}
-
-type SyncCourseInput struct {
-	Year           string                   `json:"year" binding:"required"`
-	Semester       int                      `json:"semester" binding:"required"`
-	RawJSON        string                   `json:"raw_json" binding:"required"`
-	Customizations []map[string]interface{} `json:"customizations"`
-}
-
-// SyncCourses 同步并解析缓存课表
-func (h *EduHandler) SyncCourses(c *gin.Context) {
-	userID, _ := c.Get("user_id")
-
-	var input SyncCourseInput
-	if err := c.ShouldBindJSON(&input); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	client := NewEduServiceClient()
-	resp, err := client.Post("/api/edu/courses/sync", map[string]interface{}{
-		"user_id":        fmt.Sprintf("%d", userID),
-		"year":           input.Year,
-		"semester":       input.Semester,
-		"raw_json":       input.RawJSON,
-		"customizations": input.Customizations,
-	})
-
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "无法连接教务服务"})
-		return
-	}
-
-	if resp.StatusCode() != 200 {
-		errMsg := ExtractError(resp)
-		if err := h.clearEduBoundIfRecoverable(userID, resp); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "教务状态自愈失败"})
-			return
+		json.Unmarshal(resp.Body(), &errResp)
+		msg := errResp.Detail
+		if msg == "" {
+			msg = errResp.Error
 		}
-		c.JSON(resp.StatusCode(), gin.H{"error": errMsg})
+		if msg == "" {
+			msg = "获取课表失败"
+		}
+		c.JSON(resp.StatusCode(), gin.H{"error": msg})
 		return
 	}
 
+	// 直接透传给前端
 	c.Data(http.StatusOK, "application/json", resp.Body())
 }
 
+// GradesInput 成绩查询输入
 type GradesInput struct {
 	Year     string `json:"year" binding:"required"`
 	Semester int    `json:"semester" binding:"required,oneof=3 12"`
 }
 
-// GetGrades 获取成绩
+// GetGrades 获取成绩（通过Python服务访问教务系统）
 func (h *EduHandler) GetGrades(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 
@@ -358,6 +320,7 @@ func (h *EduHandler) GetGrades(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
 		return
 	}
+
 	if !user.EduBound {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "请先绑定教务账号"})
 		return
@@ -369,27 +332,426 @@ func (h *EduHandler) GetGrades(c *gin.Context) {
 		return
 	}
 
-	client := NewEduServiceClient()
-	resp, err := client.Post("/api/edu/grades/", map[string]interface{}{
-		"user_id":  fmt.Sprintf("%d", userID),
-		"year":     input.Year,
-		"semester": input.Semester,
-	})
+	// 通过Python服务获取成绩
+	client := resty.New()
+	client.SetTimeout(30 * time.Second)
+
+	resp, err := client.R().
+		SetHeader("Content-Type", "application/json").
+		SetBody(map[string]interface{}{
+			"user_id":  fmt.Sprintf("%d", userID),
+			"year":     input.Year,
+			"semester": input.Semester,
+		}).
+		Post(EduServiceConfig.BaseURL + "/api/edu/grades")
 
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "无法连接教务服务"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "无法连接教务服务，请检查网络"})
 		return
 	}
 
-	if resp.StatusCode() != 200 {
-		errMsg := ExtractError(resp)
-		if err := h.clearEduBoundIfRecoverable(userID, resp); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "教务状态自愈失败"})
-			return
+	// 直接透传给前端
+	c.Data(resp.StatusCode(), "application/json", resp.Body())
+}
+
+// 以下是整合的教务系统登录和查询逻辑
+
+func getIndexCookieAndCsrfToken(client *resty.Client, retryCount int) (string, error) {
+	if retryCount >= 5 {
+		return "", errors.New("教务系统连接超时，多次重试失败")
+	}
+	client.SetTimeout(3 * time.Second)
+
+	initResp, err := client.R().SetHeaders(baseHttpHeaders()).Get(indexUrl + "/login_slogin.html")
+	if err != nil {
+		if urlErr, ok := err.(*url.Error); ok && urlErr.Timeout() {
+			return getIndexCookieAndCsrfToken(client, retryCount+1)
 		}
-		c.JSON(resp.StatusCode(), gin.H{"error": errMsg})
-		return
+		return "", err
 	}
 
-	c.Data(http.StatusOK, "application/json", resp.Body())
+	findCsrfToken := regexp.MustCompile(`id="csrftoken" name="csrftoken" value="([^"]+)"`)
+	matches := findCsrfToken.FindStringSubmatch(string(initResp.Body()))
+	if len(matches) < 2 {
+		return "", errors.New("无法获取csrf token")
+	}
+
+	client.Cookies = initResp.Cookies()
+	return matches[1], nil
+}
+
+func getPublicKey(client *resty.Client) (*PublicKey, error) {
+	resp, err := client.R().SetHeaders(baseHttpHeaders()).
+		SetQueryParams(map[string]string{
+			"time": nowTime(),
+			"_":    nowTime(),
+		}).Get(indexUrl + "/login_getPublicKey.html")
+
+	if err != nil {
+		return nil, err
+	}
+
+	var publicKey PublicKey
+	if err := json.Unmarshal(resp.Body(), &publicKey); err != nil {
+		return nil, err
+	}
+	return &publicKey, nil
+}
+
+func rsaByPublicKey(password string, publicKey *PublicKey) (string, error) {
+	modulusBytes, err := base64.StdEncoding.DecodeString(publicKey.Modulus)
+	if err != nil {
+		return "", err
+	}
+
+	exponentBytes, err := base64.StdEncoding.DecodeString(publicKey.Exponent)
+	if err != nil {
+		return "", err
+	}
+
+	pubKey := &rsa.PublicKey{
+		N: new(big.Int).SetBytes(modulusBytes),
+		E: int(new(big.Int).SetBytes(exponentBytes).Int64()),
+	}
+
+	encryptedBytes, err := rsa.EncryptPKCS1v15(rand.Reader, pubKey, []byte(password))
+	if err != nil {
+		return "", err
+	}
+
+	return base64.StdEncoding.EncodeToString(encryptedBytes), nil
+}
+
+func syluLogin(client *resty.Client, studentID, encryptedPassword, csrfToken string) ([]*http.Cookie, error) {
+	loginResp, err := client.SetRedirectPolicy(resty.NoRedirectPolicy()).R().
+		SetFormData(map[string]string{
+			"csrftoken": csrfToken,
+			"language":  "zh_CN",
+			"yhm":       studentID,
+			"mm":        encryptedPassword,
+		}).
+		SetQueryParam("time", nowTime()).
+		SetHeaders(baseHttpHeaders()).
+		Post(indexUrl + "/login_slogin.html")
+
+	if err != nil && err.Error() == Error302.Error() {
+		return loginResp.Cookies(), nil
+	} else if err != nil {
+		return nil, errors.New("服务器连接失败:" + err.Error())
+	}
+	return nil, errors.New("账号或密码错误")
+}
+
+func buildCookieString(cookies []*http.Cookie) string {
+	var parts []string
+	for _, c := range cookies {
+		parts = append(parts, c.Name+"="+c.Value)
+	}
+	return strings.Join(parts, "; ")
+}
+
+// scheduleResponse 课表响应结构（匹配教务系统JSON字段）
+type scheduleResponse struct {
+	RqazcList []struct {
+		Rq string `json:"rq"`
+	} `json:"rqazcList"`
+	KbList []struct {
+		Name     string `json:"kcmc"` // 课程名称
+		Teacher  string `json:"xm"`   // 教师姓名
+		Location string `json:"cdmc"` // 场地名称
+		Time     string `json:"jc"`   // 节次
+		WeekDay  string `json:"xqj"`  // 星期几
+		WeekS    string `json:"zcd"`  // 周段
+	} `json:"kbList"`
+}
+
+type courseResponse struct {
+	Courses []courseInfo `json:"courses"`
+}
+
+type courseInfo struct {
+	Name     string `json:"name"`
+	Teacher  string `json:"teacher"`
+	Location string `json:"location"`
+	Time     int    `json:"time"`
+	WeekDay  int    `json:"week_day"`
+	WeekS    []int  `json:"weeks"`
+}
+
+func getCourseByInfo(client *resty.Client, cookie, year string, semester int) (*courseResponse, error) {
+	client.SetHostURL(courseUrl)
+	defer client.GetClient().CloseIdleConnections()
+
+	formData := map[string]string{
+		"xnm":    year,
+		"zs":     "1",
+		"doType": "app",
+		"xqm":    strconv.Itoa(semester),
+		"kblx":   "1",
+	}
+
+	resp, err := client.R().
+		SetFormData(formData).
+		SetHeader("Cookie", cookie).
+		Post("/xskbcxMobile_cxXsKb.html?gnmkdm=N2154")
+
+	if err != nil {
+		return nil, err
+	}
+
+	if string(resp.Body()) == "null" {
+		return nil, ErrorLapse
+	}
+
+	var schedule scheduleResponse
+	if err := json.Unmarshal(resp.Body(), &schedule); err != nil {
+		return nil, err
+	}
+
+	if len(schedule.KbList) == 0 {
+		return nil, ErrorCourseNoOpen
+	}
+
+	result := &courseResponse{Courses: make([]courseInfo, 0, len(schedule.KbList))}
+
+	for _, v := range schedule.KbList {
+		course := courseInfo{
+			Name:     v.Name,
+			Teacher:  v.Teacher,
+			Location: v.Location,
+			Time:     timeToInt(v.Time),
+			WeekDay:  parseWeekday(v.WeekDay),
+			WeekS:    parseWeeks(v.WeekS),
+		}
+		result.Courses = append(result.Courses, course)
+	}
+
+	return result, nil
+}
+
+// 成绩相关结构（匹配教务系统JSON字段）
+type gradesResponse struct {
+	Items []struct {
+		Kcmc   string `json:"KCMC"`   // 课程名称
+		JxbID  string `json:"JXBID"`  // 教学班ID
+		Jsxm   string `json:"JSXM"`   // 教师姓名
+		Sfxwkc string `json:"SFXWKC"` // 是否学位课
+		Xf     string `json:"XF"`     // 学分
+		Jd     string `json:"JD"`     // 绩点
+		Xfjd   string `json:"XFJD"`   // 学分绩点
+		Bfzcj  string `json:"BFZCJ"`  // 百分成绩
+		Cj     string `json:"CJ"`     // 成绩
+	} `json:"items"`
+}
+
+type gradeInfo struct {
+	Name        string  `json:"name"`
+	ClassID     string  `json:"class_id"`
+	Teacher     string  `json:"teacher"`
+	IsDegree    bool    `json:"is_degree"`
+	Credits     float64 `json:"credits"`
+	GPA         float64 `json:"gpa"`
+	GradePoints float64 `json:"grade_points"`
+	Fraction    float64 `json:"fraction"`
+	Grade       string  `json:"grade"`
+}
+
+func getGradesByInfo(client *resty.Client, cookie, year string, semester int) ([]gradeInfo, error) {
+	client.SetHostURL(gradeUrl)
+	defer client.GetClient().CloseIdleConnections()
+
+	queryData := map[string]string{
+		"doType": "query",
+		"gnmkdm": "N305005",
+	}
+
+	formData := map[string]string{
+		"xnm":                  year,
+		"xqm":                  strconv.Itoa(semester),
+		"queryModel.showCount": "30",
+	}
+
+	resp, err := client.R().
+		SetQueryParams(queryData).
+		SetFormData(formData).
+		SetHeader("Cookie", cookie).
+		Post("/cjcx_cxXsgrcj.html")
+
+	if err != nil {
+		return nil, err
+	}
+
+	if strings.Contains(string(resp.Header().Get("Content-Type")), "text/html") {
+		return nil, ErrorLapse
+	}
+
+	var grades gradesResponse
+	if err := json.Unmarshal(resp.Body(), &grades); err != nil {
+		return nil, err
+	}
+
+	if len(grades.Items) < 1 {
+		return nil, ErrorGradesNoOpen
+	}
+
+	result := make([]gradeInfo, 0, len(grades.Items))
+	for _, v := range grades.Items {
+		grade := gradeInfo{
+			Name:     v.Kcmc,
+			ClassID:  v.JxbID,
+			Teacher:  v.Jsxm,
+			IsDegree: v.Sfxwkc == "是",
+		}
+		grade.Credits, _ = strconv.ParseFloat(v.Xf, 64)
+		grade.GPA, _ = strconv.ParseFloat(v.Jd, 64)
+		grade.GradePoints, _ = strconv.ParseFloat(v.Xfjd, 64)
+		grade.Fraction, _ = strconv.ParseFloat(v.Bfzcj, 64)
+		grade.Grade = v.Cj
+		result = append(result, grade)
+	}
+
+	return result, nil
+}
+
+func parseWeekday(s string) int {
+	if v, err := strconv.Atoi(s); err == nil {
+		return v
+	}
+	return 0
+}
+
+func parseWeeks(input string) []int {
+	var weeks []int
+	ranges := strings.Split(input, ",")
+	for _, r := range ranges {
+		re := regexp.MustCompile(`(\d+)`)
+		bounds := re.FindAllString(r, -1)
+		if len(bounds) > 1 {
+			start, _ := strconv.Atoi(bounds[0])
+			end, _ := strconv.Atoi(bounds[1])
+			for i := start; i <= end; i++ {
+				weeks = append(weeks, i)
+			}
+		} else if len(bounds) == 1 {
+			start, _ := strconv.Atoi(bounds[0])
+			weeks = append(weeks, start)
+		}
+	}
+	return weeks
+}
+
+func timeToInt(time string) int {
+	switch time {
+	case "1-2节":
+		return 1
+	case "3-4节":
+		return 2
+	case "5-6节":
+		return 3
+	case "7-8节":
+		return 4
+	case "9-10节":
+		return 5
+	case "11-12节":
+		return 6
+	case "13-14节":
+		return 7
+	}
+	return 0
+}
+
+// getStudentInfo 从教务系统获取学生基本信息
+func getStudentInfo(client *resty.Client, cookie, studentID string) (grade, college, major string, err error) {
+	client.SetHostURL("https://jxw.sylu.edu.cn/xtgl")
+	defer client.GetClient().CloseIdleConnections()
+
+	// 访问个人中心页面获取学生信息
+	resp, err := client.R().
+		SetHeader("Cookie", cookie).
+		SetHeaders(baseHttpHeaders()).
+		Get("/grxx_cxGrxx.html?gnmkdm=N100501&layout=default")
+
+	if err != nil {
+		return "", "", "", err
+	}
+
+	body := string(resp.Body())
+
+	// 解析年级、学院、专业
+	// 使用正则匹配
+	gradeRe := regexp.MustCompile(`年级[：:]\s*(\d{4})`)
+	gradeMatch := gradeRe.FindStringSubmatch(body)
+	if len(gradeMatch) > 1 {
+		grade = gradeMatch[1]
+	}
+
+	collegeRe := regexp.MustCompile(`学院[：:]\s*([^\s<]+)`)
+	collegeMatch := collegeRe.FindStringSubmatch(body)
+	if len(collegeMatch) > 1 {
+		college = collegeMatch[1]
+	}
+
+	majorRe := regexp.MustCompile(`专业[：:]\s*([^\s<]+)`)
+	majorMatch := majorRe.FindStringSubmatch(body)
+	if len(majorMatch) > 1 {
+		major = majorMatch[1]
+	}
+
+	// 如果解析不到，尝试从URL参数或页面其他地方获取
+	if grade == "" {
+		gradeRe2 := regexp.MustCompile(`(\d{4})-(\d{4})`)
+		gradeMatch2 := gradeRe2.FindStringSubmatch(body)
+		if len(gradeMatch2) > 0 {
+			grade = gradeMatch2[1]
+		}
+	}
+
+	return grade, college, major, nil
+}
+
+// refreshCookie 自动刷新过期的Cookie
+func (h *EduHandler) refreshCookie(userID uint) (string, error) {
+	var user models.User
+	if err := h.db.First(&user, userID).Error; err != nil {
+		return "", err
+	}
+
+	if !user.EduBound || user.EduStudentID == "" || user.EduPassword == "" {
+		return "", errors.New("未绑定教务账号")
+	}
+
+	client := resty.New()
+
+	csrfToken, err := getIndexCookieAndCsrfToken(client, 0)
+	if err != nil {
+		return "", err
+	}
+
+	publicKey, err := getPublicKey(client)
+	if err != nil {
+		return "", err
+	}
+
+	encryptedPassword, err := rsaByPublicKey(user.EduPassword, publicKey)
+	if err != nil {
+		return "", err
+	}
+
+	_, err = syluLogin(client, user.EduStudentID, encryptedPassword, csrfToken)
+	if err != nil {
+		return "", err
+	}
+
+	var cookieStr string
+	if len(client.Cookies) > 1 {
+		cookieStr = buildCookieString(client.Cookies[1:2])
+	} else if len(client.Cookies) == 1 {
+		cookieStr = buildCookieString(client.Cookies)
+	}
+
+	h.db.Model(&user).Updates(map[string]interface{}{
+		"edu_cookie": cookieStr,
+	})
+
+	return cookieStr, nil
 }

@@ -36,8 +36,10 @@ class AnswerGatewayResult {
     required this.balanceAfterCents,
   });
 
-  factory AnswerGatewayResult.error(String message,
-      {required bool usesOfficialBackend}) {
+  factory AnswerGatewayResult.error(
+    String message, {
+    required bool usesOfficialBackend,
+  }) {
     return AnswerGatewayResult(
       ok: false,
       answer: '',
@@ -83,7 +85,8 @@ class AnswerGateway {
     int startIdx = answer.indexOf('<think>');
     int endIdx = answer.indexOf('</think>');
     if (startIdx != -1 && endIdx != -1 && endIdx > startIdx) {
-      answer = answer.substring(0, startIdx) +
+      answer =
+          answer.substring(0, startIdx) +
           answer.substring(endIdx + '</think>'.length);
     }
     return answer.trim();
@@ -112,7 +115,11 @@ class AnswerGateway {
         debugPrint('发现自定义 API Key，采用分支 A：本地直连大模型');
         onProgress?.call('AI答题中...');
         result = await _askAiDirectly(
-            customKey, questionType, contentText, onProgress);
+          customKey,
+          questionType,
+          contentText,
+          onProgress,
+        );
       } else {
         debugPrint('未配置自定义 API Key，采用分支 B：请求 Go 后端余额扣费');
         onProgress?.call(forceRefresh ? '正在重新发起 AI 作答...' : 'AI答题中...');
@@ -151,7 +158,9 @@ class AnswerGateway {
   }
 
   Future<void> executeAnswer(
-      InAppWebViewController controller, String aiAnswer) async {
+    InAppWebViewController controller,
+    String aiAnswer,
+  ) async {
     String autoMode =
         await _secureStorage.read(key: 'auto_submit_mode') ?? 'semi';
     String safeAnswer = jsonEncode(aiAnswer);
@@ -161,7 +170,10 @@ class AnswerGateway {
   }
 
   Future<String?> markQuestionWrong(
-      String qType, Map<String, dynamic> rawContent, String contentText) async {
+    String qType,
+    Map<String, dynamic> rawContent,
+    String contentText,
+  ) async {
     final token = await _secureStorage.read(key: StorageKeys.authToken);
     if (token == null || token.isEmpty) {
       return '未登录，无法标记错题';
@@ -250,7 +262,8 @@ class AnswerGateway {
     final prompt =
         '你是一个专业的大学辅助答题助手。\n【重点警告】如果是选择题，请输出正确选项的字母和【完整文字内容】。如果选项是纯图片，或者你无法用文字描述，请务必输出对应选项的字母（如 A、B、C、D）。\n【关键：题号匹配】我传给你的题目 JSON 中可能带有一个 `__originalIndex` 字段。在输出多道题的答案时，你的编号必须严格等于该题目的 `__originalIndex` 的值（例如："17. A 选项文字"，"18. B"），绝对不能自己从 1 开始顺延编号！绝对不要包含任何解析或废话。\n题型：$qType\n题目内容：$content';
 
-    final baseUrl = await _secureStorage.read(key: 'custom_base_url') ??
+    final baseUrl =
+        await _secureStorage.read(key: 'custom_base_url') ??
         'https://api.deepseek.com/v1';
     final modelName =
         await _secureStorage.read(key: 'custom_model_name') ?? 'deepseek-chat';
@@ -259,10 +272,12 @@ class AnswerGateway {
         : '$baseUrl/chat/completions';
 
     final imageRegex = RegExp(
-        r'<img[^>]+(?:src|data-src)=\\?["\u0027](https?://[^"\u0027\\]+)\\?["\u0027]');
+      r'<img[^>]+(?:src|data-src)=\\?["\u0027](https?://[^"\u0027\\]+)\\?["\u0027]',
+    );
     final matches1 = imageRegex.allMatches(content);
     final directUrlRegex = RegExp(
-        r'https?://[^"\u0027\\]+(?:storage\.yuketang\.cn|qn-storage)[^"\u0027\\]+|https?://[^"\u0027\\]+\.(?:png|jpg|jpeg|webp|gif|bmp)(?:\?[^"\u0027\\]*)?');
+      r'https?://[^"\u0027\\]+(?:storage\.yuketang\.cn|qn-storage)[^"\u0027\\]+|https?://[^"\u0027\\]+\.(?:png|jpg|jpeg|webp|gif|bmp)(?:\?[^"\u0027\\]*)?',
+    );
     final matches2 = directUrlRegex.allMatches(content);
 
     final Set<String> urlSet = {};
@@ -280,12 +295,12 @@ class AnswerGateway {
     dynamic messagesContent;
     if (urlSet.isNotEmpty) {
       final List<Map<String, dynamic>> contentArray = [
-        {'type': 'text', 'text': prompt}
+        {'type': 'text', 'text': prompt},
       ];
       for (final url in urlSet) {
         contentArray.add({
           'type': 'image_url',
-          'image_url': {'url': url}
+          'image_url': {'url': url},
         });
       }
       messagesContent = contentArray;
@@ -306,7 +321,7 @@ class AnswerGateway {
         data: {
           'model': modelName,
           'messages': [
-            {'role': 'user', 'content': messagesContent}
+            {'role': 'user', 'content': messagesContent},
           ],
           'temperature': 0.1,
         },
@@ -335,8 +350,10 @@ class AnswerGateway {
       }
       return AnswerGatewayResult.error('AI 响应格式异常', usesOfficialBackend: false);
     } catch (e) {
-      return AnswerGatewayResult.error('直连 AI 失败: $e',
-          usesOfficialBackend: false);
+      return AnswerGatewayResult.error(
+        '直连 AI 失败: $e',
+        usesOfficialBackend: false,
+      );
     }
   }
 
@@ -350,8 +367,10 @@ class AnswerGateway {
   }) async {
     final token = await _secureStorage.read(key: StorageKeys.authToken);
     if (token == null || token.isEmpty) {
-      return AnswerGatewayResult.error('未登录，无法使用官方接口',
-          usesOfficialBackend: true);
+      return AnswerGatewayResult.error(
+        '未登录，无法使用官方接口',
+        usesOfficialBackend: true,
+      );
     }
 
     var payloadText = contentText;
@@ -365,8 +384,9 @@ class AnswerGateway {
     while (retryCount <= maxRetries) {
       try {
         if (retryCount > 0) {
-          onProgress
-              ?.call('题目较多，服务器 AI 仍在处理中，继续等待 ($retryCount/$maxRetries)...');
+          onProgress?.call(
+            '题目较多，服务器 AI 仍在处理中，继续等待 ($retryCount/$maxRetries)...',
+          );
           await Future.delayed(const Duration(seconds: 2));
         } else {
           onProgress?.call(forceRefresh ? 'AI答题中（忽略旧缓存）...' : 'AI答题中...');
@@ -424,8 +444,10 @@ class AnswerGateway {
             usesOfficialBackend: true,
           );
         }
-        return AnswerGatewayResult.error('服务器返回异常: ${response.statusCode}',
-            usesOfficialBackend: true);
+        return AnswerGatewayResult.error(
+          '服务器返回异常: ${response.statusCode}',
+          usesOfficialBackend: true,
+        );
       } on DioException catch (e) {
         final statusCode = e.response?.statusCode;
         if (statusCode == 504 || statusCode == 502 || statusCode == 524) {
@@ -434,13 +456,17 @@ class AnswerGateway {
         }
 
         if (statusCode == 403) {
-          return AnswerGatewayResult.error('余额不足，请充值或配置自定义 Key',
-              usesOfficialBackend: true);
+          return AnswerGatewayResult.error(
+            '余额不足，请充值或配置自定义 Key',
+            usesOfficialBackend: true,
+          );
         }
 
         if (e.response?.data is Map && e.response!.data['error'] != null) {
-          return AnswerGatewayResult.error(e.response!.data['error'].toString(),
-              usesOfficialBackend: true);
+          return AnswerGatewayResult.error(
+            e.response!.data['error'].toString(),
+            usesOfficialBackend: true,
+          );
         }
         return AnswerGatewayResult.error(
           '请求后端失败: ${e.message} (Status: $statusCode)',

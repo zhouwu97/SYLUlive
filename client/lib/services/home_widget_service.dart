@@ -30,24 +30,40 @@ class HomeWidgetService {
       // 筛选当天的课
       final todayCourses = provider.courses.where((c) {
         if (c.weekday != weekday) return false;
-        if (academicWeek != null &&
-            !provider.isCourseActive(c, academicWeek)) {
+        if (academicWeek != null && !provider.isCourseActive(c, academicWeek)) {
           return false;
         }
         return true;
-      }).toList()
-        ..sort((a, b) => a.startSection.compareTo(b.startSection));
+      }).toList()..sort((a, b) => a.startSection.compareTo(b.startSection));
 
       // 上课时间表
       const starts = [
-        '08:00', '08:55', '10:00', '10:55',
-        '13:00', '13:55', '14:50', '15:45',
-        '16:40', '17:35', '18:30', '19:25'
+        '08:00',
+        '08:55',
+        '10:00',
+        '10:55',
+        '13:00',
+        '13:55',
+        '14:50',
+        '15:45',
+        '16:40',
+        '17:35',
+        '18:30',
+        '19:25',
       ];
       const ends = [
-        '08:45', '09:40', '10:45', '11:40',
-        '13:45', '14:40', '15:35', '16:30',
-        '17:25', '18:20', '19:15', '20:10'
+        '08:45',
+        '09:40',
+        '10:45',
+        '11:40',
+        '13:45',
+        '14:40',
+        '15:35',
+        '16:30',
+        '17:25',
+        '18:20',
+        '19:15',
+        '20:10',
       ];
 
       final coursesJson = todayCourses.map((c) {

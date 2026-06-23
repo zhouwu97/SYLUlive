@@ -5,7 +5,7 @@ import '../models/canteen.dart';
 
 class CanteenProvider with ChangeNotifier {
   final Dio _dio;
-  
+
   List<Canteen> _canteens = [];
   bool _isLoading = false;
   String? _errorMessage;
@@ -39,10 +39,7 @@ class CanteenProvider with ChangeNotifier {
     try {
       final response = await _dio.post(
         '/canteens',
-        data: {
-          'name': name,
-          'image': image,
-        },
+        data: {'name': name, 'image': image},
       );
       return response.statusCode == 201;
     } on DioException catch (e) {
@@ -76,16 +73,17 @@ class CanteenProvider with ChangeNotifier {
     }
   }
 
-  Future<bool> rateCanteen(int id, int star, String comment, List<String> images) async {
+  Future<bool> rateCanteen(
+    int id,
+    int star,
+    String comment,
+    List<String> images,
+  ) async {
     try {
       final imagesJson = json.encode(images);
       final response = await _dio.post(
         '/canteens/$id/rate',
-        data: {
-          'star': star,
-          'comment': comment,
-          'images': imagesJson,
-        },
+        data: {'star': star, 'comment': comment, 'images': imagesJson},
       );
       return response.statusCode == 200 || response.statusCode == 201;
     } on DioException catch (e) {

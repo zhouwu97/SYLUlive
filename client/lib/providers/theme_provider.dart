@@ -75,14 +75,18 @@ class ThemeProvider extends ChangeNotifier {
 
   /// 获取当前环境适用的背景图片
   String? getBackgroundImageFor(BuildContext context) {
-    if (ResponsiveUtil.useDesktopShell(context) && hasLandscapeBackground) {
+    final isWide =
+        MediaQuery.of(context).size.width > MediaQuery.of(context).size.height;
+    if (isWide && hasLandscapeBackground) {
       return _landscapeBackgroundImage;
     }
     return _backgroundImage;
   }
 
   bool getBackgroundFillScreenFor(BuildContext context) {
-    if (ResponsiveUtil.useDesktopShell(context) && hasLandscapeBackground) {
+    final isWide =
+        MediaQuery.of(context).size.width > MediaQuery.of(context).size.height;
+    if (isWide && hasLandscapeBackground) {
       return _landscapeBackgroundFillScreen;
     }
     return _backgroundFillScreen;
@@ -129,8 +133,9 @@ class ThemeProvider extends ChangeNotifier {
     bool fillScreen = false,
   }) async {
     _backgroundImage = imageUrl;
-    _backgroundFillScreen =
-        imageUrl != null && imageUrl.isNotEmpty ? fillScreen : false;
+    _backgroundFillScreen = imageUrl != null && imageUrl.isNotEmpty
+        ? fillScreen
+        : false;
     final prefs = await SharedPreferences.getInstance();
     if (imageUrl != null && imageUrl.isNotEmpty) {
       await prefs.setString(_backgroundImageKey, imageUrl);
@@ -147,13 +152,16 @@ class ThemeProvider extends ChangeNotifier {
     bool fillScreen = false,
   }) async {
     _landscapeBackgroundImage = imageUrl;
-    _landscapeBackgroundFillScreen =
-        imageUrl != null && imageUrl.isNotEmpty ? fillScreen : false;
+    _landscapeBackgroundFillScreen = imageUrl != null && imageUrl.isNotEmpty
+        ? fillScreen
+        : false;
     final prefs = await SharedPreferences.getInstance();
     if (imageUrl != null && imageUrl.isNotEmpty) {
       await prefs.setString(_landscapeBackgroundImageKey, imageUrl);
       await prefs.setBool(
-          _landscapeBackgroundFillScreenKey, _landscapeBackgroundFillScreen);
+        _landscapeBackgroundFillScreenKey,
+        _landscapeBackgroundFillScreen,
+      );
     } else {
       await prefs.remove(_landscapeBackgroundImageKey);
       await prefs.remove(_landscapeBackgroundFillScreenKey);

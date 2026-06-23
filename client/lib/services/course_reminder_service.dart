@@ -40,11 +40,11 @@ class CourseBackgroundKeepAliveStatus {
   });
 
   const CourseBackgroundKeepAliveStatus.unsupported()
-      : supported = false,
-        isIgnoringBatteryOptimizations = true,
-        canScheduleExactAlarms = true,
-        manufacturer = '',
-        sdkInt = 0;
+    : supported = false,
+      isIgnoringBatteryOptimizations = true,
+      canScheduleExactAlarms = true,
+      manufacturer = '',
+      sdkInt = 0;
 
   bool get isReady =>
       !supported || (isIgnoringBatteryOptimizations && canScheduleExactAlarms);
@@ -72,24 +72,25 @@ class CourseReminderService {
   static const String _channelId = 'course_reminders_silent';
   static const String _channelName = '课程提醒';
   static const int _maxPendingNotifications = 60;
-  static const MethodChannel _platform =
-      MethodChannel('shenliyuan/course_reminders');
+  static const MethodChannel _platform = MethodChannel(
+    'shenliyuan/course_reminders',
+  );
 
   // 课次起始时间（索引 0 = 第1节，索引 11 = 第12节）
   // 修复：补齐了缺失的 16:40 和 17:35
   static const List<String> _starts = [
-    '08:00',  // 第1节
-    '08:55',  // 第2节
-    '10:00',  // 第3节
-    '10:55',  // 第4节
-    '13:00',  // 第5节
-    '13:55',  // 第6节
-    '14:50',  // 第7节
-    '15:45',  // 第8节
-    '16:40',  // 第9节（修复：原为19:00）
-    '17:35',  // 第10节（修复：原为19:55）
-    '18:30',  // 第11节（修复：原为20:50）
-    '19:25',  // 第12节（修复：原为21:45）
+    '08:00', // 第1节
+    '08:55', // 第2节
+    '10:00', // 第3节
+    '10:55', // 第4节
+    '13:00', // 第5节
+    '13:55', // 第6节
+    '14:50', // 第7节
+    '15:45', // 第8节
+    '16:40', // 第9节（修复：原为19:00）
+    '17:35', // 第10节（修复：原为19:55）
+    '18:30', // 第11节（修复：原为20:50）
+    '19:25', // 第12节（修复：原为21:45）
   ];
 
   // 标准学期周数
@@ -119,7 +120,8 @@ class CourseReminderService {
     await _plugin.initialize(settings);
     await _plugin
         .resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>()
+          AndroidFlutterLocalNotificationsPlugin
+        >()
         ?.createNotificationChannel(
           const AndroidNotificationChannel(
             _channelId,
@@ -144,7 +146,8 @@ class CourseReminderService {
     return prefs.getInt(_advanceMinutesKey) ?? 5;
   }
 
-  Future<void> setAdvanceMinutes(int minutes, {
+  Future<void> setAdvanceMinutes(
+    int minutes, {
     required List<CourseBlock> courses,
     required DateTime? semesterStart,
   }) async {
@@ -232,9 +235,15 @@ class CourseReminderService {
 
     final advanceMinutes = await getAdvanceMinutes();
     final now = DateTime.now();
-    final reminders = _buildReminderEntries(courses, semesterStart, now, advanceMinutes);
-    final pendingReminders =
-        reminders.take(_maxPendingNotifications).toList(growable: false);
+    final reminders = _buildReminderEntries(
+      courses,
+      semesterStart,
+      now,
+      advanceMinutes,
+    );
+    final pendingReminders = reminders
+        .take(_maxPendingNotifications)
+        .toList(growable: false);
     final ids = <String>[];
 
     for (final reminder in pendingReminders) {
@@ -264,26 +273,30 @@ class CourseReminderService {
 
   Future<bool> requestPermissions() async {
     if (Platform.isAndroid) {
-      final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin>();
+      final androidPlugin = _plugin
+          .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin
+          >();
 
       if (androidPlugin == null) return false;
 
       // 1. 请求普通通知权限
-      final bool? notiGranted =
-          await androidPlugin.requestNotificationsPermission();
+      final bool? notiGranted = await androidPlugin
+          .requestNotificationsPermission();
 
       // 2. 请求精确闹钟权限 (关键：必须捕获返回值)
-      final bool? alarmGranted =
-          await androidPlugin.requestExactAlarmsPermission();
+      final bool? alarmGranted = await androidPlugin
+          .requestExactAlarmsPermission();
 
       debugPrint('通知权限: $notiGranted, 精确闹钟权限: $alarmGranted');
 
       // 两者都为 true (或 null 代表该版本不需要) 才算成功
       return (notiGranted ?? false) && (alarmGranted ?? false);
     } else if (Platform.isIOS) {
-      final iosPlugin = _plugin.resolvePlatformSpecificImplementation<
-          IOSFlutterLocalNotificationsPlugin>();
+      final iosPlugin = _plugin
+          .resolvePlatformSpecificImplementation<
+            IOSFlutterLocalNotificationsPlugin
+          >();
 
       final bool? iosGranted = await iosPlugin?.requestPermissions(
         alert: true,
@@ -315,7 +328,7 @@ class CourseReminderService {
   }
 
   Future<CourseBackgroundKeepAliveStatus>
-      requestBackgroundKeepAlivePermissions() async {
+  requestBackgroundKeepAlivePermissions() async {
     if (!_usesAndroidLiveReminders) {
       return const CourseBackgroundKeepAliveStatus.unsupported();
     }
@@ -384,10 +397,9 @@ class CourseReminderService {
   Future<void> _cancelAndroidLiveReminders(List<int> ids) async {
     if (!_usesAndroidLiveReminders) return;
     try {
-      await _platform.invokeMethod<void>(
-        'cancelAndroidLiveReminders',
-        {'ids': ids},
-      );
+      await _platform.invokeMethod<void>('cancelAndroidLiveReminders', {
+        'ids': ids,
+      });
     } catch (e) {
       debugPrint('Android Live Updates 课程提醒取消失败: $e');
     }
@@ -450,16 +462,17 @@ class CourseReminderService {
     final entries = <_CourseReminderEntry>[];
 
     for (final course in courses) {
-      final weeks =
-          course.weeks.isEmpty ? _fallbackWeeks(semesterStart, now) : course.weeks;
+      final weeks = course.weeks.isEmpty
+          ? _fallbackWeeks(semesterStart, now)
+          : course.weeks;
       for (final week in weeks) {
         if (course.startSection < 1 || course.startSection > _starts.length) {
           continue;
         }
         final timeParts = _starts[course.startSection - 1].split(':');
-        final classDate = start.add(Duration(
-          days: (week - 1) * 7 + (course.weekday - 1),
-        ));
+        final classDate = start.add(
+          Duration(days: (week - 1) * 7 + (course.weekday - 1)),
+        );
         final classStart = DateTime(
           classDate.year,
           classDate.month,
@@ -467,19 +480,23 @@ class CourseReminderService {
           int.parse(timeParts[0]),
           int.parse(timeParts[1]),
         );
-        final reminderAt = classStart.subtract(Duration(minutes: advanceMinutes));
+        final reminderAt = classStart.subtract(
+          Duration(minutes: advanceMinutes),
+        );
         if (!reminderAt.isAfter(now)) continue;
 
-        entries.add(_CourseReminderEntry(
-          id: _notificationId(course, week, reminderAt),
-          course: course,
-          time: reminderAt,
-          classStart: classStart,
-          title: _titleFor(course),
-          body: _bodyFor(course),
-          detailText: _detailTextFor(course, classStart),
-          payload: 'course:${course.id}:${reminderAt.toIso8601String()}',
-        ));
+        entries.add(
+          _CourseReminderEntry(
+            id: _notificationId(course, week, reminderAt),
+            course: course,
+            time: reminderAt,
+            classStart: classStart,
+            title: _titleFor(course),
+            body: _bodyFor(course),
+            detailText: _detailTextFor(course, classStart),
+            payload: 'course:${course.id}:${reminderAt.toIso8601String()}',
+          ),
+        );
       }
     }
 
@@ -489,15 +506,22 @@ class CourseReminderService {
 
   List<int> _fallbackWeeks(DateTime semesterStart, DateTime now) {
     // 修复：根据学期起始日计算当前周，往后最多补 20 周
-    final currentWeek = max(1, (now.difference(semesterStart).inDays / 7).floor() + 1);
+    final currentWeek = max(
+      1,
+      (now.difference(semesterStart).inDays / 7).floor() + 1,
+    );
     final maxWeek = min(_semesterTotalWeeks, currentWeek + 8);
-    return List.generate(maxWeek - currentWeek + 1, (index) => currentWeek + index);
+    return List.generate(
+      maxWeek - currentWeek + 1,
+      (index) => currentWeek + index,
+    );
   }
 
   int _notificationId(CourseBlock course, int week, DateTime reminderAt) {
     // 修复：使用不可变字段（课程代码+星期+节次+周次）生成ID
     // 不再依赖课程名（用户可修改）和提醒时间（会变化）
-    final raw = '${course.courseCode}_${course.weekday}_${course.startSection}_$week';
+    final raw =
+        '${course.courseCode}_${course.weekday}_${course.startSection}_$week';
     return raw.hashCode.toSigned(32);
   }
 

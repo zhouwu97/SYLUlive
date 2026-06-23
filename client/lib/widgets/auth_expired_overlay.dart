@@ -28,9 +28,10 @@ class _AuthExpiredOverlayState extends State<AuthExpiredOverlay>
       vsync: this,
       duration: const Duration(milliseconds: 300),
     );
-    _fadeAnimation = Tween<double>(begin: 0, end: 1).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeOut),
-    );
+    _fadeAnimation = Tween<double>(
+      begin: 0,
+      end: 1,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
     _slideAnimation = Tween<Offset>(
       begin: const Offset(0, 0.1),
       end: Offset.zero,
@@ -297,7 +298,11 @@ class AuthExpiredManager {
 
   static OverlayEntry? _currentOverlay;
 
-  static void show(BuildContext context, {required VoidCallback onDismiss, required VoidCallback onRelogin}) {
+  static void show(
+    BuildContext context, {
+    required VoidCallback onDismiss,
+    required VoidCallback onRelogin,
+  }) {
     if (!shouldShow()) return;
 
     final overlay = Overlay.of(context);

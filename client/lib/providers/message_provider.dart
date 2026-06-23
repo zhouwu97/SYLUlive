@@ -66,8 +66,9 @@ class MessageProvider extends ChangeNotifier {
       final response = await _dio.get('/messages/conversations');
       if (response.statusCode == 200) {
         _conversations = (response.data as List)
-            .map((e) =>
-                Conversation.fromJson(Map<String, dynamic>.from(e as Map)))
+            .map(
+              (e) => Conversation.fromJson(Map<String, dynamic>.from(e as Map)),
+            )
             .toList();
       }
     } on DioException catch (e) {
@@ -121,9 +122,11 @@ class MessageProvider extends ChangeNotifier {
 
   Conversation? _findConversation(int currentUserId, int targetUserId) {
     for (final conversation in _conversations) {
-      final matchesForward = conversation.user1Id == currentUserId &&
+      final matchesForward =
+          conversation.user1Id == currentUserId &&
           conversation.user2Id == targetUserId;
-      final matchesReverse = conversation.user1Id == targetUserId &&
+      final matchesReverse =
+          conversation.user1Id == targetUserId &&
           conversation.user2Id == currentUserId;
       if (matchesForward || matchesReverse) {
         return conversation;
@@ -145,7 +148,8 @@ class MessageProvider extends ChangeNotifier {
     final requestVersion = ++_messageRequestVersion;
     _currentConversationId = conversationId;
     final cachedMessages = _messageCache[conversationId];
-    final cacheContainsTarget = aroundMessageId == null ||
+    final cacheContainsTarget =
+        aroundMessageId == null ||
         cachedMessages?.any((message) => message.id == aroundMessageId) == true;
     if (preferCache && cachedMessages != null && cacheContainsTarget) {
       _messages = List<Message>.of(cachedMessages);
@@ -222,10 +226,7 @@ class MessageProvider extends ChangeNotifier {
     try {
       final response = await _dio.get(
         '/messages/conversations/$conversationId',
-        queryParameters: {
-          'limit': _pageSize,
-          'before_id': oldestMessageId,
-        },
+        queryParameters: {'limit': _pageSize, 'before_id': oldestMessageId},
       );
       if (_currentConversationId != conversationId ||
           requestVersion != _messageRequestVersion) {
@@ -293,10 +294,7 @@ class MessageProvider extends ChangeNotifier {
     try {
       final response = await _dio.get(
         '/messages/conversations/$conversationId',
-        queryParameters: {
-          'limit': _pageSize,
-          'after_id': afterId,
-        },
+        queryParameters: {'limit': _pageSize, 'after_id': afterId},
       );
       if (_currentConversationId != conversationId ||
           requestVersion != _messageRequestVersion ||
@@ -363,10 +361,7 @@ class MessageProvider extends ChangeNotifier {
     try {
       final response = await _dio.get(
         '/messages/conversations/$conversationId',
-        queryParameters: {
-          'limit': _pageSize,
-          'around_id': messageId,
-        },
+        queryParameters: {'limit': _pageSize, 'around_id': messageId},
       );
       if (_currentConversationId != conversationId ||
           requestVersion != _messageRequestVersion ||
@@ -409,13 +404,14 @@ class MessageProvider extends ChangeNotifier {
       notifyListeners();
     });
     try {
-      final response = await _dio.post('/messages/$targetUserId', data: {
-        'content': trimmed,
-        if (fileId != null) 'file_id': fileId,
-      });
+      final response = await _dio.post(
+        '/messages/$targetUserId',
+        data: {'content': trimmed, if (fileId != null) 'file_id': fileId},
+      );
       if (response.statusCode == 201) {
-        final message =
-            Message.fromJson(Map<String, dynamic>.from(response.data as Map));
+        final message = Message.fromJson(
+          Map<String, dynamic>.from(response.data as Map),
+        );
         _currentConversationId = message.conversationId;
         if (!_messages.any((item) => item.id == message.id)) {
           _messages.add(message);
@@ -468,10 +464,7 @@ class MessageProvider extends ChangeNotifier {
     markRead(conversationId, markedMessageId: latestIncomingId);
   }
 
-  Future<void> markRead(
-    int conversationId, {
-    int? markedMessageId,
-  }) async {
+  Future<void> markRead(int conversationId, {int? markedMessageId}) async {
     try {
       await _dio.post('/messages/conversations/$conversationId/read');
       // Only record after success so that a failed request gets retried.
@@ -480,8 +473,9 @@ class MessageProvider extends ChangeNotifier {
       } else if (_messages.isNotEmpty) {
         _lastMarkedReadMessageIds[conversationId] = _messages.last.id;
       }
-      final index = _conversations
-          .indexWhere((conversation) => conversation.id == conversationId);
+      final index = _conversations.indexWhere(
+        (conversation) => conversation.id == conversationId,
+      );
       if (index >= 0 && _conversations[index].unreadCount != 0) {
         _conversations[index] = _conversations[index].copyWith(unreadCount: 0);
         notifyListeners();

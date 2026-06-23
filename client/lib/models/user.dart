@@ -140,21 +140,31 @@ class User {
   /// 升级到下一级所需经验
   int get expToNextLevel {
     switch (level) {
-      case 1: return 50;
-      case 2: return 150;
-      case 3: return 500;
-      case 4: return 1000;
-      case 5: return 2500;
-      case 6: return 5000;
-      case 7: return 8000;
-      default: return 0; // 已满级
+      case 1:
+        return 50;
+      case 2:
+        return 150;
+      case 3:
+        return 500;
+      case 4:
+        return 1000;
+      case 5:
+        return 2500;
+      case 6:
+        return 5000;
+      case 7:
+        return 8000;
+      default:
+        return 0; // 已满级
     }
   }
 
   /// 当前等级进度（0.0 - 1.0）
   double get levelProgress {
     if (level >= 8) return 1.0;
-    final currentMin = level == 1 ? 0 : [0, 50, 150, 500, 1000, 2500, 5000, 8000][level - 1];
+    final currentMin = level == 1
+        ? 0
+        : [0, 50, 150, 500, 1000, 2500, 5000, 8000][level - 1];
     final needed = expToNextLevel - currentMin;
     if (needed <= 0) return 1.0;
     return ((exp - currentMin) / needed).clamp(0.0, 1.0);
@@ -166,15 +176,23 @@ class User {
   /// 等级颜色
   int get levelColorValue {
     switch (level) {
-      case 8: return 0xFFFF0000; // 烈焰红 - 终极神话
-      case 7: return 0xFFD32F2F; // 炽红 - 巅峰的前奏
-      case 6: return 0xFFFFA000; // 琥珀橙 - 荣耀光芒
-      case 5: return 0xFF8E24AA; // 紫晶紫 - 尊贵神秘
-      case 4: return 0xFF4682B4; // 深海蓝 / 钢蓝
-      case 3: return 0xFF2E7D32; // 森林绿
-      case 2: return 0xFF00897B; // 墨绿 - 初露锋芒
-      case 1: 
-      default: return 0xFF616161; // 深灰 - 初始的沉淀
+      case 8:
+        return 0xFFFF0000; // 烈焰红 - 终极神话
+      case 7:
+        return 0xFFD32F2F; // 炽红 - 巅峰的前奏
+      case 6:
+        return 0xFFFFA000; // 琥珀橙 - 荣耀光芒
+      case 5:
+        return 0xFF8E24AA; // 紫晶紫 - 尊贵神秘
+      case 4:
+        return 0xFF4682B4; // 深海蓝 / 钢蓝
+      case 3:
+        return 0xFF2E7D32; // 森林绿
+      case 2:
+        return 0xFF00897B; // 墨绿 - 初露锋芒
+      case 1:
+      default:
+        return 0xFF616161; // 深灰 - 初始的沉淀
     }
   }
 }

@@ -885,8 +885,14 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
                         color: isDark ? Colors.white : const Color(0xFF1A1A2E),
                       ),
                     ),
-                    const SizedBox(width: 14),
-                    rightWidget,
+                    const SizedBox(width: 18),
+                    SizedBox(
+                      width: 64,
+                      child: Align(
+                        alignment: Alignment.centerRight,
+                        child: rightWidget,
+                      ),
+                    ),
                   ],
                 ),
               ),

@@ -703,7 +703,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
                 ),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 6),
           Text(
             '${data.totalScore} 分',
             style: const TextStyle(
@@ -711,7 +711,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
               fontWeight: FontWeight.bold,
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 10),
           Row(
             children: [
               Text(
@@ -723,7 +723,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
               ),
               const Spacer(),
               const Text(
-                '查看等级',
+                '评分标准',
                 style: TextStyle(
                   color: Color(0xFF5B6EE1),
                   fontSize: 13,
@@ -759,11 +759,15 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
     final isSelected = _displayMode == mode;
     return GestureDetector(
       onTap: () => setState(() => _displayMode = mode),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeInOut,
+        alignment: Alignment.center,
+        constraints: const BoxConstraints(minWidth: 48, minHeight: 34),
+        padding: const EdgeInsets.symmetric(horizontal: 14),
         decoration: BoxDecoration(
           color: isSelected ? const Color(0xFF5B6EE1) : Colors.transparent,
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(17),
         ),
         child: Text(
           text,
@@ -772,7 +776,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
             fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
             color: isSelected 
                 ? Colors.white 
-                : (isDark ? Colors.white70 : const Color(0xFF8A8F9C)),
+                : (isDark ? Colors.white70 : const Color(0xFF6B7280)),
           ),
         ),
       ),
@@ -812,7 +816,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
               item.result,
               textAlign: TextAlign.right,
               style: TextStyle(
-                fontSize: 15,
+                fontSize: 14,
                 fontWeight: FontWeight.w600,
                 color: isDark ? Colors.white : const Color(0xFF1A1A2E),
               ),
@@ -872,8 +876,8 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
                             Text(
                               '· $w%',
                               style: TextStyle(
-                                fontSize: 12,
-                                color: isDark ? Colors.white54 : const Color(0xFF8A8F9C),
+                                fontSize: 11,
+                                color: isDark ? Colors.white54 : const Color(0xFF8E94A3),
                               ),
                             ),
                           ],
@@ -989,9 +993,9 @@ class _GymScoreItem {
     rawResult = rawResult.replaceAll('times', '次');
     rawResult = rawResult.replaceAll(' min', ' 分钟'); 
     
-    if (rawResult.contains("m's\"")) {
-      rawResult = rawResult.replaceAll("m's\"", "");
-      rawResult = rawResult.replaceAll("'", "′").replaceAll("\"", "″");
+    rawResult = rawResult.replaceAll(RegExp(r"m's['" + '"' + r"]*"), "");
+    if (rawResult.contains("'") || rawResult.contains('"')) {
+      rawResult = rawResult.replaceAll("''", "″").replaceAll("'", "′").replaceAll("\"", "″");
     }
     rawResult = rawResult.trim();
 

@@ -97,7 +97,6 @@ class _UserHomeScreenState extends State<UserHomeScreen>
     final panelColor = isDark ? const Color(0xFF1A1B1E) : Colors.white;
 
     final screenWidth = MediaQuery.sizeOf(context).width;
-    final heroHeight = (screenWidth * 1.03).clamp(390.0, 480.0);
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -327,7 +326,6 @@ class _UserHomeScreenState extends State<UserHomeScreen>
     Color panelColor,
     double screenWidth,
   ) {
-    final heroHeight = (screenWidth * 1.03).clamp(390.0, 480.0);
     return Scaffold(
       backgroundColor: panelColor,
       body: RefreshIndicator(

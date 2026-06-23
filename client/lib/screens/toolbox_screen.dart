@@ -69,9 +69,9 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                     padding: const EdgeInsets.all(20),
                     gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                       crossAxisCount: crossAxisCount,
-                      childAspectRatio: 2.8,
-                      mainAxisSpacing: 16,
-                      crossAxisSpacing: 16,
+                      mainAxisExtent: crossAxisCount == 1 ? 82 : 88,
+                      mainAxisSpacing: 12,
+                      crossAxisSpacing: 12,
                     ),
                     children: [
                       _buildToolCard(
@@ -309,7 +309,7 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
       child: GlassContainer(
         width: double.infinity,
         height: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         borderRadius: 20,
         borderColor: is520 ? const Color(0x668BE197) : null,
         backgroundColor: is520
@@ -321,12 +321,13 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
           child: Row(
             children: [
               Container(
-                padding: const EdgeInsets.all(10),
+                width: 42,
+                height: 42,
                 decoration: BoxDecoration(
                   color: color.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(14),
                 ),
-                child: Icon(icon, color: color, size: 28),
+                child: Icon(icon, color: color, size: 22),
               ),
               const SizedBox(width: 12),
               Expanded(

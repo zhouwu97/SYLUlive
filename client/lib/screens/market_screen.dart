@@ -274,12 +274,12 @@ class _MarketScreenState extends State<MarketScreen> {
                         delegate: SliverChildListDelegate([
                           _buildSearchBar(isDark),
                           if (widget.onlyPostTypes == null) ...[
-                            const SizedBox(height: 12),
+                            const SizedBox(height: 8),
                             _buildExposureEntry(isDark, exposurePosts),
-                            const SizedBox(height: 16),
+                            const SizedBox(height: 12),
                           ] else
-                            const SizedBox(height: 16),
-                          _buildSectionHeader(isDark, marketPosts.length),
+                            const SizedBox(height: 12),
+                          _buildSectionHeader(isDark),
                         ]),
                       ),
                     ),
@@ -311,7 +311,7 @@ class _MarketScreenState extends State<MarketScreen> {
                             AppLayout.floatingNavHeight +
                                 AppLayout.floatingNavBottomMargin +
                                 AppLayout.fabNavGap +
-                                60),
+                                140),
                         sliver: SliverList(
                           delegate: SliverChildBuilderDelegate(
                             (context, index) =>
@@ -329,7 +329,7 @@ class _MarketScreenState extends State<MarketScreen> {
                             AppLayout.floatingNavHeight +
                                 AppLayout.floatingNavBottomMargin +
                                 AppLayout.fabNavGap +
-                                60),
+                                140),
                         sliver: SliverMasonryGrid.extent(
                           maxCrossAxisExtent: 300,
                           mainAxisSpacing: 16,
@@ -353,12 +353,15 @@ class _MarketScreenState extends State<MarketScreen> {
               AppLayout.floatingNavBottomMargin +
               AppLayout.fabNavGap,
         ),
-        child: FloatingActionButton.extended(
-          heroTag: 'market_fab',
-          label: const Text('发布'),
-          icon: const Icon(Icons.add),
-          backgroundColor: const Color(0xFF6266D9),
-          foregroundColor: Colors.white,
+        child: SizedBox(
+          height: 48,
+          child: FloatingActionButton.extended(
+            heroTag: 'market_fab',
+            elevation: 2,
+            label: const Text('发布闲置'),
+            icon: const Icon(Icons.add),
+            backgroundColor: const Color(0xFF6266D9),
+            foregroundColor: Colors.white,
           onPressed: () async {
             final authProvider = context.read<AuthProvider>();
             if (!authProvider.isLoggedIn) {
@@ -438,75 +441,57 @@ class _MarketScreenState extends State<MarketScreen> {
   Widget _buildExposureEntry(bool isDark, List<Post> exposurePosts) {
     final latest = exposurePosts.isNotEmpty ? exposurePosts.first : null;
     return InkWell(
-      borderRadius: BorderRadius.circular(16),
+      borderRadius: BorderRadius.circular(12),
       onTap: () => Navigator.push(
         context,
         MaterialPageRoute(builder: (_) => const MarketExposureScreen()),
       ),
       child: Container(
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        height: 52,
         decoration: BoxDecoration(
           color: isDark ? const Color(0xFF1C1620) : const Color(0xFFFFF7F2),
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(12),
         ),
         child: Row(
           children: [
             Container(
-              width: 38,
-              height: 38,
+              width: 28,
+              height: 28,
               decoration: BoxDecoration(
                 color: const Color(0xFFFF6B6B).withValues(alpha: 0.14),
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(8),
               ),
               child: const Icon(
                 Icons.gpp_maybe_outlined,
                 color: Color(0xFFFF6B6B),
-                size: 20,
+                size: 16,
               ),
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Text(
-                        '曝光台',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
-                          color: isDark ? Colors.white : Colors.black87,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    latest == null
-                        ? '查看校园曝光信息'
-                        : (latest.title.isNotEmpty
-                            ? latest.title
-                            : latest.content),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: isDark ? Colors.white60 : const Color(0xFF98A2B3),
-                    ),
-                  ),
-                ],
+            const SizedBox(width: 10),
+            Text(
+              '曝光台',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                color: isDark ? Colors.white : Colors.black87,
               ),
             ),
             const SizedBox(width: 8),
-            Text(
-              exposurePosts.isEmpty ? '暂无新内容' : '${exposurePosts.length} 条',
-              style: TextStyle(
-                fontSize: 12,
-                color: isDark ? Colors.white38 : const Color(0xFF98A2B3),
+            Expanded(
+              child: Text(
+                latest == null
+                    ? '校园交易风险提醒'
+                    : (latest.title.isNotEmpty ? latest.title : latest.content),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: isDark ? Colors.white60 : const Color(0xFF98A2B3),
+                ),
               ),
             ),
-            const SizedBox(width: 2),
+            const SizedBox(width: 4),
             Icon(
               Icons.chevron_right_rounded,
               size: 16,
@@ -518,9 +503,9 @@ class _MarketScreenState extends State<MarketScreen> {
     );
   }
 
-  Widget _buildSectionHeader(bool isDark, int count) {
+  Widget _buildSectionHeader(bool isDark) {
     final sectionTitle =
-        _searchQuery.isNotEmpty ? '搜索结果' : (widget.titleOverride ?? '商品列表');
+        _searchQuery.isNotEmpty ? '搜索结果' : (widget.titleOverride ?? '最新商品');
 
     String sortLabel = '最新发布';
     switch (_sortType) {
@@ -539,41 +524,40 @@ class _MarketScreenState extends State<MarketScreen> {
     }
 
     return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(
-          sectionTitle,
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w700,
-            color: isDark ? Colors.white : const Color(0xFF1D2129),
-          ),
+        Row(
+          children: [
+            Text(
+              sectionTitle,
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+                color: isDark ? Colors.white : Colors.black87,
+              ),
+            ),
+          ],
         ),
-        const SizedBox(width: 8),
-        Text(
-          '· 已加载 $count 件',
-          style: TextStyle(
-            fontSize: 13,
-            color: isDark ? Colors.white38 : const Color(0xFF98A2B3),
-          ),
-        ),
-        const Spacer(),
-        if (widget.titleOverride != '失物招领')
-          GestureDetector(
-            onTap: _showSortBottomSheet,
+        InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: _showSortBottomSheet,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             child: Row(
-              mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
                   sortLabel,
                   style: TextStyle(
-                    fontSize: 13,
-                    color: isDark ? Colors.white70 : const Color(0xFF667085),
+                    fontSize: 14,
+                    color: isDark ? Colors.white60 : Colors.black54,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
+                const SizedBox(width: 2),
                 Icon(
-                  Icons.keyboard_arrow_down,
-                  size: 16,
-                  color: isDark ? Colors.white70 : const Color(0xFF667085),
+                  Icons.keyboard_arrow_down_rounded,
+                  size: 18,
+                  color: isDark ? Colors.white60 : Colors.black54,
                 ),
               ],
             ),

@@ -1,5 +1,5 @@
 import 'package:html/parser.dart' show parse;
-import 'package:html/dom.dart' show Document;
+import 'package:html/dom.dart' show Document, Element;
 
 import 'erke_models.dart';
 
@@ -30,25 +30,57 @@ class ErkeParser {
   //  通用工具
   // ==================================================================
 
+  /// 按 ID 查找元素（精确 ID 优先，后缀匹配兜底）
+  static Element? _findByIdOrSuffix(Document doc, String id) {
+    final exact = doc.getElementById(id);
+    if (exact != null) return exact;
+    // ASP.NET ClientID 后缀匹配
+    final elements = doc.querySelectorAll('[id\$="$id"]');
+    if (elements.length == 1) return elements.first;
+    if (elements.length > 1) {
+      throw ErkePageChangedException(
+        '多个元素匹配 #$id 后缀，无法确定唯一节点',
+        missingElementId: id,
+      );
+    }
+    return null;
+  }
+
   /// 按精确 ID 从文档中提取 span 文本，并解析为 double
   /// 找不到节点或值非数字时抛 ErkePageChangedException
+  /// 支持 ASP.NET ClientID 前缀（ctl00_..._CountA1）
   static double _requireSpanValue(Document doc, String id) {
-    final el = doc.getElementById(id);
+    final el = _findByIdOrSuffix(doc, id);
     if (el == null) {
       throw ErkePageChangedException(
         '缺少必要元素: #$id',
         missingElementId: id,
       );
     }
-    final text = el.text.trim();
+    final text =
+        (el.text.isNotEmpty ? el.text : el.attributes['value'] ?? '').trim();
     final value = double.tryParse(text);
-    if (value == null) {
+    if (value == null || text.isEmpty) {
       throw ErkePageChangedException(
         '无法解析 #$id 的值: "$text"',
         missingElementId: id,
       );
     }
     return value;
+  }
+
+  /// 检查页面是否包含成绩数据（CountA1 非空）
+  static bool _hasScoreData(Document doc) {
+    for (final code in ['A', 'B', 'C', 'D', 'E']) {
+      final el = _findByIdOrSuffix(doc, 'Count${code}1');
+      if (el != null) {
+        final text =
+            (el.text.isNotEmpty ? el.text : el.attributes['value'] ?? '')
+                .trim();
+        if (text.isNotEmpty && double.tryParse(text) != null) return true;
+      }
+    }
+    return false;
   }
 
   /// 按 ID 提取文本，找不到返回空字符串
@@ -229,6 +261,70 @@ class ErkeParser {
   /// 提取学年页的 hidden inputs（供 WebForms 学年切换 POST 使用）
   static Map<String, String> extractYearlyHiddenInputs(String html) {
     return extractHiddenInputs(parse(html));
+  }
+
+  // ==================================================================
+  //  学年查询表单解析（不要求页面已包含成绩）
+  // ==================================================================
+
+  /// 解析学年页面的查询表单结构（GET 初始返回或空模板）
+  static YearPageForm parseYearPageForm(String html) {
+    final doc = parse(html);
+
+    final availableYears = extractSelectOptions(doc, 'YearTime');
+    final selectedYear = extractSelectedOption(doc, 'YearTime') ?? '';
+    final hiddenInputs = extractHiddenInputs(doc);
+
+    // 尝试找到实际提交按钮
+    String? submitButtonName;
+    String? submitButtonValue;
+    String? eventTarget;
+
+    // 查找 id/name 含 "btn" 或 "query" 的按钮/input
+    for (final el in doc.querySelectorAll(
+        'input[type="submit"], button, input[type="button"]')) {
+      final id = (el.attributes['id'] ?? '').toLowerCase();
+      final name = (el.attributes['name'] ?? '').toLowerCase();
+      if (id.contains('btn') ||
+          id.contains('query') ||
+          name.contains('btn') ||
+          name.contains('query')) {
+        submitButtonName = el.attributes['name'] ?? el.attributes['id'];
+        submitButtonValue = el.attributes['value'];
+        break;
+      }
+    }
+
+    // 若没找到按钮，尝试使用 YearTime 作为 eventTarget
+    if (submitButtonName == null && availableYears.isNotEmpty) {
+      eventTarget = 'YearTime';
+    }
+
+    final hasScores = _hasScoreData(doc);
+    final hasExactCountA1 = doc.getElementById('CountA1') != null;
+    final hasSuffixCountA1 =
+        !hasExactCountA1 && doc.querySelectorAll('[id\$="CountA1"]').isNotEmpty;
+
+    print('[Erke] yearly GET selectedYear=$selectedYear');
+    print('[Erke] yearly GET availableYears=${availableYears.join(",")}');
+    print(
+        '[Erke] yearly GET hasScores=$hasScores hasExactCountA1=$hasExactCountA1 hasSuffixCountA1=$hasSuffixCountA1');
+    print(
+        '[Erke] yearly GET submitButton=$submitButtonName eventTarget=$eventTarget');
+
+    return YearPageForm(
+      availableYears: availableYears,
+      selectedYear: selectedYear,
+      hiddenInputs: hiddenInputs,
+      submitButtonName: submitButtonName,
+      submitButtonValue: submitButtonValue,
+      eventTarget: eventTarget,
+    );
+  }
+
+  /// 检查学年页 GET 返回是否已包含成绩
+  static bool yearlyPageHasScores(String html) {
+    return _hasScoreData(parse(html));
   }
 
   // ==================================================================

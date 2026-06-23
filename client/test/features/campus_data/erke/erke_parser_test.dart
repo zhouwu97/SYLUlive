@@ -549,6 +549,51 @@ void main() {
       expect(ErkeParser.yearlyPageHasScores(emptyForm), false);
     });
 
+    test('CountA1 节点存在但内容为空 → false', () {
+      const html = '<!DOCTYPE html><html><body>'
+          '<span id="CountA1"></span>'
+          '<span id="CountB1">0.00</span>'
+          '<span id="CountC1">4.00</span>'
+          '<span id="CountD1">4.00</span>'
+          '<span id="CountE1">0.95</span>'
+          '<span id="SunCount1">8.95</span>'
+          '<span id="CountTotalSum">38.70</span>'
+          '</body></html>';
+      // CountA1 存在但为空文本 → 不是有效成绩
+      expect(ErkeParser.yearlyPageHasScores(html), false);
+    });
+
+    test('CountA1 内容为空格 → false', () {
+      const html = '<!DOCTYPE html><html><body>'
+          '<span id="CountA1">  </span>'
+          '<span id="CountB1">0.00</span>'
+          '<span id="CountC1">4.00</span>'
+          '<span id="CountD1">4.00</span>'
+          '<span id="CountE1">0.95</span>'
+          '<span id="SunCount1">8.95</span>'
+          '<span id="CountTotalSum">38.70</span>'
+          '</body></html>';
+      expect(ErkeParser.yearlyPageHasScores(html), false);
+    });
+
+    test('CountA1 内容非数字 → false', () {
+      const html = '<!DOCTYPE html><html><body>'
+          '<span id="CountA1">abc</span>'
+          '<span id="CountB1">0.00</span>'
+          '<span id="CountC1">4.00</span>'
+          '<span id="CountD1">4.00</span>'
+          '<span id="CountE1">0.95</span>'
+          '<span id="SunCount1">8.95</span>'
+          '<span id="CountTotalSum">38.70</span>'
+          '</body></html>';
+      expect(ErkeParser.yearlyPageHasScores(html), false);
+    });
+
+    test('A~E 全部有效数字 + 总分 → true', () {
+      final html = _loadFixture('fixture_yearly.html');
+      expect(ErkeParser.yearlyPageHasScores(html), true);
+    });
+
     test('ASP.NET 前缀 ID → _findByIdOrSuffix 后缀匹配', () {
       const html = '<!DOCTYPE html><html><body><form>'
           '<span id="CountA">8.00</span><span id="CountB">7.00</span>'

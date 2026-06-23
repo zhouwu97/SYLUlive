@@ -56,6 +56,21 @@ class _PostCardState extends State<PostCard>
         ? authUser.nickname
         : (widget.post.author?.nickname ?? '匿名');
 
+    // 只统计真正具有有效地址的图片
+    final validImageCount = widget.post.images
+        .where((image) => image.url.trim().isNotEmpty)
+        .length;
+
+    // 有图片时标题统一只显示一行
+    final titleMaxLines = validImageCount > 0 ? 1 : 2;
+
+    // 单图正文 1 行，多图正文 2 行，无图保持原来的 4 行
+    final contentMaxLines = validImageCount == 1
+        ? 1
+        : validImageCount > 1
+            ? 2
+            : 4;
+
     return GlassContainer(
       margin: EdgeInsets.only(bottom: isDesktop ? 16 : 8),
       borderRadius: isDesktop ? 16 : 12,
@@ -80,7 +95,7 @@ class _PostCardState extends State<PostCard>
                       ? null
                       : () => _openAuthor(context),
                   child: Container(
-                    padding: const EdgeInsets.all(2),
+                    padding: EdgeInsets.all(isDesktop ? 2 : 1.5),
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       gradient: LinearGradient(
@@ -91,7 +106,7 @@ class _PostCardState extends State<PostCard>
                       ),
                     ),
                     child: CachedAvatar(
-                      radius: isDesktop ? 20 : 18,
+                      radius: isDesktop ? 20 : 16,
                       imageUrl: displayAvatar.isNotEmpty == true
                           ? ApiConstants.fullUrl(displayAvatar)
                           : null,
@@ -99,7 +114,7 @@ class _PostCardState extends State<PostCard>
                     ),
                   ),
                 ),
-                SizedBox(width: isDesktop ? 12 : 10),
+                SizedBox(width: isDesktop ? 12 : 8),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -116,7 +131,8 @@ class _PostCardState extends State<PostCard>
                                 displayNickname,
                                 style: TextStyle(
                                   fontWeight: FontWeight.w600,
-                                  fontSize: isDesktop ? 15 : 13,
+                                  fontSize: isDesktop ? 15 : 12,
+                                  height: 1.15,
                                 ),
                                 overflow: TextOverflow.ellipsis,
                               ),
@@ -128,11 +144,12 @@ class _PostCardState extends State<PostCard>
                           ],
                         ),
                       ),
-                      const SizedBox(height: 2),
+                      SizedBox(height: isDesktop ? 2 : 0),
                       Text(
                         _formatTime(widget.post.createdAt),
                         style: TextStyle(
-                          fontSize: isDesktop ? 12 : 11,
+                          fontSize: isDesktop ? 12 : 10,
+                          height: 1.1,
                           color: isDark ? Colors.white54 : Colors.grey[700],
                         ),
                       ),
@@ -141,34 +158,35 @@ class _PostCardState extends State<PostCard>
                 ),
                 if (widget.post.author != null)
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
+                    padding: EdgeInsets.symmetric(
+                      horizontal: isDesktop ? 8 : 6,
+                      vertical: isDesktop ? 4 : 2,
                     ),
                     decoration: BoxDecoration(
                       color: _getCreditColor(
                         widget.post.author!.creditScore,
                       ).withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(isDesktop ? 8 : 6),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(
                           Icons.verified,
-                          size: isDesktop ? 14 : 12,
+                          size: isDesktop ? 14 : 11,
                           color: _getCreditColor(
                             widget.post.author!.creditScore,
                           ),
                         ),
-                        const SizedBox(width: 4),
+                        SizedBox(width: isDesktop ? 4 : 3),
                         Text(
                           '${widget.post.author!.creditScore}%',
                           style: TextStyle(
                             color: _getCreditColor(
                               widget.post.author!.creditScore,
                             ),
-                            fontSize: isDesktop ? 12 : 11,
+                            fontSize: isDesktop ? 12 : 10,
+                            height: 1.1,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
@@ -178,30 +196,32 @@ class _PostCardState extends State<PostCard>
               ],
             ),
             if (widget.post.title.isNotEmpty) ...[
-              SizedBox(height: isDesktop ? 12 : 8),
+              SizedBox(height: isDesktop ? 12 : 6),
               Text(
                 widget.post.title,
                 style: TextStyle(
                   fontSize: isDesktop ? 17 : 15,
                   fontWeight: FontWeight.bold,
+                  height: 1.25,
                 ),
-                maxLines: 2,
+                maxLines: titleMaxLines,
                 overflow: TextOverflow.ellipsis,
               ),
             ],
-            SizedBox(height: isDesktop ? 8 : 6),
+            if (widget.post.title.isNotEmpty)
+              SizedBox(height: isDesktop ? 8 : 4),
             Text(
               widget.post.content,
-              maxLines: 4,
+              maxLines: contentMaxLines,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 color: isDark ? Colors.white70 : Colors.black87,
-                height: 1.4,
+                height: isDesktop ? 1.4 : 1.3,
                 fontSize: isDesktop ? 15 : 13,
               ),
             ),
-            if (widget.post.images.isNotEmpty) ...[
-              SizedBox(height: isDesktop ? 12 : 8),
+            if (validImageCount > 0) ...[
+              SizedBox(height: isDesktop ? 12 : 6),
               _buildImageGrid(context, widget.post.images),
             ],
             if ((widget.showPrice && widget.post.price > 0) ||
@@ -528,7 +548,10 @@ class _PostCardState extends State<PostCard>
 
   Widget _buildLevelBadge(User user) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+      padding: const EdgeInsets.symmetric(
+        horizontal: 4,
+        vertical: 0.5,
+      ),
       decoration: BoxDecoration(
         color: Color(user.levelColorValue).withValues(alpha: 0.15),
         borderRadius: BorderRadius.circular(4),
@@ -536,7 +559,8 @@ class _PostCardState extends State<PostCard>
       child: Text(
         user.levelLabel,
         style: TextStyle(
-          fontSize: 9,
+          fontSize: 8,
+          height: 1.15,
           fontWeight: FontWeight.w700,
           color: Color(user.levelColorValue),
         ),

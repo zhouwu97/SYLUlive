@@ -126,16 +126,14 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
   Future<void> _queryScores() async {
     final auth = context.read<AuthProvider>();
     if (!auth.isLoggedIn) {
-      AppFeedback.showSnackBar(context, '请先在「我的」页面登录后再查询',
-          isError: true);
+      AppFeedback.showSnackBar(context, '请先在「我的」页面登录后再查询', isError: true);
       return;
     }
 
     final inputCasPwd = _casPwdCtrl.text;
     final inputErkePwd = _erkePwdCtrl.text;
-    final casPwd = inputCasPwd == ('•' * _realCasPwd.length)
-        ? _realCasPwd
-        : inputCasPwd;
+    final casPwd =
+        inputCasPwd == ('•' * _realCasPwd.length) ? _realCasPwd : inputCasPwd;
     final erkePwd = inputErkePwd == ('•' * _realErkePwd.length)
         ? _realErkePwd
         : inputErkePwd;
@@ -186,6 +184,10 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
   }
 
   Future<void> _switchYear(String year) async {
+    if (!_repo.hasLiveSession) {
+      AppFeedback.showSnackBar(context, '会话已过期，请重新登录', isError: true);
+      return;
+    }
     await _repo.fetchYearlySummary(year);
     if (_repo.yearlyError != null && mounted) {
       AppFeedback.showSnackBar(context, _repo.yearlyError!, isError: true);
@@ -232,7 +234,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
         backgroundColor: Colors.transparent,
         elevation: 0,
         actions: [
-          if (_repo.isLoggedIn)
+          if (_repo.hasData)
             PopupMenuButton<String>(
               onSelected: (value) async {
                 if (value == 'relogin') {
@@ -255,7 +257,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
         ],
       ),
       body: SafeArea(
-        child: _repo.isLoggedIn ? _buildDataView(isDark) : _buildLoginForm(),
+        child: _repo.hasData ? _buildDataView(isDark) : _buildLoginForm(),
       ),
     );
   }
@@ -322,9 +324,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
                     prefixIcon: const Icon(Icons.lock_outline, size: 18),
                     suffixIcon: IconButton(
                       icon: Icon(
-                          _obscureCas
-                              ? Icons.visibility_off
-                              : Icons.visibility,
+                          _obscureCas ? Icons.visibility_off : Icons.visibility,
                           size: 18),
                       onPressed: () =>
                           setState(() => _obscureCas = !_obscureCas),
@@ -419,8 +419,8 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
                       ],
                     )
                   : const Text('开始查询',
-                      style: TextStyle(
-                          fontSize: 16, fontWeight: FontWeight.bold)),
+                      style:
+                          TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             ),
           ),
           if (_isLoading && _loadingMessage.isNotEmpty) ...[
@@ -490,9 +490,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
         child: Container(
           margin: const EdgeInsets.all(3),
           decoration: BoxDecoration(
-            color: selected
-                ? const Color(0xFF6366F1)
-                : Colors.transparent,
+            color: selected ? const Color(0xFF6366F1) : Colors.transparent,
             borderRadius: BorderRadius.circular(10),
           ),
           alignment: Alignment.center,
@@ -549,8 +547,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
     );
   }
 
-  Widget _buildGraduationProgressCard(
-      ErkeGraduationSummary grad, bool isDark) {
+  Widget _buildGraduationProgressCard(ErkeGraduationSummary grad, bool isDark) {
     final percentage = grad.percentage;
     final isComplete = grad.totalGap <= 0;
 
@@ -583,17 +580,18 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              Text(grad.earnedTotal.toStringAsFixed(
-                  grad.earnedTotal == grad.earnedTotal.roundToDouble()
-                      ? 0
-                      : 1),
+              Text(
+                  grad.earnedTotal.toStringAsFixed(
+                      grad.earnedTotal == grad.earnedTotal.roundToDouble()
+                          ? 0
+                          : 1),
                   style: TextStyle(
                       fontSize: 32,
                       fontWeight: FontWeight.bold,
                       color: isDark ? Colors.white : const Color(0xFF20232A))),
               Text(' / ${grad.requiredTotal.toStringAsFixed(0)}',
-                  style: const TextStyle(
-                      fontSize: 18, color: Color(0xFF8A8F9C))),
+                  style:
+                      const TextStyle(fontSize: 18, color: Color(0xFF8A8F9C))),
             ],
           ),
           const SizedBox(height: 10),
@@ -603,8 +601,9 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
             child: LinearProgressIndicator(
               value: (percentage / 100).clamp(0.0, 1.0),
               minHeight: 8,
-              backgroundColor:
-                  isDark ? Colors.white.withValues(alpha: 0.1) : const Color(0xFFEEF0F4),
+              backgroundColor: isDark
+                  ? Colors.white.withValues(alpha: 0.1)
+                  : const Color(0xFFEEF0F4),
               valueColor: AlwaysStoppedAnimation<Color>(
                   isComplete ? Color(0xFF42B36F) : Color(0xFF6366F1)),
             ),
@@ -642,8 +641,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
     );
   }
 
-  Widget _buildGraduationCategoryList(
-      ErkeGraduationSummary grad, bool isDark) {
+  Widget _buildGraduationCategoryList(ErkeGraduationSummary grad, bool isDark) {
     return Container(
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF1E2433) : Colors.white,
@@ -672,8 +670,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
     );
   }
 
-  Widget _buildGraduationCategoryRow(
-      ErkeRequirementCategory cat, bool isDark) {
+  Widget _buildGraduationCategoryRow(ErkeRequirementCategory cat, bool isDark) {
     final isOk = cat.meetsNumerically;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -684,8 +681,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
                 style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
-                    color:
-                        isDark ? Colors.white : const Color(0xFF20232A))),
+                    color: isDark ? Colors.white : const Color(0xFF20232A))),
           ),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -732,8 +728,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
           const SizedBox(width: 8),
           Expanded(
             child: Text('官方结论：$conclusion',
-                style: const TextStyle(
-                    fontSize: 13, color: Color(0xFF20232A))),
+                style: const TextStyle(fontSize: 13, color: Color(0xFF20232A))),
           ),
         ],
       ),
@@ -802,8 +797,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
                 style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
-                    color:
-                        isDark ? Colors.white : const Color(0xFF20232A)),
+                    color: isDark ? Colors.white : const Color(0xFF20232A)),
                 items: yr.availableYears.map((y) {
                   return DropdownMenuItem(value: y, child: Text('$y 学年'));
                 }).toList(),
@@ -851,18 +845,17 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
           ]),
           const SizedBox(height: 12),
           Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
-            Text(yr.yearEarnedTotal.toStringAsFixed(
-                yr.yearEarnedTotal == yr.yearEarnedTotal.roundToDouble()
-                    ? 0
-                    : 1),
+            Text(
+                yr.yearEarnedTotal.toStringAsFixed(
+                    yr.yearEarnedTotal == yr.yearEarnedTotal.roundToDouble()
+                        ? 0
+                        : 1),
                 style: TextStyle(
                     fontSize: 32,
                     fontWeight: FontWeight.bold,
-                    color:
-                        isDark ? Colors.white : const Color(0xFF20232A))),
+                    color: isDark ? Colors.white : const Color(0xFF20232A))),
             Text(' / ${yr.requiredTotal.toStringAsFixed(0)}',
-                style: const TextStyle(
-                    fontSize: 18, color: Color(0xFF8A8F9C))),
+                style: const TextStyle(fontSize: 18, color: Color(0xFF8A8F9C))),
           ]),
           const SizedBox(height: 10),
           ClipRRect(
@@ -879,8 +872,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
           ),
           const SizedBox(height: 12),
           if (yr.yearGap > 0)
-            _infoTag('本学年总分还差 ${yr.yearGap.toStringAsFixed(2)}',
-                Colors.orange)
+            _infoTag('本学年总分还差 ${yr.yearGap.toStringAsFixed(2)}', Colors.orange)
           else
             _infoTag('本学年总分已达标 ✓', Colors.green),
           const SizedBox(height: 8),
@@ -934,9 +926,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
                   style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
-                      color: isDark
-                          ? Colors.white
-                          : const Color(0xFF20232A))),
+                      color: isDark ? Colors.white : const Color(0xFF20232A))),
             ),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -951,9 +941,8 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
-                  color: isOk
-                      ? const Color(0xFF42B36F)
-                      : const Color(0xFFF3A640),
+                  color:
+                      isOk ? const Color(0xFF42B36F) : const Color(0xFFF3A640),
                 ),
               ),
             ),
@@ -965,8 +954,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
               '本学年 ${cat.yearEarned.toStringAsFixed(cat.yearEarned == cat.yearEarned.roundToDouble() ? 0 : 1)} / 要求 ${cat.required.toStringAsFixed(0)}',
               style: TextStyle(
                   fontSize: 13,
-                  color:
-                      isDark ? Colors.white54 : const Color(0xFF6366F1)),
+                  color: isDark ? Colors.white54 : const Color(0xFF6366F1)),
             ),
             const Spacer(),
             Text(
@@ -1018,9 +1006,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
                 height: 36,
                 padding: const EdgeInsets.symmetric(horizontal: 14),
                 decoration: BoxDecoration(
-                  color: isDark
-                      ? Colors.white10
-                      : const Color(0xFFF0F1F5),
+                  color: isDark ? Colors.white10 : const Color(0xFFF0F1F5),
                   borderRadius: BorderRadius.circular(18),
                 ),
                 child: Row(mainAxisSize: MainAxisSize.min, children: [
@@ -1034,9 +1020,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
                   const SizedBox(width: 4),
                   Icon(Icons.filter_list,
                       size: 16,
-                      color: isDark
-                          ? Colors.white70
-                          : const Color(0xFF5C6273)),
+                      color: isDark ? Colors.white70 : const Color(0xFF5C6273)),
                 ]),
               ),
             ),
@@ -1111,8 +1095,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
         child: Stack(
           children: [
             Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -1136,14 +1119,12 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
                         padding: const EdgeInsets.only(right: 8),
                         child: Text(item.category,
                             style: const TextStyle(
-                                fontSize: 12,
-                                color: Color(0xFF6366F1))),
+                                fontSize: 12, color: Color(0xFF6366F1))),
                       ),
                     Expanded(
                         child: Text(formattedDate,
                             style: const TextStyle(
-                                fontSize: 12,
-                                color: Color(0xFF8A8F9C)))),
+                                fontSize: 12, color: Color(0xFF8A8F9C)))),
                   ]),
                 ],
               ),
@@ -1165,8 +1146,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
 
   String _formatDate(String dateStr) {
     if (dateStr.isEmpty) return '';
-    String s =
-        dateStr.replaceAll('-', '.').replaceAll('至', '–');
+    String s = dateStr.replaceAll('-', '.').replaceAll('至', '–');
     s = s.replaceAll(' 00:00:00', '');
     s = s.replaceAllMapped(
         RegExp(r'(\d{2}:\d{2}):00'), (match) => match.group(1)!);
@@ -1175,8 +1155,10 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
     final sameYearRegex = RegExp(r'^(\d{4})\.(.*?)–\1\.(.*?)$');
 
     if (sameDayRegex.hasMatch(s)) {
-      s = s.replaceFirstMapped(sameDayRegex,
-          (match) => '${match.group(1)}${match.group(2)}–${match.group(3)?.trim()}');
+      s = s.replaceFirstMapped(
+          sameDayRegex,
+          (match) =>
+              '${match.group(1)}${match.group(2)}–${match.group(3)?.trim()}');
     } else if (sameYearRegex.hasMatch(s)) {
       s = s.replaceFirstMapped(sameYearRegex,
           (match) => '${match.group(1)}.${match.group(2)}–${match.group(3)}');

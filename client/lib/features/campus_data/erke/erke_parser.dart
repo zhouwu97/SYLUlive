@@ -202,9 +202,15 @@ class ErkeParser {
 
     final conclusion = _getSpanTextOr(doc, 'Status', '');
 
-    final double yearGap = officialYearEarnedTotal < officialRequiredTotal
+    final double rawYearGap = officialYearEarnedTotal < officialRequiredTotal
         ? (officialRequiredTotal - officialYearEarnedTotal)
         : 0.0;
+    final double categoryGap = categories.fold(
+        0.0,
+        (sum, c) =>
+            sum + (c.yearEarned < c.required ? c.required - c.yearEarned : 0));
+    final double minimumGap =
+        rawYearGap > categoryGap ? rawYearGap : categoryGap;
 
     return ErkeYearlySummary(
       year: year,
@@ -212,7 +218,9 @@ class ErkeParser {
       requiredTotal: officialRequiredTotal,
       yearEarnedTotal: officialYearEarnedTotal,
       cumulativeTotal: officialCumulativeTotal,
-      yearGap: yearGap,
+      rawYearGap: rawYearGap,
+      categoryGap: categoryGap,
+      minimumGap: minimumGap,
       officialConclusion: conclusion,
       categories: categories,
     );

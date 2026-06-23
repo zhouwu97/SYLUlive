@@ -169,12 +169,14 @@ class ErkeYearlyCategory {
 }
 
 class ErkeYearlySummary {
-  final String year; // "2025-2026"
+  final String year;
   final List<String> availableYears;
   final double requiredTotal;
   final double yearEarnedTotal;
   final double cumulativeTotal;
-  final double yearGap; // max(0, requiredTotal - yearEarnedTotal)
+  final double rawYearGap; // max(0, requiredTotal - yearEarnedTotal)
+  final double categoryGap; // 各分类 max(0, required - yearEarned) 之和
+  final double minimumGap; // max(rawYearGap, categoryGap)
   final String officialConclusion;
   final List<ErkeYearlyCategory> categories;
 
@@ -184,13 +186,16 @@ class ErkeYearlySummary {
     required this.requiredTotal,
     required this.yearEarnedTotal,
     required this.cumulativeTotal,
-    required this.yearGap,
+    required this.rawYearGap,
+    required this.categoryGap,
+    required this.minimumGap,
     required this.officialConclusion,
     required this.categories,
   });
 
+  /// 分类最低完成度 = (requiredTotal - minimumGap) / requiredTotal
   double get percentage => requiredTotal > 0
-      ? (yearEarnedTotal / requiredTotal * 100).clamp(0, 100)
+      ? ((requiredTotal - minimumGap) / requiredTotal * 100).clamp(0, 100)
       : 0;
 
   factory ErkeYearlySummary.fromJson(Map<String, dynamic> json) {
@@ -208,7 +213,9 @@ class ErkeYearlySummary {
       requiredTotal: (json['requiredTotal'] as num?)?.toDouble() ?? 0,
       yearEarnedTotal: (json['yearEarnedTotal'] as num?)?.toDouble() ?? 0,
       cumulativeTotal: (json['cumulativeTotal'] as num?)?.toDouble() ?? 0,
-      yearGap: (json['yearGap'] as num?)?.toDouble() ?? 0,
+      rawYearGap: (json['rawYearGap'] as num?)?.toDouble() ?? 0,
+      categoryGap: (json['categoryGap'] as num?)?.toDouble() ?? 0,
+      minimumGap: (json['minimumGap'] as num?)?.toDouble() ?? 0,
       officialConclusion: json['officialConclusion'] as String? ?? '',
       categories: cats,
     );
@@ -220,7 +227,9 @@ class ErkeYearlySummary {
         'requiredTotal': requiredTotal,
         'yearEarnedTotal': yearEarnedTotal,
         'cumulativeTotal': cumulativeTotal,
-        'yearGap': yearGap,
+        'rawYearGap': rawYearGap,
+        'categoryGap': categoryGap,
+        'minimumGap': minimumGap,
         'officialConclusion': officialConclusion,
         'categories': categories.map((c) => c.toJson()).toList(),
       };

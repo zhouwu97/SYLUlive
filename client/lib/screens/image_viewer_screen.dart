@@ -7,11 +7,8 @@ import 'package:dio/dio.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:gal/gal.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:provider/provider.dart';
 import 'dart:io';
 
-import '../providers/auth_provider.dart';
-import '../services/upload_cache_recovery_service.dart';
 import '../utils/post_image_cache.dart';
 
 class ImageViewerScreen extends StatefulWidget {
@@ -40,19 +37,6 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
   late int _currentIndex;
   bool _isSaving = false;
   final Map<int, Uint8List> _downloadedImages = {};
-
-  void _recoverImageUrl(String url) {
-    try {
-      UploadCacheRecoveryService.recover(
-        imageUrl: url,
-        dio: context.read<AuthProvider>().dio,
-        cacheManager: PostImageCache.manager,
-        fallbackCacheManagers: [DefaultCacheManager()],
-      ).then((recovered) {
-        if (recovered && mounted) setState(() {});
-      }).catchError((_) {});
-    } catch (_) {}
-  }
 
   @override
   void initState() {
@@ -279,14 +263,11 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
                       placeholder: (context, url) => const Center(
                         child: CircularProgressIndicator(color: Colors.white),
                       ),
-                      errorWidget: (context, url, error) {
-                        _recoverImageUrl(url);
-                        return const Icon(
-                          Icons.error,
-                          color: Colors.white,
-                          size: 48,
-                        );
-                      },
+                      errorWidget: (context, url, error) => const Icon(
+                        Icons.error,
+                        color: Colors.white,
+                        size: 48,
+                      ),
                     ),
             ),
           );

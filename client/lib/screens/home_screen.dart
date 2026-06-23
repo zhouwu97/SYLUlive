@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -13,7 +12,6 @@ import '../main.dart';
 import '../providers/auth_provider.dart';
 import '../providers/post_provider.dart';
 import '../providers/theme_provider.dart';
-import '../services/upload_cache_recovery_service.dart';
 import '../utils/app_navigator.dart';
 import '../utils/post_image_cache.dart';
 import '../utils/screen_swipe.dart';
@@ -45,20 +43,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   String? _announcementAuthKey;
   bool _isCheckingAnnouncements = false;
   bool _announcementDialogOpen = false;
-
-  void _recoverImageUrl(String url) {
-    try {
-      UploadCacheRecoveryService.recover(
-        imageUrl: url,
-        dio: context.read<AuthProvider>().dio,
-        cacheManager: PostImageCache.manager,
-        fallbackCacheManagers: [DefaultCacheManager()],
-      ).then((recovered) {
-        if (recovered && mounted) setState(() {});
-      }).catchError((_) {});
-    } catch (_) {}
-  }
-
   final Set<int> _dismissedAnnouncementIds = {};
   final Set<int> _seenAnnouncementIds = {};
   String? _announcementSeenKey;
@@ -277,18 +261,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 child: CircularProgressIndicator(strokeWidth: 2),
               ),
             ),
-            errorWidget: (_, url, ___) {
-              _recoverImageUrl(url);
-              return Container(
-                height: config.height ?? 180,
-                color: isDark ? Colors.white10 : Colors.grey[200],
-                alignment: Alignment.center,
-                child: Icon(
-                  Icons.broken_image_outlined,
-                  color: isDark ? Colors.white38 : Colors.grey[500],
-                ),
-              );
-            },
+            errorWidget: (_, __, ___) => Container(
+              height: config.height ?? 180,
+              color: isDark ? Colors.white10 : Colors.grey[200],
+              alignment: Alignment.center,
+              child: Icon(
+                Icons.broken_image_outlined,
+                color: isDark ? Colors.white38 : Colors.grey[500],
+              ),
+            ),
           ),
         ),
       ),

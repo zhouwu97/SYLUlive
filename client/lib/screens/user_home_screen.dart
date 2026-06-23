@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:dio/dio.dart';
-import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:image_cropper/image_cropper.dart';
 import '../providers/auth_provider.dart';
@@ -10,7 +9,6 @@ import '../config/api_constants.dart';
 import '../models/user.dart';
 import '../models/post.dart';
 import '../providers/social_provider.dart';
-import '../services/upload_cache_recovery_service.dart';
 import '../widgets/post_card.dart';
 import '../widgets/cached_avatar.dart';
 import 'social_list_screen.dart';
@@ -32,18 +30,6 @@ class _UserHomeScreenState extends State<UserHomeScreen>
   User? _user;
   List<Post> _posts = [];
   bool _isLoading = true;
-
-  void _recoverImageUrl(String url) {
-    try {
-      UploadCacheRecoveryService.recover(
-        imageUrl: url,
-        dio: context.read<AuthProvider>().dio,
-        cacheManager: DefaultCacheManager(),
-      ).then((recovered) {
-        if (recovered && mounted) setState(() {});
-      }).catchError((_) {});
-    } catch (_) {}
-  }
 
   @override
   void initState() {
@@ -109,7 +95,9 @@ class _UserHomeScreenState extends State<UserHomeScreen>
         : Theme.of(context).scaffoldBackgroundColor;
 
     // 标签栏和内容区共用的面板色
-    final panelColor = isDark ? const Color(0xFF1A1B1E) : Colors.white;
+    final panelColor = isDark
+        ? const Color(0xFF1A1B1E)
+        : Colors.white;
 
     final screenWidth = MediaQuery.sizeOf(context).width;
     final heroHeight = (screenWidth * 1.03).clamp(390.0, 480.0);
@@ -141,19 +129,14 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                     children: [
                       // 背景图
                       GestureDetector(
-                        onTap:
-                            isMe ? () => _showEditSheet(context, user) : null,
+                        onTap: isMe
+                            ? () => _showEditSheet(context, user)
+                            : null,
                         child: user.background.isNotEmpty
                             ? CachedNetworkImage(
-                                imageUrl: ApiConstants.fullUrl(user.background),
+                                imageUrl:
+                                    ApiConstants.fullUrl(user.background),
                                 fit: BoxFit.cover,
-                                errorWidget: (_, url, ___) {
-                                  _recoverImageUrl(url);
-                                  return Image.asset(
-                                    'assets/images/morenbeijing.jpeg',
-                                    fit: BoxFit.cover,
-                                  );
-                                },
                               )
                             : Image.asset(
                                 'assets/images/morenbeijing.jpeg',
@@ -244,8 +227,10 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                       controller: _tabController,
                       indicatorSize: TabBarIndicatorSize.label,
                       indicatorWeight: 3,
-                      indicatorColor: Theme.of(context).colorScheme.primary,
-                      labelColor: Theme.of(context).colorScheme.primary,
+                      indicatorColor:
+                          Theme.of(context).colorScheme.primary,
+                      labelColor:
+                          Theme.of(context).colorScheme.primary,
                       unselectedLabelColor:
                           isDark ? Colors.white60 : Colors.black54,
                       labelStyle: const TextStyle(
@@ -274,7 +259,8 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                   : _posts.isEmpty
                       ? const Center(child: Text('暂无帖子'))
                       : ListView.builder(
-                          padding: const EdgeInsets.fromLTRB(12, 10, 12, 24),
+                          padding:
+                              const EdgeInsets.fromLTRB(12, 10, 12, 24),
                           itemCount: _posts.length,
                           itemBuilder: (context, index) {
                             return PostCard(

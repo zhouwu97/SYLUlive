@@ -72,7 +72,7 @@ class PostProvider extends ChangeNotifier {
   final int _activeBoardId = 1;
 
   PostProvider(this._dio, {bool enableCache = true})
-    : _enableCache = enableCache;
+      : _enableCache = enableCache;
 
   String _stateKey(int boardId, String sort, String? type) {
     return '$boardId|$sort|${type ?? ''}';
@@ -115,7 +115,8 @@ class PostProvider extends ChangeNotifier {
     int boardId, {
     String sort = 'time',
     String? type,
-  }) => _ensureBoard(boardId, sort: sort, type: type).lastSuccessfulRefreshAt;
+  }) =>
+      _ensureBoard(boardId, sort: sort, type: type).lastSuccessfulRefreshAt;
 
   Future<void> _savePostsToCache(
     int boardId,
@@ -213,9 +214,8 @@ class PostProvider extends ChangeNotifier {
         }
 
         final total = (data['total'] as num?)?.toInt();
-        board.hasMore = total != null
-            ? board.posts.length < total
-            : newPosts.length >= 20;
+        board.hasMore =
+            total != null ? board.posts.length < total : newPosts.length >= 20;
         board.currentPage = 2;
       }
     } on DioException catch (e) {
@@ -237,13 +237,16 @@ class PostProvider extends ChangeNotifier {
     String? type,
     String sort = 'time',
   }) {
-    final key = 'load_${boardId}_${type}_$sort';
+    final board = _ensureBoard(boardId, sort: sort, type: type);
+    final page = board.currentPage;
+    final key = 'load_${boardId}_${sort}_${type}_${page}';
+
     if (_inflightRequests.containsKey(key)) return _inflightRequests[key]!;
 
     final future = _loadPostsInternal(boardId: boardId, type: type, sort: sort)
         .whenComplete(() {
-          _inflightRequests.remove(key);
-        });
+      _inflightRequests.remove(key);
+    });
     _inflightRequests[key] = future;
     return future;
   }
@@ -313,9 +316,8 @@ class PostProvider extends ChangeNotifier {
         }
 
         final total = (data['total'] as num?)?.toInt();
-        board.hasMore = total != null
-            ? board.posts.length < total
-            : newPosts.length >= 20;
+        board.hasMore =
+            total != null ? board.posts.length < total : newPosts.length >= 20;
         if (!usesSnapshot) {
           board.currentPage++;
         }
@@ -329,20 +331,25 @@ class PostProvider extends ChangeNotifier {
     if (requestVersion == board.requestVersion) {
       board.isLoading = false;
       board.hasLoaded = true;
-      board.lastSuccessfulRefreshAt = DateTime.now();
       board.revision++;
       notifyListeners();
     }
   }
 
-  Future<void> refresh({int boardId = 1, String? type, String sort = 'time'}) {
-    final key = 'refresh_${boardId}_${type}_$sort';
+  Future<void> refresh({
+    int boardId = 1,
+    String? type,
+    String sort = 'time',
+  }) {
+    final board = _ensureBoard(boardId, sort: sort, type: type);
+    final key = 'refresh_${boardId}_${sort}_${type}';
+
     if (_inflightRequests.containsKey(key)) return _inflightRequests[key]!;
 
     final future = _refreshInternal(boardId: boardId, type: type, sort: sort)
         .whenComplete(() {
-          _inflightRequests.remove(key);
-        });
+      _inflightRequests.remove(key);
+    });
     _inflightRequests[key] = future;
     return future;
   }
@@ -363,6 +370,8 @@ class PostProvider extends ChangeNotifier {
       board.revision++;
       notifyListeners();
     }
+
+    bool succeeded = false;
 
     try {
       board.sessionId = null; // 清除老的会话快照
@@ -390,10 +399,10 @@ class PostProvider extends ChangeNotifier {
         await _savePostsToCache(boardId, sort, board.posts);
 
         final total = (response.data['total'] as num?)?.toInt();
-        board.hasMore = total != null
-            ? newPosts.length < total
-            : newPosts.length >= 20;
+        board.hasMore =
+            total != null ? newPosts.length < total : newPosts.length >= 20;
         board.currentPage = 2;
+        succeeded = true;
       }
     } on DioException catch (e) {
       debugPrint('刷新失败(board=$boardId): ${e.message}');
@@ -402,7 +411,9 @@ class PostProvider extends ChangeNotifier {
     if (requestVersion == board.requestVersion) {
       board.isLoading = false;
       board.hasLoaded = true;
-      board.lastSuccessfulRefreshAt = DateTime.now();
+      if (succeeded) {
+        board.lastSuccessfulRefreshAt = DateTime.now();
+      }
       board.revision++;
       notifyListeners();
     }

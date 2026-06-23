@@ -90,6 +90,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     super.didUpdateWidget(oldWidget);
     if (widget.initialTab != oldWidget.initialTab) {
       _currentIndex = widget.initialTab;
+      _visitedTabs.add(_currentIndex);
+      _getOrCreateTabPage(_currentIndex);
     }
   }
 
@@ -105,9 +107,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (_announcementAuthKey == authKey) return;
 
     _announcementAuthKey = authKey;
-    _announcementSeenKey = auth.isLoggedIn
-        ? 'seen_announcements_${auth.user?.id}'
-        : null;
+    _announcementSeenKey =
+        auth.isLoggedIn ? 'seen_announcements_${auth.user?.id}' : null;
     _dismissedAnnouncementIds.clear();
     _seenAnnouncementIds.clear();
     _announcementTimer?.cancel();
@@ -193,8 +194,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       }
       return (resp.data as List?) ?? const [];
     } on DioException catch (e) {
-      final isBadUnreadRoute =
-          e.response?.statusCode == 400 &&
+      final isBadUnreadRoute = e.response?.statusCode == 400 &&
           e.response?.data is Map &&
           (e.response!.data['error']?.toString().contains('无效的公告ID') ?? false);
       if (isBadUnreadRoute) {
@@ -371,7 +371,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                 width: 42,
                                 height: 42,
                                 decoration: BoxDecoration(
-                                  color: Theme.of(context).primaryColor
+                                  color: Theme.of(context)
+                                      .primaryColor
                                       .withValues(alpha: isDark ? 0.22 : 0.14),
                                   borderRadius: BorderRadius.circular(14),
                                 ),
@@ -597,9 +598,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                               blockquote: TextStyle(
                                 fontSize: 14,
                                 height: 1.6,
-                                color: isDark
-                                    ? Colors.white60
-                                    : Colors.grey[700],
+                                color:
+                                    isDark ? Colors.white60 : Colors.grey[700],
                               ),
                               blockquoteDecoration: BoxDecoration(
                                 color: isDark
@@ -662,8 +662,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                             onPressed: () async {
                               try {
                                 await context.read<AuthProvider>().dio.post(
-                                  '${ApiConstants.noticesPath}/${a['id']}/read',
-                                );
+                                      '${ApiConstants.noticesPath}/${a['id']}/read',
+                                    );
                               } catch (_) {}
                               await _markAnnouncementsSeen([a]);
                               if (current < unread.length - 1) {

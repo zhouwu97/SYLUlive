@@ -96,18 +96,15 @@ void main() {
     expect(provider.postsFor(1, sort: 'all').single.id, 2);
   });
 
-  test('stale response cannot overwrite a newer request', () async {
+  test('in-flight exact duplicate requests are merged', () async {
     final dio = Dio();
     var requestCount = 0;
     dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) async {
           requestCount++;
-          final currentRequest = requestCount;
-          await Future<void>.delayed(
-            Duration(milliseconds: currentRequest == 1 ? 50 : 5),
-          );
-          handler.resolve(_response(options, currentRequest));
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+          handler.resolve(_response(options, requestCount));
         },
       ),
     );
@@ -118,7 +115,8 @@ void main() {
       provider.refresh(boardId: 1, sort: 'hot'),
     ]);
 
-    expect(provider.postsFor(1, sort: 'hot').single.id, 2);
+    expect(requestCount, 1);
+    expect(provider.postsFor(1, sort: 'hot').single.id, 1);
   });
 
   test('cached first load refreshes latest page without since anchor',

@@ -169,8 +169,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      if (_currentConfig.supportsRemoteLoading &&
-          _canLoadFeedMode(_feedMode)) {
+      if (_currentConfig.supportsRemoteLoading && _canLoadFeedMode(_feedMode)) {
         _refresh();
       }
       _loadAnnouncements();
@@ -184,8 +183,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     _stopAutoRefresh();
     _autoRefreshTimer = Timer.periodic(_autoRefreshInterval, (_) {
       if (!mounted) return;
-      if (_currentConfig.supportsRemoteLoading &&
-          _canLoadFeedMode(_feedMode)) {
+      if (_currentConfig.supportsRemoteLoading && _canLoadFeedMode(_feedMode)) {
         _refresh();
       }
       _loadAnnouncements();
@@ -714,9 +712,10 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       }
       _wasLoggedIn = authProvider.isLoggedIn;
       _messagesLoadRequested = false;
-      // 登录/退出时清除关注信息流，避免跨账号数据残留
-      context.read<PostProvider>().invalidateFollowingFeed();
       WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        // 登录/退出时清除关注信息流，避免跨账号数据残留
+        context.read<PostProvider>().invalidateFollowingFeed();
         if (_currentConfig.supportsRemoteLoading &&
             _canLoadFeedMode(_feedMode)) {
           _refresh();
@@ -1142,8 +1141,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                   ).animate(_feedSwitchAnimation),
                   child: NotificationListener<ScrollNotification>(
                     onNotification: (notification) {
-                      final canLoadMore =
-                          _feedMode != 'following' ||
+                      final canLoadMore = _feedMode != 'following' ||
                           context.read<AuthProvider>().isLoggedIn;
                       if (_currentConfig.supportsRemoteLoading &&
                           notification.metrics.pixels >=
@@ -1202,10 +1200,9 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                                 ? _buildFollowingEmptyState(isDark)
                                 : _buildEmptyState(
                                     isDark,
-                                    title:
-                                        _searchQuery.isNotEmpty
-                                            ? '没有找到匹配帖子'
-                                            : '暂无帖子',
+                                    title: _searchQuery.isNotEmpty
+                                        ? '没有找到匹配帖子'
+                                        : '暂无帖子',
                                     subtitle: _searchQuery.isNotEmpty
                                         ? '目前只按标题搜索，换个标题关键词试试'
                                         : '发布第一条帖子吧',

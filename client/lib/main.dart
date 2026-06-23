@@ -281,7 +281,7 @@ void _navigateToNotificationTarget(NotificationOpenTarget target) {
     debugPrint('忽略重复的通知跳转: ${target.type}');
     return;
   }
-  
+
   _lastOpenedNotificationTarget = target;
   _lastOpenedNotificationAt = now;
 
@@ -572,28 +572,21 @@ PrivateMessageTarget _resolvePrivateMessageTarget(PrivateMessageTarget target) {
   return target;
 }
 
-void _processPendingOpenNotification() {
+void _processPendingPrivateMessageOpen() {
   final now = DateTime.now();
   _pendingPrivateMessageOpen.markReady(now);
-  _pendingNavigatorAction.markReady(now);
-  
+
   if (appNavigatorKey.currentState == null) {
     debugPrint('📌 等待 navigator 就绪后再处理私信通知');
     return;
   }
-  
+
   final target = _pendingPrivateMessageOpen.consume(now);
   if (target != null) {
     debugPrint(
       '✅ 处理缓冲通知: conv=${target.conversationId} sender=${target.senderId}',
     );
     _navigateToPrivateMessage(target);
-  }
-
-  final action = _pendingNavigatorAction.consume(now);
-  if (action != null) {
-    debugPrint('✅ 处理通用缓冲路由通知');
-    action(appNavigatorKey.currentState!);
   }
 }
 
@@ -1027,6 +1020,7 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
         _ensureJPush(authProvider);
         _checkNativePrivateMessage();
       }
+      _processPendingPrivateMessageOpen();
       _schedulePendingNotificationProcessing();
     }
   }
@@ -1090,6 +1084,7 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
               _ensureJPush(authProvider);
               _requestNotificationPermissionIfNeeded();
             }
+            _processPendingPrivateMessageOpen();
             _schedulePendingNotificationProcessing();
             _checkNativePrivateMessage();
           });

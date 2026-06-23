@@ -1,4 +1,4 @@
-.dart_tool/
+﻿.dart_tool/
 .flutter-plugins
 .flutter-plugins-dependencies
 .packages
@@ -19,12 +19,13 @@ web/favicon.png
 *.db
 server/uploads/*
 !server/uploads/.gitkeep
-shenliyuan
-shenliyuan.exe
-shenliyuan.exe~
+/shenliyuan
+/shenliyuan.exe
+/shenliyuan.exe~
 server/*.exe
 server/*.exe~
 *.apk
+backups.tar/
 *.aab
 *.exe
 __pycache__/
@@ -34,4 +35,10 @@ fix.dart
 scratch.go
 repl.go
 patch*.py
+
 check_apk.py
+/client/test/e2e_test.dart
+/client/integration_test/local_*.dart
+/client/test_credentials.*
+/client/.env
+/client/.env.*

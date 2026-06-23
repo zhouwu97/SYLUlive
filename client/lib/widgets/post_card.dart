@@ -1,10 +1,12 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 
 import '../config/api_constants.dart';
 import '../models/post.dart';
 import '../models/user.dart';
 import '../screens/image_viewer_screen.dart';
+import '../services/upload_cache_recovery_service.dart';
 import '../utils/post_image_cache.dart';
 import 'cached_avatar.dart';
 import 'glass_container.dart';
@@ -38,6 +40,19 @@ class _PostCardState extends State<PostCard>
     with AutomaticKeepAliveClientMixin {
   @override
   bool get wantKeepAlive => true;
+
+  void _recoverImageUrl(String url) {
+    try {
+      UploadCacheRecoveryService.recover(
+        imageUrl: url,
+        dio: context.read<AuthProvider>().dio,
+        cacheManager: PostImageCache.manager,
+        fallbackCacheManagers: [DefaultCacheManager()],
+      ).then((recovered) {
+        if (recovered && mounted) setState(() {});
+      }).catchError((_) {});
+    } catch (_) {}
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -357,10 +372,13 @@ class _PostCardState extends State<PostCard>
               width: double.infinity,
               fit: widget.showPrice ? BoxFit.contain : BoxFit.cover,
               placeholder: (_, __) => Container(color: Colors.grey[300]),
-              errorWidget: (_, __, ___) => Container(
-                color: Colors.grey[300],
-                child: const Icon(Icons.image),
-              ),
+              errorWidget: (_, url, ___) {
+                _recoverImageUrl(url);
+                return Container(
+                  color: Colors.grey[300],
+                  child: const Icon(Icons.image),
+                );
+              },
             ),
           ),
         ),
@@ -392,8 +410,10 @@ class _PostCardState extends State<PostCard>
                     imageUrl: imageUrls[index],
                     fit: BoxFit.cover,
                     placeholder: (_, __) => Container(color: Colors.grey[300]),
-                    errorWidget: (_, __, ___) =>
-                        Container(color: Colors.grey[300]),
+                    errorWidget: (_, url, ___) {
+                      _recoverImageUrl(url);
+                      return Container(color: Colors.grey[300]);
+                    },
                   ),
                   Container(
                     color: Colors.black54,
@@ -418,10 +438,13 @@ class _PostCardState extends State<PostCard>
               imageUrl: imageUrls[index],
               fit: BoxFit.cover,
               placeholder: (_, __) => Container(color: Colors.grey[300]),
-              errorWidget: (_, __, ___) => Container(
-                color: Colors.grey[300],
-                child: const Icon(Icons.image),
-              ),
+              errorWidget: (_, url, ___) {
+                _recoverImageUrl(url);
+                return Container(
+                  color: Colors.grey[300],
+                  child: const Icon(Icons.image),
+                );
+              },
             ),
           );
         },

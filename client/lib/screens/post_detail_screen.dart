@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:dio/dio.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../config/api_constants.dart';
@@ -9,6 +10,7 @@ import '../models/post.dart';
 import '../models/reply.dart';
 import '../models/user.dart';
 import '../providers/post_provider.dart';
+import '../services/upload_cache_recovery_service.dart';
 import '../utils/app_feedback.dart';
 import '../utils/post_image_cache.dart';
 import '../widgets/report_sheet.dart';
@@ -58,6 +60,19 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   int? _replyToUserId;
   bool _isSending = false;
   final Set<int> _expandedThreads = {};
+
+  void _recoverImageUrl(String url) {
+    try {
+      UploadCacheRecoveryService.recover(
+        imageUrl: url,
+        dio: context.read<AuthProvider>().dio,
+        cacheManager: PostImageCache.manager,
+        fallbackCacheManagers: [DefaultCacheManager()],
+      ).then((recovered) {
+        if (recovered && mounted) setState(() {});
+      }).catchError((_) {});
+    } catch (_) {}
+  }
 
   final Map<int, GlobalKey> _replyKeys = {};
   bool _hasScrolledToTarget = false;
@@ -701,11 +716,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 fit: forceFitHeight ? BoxFit.contain : BoxFit.cover,
                 placeholder: (_, __) => Container(
                     color: isDark ? Colors.white10 : Colors.grey[200]),
-                errorWidget: (_, __, ___) => Container(
-                  color: isDark ? Colors.white10 : Colors.grey[200],
-                  child: const Icon(Icons.broken_image,
-                      size: 40, color: Colors.grey),
-                ),
+                errorWidget: (_, url, ___) {
+                  _recoverImageUrl(url);
+                  return Container(
+                    color: isDark ? Colors.white10 : Colors.grey[200],
+                    child: const Icon(Icons.broken_image,
+                        size: 40, color: Colors.grey),
+                  );
+                },
               ),
             ),
           ),
@@ -931,15 +949,18 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     height: 340,
                     color: isDark ? Colors.white10 : Colors.grey[200],
                   ),
-                  errorWidget: (_, __, ___) => Container(
-                    height: 340,
-                    color: isDark ? Colors.white10 : Colors.grey[200],
-                    child: const Icon(
-                      Icons.broken_image,
-                      size: 40,
-                      color: Colors.grey,
-                    ),
-                  ),
+                  errorWidget: (_, url, ___) {
+                    _recoverImageUrl(url);
+                    return Container(
+                      height: 340,
+                      color: isDark ? Colors.white10 : Colors.grey[200],
+                      child: const Icon(
+                        Icons.broken_image,
+                        size: 40,
+                        color: Colors.grey,
+                      ),
+                    );
+                  },
                 ),
               ),
             ),
@@ -998,9 +1019,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 imageUrl: images[index],
                 fit: BoxFit.cover,
                 placeholder: (_, __) => Container(color: Colors.grey[300]),
-                errorWidget: (_, __, ___) => Container(
-                    color: Colors.grey[300],
-                    child: const Icon(Icons.broken_image))),
+                errorWidget: (_, url, ___) {
+                  _recoverImageUrl(url);
+                  return Container(
+                      color: Colors.grey[300],
+                      child: const Icon(Icons.broken_image));
+                }),
           ]),
         ),
       ),

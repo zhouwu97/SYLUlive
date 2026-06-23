@@ -108,6 +108,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   Timer? _autoRefreshTimer;
   List<model.Announcement> _announcements = [];
   bool _wasLoggedIn = false;
+  bool _checkinStatusLoaded = false;
   String _feedMode = kFeedModes[kDefaultFeedModeIndex].key; // 'all'
   String _searchQuery = '';
   List<Post> _searchResults = [];
@@ -151,7 +152,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       final postProvider = context.read<PostProvider>();
       postProvider.loadPosts(boardId: 1, sort: 'all');
       _startAutoRefresh();
-      
+
       // 延迟加载其他非核心数据
       Future.delayed(const Duration(seconds: 3), () {
         if (mounted) {
@@ -364,6 +365,14 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     if (_feedMode != modeAtStart) return;
     if (_searchQuery.isNotEmpty) {
       await _runSearch(_searchQuery);
+    }
+  }
+
+  Future<void> _ensureCheckinStatusLoaded() async {
+    if (_checkinStatusLoaded || _checkInLoading) return;
+    await _loadCheckinStatus();
+    if (mounted) {
+      _checkinStatusLoaded = true;
     }
   }
 
@@ -600,7 +609,9 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       backgroundColor: Colors.transparent,
       extendBodyBehindAppBar: true,
       onDrawerChanged: (isOpened) {
-        if (isOpened) _loadCheckinStatus();
+        if (isOpened) {
+          unawaited(_ensureCheckinStatusLoaded());
+        }
       },
       drawer: HomeServiceDrawer(
         checkedIn: _checkedIn,

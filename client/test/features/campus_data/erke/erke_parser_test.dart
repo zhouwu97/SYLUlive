@@ -24,9 +24,12 @@ void main() {
       // 总分
       expect(result.requiredTotal, 40.0);
       expect(result.earnedTotal, 38.7);
-      expect(result.totalGap, closeTo(1.3, 0.01)); // 浮点: 38.7 < 40.0 → 1.3
+      expect(result.rawTotalGap, closeTo(1.3, 0.01));
+      expect(result.categoryGap, closeTo(10.8, 0.01));
+      expect(
+          result.graduationGap, closeTo(10.8, 0.01)); // max(1.3, 10.8) = 10.8
       expect(result.unmetCount, 2);
-      expect(result.percentage, closeTo(96.75, 0.1));
+      expect(result.percentage, closeTo(73.0, 0.1)); // (40-10.8)/40 = 73%
 
       // 官方结论原样
       expect(result.officialConclusion, 'B得分不足、总分不足');
@@ -64,7 +67,7 @@ void main() {
 
       expect(restored.requiredTotal, original.requiredTotal);
       expect(restored.earnedTotal, original.earnedTotal);
-      expect(restored.totalGap, original.totalGap);
+      expect(restored.graduationGap, original.graduationGap);
       expect(restored.unmetCount, original.unmetCount);
       expect(restored.officialConclusion, original.officialConclusion);
       expect(restored.categories.length, original.categories.length);
@@ -486,7 +489,9 @@ void main() {
         graduation: ErkeGraduationSummary(
           requiredTotal: 40,
           earnedTotal: 38.7,
-          totalGap: 1.3,
+          rawTotalGap: 1.3,
+          categoryGap: 0,
+          graduationGap: 1.3,
           unmetCount: 2,
           officialConclusion: 'B得分不足、总分不足',
           categories: [],

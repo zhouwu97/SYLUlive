@@ -290,12 +290,45 @@ class ErkeClient {
         '[Erke] yearly GET status=${getResp.statusCode} bodyLength=${getHtml.length}');
     final title = getDoc.querySelector('title')?.text ?? '';
     print('[Erke] yearly GET title=$title');
+    // 保存 GET HTML 前 2000 字符用于诊断（分段打印避免 logcat 截断）
+    final preview =
+        getHtml.length < 2000 ? getHtml : getHtml.substring(0, 2000);
+    print('[Erke] yearly GET html-preview $preview');
 
-    // 2. 解析查询表单（不需要成绩数据）
+    // 2. 解析查询表单
     final form = ErkeParser.parseYearPageForm(getHtml);
     final targetYear = year ?? form.selectedYear;
 
-    // 3. 始终 POST 提交学年查询
+    // 诊断：打印表单中所有 input 的 name/id（不打印 value，不含隐私）
+    print('[Erke] yearly GET form inputs:');
+    for (final inp in getDoc.querySelectorAll('input')) {
+      final name = inp.attributes['name'] ?? '';
+      final id = inp.attributes['id'] ?? '';
+      final type = inp.attributes['type'] ?? 'text';
+      if (name.isNotEmpty || id.isNotEmpty) {
+        print('[Erke]   input name=$name id=$id type=$type');
+      }
+    }
+    // 找所有 button/submit
+    for (final btn in getDoc.querySelectorAll(
+        'input[type="submit"], button, input[type="button"]')) {
+      print(
+          '[Erke]   button name=${btn.attributes["name"]} id=${btn.attributes["id"]} value=${btn.attributes["value"]}');
+    }
+    // 找 __doPostBack 调用
+    final doPostBackRe =
+        RegExp(r"__doPostBack\s*\(\s*'([^']+)'\s*,\s*'([^']*)'\s*\)");
+    for (final m in doPostBackRe.allMatches(getHtml)) {
+      print('[Erke]   __doPostBack target=${m.group(1)} arg=${m.group(2)}');
+    }
+
+    // 3. GET 已有成绩 → 直接解析；无成绩 → POST
+    final getHasScores = ErkeParser.yearlyPageHasScores(getHtml);
+    if (getHasScores) {
+      print('[Erke] yearly GET has scores, parse directly');
+      return getHtml;
+    }
+
     print(
         '[Erke] yearly POST — GET selectedYear=${form.selectedYear} targetYear=$targetYear');
     if (!form.availableYears.contains(targetYear)) {

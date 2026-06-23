@@ -33,8 +33,6 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
     super.initState();
   }
 
-
-
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -67,8 +65,10 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                     color: Colors.green,
                     title: '二课分查询',
                     subtitle: '支持 WebVPN 穿透',
-                    onTap: () => Navigator.push(context,
-                        MaterialPageRoute(builder: (_) => const ErkeScoreScreen())),
+                    onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => const ErkeScoreScreen())),
                   ),
                   _buildToolCard(
                     context,
@@ -76,8 +76,10 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                     color: Colors.blueAccent,
                     title: '雨课堂',
                     subtitle: '测验与课件',
-                    onTap: () => Navigator.push(context,
-                        MaterialPageRoute(builder: (_) => const YuketangClassScreen())),
+                    onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => const YuketangClassScreen())),
                   ),
                   _buildToolCard(
                     context,
@@ -101,8 +103,10 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                     color: const Color(0xFFE91E63),
                     title: '抽奖活动',
                     subtitle: '公平福利派送',
-                    onTap: () => Navigator.push(context,
-                        MaterialPageRoute(builder: (_) => const LotteryScreen())),
+                    onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => const LotteryScreen())),
                   ),
                   _buildToolCard(
                     context,
@@ -110,8 +114,10 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                     color: Colors.deepPurpleAccent,
                     title: '考试日程',
                     subtitle: 'AI一键提取',
-                    onTap: () => Navigator.push(context,
-                        MaterialPageRoute(builder: (_) => const ExamScheduleScreen())),
+                    onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => const ExamScheduleScreen())),
                   ),
                   _buildToolCard(
                     context,
@@ -212,7 +218,8 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
   }
 
   Widget _buildBackground(ThemeProvider themeProvider, bool isDark) {
-    if (themeProvider.isBackgroundVisible && themeProvider.getBackgroundImageFor(context) != null) {
+    if (themeProvider.isBackgroundVisible &&
+        themeProvider.getBackgroundImageFor(context) != null) {
       final bgPath = themeProvider.getBackgroundImageFor(context)!;
       final isAsset = !bgPath.startsWith('http') && !bgPath.startsWith('/');
       return Stack(
@@ -247,8 +254,9 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
         Image.asset('assets/images/morenbeijing.jpeg',
             fit: BoxFit.cover,
             errorBuilder: (_, __, ___) => Container(
-                  color:
-                      isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
+                  color: isDark
+                      ? const Color(0xFF131720)
+                      : const Color(0xFFF4F6FB),
                 )),
         Container(
           color: isDark
@@ -288,37 +296,37 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(14),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(icon, color: color, size: 28),
               ),
-              child: Icon(icon, color: color, size: 28),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              title,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontWeight: FontWeight.w600,
-                fontSize: 13,
-                color: isDark ? Colors.white : const Color(0xFF1E293B),
+              const SizedBox(height: 10),
+              Text(
+                title,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                  color: isDark ? Colors.white : const Color(0xFF1E293B),
+                ),
               ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              subtitle,
-              textAlign: TextAlign.center,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 10,
-                color: isDark ? Colors.white60 : const Color(0xFF64748B),
+              const SizedBox(height: 4),
+              Text(
+                subtitle,
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 10,
+                  color: isDark ? Colors.white60 : const Color(0xFF64748B),
+                ),
               ),
-            ),
-          ],
-        ),
+            ],
+          ),
         ),
       ),
     );
@@ -376,7 +384,7 @@ class _PhysicalTestGateState extends State<_PhysicalTestGate> {
   void _queryManual() {
     final inputPwd = _pwdCtrl.text;
     final pwd = inputPwd == ('•' * _realPwd.length) ? _realPwd : inputPwd;
-    
+
     if (pwd.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('请输入体测密码')),
@@ -399,7 +407,8 @@ class _PhysicalTestGateState extends State<_PhysicalTestGate> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor: isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
+      backgroundColor:
+          isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
       appBar: AppBar(
         title: const Text('体测成绩查询'),
         backgroundColor: Colors.transparent,
@@ -415,12 +424,15 @@ class _PhysicalTestGateState extends State<_PhysicalTestGate> {
                 borderRadius: 16,
                 child: Row(
                   children: [
-                    const Icon(Icons.info_outline, color: Colors.blue, size: 20),
+                    const Icon(Icons.info_outline,
+                        color: Colors.blue, size: 20),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
                         '学号 ${widget.username} 已自动识别，请输入体测密码查询',
-                        style: TextStyle(fontSize: 13, color: isDark ? Colors.white70 : Colors.black87),
+                        style: TextStyle(
+                            fontSize: 13,
+                            color: isDark ? Colors.white70 : Colors.black87),
                       ),
                     ),
                   ],
@@ -435,11 +447,19 @@ class _PhysicalTestGateState extends State<_PhysicalTestGate> {
                   children: [
                     Row(
                       children: [
-                        const Icon(Icons.fitness_center, color: Colors.blue, size: 22),
+                        const Icon(Icons.fitness_center,
+                            color: Colors.blue, size: 22),
                         const SizedBox(width: 10),
-                        const Text('体测密码', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                        const Text('体测密码',
+                            style: TextStyle(
+                                fontSize: 15, fontWeight: FontWeight.bold)),
                         const Spacer(),
-                        Text('初始密码默认为111111', style: TextStyle(fontSize: 10, color: isDark ? Colors.white38 : Colors.grey[500])),
+                        Text('初始密码默认为111111',
+                            style: TextStyle(
+                                fontSize: 10,
+                                color: isDark
+                                    ? Colors.white38
+                                    : Colors.grey[500])),
                       ],
                     ),
                     const SizedBox(height: 16),
@@ -452,12 +472,21 @@ class _PhysicalTestGateState extends State<_PhysicalTestGate> {
                         hintText: '输入体测系统密码',
                         prefixIcon: const Icon(Icons.lock_outline, size: 18),
                         suffixIcon: IconButton(
-                          icon: Icon(_obscurePwd ? Icons.visibility_off : Icons.visibility, size: 18),
-                          onPressed: () => setState(() => _obscurePwd = !_obscurePwd),
+                          icon: Icon(
+                              _obscurePwd
+                                  ? Icons.visibility_off
+                                  : Icons.visibility,
+                              size: 18),
+                          onPressed: () =>
+                              setState(() => _obscurePwd = !_obscurePwd),
                         ),
                         filled: true,
-                        fillColor: isDark ? Colors.white.withValues(alpha: 0.05) : Colors.black.withValues(alpha: 0.03),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                        fillColor: isDark
+                            ? Colors.white.withValues(alpha: 0.05)
+                            : Colors.black.withValues(alpha: 0.03),
+                        border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide.none),
                       ),
                     ),
                   ],
@@ -472,10 +501,13 @@ class _PhysicalTestGateState extends State<_PhysicalTestGate> {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Theme.of(context).primaryColor,
                     foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16)),
                     elevation: 0,
                   ),
-                  child: const Text('开始查询', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  child: const Text('开始查询',
+                      style:
+                          TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                 ),
               ),
             ],

@@ -24,12 +24,14 @@ const _reportReasons = [
 
 /// 弹出举报 BottomSheet
 /// [targetType] = "post" 或 "reply"
-void showReportSheet(BuildContext context, {required int targetId, String targetType = 'post'}) {
+void showReportSheet(BuildContext context,
+    {required int targetId, String targetType = 'post'}) {
   showModalBottomSheet(
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
-    builder: (ctx) => _ReportSheetContent(targetId: targetId, targetType: targetType),
+    builder: (ctx) =>
+        _ReportSheetContent(targetId: targetId, targetType: targetType),
   );
 }
 
@@ -50,7 +52,8 @@ class _ReportSheetContentState extends State<_ReportSheetContent> {
   Future<void> _submit() async {
     if (_selectedReason == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请选择举报原因'), backgroundColor: Colors.orange),
+        const SnackBar(
+            content: Text('请选择举报原因'), backgroundColor: Colors.orange),
       );
       return;
     }
@@ -68,12 +71,14 @@ class _ReportSheetContentState extends State<_ReportSheetContent> {
       if (mounted) {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('举报已提交，管理员会尽快处理'), backgroundColor: Colors.green),
+          const SnackBar(
+              content: Text('举报已提交，管理员会尽快处理'), backgroundColor: Colors.green),
         );
       }
     } on DioException catch (e) {
       String msg = '举报失败';
-      if (e.response?.data is Map && (e.response!.data as Map).containsKey('error')) {
+      if (e.response?.data is Map &&
+          (e.response!.data as Map).containsKey('error')) {
         msg = (e.response!.data as Map)['error'].toString();
       }
       if (mounted) {
@@ -84,7 +89,8 @@ class _ReportSheetContentState extends State<_ReportSheetContent> {
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('举报失败，请稍后重试'), backgroundColor: Colors.red),
+          const SnackBar(
+              content: Text('举报失败，请稍后重试'), backgroundColor: Colors.red),
         );
       }
     } finally {
@@ -104,7 +110,8 @@ class _ReportSheetContentState extends State<_ReportSheetContent> {
     final targetLabel = widget.targetType == 'reply' ? '举报评论' : '举报帖子';
 
     return Container(
-      constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.75),
+      constraints:
+          BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.75),
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF1E1E2E) : Colors.white,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
@@ -129,7 +136,9 @@ class _ReportSheetContentState extends State<_ReportSheetContent> {
               children: [
                 Icon(Icons.report_outlined, color: Colors.red[400], size: 24),
                 const SizedBox(width: 10),
-                Text(targetLabel, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+                Text(targetLabel,
+                    style: const TextStyle(
+                        fontSize: 18, fontWeight: FontWeight.w600)),
               ],
             ),
           ),
@@ -153,11 +162,14 @@ class _ReportSheetContentState extends State<_ReportSheetContent> {
                     maxLines: 3,
                     decoration: InputDecoration(
                       hintText: '补充说明（选填）',
-                      hintStyle: TextStyle(color: isDark ? Colors.white38 : Colors.grey[400]),
+                      hintStyle: TextStyle(
+                          color: isDark ? Colors.white38 : Colors.grey[400]),
                       border: InputBorder.none,
                       contentPadding: EdgeInsets.zero,
                     ),
-                    style: TextStyle(fontSize: 14, color: isDark ? Colors.white : Colors.black87),
+                    style: TextStyle(
+                        fontSize: 14,
+                        color: isDark ? Colors.white : Colors.black87),
                   ),
                 ),
               ],
@@ -175,12 +187,19 @@ class _ReportSheetContentState extends State<_ReportSheetContent> {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.red[400],
                     foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14)),
                     elevation: 0,
                   ),
                   child: _submitting
-                      ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                      : const Text('提交举报', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: Colors.white))
+                      : const Text('提交举报',
+                          style: TextStyle(
+                              fontSize: 16, fontWeight: FontWeight.w600)),
                 ),
               ),
             ),
@@ -205,21 +224,31 @@ class _ReportSheetContentState extends State<_ReportSheetContent> {
               borderRadius: BorderRadius.circular(14),
               color: selected
                   ? (Colors.red[400]!.withValues(alpha: isDark ? 0.2 : 0.1))
-                  : (isDark ? Colors.white.withValues(alpha: 0.04) : Colors.grey.withValues(alpha: 0.06)),
+                  : (isDark
+                      ? Colors.white.withValues(alpha: 0.04)
+                      : Colors.grey.withValues(alpha: 0.06)),
               border: selected
-                  ? Border.all(color: Colors.red[400]!.withValues(alpha: 0.5), width: 1.2)
+                  ? Border.all(
+                      color: Colors.red[400]!.withValues(alpha: 0.5),
+                      width: 1.2)
                   : null,
             ),
             child: Row(
               children: [
-                Icon(reason.icon, size: 20, color: selected ? Colors.red[400] : (isDark ? Colors.white54 : Colors.grey[600])),
+                Icon(reason.icon,
+                    size: 20,
+                    color: selected
+                        ? Colors.red[400]
+                        : (isDark ? Colors.white54 : Colors.grey[600])),
                 const SizedBox(width: 12),
                 Text(
                   reason.label,
                   style: TextStyle(
                     fontSize: 15,
                     fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
-                    color: selected ? Colors.red[400] : (isDark ? Colors.white : Colors.black87),
+                    color: selected
+                        ? Colors.red[400]
+                        : (isDark ? Colors.white : Colors.black87),
                   ),
                 ),
                 const Spacer(),

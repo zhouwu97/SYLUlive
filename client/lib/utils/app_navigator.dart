@@ -4,7 +4,8 @@ import 'package:flutter/material.dart';
 final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 
 /// 全局 ScaffoldMessenger Key，用于在无 BuildContext 的地方显示 SnackBar
-final GlobalKey<ScaffoldMessengerState> scaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
+final GlobalKey<ScaffoldMessengerState> scaffoldMessengerKey =
+    GlobalKey<ScaffoldMessengerState>();
 
 /// 桌面小组件点击 → 通知 HomeScreen 切到课程表 tab
 final ValueNotifier<int> widgetTabSwitch = ValueNotifier<int>(0);

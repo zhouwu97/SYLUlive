@@ -26,7 +26,7 @@ class _DiagnosticLogScreenState extends State<DiagnosticLogScreen> {
     if (mounted) {
       setState(() => _isLoading = true);
     }
-    
+
     try {
       final logs = await DiagnosticLogService.instance.getLogs();
       if (!mounted) return;
@@ -81,7 +81,7 @@ class _DiagnosticLogScreenState extends State<DiagnosticLogScreen> {
 
   void _copyAll() {
     if (_logs.isEmpty) return;
-    
+
     // 正序输出，便于从前往后分析
     final sortedLogs = List<DiagnosticLogEntry>.from(_logs)
       ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
@@ -91,7 +91,8 @@ class _DiagnosticLogScreenState extends State<DiagnosticLogScreen> {
       final timeStr = DateFormat('yyyy-MM-dd HH:mm:ss').format(
         DateTime.fromMillisecondsSinceEpoch(log.timestamp),
       );
-      sb.writeln('[$timeStr] [${log.level.toUpperCase()}] [${log.source}] ${log.type}');
+      sb.writeln(
+          '[$timeStr] [${log.level.toUpperCase()}] [${log.source}] ${log.type}');
       sb.writeln('Summary: ${log.summary}');
       sb.writeln(
         'App: ${log.appVersion} | '
@@ -124,7 +125,7 @@ class _DiagnosticLogScreenState extends State<DiagnosticLogScreen> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    
+
     final filteredLogs = _logs.where((log) {
       if (_filter == 'warning') return log.isWarning || log.isError;
       if (_filter == 'error') return log.isError;
@@ -133,14 +134,16 @@ class _DiagnosticLogScreenState extends State<DiagnosticLogScreen> {
 
     String timeRange = '';
     if (_logs.isNotEmpty) {
-      final earliest = DateTime.fromMillisecondsSinceEpoch(_logs.last.timestamp);
+      final earliest =
+          DateTime.fromMillisecondsSinceEpoch(_logs.last.timestamp);
       final latest = DateTime.fromMillisecondsSinceEpoch(_logs.first.timestamp);
       final fmt = DateFormat('MM-dd HH:mm');
       timeRange = '最早 ${fmt.format(earliest)} · 最近 ${fmt.format(latest)}';
     }
 
     return Scaffold(
-      backgroundColor: isDark ? const Color(0xFF111318) : const Color(0xFFF5F6F8),
+      backgroundColor:
+          isDark ? const Color(0xFF111318) : const Color(0xFFF5F6F8),
       appBar: AppBar(
         title: const Text('诊断日志'),
         elevation: 0,
@@ -166,7 +169,8 @@ class _DiagnosticLogScreenState extends State<DiagnosticLogScreen> {
       body: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -178,7 +182,8 @@ class _DiagnosticLogScreenState extends State<DiagnosticLogScreen> {
             ),
           ),
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
             child: Row(
               children: [
                 _buildFilterChip('全部', 'all'),
@@ -250,7 +255,8 @@ class _LogEntryCardState extends State<_LogEntryCard> {
       DateTime.fromMillisecondsSinceEpoch(log.timestamp),
     );
     final sb = StringBuffer();
-    sb.writeln('[$timeStr] [${log.level.toUpperCase()}] [${log.source}] ${log.type}');
+    sb.writeln(
+        '[$timeStr] [${log.level.toUpperCase()}] [${log.source}] ${log.type}');
     sb.writeln('Summary: ${log.summary}');
     sb.writeln(
       'App: ${log.appVersion} | '
@@ -282,8 +288,9 @@ class _LogEntryCardState extends State<_LogEntryCard> {
   Widget build(BuildContext context) {
     final entry = widget.entry;
     final timeFormat = DateFormat('HH:mm:ss');
-    final timeStr = timeFormat.format(DateTime.fromMillisecondsSinceEpoch(entry.timestamp));
-    
+    final timeStr =
+        timeFormat.format(DateTime.fromMillisecondsSinceEpoch(entry.timestamp));
+
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final cardColor = isDark ? const Color(0xFF1E2025) : Colors.white;
 
@@ -317,7 +324,8 @@ class _LogEntryCardState extends State<_LogEntryCard> {
                   ),
                   const SizedBox(width: 8),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     decoration: BoxDecoration(
                       color: isDark ? Colors.white12 : Colors.black12,
                       borderRadius: BorderRadius.circular(4),
@@ -358,20 +366,24 @@ class _LogEntryCardState extends State<_LogEntryCard> {
                     padding: const EdgeInsets.only(top: 4.0),
                     child: Text(
                       '重复 ${entry.repeatCount} 次',
-                      style: const TextStyle(fontSize: 12, color: Colors.orange),
+                      style:
+                          const TextStyle(fontSize: 12, color: Colors.orange),
                     ),
                   ),
               ] else ...[
                 Text(
                   entry.summary,
-                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                  style: const TextStyle(
+                      fontSize: 13, fontWeight: FontWeight.w500),
                 ),
                 const SizedBox(height: 8),
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: isDark ? Colors.black26 : Colors.black.withOpacity(0.04),
+                    color: isDark
+                        ? Colors.black26
+                        : Colors.black.withOpacity(0.04),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Column(
@@ -379,17 +391,24 @@ class _LogEntryCardState extends State<_LogEntryCard> {
                     children: [
                       SelectableText(
                         'SessionId: ${entry.sessionId} | PID: ${entry.pid}',
-                        style: const TextStyle(fontSize: 12, fontFamily: 'monospace', color: Colors.grey),
+                        style: const TextStyle(
+                            fontSize: 12,
+                            fontFamily: 'monospace',
+                            color: Colors.grey),
                       ),
                       if (entry.repeatCount > 1)
                         SelectableText(
                           '重复: ${entry.repeatCount} 次\n首次: ${DateFormat('MM-dd HH:mm:ss').format(DateTime.fromMillisecondsSinceEpoch(entry.firstSeenAt))}',
-                          style: const TextStyle(fontSize: 12, fontFamily: 'monospace', color: Colors.orange),
+                          style: const TextStyle(
+                              fontSize: 12,
+                              fontFamily: 'monospace',
+                              color: Colors.orange),
                         ),
                       const SizedBox(height: 4),
                       SelectableText(
                         entry.detail.isEmpty ? '无详细信息' : entry.detail,
-                        style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
+                        style: const TextStyle(
+                            fontSize: 12, fontFamily: 'monospace'),
                       ),
                     ],
                   ),

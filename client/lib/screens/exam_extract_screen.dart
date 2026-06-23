@@ -46,11 +46,12 @@ class _ExamExtractScreenState extends State<ExamExtractScreen> {
       final dio = getSharedDio();
       final resp = await dio.get('/tutorial/exam_extract');
       if (resp.statusCode == 200) {
-        if (mounted) setState(() {
-          _tutorialTitle = resp.data['title'];
-          _tutorialContent = resp.data['content'];
-          _loading = false;
-        });
+        if (mounted)
+          setState(() {
+            _tutorialTitle = resp.data['title'];
+            _tutorialContent = resp.data['content'];
+            _loading = false;
+          });
         return;
       }
     } catch (_) {}
@@ -61,14 +62,16 @@ class _ExamExtractScreenState extends State<ExamExtractScreen> {
     if (mounted) setState(() => _copyingProject = true);
     try {
       final tempDir = await getTemporaryDirectory();
-      
+
       // 提取脚本
-      final scriptData = await rootBundle.load('assets/scripts/tampermonkey_script.js');
+      final scriptData =
+          await rootBundle.load('assets/scripts/tampermonkey_script.js');
       final scriptFile = File('${tempDir.path}/tampermonkey_script.js');
       await scriptFile.writeAsBytes(scriptData.buffer.asUint8List());
-      
+
       // 提取HTML
-      final htmlData = await rootBundle.load('assets/yongzhiyunkao/convert_to_markdown.html');
+      final htmlData = await rootBundle
+          .load('assets/yongzhiyunkao/convert_to_markdown.html');
       final htmlFile = File('${tempDir.path}/convert_to_markdown.html');
       await htmlFile.writeAsBytes(htmlData.buffer.asUint8List());
 
@@ -110,8 +113,6 @@ class _ExamExtractScreenState extends State<ExamExtractScreen> {
       );
     }
   }
-
-
 
   @override
   Widget build(BuildContext context) {
@@ -256,7 +257,8 @@ class _ExamExtractScreenState extends State<ExamExtractScreen> {
       // 第一步
       _sectionCard(isDark, '1', '获取工具', Icons.share, [
         _stepLine('点击下方"分享提取工具"按钮，将文件分享到电脑（可通过微信/QQ文件传输助手）'),
-        _stepLine('您会在电脑收到两个文件：tampermonkey_script.js 和 convert_to_markdown.html'),
+        _stepLine(
+            '您会在电脑收到两个文件：tampermonkey_script.js 和 convert_to_markdown.html'),
         _actionBtn('分享提取工具', Icons.share, _shareFiles),
       ]),
       const SizedBox(height: 14),

@@ -95,9 +95,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
         : Theme.of(context).scaffoldBackgroundColor;
 
     // 标签栏和内容区共用的面板色
-    final panelColor = isDark
-        ? const Color(0xFF1A1B1E)
-        : Colors.white;
+    final panelColor = isDark ? const Color(0xFF1A1B1E) : Colors.white;
 
     final screenWidth = MediaQuery.sizeOf(context).width;
     final heroHeight = (screenWidth * 1.03).clamp(390.0, 480.0);
@@ -129,13 +127,11 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                     children: [
                       // 背景图
                       GestureDetector(
-                        onTap: isMe
-                            ? () => _showEditSheet(context, user)
-                            : null,
+                        onTap:
+                            isMe ? () => _showEditSheet(context, user) : null,
                         child: user.background.isNotEmpty
                             ? CachedNetworkImage(
-                                imageUrl:
-                                    ApiConstants.fullUrl(user.background),
+                                imageUrl: ApiConstants.fullUrl(user.background),
                                 fit: BoxFit.cover,
                               )
                             : Image.asset(
@@ -227,10 +223,8 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                       controller: _tabController,
                       indicatorSize: TabBarIndicatorSize.label,
                       indicatorWeight: 3,
-                      indicatorColor:
-                          Theme.of(context).colorScheme.primary,
-                      labelColor:
-                          Theme.of(context).colorScheme.primary,
+                      indicatorColor: Theme.of(context).colorScheme.primary,
+                      labelColor: Theme.of(context).colorScheme.primary,
                       unselectedLabelColor:
                           isDark ? Colors.white60 : Colors.black54,
                       labelStyle: const TextStyle(
@@ -259,8 +253,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                   : _posts.isEmpty
                       ? const Center(child: Text('暂无帖子'))
                       : ListView.builder(
-                          padding:
-                              const EdgeInsets.fromLTRB(12, 10, 12, 24),
+                          padding: const EdgeInsets.fromLTRB(12, 10, 12, 24),
                           itemCount: _posts.length,
                           itemBuilder: (context, index) {
                             return PostCard(

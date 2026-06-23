@@ -26,32 +26,37 @@ class _UserRepliesScreenState extends State<UserRepliesScreen> {
   }
 
   Future<void> _loadReplies() async {
-    if (mounted) setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
+    if (mounted)
+      setState(() {
+        _isLoading = true;
+        _errorMessage = null;
+      });
 
     try {
       final auth = context.read<AuthProvider>();
       final response = await auth.dio.get('/user/replies/received');
       if (response.statusCode == 200) {
-        final list = (response.data as List).map((e) => Reply.fromJson(e)).toList();
+        final list =
+            (response.data as List).map((e) => Reply.fromJson(e)).toList();
         list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-        if (mounted) setState(() {
-          _replies = list;
-          _isLoading = false;
-        });
+        if (mounted)
+          setState(() {
+            _replies = list;
+            _isLoading = false;
+          });
       } else {
-        if (mounted) setState(() {
-          _errorMessage = '获取失败: ${response.statusCode}';
-          _isLoading = false;
-        });
+        if (mounted)
+          setState(() {
+            _errorMessage = '获取失败: ${response.statusCode}';
+            _isLoading = false;
+          });
       }
     } catch (e) {
-      if (mounted) setState(() {
-        _errorMessage = '暂无网络或后端接口未部署\n详细信息: $e';
-        _isLoading = false;
-      });
+      if (mounted)
+        setState(() {
+          _errorMessage = '暂无网络或后端接口未部署\n详细信息: $e';
+          _isLoading = false;
+        });
     }
   }
 

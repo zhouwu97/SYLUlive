@@ -23,7 +23,8 @@ class CampusMapCard extends StatelessWidget {
           children: [
             // 缩略图区域
             ClipRRect(
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(16)),
               child: Stack(
                 children: [
                   SizedBox(
@@ -52,18 +53,23 @@ class CampusMapCard extends StatelessWidget {
                     bottom: 12,
                     right: 12,
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
                         color: Colors.black.withValues(alpha: 0.5),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: const Row(
                         children: [
-                          Icon(Icons.map_outlined, color: Colors.white, size: 14),
+                          Icon(Icons.map_outlined,
+                              color: Colors.white, size: 14),
                           SizedBox(width: 4),
                           Text(
                             '校园全景',
-                            style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                            style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold),
                           ),
                         ],
                       ),
@@ -92,7 +98,9 @@ class CampusMapCard extends StatelessWidget {
                       Icon(
                         Icons.touch_app_outlined,
                         size: 18,
-                        color: Theme.of(context).primaryColor.withValues(alpha: 0.7),
+                        color: Theme.of(context)
+                            .primaryColor
+                            .withValues(alpha: 0.7),
                       ),
                     ],
                   ),
@@ -114,12 +122,14 @@ class CampusMapCard extends StatelessWidget {
                         backgroundColor: Theme.of(context).primaryColor,
                         foregroundColor: Colors.white,
                         elevation: 0,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
                       ),
                       icon: const Icon(Icons.zoom_in_map_rounded, size: 20),
                       label: const Text(
                         '开启操控模式 (Precision Scale)',
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 14),
                       ),
                       onPressed: () => _openMapControlMode(context),
                     ),
@@ -155,11 +165,14 @@ class MapControlFullscreenOverlay extends StatefulWidget {
   const MapControlFullscreenOverlay({super.key});
 
   @override
-  State<MapControlFullscreenOverlay> createState() => _MapControlFullscreenOverlayState();
+  State<MapControlFullscreenOverlay> createState() =>
+      _MapControlFullscreenOverlayState();
 }
 
-class _MapControlFullscreenOverlayState extends State<MapControlFullscreenOverlay> {
-  final TransformationController _transformationController = TransformationController();
+class _MapControlFullscreenOverlayState
+    extends State<MapControlFullscreenOverlay> {
+  final TransformationController _transformationController =
+      TransformationController();
 
   void _zoom(double factor) {
     final Matrix4 matrix = _transformationController.value.clone();
@@ -219,7 +232,8 @@ class _MapControlFullscreenOverlayState extends State<MapControlFullscreenOverla
                   borderRadius: 50,
                   blur: 10,
                   opacity: 0.2,
-                  child: const Icon(Icons.arrow_back_ios_new, color: Colors.white, size: 20),
+                  child: const Icon(Icons.arrow_back_ios_new,
+                      color: Colors.white, size: 20),
                 ),
               ),
             ),
@@ -230,7 +244,8 @@ class _MapControlFullscreenOverlayState extends State<MapControlFullscreenOverla
               left: 16,
               right: 88,
               child: GlassContainer(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 borderRadius: 16,
                 blur: 15,
                 opacity: 0.2,
@@ -251,7 +266,10 @@ class _MapControlFullscreenOverlayState extends State<MapControlFullscreenOverla
                         const SizedBox(width: 8),
                         const Text(
                           '地图操控模式已开启',
-                          style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
+                          style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold),
                         ),
                       ],
                     ),

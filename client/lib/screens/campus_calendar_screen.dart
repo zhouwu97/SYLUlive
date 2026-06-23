@@ -93,9 +93,10 @@ class _CampusCalendarScreenState extends State<CampusCalendarScreen>
               minScale: 0.5,
               maxScale: 4.0,
               onInteractionUpdate: (details) {
-                if (mounted) setState(() {
-                  _currentScale = details.scale;
-                });
+                if (mounted)
+                  setState(() {
+                    _currentScale = details.scale;
+                  });
               },
               child: Center(
                 child: AnimatedBuilder(
@@ -179,8 +180,7 @@ class _CampusCalendarScreenState extends State<CampusCalendarScreen>
       borderRadius: 24.0,
       blur: 20,
       opacity: 0.35,
-      backgroundColor:
-          isDark ? const Color(0xFF1A1A2E) : Colors.white,
+      backgroundColor: isDark ? const Color(0xFF1A1A2E) : Colors.white,
       borderColor: isDark
           ? Colors.white.withValues(alpha: 0.1)
           : Colors.black.withValues(alpha: 0.06),
@@ -374,8 +374,7 @@ class _CampusCalendarScreenState extends State<CampusCalendarScreen>
           borderRadius: 24,
           blur: 16,
           opacity: 0.3,
-          backgroundColor:
-              isDark ? const Color(0xFF1A1A2E) : Colors.white,
+          backgroundColor: isDark ? const Color(0xFF1A1A2E) : Colors.white,
           borderColor: isDark
               ? Colors.white.withValues(alpha: 0.08)
               : Colors.black.withValues(alpha: 0.06),

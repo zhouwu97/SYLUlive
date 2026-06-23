@@ -89,14 +89,15 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
     final academicYear = now.month >= 9 ? now.year + 1 : now.year;
     final currentYearStr = academicYear.toString();
     // 服务端的 school_date 可能返回旧年份，不要直接信任
-    if (mounted) setState(() {
-      _currentYear = _yearData[currentYearStr] != null
-          ? currentYearStr  // 当前学年有数据，优先用
-          : _availableYears.firstWhere(
-              (y) => _yearData[y] != null,
-              orElse: () => currentYearStr, // 都没数据，用当前学年
-            );
-    });
+    if (mounted)
+      setState(() {
+        _currentYear = _yearData[currentYearStr] != null
+            ? currentYearStr // 当前学年有数据，优先用
+            : _availableYears.firstWhere(
+                (y) => _yearData[y] != null,
+                orElse: () => currentYearStr, // 都没数据，用当前学年
+              );
+      });
 
     // 如果选中年份没有缓存，自动拉取；优先拉取当前年份
     if (_yearData[_currentYear] == null) {
@@ -202,8 +203,10 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
               _currentYear = data['school_date'].toString();
             }
             final prefs = await SharedPreferences.getInstance();
-            await prefs.setString('sylu_physical_test_pwd_${widget.username}', widget.password);
-            debugPrint('登录成功！UserId: $_userId, Token: $_token, Year: $_currentYear');
+            await prefs.setString(
+                'sylu_physical_test_pwd_${widget.username}', widget.password);
+            debugPrint(
+                '登录成功！UserId: $_userId, Token: $_token, Year: $_currentYear');
             return true;
           } else {
             debugPrint('登录返回了数据，但未能解析到 userId');
@@ -296,8 +299,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
           final list = inner['data_arr'];
           final scores = (list is List)
               ? list
-                  .map((e) =>
-                      _GymScoreItem.fromJson(e as Map<String, dynamic>))
+                  .map((e) => _GymScoreItem.fromJson(e as Map<String, dynamic>))
                   .toList()
               : <_GymScoreItem>[];
 
@@ -326,10 +328,12 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor: isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
+      backgroundColor:
+          isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
       appBar: AppBar(
         title: const Text('体测成绩查询'),
-        backgroundColor: isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
+        backgroundColor:
+            isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
         elevation: 0,
         actions: [
           IconButton(
@@ -340,8 +344,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Icon(Icons.refresh),
-            onPressed:
-                _loadingYear ? null : () => _fetchYear(_currentYear),
+            onPressed: _loadingYear ? null : () => _fetchYear(_currentYear),
             tooltip: '刷新当前学年',
           ),
         ],
@@ -426,26 +429,28 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
             child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: Row(
-                children: _availableYears.map(
-                  (y) => Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: ChoiceChip(
-                      label: Text('$y - ${int.parse(y) + 1}'),
-                      selected: _currentYear == y,
-                      selectedColor: const Color(0xFF6366F1),
-                      labelStyle: TextStyle(
-                        color: _currentYear == y ? Colors.white : null,
-                        fontWeight: FontWeight.w600,
+                children: _availableYears
+                    .map(
+                      (y) => Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: ChoiceChip(
+                          label: Text('$y - ${int.parse(y) + 1}'),
+                          selected: _currentYear == y,
+                          selectedColor: const Color(0xFF6366F1),
+                          labelStyle: TextStyle(
+                            color: _currentYear == y ? Colors.white : null,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          onSelected: (_) {
+                            if (mounted) setState(() => _currentYear = y);
+                            if (_yearData[y] == null) {
+                              _fetchYear(y);
+                            }
+                          },
+                        ),
                       ),
-                      onSelected: (_) {
-                        if (mounted) setState(() => _currentYear = y);
-                        if (_yearData[y] == null) {
-                          _fetchYear(y);
-                        }
-                      },
-                    ),
-                  ),
-                ).toList(),
+                    )
+                    .toList(),
               ),
             ),
           ),
@@ -464,8 +469,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
           children: [
             Row(
               children: [
-                const Icon(Icons.qr_code_2,
-                    size: 20, color: Color(0xFF6366F1)),
+                const Icon(Icons.qr_code_2, size: 20, color: Color(0xFF6366F1)),
                 const SizedBox(width: 10),
                 const Text('体测身份码',
                     style:
@@ -483,8 +487,8 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(10),
                 ),
-            child: QrImageView(
-              data: _testCode.isNotEmpty ? _testCode : widget.username,
+                child: QrImageView(
+                  data: _testCode.isNotEmpty ? _testCode : widget.username,
                   version: QrVersions.auto,
                   size: 160,
                   backgroundColor: Colors.white,
@@ -534,8 +538,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
           Expanded(
             child: Text(
               '总评：${data.totalGrade}  |  ${data.totalScore}分',
-              style:
-                  const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
             ),
           ),
           GestureDetector(
@@ -582,15 +585,13 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
                       style: TextStyle(
                           fontSize: 22,
                           fontWeight: FontWeight.bold,
-                          color: isDark
-                              ? Colors.white
-                              : const Color(0xFF1A1A2E))),
+                          color:
+                              isDark ? Colors.white : const Color(0xFF1A1A2E))),
                 ],
               ),
             ),
             Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
               decoration: BoxDecoration(
                 color: statusColor.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(16),

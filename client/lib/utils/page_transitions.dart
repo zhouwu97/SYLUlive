@@ -68,7 +68,7 @@ class _SlideFadeTransition extends StatelessWidget {
     // Navigator 会在手势返回时自动渲染前一页在下方，当前页滑出即可
     return SlideTransition(
       position: Tween<Offset>(
-        begin: const Offset(0.3, 0),  // 从右侧 30% 处滑入
+        begin: const Offset(0.3, 0), // 从右侧 30% 处滑入
         end: Offset.zero,
       ).animate(CurvedAnimation(
         parent: animation,
@@ -128,8 +128,8 @@ class AppPageTransitionsBuilder extends PageTransitionsBuilder {
     Widget child,
   ) {
     if (Theme.of(context).platform == TargetPlatform.iOS) {
-      return const CupertinoPageTransitionsBuilder()
-          .buildTransitions(route, context, animation, secondaryAnimation, child);
+      return const CupertinoPageTransitionsBuilder().buildTransitions(
+          route, context, animation, secondaryAnimation, child);
     }
     return child;
   }

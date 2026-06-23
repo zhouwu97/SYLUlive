@@ -26,7 +26,9 @@ class Announcement {
       content: json['content'] ?? '',
       authorId: json['author_id'] ?? 0,
       createdAt: DateTime.tryParse(json['created_at'] ?? '') ?? DateTime.now(),
-      updatedAt: json['updated_at'] != null ? DateTime.tryParse(json['updated_at']) : null,
+      updatedAt: json['updated_at'] != null
+          ? DateTime.tryParse(json['updated_at'])
+          : null,
       isPinned: json['is_pinned'] ?? false,
       priority: json['priority'] ?? 0,
     );

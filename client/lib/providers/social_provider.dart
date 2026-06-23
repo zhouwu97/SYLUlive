@@ -31,9 +31,11 @@ class SocialProvider extends ChangeNotifier {
     }
   }
 
-  Future<Map<String, dynamic>> getFollowers(int userId, {int page = 1, int limit = 20}) async {
+  Future<Map<String, dynamic>> getFollowers(int userId,
+      {int page = 1, int limit = 20}) async {
     try {
-      final response = await _dio.get('/user/$userId/followers', queryParameters: {
+      final response =
+          await _dio.get('/user/$userId/followers', queryParameters: {
         'page': page,
         'limit': limit,
       });
@@ -44,9 +46,11 @@ class SocialProvider extends ChangeNotifier {
     }
   }
 
-  Future<Map<String, dynamic>> getFollowing(int userId, {int page = 1, int limit = 20}) async {
+  Future<Map<String, dynamic>> getFollowing(int userId,
+      {int page = 1, int limit = 20}) async {
     try {
-      final response = await _dio.get('/user/$userId/following', queryParameters: {
+      final response =
+          await _dio.get('/user/$userId/following', queryParameters: {
         'page': page,
         'limit': limit,
       });
@@ -73,7 +77,8 @@ class SocialProvider extends ChangeNotifier {
     }
   }
 
-  Future<List<Post>> getUserPosts(int userId, {int page = 1, int limit = 20}) async {
+  Future<List<Post>> getUserPosts(int userId,
+      {int page = 1, int limit = 20}) async {
     try {
       final response = await _dio.get('/user/$userId/posts', queryParameters: {
         'page': page,

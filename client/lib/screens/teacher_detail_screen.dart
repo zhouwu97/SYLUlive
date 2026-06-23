@@ -47,7 +47,9 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
         title: const Text('确认删除'),
         content: Text('确定要删除教师「${widget.teacherName}」吗？此操作不可撤销。'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('取消')),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
@@ -62,12 +64,14 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
       final dio = context.read<AuthProvider>().dio;
       await dio.delete('/teachers/${widget.teacherId}/reject');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('教师已删除')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('教师已删除')));
         Navigator.pop(context, true);
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('删除失败: $e')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('删除失败: $e')));
       }
     }
   }
@@ -84,7 +88,8 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
         Navigator.pop(context, _didChange);
       },
       child: Scaffold(
-        backgroundColor: isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
+        backgroundColor:
+            isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
         extendBodyBehindAppBar: false, // 修复重叠：不再将 body 延伸到 AppBar 后方
         appBar: AppBar(
           systemOverlayStyle: SystemUiOverlayStyle(
@@ -118,52 +123,59 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
           ],
         ),
         body: Consumer<TeacherProvider>(
-              builder: (context, provider, _) {
-                if (provider.isLoading) {
-                  return const Center(child: CircularProgressIndicator());
-                }
+          builder: (context, provider, _) {
+            if (provider.isLoading) {
+              return const Center(child: CircularProgressIndicator());
+            }
 
-                final teacher = provider.selectedTeacher;
-                if (teacher == null) return const Center(child: Text('加载失败'));
+            final teacher = provider.selectedTeacher;
+            if (teacher == null) return const Center(child: Text('加载失败'));
 
-                return ListView(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 80), // 顶部边距设为 0
-                  children: [
-                    _buildHeader(teacher, provider, isDark),
-                    const SizedBox(height: 16),
-                    _buildMyRating(provider, isDark),
-                    const SizedBox(height: 20),
-                    if (provider.ratings.isNotEmpty) ...[
-                      Text('${provider.ratingCount}人评价', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: isDark ? Colors.white : Colors.black87)),
-                      const SizedBox(height: 8),
-                      GlassContainer(
-                        padding: const EdgeInsets.all(12),
-                        borderRadius: 12,
-                        blur: 10,
-                        opacity: 0.1,
-                        backgroundColor: isDark ? const Color(0x99171B24) : const Color(0xCCFFFFFF),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Icon(Icons.warning_amber_rounded, color: Colors.orange[700], size: 20),
-                            const SizedBox(width: 8),
-                            const Expanded(
-                              child: Text(
-                                '禁止对老师造成人格侮辱，只准对课堂行为评价。',
-                                style: TextStyle(fontSize: 13, color: Colors.grey),
-                              ),
-                            ),
-                          ],
+            return ListView(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 80), // 顶部边距设为 0
+              children: [
+                _buildHeader(teacher, provider, isDark),
+                const SizedBox(height: 16),
+                _buildMyRating(provider, isDark),
+                const SizedBox(height: 20),
+                if (provider.ratings.isNotEmpty) ...[
+                  Text('${provider.ratingCount}人评价',
+                      style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: isDark ? Colors.white : Colors.black87)),
+                  const SizedBox(height: 8),
+                  GlassContainer(
+                    padding: const EdgeInsets.all(12),
+                    borderRadius: 12,
+                    blur: 10,
+                    opacity: 0.1,
+                    backgroundColor: isDark
+                        ? const Color(0x99171B24)
+                        : const Color(0xCCFFFFFF),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.warning_amber_rounded,
+                            color: Colors.orange[700], size: 20),
+                        const SizedBox(width: 8),
+                        const Expanded(
+                          child: Text(
+                            '禁止对老师造成人格侮辱，只准对课堂行为评价。',
+                            style: TextStyle(fontSize: 13, color: Colors.grey),
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 12),
-                      ...provider.ratings.map((r) => _buildRatingCard(r, isDark)),
-                    ],
-                    const SizedBox(height: 80),
-                  ],
-                );
-              },
-            ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  ...provider.ratings.map((r) => _buildRatingCard(r, isDark)),
+                ],
+                const SizedBox(height: 80),
+              ],
+            );
+          },
+        ),
       ),
     );
   }
@@ -244,11 +256,12 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
               if (provider.myRating != null && !_isEditing)
                 TextButton(
                     onPressed: () {
-                      if (mounted) setState(() {
-                        _isEditing = true;
-                        _star = provider.myRating!.star;
-                        _commentCtrl.text = provider.myRating!.comment;
-                      });
+                      if (mounted)
+                        setState(() {
+                          _isEditing = true;
+                          _star = provider.myRating!.star;
+                          _commentCtrl.text = provider.myRating!.comment;
+                        });
                     },
                     child: const Text('修改')),
             ]),
@@ -281,10 +294,15 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
                     borderSide: BorderSide.none,
                   ),
                   filled: true,
-                  fillColor: isDark ? const Color(0x33FFFFFF) : const Color(0x0A000000),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                  fillColor: isDark
+                      ? const Color(0x33FFFFFF)
+                      : const Color(0x0A000000),
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                 ),
-                style: TextStyle(fontSize: 14, color: isDark ? Colors.white : Colors.black87),
+                style: TextStyle(
+                    fontSize: 14,
+                    color: isDark ? Colors.white : Colors.black87),
               ),
               const SizedBox(height: 12),
               // 提交按钮
@@ -299,7 +317,9 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
                       ? null
                       : () async {
                           final ok = await provider.rateTeacher(
-                              widget.teacherId, _star, _commentCtrl.text.trim());
+                              widget.teacherId,
+                              _star,
+                              _commentCtrl.text.trim());
                           if (ok && mounted) {
                             _didChange = true;
                             if (mounted) setState(() => _isEditing = false);
@@ -320,8 +340,6 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
     );
   }
 
-
-
   Widget _buildRatingCard(TeacherRating r, bool isDark) {
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
@@ -331,13 +349,25 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
         padding: const EdgeInsets.all(12),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [
-            CircleAvatar(radius: 14, backgroundColor: const Color(0xFF6366F1), child: Text(r.userName.isNotEmpty ? r.userName[0] : '?', style: const TextStyle(color: Colors.white, fontSize: 12))),
+            CircleAvatar(
+                radius: 14,
+                backgroundColor: const Color(0xFF6366F1),
+                child: Text(r.userName.isNotEmpty ? r.userName[0] : '?',
+                    style: const TextStyle(color: Colors.white, fontSize: 12))),
             const SizedBox(width: 8),
-            Expanded(child: Text(r.userName.isNotEmpty ? r.userName : '匿名', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14))),
+            Expanded(
+                child: Text(r.userName.isNotEmpty ? r.userName : '匿名',
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w600, fontSize: 14))),
             _buildStarRowSmall(r.star.toDouble()),
           ]),
           if (r.comment.isNotEmpty)
-            Padding(padding: const EdgeInsets.only(top: 6), child: Text(r.comment, style: TextStyle(color: isDark ? Colors.grey[300] : Colors.grey[700], fontSize: 14))),
+            Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text(r.comment,
+                    style: TextStyle(
+                        color: isDark ? Colors.grey[300] : Colors.grey[700],
+                        fontSize: 14))),
         ]),
       ),
     );

@@ -196,6 +196,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         Future.delayed(const Duration(milliseconds: 100), () {
           if (mounted) _scheduleScrollToTarget(targetId, retries - 1);
         });
+      } else {
+        _hasScrolledToTarget = true;
+        debugPrint('目标回复未进入组件树: $targetId');
+        return;
       }
     });
   }
@@ -1537,10 +1541,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   Widget _buildMainReply(Reply r, bool isDark) {
     final currentUser = context.read<AuthProvider>().user;
     final isOwn = currentUser?.id == r.authorId;
-    return _buildHighlightWrapper(
-      r,
-      isDark,
-      GestureDetector(
+    return _buildReplyAnchor(
+      reply: r,
+      isDark: isDark,
+      child: GestureDetector(
         onTap: () => _openReplyComposer(
           parentReplyId: r.id,
           replyToName: r.author?.nickname,
@@ -1654,10 +1658,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final threadParentId = _findTopLevelParentId(r);
     final currentUser = context.read<AuthProvider>().user;
     final isOwn = currentUser?.id == r.authorId;
-    return _buildHighlightWrapper(
-      r,
-      isDark,
-      GestureDetector(
+    return _buildReplyAnchor(
+      reply: r,
+      isDark: isDark,
+      child: GestureDetector(
         onTap: () => _openReplyComposer(
           parentReplyId: threadParentId,
           replyToName: r.author?.nickname,
@@ -1734,16 +1738,29 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
-  Widget _buildHighlightWrapper(Reply r, bool isDark, Widget child) {
-    _replyKeys[r.id] ??= GlobalKey();
-    final isHighlighted = _highlightedReplyId == r.id;
+  Widget _buildReplyAnchor({
+    required Reply reply,
+    required Widget child,
+    required bool isDark,
+  }) {
+    final replyKey = _replyKeys.putIfAbsent(
+      reply.id,
+      GlobalKey.new,
+    );
+    final isHighlighted = _highlightedReplyId == reply.id;
 
     return AnimatedContainer(
-      key: _replyKeys[r.id],
-      duration: const Duration(seconds: 1),
-      color: isHighlighted
-          ? Theme.of(context).primaryColor.withValues(alpha: 0.3)
-          : Colors.transparent,
+      key: replyKey,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOut,
+      decoration: BoxDecoration(
+        color: isHighlighted
+            ? Colors.amber.withValues(
+                alpha: isDark ? 0.22 : 0.16,
+              )
+            : Colors.transparent,
+        borderRadius: BorderRadius.circular(12),
+      ),
       child: child,
     );
   }

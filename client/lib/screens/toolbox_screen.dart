@@ -42,102 +42,225 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
         backgroundColor: Colors.transparent,
         extendBodyBehindAppBar: true,
         appBar: AppBar(
-          title: const Text('工具箱'),
-          actions: [],
+          centerTitle: false,
+          foregroundColor: Colors.white,
           backgroundColor: Colors.transparent,
           elevation: 0,
-          iconTheme: const IconThemeData(color: Colors.white),
+          title: const Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '工具箱',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                  shadows: [
+                    Shadow(
+                      color: Colors.black45,
+                      blurRadius: 8,
+                    ),
+                  ],
+                ),
+              ),
+              Text(
+                '学习、查询与校园工具',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w400,
+                  color: Colors.white70,
+                ),
+              ),
+            ],
+          ),
+          actions: [],
         ),
         body: SafeArea(
           child: Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 1000),
-              child: GridView.extent(
-                padding: const EdgeInsets.all(20),
-                maxCrossAxisExtent: 130, // 手机上正好排3列，Pad上排更多列，防止卡片变巨无霸
-                childAspectRatio: 0.85,
-                mainAxisSpacing: 16,
-                crossAxisSpacing: 16,
-                children: [
-                  _buildToolCard(
-                    context,
-                    icon: Icons.school_outlined,
-                    color: Colors.green,
-                    title: '二课分查询',
-                    subtitle: '支持 WebVPN 穿透',
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const ErkeScoreScreen(),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  int crossAxisCount = 1;
+                  if (constraints.maxWidth >= 900) {
+                    crossAxisCount = 4;
+                  } else if (constraints.maxWidth >= 600) {
+                    crossAxisCount = 3;
+                  } else if (constraints.maxWidth >= 380) {
+                    crossAxisCount = 2;
+                  } else {
+                    crossAxisCount = 1;
+                  }
+
+                  return ListView(
+                    padding: const EdgeInsets.all(20),
+                    children: [
+                      _buildSectionTitle('常用工具', isDark),
+                      const SizedBox(height: 12),
+                      GridView(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        padding: EdgeInsets.zero,
+                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: crossAxisCount,
+                          mainAxisExtent: crossAxisCount == 1 ? 82 : 88,
+                          mainAxisSpacing: 12,
+                          crossAxisSpacing: 12,
+                        ),
+                        children: [
+                          _buildToolCard(
+                            context,
+                            icon: Icons.school_outlined,
+                            color: Colors.green,
+                            title: '二课分查询',
+                            subtitle: '支持 WebVPN 穿透',
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const ErkeScoreScreen(),
+                              ),
+                            ),
+                          ),
+                          _buildToolCard(
+                            context,
+                            icon: Icons.school,
+                            color: Colors.blueAccent,
+                            title: '雨课堂',
+                            subtitle: '测验与课件',
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const YuketangClassScreen(),
+                              ),
+                            ),
+                          ),
+                          _buildToolCard(
+                            context,
+                            icon: Icons.fitness_center,
+                            color: Colors.orange,
+                            title: '体测成绩',
+                            subtitle: '扫码核验 / 查询',
+                            onTap: () => _openPhysicalTest(context),
+                          ),
+                          _buildToolCard(
+                            context,
+                            icon: Icons.event_note,
+                            color: Colors.deepPurpleAccent,
+                            title: '考试日程',
+                            subtitle: 'AI一键提取',
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const ExamScheduleScreen(),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
-                  ),
-                  _buildToolCard(
-                    context,
-                    icon: Icons.school,
-                    color: Colors.blueAccent,
-                    title: '雨课堂',
-                    subtitle: '测验与课件',
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const YuketangClassScreen(),
+                      const SizedBox(height: 24),
+                      _buildSectionTitle('校园与娱乐', isDark),
+                      const SizedBox(height: 12),
+                      GridView(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        padding: EdgeInsets.zero,
+                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: crossAxisCount,
+                          mainAxisExtent: crossAxisCount == 1 ? 82 : 88,
+                          mainAxisSpacing: 12,
+                          crossAxisSpacing: 12,
+                        ),
+                        children: [
+                          _buildToolCard(
+                            context,
+                            icon: Icons.sports_esports,
+                            color: const Color(0xFF00BCD4),
+                            title: '云原神',
+                            subtitle: '点击即玩',
+                            onTap: () => _launchCloudGenshin(context),
+                          ),
+                          _buildToolCard(
+                            context,
+                            icon: Icons.card_giftcard,
+                            color: const Color(0xFFE91E63),
+                            title: '抽奖活动',
+                            subtitle: '公平福利派送',
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (_) => const LotteryScreen()),
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
-                  ),
-                  _buildToolCard(
-                    context,
-                    icon: Icons.fitness_center,
-                    color: Colors.orange,
-                    title: '体测成绩',
-                    subtitle: '扫码核验 / 查询',
-                    onTap: () => _openPhysicalTest(context),
-                  ),
-                  _buildToolCard(
-                    context,
-                    icon: Icons.sports_esports,
-                    color: const Color(0xFF00BCD4),
-                    title: '云原神',
-                    subtitle: '点击即玩',
-                    onTap: () => _launchCloudGenshin(context),
-                  ),
-                  _buildToolCard(
-                    context,
-                    icon: Icons.card_giftcard,
-                    color: const Color(0xFFE91E63),
-                    title: '抽奖活动',
-                    subtitle: '公平福利派送',
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const LotteryScreen()),
-                    ),
-                  ),
-                  _buildToolCard(
-                    context,
-                    icon: Icons.event_note,
-                    color: Colors.deepPurpleAccent,
-                    title: '考试日程',
-                    subtitle: 'AI一键提取',
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const ExamScheduleScreen(),
-                      ),
-                    ),
-                  ),
-                  _buildToolCard(
-                    context,
-                    icon: Icons.auto_stories_outlined,
-                    color: Colors.blue,
-                    title: '更多工具',
-                    subtitle: '敬请期待',
-                    onTap: () {},
-                  ),
-                ],
+                      const SizedBox(height: 24),
+                      _buildMoreToolsCard(isDark),
+                    ],
+                  );
+                },
               ),
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildSectionTitle(String title, bool isDark) {
+    return Text(
+      title,
+      style: TextStyle(
+        fontSize: 14,
+        fontWeight: FontWeight.w600,
+        color: isDark ? Colors.white70 : const Color(0xFF475569),
+        shadows: isDark
+            ? [
+                const Shadow(color: Colors.black54, blurRadius: 4),
+              ]
+            : null,
+      ),
+    );
+  }
+
+  Widget _buildMoreToolsCard(bool isDark) {
+    return GlassContainer(
+      backgroundColor: isDark
+          ? Colors.black.withValues(alpha: 0.42)
+          : Colors.white.withValues(alpha: 0.76),
+      borderColor: Colors.white.withValues(alpha: 0.55),
+      borderWidth: 0.8,
+      blur: 16,
+      borderRadius: 16,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: Colors.blue.withValues(alpha: 0.18),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(Icons.auto_stories_outlined, color: Colors.blue, size: 20),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              '更多工具',
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                fontSize: 15,
+                color: isDark ? Colors.white : const Color(0xFF1E293B),
+              ),
+            ),
+          ),
+          Text(
+            '敬请期待',
+            style: TextStyle(
+              fontSize: 12,
+              color: isDark ? Colors.white60 : const Color(0xFF64748B),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -234,16 +357,16 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                   errorBuilder: (_, __, ___) => _buildDefaultBg(isDark),
                 )
               : bgPath.startsWith('/')
-              ? Image.file(
-                  File(bgPath),
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => _buildDefaultBg(isDark),
-                )
-              : Image.network(
-                  bgPath,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => _buildDefaultBg(isDark),
-                ),
+                  ? Image.file(
+                      File(bgPath),
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => _buildDefaultBg(isDark),
+                    )
+                  : Image.network(
+                      bgPath,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => _buildDefaultBg(isDark),
+                    ),
           Container(
             color: isDark
                 ? Colors.black.withValues(alpha: 0.35)
@@ -291,46 +414,55 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
       child: GlassContainer(
         width: double.infinity,
         height: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
-        borderRadius: 20,
-        borderColor: is520 ? const Color(0x668BE197) : null,
-        backgroundColor: is520
-            ? (isDark
-                  ? Colors.black.withValues(alpha: 0.3)
-                  : Colors.white.withValues(alpha: 0.5))
-            : null,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        borderRadius: 16,
+        borderWidth: 0.8,
+        borderColor: Colors.white.withValues(alpha: 0.55),
+        backgroundColor: isDark
+            ? Colors.black.withValues(alpha: 0.42)
+            : Colors.white.withValues(alpha: 0.76),
+        blur: 16,
         child: SizedBox.expand(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.center,
+          child: Row(
             children: [
               Container(
-                padding: const EdgeInsets.all(10),
+                width: 42,
+                height: 42,
                 decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.12),
+                  color: color.withValues(alpha: 0.18),
                   borderRadius: BorderRadius.circular(14),
                 ),
-                child: Icon(icon, color: color, size: 28),
+                child: Icon(icon, color: color, size: 22),
               ),
-              const SizedBox(height: 10),
-              Text(
-                title,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 13,
-                  color: isDark ? Colors.white : const Color(0xFF1E293B),
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                subtitle,
-                textAlign: TextAlign.center,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 10,
-                  color: isDark ? Colors.white60 : const Color(0xFF64748B),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 14,
+                        color: isDark ? Colors.white : const Color(0xFF1E293B),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w400,
+                        color:
+                            isDark ? Colors.white60 : const Color(0xFF64748B),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
@@ -413,9 +545,8 @@ class _PhysicalTestGateState extends State<_PhysicalTestGate> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor: isDark
-          ? const Color(0xFF131720)
-          : const Color(0xFFF4F6FB),
+      backgroundColor:
+          isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
       appBar: AppBar(
         title: const Text('体测成绩查询'),
         backgroundColor: Colors.transparent,

@@ -35,17 +35,16 @@ class HomeServiceDrawer extends StatelessWidget {
     final screenWidth = MediaQuery.sizeOf(context).width;
     final drawerWidth = (screenWidth * 0.8).clamp(0.0, 360.0);
 
-    return SizedBox(
+    return Container(
       width: drawerWidth,
-      child: Drawer(
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.only(
-            topRight: Radius.circular(24),
-            bottomRight: Radius.circular(24),
-          ),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF181D28) : Colors.white,
+        borderRadius: const BorderRadius.only(
+          topRight: Radius.circular(24),
+          bottomRight: Radius.circular(24),
         ),
-        backgroundColor: isDark ? const Color(0xFF181D28) : Colors.white,
-        child: SafeArea(
+      ),
+      child: SafeArea(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -70,8 +69,7 @@ class HomeServiceDrawer extends StatelessWidget {
             ],
           ),
         ),
-      ),
-    );
+      );
   }
 
   // ---- 标题区域 ----
@@ -103,13 +101,6 @@ class HomeServiceDrawer extends StatelessWidget {
               ],
             ),
           ),
-          IconButton(
-            onPressed: () => Navigator.of(context).pop(),
-            icon: Icon(
-              Icons.close_rounded,
-              color: isDark ? Colors.white60 : Colors.black54,
-            ),
-          ),
         ],
       ),
     );
@@ -138,7 +129,7 @@ class HomeServiceDrawer extends StatelessWidget {
             title: '失物招领',
             subtitle: '查看线索',
             isDark: isDark,
-            onTap: () => _closeDrawerThen(context, onOpenLostFound),
+            onTap: onOpenLostFound,
           ),
         ),
         const SizedBox(width: 10),
@@ -149,7 +140,7 @@ class HomeServiceDrawer extends StatelessWidget {
             title: '工具箱',
             subtitle: '快捷小工具',
             isDark: isDark,
-            onTap: () => _closeDrawerThen(context, onOpenToolbox),
+            onTap: onOpenToolbox,
           ),
         ),
       ],
@@ -162,7 +153,7 @@ class HomeServiceDrawer extends StatelessWidget {
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: () => _closeDrawerThen(context, onOpenAnnouncements),
+        onTap: onOpenAnnouncements,
         borderRadius: BorderRadius.circular(16),
         child: Container(
           width: double.infinity,
@@ -281,7 +272,7 @@ class HomeServiceDrawer extends StatelessWidget {
           title: '考试安排',
           subtitle: 'AI 一键提取',
           isDark: isDark,
-          onTap: () => _closeDrawerThen(context, onOpenExamSchedule),
+          onTap: onOpenExamSchedule,
         ),
         const SizedBox(height: 8),
         _ServiceRow(
@@ -290,18 +281,10 @@ class HomeServiceDrawer extends StatelessWidget {
           title: '意见反馈',
           subtitle: 'Bug 报告与功能建议',
           isDark: isDark,
-          onTap: () => _closeDrawerThen(context, onOpenFeedback),
+          onTap: onOpenFeedback,
         ),
       ],
     );
-  }
-
-  /// 先关闭抽屉，再在下一帧执行操作，避免 context 冲突。
-  void _closeDrawerThen(BuildContext context, VoidCallback action) {
-    Navigator.of(context).pop();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      action();
-    });
   }
 }
 

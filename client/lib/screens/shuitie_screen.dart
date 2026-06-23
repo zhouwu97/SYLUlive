@@ -91,8 +91,6 @@ class ShuitieScreen extends StatefulWidget {
 
 class _ShuitieScreenState extends State<ShuitieScreen>
     with TickerProviderStateMixin, WidgetsBindingObserver {
-  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
-
   late final Map<String, ScrollController> _feedScrollControllers;
 
   ScrollController get _currentFeedScrollController {
@@ -582,6 +580,112 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     );
   }
 
+  Future<void> _openHomeServicePanel() async {
+    await _ensureCheckinStatusLoaded();
+    if (!mounted) return;
+
+    await showGeneralDialog(
+      context: context,
+      useRootNavigator: true,
+      barrierDismissible: true,
+      barrierLabel: '关闭校园服务',
+      barrierColor: Colors.black.withValues(alpha: 0.35),
+      transitionDuration: const Duration(milliseconds: 230),
+      pageBuilder: (dialogContext, __, ___) {
+        final width = MediaQuery.sizeOf(dialogContext).width;
+
+        return Align(
+          alignment: Alignment.centerLeft,
+          child: Material(
+            color: Colors.transparent,
+            child: SizedBox(
+              width: (width * 0.86).clamp(0.0, 390.0),
+              height: double.infinity,
+              child: HomeServiceDrawer(
+                checkedIn: _checkedIn,
+                streakDays: _streakDays,
+                checkInLoading: _checkInLoading,
+                announcements: _announcements,
+                onCheckIn: () {
+                  _closePanelThenOpen(dialogContext, _doCheckIn);
+                },
+                onOpenLostFound: () {
+                  _closePanelThenOpen(dialogContext, () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const MarketScreen(
+                          onlyPostTypes: ['lost', 'found'],
+                          titleOverride: '失物招领',
+                        ),
+                      ),
+                    );
+                  });
+                },
+                onOpenToolbox: () {
+                  _closePanelThenOpen(dialogContext, () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const ToolboxScreen()),
+                    );
+                  });
+                },
+                onOpenAnnouncements: () {
+                  _closePanelThenOpen(dialogContext, () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const AnnouncementScreen()),
+                    );
+                  });
+                },
+                onOpenExamSchedule: () {
+                  _closePanelThenOpen(dialogContext, () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const ExamScheduleScreen()),
+                    );
+                  });
+                },
+                onOpenFeedback: () {
+                  _closePanelThenOpen(dialogContext, () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const FeedbackScreen()),
+                    );
+                  });
+                },
+              ),
+            ),
+          ),
+        );
+      },
+      transitionBuilder: (_, animation, __, child) {
+        return SlideTransition(
+          position: Tween(
+            begin: const Offset(-1, 0),
+            end: Offset.zero,
+          ).animate(CurvedAnimation(
+            parent: animation,
+            curve: Curves.easeOutCubic,
+          )),
+          child: FadeTransition(
+            opacity: animation,
+            child: child,
+          ),
+        );
+      },
+    );
+  }
+
+  void _closePanelThenOpen(BuildContext dialogContext, VoidCallback openPage) {
+    Navigator.of(dialogContext, rootNavigator: true).pop();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) openPage();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -612,46 +716,8 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     final useDesktopShell = ResponsiveUtil.useDesktopShell(context);
 
     return Scaffold(
-      key: _scaffoldKey,
       backgroundColor: Colors.transparent,
       extendBodyBehindAppBar: true,
-      onDrawerChanged: (isOpened) {
-        if (isOpened) {
-          unawaited(_ensureCheckinStatusLoaded());
-        }
-      },
-      drawer: HomeServiceDrawer(
-        checkedIn: _checkedIn,
-        streakDays: _streakDays,
-        checkInLoading: _checkInLoading,
-        announcements: _announcements,
-        onCheckIn: _doCheckIn,
-        onOpenLostFound: () => Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => const MarketScreen(
-              onlyPostTypes: ['lost', 'found'],
-              titleOverride: '失物招领',
-            ),
-          ),
-        ),
-        onOpenToolbox: () => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const ToolboxScreen()),
-        ),
-        onOpenAnnouncements: () => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const AnnouncementScreen()),
-        ),
-        onOpenExamSchedule: () => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const ExamScheduleScreen()),
-        ),
-        onOpenFeedback: () => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const FeedbackScreen()),
-        ),
-      ),
       body: Stack(
         children: [
           useDesktopShell
@@ -842,7 +908,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
               width: 44,
               height: 44,
               child: IconButton(
-                onPressed: () => _scaffoldKey.currentState?.openDrawer(),
+                onPressed: _openHomeServicePanel,
                 icon: Icon(
                   Icons.menu_rounded,
                   size: 26,

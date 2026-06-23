@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:dio/dio.dart';
@@ -62,6 +63,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   final Map<int, GlobalKey> _replyKeys = {};
   bool _hasScrolledToTarget = false;
+  int? _highlightedReplyId;
+  Timer? _highlightTimer;
 
   @override
   void initState() {
@@ -78,6 +81,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   void dispose() {
     _replyController.dispose();
     _replyFocus.dispose();
+    _highlightTimer?.cancel();
     super.dispose();
   }
 
@@ -125,18 +129,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         context.read<PostProvider>().updatePostInCache(_post!);
       }
       if (widget.targetReplyId != null && !_hasScrolledToTarget) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          final key = _replyKeys[widget.targetReplyId];
-          if (key != null && key.currentContext != null) {
-            Scrollable.ensureVisible(
-              key.currentContext!,
-              duration: const Duration(milliseconds: 500),
-              curve: Curves.easeInOut,
-              alignment: 0.5,
-            );
-            _hasScrolledToTarget = true;
-          }
-        });
+        _prepareTargetReplyAndScroll();
       }
     } on DioException catch (e) {
       final msg = AppFeedback.dioErrorMessage(e, fallback: '加载帖子失败');
@@ -152,6 +145,59 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           _errorMessage = '加载失败: $e';
         });
     }
+  }
+
+  void _prepareTargetReplyAndScroll() {
+    if (widget.targetReplyId == null) return;
+    
+    // 寻找目标回复
+    final targetReply = _replies.where((r) => r.id == widget.targetReplyId).firstOrNull;
+    if (targetReply == null) return;
+
+    // 如果目标是子回复，强制展开它的父级楼中楼
+    if (targetReply.parentReplyId != null) {
+      _expandedThreads.add(targetReply.parentReplyId!);
+    }
+
+    setState(() {}); // 触发重新渲染，确保子组件挂载
+
+    _scheduleScrollToTarget(widget.targetReplyId!, 3);
+  }
+
+  void _scheduleScrollToTarget(int targetId, int retries) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+
+      final key = _replyKeys[targetId];
+      final context = key?.currentContext;
+
+      if (context != null) {
+        Scrollable.ensureVisible(
+          context,
+          duration: const Duration(milliseconds: 500),
+          curve: Curves.easeInOut,
+          alignment: 0.5,
+        );
+        setState(() {
+          _hasScrolledToTarget = true;
+          _highlightedReplyId = targetId;
+        });
+
+        _highlightTimer?.cancel();
+        _highlightTimer = Timer(const Duration(seconds: 3), () {
+          if (mounted) {
+            setState(() {
+              _highlightedReplyId = null;
+            });
+          }
+        });
+      } else if (retries > 0) {
+        // 重试机制，防止第一帧还没算完布局
+        Future.delayed(const Duration(milliseconds: 100), () {
+          if (mounted) _scheduleScrollToTarget(targetId, retries - 1);
+        });
+      }
+    });
   }
 
   Future<void> _toggleLike() async {
@@ -1689,23 +1735,16 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   Widget _buildHighlightWrapper(Reply r, bool isDark, Widget child) {
-    final key = _replyKeys.putIfAbsent(r.id, () => GlobalKey());
-    final isTarget = widget.targetReplyId == r.id;
-    return KeyedSubtree(
-      key: key,
-      child: isTarget
-          ? TweenAnimationBuilder<Color?>(
-              tween: ColorTween(
-                begin: Theme.of(context).primaryColor.withValues(alpha: 0.3),
-                end: Colors.transparent,
-              ),
-              duration: const Duration(milliseconds: 1500),
-              builder: (context, color, child) {
-                return Container(color: color, child: child);
-              },
-              child: child,
-            )
-          : child,
+    _replyKeys[r.id] ??= GlobalKey();
+    final isHighlighted = _highlightedReplyId == r.id;
+
+    return AnimatedContainer(
+      key: _replyKeys[r.id],
+      duration: const Duration(seconds: 1),
+      color: isHighlighted
+          ? Theme.of(context).primaryColor.withValues(alpha: 0.3)
+          : Colors.transparent,
+      child: child,
     );
   }
 

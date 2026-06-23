@@ -179,15 +179,13 @@ class ErkeYearlySummary {
     required this.categories,
   });
 
-  double get percentage =>
-      requiredTotal > 0
-          ? (yearEarnedTotal / requiredTotal * 100).clamp(0, 100)
-          : 0;
+  double get percentage => requiredTotal > 0
+      ? (yearEarnedTotal / requiredTotal * 100).clamp(0, 100)
+      : 0;
 
   factory ErkeYearlySummary.fromJson(Map<String, dynamic> json) {
     final cats = (json['categories'] as List<dynamic>?)
-            ?.map(
-                (e) => ErkeYearlyCategory.fromJson(e as Map<String, dynamic>))
+            ?.map((e) => ErkeYearlyCategory.fromJson(e as Map<String, dynamic>))
             .toList() ??
         [];
     final years = (json['availableYears'] as List<dynamic>?)
@@ -225,6 +223,7 @@ class ErkeSnapshot {
   final ErkeYearlySummary? yearly;
   final Map<String, ErkeYearlySummary> yearlyByYear;
   final List<ErkeActivity> activities;
+  final Map<String, List<ErkeActivity>> activitiesByYear;
   final DateTime? fetchedAt;
 
   const ErkeSnapshot({
@@ -232,6 +231,7 @@ class ErkeSnapshot {
     this.yearly,
     this.yearlyByYear = const {},
     this.activities = const [],
+    this.activitiesByYear = const {},
     this.fetchedAt,
   });
 
@@ -250,17 +250,27 @@ class ErkeSnapshot {
             .toList() ??
         [];
 
+    final actsByYear = <String, List<ErkeActivity>>{};
+    final rawActsByYear = json['activitiesByYear'] as Map<String, dynamic>?;
+    if (rawActsByYear != null) {
+      for (final entry in rawActsByYear.entries) {
+        actsByYear[entry.key] = (entry.value as List<dynamic>)
+            .map((e) => ErkeActivity.fromJson(e as Map<String, dynamic>))
+            .toList();
+      }
+    }
+
     return ErkeSnapshot(
       graduation: json['graduation'] != null
           ? ErkeGraduationSummary.fromJson(
               json['graduation'] as Map<String, dynamic>)
           : null,
       yearly: json['yearly'] != null
-          ? ErkeYearlySummary.fromJson(
-              json['yearly'] as Map<String, dynamic>)
+          ? ErkeYearlySummary.fromJson(json['yearly'] as Map<String, dynamic>)
           : null,
       yearlyByYear: yearlyMap,
       activities: acts,
+      activitiesByYear: actsByYear,
       fetchedAt: json['fetchedAt'] != null
           ? DateTime.tryParse(json['fetchedAt'] as String)
           : null,
@@ -270,9 +280,10 @@ class ErkeSnapshot {
   Map<String, dynamic> toJson() => {
         if (graduation != null) 'graduation': graduation!.toJson(),
         if (yearly != null) 'yearly': yearly!.toJson(),
-        'yearlyByYear':
-            yearlyByYear.map((k, v) => MapEntry(k, v.toJson())),
+        'yearlyByYear': yearlyByYear.map((k, v) => MapEntry(k, v.toJson())),
         'activities': activities.map((a) => a.toJson()).toList(),
+        'activitiesByYear': activitiesByYear
+            .map((k, v) => MapEntry(k, v.map((a) => a.toJson()).toList())),
         if (fetchedAt != null) 'fetchedAt': fetchedAt!.toIso8601String(),
       };
 

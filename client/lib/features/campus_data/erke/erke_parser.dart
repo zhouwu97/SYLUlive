@@ -9,8 +9,7 @@ class ErkePageChangedException implements Exception {
   final String? missingElementId;
   const ErkePageChangedException(this.message, {this.missingElementId});
   @override
-  String toString() =>
-      'ErkePageChangedException: $message'
+  String toString() => 'ErkePageChangedException: $message'
       '${missingElementId != null ? ' (missing: #$missingElementId)' : ''}';
 }
 
@@ -119,27 +118,27 @@ class ErkeParser {
       ));
     }
 
-    // 验证总分节点存在
-    final reqTotalFromPage = _requireSpanValue(doc, 'SunCount');
-    _requireSpanValue(doc, 'SunCount1'); // 确保节点存在
+    // 官方总分节点作为权威数据
+    final officialRequiredTotal = _requireSpanValue(doc, 'SunCount');
+    final officialEarnedTotal = _requireSpanValue(doc, 'SunCount1');
 
-    if ((reqTotalFromPage - requiredTotal).abs() > 0.1) {
+    // 分类合计仅用于一致性检查
+    if ((officialRequiredTotal - requiredTotal).abs() > 0.1) {
       throw ErkePageChangedException(
-        '总分要求不一致: SunCount=$reqTotalFromPage, 分类合计=$requiredTotal',
+        '总分要求不一致: SunCount=$officialRequiredTotal, 分类合计=$requiredTotal',
       );
     }
 
-    final conclusion =
-        _getSpanTextOr(doc, 'Status', '');
+    final conclusion = _getSpanTextOr(doc, 'Status', '');
 
-    final double totalGap =
-        earnedTotal < requiredTotal ? (requiredTotal - earnedTotal) : 0.0;
-    final unmetCount =
-        categories.where((c) => !c.meetsNumerically).length;
+    final double totalGap = officialEarnedTotal < officialRequiredTotal
+        ? (officialRequiredTotal - officialEarnedTotal)
+        : 0.0;
+    final unmetCount = categories.where((c) => !c.meetsNumerically).length;
 
     return ErkeGraduationSummary(
-      requiredTotal: requiredTotal,
-      earnedTotal: earnedTotal,
+      requiredTotal: officialRequiredTotal,
+      earnedTotal: officialEarnedTotal,
       totalGap: totalGap,
       unmetCount: unmetCount,
       officialConclusion: conclusion,
@@ -180,33 +179,33 @@ class ErkeParser {
       ));
     }
 
-    // 验证总分节点存在
-    final reqTotalFromPage = _requireSpanValue(doc, 'SunCount');
-    _requireSpanValue(doc, 'SunCount1'); // 确保节点存在
-    _requireSpanValue(doc, 'CountTotalSum'); // 确保节点存在
+    // 官方总分节点作为权威数据
+    final officialRequiredTotal = _requireSpanValue(doc, 'SunCount');
+    final officialYearEarnedTotal = _requireSpanValue(doc, 'SunCount1');
+    final officialCumulativeTotal = _requireSpanValue(doc, 'CountTotalSum');
 
-    if ((reqTotalFromPage - requiredTotal).abs() > 0.1) {
+    // 分类合计仅用于一致性检查
+    if ((officialRequiredTotal - requiredTotal).abs() > 0.1) {
       throw ErkePageChangedException(
-        '学年总分要求不一致: SunCount=$reqTotalFromPage, 分类合计=$requiredTotal',
+        '学年总分要求不一致: SunCount=$officialRequiredTotal, 分类合计=$requiredTotal',
       );
     }
 
     final year = extractSelectedOption(doc, 'YearTime') ?? '';
     final availableYears = extractSelectOptions(doc, 'YearTime');
 
-    final conclusion =
-        _getSpanTextOr(doc, 'Status', '');
+    final conclusion = _getSpanTextOr(doc, 'Status', '');
 
-    final double yearGap = yearEarnedTotal < requiredTotal
-        ? (requiredTotal - yearEarnedTotal)
+    final double yearGap = officialYearEarnedTotal < officialRequiredTotal
+        ? (officialRequiredTotal - officialYearEarnedTotal)
         : 0.0;
 
     return ErkeYearlySummary(
       year: year,
       availableYears: availableYears,
-      requiredTotal: requiredTotal,
-      yearEarnedTotal: yearEarnedTotal,
-      cumulativeTotal: cumulativeTotal,
+      requiredTotal: officialRequiredTotal,
+      yearEarnedTotal: officialYearEarnedTotal,
+      cumulativeTotal: officialCumulativeTotal,
       yearGap: yearGap,
       officialConclusion: conclusion,
       categories: categories,

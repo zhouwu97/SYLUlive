@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math/big"
 	"net/http"
 	"net/url"
@@ -14,10 +15,11 @@ import (
 	"strings"
 	"time"
 
+	"shenliyuan/internal/models"
+
 	"github.com/gin-gonic/gin"
 	"github.com/go-resty/resty/v2"
 	"gorm.io/gorm"
-	"shenliyuan/internal/models"
 )
 
 const (
@@ -83,7 +85,7 @@ func (h *EduHandler) BindEdu(c *gin.Context) {
 	client := resty.New()
 
 	// 获取csrf token
-	csrfToken, err := getIndexCookieAndCsrfToken(client)
+	csrfToken, err := getIndexCookieAndCsrfToken(client, 0)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "无法连接教务系统，请检查网络"})
 		return
@@ -111,7 +113,12 @@ func (h *EduHandler) BindEdu(c *gin.Context) {
 	}
 
 	// 构建cookie字符串（和学长项目一样，取 client.Cookies[1]）
-	cookieStr := buildCookieString(client.Cookies[1:2])
+	var cookieStr string
+	if len(client.Cookies) > 1 {
+		cookieStr = buildCookieString(client.Cookies[1:2])
+	} else if len(client.Cookies) == 1 {
+		cookieStr = buildCookieString(client.Cookies)
+	}
 
 	// 获取学生基本信息（年级、学院、专业）
 	grade, college, major, _ := getStudentInfo(client, cookieStr, input.StudentID)
@@ -199,7 +206,7 @@ func (h *EduHandler) PreVerify(c *gin.Context) {
 
 	// 尝试验证教务密码
 	client := resty.New()
-	csrfToken, err := getIndexCookieAndCsrfToken(client)
+	csrfToken, err := getIndexCookieAndCsrfToken(client, 0)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "无法连接教务系统", "success": false})
 		return
@@ -225,8 +232,8 @@ func (h *EduHandler) PreVerify(c *gin.Context) {
 
 	// 验证成功
 	c.JSON(http.StatusOK, gin.H{
-		"success":       true,
-		"message":       "验证通过",
+		"success":        true,
+		"message":        "验证通过",
 		"edu_student_id": input.StudentID,
 	})
 }
@@ -237,18 +244,17 @@ type CourseInput struct {
 	Semester int    `json:"semester" binding:"required,oneof=3 12"`
 }
 
-// GetCourses 获取课表
+// GetCourses 获取课表（通过Python服务访问教务系统）
 func (h *EduHandler) GetCourses(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 
-	// 获取用户的教务Cookie
 	var user models.User
 	if err := h.db.First(&user, userID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
 		return
 	}
 
-	if !user.EduBound || user.EduCookie == "" {
+	if !user.EduBound {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "请先绑定教务账号"})
 		return
 	}
@@ -259,33 +265,44 @@ func (h *EduHandler) GetCourses(c *gin.Context) {
 		return
 	}
 
+	// 通过Python服务获取课表（Go在香港无法直接访问教务系统）
 	client := resty.New()
-	cookie := user.EduCookie
-	courses, err := getCourseByInfo(client, cookie, input.Year, input.Semester)
+	client.SetTimeout(30 * time.Second)
 
-	// 如果Cookie失效，尝试刷新
-	if errors.Is(err, ErrorLapse) {
-		newCookie, refreshErr := h.refreshCookie(user.ID)
-		if refreshErr == nil {
-			cookie = newCookie
-			courses, err = getCourseByInfo(client, cookie, input.Year, input.Semester)
-		}
-	}
+	resp, err := client.R().
+		SetHeader("Content-Type", "application/json").
+		SetBody(map[string]interface{}{
+			"user_id":  fmt.Sprintf("%d", userID),
+			"year":     input.Year,
+			"semester": input.Semester,
+		}).
+		Post(EduServiceConfig.BaseURL + "/api/edu/courses/fetch")
 
 	if err != nil {
-		if errors.Is(err, ErrorLapse) {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "教务Cookie已失效，请重新绑定"})
-			return
-		}
-		if errors.Is(err, ErrorCourseNoOpen) {
-			c.JSON(http.StatusOK, gin.H{"error": "当前学期课表暂未开放"})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "无法连接教务服务，请检查网络"})
 		return
 	}
 
-	c.JSON(http.StatusOK, courses)
+	if resp.StatusCode() != 200 {
+		// 解析Python返回的错误
+		var errResp struct {
+			Detail string `json:"detail"`
+			Error  string `json:"error"`
+		}
+		json.Unmarshal(resp.Body(), &errResp)
+		msg := errResp.Detail
+		if msg == "" {
+			msg = errResp.Error
+		}
+		if msg == "" {
+			msg = "获取课表失败"
+		}
+		c.JSON(resp.StatusCode(), gin.H{"error": msg})
+		return
+	}
+
+	// 直接透传给前端
+	c.Data(http.StatusOK, "application/json", resp.Body())
 }
 
 // GradesInput 成绩查询输入
@@ -294,7 +311,7 @@ type GradesInput struct {
 	Semester int    `json:"semester" binding:"required,oneof=3 12"`
 }
 
-// GetGrades 获取成绩
+// GetGrades 获取成绩（通过Python服务访问教务系统）
 func (h *EduHandler) GetGrades(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 
@@ -304,7 +321,7 @@ func (h *EduHandler) GetGrades(c *gin.Context) {
 		return
 	}
 
-	if !user.EduBound || user.EduCookie == "" {
+	if !user.EduBound {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "请先绑定教务账号"})
 		return
 	}
@@ -315,44 +332,40 @@ func (h *EduHandler) GetGrades(c *gin.Context) {
 		return
 	}
 
+	// 通过Python服务获取成绩
 	client := resty.New()
-	cookie := user.EduCookie
-	grades, err := getGradesByInfo(client, cookie, input.Year, input.Semester)
+	client.SetTimeout(30 * time.Second)
 
-	// 如果Cookie失效，尝试刷新
-	if errors.Is(err, ErrorLapse) {
-		newCookie, refreshErr := h.refreshCookie(user.ID)
-		if refreshErr == nil {
-			cookie = newCookie
-			grades, err = getGradesByInfo(client, cookie, input.Year, input.Semester)
-		}
-	}
+	resp, err := client.R().
+		SetHeader("Content-Type", "application/json").
+		SetBody(map[string]interface{}{
+			"user_id":  fmt.Sprintf("%d", userID),
+			"year":     input.Year,
+			"semester": input.Semester,
+		}).
+		Post(EduServiceConfig.BaseURL + "/api/edu/grades")
 
 	if err != nil {
-		if errors.Is(err, ErrorLapse) {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "教务Cookie已失效，请重新绑定"})
-			return
-		}
-		if errors.Is(err, ErrorGradesNoOpen) {
-			c.JSON(http.StatusOK, gin.H{"grades": []interface{}{}, "message": "当前学期暂无成绩"})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "无法连接教务服务，请检查网络"})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"grades": grades})
+	// 直接透传给前端
+	c.Data(resp.StatusCode(), "application/json", resp.Body())
 }
 
 // 以下是整合的教务系统登录和查询逻辑
 
-func getIndexCookieAndCsrfToken(client *resty.Client) (string, error) {
+func getIndexCookieAndCsrfToken(client *resty.Client, retryCount int) (string, error) {
+	if retryCount >= 5 {
+		return "", errors.New("教务系统连接超时，多次重试失败")
+	}
 	client.SetTimeout(3 * time.Second)
 
 	initResp, err := client.R().SetHeaders(baseHttpHeaders()).Get(indexUrl + "/login_slogin.html")
 	if err != nil {
 		if urlErr, ok := err.(*url.Error); ok && urlErr.Timeout() {
-			return getIndexCookieAndCsrfToken(client)
+			return getIndexCookieAndCsrfToken(client, retryCount+1)
 		}
 		return "", err
 	}
@@ -709,7 +722,7 @@ func (h *EduHandler) refreshCookie(userID uint) (string, error) {
 
 	client := resty.New()
 
-	csrfToken, err := getIndexCookieAndCsrfToken(client)
+	csrfToken, err := getIndexCookieAndCsrfToken(client, 0)
 	if err != nil {
 		return "", err
 	}
@@ -729,7 +742,12 @@ func (h *EduHandler) refreshCookie(userID uint) (string, error) {
 		return "", err
 	}
 
-	cookieStr := buildCookieString(client.Cookies[1:2])
+	var cookieStr string
+	if len(client.Cookies) > 1 {
+		cookieStr = buildCookieString(client.Cookies[1:2])
+	} else if len(client.Cookies) == 1 {
+		cookieStr = buildCookieString(client.Cookies)
+	}
 
 	h.db.Model(&user).Updates(map[string]interface{}{
 		"edu_cookie": cookieStr,

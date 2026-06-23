@@ -94,8 +94,10 @@ void main() {
       expect(result.requiredTotal, 25.0);
       expect(result.yearEarnedTotal, 8.95);
       expect(result.cumulativeTotal, 38.7);
-      expect(result.yearGap, closeTo(16.05, 0.01));
-      expect(result.percentage, closeTo(35.8, 0.1));
+      expect(result.rawYearGap, closeTo(16.05, 0.01));
+      expect(result.categoryGap, closeTo(18.05, 0.01));
+      expect(result.minimumGap, closeTo(18.05, 0.01));
+      expect(result.percentage, closeTo(27.8, 0.1));
 
       expect(result.officialConclusion, 'B得分不足');
 
@@ -502,7 +504,9 @@ void main() {
           requiredTotal: 25,
           yearEarnedTotal: 8.95,
           cumulativeTotal: 38.7,
-          yearGap: 16.05,
+          rawYearGap: 16.05,
+          categoryGap: 18.05,
+          minimumGap: 18.05,
           officialConclusion: 'B得分不足',
           categories: [],
         ),

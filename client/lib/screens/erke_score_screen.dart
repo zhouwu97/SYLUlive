@@ -594,7 +594,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
           Row(
             children: [
               if (grad.graduationGap > 0) ...[
-                _infoTag('最低还需 ${_formatScore(grad.graduationGap)} 分',
+                _infoTag('按分类最低还需 ${_formatScore(grad.graduationGap)} 分',
                     Colors.orange),
                 const SizedBox(width: 12),
               ] else ...[
@@ -816,7 +816,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
 
   Widget _buildYearlyProgressCard(ErkeYearlySummary yr, bool isDark) {
     final percentage = yr.percentage;
-    final isComplete = yr.yearGap <= 0;
+    final isComplete = yr.minimumGap <= 0;
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -828,7 +828,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            const Text('本学年完成进度',
+            const Text('本学年要求完成度',
                 style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
@@ -864,13 +864,22 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
             ),
           ),
           const SizedBox(height: 12),
-          if (yr.yearGap > 0)
-            _infoTag('本学年总分还差 ${_formatScore(yr.yearGap)}', Colors.orange)
+          if (yr.minimumGap > 0)
+            _infoTag('按分类最低还需 ${_formatScore(yr.minimumGap)} 分', Colors.orange)
           else
-            _infoTag('本学年总分已达标 ✓', Colors.green),
+            _infoTag('已达标 ✓', Colors.green),
           const SizedBox(height: 8),
-          Text('累计总分 ${_formatScore(yr.cumulativeTotal)}',
-              style: const TextStyle(fontSize: 13, color: Color(0xFF8A8F9C))),
+          Row(
+            children: [
+              Text('本学年实际获得 ${_formatScore(yr.yearEarnedTotal)}',
+                  style:
+                      const TextStyle(fontSize: 13, color: Color(0xFF8A8F9C))),
+              const Spacer(),
+              Text('累计总分 ${_formatScore(yr.cumulativeTotal)}',
+                  style:
+                      const TextStyle(fontSize: 13, color: Color(0xFF8A8F9C))),
+            ],
+          ),
         ],
       ),
     );

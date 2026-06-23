@@ -549,7 +549,7 @@ void main() {
       expect(ErkeParser.yearlyPageHasScores(emptyForm), false);
     });
 
-    test('CountA1 节点存在但内容为空 → false', () {
+    test('CountA1 节点存在但内容为空 → true（空=0，合法）', () {
       const html = '<!DOCTYPE html><html><body>'
           '<span id="CountA1"></span>'
           '<span id="CountB1">0.00</span>'
@@ -557,39 +557,42 @@ void main() {
           '<span id="CountD1">4.00</span>'
           '<span id="CountE1">0.95</span>'
           '<span id="SunCount1">8.95</span>'
-          '<span id="CountTotalSum">38.70</span>'
           '</body></html>';
-      // CountA1 存在但为空文本 → 不是有效成绩
-      expect(ErkeParser.yearlyPageHasScores(html), false);
+      // 所有 CountX1+SunCount1 节点存在 → 有成绩
+      expect(ErkeParser.yearlyPageHasScores(html), true);
     });
 
-    test('CountA1 内容为空格 → false', () {
+    test('空节点解析为 0.0', () {
       const html = '<!DOCTYPE html><html><body>'
-          '<span id="CountA1">  </span>'
-          '<span id="CountB1">0.00</span>'
-          '<span id="CountC1">4.00</span>'
-          '<span id="CountD1">4.00</span>'
-          '<span id="CountE1">0.95</span>'
-          '<span id="SunCount1">8.95</span>'
-          '<span id="CountTotalSum">38.70</span>'
+          '<span id="CountA">8.00</span><span id="CountA1"></span>'
+          '<span id="CountB">7.00</span><span id="CountB1"></span>'
+          '<span id="CountC">2.00</span><span id="CountC1">4.00</span>'
+          '<span id="CountD">6.00</span><span id="CountD1">4.00</span>'
+          '<span id="CountE">2.00</span><span id="CountE1">0.95</span>'
+          '<span id="SunCount">25.00</span><span id="SunCount1">8.95</span>'
+          '<span id="CountASum">0.00</span><span id="CountBSum">0.00</span>'
+          '<span id="CountCSum">0.00</span><span id="CountDSum">0.00</span>'
+          '<span id="CountESum">0.00</span><span id="CountTotalSum">0.00</span>'
+          '<span id="Status">B得分不足</span>'
           '</body></html>';
-      expect(ErkeParser.yearlyPageHasScores(html), false);
+      final result = ErkeParser.parseYearlySummary(html);
+      // 空的 CountA1 → 0.0
+      expect(result.categories[0].yearEarned, 0.0);
+      expect(result.categories[1].yearEarned, 0.0);
+      expect(result.categories[2].yearEarned, 4.0);
+      // 学年总分是 0+0+4+4+0.95 = 8.95
+      expect(result.yearEarnedTotal, 8.95);
     });
 
-    test('CountA1 内容非数字 → false', () {
+    test('非数字 → 抛异常', () {
       const html = '<!DOCTYPE html><html><body>'
-          '<span id="CountA1">abc</span>'
-          '<span id="CountB1">0.00</span>'
-          '<span id="CountC1">4.00</span>'
-          '<span id="CountD1">4.00</span>'
-          '<span id="CountE1">0.95</span>'
-          '<span id="SunCount1">8.95</span>'
-          '<span id="CountTotalSum">38.70</span>'
+          '<span id="CountA">8.00</span><span id="CountA1">NOT_A_NUMBER</span>'
           '</body></html>';
-      expect(ErkeParser.yearlyPageHasScores(html), false);
+      expect(() => ErkeParser.parseGraduationSummary(html),
+          throwsA(isA<ErkePageChangedException>()));
     });
 
-    test('A~E 全部有效数字 + 总分 → true', () {
+    test('A~E 全部有效数字 → true', () {
       final html = _loadFixture('fixture_yearly.html');
       expect(ErkeParser.yearlyPageHasScores(html), true);
     });

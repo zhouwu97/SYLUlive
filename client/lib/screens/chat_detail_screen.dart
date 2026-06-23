@@ -4,6 +4,7 @@ import 'dart:ui';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -14,6 +15,7 @@ import '../models/user.dart';
 import '../providers/auth_provider.dart';
 import '../providers/message_provider.dart';
 import '../providers/theme_provider.dart';
+import '../services/upload_cache_recovery_service.dart';
 import '../utils/app_feedback.dart';
 import '../utils/app_time.dart';
 import '../widgets/cached_avatar.dart';
@@ -54,6 +56,18 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   final Map<int, GlobalKey> _messageKeys = {};
   static const MethodChannel _privateMessageNotificationsChannel =
       MethodChannel('shenliyuan/private_message_notifications');
+
+  void _recoverImageUrl(String url) {
+    try {
+      UploadCacheRecoveryService.recover(
+        imageUrl: url,
+        dio: context.read<AuthProvider>().dio,
+        cacheManager: DefaultCacheManager(),
+      ).then((recovered) {
+        if (recovered && mounted) setState(() {});
+      }).catchError((_) {});
+    } catch (_) {}
+  }
 
   @override
   void initState() {
@@ -201,8 +215,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     final currentUserId = context.read<AuthProvider>().user?.id;
     final oldLastId = context.read<MessageProvider>().messages.lastOrNull?.id;
     await context.read<MessageProvider>().refreshMessages(
-      currentUserId: currentUserId,
-    );
+          currentUserId: currentUserId,
+        );
     if (!mounted) return;
     final newLastId = context.read<MessageProvider>().messages.lastOrNull?.id;
     if (wasNearBottom && oldLastId != newLastId) {
@@ -517,7 +531,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     User? currentUser, {
     required bool includeBackdrop,
   }) {
-    if (provider.messageLoading && !_initialLoadFinished && provider.messages.isEmpty) {
+    if (provider.messageLoading &&
+        !_initialLoadFinished &&
+        provider.messages.isEmpty) {
       return _wrapMessageBackdrop(
         const Center(child: CircularProgressIndicator()),
         includeBackdrop,
@@ -847,6 +863,14 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
                             height: 140,
                             child: Center(child: CircularProgressIndicator()),
                           ),
+                          errorWidget: (_, url, ___) {
+                            _recoverImageUrl(url);
+                            return const SizedBox(
+                              width: 210,
+                              height: 140,
+                              child: Icon(Icons.broken_image),
+                            );
+                          },
                         ),
                       ),
                     ),

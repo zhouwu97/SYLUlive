@@ -21,6 +21,29 @@ class ErkeCacheStore {
   //  读取
   // ================================================================
 
+  /// 读取完整快照 (新格式)；不存在时尝试从旧缓存迁移
+  Future<ErkeSnapshot?> loadOrMigrateSnapshot() async {
+    final existing = await loadSnapshot();
+    if (existing != null) return existing;
+
+    // 尝试旧缓存迁移
+    final prefs = await SharedPreferences.getInstance();
+    final oldScores = prefs.getString(_keyScores);
+    if (oldScores == null || oldScores.isEmpty) return null;
+
+    try {
+      final list = json.decode(oldScores) as List<dynamic>;
+      final activities = list
+          .map((e) => ErkeActivity.fromLegacyMap(e as Map<String, dynamic>))
+          .toList();
+      final snapshot = ErkeSnapshot(activities: activities);
+      await saveSnapshot(snapshot);
+      return snapshot;
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// 读取完整快照 (新格式)
   Future<ErkeSnapshot?> loadSnapshot() async {
     final prefs = await SharedPreferences.getInstance();
@@ -33,7 +56,7 @@ class ErkeCacheStore {
     }
   }
 
-  /// 读取活动列表 (兼容旧缓存)
+  /// 读取活动列表 (优先新快照 → 旧缓存)
   Future<List<ErkeActivity>> loadActivities() async {
     final snapshot = await loadSnapshot();
     if (snapshot != null && snapshot.hasActivities) {
@@ -75,8 +98,7 @@ class ErkeCacheStore {
   /// 检查是否有缓存
   Future<bool> hasCache() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.containsKey(_keySnapshot) ||
-        prefs.containsKey(_keyScores);
+    return prefs.containsKey(_keySnapshot) || prefs.containsKey(_keyScores);
   }
 
   // ================================================================
@@ -89,8 +111,11 @@ class ErkeCacheStore {
     await prefs.setString(_keySnapshot, json.encode(snapshot.toJson()));
   }
 
-  /// 更新或合并学年汇总到快照中
-  Future<void> saveYearlySummary(ErkeYearlySummary yearly) async {
+  /// 更新或合并学年汇总到快照中 (含学年活动)
+  Future<void> saveYearlySummary(
+    ErkeYearlySummary yearly,
+    List<ErkeActivity> yearActivities,
+  ) async {
     final snapshot = await loadSnapshot();
     final merged = ErkeSnapshot(
       graduation: snapshot?.graduation,
@@ -100,6 +125,10 @@ class ErkeCacheStore {
         yearly.year: yearly,
       },
       activities: snapshot?.activities ?? [],
+      activitiesByYear: {
+        ...?snapshot?.activitiesByYear,
+        yearly.year: yearActivities,
+      },
       fetchedAt: DateTime.now(),
     );
     await saveSnapshot(merged);
@@ -113,6 +142,7 @@ class ErkeCacheStore {
       yearly: snapshot?.yearly,
       yearlyByYear: snapshot?.yearlyByYear ?? {},
       activities: activities,
+      activitiesByYear: snapshot?.activitiesByYear ?? {},
       fetchedAt: DateTime.now(),
     );
     await saveSnapshot(merged);
@@ -129,6 +159,7 @@ class ErkeCacheStore {
       yearly: yearly,
       yearlyByYear: {yearly.year: yearly},
       activities: activities,
+      activitiesByYear: {yearly.year: activities},
       fetchedAt: DateTime.now(),
     );
     await saveSnapshot(snapshot);

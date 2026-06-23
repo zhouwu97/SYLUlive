@@ -69,18 +69,21 @@ class ErkeParser {
     return value;
   }
 
-  /// 检查页面是否包含成绩数据（CountA1 非空）
+  /// 检查页面是否包含完整可解析的成绩数据
+  /// A~E 的 CountX1 必须全部存在且为有效数字，缺一不可
   static bool _hasScoreData(Document doc) {
-    for (final code in ['A', 'B', 'C', 'D', 'E']) {
-      final el = _findByIdOrSuffix(doc, 'Count${code}1');
-      if (el != null) {
-        final text =
-            (el.text.isNotEmpty ? el.text : el.attributes['value'] ?? '')
-                .trim();
-        if (text.isNotEmpty && double.tryParse(text) != null) return true;
-      }
+    const requiredIds = [
+      'CountA1', 'CountB1', 'CountC1', 'CountD1', 'CountE1',
+      'SunCount1', 'CountTotalSum',
+    ];
+    for (final id in requiredIds) {
+      final el = _findByIdOrSuffix(doc, id);
+      if (el == null) return false;
+      final raw = (el.text.isNotEmpty ? el.text : el.attributes['value'] ?? '')
+          .trim();
+      if (double.tryParse(raw) == null) return false;
     }
-    return false;
+    return true;
   }
 
   /// 按 ID 提取文本，找不到返回空字符串

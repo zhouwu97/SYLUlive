@@ -75,14 +75,18 @@ class ThemeProvider extends ChangeNotifier {
 
   /// 获取当前环境适用的背景图片
   String? getBackgroundImageFor(BuildContext context) {
-    if (ResponsiveUtil.useDesktopShell(context) && hasLandscapeBackground) {
+    final isWide =
+        MediaQuery.of(context).size.width > MediaQuery.of(context).size.height;
+    if (isWide && hasLandscapeBackground) {
       return _landscapeBackgroundImage;
     }
     return _backgroundImage;
   }
 
   bool getBackgroundFillScreenFor(BuildContext context) {
-    if (ResponsiveUtil.useDesktopShell(context) && hasLandscapeBackground) {
+    final isWide =
+        MediaQuery.of(context).size.width > MediaQuery.of(context).size.height;
+    if (isWide && hasLandscapeBackground) {
       return _landscapeBackgroundFillScreen;
     }
     return _backgroundFillScreen;

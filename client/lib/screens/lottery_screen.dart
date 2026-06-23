@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:dio/dio.dart';
 import 'dart:async';
@@ -207,66 +208,74 @@ class _LotteryScreenState extends State<LotteryScreen> {
     final user = context.watch<AuthProvider>().user;
     final isSuperAdmin = user?.isSuperAdmin == true;
 
-    return Scaffold(
-      backgroundColor:
-          isDark ? const Color(0xFF06080D) : const Color(0xFFF4F6FB),
-      appBar: AppBar(
-        title: const Text('官方抽奖'),
-        elevation: 0,
-        backgroundColor: Colors.transparent,
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
+        statusBarBrightness: isDark ? Brightness.dark : Brightness.light,
       ),
-      extendBodyBehindAppBar: true,
-      body: Stack(
-        children: [
-          Positioned.fill(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: isDark
-                      ? const [
-                          Color(0xFF06080D),
-                          Color(0xFF10131A),
-                          Color(0xFF06080D),
-                        ]
-                      : const [
-                          Color(0xFFF4F6FB),
-                          Color(0xFFEFF3F8),
-                          Color(0xFFF8FAFC),
-                        ],
+      child: Scaffold(
+        backgroundColor:
+            isDark ? const Color(0xFF06080D) : const Color(0xFFF4F6FB),
+        appBar: AppBar(
+          title: const Text('官方抽奖'),
+          elevation: 0,
+          backgroundColor: Colors.transparent,
+        ),
+        extendBodyBehindAppBar: true,
+        body: Stack(
+          children: [
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: isDark
+                        ? const [
+                            Color(0xFF06080D),
+                            Color(0xFF10131A),
+                            Color(0xFF06080D),
+                          ]
+                        : const [
+                            Color(0xFFF4F6FB),
+                            Color(0xFFEFF3F8),
+                            Color(0xFFF8FAFC),
+                          ],
+                  ),
                 ),
               ),
             ),
-          ),
-          SafeArea(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : _errorMessage != null
-                    ? Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.inbox_rounded,
-                              size: 80,
-                              color: isDark ? Colors.white30 : Colors.black26,
-                            ),
-                            const SizedBox(height: 16),
-                            Text(
-                              _errorMessage!,
-                              style: TextStyle(
-                                fontSize: 16,
-                                color: isDark ? Colors.white70 : Colors.black54,
+            SafeArea(
+              child: _isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _errorMessage != null
+                      ? Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.inbox_rounded,
+                                size: 80,
+                                color: isDark ? Colors.white30 : Colors.black26,
                               ),
-                            ),
-                          ],
-                        ),
-                      )
-                    : _buildEventContent(
-                        context, primary, isDark, isSuperAdmin),
-          ),
-        ],
+                              const SizedBox(height: 16),
+                              Text(
+                                _errorMessage!,
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  color:
+                                      isDark ? Colors.white70 : Colors.black54,
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                      : _buildEventContent(
+                          context, primary, isDark, isSuperAdmin),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -282,11 +291,11 @@ class _LotteryScreenState extends State<LotteryScreen> {
     final titleColor = isDark ? Colors.white : const Color(0xFF111827);
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
       child: Column(
         children: [
           _buildEventHero(ev, primary, isDark),
-          const SizedBox(height: 24),
+          const SizedBox(height: 20),
           Align(
             alignment: Alignment.centerLeft,
             child: Text(
@@ -335,7 +344,7 @@ class _LotteryScreenState extends State<LotteryScreen> {
                         ),
                 ),
               ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 20),
             Align(
               alignment: Alignment.centerLeft,
               child: Text(
@@ -510,7 +519,6 @@ class _LotteryScreenState extends State<LotteryScreen> {
       LotteryEvent event, bool isOngoing, Color primary, bool isDark) {
     final cardColor = isDark ? const Color(0xFF151A24) : Colors.white;
     final textColor = isDark ? Colors.white : const Color(0xFF20232A);
-    final secondaryColor = isDark ? Colors.white60 : const Color(0xFF8A8F9C);
 
     return Container(
       width: double.infinity,
@@ -559,14 +567,6 @@ class _LotteryScreenState extends State<LotteryScreen> {
                         fontSize: 19,
                         fontWeight: FontWeight.w700,
                         color: textColor,
-                      ),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      '官方活动奖品',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: secondaryColor,
                       ),
                     ),
                   ],
@@ -629,7 +629,7 @@ class _LotteryScreenState extends State<LotteryScreen> {
           textAlign: TextAlign.center,
           style: TextStyle(
             fontSize: 15,
-            fontWeight: FontWeight.w700,
+            fontWeight: FontWeight.w600,
             color: isDark ? Colors.white : const Color(0xFF20232A),
           ),
         ),
@@ -762,13 +762,14 @@ class _LotteryScreenState extends State<LotteryScreen> {
     return Row(
       children: [
         Icon(icon, size: 16, color: primary),
-        const SizedBox(width: 8),
+        const SizedBox(width: 10),
         Expanded(
           child: Text(
             text,
             style: TextStyle(
               fontSize: 13,
               color: textColor,
+              height: 1.5,
             ),
           ),
         ),

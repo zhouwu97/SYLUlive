@@ -5,10 +5,6 @@ import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 class UploadCacheRecoveryService {
   UploadCacheRecoveryService._();
 
-  static const String _recoveryToken = String.fromEnvironment(
-    'UPLOAD_RECOVERY_TOKEN',
-  );
-
   static final Set<String> _attempted = {};
   static final Set<String> _inFlight = {};
 
@@ -90,12 +86,13 @@ class UploadCacheRecoveryService {
             filename: fileName,
           ),
         }),
-        options: _uploadOptions(includeRecoveryToken: true),
+        options: _uploadOptions(),
       );
     } on DioException catch (e) {
       final statusCode = e.response?.statusCode;
       if (statusCode == 404 || statusCode == 405) return null;
-      rethrow;
+      debugPrint('Cached upload path recovery failed for $uploadPath: $e');
+      return null;
     }
   }
 
@@ -116,11 +113,8 @@ class UploadCacheRecoveryService {
     );
   }
 
-  static Options _uploadOptions({bool includeRecoveryToken = false}) {
+  static Options _uploadOptions() {
     return Options(
-      headers: includeRecoveryToken && _recoveryToken.isNotEmpty
-          ? {'X-Recovery-Token': _recoveryToken}
-          : null,
       sendTimeout: const Duration(seconds: 60),
       receiveTimeout: const Duration(seconds: 60),
     );

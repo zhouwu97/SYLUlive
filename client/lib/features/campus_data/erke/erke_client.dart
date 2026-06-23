@@ -44,8 +44,7 @@ class ErkeClient {
     final plainBytes = utf8.encode(_targetDomain);
 
     final cipher = pc.CFBBlockCipher(pc.AESEngine(), 16);
-    cipher.init(
-        true, pc.ParametersWithIV(pc.KeyParameter(keyBytes), ivBytes));
+    cipher.init(true, pc.ParametersWithIV(pc.KeyParameter(keyBytes), ivBytes));
 
     final cipherBytes = Uint8List(plainBytes.length);
     int offset = 0;
@@ -56,7 +55,8 @@ class ErkeClient {
       block.setRange(0, chunkSize, plainBytes.skip(offset).take(chunkSize));
       final outBlock = Uint8List(16);
       cipher.processBlock(block, 0, outBlock, 0);
-      cipherBytes.setRange(offset, offset + chunkSize, outBlock.take(chunkSize));
+      cipherBytes.setRange(
+          offset, offset + chunkSize, outBlock.take(chunkSize));
       offset += chunkSize;
     }
 
@@ -131,8 +131,7 @@ class ErkeClient {
       final plainBytes = utf8.encode(plainText) as Uint8List;
       return base64Encode(cipher.process(plainBytes));
     } catch (e) {
-      // RSA encryption fallback — should not happen in production
-      return plainText;
+      throw Exception('RSA密码加密失败: $e');
     }
   }
 
@@ -208,7 +207,7 @@ class ErkeClient {
       'pwd': encryptedPwd,
       'pubKey': pubKeyBase64,
       'codeInput': captcha,
-      'queryBtn': _queryBtnGbk,
+      'queryBtn': '登          录',
     };
 
     final postResp = await _dio.post(
@@ -251,9 +250,6 @@ class ErkeClient {
     throw Exception('未能确认登录成功');
   }
 
-  /// GBK 编码的 "登          录" 按钮值
-  static final List<int> _queryBtnGbk = gbk.encode('登          录');
-
   // ====================================================================
   //  页面获取
   // ====================================================================
@@ -293,8 +289,8 @@ class ErkeClient {
       url,
       options: Options(responseType: ResponseType.bytes),
     );
-    final getHtml = decodeResponseBytes(
-        getResp.data as List<int>, getResp.headers);
+    final getHtml =
+        decodeResponseBytes(getResp.data as List<int>, getResp.headers);
     final getDoc = parse(getHtml);
 
     // 验证要切换的年是否在可选列表中
@@ -326,15 +322,14 @@ class ErkeClient {
       ),
     );
 
-    final postHtml = decodeResponseBytes(
-        postResp.data as List<int>, postResp.headers);
+    final postHtml =
+        decodeResponseBytes(postResp.data as List<int>, postResp.headers);
 
     // 4. 验证返回页面确实切换到了目标学年
     final returnedYear =
         ErkeParser.extractSelectedOption(parse(postHtml), 'YearTime');
     if (returnedYear != null && returnedYear != year) {
-      throw Exception(
-          '学年切换失败: 请求 $year，服务器返回 $returnedYear');
+      throw Exception('学年切换失败: 请求 $year，服务器返回 $returnedYear');
     }
 
     return postHtml;
@@ -364,10 +359,9 @@ class ErkeClient {
       url,
       options: Options(responseType: ResponseType.bytes),
     );
-    final getHtml = decodeResponseBytes(
-        getResp.data as List<int>, getResp.headers);
-    final hiddenInputs =
-        ErkeParser.extractHiddenInputs(parse(getHtml));
+    final getHtml =
+        decodeResponseBytes(getResp.data as List<int>, getResp.headers);
+    final hiddenInputs = ErkeParser.extractHiddenInputs(parse(getHtml));
 
     final formData = <String, dynamic>{
       ...hiddenInputs,

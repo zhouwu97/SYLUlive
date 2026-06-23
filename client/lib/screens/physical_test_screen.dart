@@ -747,9 +747,8 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          _buildModeButton(0, '成绩', isDark),
-          _buildModeButton(1, '得分', isDark),
-          _buildModeButton(2, '评级', isDark),
+          _buildModeButton(0, '得分', isDark),
+          _buildModeButton(1, '评级', isDark),
         ],
       ),
     );
@@ -812,26 +811,19 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
 
           Widget rightWidget;
           if (displayMode == 0) {
-            rightWidget = Text(
-              item.result,
-              textAlign: TextAlign.right,
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: isDark ? Colors.white : const Color(0xFF1A1A2E),
+            rightWidget = Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+              decoration: BoxDecoration(
+                color: gradeBg,
+                borderRadius: BorderRadius.circular(10),
               ),
-            );
-          } else if (displayMode == 1) {
-            final isPass = item.score >= 60;
-            rightWidget = Text(
-              '${item.score} 分',
-              textAlign: TextAlign.right,
-              style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-                color: isPass 
-                    ? (isDark ? const Color(0xFF32A866) : const Color(0xFF32A866)) 
-                    : const Color(0xFFE45757),
+              child: Text(
+                '${item.score}分',
+                style: TextStyle(
+                  color: gradeColor,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 12,
+                ),
               ),
             );
           } else {
@@ -884,6 +876,16 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
                         ],
                       ),
                     ),
+                    Text(
+                      item.result,
+                      textAlign: TextAlign.right,
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: isDark ? Colors.white : const Color(0xFF1A1A2E),
+                      ),
+                    ),
+                    const SizedBox(width: 14),
                     rightWidget,
                   ],
                 ),

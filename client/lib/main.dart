@@ -23,6 +23,7 @@ import 'providers/canteen_provider.dart';
 import 'providers/social_provider.dart';
 import 'models/user.dart';
 import 'screens/chat_detail_screen.dart';
+import 'screens/post_detail_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/course_schedule_screen.dart';
@@ -211,6 +212,44 @@ const MethodChannel _privateMessageNotificationChannel = MethodChannel(
 final PendingPrivateMessageOpen _pendingPrivateMessageOpen =
     PendingPrivateMessageOpen();
 
+typedef NavigatorAction = void Function(NavigatorState navigator);
+
+class PendingNavigatorAction {
+  PendingNavigatorAction({this.ttl = const Duration(seconds: 10)});
+  final Duration ttl;
+  NavigatorAction? _action;
+  DateTime? _readyAt;
+
+  void store(NavigatorAction action) {
+    _action = action;
+    _readyAt = null;
+  }
+
+  void markReady(DateTime now) {
+    if (_action == null || _readyAt != null) return;
+    _readyAt = now;
+  }
+
+  NavigatorAction? consume(DateTime now) {
+    final action = _action;
+    if (action == null) return null;
+    final readyAt = _readyAt;
+    if (readyAt != null && now.difference(readyAt) > ttl) {
+      clear();
+      return null;
+    }
+    clear();
+    return action;
+  }
+
+  void clear() {
+    _action = null;
+    _readyAt = null;
+  }
+}
+
+final PendingNavigatorAction _pendingNavigatorAction = PendingNavigatorAction();
+
 Future<void> setupJPush(AuthProvider authProvider) async {
   jpush.setup(
     appKey: ApiConstants.jpushAppKey,
@@ -230,11 +269,44 @@ Future<void> setupJPush(AuthProvider authProvider) async {
       if (await _handlePrivateMessageNotification(message, opened: true)) {
         return;
       }
-      if (appNavigatorKey.currentState != null) {
-        appNavigatorKey.currentState!.popUntil((route) => route.isFirst);
-        appNavigatorKey.currentState!.push(
-          MaterialPageRoute(builder: (_) => const UserRepliesScreen()),
-        );
+
+      final extras = extractJPushExtras(message);
+      final type = extras['type']?.toString();
+
+      WidgetBuilder? routeBuilder;
+
+      if (type == 'reply') {
+        final postId = intFromNotificationExtra(extras['post_id']);
+        final replyId = intFromNotificationExtra(extras['reply_id']);
+        if (postId != null) {
+          routeBuilder = (_) => PostDetailScreen(postId: postId, targetReplyId: replyId);
+        } else {
+          routeBuilder = (_) => const UserRepliesScreen();
+        }
+      } else if (type == 'market_post') {
+        final postId = intFromNotificationExtra(extras['post_id']);
+        if (postId != null) {
+          routeBuilder = (_) => PostDetailScreen(postId: postId);
+        }
+      } else {
+        routeBuilder = (_) => const UserRepliesScreen();
+      }
+
+      if (routeBuilder != null) {
+        // 尝试拉起 App
+        const channel = MethodChannel('shenliyuan/foreground');
+        channel.invokeMethod('bringToForeground').catchError((e) {});
+
+        void doNavigation(NavigatorState navigator) {
+          navigator.popUntil((route) => route.isFirst);
+          navigator.push(MaterialPageRoute(builder: routeBuilder!));
+        }
+
+        if (appNavigatorKey.currentState != null) {
+          doNavigation(appNavigatorKey.currentState!);
+        } else {
+          _pendingNavigatorAction.store(doNavigation);
+        }
       }
     },
   );
@@ -440,16 +512,25 @@ PrivateMessageTarget _resolvePrivateMessageTarget(PrivateMessageTarget target) {
 void _processPendingOpenNotification() {
   final now = DateTime.now();
   _pendingPrivateMessageOpen.markReady(now);
+  _pendingNavigatorAction.markReady(now);
+  
   if (appNavigatorKey.currentState == null) {
     debugPrint('📌 等待 navigator 就绪后再处理私信通知');
     return;
   }
+  
   final target = _pendingPrivateMessageOpen.consume(now);
   if (target != null) {
     debugPrint(
       '✅ 处理缓冲通知: conv=${target.conversationId} sender=${target.senderId}',
     );
     _navigateToPrivateMessage(target);
+  }
+
+  final action = _pendingNavigatorAction.consume(now);
+  if (action != null) {
+    debugPrint('✅ 处理通用缓冲路由通知');
+    action(appNavigatorKey.currentState!);
   }
 }
 

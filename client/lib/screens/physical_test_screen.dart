@@ -49,8 +49,8 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
   final Map<String, _YearData> _yearData = {};
 
   bool _showQr = false;
-  String _testCode = ''; // 扫码核验码 (id=xxx&name=xxx)
-  bool _showScore = false; // Toggle to show score vs grade
+  String _testCode = ''; 
+  int _displayMode = 0; // 0: 成绩, 1: 得分, 2: 评级
 
   @override
   void initState() {
@@ -402,20 +402,23 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
                   const SizedBox(height: 16),
                 ],
                 if (scores.isNotEmpty) ...[
-                  const Padding(
-                    padding: EdgeInsets.only(left: 4, bottom: 8, top: 8),
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        '成绩明细',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
+                  Padding(
+                    padding: const EdgeInsets.only(left: 4, bottom: 12, top: 8),
+                    child: Row(
+                      children: [
+                        const Text(
+                          '成绩明细',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
-                      ),
+                        const Spacer(),
+                        _buildDisplayModeSelector(isDark),
+                      ],
                     ),
                   ),
-                  _buildScoreListCard(scores, isDark, _showScore),
+                  _buildScoreListCard(scores, isDark, _displayMode),
                 ] else if (data != null)
                   Padding(
                     padding: const EdgeInsets.all(40),
@@ -719,15 +722,12 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
                 ),
               ),
               const Spacer(),
-              GestureDetector(
-                onTap: () => setState(() => _showScore = !_showScore),
-                child: Text(
-                  _showScore ? '查看等级' : '切换分数',
-                  style: const TextStyle(
-                    color: Color(0xFF5B6EE1),
-                    fontSize: 13,
-                    fontWeight: FontWeight.w500,
-                  ),
+              const Text(
+                '查看等级',
+                style: TextStyle(
+                  color: Color(0xFF5B6EE1),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
             ],
@@ -737,7 +737,49 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
     );
   }
 
-  Widget _buildScoreListCard(List<_GymScoreItem> scores, bool isDark, bool showScore) {
+  Widget _buildDisplayModeSelector(bool isDark) {
+    return Container(
+      decoration: BoxDecoration(
+        color: isDark ? Colors.white10 : const Color(0xFFEEF0F4),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      padding: const EdgeInsets.all(2),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _buildModeButton(0, '成绩', isDark),
+          _buildModeButton(1, '得分', isDark),
+          _buildModeButton(2, '评级', isDark),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildModeButton(int mode, String text, bool isDark) {
+    final isSelected = _displayMode == mode;
+    return GestureDetector(
+      onTap: () => setState(() => _displayMode = mode),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFF5B6EE1) : Colors.transparent,
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: Text(
+          text,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+            color: isSelected 
+                ? Colors.white 
+                : (isDark ? Colors.white70 : const Color(0xFF8A8F9C)),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildScoreListCard(List<_GymScoreItem> scores, bool isDark, int displayMode) {
     return Container(
       decoration: BoxDecoration(
         color: isDark ? Colors.grey[850] : Colors.white,
@@ -764,6 +806,50 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
             gradeBg = isDark ? Colors.white10 : const Color(0xFFF6F7FB);
           }
 
+          Widget rightWidget;
+          if (displayMode == 0) {
+            rightWidget = Text(
+              item.result,
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+                color: isDark ? Colors.white : const Color(0xFF1A1A2E),
+              ),
+            );
+          } else if (displayMode == 1) {
+            final isPass = item.score >= 60;
+            rightWidget = Text(
+              '${item.score} 分',
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+                color: isPass 
+                    ? (isDark ? const Color(0xFF32A866) : const Color(0xFF32A866)) 
+                    : const Color(0xFFE45757),
+              ),
+            );
+          } else {
+            rightWidget = Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+              decoration: BoxDecoration(
+                color: gradeBg,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                item.statusLabel,
+                style: TextStyle(
+                  color: gradeColor,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 12,
+                ),
+              ),
+            );
+          }
+
+          final w = item.standardWeight;
+
           return Column(
             children: [
               Padding(
@@ -771,49 +857,30 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
                 child: Row(
                   children: [
                     Expanded(
-                      flex: 2,
-                      child: Text(
-                        item.subName,
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
-                          color: isDark ? Colors.white70 : const Color(0xFF20232A),
-                        ),
-                      ),
-                    ),
-                    Expanded(
-                      flex: 2,
-                      child: Text(
-                        item.result,
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          color: isDark ? Colors.white : const Color(0xFF1A1A2E),
-                        ),
-                      ),
-                    ),
-                    Expanded(
-                      flex: 1,
-                      child: Align(
-                        alignment: Alignment.centerRight,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: gradeBg,
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Text(
-                            showScore ? '${item.score}分' : item.statusLabel,
+                      child: Row(
+                        children: [
+                          Text(
+                            item.subName,
                             style: TextStyle(
-                              color: gradeColor,
-                              fontWeight: FontWeight.w600,
-                              fontSize: 12,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                              color: isDark ? Colors.white : const Color(0xFF20232A),
                             ),
                           ),
-                        ),
+                          if (w.isNotEmpty) ...[
+                            const SizedBox(width: 6),
+                            Text(
+                              '· $w%',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: isDark ? Colors.white54 : const Color(0xFF8A8F9C),
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
                     ),
+                    rightWidget,
                   ],
                 ),
               ),
@@ -889,13 +956,27 @@ class _GymScoreItem {
   final String result;
   final String grade;
   final int score;
+  final String weight;
 
   const _GymScoreItem({
     required this.subName,
     required this.result,
     required this.grade,
     this.score = 0,
+    this.weight = '',
   });
+
+  String get standardWeight {
+    if (weight.isNotEmpty) return weight;
+    if (subName.contains('BMI') || subName.contains('体重指数')) return '15';
+    if (subName.contains('肺活量')) return '15';
+    if (subName.contains('50')) return '20';
+    if (subName.contains('前屈')) return '10';
+    if (subName.contains('跳远')) return '10';
+    if (subName.contains('引体') || subName.contains('仰卧')) return '10';
+    if (subName.contains('1000') || subName.contains('800')) return '20';
+    return '';
+  }
 
   factory _GymScoreItem.fromJson(Map<String, dynamic> json) {
     String name = (json['sub_name'] ?? '').toString();
@@ -914,11 +995,15 @@ class _GymScoreItem {
     }
     rawResult = rawResult.trim();
 
+    String w = (json['weight'] ?? json['percent'] ?? '').toString();
+    w = w.replaceAll('%', '');
+
     return _GymScoreItem(
       subName: name,
       result: rawResult,
       grade: (json['grade'] ?? '').toString(),
       score: int.tryParse(json['score']?.toString() ?? '') ?? 0,
+      weight: w,
     );
   }
 

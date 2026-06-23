@@ -1,30 +1,21 @@
+import 'package:flutter/foundation.dart';
+
 import '../../../services/webvpn_service.dart';
 import '../storage/erke_cache_store.dart';
 import 'erke_client.dart';
 import 'erke_models.dart';
 
-/// 二课数据仓库
-///
-/// 用法:
-///   final repo = ErkeRepository(vpnService: _vpn, cacheStore: _cache);
-///   await repo.loadCache(); // 读取本地缓存
-///   if (!repo.hasLiveSession) { await repo.loginAndFetch(...); }
 class ErkeRepository {
   final WebVpnService _vpn;
   final ErkeCacheStore _cache;
 
   ErkeClient? _client;
 
-  /// 本地是否有数据（缓存命中，含旧缓存迁移）
   bool hasCachedData = false;
 
-  /// 是否有毕业要求汇总数据
   bool get hasGraduationSummary => graduation != null;
-
-  /// 是否有学年要求汇总数据
   bool get hasYearlySummary => yearly != null;
 
-  /// 当前是否持有在线二课会话（_client != null && 已成功 loginToErke）
   bool hasLiveSession = false;
 
   ErkeGraduationSummary? graduation;
@@ -49,8 +40,6 @@ class ErkeRepository {
 
   Future<bool> hasCache() => _cache.hasCache();
 
-  /// 加载缓存（不发起网络请求）
-  /// 优先读取新 snapshot；不存在时从旧 SharedPreferences 键迁移
   Future<void> loadCache() async {
     final snapshot = await _cache.loadOrMigrateSnapshot();
     if (snapshot == null) return;
@@ -61,62 +50,113 @@ class ErkeRepository {
     activitiesByYear = snapshot.activitiesByYear;
     availableYears = snapshot.yearly?.availableYears ?? [];
     hasCachedData = snapshot.hasActivities || snapshot.hasGraduationData;
-    // 缓存命中不代表有在线会话 — 切换学年需要重新验证
     hasLiveSession = false;
   }
 
   // ================================================================
-  //  登录 + 完整抓取
+  //  登录 + 完整抓取 → 返回 bool
   // ================================================================
 
-  Future<void> loginAndFetch(
+  Future<bool> loginAndFetch(
     String studentId,
     String casPassword,
     String erkePassword,
   ) async {
     fetchError = null;
+    String phase = 'init';
 
     try {
       // 1. WebVPN 登录
+      phase = 'vpn_login';
+      debugPrint('[Erke] phase=$phase start');
       final vpnOk = await _vpn.login(studentId, casPassword);
       if (!vpnOk) {
         fetchError = '统一认证登录失败，请检查密码';
-        return;
+        debugPrint(
+            '[Erke] phase=$phase failed type=VpnLoginFailed message=$fetchError');
+        hasLiveSession = false;
+        _client = null;
+        return false;
       }
+      debugPrint('[Erke] phase=$phase success');
 
-      // 2. 创建 ErkeClient (复用 VPN 的 dio)
+      // 2. 二课登录
+      phase = 'erke_login';
+      debugPrint('[Erke] phase=$phase start');
       _client = ErkeClient(dio: _vpn.dio);
-
-      // 3. 二课登录
       await _client!.loginToErke(studentId, erkePassword);
       hasLiveSession = true;
+      debugPrint('[Erke] phase=$phase success');
 
-      // 4. 并行获取三页数据
-      final results = await Future.wait([
-        _client!.getGraduationSummary(),
-        _client!.getYearlySummary(),
-        _client!.getActivities(),
-      ]);
+      // 3. 分别抓取三页数据（每个可独立定位失败阶段）
+      phase = 'graduation_fetch';
+      debugPrint('[Erke] phase=$phase start');
+      ErkeGraduationSummary? newGraduation;
+      try {
+        newGraduation = await _client!.getGraduationSummary();
+        debugPrint('[Erke] phase=$phase success');
+      } catch (e, st) {
+        debugPrint(
+            '[Erke] phase=$phase failed type=${e.runtimeType} message=$e');
+        debugPrintStack(label: '[Erke] $phase', stackTrace: st);
+        rethrow;
+      }
 
-      graduation = results[0] as ErkeGraduationSummary;
-      yearly = results[1] as ErkeYearlySummary;
-      activities = results[2] as List<ErkeActivity>;
-      activitiesByYear = {yearly!.year: activities};
-      availableYears = yearly!.availableYears;
+      phase = 'yearly_fetch';
+      debugPrint('[Erke] phase=$phase start');
+      ErkeYearlySummary? newYearly;
+      try {
+        newYearly = await _client!.getYearlySummary();
+        debugPrint('[Erke] phase=$phase success');
+      } catch (e, st) {
+        debugPrint(
+            '[Erke] phase=$phase failed type=${e.runtimeType} message=$e');
+        debugPrintStack(label: '[Erke] $phase', stackTrace: st);
+        rethrow;
+      }
+
+      phase = 'activities_fetch';
+      debugPrint('[Erke] phase=$phase start');
+      List<ErkeActivity> newActivities;
+      try {
+        newActivities = await _client!.getActivities();
+        debugPrint('[Erke] phase=$phase success');
+      } catch (e, st) {
+        debugPrint(
+            '[Erke] phase=$phase failed type=${e.runtimeType} message=$e');
+        debugPrintStack(label: '[Erke] $phase', stackTrace: st);
+        rethrow;
+      }
+
+      // 4. 全部成功才替换内存数据
+      graduation = newGraduation;
+      yearly = newYearly;
+      activities = newActivities;
+      activitiesByYear = {newYearly.year: newActivities};
+      availableYears = newYearly.availableYears;
       hasCachedData = true;
 
       // 5. 写入缓存
+      phase = 'cache_save';
+      debugPrint('[Erke] phase=$phase start');
       await _cache.saveFullResult(
         graduation: graduation!,
         yearly: yearly!,
         activities: activities,
       );
-    } catch (e) {
-      fetchError = e.toString();
-      // 失败时保留旧数据，仅清除未完成的在线状态
+      debugPrint('[Erke] phase=$phase success');
+
+      fetchError = null;
+      return true;
+    } catch (e, stackTrace) {
+      fetchError =
+          '[Erke] phase=$phase failed type=${e.runtimeType} message=$e';
+      debugPrint(fetchError);
+      debugPrintStack(label: '[Erke] $phase stack', stackTrace: stackTrace);
       hasLiveSession = false;
       _client = null;
-      rethrow;
+      // 不覆盖内存中的旧数据
+      return false;
     }
   }
 
@@ -134,7 +174,6 @@ class ErkeRepository {
     yearlyError = null;
 
     try {
-      // 检查缓存
       final cached = await _cache.loadOrMigrateSnapshot();
       if (cached != null &&
           cached.yearlyByYear.containsKey(year) &&
@@ -145,7 +184,6 @@ class ErkeRepository {
         return;
       }
 
-      // 网络请求 — 学年汇总和活动一起请求
       final results = await Future.wait([
         _client!.getYearlySummary(year: year),
         _client!.getActivities(year: year),
@@ -158,7 +196,6 @@ class ErkeRepository {
       activities = yearActivities;
       activitiesByYear[year] = yearActivities;
 
-      // 写入缓存
       await _cache.saveYearlySummary(newYearly, yearActivities);
     } catch (e) {
       yearlyError = e.toString();
@@ -168,10 +205,19 @@ class ErkeRepository {
   }
 
   // ================================================================
-  //  清理
+  //  状态重置（不删缓存）
   // ================================================================
 
-  Future<void> clearAll() async {
+  /// 重置在线会话，保留所有缓存数据和本地快照
+  void resetLiveSession() {
+    hasLiveSession = false;
+    _client = null;
+    fetchError = null;
+    yearlyError = null;
+  }
+
+  /// 清除二课成绩缓存和数据
+  Future<void> clearCachedData() async {
     await _cache.clearAll();
     graduation = null;
     yearly = null;
@@ -179,7 +225,6 @@ class ErkeRepository {
     activitiesByYear = {};
     availableYears = [];
     hasCachedData = false;
-    hasLiveSession = false;
     hasLiveSession = false;
     _client = null;
     fetchError = null;

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -9,6 +10,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"shenliyuan/internal/models"
@@ -114,9 +116,14 @@ func (h *UploadHandler) Upload(c *gin.Context) {
 }
 
 // RecoverUpload restores a missing /uploads file from a client-side cache copy.
-// Unlike the normal upload endpoint, this writes to the requested legacy path so
-// existing post/avatar records start working again even when cached bytes differ.
+// Unlike the normal upload endpoint, this writes to the requested legacy path,
+// but only when the cached bytes match the SHA-256 hash embedded in that path.
 func (h *UploadHandler) RecoverUpload(c *gin.Context) {
+	if !recoveryAuthorized(c) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "recovery disabled"})
+		return
+	}
+
 	expectedPath := path.Clean("/" + strings.TrimSpace(c.PostForm("expected_path")))
 	if !strings.HasPrefix(expectedPath, "/uploads/") {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "恢复路径无效"})
@@ -132,6 +139,22 @@ func (h *UploadHandler) RecoverUpload(c *gin.Context) {
 	ext := strings.ToLower(filepath.Ext(relPath))
 	if ext != ".jpg" && ext != ".jpeg" && ext != ".png" && ext != ".gif" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "只支持 jpg/png/gif 格式"})
+		return
+	}
+
+	expectedHash := strings.TrimSuffix(filepath.Base(relPath), ext)
+	if len(expectedHash) != 64 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "恢复路径哈希无效"})
+		return
+	}
+
+	var fileRecord models.File
+	if err := h.db.Where("path = ?", expectedPath).First(&fileRecord).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusConflict, gin.H{"error": "数据库中不存在该文件路径"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询文件记录失败"})
 		return
 	}
 
@@ -172,58 +195,79 @@ func (h *UploadHandler) RecoverUpload(c *gin.Context) {
 	}
 	defer src.Close()
 
-	hash := sha256.New()
-	if _, err := io.Copy(hash, src); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "计算文件哈希失败"})
-		return
-	}
-	hashStr := hex.EncodeToString(hash.Sum(nil))
-
 	if err := os.MkdirAll(filepath.Dir(dstAbs), 0755); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建上传目录失败"})
 		return
 	}
 
-	dst, err := os.Create(dstAbs)
+	tmp, err := os.CreateTemp(filepath.Dir(dstAbs), ".recover-*")
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建文件失败"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建临时文件失败"})
 		return
 	}
-	defer dst.Close()
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
 
-	if _, err := src.Seek(0, 0); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取文件失败"})
-		return
-	}
-	if _, err := io.Copy(dst, src); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存文件失败"})
+	hash := sha256.New()
+	if _, err := io.Copy(tmp, io.TeeReader(src, hash)); err != nil {
+		tmp.Close()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "写入临时文件失败"})
 		return
 	}
 
-	var fileRecord models.File
-	if err := h.db.Where("path = ?", expectedPath).First(&fileRecord).Error; err == nil {
-		h.db.Model(&fileRecord).Updates(map[string]interface{}{
-			"size":      file.Size,
-			"mime_type": getMimeType(ext),
-		})
-	} else if err == gorm.ErrRecordNotFound {
-		pathHash := strings.TrimSuffix(filepath.Base(relPath), ext)
-		if len(pathHash) != 64 {
-			pathHash = hashStr
-		}
-		_ = h.db.Create(&models.File{
-			Hash:     pathHash,
-			Path:     expectedPath,
-			Size:     file.Size,
-			MimeType: getMimeType(ext),
-			RefCount: 1,
-		}).Error
+	if err := tmp.Close(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "关闭临时文件失败"})
+		return
 	}
+
+	hashStr := hex.EncodeToString(hash.Sum(nil))
+	if !strings.EqualFold(hashStr, expectedHash) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "缓存文件哈希与原路径不匹配"})
+		return
+	}
+
+	if _, err := os.Stat(dstAbs); err == nil {
+		c.JSON(http.StatusOK, gin.H{"url": expectedPath, "already_exists": true})
+		return
+	} else if !os.IsNotExist(err) {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "检查文件失败"})
+		return
+	}
+
+	if err := os.Rename(tmpPath, dstAbs); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "恢复文件失败"})
+		return
+	}
+	tmpPath = ""
+
+	h.db.Model(&fileRecord).Updates(map[string]interface{}{
+		"size":      file.Size,
+		"mime_type": getMimeType(ext),
+	})
 
 	c.JSON(http.StatusOK, gin.H{
 		"url":  expectedPath,
 		"hash": hashStr,
 	})
+}
+
+func recoveryAuthorized(c *gin.Context) bool {
+	if expectedToken := os.Getenv("UPLOAD_RECOVERY_TOKEN"); expectedToken != "" {
+		headerToken := c.GetHeader("X-Recovery-Token")
+		if subtle.ConstantTimeCompare([]byte(headerToken), []byte(expectedToken)) == 1 {
+			return true
+		}
+	}
+
+	allowedUserID := os.Getenv("UPLOAD_RECOVERY_USER_ID")
+	if allowedUserID == "" {
+		return false
+	}
+	parsedUserID, err := strconv.ParseUint(allowedUserID, 10, 64)
+	if err != nil {
+		return false
+	}
+	return c.GetUint("user_id") == uint(parsedUserID)
 }
 
 // UploadMultiple 批量上传

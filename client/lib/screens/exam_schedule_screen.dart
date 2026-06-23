@@ -204,13 +204,17 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
       await file.writeAsString(jsonEncode(exportData));
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        final messenger = ScaffoldMessenger.of(context);
+        messenger.hideCurrentSnackBar();
+        messenger.showSnackBar(
           SnackBar(
             content: Text('已成功存档至：${file.path}'),
             duration: const Duration(seconds: 5),
+            persist: false,
             action: SnackBarAction(
               label: '分享/打开',
               onPressed: () {
+                messenger.hideCurrentSnackBar();
                 Share.shareXFiles([XFile(file.path)], text: '沈理校园考试存档导出');
               },
             ),

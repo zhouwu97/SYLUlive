@@ -45,12 +45,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+from fastapi import Depends
+from services.internal_auth import require_internal_service_key
+
 # 注册路由
-app.include_router(auth.router)
-app.include_router(courses.router)
-app.include_router(grades.router)
-app.include_router(erke.router)
-app.include_router(spider.router)
+app.include_router(auth.router, dependencies=[Depends(require_internal_service_key)])
+app.include_router(courses.router, dependencies=[Depends(require_internal_service_key)])
+app.include_router(grades.router, dependencies=[Depends(require_internal_service_key)])
+app.include_router(erke.router, dependencies=[Depends(require_internal_service_key)])
+app.include_router(spider.router, dependencies=[Depends(require_internal_service_key)])
 
 
 @app.get("/")

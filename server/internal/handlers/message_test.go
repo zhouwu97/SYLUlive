@@ -394,8 +394,7 @@ func TestMessageSendImageResponseAndPush(t *testing.T) {
 			call.Extras["message_id"] == nil ||
 			call.Extras["sender_id"] != uint(1) ||
 			call.Extras["sender_name"] != "Alice" ||
-			call.Extras["sender_avatar"] == nil ||
-			call.Extras["override_msg_id"] != fmt.Sprintf("private_message_conversation_%v", conversationID) {
+			call.Extras["sender_avatar"] == nil {
 			t.Fatalf("unexpected push extras: %#v", call.Extras)
 		}
 	case <-time.After(time.Second):

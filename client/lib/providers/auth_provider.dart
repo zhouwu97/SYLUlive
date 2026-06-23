@@ -39,7 +39,6 @@ class AuthProvider extends ChangeNotifier {
   static const String _userKey = 'auth_user';
 
   final Dio _dio;
-  late final Dio _eduDio; // Python 教务服务
 
   User? _user;
   String? _token;
@@ -55,11 +54,6 @@ class AuthProvider extends ChangeNotifier {
   PersistCookieJar? _cookieJar;
 
   AuthProvider(this._dio) {
-    _eduDio = Dio(BaseOptions(
-      baseUrl: ApiConstants.eduServiceUrl,
-      connectTimeout: ApiConstants.connectTimeout,
-      receiveTimeout: ApiConstants.receiveTimeout,
-    ));
     // 添加 401 拦截器：自动登出并提示重新登录
     _dio.interceptors.add(InterceptorsWrapper(
       onRequest: (options, handler) {
@@ -454,13 +448,13 @@ class AuthProvider extends ChangeNotifier {
   /// 验证教务账号（注册前验证学号是否属于自己）
   Future<AuthResult> verifyEdu(String studentId, String eduPassword) async {
     try {
-      // 教务服务使用专用的 eduDio，路由是 /api/edu/pre_verify
+      // 教务验证服务由 Go 提供代理
       debugPrint('=== verifyEdu 开始 ===');
       debugPrint('student_id: $studentId');
-      debugPrint('baseUrl: ${_eduDio.options.baseUrl}');
-      debugPrint('fullUrl: ${_eduDio.options.baseUrl}/api/edu/pre_verify');
+      debugPrint('baseUrl: ${_dio.options.baseUrl}');
+      debugPrint('fullUrl: ${_dio.options.baseUrl}/edu/pre_verify');
 
-      final response = await _eduDio.post('/api/edu/pre_verify', data: {
+      final response = await _dio.post('/edu/pre_verify', data: {
         'student_id': studentId,
         'password': eduPassword,
       });

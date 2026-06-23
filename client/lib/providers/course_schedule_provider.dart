@@ -101,7 +101,7 @@ class CourseArchive {
 /// 课表数据提供者 —— 只负责课程网格数据，不管理教务绑定
 /// 绑定状态由 [EduProvider] 统一管理，本 Provider 只负责拉取和展示本地课程
 class CourseScheduleProvider extends ChangeNotifier {
-  late final Dio _eduDio;
+  final Dio _dio;
 
   String? _userId;
   bool _isLoading = false;
@@ -146,12 +146,7 @@ class CourseScheduleProvider extends ChangeNotifier {
   String? get cacheUserId => _userId;
   List<CourseArchive> get archives => _archives;
 
-  CourseScheduleProvider() {
-    _eduDio = Dio(BaseOptions(
-      baseUrl: ApiConstants.eduServiceUrl,
-      connectTimeout: const Duration(seconds: 30),
-      receiveTimeout: const Duration(seconds: 60),
-    ));
+  CourseScheduleProvider(this._dio) {
     _initDefaults();
   }
 
@@ -381,10 +376,9 @@ class CourseScheduleProvider extends ChangeNotifier {
     bool localSuccess = false;
     bool networkSuccess = false;
     try {
-      final localResp = await _eduDio.get(
-        '/api/edu/courses/local',
+      final localResp = await _dio.get(
+        '/edu/courses/local',
         queryParameters: {
-          'user_id': _userId,
           'year': _selectedYear,
           'semester': _selectedSemester,
         },
@@ -415,10 +409,9 @@ class CourseScheduleProvider extends ChangeNotifier {
     // Step 2: 服务器本地为空，从教务系统拉取原始数据
     if (!localSuccess) {
       try {
-        final fetchResp = await _eduDio.post(
-          '/api/edu/courses/fetch',
+        final fetchResp = await _dio.post(
+          '/edu/courses',
           data: {
-            'user_id': _userId,
             'year': _selectedYear,
             'semester': _selectedSemester,
           },

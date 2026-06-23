@@ -24,6 +24,8 @@ class MessageProvider extends ChangeNotifier {
   String? _messageError;
   int? _currentConversationId;
   int _messageRequestVersion = 0;
+  final Set<int> _refreshingConversationIds = {};
+  final Map<int, int> _lastMarkedReadMessageIds = {};
   final Map<int, String> _drafts = {};
 
   List<Conversation> get conversations => _conversations;
@@ -251,11 +253,38 @@ class MessageProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> refreshMessages() async {
+  Future<void> refreshMessages({int? currentUserId}) async {
     final conversationId = _currentConversationId;
     if (conversationId == null || _messageLoading) return;
+    if (!_refreshingConversationIds.add(conversationId)) return;
+
     if (_messages.isEmpty) {
-      await loadMessages(conversationId);
+      // Don't fall through to loadMessages – that would set _messageLoading
+      // and trigger the full-screen spinner during a background poll.
+      // Instead, do a silent fetch inline.
+      try {
+        final requestVersion = _messageRequestVersion;
+        final response = await _dio.get(
+          '/messages/conversations/$conversationId',
+          queryParameters: {'limit': _pageSize},
+        );
+        if (_currentConversationId != conversationId ||
+            requestVersion != _messageRequestVersion ||
+            response.data is! List) {
+          return;
+        }
+        _messages = (response.data as List)
+            .map((e) => Message.fromJson(Map<String, dynamic>.from(e as Map)))
+            .toList();
+        _hasMore = _messages.length == _pageSize;
+        _rememberMessages(conversationId);
+        _markReadIfNeeded(conversationId, currentUserId: currentUserId);
+        notifyListeners();
+      } catch (e) {
+        debugPrint('静默刷新消息失败: $e');
+      } finally {
+        _refreshingConversationIds.remove(conversationId);
+      }
       return;
     }
 
@@ -277,16 +306,20 @@ class MessageProvider extends ChangeNotifier {
       final latest = (response.data as List)
           .map((e) => Message.fromJson(Map<String, dynamic>.from(e as Map)))
           .toList();
-      final byId = <int, Message>{
-        for (final message in _messages) message.id: message,
-        for (final message in latest) message.id: message,
-      };
-      _messages = byId.values.toList()..sort((a, b) => a.id.compareTo(b.id));
-      _rememberMessages(conversationId);
-      await markRead(conversationId);
-      notifyListeners();
+      if (latest.isNotEmpty) {
+        final byId = <int, Message>{
+          for (final message in _messages) message.id: message,
+          for (final message in latest) message.id: message,
+        };
+        _messages = byId.values.toList()..sort((a, b) => a.id.compareTo(b.id));
+        _rememberMessages(conversationId);
+        _markReadIfNeeded(conversationId, currentUserId: currentUserId);
+        notifyListeners();
+      }
     } catch (e) {
       debugPrint('刷新消息失败: $e');
+    } finally {
+      _refreshingConversationIds.remove(conversationId);
     }
   }
 
@@ -315,7 +348,7 @@ class MessageProvider extends ChangeNotifier {
       _messages = byId.values.toList()..sort((a, b) => a.id.compareTo(b.id));
       _hasMore = _hasMore || latest.length == _pageSize;
       _rememberMessages(conversationId);
-      await markRead(conversationId);
+      _markReadIfNeeded(conversationId);
       notifyListeners();
     } catch (e) {
       debugPrint('刷新最新消息失败: $e');
@@ -350,7 +383,7 @@ class MessageProvider extends ChangeNotifier {
       _messages = byId.values.toList()..sort((a, b) => a.id.compareTo(b.id));
       _hasMore = _hasMore || around.length == _pageSize;
       _rememberMessages(conversationId);
-      await markRead(conversationId);
+      _markReadIfNeeded(conversationId);
       notifyListeners();
     } catch (e) {
       debugPrint('加载目标消息失败: $e');
@@ -409,9 +442,44 @@ class MessageProvider extends ChangeNotifier {
     return null;
   }
 
-  Future<void> markRead(int conversationId) async {
+  /// Only sends a /read request when the latest incoming message ID has changed
+  /// for this conversation. Skips if the latest message is from the current user.
+  void _markReadIfNeeded(int conversationId, {int? currentUserId}) {
+    if (_messages.isEmpty) return;
+
+    // Find the latest incoming message (not from current user).
+    // If currentUserId is unknown, fall back to using the latest message ID.
+    int? latestIncomingId;
+    if (currentUserId != null) {
+      for (var i = _messages.length - 1; i >= 0; i--) {
+        if (_messages[i].senderId != currentUserId) {
+          latestIncomingId = _messages[i].id;
+          break;
+        }
+      }
+      if (latestIncomingId == null) return; // All messages are from self
+    } else {
+      latestIncomingId = _messages.last.id;
+    }
+
+    final lastMarkedId = _lastMarkedReadMessageIds[conversationId];
+    if (latestIncomingId == lastMarkedId) return;
+    // Don't record yet – only record after the API call succeeds.
+    markRead(conversationId, markedMessageId: latestIncomingId);
+  }
+
+  Future<void> markRead(
+    int conversationId, {
+    int? markedMessageId,
+  }) async {
     try {
       await _dio.post('/messages/conversations/$conversationId/read');
+      // Only record after success so that a failed request gets retried.
+      if (markedMessageId != null) {
+        _lastMarkedReadMessageIds[conversationId] = markedMessageId;
+      } else if (_messages.isNotEmpty) {
+        _lastMarkedReadMessageIds[conversationId] = _messages.last.id;
+      }
       final index = _conversations
           .indexWhere((conversation) => conversation.id == conversationId);
       if (index >= 0 && _conversations[index].unreadCount != 0) {

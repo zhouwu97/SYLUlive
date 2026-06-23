@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -941,7 +942,9 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                             // 搜索框（可折叠）
                             SliverPersistentHeader(
                               pinned: false,
+                              floating: true,
                               delegate: _SliverSearchBarDelegate(
+                                vsync: this,
                                 child: Padding(
                                   padding:
                                       const EdgeInsets.fromLTRB(12, 6, 12, 8),
@@ -1156,15 +1159,27 @@ class _ShuitieScreenState extends State<ShuitieScreen>
 
 // ---- 搜索框折叠 SliverPersistentHeaderDelegate ----
 class _SliverSearchBarDelegate extends SliverPersistentHeaderDelegate {
+  final TickerProvider _vsync;
   final Widget child;
 
-  _SliverSearchBarDelegate({required this.child});
+  _SliverSearchBarDelegate({required TickerProvider vsync, required this.child})
+      : _vsync = vsync;
 
   @override
   double get maxExtent => 56;
 
   @override
   double get minExtent => 0;
+
+  @override
+  FloatingHeaderSnapConfiguration get snapConfiguration =>
+      FloatingHeaderSnapConfiguration(
+        curve: Curves.easeOut,
+        duration: const Duration(milliseconds: 200),
+      );
+
+  @override
+  TickerProvider get vsync => _vsync;
 
   @override
   Widget build(

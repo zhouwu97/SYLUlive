@@ -79,8 +79,10 @@ class _MyContentScreenState extends State<MyContentScreen>
       }
 
       // 直接从 API 获取用户所有帖子，不走 PostProvider 的 board 分页
-      final res = await authProvider.dio
-          .get('/user/$currentUserId/posts', queryParameters: {'limit': '999'});
+      final res = await authProvider.dio.get(
+        '/user/$currentUserId/posts',
+        queryParameters: {'limit': '999'},
+      );
       final data = res.data is Map ? res.data['data'] : res.data;
       final allPosts = (data as List)
           .map((e) => Post.fromJson(e as Map<String, dynamic>))
@@ -167,11 +169,14 @@ class _MyContentScreenState extends State<MyContentScreen>
       MyContentScreen.globalPostCount = _myPosts.length + _myMarketPosts.length;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(errors.isEmpty
-              ? '已删除 $deletedCount 项'
-              : '已删除 $deletedCount 项，${errors.first}'),
-          backgroundColor:
-              errors.isEmpty && deletedCount > 0 ? Colors.green : Colors.red,
+          content: Text(
+            errors.isEmpty
+                ? '已删除 $deletedCount 项'
+                : '已删除 $deletedCount 项，${errors.first}',
+          ),
+          backgroundColor: errors.isEmpty && deletedCount > 0
+              ? Colors.green
+              : Colors.red,
         ),
       );
       if (mounted)
@@ -250,8 +255,10 @@ class _MyContentScreenState extends State<MyContentScreen>
               children: [
                 // Tab栏
                 Container(
-                  margin:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  margin: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
                   decoration: BoxDecoration(
                     color: isDark
                         ? Colors.white.withValues(alpha: 0.08)
@@ -263,16 +270,20 @@ class _MyContentScreenState extends State<MyContentScreen>
                     indicatorColor: Theme.of(context).primaryColor,
                     indicatorWeight: 3,
                     labelStyle: const TextStyle(
-                        fontWeight: FontWeight.bold, fontSize: 13),
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                    ),
                     unselectedLabelStyle: const TextStyle(fontSize: 12),
                     dividerColor: Colors.transparent,
                     tabs: [
                       Tab(
-                          text:
-                              '我的帖子${_myPosts.isEmpty ? '' : ' (${_myPosts.length})'}'),
+                        text:
+                            '我的帖子${_myPosts.isEmpty ? '' : ' (${_myPosts.length})'}',
+                      ),
                       Tab(
-                          text:
-                              '我的集市${_myMarketPosts.isEmpty ? '' : ' (${_myMarketPosts.length})'}'),
+                        text:
+                            '我的集市${_myMarketPosts.isEmpty ? '' : ' (${_myMarketPosts.length})'}',
+                      ),
                     ],
                   ),
                 ),
@@ -282,14 +293,14 @@ class _MyContentScreenState extends State<MyContentScreen>
                   child: _isLoading
                       ? const Center(child: CircularProgressIndicator())
                       : _errorMessage != null
-                          ? _buildErrorView(isDark)
-                          : TabBarView(
-                              controller: _tabController,
-                              children: [
-                                _buildPostsList(_myPosts, isDark),
-                                _buildMarketList(_myMarketPosts, isDark),
-                              ],
-                            ),
+                      ? _buildErrorView(isDark)
+                      : TabBarView(
+                          controller: _tabController,
+                          children: [
+                            _buildPostsList(_myPosts, isDark),
+                            _buildMarketList(_myMarketPosts, isDark),
+                          ],
+                        ),
                 ),
               ],
             ),
@@ -305,25 +316,33 @@ class _MyContentScreenState extends State<MyContentScreen>
         themeProvider.getBackgroundImageFor(context) != null) {
       final bgPath = themeProvider.getBackgroundImageFor(context)!;
       final isAsset = !bgPath.startsWith('http') && !bgPath.startsWith('/');
-      return Stack(fit: StackFit.expand, children: [
-        isAsset
-            ? Image.asset('assets/images/$bgPath',
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => _buildDefaultBackground(isDark))
-            : bgPath.startsWith('/')
-                ? Image.file(File(bgPath),
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) =>
-                        _buildDefaultBackground(isDark))
-                : Image.network(bgPath,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) =>
-                        _buildDefaultBackground(isDark)),
-        Container(
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          isAsset
+              ? Image.asset(
+                  'assets/images/$bgPath',
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => _buildDefaultBackground(isDark),
+                )
+              : bgPath.startsWith('/')
+              ? Image.file(
+                  File(bgPath),
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => _buildDefaultBackground(isDark),
+                )
+              : Image.network(
+                  bgPath,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => _buildDefaultBackground(isDark),
+                ),
+          Container(
             color: isDark
                 ? Colors.black.withValues(alpha: 0.4)
-                : Colors.white.withValues(alpha: 0.3)),
-      ]);
+                : Colors.white.withValues(alpha: 0.3),
+          ),
+        ],
+      );
     }
     return _buildDefaultBackground(isDark);
   }
@@ -334,8 +353,9 @@ class _MyContentScreenState extends State<MyContentScreen>
       children: [
         Image(
           image: ResizeImage(
-              const AssetImage('assets/images/morenbeijing.jpeg'),
-              width: 1080),
+            const AssetImage('assets/images/morenbeijing.jpeg'),
+            width: 1080,
+          ),
           fit: BoxFit.cover,
           errorBuilder: (_, __, ___) => Container(
             decoration: BoxDecoration(
@@ -346,21 +366,22 @@ class _MyContentScreenState extends State<MyContentScreen>
                     ? [
                         const Color(0xFF1A1A2E),
                         const Color(0xFF16213E),
-                        const Color(0xFF0F3460)
+                        const Color(0xFF0F3460),
                       ]
                     : [
                         const Color(0xFF667EEA),
                         const Color(0xFF764BA2),
-                        const Color(0xFFF093FB)
+                        const Color(0xFFF093FB),
                       ],
               ),
             ),
           ),
         ),
         Container(
-            color: isDark
-                ? Colors.black.withValues(alpha: 0.35)
-                : Colors.white.withValues(alpha: 0.25)),
+          color: isDark
+              ? Colors.black.withValues(alpha: 0.35)
+              : Colors.white.withValues(alpha: 0.25),
+        ),
       ],
     );
   }
@@ -372,26 +393,36 @@ class _MyContentScreenState extends State<MyContentScreen>
         borderRadius: 20,
         blur: 12,
         opacity: 0.12,
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Icon(Icons.cloud_off,
-              size: 48, color: isDark ? Colors.white30 : Colors.grey[400]),
-          const SizedBox(height: 14),
-          Text(_errorMessage!,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.cloud_off,
+              size: 48,
+              color: isDark ? Colors.white30 : Colors.grey[400],
+            ),
+            const SizedBox(height: 14),
+            Text(
+              _errorMessage!,
               textAlign: TextAlign.center,
               style: TextStyle(
-                  color: isDark ? Colors.white60 : Colors.grey[600],
-                  fontSize: 15)),
-          const SizedBox(height: 18),
-          OutlinedButton.icon(
-            onPressed: _loadData,
-            icon: const Icon(Icons.refresh, size: 18),
-            label: const Text('重试'),
-            style: OutlinedButton.styleFrom(
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
+                color: isDark ? Colors.white60 : Colors.grey[600],
+                fontSize: 15,
+              ),
             ),
-          ),
-        ]),
+            const SizedBox(height: 18),
+            OutlinedButton.icon(
+              onPressed: _loadData,
+              icon: const Icon(Icons.refresh, size: 18),
+              label: const Text('重试'),
+              style: OutlinedButton.styleFrom(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -401,7 +432,11 @@ class _MyContentScreenState extends State<MyContentScreen>
   Widget _buildPostsList(List<Post> posts, bool isDark) {
     if (posts.isEmpty) {
       return _buildEmptyState(
-          '暂无帖子', '发布你的第一条帖子吧', Icons.article_outlined, isDark);
+        '暂无帖子',
+        '发布你的第一条帖子吧',
+        Icons.article_outlined,
+        isDark,
+      );
     }
 
     return RefreshIndicator(
@@ -438,7 +473,8 @@ class _MyContentScreenState extends State<MyContentScreen>
               onChanged: (_) => _toggleSelect(post.id),
               activeColor: Theme.of(context).primaryColor,
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(4)),
+                borderRadius: BorderRadius.circular(4),
+              ),
             ),
             const SizedBox(width: 8),
           ],
@@ -459,27 +495,33 @@ class _MyContentScreenState extends State<MyContentScreen>
                 const SizedBox(height: 6),
                 Row(
                   children: [
-                    Icon(Icons.access_time,
-                        size: 12,
-                        color: isDark ? Colors.white38 : Colors.grey[500]),
+                    Icon(
+                      Icons.access_time,
+                      size: 12,
+                      color: isDark ? Colors.white38 : Colors.grey[500],
+                    ),
                     const SizedBox(width: 4),
                     Text(
                       _formatTime(post.createdAt),
                       style: TextStyle(
-                          fontSize: 12,
-                          color: isDark ? Colors.white38 : Colors.grey[500]),
+                        fontSize: 12,
+                        color: isDark ? Colors.white38 : Colors.grey[500],
+                      ),
                     ),
                     const SizedBox(width: 12),
                     if (post.images.isNotEmpty) ...[
-                      Icon(Icons.image,
-                          size: 12,
-                          color: isDark ? Colors.white38 : Colors.grey[500]),
+                      Icon(
+                        Icons.image,
+                        size: 12,
+                        color: isDark ? Colors.white38 : Colors.grey[500],
+                      ),
                       const SizedBox(width: 4),
                       Text(
                         '${post.images.length}',
                         style: TextStyle(
-                            fontSize: 12,
-                            color: isDark ? Colors.white38 : Colors.grey[500]),
+                          fontSize: 12,
+                          color: isDark ? Colors.white38 : Colors.grey[500],
+                        ),
                       ),
                     ],
                   ],
@@ -493,12 +535,16 @@ class _MyContentScreenState extends State<MyContentScreen>
               children: [
                 IconButton(
                   tooltip: '编辑帖子',
-                  icon: Icon(Icons.edit_outlined,
-                      color: isDark ? Colors.white54 : Colors.grey[600]),
+                  icon: Icon(
+                    Icons.edit_outlined,
+                    color: isDark ? Colors.white54 : Colors.grey[600],
+                  ),
                   onPressed: () => _editPost(post),
                 ),
-                Icon(Icons.chevron_right,
-                    color: isDark ? Colors.white30 : Colors.grey[400]),
+                Icon(
+                  Icons.chevron_right,
+                  color: isDark ? Colors.white30 : Colors.grey[400],
+                ),
               ],
             ),
         ],
@@ -547,7 +593,8 @@ class _MyContentScreenState extends State<MyContentScreen>
               onChanged: (_) => _toggleSelect(post.id),
               activeColor: Theme.of(context).primaryColor,
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(4)),
+                borderRadius: BorderRadius.circular(4),
+              ),
             ),
             const SizedBox(width: 8),
           ],
@@ -564,8 +611,10 @@ class _MyContentScreenState extends State<MyContentScreen>
                   width: 60,
                   height: 60,
                   color: isDark ? Colors.white12 : Colors.grey[200],
-                  child: Icon(Icons.image,
-                      color: isDark ? Colors.white30 : Colors.grey[400]),
+                  child: Icon(
+                    Icons.image,
+                    color: isDark ? Colors.white30 : Colors.grey[400],
+                  ),
                 ),
               ),
             ),
@@ -605,15 +654,18 @@ class _MyContentScreenState extends State<MyContentScreen>
                 const SizedBox(height: 4),
                 Row(
                   children: [
-                    Icon(Icons.access_time,
-                        size: 12,
-                        color: isDark ? Colors.white38 : Colors.grey[500]),
+                    Icon(
+                      Icons.access_time,
+                      size: 12,
+                      color: isDark ? Colors.white38 : Colors.grey[500],
+                    ),
                     const SizedBox(width: 4),
                     Text(
                       _formatTime(post.createdAt),
                       style: TextStyle(
-                          fontSize: 12,
-                          color: isDark ? Colors.white38 : Colors.grey[500]),
+                        fontSize: 12,
+                        color: isDark ? Colors.white38 : Colors.grey[500],
+                      ),
                     ),
                   ],
                 ),
@@ -626,12 +678,16 @@ class _MyContentScreenState extends State<MyContentScreen>
               children: [
                 IconButton(
                   tooltip: '编辑帖子',
-                  icon: Icon(Icons.edit_outlined,
-                      color: isDark ? Colors.white54 : Colors.grey[600]),
+                  icon: Icon(
+                    Icons.edit_outlined,
+                    color: isDark ? Colors.white54 : Colors.grey[600],
+                  ),
                   onPressed: () => _editPost(post),
                 ),
-                Icon(Icons.chevron_right,
-                    color: isDark ? Colors.white30 : Colors.grey[400]),
+                Icon(
+                  Icons.chevron_right,
+                  color: isDark ? Colors.white30 : Colors.grey[400],
+                ),
               ],
             ),
         ],
@@ -672,14 +728,21 @@ class _MyContentScreenState extends State<MyContentScreen>
       ),
       child: Text(
         label,
-        style:
-            TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w500),
+        style: TextStyle(
+          color: color,
+          fontSize: 11,
+          fontWeight: FontWeight.w500,
+        ),
       ),
     );
   }
 
   Widget _buildEmptyState(
-      String title, String subtitle, IconData icon, bool isDark) {
+    String title,
+    String subtitle,
+    IconData icon,
+    bool isDark,
+  ) {
     return Center(
       child: GlassContainer(
         padding: const EdgeInsets.all(32),
@@ -689,23 +752,28 @@ class _MyContentScreenState extends State<MyContentScreen>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon,
-                size: 64, color: isDark ? Colors.white60 : Colors.grey[400]),
+            Icon(
+              icon,
+              size: 64,
+              color: isDark ? Colors.white60 : Colors.grey[400],
+            ),
             const SizedBox(height: 16),
             Text(
               title,
               style: TextStyle(
-                  fontSize: 18,
-                  color: isDark ? Colors.white70 : Colors.grey[600]),
+                fontSize: 18,
+                color: isDark ? Colors.white70 : Colors.grey[600],
+              ),
             ),
             const SizedBox(height: 8),
             Text(
               subtitle,
               style: TextStyle(
-                  fontSize: 14,
-                  color: isDark
-                      ? Colors.white.withOpacity(0.4)
-                      : Colors.grey[400]),
+                fontSize: 14,
+                color: isDark
+                    ? Colors.white.withOpacity(0.4)
+                    : Colors.grey[400],
+              ),
             ),
           ],
         ),

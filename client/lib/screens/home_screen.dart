@@ -39,6 +39,8 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   int _currentIndex = 0;
   final GlobalKey _contentKey = GlobalKey(debugLabel: 'homeContentStack');
+  late final Set<int> _visitedTabs;
+  final Map<int, Widget> _tabPages = {};
   Timer? _announcementTimer;
   String? _announcementAuthKey;
   bool _isCheckingAnnouncements = false;
@@ -54,6 +56,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     _currentIndex = widget.initialTab;
+    _visitedTabs = {_currentIndex};
     widgetTabSwitch.addListener(_onWidgetTabSwitch);
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -70,7 +73,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   void _onWidgetTabSwitch() {
     if (mounted && _currentIndex != 2) {
-      setState(() => _currentIndex = 2);
+      _switchTab(2);
     }
   }
 
@@ -102,8 +105,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (_announcementAuthKey == authKey) return;
 
     _announcementAuthKey = authKey;
-    _announcementSeenKey =
-        auth.isLoggedIn ? 'seen_announcements_${auth.user?.id}' : null;
+    _announcementSeenKey = auth.isLoggedIn
+        ? 'seen_announcements_${auth.user?.id}'
+        : null;
     _dismissedAnnouncementIds.clear();
     _seenAnnouncementIds.clear();
     _announcementTimer?.cancel();
@@ -189,7 +193,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       }
       return (resp.data as List?) ?? const [];
     } on DioException catch (e) {
-      final isBadUnreadRoute = e.response?.statusCode == 400 &&
+      final isBadUnreadRoute =
+          e.response?.statusCode == 400 &&
           e.response?.data is Map &&
           (e.response!.data['error']?.toString().contains('无效的公告ID') ?? false);
       if (isBadUnreadRoute) {
@@ -214,9 +219,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _isCheckingAnnouncements = true;
     try {
       final list = (await _loadUnreadAnnouncements(auth))
-          .where((item) =>
-              !_dismissedAnnouncementIds.contains(_announcementId(item)) &&
-              !_seenAnnouncementIds.contains(_announcementId(item)))
+          .where(
+            (item) =>
+                !_dismissedAnnouncementIds.contains(_announcementId(item)) &&
+                !_seenAnnouncementIds.contains(_announcementId(item)),
+          )
           .toList();
       if (list.isEmpty || !mounted) return;
       await _showAnnouncementDialog(list);
@@ -255,10 +262,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         onTap: () => Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (_) => ImageViewerScreen(
-              imageUrls: [imageUrl],
-              initialIndex: 0,
-            ),
+            builder: (_) =>
+                ImageViewerScreen(imageUrls: [imageUrl], initialIndex: 0),
           ),
         ),
         child: ClipRRect(
@@ -304,361 +309,395 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       readAll = await showDialog<bool>(
         context: context,
         barrierDismissible: false,
-        builder: (ctx) => StatefulBuilder(builder: (ctx, setLocal) {
-          final a = unread[current];
-          final title = (a['title']?.toString().trim().isNotEmpty ?? false)
-              ? a['title'].toString().trim()
-              : '系统公告';
-          final content = a['content']?.toString() ?? '';
-          final isPinned = a['is_pinned'] == true;
-          final timeText = _announcementTime(a);
+        builder: (ctx) => StatefulBuilder(
+          builder: (ctx, setLocal) {
+            final a = unread[current];
+            final title = (a['title']?.toString().trim().isNotEmpty ?? false)
+                ? a['title'].toString().trim()
+                : '系统公告';
+            final content = a['content']?.toString() ?? '';
+            final isPinned = a['is_pinned'] == true;
+            final timeText = _announcementTime(a);
 
-          return Dialog(
-            backgroundColor: Colors.transparent,
-            insetPadding:
-                const EdgeInsets.symmetric(horizontal: 22, vertical: 24),
-            child: Container(
-              constraints: const BoxConstraints(maxWidth: 520),
-              decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF161B24) : Colors.white,
-                borderRadius: BorderRadius.circular(28),
-                border: Border.all(
-                  color: isDark
-                      ? Colors.white.withValues(alpha: 0.06)
-                      : const Color(0xFFE7EBF3),
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: isDark ? 0.28 : 0.10),
-                    blurRadius: 28,
-                    offset: const Offset(0, 12),
-                  ),
-                ],
+            return Dialog(
+              backgroundColor: Colors.transparent,
+              insetPadding: const EdgeInsets.symmetric(
+                horizontal: 22,
+                vertical: 24,
               ),
-              child: Column(mainAxisSize: MainAxisSize.min, children: [
-                Container(
-                  padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: isDark
-                          ? const [Color(0xFF24334E), Color(0xFF192231)]
-                          : const [Color(0xFFF4F7FF), Color(0xFFEAF0FF)],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    borderRadius:
-                        const BorderRadius.vertical(top: Radius.circular(28)),
+              child: Container(
+                constraints: const BoxConstraints(maxWidth: 520),
+                decoration: BoxDecoration(
+                  color: isDark ? const Color(0xFF161B24) : Colors.white,
+                  borderRadius: BorderRadius.circular(28),
+                  border: Border.all(
+                    color: isDark
+                        ? Colors.white.withValues(alpha: 0.06)
+                        : const Color(0xFFE7EBF3),
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(children: [
-                        Container(
-                          width: 42,
-                          height: 42,
-                          decoration: BoxDecoration(
-                            color: Theme.of(context)
-                                .primaryColor
-                                .withValues(alpha: isDark ? 0.22 : 0.14),
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                          child: Icon(
-                            Icons.campaign_rounded,
-                            color: Theme.of(context).primaryColor,
-                          ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(
+                        alpha: isDark ? 0.28 : 0.10,
+                      ),
+                      blurRadius: 28,
+                      offset: const Offset(0, 12),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: isDark
+                              ? const [Color(0xFF24334E), Color(0xFF192231)]
+                              : const [Color(0xFFF4F7FF), Color(0xFFEAF0FF)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
                         ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                        borderRadius: const BorderRadius.vertical(
+                          top: Radius.circular(28),
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
                             children: [
-                              Row(
-                                children: [
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 10,
-                                      vertical: 4,
+                              Container(
+                                width: 42,
+                                height: 42,
+                                decoration: BoxDecoration(
+                                  color: Theme.of(context).primaryColor
+                                      .withValues(alpha: isDark ? 0.22 : 0.14),
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                                child: Icon(
+                                  Icons.campaign_rounded,
+                                  color: Theme.of(context).primaryColor,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 10,
+                                            vertical: 4,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: Theme.of(context)
+                                                .primaryColor
+                                                .withValues(alpha: 0.12),
+                                            borderRadius: BorderRadius.circular(
+                                              999,
+                                            ),
+                                          ),
+                                          child: Text(
+                                            '系统公告',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w700,
+                                              color: Theme.of(
+                                                context,
+                                              ).primaryColor,
+                                            ),
+                                          ),
+                                        ),
+                                        if (isPinned) ...[
+                                          const SizedBox(width: 8),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 10,
+                                              vertical: 4,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: const Color(
+                                                0xFFFFB84D,
+                                              ).withValues(alpha: 0.18),
+                                              borderRadius:
+                                                  BorderRadius.circular(999),
+                                            ),
+                                            child: const Text(
+                                              '置顶',
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w700,
+                                                color: Color(0xFFFF9800),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ],
                                     ),
-                                    decoration: BoxDecoration(
-                                      color: Theme.of(context)
-                                          .primaryColor
-                                          .withValues(alpha: 0.12),
-                                      borderRadius: BorderRadius.circular(999),
-                                    ),
-                                    child: Text(
-                                      '系统公告',
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      unread.length > 1
+                                          ? '第 ${current + 1} 条，共 ${unread.length} 条'
+                                          : '请及时查看最新校园通知',
                                       style: TextStyle(
                                         fontSize: 12,
-                                        fontWeight: FontWeight.w700,
-                                        color: Theme.of(context).primaryColor,
-                                      ),
-                                    ),
-                                  ),
-                                  if (isPinned) ...[
-                                    const SizedBox(width: 8),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 10,
-                                        vertical: 4,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: const Color(0xFFFFB84D)
-                                            .withValues(alpha: 0.18),
-                                        borderRadius:
-                                            BorderRadius.circular(999),
-                                      ),
-                                      child: const Text(
-                                        '置顶',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w700,
-                                          color: Color(0xFFFF9800),
-                                        ),
+                                        color: isDark
+                                            ? Colors.white54
+                                            : Colors.grey[700],
                                       ),
                                     ),
                                   ],
-                                ],
+                                ),
                               ),
-                              const SizedBox(height: 8),
-                              Text(
-                                unread.length > 1
-                                    ? '第 ${current + 1} 条，共 ${unread.length} 条'
-                                    : '请及时查看最新校园通知',
-                                style: TextStyle(
-                                  fontSize: 12,
+                              IconButton(
+                                onPressed: () => Navigator.pop(ctx, false),
+                                icon: Icon(
+                                  Icons.close,
                                   color: isDark
-                                      ? Colors.white54
+                                      ? Colors.white60
                                       : Colors.grey[700],
                                 ),
                               ),
                             ],
                           ),
-                        ),
-                        IconButton(
-                          onPressed: () => Navigator.pop(ctx, false),
-                          icon: Icon(
-                            Icons.close,
-                            color: isDark ? Colors.white60 : Colors.grey[700],
-                          ),
-                        ),
-                      ]),
-                      const SizedBox(height: 16),
-                      Text(
-                        title,
-                        style: TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.w800,
-                          color:
-                              isDark ? Colors.white : const Color(0xFF111827),
-                        ),
-                      ),
-                      if (timeText.isNotEmpty) ...[
-                        const SizedBox(height: 8),
-                        Row(
-                          children: [
-                            Icon(
-                              Icons.schedule_rounded,
-                              size: 14,
-                              color: isDark ? Colors.white38 : Colors.grey[600],
+                          const SizedBox(height: 16),
+                          Text(
+                            title,
+                            style: TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.w800,
+                              color: isDark
+                                  ? Colors.white
+                                  : const Color(0xFF111827),
                             ),
-                            const SizedBox(width: 6),
-                            Text(
-                              timeText,
-                              style: TextStyle(
-                                fontSize: 12,
-                                color:
-                                    isDark ? Colors.white38 : Colors.grey[600],
-                              ),
+                          ),
+                          if (timeText.isNotEmpty) ...[
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.schedule_rounded,
+                                  size: 14,
+                                  color: isDark
+                                      ? Colors.white38
+                                      : Colors.grey[600],
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  timeText,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: isDark
+                                        ? Colors.white38
+                                        : Colors.grey[600],
+                                  ),
+                                ),
+                              ],
                             ),
                           ],
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 18, 20, 12),
-                  child: Container(
-                    constraints: const BoxConstraints(maxHeight: 320),
-                    padding: const EdgeInsets.all(18),
-                    decoration: BoxDecoration(
-                      color: isDark
-                          ? const Color(0xFF11161F)
-                          : const Color(0xFFF7F9FC),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color: isDark
-                            ? Colors.white.withValues(alpha: 0.05)
-                            : const Color(0xFFE9EDF5),
+                        ],
                       ),
                     ),
-                    child: SingleChildScrollView(
-                      child: MarkdownBody(
-                        data: content,
-                        selectable: true,
-                        onTapLink: (text, href, title) async {
-                          final link = href?.trim();
-                          if (link == null || link.isEmpty) return;
-                          final uri = Uri.tryParse(link);
-                          if (uri == null) return;
-                          await launchUrl(
-                            uri,
-                            mode: LaunchMode.externalApplication,
-                          );
-                        },
-                        styleSheet: MarkdownStyleSheet(
-                          p: TextStyle(
-                            fontSize: 15,
-                            height: 1.7,
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 18, 20, 12),
+                      child: Container(
+                        constraints: const BoxConstraints(maxHeight: 320),
+                        padding: const EdgeInsets.all(18),
+                        decoration: BoxDecoration(
+                          color: isDark
+                              ? const Color(0xFF11161F)
+                              : const Color(0xFFF7F9FC),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
                             color: isDark
-                                ? Colors.white70
-                                : const Color(0xFF334155),
+                                ? Colors.white.withValues(alpha: 0.05)
+                                : const Color(0xFFE9EDF5),
                           ),
-                          h1: TextStyle(
-                            fontSize: 22,
-                            height: 1.4,
-                            fontWeight: FontWeight.w800,
-                            color:
-                                isDark ? Colors.white : const Color(0xFF0F172A),
-                          ),
-                          h2: TextStyle(
-                            fontSize: 19,
-                            height: 1.45,
-                            fontWeight: FontWeight.w700,
-                            color:
-                                isDark ? Colors.white : const Color(0xFF0F172A),
-                          ),
-                          h3: TextStyle(
-                            fontSize: 17,
-                            height: 1.45,
-                            fontWeight: FontWeight.w700,
-                            color:
-                                isDark ? Colors.white : const Color(0xFF0F172A),
-                          ),
-                          listBullet: TextStyle(
-                            fontSize: 15,
-                            color: isDark
-                                ? Colors.white70
-                                : const Color(0xFF334155),
-                          ),
-                          strong: TextStyle(
-                            fontWeight: FontWeight.w800,
-                            color:
-                                isDark ? Colors.white : const Color(0xFF111827),
-                          ),
-                          em: TextStyle(
-                            fontStyle: FontStyle.italic,
-                            color: isDark
-                                ? Colors.white70
-                                : const Color(0xFF334155),
-                          ),
-                          code: TextStyle(
-                            fontFamily: 'monospace',
-                            fontSize: 13.5,
-                            color: isDark
-                                ? const Color(0xFFF8FAFC)
-                                : const Color(0xFF1E293B),
-                          ),
-                          codeblockDecoration: BoxDecoration(
-                            color: isDark
-                                ? const Color(0xFF0B1220)
-                                : const Color(0xFFEFF3F8),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          blockquote: TextStyle(
-                            fontSize: 14,
-                            height: 1.6,
-                            color: isDark ? Colors.white60 : Colors.grey[700],
-                          ),
-                          blockquoteDecoration: BoxDecoration(
-                            color: isDark
-                                ? Colors.white.withValues(alpha: 0.03)
-                                : Colors.white,
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border(
-                              left: BorderSide(
+                        ),
+                        child: SingleChildScrollView(
+                          child: MarkdownBody(
+                            data: content,
+                            selectable: true,
+                            onTapLink: (text, href, title) async {
+                              final link = href?.trim();
+                              if (link == null || link.isEmpty) return;
+                              final uri = Uri.tryParse(link);
+                              if (uri == null) return;
+                              await launchUrl(
+                                uri,
+                                mode: LaunchMode.externalApplication,
+                              );
+                            },
+                            styleSheet: MarkdownStyleSheet(
+                              p: TextStyle(
+                                fontSize: 15,
+                                height: 1.7,
+                                color: isDark
+                                    ? Colors.white70
+                                    : const Color(0xFF334155),
+                              ),
+                              h1: TextStyle(
+                                fontSize: 22,
+                                height: 1.4,
+                                fontWeight: FontWeight.w800,
+                                color: isDark
+                                    ? Colors.white
+                                    : const Color(0xFF0F172A),
+                              ),
+                              h2: TextStyle(
+                                fontSize: 19,
+                                height: 1.45,
+                                fontWeight: FontWeight.w700,
+                                color: isDark
+                                    ? Colors.white
+                                    : const Color(0xFF0F172A),
+                              ),
+                              h3: TextStyle(
+                                fontSize: 17,
+                                height: 1.45,
+                                fontWeight: FontWeight.w700,
+                                color: isDark
+                                    ? Colors.white
+                                    : const Color(0xFF0F172A),
+                              ),
+                              listBullet: TextStyle(
+                                fontSize: 15,
+                                color: isDark
+                                    ? Colors.white70
+                                    : const Color(0xFF334155),
+                              ),
+                              strong: TextStyle(
+                                fontWeight: FontWeight.w800,
+                                color: isDark
+                                    ? Colors.white
+                                    : const Color(0xFF111827),
+                              ),
+                              em: TextStyle(
+                                fontStyle: FontStyle.italic,
+                                color: isDark
+                                    ? Colors.white70
+                                    : const Color(0xFF334155),
+                              ),
+                              code: TextStyle(
+                                fontFamily: 'monospace',
+                                fontSize: 13.5,
+                                color: isDark
+                                    ? const Color(0xFFF8FAFC)
+                                    : const Color(0xFF1E293B),
+                              ),
+                              codeblockDecoration: BoxDecoration(
+                                color: isDark
+                                    ? const Color(0xFF0B1220)
+                                    : const Color(0xFFEFF3F8),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              blockquote: TextStyle(
+                                fontSize: 14,
+                                height: 1.6,
+                                color: isDark
+                                    ? Colors.white60
+                                    : Colors.grey[700],
+                              ),
+                              blockquoteDecoration: BoxDecoration(
+                                color: isDark
+                                    ? Colors.white.withValues(alpha: 0.03)
+                                    : Colors.white,
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border(
+                                  left: BorderSide(
+                                    color: Theme.of(context).primaryColor,
+                                    width: 3,
+                                  ),
+                                ),
+                              ),
+                              a: TextStyle(
                                 color: Theme.of(context).primaryColor,
-                                width: 3,
+                                decoration: TextDecoration.underline,
+                                decorationColor: Theme.of(context).primaryColor,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            sizedImageBuilder: (config) =>
+                                _buildAnnouncementImage(config, isDark),
+                          ),
+                        ),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                      child: Row(
+                        children: [
+                          if (unread.length > 1)
+                            OutlinedButton.icon(
+                              onPressed: current > 0
+                                  ? () => setLocal(() => current--)
+                                  : null,
+                              icon: const Icon(
+                                Icons.chevron_left_rounded,
+                                size: 18,
+                              ),
+                              label: const Text('上一条'),
+                              style: OutlinedButton.styleFrom(
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                            )
+                          else
+                            TextButton(
+                              onPressed: () => Navigator.pop(ctx, false),
+                              child: const Text('稍后再看'),
+                            ),
+                          const Spacer(),
+                          if (unread.length > 1 && current < unread.length - 1)
+                            TextButton(
+                              onPressed: () => setLocal(() => current++),
+                              child: const Text('下一条'),
+                            ),
+                          const SizedBox(width: 8),
+                          ElevatedButton.icon(
+                            onPressed: () async {
+                              try {
+                                await context.read<AuthProvider>().dio.post(
+                                  '${ApiConstants.noticesPath}/${a['id']}/read',
+                                );
+                              } catch (_) {}
+                              await _markAnnouncementsSeen([a]);
+                              if (current < unread.length - 1) {
+                                setLocal(() => current++);
+                              } else {
+                                if (ctx.mounted) Navigator.pop(ctx, true);
+                              }
+                            },
+                            icon: const Icon(Icons.done_all_rounded, size: 18),
+                            label: Text(
+                              current < unread.length - 1 ? '已读并继续' : '我知道了',
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Theme.of(context).primaryColor,
+                              foregroundColor: Colors.white,
+                              elevation: 0,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 14,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
                               ),
                             ),
                           ),
-                          a: TextStyle(
-                            color: Theme.of(context).primaryColor,
-                            decoration: TextDecoration.underline,
-                            decorationColor: Theme.of(context).primaryColor,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        sizedImageBuilder: (config) =>
-                            _buildAnnouncementImage(config, isDark),
+                        ],
                       ),
                     ),
-                  ),
+                  ],
                 ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                  child: Row(
-                    children: [
-                      if (unread.length > 1)
-                        OutlinedButton.icon(
-                          onPressed: current > 0
-                              ? () => setLocal(() => current--)
-                              : null,
-                          icon:
-                              const Icon(Icons.chevron_left_rounded, size: 18),
-                          label: const Text('上一条'),
-                          style: OutlinedButton.styleFrom(
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                        )
-                      else
-                        TextButton(
-                          onPressed: () => Navigator.pop(ctx, false),
-                          child: const Text('稍后再看'),
-                        ),
-                      const Spacer(),
-                      if (unread.length > 1 && current < unread.length - 1)
-                        TextButton(
-                          onPressed: () => setLocal(() => current++),
-                          child: const Text('下一条'),
-                        ),
-                      const SizedBox(width: 8),
-                      ElevatedButton.icon(
-                        onPressed: () async {
-                          try {
-                            await context.read<AuthProvider>().dio.post(
-                                '${ApiConstants.noticesPath}/${a['id']}/read');
-                          } catch (_) {}
-                          await _markAnnouncementsSeen([a]);
-                          if (current < unread.length - 1) {
-                            setLocal(() => current++);
-                          } else {
-                            if (ctx.mounted) Navigator.pop(ctx, true);
-                          }
-                        },
-                        icon: const Icon(Icons.done_all_rounded, size: 18),
-                        label: Text(
-                            current < unread.length - 1 ? '已读并继续' : '我知道了'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Theme.of(context).primaryColor,
-                          foregroundColor: Colors.white,
-                          elevation: 0,
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 14),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ]),
-            ),
-          );
-        }),
+              ),
+            );
+          },
+        ),
       );
     } finally {
       _announcementDialogOpen = false;
@@ -671,10 +710,48 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
-  void _onTabTapped(int index) {
-    if (mounted) setState(() => _currentIndex = index);
+  void _switchTab(int index) {
+    if (_currentIndex == index) return;
+    if (mounted) {
+      setState(() {
+        _currentIndex = index;
+        _visitedTabs.add(index);
+      });
+    }
     final screenNames = ['shuitie', 'market', 'schedule', 'campus', 'profile'];
     backgroundWrapperKey.currentState?.updateScreen(screenNames[index]);
+  }
+
+  void _onTabTapped(int index) {
+    _switchTab(index);
+  }
+
+  Widget _getOrCreateTabPage(int index) {
+    return _tabPages.putIfAbsent(index, () {
+      switch (index) {
+        case 0:
+          return const ShuitieScreen();
+        case 1:
+          return const MarketScreen();
+        case 2:
+          return const CourseScheduleScreen();
+        case 3:
+          return const CampusScreen();
+        case 4:
+          return const ProfileScreen();
+        default:
+          return const SizedBox.shrink();
+      }
+    });
+  }
+
+  List<Widget> _buildLazyTabChildren() {
+    return List.generate(5, (index) {
+      if (!_visitedTabs.contains(index)) {
+        return const SizedBox.shrink();
+      }
+      return _getOrCreateTabPage(index);
+    });
   }
 
   void _startNavigationSwipe(PointerDownEvent event, double screenHeight) {
@@ -735,16 +812,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
     Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (_) => const CreatePostScreen(boardId: 1),
-      ),
+      MaterialPageRoute(builder: (_) => const CreatePostScreen(boardId: 1)),
     ).then((_) {
       if (mounted) {
-        unawaited(Future.wait([
-          postProvider.refresh(boardId: 1, sort: 'time'),
-          postProvider.refresh(boardId: 1, sort: 'all'),
-          postProvider.refresh(boardId: 1, sort: 'hot'),
-        ]));
+        unawaited(
+          Future.wait([
+            postProvider.refresh(boardId: 1, sort: 'time'),
+            postProvider.refresh(boardId: 1, sort: 'all'),
+            postProvider.refresh(boardId: 1, sort: 'hot'),
+          ]),
+        );
       }
     });
   }
@@ -815,7 +892,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Widget _buildWideLayout(
-      double bottomSafe, AuthProvider authProvider, bool isExtended) {
+    double bottomSafe,
+    AuthProvider authProvider,
+    bool isExtended,
+  ) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Row(
@@ -840,19 +920,26 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 onDestinationSelected: _onTabTapped,
                 labelType: NavigationRailLabelType.all,
                 backgroundColor: Colors.transparent,
-                indicatorColor:
-                    Theme.of(context).primaryColor.withValues(alpha: 0.15),
+                indicatorColor: Theme.of(
+                  context,
+                ).primaryColor.withValues(alpha: 0.15),
                 selectedIconTheme: IconThemeData(
-                    color: Theme.of(context).primaryColor, size: 28),
+                  color: Theme.of(context).primaryColor,
+                  size: 28,
+                ),
                 unselectedIconTheme: IconThemeData(
-                    color: isDark ? Colors.white60 : Colors.black54, size: 24),
+                  color: isDark ? Colors.white60 : Colors.black54,
+                  size: 24,
+                ),
                 selectedLabelTextStyle: TextStyle(
-                    color: Theme.of(context).primaryColor,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 12),
+                  color: Theme.of(context).primaryColor,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                ),
                 unselectedLabelTextStyle: TextStyle(
-                    color: isDark ? Colors.white60 : Colors.black54,
-                    fontSize: 12),
+                  color: isDark ? Colors.white60 : Colors.black54,
+                  fontSize: 12,
+                ),
                 groupAlignment: 0.0,
                 destinations: const [
                   NavigationRailDestination(
@@ -890,13 +977,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             child: IndexedStack(
               key: _contentKey,
               index: _currentIndex,
-              children: [
-                const ShuitieScreen(),
-                const MarketScreen(),
-                const CourseScheduleScreen(),
-                const CampusScreen(),
-                ProfileScreen(isActive: _currentIndex == 4),
-              ],
+              children: _buildLazyTabChildren(),
             ),
           ),
         ),
@@ -908,15 +989,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     return IndexedStack(
       key: _contentKey,
       index: _currentIndex,
-      children: [
-        const ShuitieScreen(),
-        const MarketScreen(),
-        const CourseScheduleScreen(),
-        const CampusScreen(),
-        ProfileScreen(isActive: _currentIndex == 4),
-      ],
+      children: _buildLazyTabChildren(),
     );
   }
 }
-
-

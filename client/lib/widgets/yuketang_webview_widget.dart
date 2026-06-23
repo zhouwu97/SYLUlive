@@ -9,10 +9,7 @@ import '../services/answer_gateway.dart';
 class YuketangWebViewWidget extends StatefulWidget {
   final String url;
 
-  const YuketangWebViewWidget({
-    Key? key,
-    required this.url,
-  }) : super(key: key);
+  const YuketangWebViewWidget({Key? key, required this.url}) : super(key: key);
 
   @override
   State<YuketangWebViewWidget> createState() => YuketangWebViewWidgetState();
@@ -97,53 +94,56 @@ class YuketangWebViewWidgetState extends State<YuketangWebViewWidget> {
 
             // 拦截成功通知信道
             controller.addJavaScriptHandler(
-                handlerName: 'YuketangIntercepted',
-                callback: (args) {
-                  if (mounted) {
-                    setState(() {
-                      _isIntercepted = true;
-                      _statusText = '🎯 拦截成功！正在分析试卷...';
-                      _isLoadingTotal = true;
-                    });
-                    _fetchTotalQuestions(controller);
-                  }
-                });
+              handlerName: 'YuketangIntercepted',
+              callback: (args) {
+                if (mounted) {
+                  setState(() {
+                    _isIntercepted = true;
+                    _statusText = '🎯 拦截成功！正在分析试卷...';
+                    _isLoadingTotal = true;
+                  });
+                  _fetchTotalQuestions(controller);
+                }
+              },
+            );
 
             // 直播课实时发题通知信道
             controller.addJavaScriptHandler(
-                handlerName: 'YuketangLiveProblem',
-                callback: (args) {
-                  if (mounted && args.isNotEmpty) {
-                    String probId = args[0].toString();
-                    if (mounted)
-                      setState(() {
-                        _isIntercepted = true;
-                        _isBlockMode = false; // 强行切到单题模式
-                        _statusText = '🚨 老师刚发布了一道直播题！';
+              handlerName: 'YuketangLiveProblem',
+              callback: (args) {
+                if (mounted && args.isNotEmpty) {
+                  String probId = args[0].toString();
+                  if (mounted)
+                    setState(() {
+                      _isIntercepted = true;
+                      _isBlockMode = false; // 强行切到单题模式
+                      _statusText = '🚨 老师刚发布了一道直播题！';
 
-                        // 如果 _totalQuestions == 0，可能需要重新计算一遍
-                        if (_totalQuestions == 0) {
-                          _isLoadingTotal = true;
-                          _fetchTotalQuestions(controller);
-                        } else {
-                          // 这里我们粗略地认为最新的一题是最后一题，或者只是提示用户。
-                          // 最完美的是前端根据 probId 去选择对应的序号，但现在我们就提示用户手动点上传。
-                          _selectedSingle = _totalQuestions;
-                        }
-                      });
-                  }
-                });
+                      // 如果 _totalQuestions == 0，可能需要重新计算一遍
+                      if (_totalQuestions == 0) {
+                        _isLoadingTotal = true;
+                        _fetchTotalQuestions(controller);
+                      } else {
+                        // 这里我们粗略地认为最新的一题是最后一题，或者只是提示用户。
+                        // 最完美的是前端根据 probId 去选择对应的序号，但现在我们就提示用户手动点上传。
+                        _selectedSingle = _totalQuestions;
+                      }
+                    });
+                }
+              },
+            );
 
             // 注册全量快照备份信道
             controller.addJavaScriptHandler(
-                handlerName: 'YuketangBackup',
-                callback: (args) async {
-                  if (args.isNotEmpty) {
-                    // 内存暂存
-                    _lastInterceptedExamData = args[0] as String;
-                    debugPrint('已在本地建立全量试卷快照备用');
-                  }
-                });
+              handlerName: 'YuketangBackup',
+              callback: (args) async {
+                if (args.isNotEmpty) {
+                  // 内存暂存
+                  _lastInterceptedExamData = args[0] as String;
+                  debugPrint('已在本地建立全量试卷快照备用');
+                }
+              },
+            );
           },
           onLoadStop: (controller, url) async {
             debugPrint('页面加载完成: $url');
@@ -184,7 +184,7 @@ class YuketangWebViewWidgetState extends State<YuketangWebViewWidget> {
                     color: Colors.black54,
                     blurRadius: 20,
                     offset: Offset(0, 10),
-                  )
+                  ),
                 ],
               ),
               child: Column(
@@ -193,29 +193,41 @@ class YuketangWebViewWidgetState extends State<YuketangWebViewWidget> {
                   // 顶部拖拽栏
                   Container(
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 15, vertical: 12),
+                      horizontal: 15,
+                      vertical: 12,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.white.withOpacity(0.08),
                       border: Border(
-                          bottom:
-                              BorderSide(color: Colors.white.withOpacity(0.1))),
-                      borderRadius:
-                          const BorderRadius.vertical(top: Radius.circular(12)),
+                        bottom: BorderSide(
+                          color: Colors.white.withOpacity(0.1),
+                        ),
+                      ),
+                      borderRadius: const BorderRadius.vertical(
+                        top: Radius.circular(12),
+                      ),
                     ),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text('🤖 AI 外挂控制台',
-                            style: TextStyle(
-                                color: Colors.green,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 14)),
+                        const Text(
+                          '🤖 AI 外挂控制台',
+                          style: TextStyle(
+                            color: Colors.green,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                          ),
+                        ),
                         GestureDetector(
                           onTap: () => setState(() => _isMin = !_isMin),
-                          child: Text(_isMin ? '展开 ⬜' : '最小化 _',
-                              style: const TextStyle(
-                                  color: Colors.grey, fontSize: 12)),
-                        )
+                          child: Text(
+                            _isMin ? '展开 ⬜' : '最小化 _',
+                            style: const TextStyle(
+                              color: Colors.grey,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
                       ],
                     ),
                   ),
@@ -225,9 +237,13 @@ class YuketangWebViewWidgetState extends State<YuketangWebViewWidget> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('状态: $_statusText',
-                              style: const TextStyle(
-                                  color: Colors.blueAccent, fontSize: 12)),
+                          Text(
+                            '状态: $_statusText',
+                            style: const TextStyle(
+                              color: Colors.blueAccent,
+                              fontSize: 12,
+                            ),
+                          ),
                           const SizedBox(height: 12),
                           Row(
                             children: [
@@ -240,165 +256,199 @@ class YuketangWebViewWidgetState extends State<YuketangWebViewWidget> {
                                           child: Row(
                                             children: [
                                               SizedBox(
-                                                  width: 16,
-                                                  height: 16,
-                                                  child:
-                                                      CircularProgressIndicator(
-                                                          strokeWidth: 2,
-                                                          color: Colors
-                                                              .blueAccent)),
+                                                width: 16,
+                                                height: 16,
+                                                child:
+                                                    CircularProgressIndicator(
+                                                      strokeWidth: 2,
+                                                      color: Colors.blueAccent,
+                                                    ),
+                                              ),
                                               SizedBox(width: 8),
-                                              Text('正在分析试卷结构...',
-                                                  style: TextStyle(
-                                                      color: Colors.grey,
-                                                      fontSize: 12)),
+                                              Text(
+                                                '正在分析试卷结构...',
+                                                style: TextStyle(
+                                                  color: Colors.grey,
+                                                  fontSize: 12,
+                                                ),
+                                              ),
                                             ],
                                           ),
                                         )
                                       : _totalQuestions == 0
-                                          ? const SizedBox(
-                                              height: 40,
-                                              child: Align(
-                                                  alignment:
-                                                      Alignment.centerLeft,
-                                                  child: Text('未能获取到题目',
+                                      ? const SizedBox(
+                                          height: 40,
+                                          child: Align(
+                                            alignment: Alignment.centerLeft,
+                                            child: Text(
+                                              '未能获取到题目',
+                                              style: TextStyle(
+                                                color: Colors.red,
+                                              ),
+                                            ),
+                                          ),
+                                        )
+                                      : SizedBox(
+                                          height: 40,
+                                          child: Row(
+                                            children: [
+                                              // 模式切换
+                                              ToggleButtons(
+                                                constraints:
+                                                    const BoxConstraints(
+                                                      minHeight: 36,
+                                                      minWidth: 40,
+                                                    ),
+                                                isSelected: [
+                                                  _isBlockMode,
+                                                  !_isBlockMode,
+                                                ],
+                                                onPressed: (idx) => setState(
+                                                  () => _isBlockMode = idx == 0,
+                                                ),
+                                                borderRadius:
+                                                    BorderRadius.circular(6),
+                                                selectedColor: Colors.white,
+                                                color: Colors
+                                                    .white54, // 修复“单题”文字不可见问题
+                                                borderColor: Colors.grey
+                                                    .withOpacity(0.3),
+                                                selectedBorderColor:
+                                                    Colors.blueAccent,
+                                                fillColor: Colors.blueAccent
+                                                    .withOpacity(0.5),
+                                                children: const [
+                                                  Padding(
+                                                    padding:
+                                                        EdgeInsets.symmetric(
+                                                          horizontal: 8,
+                                                        ),
+                                                    child: Text(
+                                                      '5题连抽',
                                                       style: TextStyle(
-                                                          color: Colors.red))))
-                                          : SizedBox(
-                                              height: 40,
-                                              child: Row(
-                                                children: [
-                                                  // 模式切换
-                                                  ToggleButtons(
-                                                    constraints:
-                                                        const BoxConstraints(
-                                                            minHeight: 36,
-                                                            minWidth: 40),
-                                                    isSelected: [
-                                                      _isBlockMode,
-                                                      !_isBlockMode
-                                                    ],
-                                                    onPressed: (idx) =>
-                                                        setState(() =>
-                                                            _isBlockMode =
-                                                                idx == 0),
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                            6),
-                                                    selectedColor: Colors.white,
-                                                    color: Colors
-                                                        .white54, // 修复“单题”文字不可见问题
-                                                    borderColor: Colors.grey
-                                                        .withOpacity(0.3),
-                                                    selectedBorderColor:
-                                                        Colors.blueAccent,
-                                                    fillColor: Colors.blueAccent
-                                                        .withOpacity(0.5),
-                                                    children: const [
-                                                      Padding(
-                                                          padding: EdgeInsets
-                                                              .symmetric(
-                                                                  horizontal:
-                                                                      8),
-                                                          child: Text('5题连抽',
-                                                              style: TextStyle(
-                                                                  fontSize:
-                                                                      12))),
-                                                      Padding(
-                                                          padding: EdgeInsets
-                                                              .symmetric(
-                                                                  horizontal:
-                                                                      8),
-                                                          child: Text('单题',
-                                                              style: TextStyle(
-                                                                  fontSize:
-                                                                      12))),
-                                                    ],
-                                                  ),
-                                                  const SizedBox(width: 8),
-                                                  // 下拉选择
-                                                  Expanded(
-                                                    child: Container(
-                                                      height: 36,
-                                                      padding: const EdgeInsets
-                                                          .symmetric(
-                                                          horizontal: 10),
-                                                      decoration: BoxDecoration(
-                                                        color: Colors.black45,
-                                                        borderRadius:
-                                                            BorderRadius
-                                                                .circular(6),
-                                                        border: Border.all(
-                                                            color: Colors.grey
-                                                                .withOpacity(
-                                                                    0.5)),
+                                                        fontSize: 12,
                                                       ),
-                                                      child:
-                                                          DropdownButtonHideUnderline(
-                                                        child: _isBlockMode
-                                                            ? DropdownButton<
-                                                                String>(
-                                                                value:
-                                                                    _selectedBlock,
-                                                                isExpanded:
-                                                                    true,
-                                                                dropdownColor:
-                                                                    Colors.grey[
-                                                                        850],
-                                                                style: const TextStyle(
-                                                                    color: Colors
-                                                                        .white,
-                                                                    fontSize:
-                                                                        13),
-                                                                onChanged: (val) =>
-                                                                    setState(() =>
-                                                                        _selectedBlock =
-                                                                            val),
-                                                                items: _generateBlocks(
-                                                                        _totalQuestions)
-                                                                    .map((b) => DropdownMenuItem(
-                                                                        value:
-                                                                            b,
-                                                                        child: Text(
-                                                                            b)))
-                                                                    .toList(),
-                                                              )
-                                                            : DropdownButton<
-                                                                int>(
-                                                                value:
-                                                                    _selectedSingle,
-                                                                isExpanded:
-                                                                    true,
-                                                                dropdownColor:
-                                                                    Colors.grey[
-                                                                        850],
-                                                                style: const TextStyle(
-                                                                    color: Colors
-                                                                        .white,
-                                                                    fontSize:
-                                                                        13),
-                                                                onChanged: (val) =>
-                                                                    setState(() =>
-                                                                        _selectedSingle =
-                                                                            val),
-                                                                items: List.generate(
-                                                                        _totalQuestions,
-                                                                        (i) =>
-                                                                            i +
-                                                                            1)
-                                                                    .map((n) => DropdownMenuItem(
-                                                                        value:
-                                                                            n,
-                                                                        child: Text(
-                                                                            '第 $n 题')))
-                                                                    .toList(),
-                                                              ),
+                                                    ),
+                                                  ),
+                                                  Padding(
+                                                    padding:
+                                                        EdgeInsets.symmetric(
+                                                          horizontal: 8,
+                                                        ),
+                                                    child: Text(
+                                                      '单题',
+                                                      style: TextStyle(
+                                                        fontSize: 12,
                                                       ),
                                                     ),
                                                   ),
                                                 ],
                                               ),
-                                            ),
+                                              const SizedBox(width: 8),
+                                              // 下拉选择
+                                              Expanded(
+                                                child: Container(
+                                                  height: 36,
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                        horizontal: 10,
+                                                      ),
+                                                  decoration: BoxDecoration(
+                                                    color: Colors.black45,
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          6,
+                                                        ),
+                                                    border: Border.all(
+                                                      color: Colors.grey
+                                                          .withOpacity(0.5),
+                                                    ),
+                                                  ),
+                                                  child: DropdownButtonHideUnderline(
+                                                    child: _isBlockMode
+                                                        ? DropdownButton<
+                                                            String
+                                                          >(
+                                                            value:
+                                                                _selectedBlock,
+                                                            isExpanded: true,
+                                                            dropdownColor:
+                                                                Colors
+                                                                    .grey[850],
+                                                            style:
+                                                                const TextStyle(
+                                                                  color: Colors
+                                                                      .white,
+                                                                  fontSize: 13,
+                                                                ),
+                                                            onChanged: (val) =>
+                                                                setState(
+                                                                  () =>
+                                                                      _selectedBlock =
+                                                                          val,
+                                                                ),
+                                                            items:
+                                                                _generateBlocks(
+                                                                      _totalQuestions,
+                                                                    )
+                                                                    .map(
+                                                                      (
+                                                                        b,
+                                                                      ) => DropdownMenuItem(
+                                                                        value:
+                                                                            b,
+                                                                        child:
+                                                                            Text(
+                                                                              b,
+                                                                            ),
+                                                                      ),
+                                                                    )
+                                                                    .toList(),
+                                                          )
+                                                        : DropdownButton<int>(
+                                                            value:
+                                                                _selectedSingle,
+                                                            isExpanded: true,
+                                                            dropdownColor:
+                                                                Colors
+                                                                    .grey[850],
+                                                            style:
+                                                                const TextStyle(
+                                                                  color: Colors
+                                                                      .white,
+                                                                  fontSize: 13,
+                                                                ),
+                                                            onChanged: (val) =>
+                                                                setState(
+                                                                  () =>
+                                                                      _selectedSingle =
+                                                                          val,
+                                                                ),
+                                                            items:
+                                                                List.generate(
+                                                                      _totalQuestions,
+                                                                      (i) =>
+                                                                          i + 1,
+                                                                    )
+                                                                    .map(
+                                                                      (
+                                                                        n,
+                                                                      ) => DropdownMenuItem(
+                                                                        value:
+                                                                            n,
+                                                                        child: Text(
+                                                                          '第 $n 题',
+                                                                        ),
+                                                                      ),
+                                                                    )
+                                                                    .toList(),
+                                                          ),
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
                                 ),
                               ),
                               const SizedBox(width: 8),
@@ -409,53 +459,64 @@ class YuketangWebViewWidgetState extends State<YuketangWebViewWidget> {
                                       backgroundColor: Colors.green,
                                       foregroundColor: Colors.white,
                                       padding: const EdgeInsets.symmetric(
-                                          horizontal: 12),
+                                        horizontal: 12,
+                                      ),
                                       minimumSize: const Size(72, 40),
                                       shape: RoundedRectangleBorder(
-                                          borderRadius:
-                                              BorderRadius.circular(6)),
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
                                     ),
                                     onPressed:
                                         _isLoadingTotal || _totalQuestions == 0
-                                            ? null
-                                            : _handleUpload,
-                                    child: const Text('上传',
-                                        style: TextStyle(
-                                            fontWeight: FontWeight.bold)),
+                                        ? null
+                                        : _handleUpload,
+                                    child: const Text(
+                                      '上传',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
                                   ),
                                   const SizedBox(height: 6),
                                   OutlinedButton(
                                     style: OutlinedButton.styleFrom(
                                       foregroundColor: Colors.orangeAccent,
                                       side: const BorderSide(
-                                          color: Colors.orangeAccent),
+                                        color: Colors.orangeAccent,
+                                      ),
                                       minimumSize: const Size(72, 34),
                                     ),
-                                    onPressed: (_lastQuestionPayload == null ||
+                                    onPressed:
+                                        (_lastQuestionPayload == null ||
                                             _lastAnswerResult == null ||
                                             !_lastAnswerResult!
                                                 .usesOfficialBackend)
                                         ? null
                                         : _handleRetryWithFreshAi,
-                                    child: const Text('纠错重答',
-                                        style: TextStyle(fontSize: 12)),
+                                    child: const Text(
+                                      '纠错重答',
+                                      style: TextStyle(fontSize: 12),
+                                    ),
                                   ),
                                   const SizedBox(height: 6),
                                   OutlinedButton(
                                     style: OutlinedButton.styleFrom(
                                       foregroundColor: Colors.lightGreenAccent,
                                       side: const BorderSide(
-                                          color: Colors.lightGreenAccent),
+                                        color: Colors.lightGreenAccent,
+                                      ),
                                       minimumSize: const Size(72, 34),
                                     ),
                                     onPressed: _canConfirmCache
                                         ? _handleConfirmCache
                                         : null,
-                                    child: const Text('确认缓存',
-                                        style: TextStyle(fontSize: 12)),
+                                    child: const Text(
+                                      '确认缓存',
+                                      style: TextStyle(fontSize: 12),
+                                    ),
                                   ),
                                 ],
-                              )
+                              ),
                             ],
                           ),
                           const SizedBox(height: 12),
@@ -466,34 +527,43 @@ class YuketangWebViewWidgetState extends State<YuketangWebViewWidget> {
                               children: [
                                 SingleChildScrollView(
                                   padding: const EdgeInsets.only(right: 28),
-                                  child: SelectableText(_answerText,
-                                      style: const TextStyle(
-                                          color: Colors.white70,
-                                          fontSize: 13,
-                                          height: 1.6)),
+                                  child: SelectableText(
+                                    _answerText,
+                                    style: const TextStyle(
+                                      color: Colors.white70,
+                                      fontSize: 13,
+                                      height: 1.6,
+                                    ),
+                                  ),
                                 ),
                                 Positioned(
                                   top: -8,
                                   right: -8,
                                   child: IconButton(
-                                    icon: const Icon(Icons.copy,
-                                        size: 16, color: Colors.white54),
+                                    icon: const Icon(
+                                      Icons.copy,
+                                      size: 16,
+                                      color: Colors.white54,
+                                    ),
                                     tooltip: '复制答案',
                                     onPressed: () {
                                       Clipboard.setData(
-                                          ClipboardData(text: _answerText));
-                                      ScaffoldMessenger.of(context)
-                                          .showSnackBar(
+                                        ClipboardData(text: _answerText),
+                                      );
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
                                         const SnackBar(
-                                            content: Text('已复制到剪贴板'),
-                                            duration: Duration(seconds: 1)),
+                                          content: Text('已复制到剪贴板'),
+                                          duration: Duration(seconds: 1),
+                                        ),
                                       );
                                     },
                                   ),
                                 ),
                               ],
                             ),
-                          )
+                          ),
                         ],
                       ),
                     ),
@@ -523,7 +593,8 @@ class YuketangWebViewWidgetState extends State<YuketangWebViewWidget> {
   Future<void> _fetchTotalQuestions(InAppWebViewController controller) async {
     try {
       final res = await controller.evaluateJavascript(
-          source: "window.AiHelper ? window.AiHelper.getTotalQuestions() : 0;");
+        source: "window.AiHelper ? window.AiHelper.getTotalQuestions() : 0;",
+      );
       int total = 0;
       if (res is int) total = res;
       if (res is String) total = int.tryParse(res) ?? 0;
@@ -604,8 +675,9 @@ class YuketangWebViewWidgetState extends State<YuketangWebViewWidget> {
       if (_uploadedAll) isDuplicate = true;
     } else if (requestedIndices.isNotEmpty) {
       // 只有当请求的所有题号都在已处理集合中时，才算作重复请求
-      isDuplicate =
-          requestedIndices.every((idx) => _uploadedIndices.contains(idx));
+      isDuplicate = requestedIndices.every(
+        (idx) => _uploadedIndices.contains(idx),
+      );
     }
 
     if (isDuplicate) {
@@ -616,11 +688,13 @@ class YuketangWebViewWidgetState extends State<YuketangWebViewWidget> {
           content: const Text('您当前请求的题目范围刚刚已经处理过了。\n确定要重新让 AI 做一遍吗？（会重复扣费）'),
           actions: [
             TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('取消')),
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('取消'),
+            ),
             TextButton(
-                onPressed: () => Navigator.pop(ctx, true),
-                child: const Text('确定')),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('确定'),
+            ),
           ],
         ),
       );
@@ -645,8 +719,9 @@ class YuketangWebViewWidgetState extends State<YuketangWebViewWidget> {
 
     try {
       final result = await webViewController?.evaluateJavascript(
-          source:
-              "window.AiHelper && window.AiHelper.sliceExamData('$rangeStr');");
+        source:
+            "window.AiHelper && window.AiHelper.sliceExamData('$rangeStr');",
+      );
       if (result == null || result == 'null') {
         if (mounted) setState(() => _statusText = '错误：无法获取裁剪后的试卷数据');
         return;
@@ -657,11 +732,7 @@ class YuketangWebViewWidgetState extends State<YuketangWebViewWidget> {
 
       Map<String, dynamic> data;
       if (decoded is List) {
-        data = {
-          'type': '批量题目',
-          'content': jsonString,
-          'raw_list': decoded,
-        };
+        data = {'type': '批量题目', 'content': jsonString, 'raw_list': decoded};
       } else if (decoded is Map) {
         data = Map<String, dynamic>.from(decoded);
       } else {
@@ -694,8 +765,9 @@ class YuketangWebViewWidgetState extends State<YuketangWebViewWidget> {
               .replaceAll("'", "\\'")
               .replaceAll("\n", "\\n");
           await webViewController?.evaluateJavascript(
-              source:
-                  "window.AiHelper && window.AiHelper.doAutoAnswer('$safeAnswer', 'full');");
+            source:
+                "window.AiHelper && window.AiHelper.doAutoAnswer('$safeAnswer', 'full');",
+          );
         } else {
           setState(() {
             _statusText = '错误';
@@ -751,11 +823,13 @@ class YuketangWebViewWidgetState extends State<YuketangWebViewWidget> {
         _answerText = freshResult.answer;
         _canConfirmCache = true;
       });
-      final safeAnswer =
-          freshResult.answer.replaceAll("'", "\\'").replaceAll("\n", "\\n");
+      final safeAnswer = freshResult.answer
+          .replaceAll("'", "\\'")
+          .replaceAll("\n", "\\n");
       await webViewController?.evaluateJavascript(
-          source:
-              "window.AiHelper && window.AiHelper.doAutoAnswer('$safeAnswer', 'full');");
+        source:
+            "window.AiHelper && window.AiHelper.doAutoAnswer('$safeAnswer', 'full');",
+      );
     } else {
       setState(() {
         _statusText = '错误';

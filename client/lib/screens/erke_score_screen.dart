@@ -142,8 +142,9 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
     final inputCasPwd = _casPwdCtrl.text;
     final inputErkePwd = _erkePwdCtrl.text;
 
-    final casPwd =
-        inputCasPwd == ('•' * _realCasPwd.length) ? _realCasPwd : inputCasPwd;
+    final casPwd = inputCasPwd == ('•' * _realCasPwd.length)
+        ? _realCasPwd
+        : inputCasPwd;
     final erkePwd = inputErkePwd == ('•' * _realErkePwd.length)
         ? _realErkePwd
         : inputErkePwd;
@@ -173,8 +174,10 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
       }
 
       _updateMessage('正在进入二课平台…');
-      final crawler =
-          SyluClientCrawler(cookieJar: _vpn.cookieJar, dio: _vpn.dio);
+      final crawler = SyluClientCrawler(
+        cookieJar: _vpn.cookieJar,
+        dio: _vpn.dio,
+      );
       final htmlStr = await crawler.login(studentId, erkePwd, _vpn.vpnCookie);
       final data = crawler.parseErkeData(htmlStr);
 
@@ -187,8 +190,11 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
         _saveCache(data['scores'], data['summary']);
         AppFeedback.showSnackBar(context, '查询并缓存成功');
       } else {
-        AppFeedback.showSnackBar(context, '查询成功，但未解析到成绩数据或二课密码错误',
-            isError: true);
+        AppFeedback.showSnackBar(
+          context,
+          '查询成功，但未解析到成绩数据或二课密码错误',
+          isError: true,
+        );
         if (mounted) setState(() => _scores = null);
       }
     } catch (e) {
@@ -241,8 +247,9 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor:
-          isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
+      backgroundColor: isDark
+          ? const Color(0xFF131720)
+          : const Color(0xFFF4F6FB),
       appBar: AppBar(
         title: const Text('二课成绩查询'),
         backgroundColor: Colors.transparent,
@@ -257,8 +264,10 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
                       height: 16,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Text('重新拉取',
-                      style: TextStyle(fontWeight: FontWeight.bold)),
+                  : const Text(
+                      '重新拉取',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
             ),
         ],
       ),
@@ -273,7 +282,9 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
                   child: Center(
                     child: Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 24, vertical: 16),
+                        horizontal: 24,
+                        vertical: 16,
+                      ),
                       decoration: BoxDecoration(
                         color: isDark ? Colors.grey[850] : Colors.white,
                         borderRadius: BorderRadius.circular(12),
@@ -283,10 +294,12 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
                         children: [
                           const CircularProgressIndicator(),
                           const SizedBox(height: 16),
-                          Text(_loadingMessage,
-                              style: TextStyle(
-                                  color:
-                                      isDark ? Colors.white : Colors.black87)),
+                          Text(
+                            _loadingMessage,
+                            style: TextStyle(
+                              color: isDark ? Colors.white : Colors.black87,
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -301,8 +314,9 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
 
   Widget _buildLoginForm() {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final studentId =
-        _studentIdCtrl.text.isNotEmpty ? _studentIdCtrl.text : '未登录';
+    final studentId = _studentIdCtrl.text.isNotEmpty
+        ? _studentIdCtrl.text
+        : '未登录';
 
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
@@ -319,8 +333,9 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
                   child: Text(
                     '学号 $studentId 已自动识别，请完成双重密码验证',
                     style: TextStyle(
-                        fontSize: 13,
-                        color: isDark ? Colors.white70 : Colors.black87),
+                      fontSize: 13,
+                      color: isDark ? Colors.white70 : Colors.black87,
+                    ),
                   ),
                 ),
               ],
@@ -337,14 +352,21 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
                   children: [
                     const Icon(Icons.security, color: Colors.blue, size: 22),
                     const SizedBox(width: 10),
-                    const Text('1. 统一认证密码',
-                        style: TextStyle(
-                            fontSize: 15, fontWeight: FontWeight.bold)),
+                    const Text(
+                      '1. 统一认证密码',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                     const Spacer(),
-                    Text('VPN 穿透专用',
-                        style: TextStyle(
-                            fontSize: 10,
-                            color: isDark ? Colors.white38 : Colors.grey[500])),
+                    Text(
+                      'VPN 穿透专用',
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: isDark ? Colors.white38 : Colors.grey[500],
+                      ),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 16),
@@ -358,8 +380,9 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
                     prefixIcon: const Icon(Icons.lock_outline, size: 18),
                     suffixIcon: IconButton(
                       icon: Icon(
-                          _obscureCas ? Icons.visibility_off : Icons.visibility,
-                          size: 18),
+                        _obscureCas ? Icons.visibility_off : Icons.visibility,
+                        size: 18,
+                      ),
                       onPressed: () =>
                           setState(() => _obscureCas = !_obscureCas),
                     ),
@@ -368,8 +391,9 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
                         ? Colors.white.withValues(alpha: 0.05)
                         : Colors.black.withValues(alpha: 0.03),
                     border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide.none),
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none,
+                    ),
                   ),
                 ),
               ],
@@ -386,14 +410,21 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
                   children: [
                     const Icon(Icons.school, color: Colors.green, size: 22),
                     const SizedBox(width: 10),
-                    const Text('2. 二课查询密码',
-                        style: TextStyle(
-                            fontSize: 15, fontWeight: FontWeight.bold)),
+                    const Text(
+                      '2. 二课查询密码',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                     const Spacer(),
-                    Text('系统登录专用',
-                        style: TextStyle(
-                            fontSize: 10,
-                            color: isDark ? Colors.white38 : Colors.grey[500])),
+                    Text(
+                      '系统登录专用',
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: isDark ? Colors.white38 : Colors.grey[500],
+                      ),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 16),
@@ -407,10 +438,9 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
                     prefixIcon: const Icon(Icons.vpn_key_outlined, size: 18),
                     suffixIcon: IconButton(
                       icon: Icon(
-                          _obscureErke
-                              ? Icons.visibility_off
-                              : Icons.visibility,
-                          size: 18),
+                        _obscureErke ? Icons.visibility_off : Icons.visibility,
+                        size: 18,
+                      ),
                       onPressed: () =>
                           setState(() => _obscureErke = !_obscureErke),
                     ),
@@ -419,8 +449,9 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
                         ? Colors.white.withValues(alpha: 0.05)
                         : Colors.black.withValues(alpha: 0.03),
                     border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide.none),
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none,
+                    ),
                   ),
                 ),
               ],
@@ -436,7 +467,8 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
                 backgroundColor: Theme.of(context).primaryColor,
                 foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16)),
+                  borderRadius: BorderRadius.circular(16),
+                ),
                 elevation: 0,
               ),
               child: _isLoading
@@ -444,36 +476,51 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                                color: Colors.white, strokeWidth: 2)),
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 2,
+                          ),
+                        ),
                         SizedBox(width: 12),
-                        Text('查询中...',
-                            style: TextStyle(
-                                fontSize: 16, fontWeight: FontWeight.bold)),
+                        Text(
+                          '查询中...',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                       ],
                     )
-                  : const Text('开始查询',
-                      style:
-                          TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  : const Text(
+                      '开始查询',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
             ),
           ),
           if (_isLoading && _loadingMessage.isNotEmpty) ...[
             const SizedBox(height: 16),
-            Text(_loadingMessage,
-                style: TextStyle(
-                    fontSize: 12,
-                    color: isDark ? Colors.white54 : Colors.grey[600],
-                    fontStyle: FontStyle.italic)),
+            Text(
+              _loadingMessage,
+              style: TextStyle(
+                fontSize: 12,
+                color: isDark ? Colors.white54 : Colors.grey[600],
+                fontStyle: FontStyle.italic,
+              ),
+            ),
           ],
           const SizedBox(height: 30),
           Text(
             '提示：系统将自动完成 WebVPN 穿透，在校外也可无障碍查询成绩。',
             textAlign: TextAlign.center,
             style: TextStyle(
-                fontSize: 11,
-                color: isDark ? Colors.white38 : Colors.grey[500]),
+              fontSize: 11,
+              color: isDark ? Colors.white38 : Colors.grey[500],
+            ),
           ),
         ],
       ),
@@ -503,7 +550,8 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
     }
 
     // 按筛选过滤
-    final filtered = _scores?.where((s) {
+    final filtered =
+        _scores?.where((s) {
           if (_filterCategory == null) return true;
           return (s['category'] ?? '') == _filterCategory;
         }).toList() ??
@@ -521,11 +569,18 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
               scrollDirection: Axis.horizontal,
               child: Row(
                 children: [
-                  _filterChip('全部', _filterCategory == null,
-                      onTap: () => setState(() => _filterCategory = null)),
-                  ...categoryList.map((c) => _filterChip(
-                      c, _filterCategory == c,
-                      onTap: () => setState(() => _filterCategory = c))),
+                  _filterChip(
+                    '全部',
+                    _filterCategory == null,
+                    onTap: () => setState(() => _filterCategory = null),
+                  ),
+                  ...categoryList.map(
+                    (c) => _filterChip(
+                      c,
+                      _filterCategory == c,
+                      onTap: () => setState(() => _filterCategory = c),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -536,8 +591,10 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
             children: [
               Text(
                 '${_filterCategory ?? '查询结果'} (${filtered.length})',
-                style:
-                    const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
               const Spacer(),
               TextButton(
@@ -553,10 +610,14 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
         Expanded(
           child: filtered.isEmpty
               ? Center(
-                  child: Text('该分类暂无数据',
-                      style: TextStyle(
-                          fontSize: 14,
-                          color: isDark ? Colors.white54 : Colors.grey[600])))
+                  child: Text(
+                    '该分类暂无数据',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: isDark ? Colors.white54 : Colors.grey[600],
+                    ),
+                  ),
+                )
               : ListView.builder(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   itemCount: filtered.length,
@@ -574,16 +635,18 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
     return Padding(
       padding: const EdgeInsets.only(right: 8),
       child: ChoiceChip(
-        label: Text(label,
-            style:
-                TextStyle(fontSize: 13, color: selected ? Colors.white : null)),
+        label: Text(
+          label,
+          style: TextStyle(fontSize: 13, color: selected ? Colors.white : null),
+        ),
         selected: selected,
         selectedColor: const Color(0xFF6366F1),
         backgroundColor: Colors.transparent,
         side: BorderSide(
-            color: selected
-                ? const Color(0xFF6366F1)
-                : Colors.grey.withValues(alpha: 0.3)),
+          color: selected
+              ? const Color(0xFF6366F1)
+              : Colors.grey.withValues(alpha: 0.3),
+        ),
         onSelected: (_) => onTap?.call(),
       ),
     );
@@ -626,7 +689,9 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
                   margin: const EdgeInsets.only(right: 10),
                   child: GlassContainer(
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 10),
+                      horizontal: 14,
+                      vertical: 10,
+                    ),
                     borderRadius: 14,
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
@@ -635,9 +700,10 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
                         Text(
                           item['category'] ?? '',
                           style: TextStyle(
-                              fontSize: 13,
-                              color: isDark ? Colors.white70 : Colors.black87,
-                              fontWeight: FontWeight.w700),
+                            fontSize: 13,
+                            color: isDark ? Colors.white70 : Colors.black87,
+                            fontWeight: FontWeight.w700,
+                          ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -647,19 +713,22 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
                           children: [
                             Text(
                               score.toStringAsFixed(
-                                  score == score.roundToDouble() ? 0 : 1),
+                                score == score.roundToDouble() ? 0 : 1,
+                              ),
                               style: TextStyle(
-                                  fontSize: 20,
-                                  color: Theme.of(context).primaryColor,
-                                  fontWeight: FontWeight.bold),
+                                fontSize: 20,
+                                color: Theme.of(context).primaryColor,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                             Text(
                               ' / $required',
                               style: TextStyle(
-                                  fontSize: 11,
-                                  color: isDark
-                                      ? Colors.white38
-                                      : Colors.grey[500]),
+                                fontSize: 11,
+                                color: isDark
+                                    ? Colors.white38
+                                    : Colors.grey[500],
+                              ),
                             ),
                           ],
                         ),
@@ -690,21 +759,25 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
             borderRadius: 12,
             child: Row(
               children: [
-                const Text('总计',
-                    style:
-                        TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                const Text(
+                  '总计',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                ),
                 const Spacer(),
                 Text(
                   '${totalScore.toStringAsFixed(totalScore == totalScore.roundToDouble() ? 0 : 1)} / $totalRequired',
                   style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                      color: Color(0xFF6366F1)),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF6366F1),
+                  ),
                 ),
                 const SizedBox(width: 8),
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
                     color: totalGap <= 0
                         ? Colors.green.withValues(alpha: 0.12)
@@ -746,12 +819,16 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
                   child: Text(
                     item['item'] ?? '未知项目',
                     style: const TextStyle(
-                        fontWeight: FontWeight.bold, fontSize: 16),
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
                   ),
                 ),
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.green.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(12),
@@ -759,9 +836,10 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
                   child: Text(
                     '+${item['score']}',
                     style: const TextStyle(
-                        color: Colors.green,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16),
+                      color: Colors.green,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
                   ),
                 ),
               ],
@@ -771,26 +849,32 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
               children: [
                 if (item['category'] != null)
                   Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
                     margin: const EdgeInsets.only(right: 8),
                     decoration: BoxDecoration(
-                      color:
-                          Theme.of(context).primaryColor.withValues(alpha: 0.1),
+                      color: Theme.of(
+                        context,
+                      ).primaryColor.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: Text(
                       item['category'],
                       style: TextStyle(
-                          fontSize: 11, color: Theme.of(context).primaryColor),
+                        fontSize: 11,
+                        color: Theme.of(context).primaryColor,
+                      ),
                     ),
                   ),
                 Expanded(
                   child: Text(
                     item['date'] ?? '',
                     style: TextStyle(
-                        fontSize: 12,
-                        color: isDark ? Colors.white38 : Colors.grey[600]),
+                      fontSize: 12,
+                      color: isDark ? Colors.white38 : Colors.grey[600],
+                    ),
                   ),
                 ),
               ],

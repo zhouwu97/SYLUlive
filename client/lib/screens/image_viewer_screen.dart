@@ -167,18 +167,18 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
         final request = await Gal.requestAccess();
         if (!request) {
           if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('需要相册权限才能保存图片')),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('需要相册权限才能保存图片')));
           if (mounted) setState(() => _isSaving = false);
           return;
         }
       }
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('正在保存图片，原图不可用时会尝试本地缓存...')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('正在保存图片，原图不可用时会尝试本地缓存...')));
 
       final image = await _loadImageBytesForSaving(url);
       final String filename =
@@ -195,14 +195,14 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
       setState(() {
         _downloadedImages[_currentIndex] = image.bytes;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${image.sourceLabel}已保存到"沈理"相册')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('${image.sourceLabel}已保存到"沈理"相册')));
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('保存失败: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('保存失败: $e')));
     } finally {
       if (mounted) {
         setState(() => _isSaving = false);
@@ -252,10 +252,7 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
           return InteractiveViewer(
             child: Center(
               child: _downloadedImages.containsKey(index)
-                  ? Image.memory(
-                      _downloadedImages[index]!,
-                      fit: BoxFit.contain,
-                    )
+                  ? Image.memory(_downloadedImages[index]!, fit: BoxFit.contain)
                   : CachedNetworkImage(
                       cacheManager: PostImageCache.manager,
                       imageUrl: widget.imageUrls[index],

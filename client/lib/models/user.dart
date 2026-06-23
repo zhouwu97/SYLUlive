@@ -162,8 +162,9 @@ class User {
   /// 当前等级进度（0.0 - 1.0）
   double get levelProgress {
     if (level >= 8) return 1.0;
-    final currentMin =
-        level == 1 ? 0 : [0, 50, 150, 500, 1000, 2500, 5000, 8000][level - 1];
+    final currentMin = level == 1
+        ? 0
+        : [0, 50, 150, 500, 1000, 2500, 5000, 8000][level - 1];
     final needed = expToNextLevel - currentMin;
     if (needed <= 0) return 1.0;
     return ((exp - currentMin) / needed).clamp(0.0, 1.0);

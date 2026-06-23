@@ -8,8 +8,10 @@ import 'package:flutter/services.dart';
 class UpdateChecker {
   /// 检查更新的核心方法
   /// [showNoUpdateToast] 设为 true 时，如果已经是最新版，可以给用户一个 Toast 提示（适合在“关于”页手动检查更新）
-  static Future<void> check(BuildContext context,
-      {bool showNoUpdateToast = false}) async {
+  static Future<void> check(
+    BuildContext context, {
+    bool showNoUpdateToast = false,
+  }) async {
     try {
       final dio = Dio();
       final timestamp = DateTime.now().millisecondsSinceEpoch;
@@ -49,17 +51,23 @@ class UpdateChecker {
           final bool isForceUpdate = releaseNotes.contains('[force_update]');
 
           // 在 UI 上展示时，把标记字符串抹掉，避免用户看着奇怪
-          final String displayNotes =
-              releaseNotes.replaceAll('[force_update]', '').trim();
+          final String displayNotes = releaseNotes
+              .replaceAll('[force_update]', '')
+              .trim();
 
           if (!context.mounted) return;
           _showUpdateDialog(
-              context, remoteVersion, displayNotes, downloadUrl, isForceUpdate);
+            context,
+            remoteVersion,
+            displayNotes,
+            downloadUrl,
+            isForceUpdate,
+          );
         } else {
           if (showNoUpdateToast && context.mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text("当前已经是最新版本")),
-            );
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(const SnackBar(content: Text("当前已经是最新版本")));
           }
         }
       }
@@ -114,57 +122,59 @@ class UpdateChecker {
               child: MarkdownBody(
                 data: releaseNotes,
                 selectable: true,
-                styleSheet:
-                    MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
-                  p: TextStyle(
-                    fontSize: 14,
-                    height: 1.55,
-                    color: Theme.of(context).brightness == Brightness.dark
-                        ? Colors.white70
-                        : const Color(0xFF1F2937),
-                  ),
-                  tableHead: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: Theme.of(context).brightness == Brightness.dark
-                        ? Colors.white
-                        : const Color(0xFF111827),
-                  ),
-                  tableBody: TextStyle(
-                    fontSize: 14,
-                    height: 1.55,
-                    color: Theme.of(context).brightness == Brightness.dark
-                        ? Colors.white70
-                        : const Color(0xFF111827),
-                  ),
-                  tableHeadAlign: TextAlign.left,
-                  tablePadding: EdgeInsets.zero,
-                  tableBorder: TableBorder(
-                    top: BorderSide(
-                      color: Theme.of(context)
-                          .dividerColor
-                          .withValues(alpha: 0.85),
-                      width: 0.8,
+                styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context))
+                    .copyWith(
+                      p: TextStyle(
+                        fontSize: 14,
+                        height: 1.55,
+                        color: Theme.of(context).brightness == Brightness.dark
+                            ? Colors.white70
+                            : const Color(0xFF1F2937),
+                      ),
+                      tableHead: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: Theme.of(context).brightness == Brightness.dark
+                            ? Colors.white
+                            : const Color(0xFF111827),
+                      ),
+                      tableBody: TextStyle(
+                        fontSize: 14,
+                        height: 1.55,
+                        color: Theme.of(context).brightness == Brightness.dark
+                            ? Colors.white70
+                            : const Color(0xFF111827),
+                      ),
+                      tableHeadAlign: TextAlign.left,
+                      tablePadding: EdgeInsets.zero,
+                      tableBorder: TableBorder(
+                        top: BorderSide(
+                          color: Theme.of(
+                            context,
+                          ).dividerColor.withValues(alpha: 0.85),
+                          width: 0.8,
+                        ),
+                        bottom: BorderSide(
+                          color: Theme.of(
+                            context,
+                          ).dividerColor.withValues(alpha: 0.85),
+                          width: 0.8,
+                        ),
+                        horizontalInside: BorderSide(
+                          color: Theme.of(
+                            context,
+                          ).dividerColor.withValues(alpha: 0.55),
+                          width: 0.8,
+                        ),
+                      ),
+                      tableColumnWidth: const FlexColumnWidth(),
+                      tableCellsPadding: const EdgeInsets.symmetric(
+                        horizontal: 4,
+                        vertical: 12,
+                      ),
+                      tableCellsDecoration: const BoxDecoration(),
+                      blockSpacing: 10,
                     ),
-                    bottom: BorderSide(
-                      color: Theme.of(context)
-                          .dividerColor
-                          .withValues(alpha: 0.85),
-                      width: 0.8,
-                    ),
-                    horizontalInside: BorderSide(
-                      color: Theme.of(context)
-                          .dividerColor
-                          .withValues(alpha: 0.55),
-                      width: 0.8,
-                    ),
-                  ),
-                  tableColumnWidth: const FlexColumnWidth(),
-                  tableCellsPadding:
-                      const EdgeInsets.symmetric(horizontal: 4, vertical: 12),
-                  tableCellsDecoration: const BoxDecoration(),
-                  blockSpacing: 10,
-                ),
               ),
             ),
             actions: <Widget>[
@@ -181,11 +191,15 @@ class UpdateChecker {
                 onPressed: () async {
                   final Uri url = Uri.parse(downloadUrl);
                   try {
-                    bool launched = await launchUrl(url,
-                        mode: LaunchMode.externalApplication);
+                    bool launched = await launchUrl(
+                      url,
+                      mode: LaunchMode.externalApplication,
+                    );
                     if (!launched) {
-                      launched = await launchUrl(url,
-                          mode: LaunchMode.platformDefault);
+                      launched = await launchUrl(
+                        url,
+                        mode: LaunchMode.platformDefault,
+                      );
                     }
                     if (!launched && context.mounted) {
                       throw Exception("Could not launch url");

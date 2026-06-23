@@ -129,8 +129,9 @@ class ThemeProvider extends ChangeNotifier {
     bool fillScreen = false,
   }) async {
     _backgroundImage = imageUrl;
-    _backgroundFillScreen =
-        imageUrl != null && imageUrl.isNotEmpty ? fillScreen : false;
+    _backgroundFillScreen = imageUrl != null && imageUrl.isNotEmpty
+        ? fillScreen
+        : false;
     final prefs = await SharedPreferences.getInstance();
     if (imageUrl != null && imageUrl.isNotEmpty) {
       await prefs.setString(_backgroundImageKey, imageUrl);
@@ -147,13 +148,16 @@ class ThemeProvider extends ChangeNotifier {
     bool fillScreen = false,
   }) async {
     _landscapeBackgroundImage = imageUrl;
-    _landscapeBackgroundFillScreen =
-        imageUrl != null && imageUrl.isNotEmpty ? fillScreen : false;
+    _landscapeBackgroundFillScreen = imageUrl != null && imageUrl.isNotEmpty
+        ? fillScreen
+        : false;
     final prefs = await SharedPreferences.getInstance();
     if (imageUrl != null && imageUrl.isNotEmpty) {
       await prefs.setString(_landscapeBackgroundImageKey, imageUrl);
       await prefs.setBool(
-          _landscapeBackgroundFillScreenKey, _landscapeBackgroundFillScreen);
+        _landscapeBackgroundFillScreenKey,
+        _landscapeBackgroundFillScreen,
+      );
     } else {
       await prefs.remove(_landscapeBackgroundImageKey);
       await prefs.remove(_landscapeBackgroundFillScreenKey);

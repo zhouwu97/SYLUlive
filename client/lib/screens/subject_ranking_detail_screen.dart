@@ -46,7 +46,9 @@ class _SubjectRankingDetailScreenState
     if (total == 0) {
       if (_teachers.isEmpty) return 0;
       final sum = _teachers.fold<double>(
-          0, (value, teacher) => value + teacher.averageStar);
+        0,
+        (value, teacher) => value + teacher.averageStar,
+      );
       return sum / _teachers.length;
     }
     return weighted / total;
@@ -68,18 +70,19 @@ class _SubjectRankingDetailScreenState
     await context.read<TeacherProvider>().loadTeachers();
     if (!mounted) return;
 
-    final refreshed = context
-        .read<TeacherProvider>()
-        .teachers
-        .where((item) => item.course.trim() == widget.subjectName.trim())
-        .toList()
-      ..sort((a, b) {
-        final ratingCompare = b.averageStar.compareTo(a.averageStar);
-        if (ratingCompare != 0) return ratingCompare;
-        final countCompare = b.ratingCount.compareTo(a.ratingCount);
-        if (countCompare != 0) return countCompare;
-        return a.name.compareTo(b.name);
-      });
+    final refreshed =
+        context
+            .read<TeacherProvider>()
+            .teachers
+            .where((item) => item.course.trim() == widget.subjectName.trim())
+            .toList()
+          ..sort((a, b) {
+            final ratingCompare = b.averageStar.compareTo(a.averageStar);
+            if (ratingCompare != 0) return ratingCompare;
+            final countCompare = b.ratingCount.compareTo(a.ratingCount);
+            if (countCompare != 0) return countCompare;
+            return a.name.compareTo(b.name);
+          });
 
     if (mounted)
       setState(() {
@@ -91,7 +94,8 @@ class _SubjectRankingDetailScreenState
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final themeProvider = context.watch<ThemeProvider>();
-    final sorted = [..._teachers]..sort((a, b) {
+    final sorted = [..._teachers]
+      ..sort((a, b) {
         final ratingCompare = b.averageStar.compareTo(a.averageStar);
         if (ratingCompare != 0) return ratingCompare;
         final countCompare = b.ratingCount.compareTo(a.ratingCount);
@@ -106,8 +110,9 @@ class _SubjectRankingDetailScreenState
         Navigator.pop(context, _changed);
       },
       child: Scaffold(
-        backgroundColor:
-            isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
+        backgroundColor: isDark
+            ? const Color(0xFF131720)
+            : const Color(0xFFF4F6FB),
         extendBodyBehindAppBar: false, // 关闭延伸，防止 AppBar 与 Body 重叠
         appBar: AppBar(
           title: Text(widget.subjectName),
@@ -117,8 +122,9 @@ class _SubjectRankingDetailScreenState
           centerTitle: true, // 标题居中显示
           systemOverlayStyle: SystemUiOverlayStyle(
             statusBarColor: Colors.transparent,
-            statusBarIconBrightness:
-                isDark ? Brightness.light : Brightness.dark,
+            statusBarIconBrightness: isDark
+                ? Brightness.light
+                : Brightness.dark,
           ),
           titleTextStyle: TextStyle(
             color: isDark ? Colors.white : Colors.black87,
@@ -141,8 +147,9 @@ class _SubjectRankingDetailScreenState
               borderRadius: 24,
               blur: 14,
               opacity: 0.18,
-              backgroundColor:
-                  isDark ? const Color(0xA31A2040) : const Color(0xCCE8ECFF),
+              backgroundColor: isDark
+                  ? const Color(0xA31A2040)
+                  : const Color(0xCCE8ECFF),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -152,8 +159,9 @@ class _SubjectRankingDetailScreenState
                         width: 50,
                         height: 50,
                         decoration: BoxDecoration(
-                          color:
-                              const Color(0xFF6D5EF9).withValues(alpha: 0.14),
+                          color: const Color(
+                            0xFF6D5EF9,
+                          ).withValues(alpha: 0.14),
                           borderRadius: BorderRadius.circular(16),
                         ),
                         child: const Icon(
@@ -225,8 +233,9 @@ class _SubjectRankingDetailScreenState
                 borderRadius: 20,
                 blur: 12,
                 opacity: 0.18,
-                backgroundColor:
-                    isDark ? const Color(0x99171B24) : const Color(0xCCFFFFFF),
+                backgroundColor: isDark
+                    ? const Color(0x99171B24)
+                    : const Color(0xCCFFFFFF),
                 borderColor: isDark
                     ? Colors.white.withValues(alpha: 0.08)
                     : Colors.white.withValues(alpha: 0.72),
@@ -287,12 +296,7 @@ class _SubjectRankingDetailScreenState
     );
   }
 
-  Widget _buildMetric(
-    bool isDark,
-    String label,
-    String value,
-    IconData icon,
-  ) {
+  Widget _buildMetric(bool isDark, String label, String value, IconData icon) {
     return SizedBox(
       child: GlassContainer(
         width: 120,

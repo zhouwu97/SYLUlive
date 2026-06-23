@@ -38,7 +38,12 @@ import 'package:crypto/crypto.dart';
 import 'dart:convert';
 
 String _hashError(
-    String level, String source, String type, String summary, String detail) {
+  String level,
+  String source,
+  String type,
+  String summary,
+  String detail,
+) {
   final bytes = utf8.encode('$level$source$type$summary$detail');
   return md5.convert(bytes).toString();
 }
@@ -97,8 +102,9 @@ Future<void> main() async {
 
         if (exceptionText.contains('_ClientSocketException') &&
             details.library == 'image resource service') {
-          final hostMatch =
-              RegExp(r'address\s*=\s*([^\s,:]+)').firstMatch(exceptionText);
+          final hostMatch = RegExp(
+            r'address\s*=\s*([^\s,:]+)',
+          ).firstMatch(exceptionText);
           final host = hostMatch?.group(1) ?? 'unknown';
 
           _safeRecord(
@@ -121,11 +127,12 @@ Future<void> main() async {
           summary: exceptionText,
           detail: fullString,
           dedupKey: _hashError(
-              'error',
-              'Flutter',
-              details.exception.runtimeType.toString(),
-              exceptionText,
-              fullString),
+            'error',
+            'Flutter',
+            details.exception.runtimeType.toString(),
+            exceptionText,
+            fullString,
+          ),
           dedupMs: 2000,
         );
       };
@@ -140,8 +147,13 @@ Future<void> main() async {
           type: error.runtimeType.toString(),
           summary: exceptionText,
           detail: fullString,
-          dedupKey: _hashError('error', 'Flutter', error.runtimeType.toString(),
-              exceptionText, fullString),
+          dedupKey: _hashError(
+            'error',
+            'Flutter',
+            error.runtimeType.toString(),
+            exceptionText,
+            fullString,
+          ),
           dedupMs: 2000,
         );
         return true;
@@ -149,15 +161,20 @@ Future<void> main() async {
 
       // 强制沉浸式（Edge-to-Edge），解决悬浮底栏下方的系统黑条空挡问题
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-      SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-        systemNavigationBarColor: Colors.transparent,
-        statusBarColor: Colors.transparent,
-      ));
+      SystemChrome.setSystemUIOverlayStyle(
+        const SystemUiOverlayStyle(
+          systemNavigationBarColor: Colors.transparent,
+          statusBarColor: Colors.transparent,
+        ),
+      );
 
       await Hive.initFlutter();
-      await CourseReminderService.instance.initialize();
-      await _initializePrivateMessageNotifications();
       runApp(const MyApp());
+
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        CourseReminderService.instance.initialize();
+        _initializePrivateMessageNotifications();
+      });
     },
     (error, stack) {
       final exceptionText = error.toString();
@@ -168,8 +185,13 @@ Future<void> main() async {
         type: error.runtimeType.toString(),
         summary: exceptionText,
         detail: fullString,
-        dedupKey: _hashError('error', 'Dart', error.runtimeType.toString(),
-            exceptionText, fullString),
+        dedupKey: _hashError(
+          'error',
+          'Dart',
+          error.runtimeType.toString(),
+          exceptionText,
+          fullString,
+        ),
         dedupMs: 2000,
       );
     },
@@ -181,8 +203,9 @@ var jpush = JPush.newJPush();
 final FlutterLocalNotificationsPlugin _privateMessageNotifications =
     FlutterLocalNotificationsPlugin();
 bool _privateMessageNotificationsReady = false;
-const MethodChannel _privateMessageNotificationChannel =
-    MethodChannel('shenliyuan/private_message_notifications');
+const MethodChannel _privateMessageNotificationChannel = MethodChannel(
+  'shenliyuan/private_message_notifications',
+);
 
 /// 冷启动时通知数据临时存放（navigator 未就绪前）
 final PendingPrivateMessageOpen _pendingPrivateMessageOpen =
@@ -263,7 +286,8 @@ Future<void> _initializePrivateMessageNotifications() async {
   );
   await _privateMessageNotifications
       .resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin>()
+        AndroidFlutterLocalNotificationsPlugin
+      >()
       ?.createNotificationChannel(
         const AndroidNotificationChannel(
           'developer-default',
@@ -274,7 +298,8 @@ Future<void> _initializePrivateMessageNotifications() async {
       );
   await _privateMessageNotifications
       .resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin>()
+        AndroidFlutterLocalNotificationsPlugin
+      >()
       ?.createNotificationChannel(
         const AndroidNotificationChannel(
           'private_messages',
@@ -286,7 +311,8 @@ Future<void> _initializePrivateMessageNotifications() async {
   // Android 13+ 运行时通知权限
   await _privateMessageNotifications
       .resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin>()
+        AndroidFlutterLocalNotificationsPlugin
+      >()
       ?.requestNotificationsPermission();
   _privateMessageNotificationsReady = true;
 }
@@ -294,9 +320,10 @@ Future<void> _initializePrivateMessageNotifications() async {
 /// 首帧后请求通知权限（需要 Activity 已创建）
 Future<void> _requestNotificationPermissionIfNeeded() async {
   try {
-    final plugin =
-        _privateMessageNotifications.resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>();
+    final plugin = _privateMessageNotifications
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
     if (plugin == null) return;
     final granted = await plugin.requestNotificationsPermission();
     debugPrint('通知权限请求结果: $granted');
@@ -463,32 +490,64 @@ Future<bool> _handleUpdateNotification(Map<String, dynamic> message) async {
   return true;
 }
 
+class SafeLogInterceptor extends Interceptor {
+  @override
+  void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
+    if (kDebugMode) {
+      debugPrint('[HTTP] -> ${options.method} ${options.uri.path}');
+    }
+    super.onRequest(options, handler);
+  }
+
+  @override
+  void onResponse(Response response, ResponseInterceptorHandler handler) {
+    if (kDebugMode) {
+      final data = response.data;
+      String summary = '';
+      if (data is List) {
+        summary = 'List(length=${data.length})';
+      } else if (data is Map) {
+        summary = 'Map(keys=${data.keys.take(10).join(',')})';
+      } else if (data != null) {
+        summary =
+            'Data(length=${data.toString().length > 50 ? '>50' : data.toString().length})';
+      }
+      debugPrint(
+        '[HTTP] <- ${response.requestOptions.method} ${response.requestOptions.uri.path} ${response.statusCode} $summary',
+      );
+    }
+    super.onResponse(response, handler);
+  }
+
+  @override
+  void onError(DioException err, ErrorInterceptorHandler handler) {
+    if (kDebugMode) {
+      final msg = err.message ?? err.error?.toString() ?? 'unknown error';
+      final safeMsg = msg.length > 200 ? '${msg.substring(0, 200)}...' : msg;
+      debugPrint(
+        '[HTTP] <- ERROR ${err.requestOptions.method} ${err.requestOptions.uri.path} ${err.response?.statusCode} error=$safeMsg',
+      );
+    }
+    super.onError(err, handler);
+  }
+}
+
 Dio? _sharedDio;
 
 Dio getSharedDio() {
   if (_sharedDio == null) {
-    final dio = Dio(BaseOptions(
-      baseUrl: ApiConstants.baseUrl,
-      connectTimeout: ApiConstants.connectTimeout,
-      receiveTimeout: ApiConstants.receiveTimeout,
-      sendTimeout: ApiConstants.sendTimeout,
-    ));
+    final dio = Dio(
+      BaseOptions(
+        baseUrl: ApiConstants.baseUrl,
+        connectTimeout: ApiConstants.connectTimeout,
+        receiveTimeout: ApiConstants.receiveTimeout,
+        sendTimeout: ApiConstants.sendTimeout,
+      ),
+    );
 
     if (kDebugMode) {
-      dio.interceptors.add(LogInterceptor(
-        requestBody: true,
-        responseBody: true,
-        logPrint: (o) => debugPrint(o.toString()),
-      ));
+      dio.interceptors.add(SafeLogInterceptor());
     }
-
-    dio.interceptors.add(InterceptorsWrapper(
-      onError: (error, handler) {
-        debugPrint(
-            'DioError [${error.response?.statusCode}]: ${error.requestOptions.uri}');
-        handler.next(error);
-      },
-    ));
 
     _sharedDio = dio;
   }
@@ -515,9 +574,7 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => CanteenProvider(dio)),
         ChangeNotifierProvider(create: (_) => SocialProvider(dio)),
       ],
-      child: const _WidgetDeepLinkHandler(
-        child: _AppContent(),
-      ),
+      child: const _WidgetDeepLinkHandler(child: _AppContent()),
     );
   }
 }
@@ -555,7 +612,8 @@ class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
         } else if (uri != null && uri.startsWith('widget_exam') && mounted) {
           appNavigatorKey.currentState?.popUntil((route) => route.isFirst);
           appNavigatorKey.currentState?.push(
-              MaterialPageRoute(builder: (_) => const ExamScheduleScreen()));
+            MaterialPageRoute(builder: (_) => const ExamScheduleScreen()),
+          );
         }
       }
     });
@@ -585,7 +643,8 @@ class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
       } else if (uri != null && uri.startsWith('widget_exam') && mounted) {
         appNavigatorKey.currentState?.popUntil((route) => route.isFirst);
         appNavigatorKey.currentState?.push(
-            MaterialPageRoute(builder: (_) => const ExamScheduleScreen()));
+          MaterialPageRoute(builder: (_) => const ExamScheduleScreen()),
+        );
       }
     } catch (e) {
       debugPrint('深度链接检查失败: $e');
@@ -630,15 +689,11 @@ class _AppContent extends StatelessWidget {
       routes: {
         '/login': (context) => const LoginScreen(),
         '/timetable': (context) => const PredictiveBackGate(
-              child: GlobalBackgroundWrapper(
-                child: CourseScheduleScreen(),
-              ),
-            ),
+          child: GlobalBackgroundWrapper(child: CourseScheduleScreen()),
+        ),
       },
       home: const PredictiveBackGate(
-        child: GlobalBackgroundWrapper(
-          child: AuthWrapper(),
-        ),
+        child: GlobalBackgroundWrapper(child: AuthWrapper()),
       ),
     );
   }
@@ -650,10 +705,7 @@ final GlobalKey<BackgroundWrapperState> backgroundWrapperKey =
 class GlobalBackgroundWrapper extends StatefulWidget {
   final Widget child;
 
-  const GlobalBackgroundWrapper({
-    super.key,
-    required this.child,
-  });
+  const GlobalBackgroundWrapper({super.key, required this.child});
 
   @override
   State<GlobalBackgroundWrapper> createState() => BackgroundWrapperState();
@@ -703,8 +755,9 @@ class BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
     if (bgPath == null) return _buildDefaultBackground(isDark);
     final isAsset = ThemeProvider.isBundledAssetBackground(bgPath);
     final isLocalFile = ThemeProvider.isLocalFileBackground(bgPath);
-    final resolvedPath =
-        isAsset ? ThemeProvider.resolveBundledAssetPath(bgPath) : bgPath;
+    final resolvedPath = isAsset
+        ? ThemeProvider.resolveBundledAssetPath(bgPath)
+        : bgPath;
 
     const alignment = Alignment.center;
     final fillScreen = themeProvider.getBackgroundFillScreenFor(context);
@@ -712,8 +765,8 @@ class BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
     final imageProvider = isAsset
         ? AssetImage(resolvedPath) as ImageProvider
         : isLocalFile
-            ? FileImage(File(bgPath)) as ImageProvider
-            : NetworkImage(bgPath) as ImageProvider;
+        ? FileImage(File(bgPath)) as ImageProvider
+        : NetworkImage(bgPath) as ImageProvider;
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -764,8 +817,9 @@ class BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
               alignment: alignment,
               gaplessPlayback: true,
               errorBuilder: (_, __, ___) => Container(
-                color:
-                    isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
+                color: isDark
+                    ? const Color(0xFF131720)
+                    : const Color(0xFFF4F6FB),
               ),
             ),
           ),
@@ -847,10 +901,8 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
     _checkingNativePrivateMessage = true;
 
     try {
-      final payload =
-          await _privateMessageNotificationChannel.invokeMethod<String>(
-        'getPendingPrivateMessage',
-      );
+      final payload = await _privateMessageNotificationChannel
+          .invokeMethod<String>('getPendingPrivateMessage');
 
       if (payload == null || payload.isEmpty) return;
 

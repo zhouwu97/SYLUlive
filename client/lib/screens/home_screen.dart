@@ -159,7 +159,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Future<List<dynamic>> _fetchAnnouncementsFallback(AuthProvider auth) async {
-    final resp = await auth.dio.get(ApiConstants.noticesPath);
+    var resp;
+    try {
+      resp = await auth.dio.get(ApiConstants.noticesPath);
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 404) {
+        resp = await auth.dio.get('/announcements');
+      } else {
+        rethrow;
+      }
+    }
     final list = (resp.data as List?) ?? const [];
     return list
         .where((item) => !_seenAnnouncementIds.contains(_announcementId(item)))
@@ -168,7 +177,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   Future<List<dynamic>> _loadUnreadAnnouncements(AuthProvider auth) async {
     try {
-      final resp = await auth.dio.get('${ApiConstants.noticesPath}/unread');
+      var resp;
+      try {
+        resp = await auth.dio.get('${ApiConstants.noticesPath}/unread');
+      } on DioException catch (e) {
+        if (e.response?.statusCode == 404) {
+          resp = await auth.dio.get('/announcements/unread');
+        } else {
+          rethrow;
+        }
+      }
       return (resp.data as List?) ?? const [];
     } on DioException catch (e) {
       final isBadUnreadRoute = e.response?.statusCode == 400 &&

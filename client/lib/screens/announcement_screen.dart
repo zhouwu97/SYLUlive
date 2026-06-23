@@ -44,7 +44,17 @@ class _AnnouncementScreenState extends State<AnnouncementScreen>
   Future<void> _loadAnnouncements() async {
     final authProvider = context.read<AuthProvider>();
     try {
-      final response = await authProvider.dio.get(ApiConstants.noticesPath);
+      var response;
+      try {
+        response = await authProvider.dio.get(ApiConstants.noticesPath);
+      } on DioException catch (e) {
+        if (e.response?.statusCode == 404) {
+          response = await authProvider.dio.get('/announcements');
+        } else {
+          rethrow;
+        }
+      }
+
       if (response.statusCode == 200) {
         final list = (response.data as List)
             .map((e) => model.Announcement.fromJson(e))

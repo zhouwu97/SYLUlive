@@ -234,7 +234,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
         backgroundColor: Colors.transparent,
         elevation: 0,
         actions: [
-          if (_repo.hasData)
+          if (_repo.hasCachedData)
             PopupMenuButton<String>(
               onSelected: (value) async {
                 if (value == 'relogin') {
@@ -257,7 +257,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
         ],
       ),
       body: SafeArea(
-        child: _repo.hasData ? _buildDataView(isDark) : _buildLoginForm(),
+        child: _repo.hasCachedData ? _buildDataView(isDark) : _buildLoginForm(),
       ),
     );
   }
@@ -517,7 +517,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
 
   Widget _buildGraduationView(bool isDark) {
     final grad = _repo.graduation;
-    if (grad == null) return const SizedBox.shrink();
+    if (grad == null) return _buildNeedsRelogin(isDark, '毕业要求');
 
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -741,7 +741,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
 
   Widget _buildYearlyView(bool isDark) {
     final yr = _repo.yearly;
-    if (yr == null) return const SizedBox.shrink();
+    if (yr == null) return _buildNeedsRelogin(isDark, '学年要求');
 
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -1164,6 +1164,71 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
           (match) => '${match.group(1)}.${match.group(2)}–${match.group(3)}');
     }
     return s;
+  }
+
+  // ---- 旧缓存迁移提示 ----
+
+  Widget _buildNeedsRelogin(bool isDark, String mode) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 48),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.cloud_download_outlined,
+                size: 48,
+                color: isDark ? Colors.white38 : const Color(0xFFB5B8C2)),
+            const SizedBox(height: 16),
+            Text(
+              '检测到旧版二课缓存',
+              style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: isDark ? Colors.white : const Color(0xFF20232A)),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '需要重新验证账号以获取$mode和学年要求。\n已有活动记录已保留，不会丢失。',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                  fontSize: 13,
+                  color: isDark ? Colors.white54 : const Color(0xFF8A8F9C)),
+            ),
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: ElevatedButton(
+                onPressed: _isLoading ? null : _queryScores,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF6366F1),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14)),
+                  elevation: 0,
+                ),
+                child: _isLoading
+                    ? const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                  color: Colors.white, strokeWidth: 2)),
+                          SizedBox(width: 10),
+                          Text('验证中...', style: TextStyle(fontSize: 15)),
+                        ],
+                      )
+                    : const Text('重新登录并补全数据',
+                        style: TextStyle(
+                            fontSize: 15, fontWeight: FontWeight.w600)),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   // ---- 标签 ----

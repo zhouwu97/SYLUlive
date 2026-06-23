@@ -1033,7 +1033,7 @@ func main() {
 
 		c.JSON(http.StatusOK, gin.H{
 
-			"version": "1.5.18",
+			"version": "1.5.19",
 
 			"min_version": "1.4.0", // 增加最低版本限制，低于此版本的客户端将被强制更新
 
@@ -1045,7 +1045,7 @@ func main() {
 
 			"gitee_download_url": "https://gitee.com/chunhezi/SYLUlive/releases",
 
-			"update_msg": "因此正确目标是：\n\n| 功能 | 1.5.15 旧版 |\n| --- | --- |\n| 二课 WebVPN 登录 | 手机本地 |\n| 二课成绩抓取 | 手机本地 |\n| 教务登录 | Python 服务器 |\n| 课表抓取 | Go/Python 服务器 |\n| 成绩抓取 | Go/Python 服务器 |\n| 教务密码 | 会发往服务器 |\n| 教务 Cookie | 服务器使用 |",
+			"update_msg": "1. 修复推送通知点击后无法精准跳转二级回复及应用崩溃问题\n2. 完善帖子详情和结构化路由机制\n3. 修复相关组件报错",
 		})
 
 	})

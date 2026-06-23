@@ -761,8 +761,6 @@ func main() {
 
 	r.POST("/api/upload", middleware.AuthMiddleware(db, cfg.JWTSecret), uploadHandler.Upload)
 
-	r.POST("/api/upload/recover", middleware.AuthMiddleware(db, cfg.JWTSecret), uploadHandler.RecoverUpload)
-
 	r.POST("/api/upload_multiple", middleware.AuthMiddleware(db, cfg.JWTSecret), uploadHandler.UploadMultiple)
 
 	// 教务系统路由
@@ -778,9 +776,9 @@ func main() {
 		edu.DELETE("/bind", middleware.AuthMiddleware(db, cfg.JWTSecret), eduHandler.UnbindEdu)
 
 		edu.POST("/courses", middleware.AuthMiddleware(db, cfg.JWTSecret), eduHandler.GetCourses)
-
+		
 		edu.GET("/courses/local", middleware.AuthMiddleware(db, cfg.JWTSecret), eduHandler.GetLocalCourses)
-
+		
 		edu.POST("/courses/sync", middleware.AuthMiddleware(db, cfg.JWTSecret), eduHandler.SyncCourses)
 
 		edu.POST("/grades", middleware.AuthMiddleware(db, cfg.JWTSecret), eduHandler.GetGrades)

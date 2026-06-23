@@ -1,7 +1,6 @@
 import 'dart:ui';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:image_picker/image_picker.dart';
 import 'package:image_cropper/image_cropper.dart';
@@ -15,7 +14,6 @@ import '../providers/theme_provider.dart';
 import '../providers/edu_provider.dart';
 import '../providers/course_schedule_provider.dart';
 import '../providers/message_provider.dart';
-import '../services/upload_cache_recovery_service.dart';
 import '../utils/app_feedback.dart';
 import '../utils/update_checker.dart';
 import '../utils/responsive_util.dart';
@@ -58,18 +56,6 @@ class _ProfileScreenState extends State<ProfileScreen>
   int _unreadMessageCount = 0;
   bool _startOnTimetable = false;
   int? _postCount;
-
-  void _recoverImageUrl(String url) {
-    try {
-      UploadCacheRecoveryService.recover(
-        imageUrl: url,
-        dio: context.read<AuthProvider>().dio,
-        cacheManager: DefaultCacheManager(),
-      ).then((recovered) {
-        if (recovered && mounted) setState(() {});
-      }).catchError((_) {});
-    } catch (_) {}
-  }
 
   @override
   void initState() {
@@ -1059,15 +1045,7 @@ class _ProfileScreenState extends State<ProfileScreen>
         child: GestureDetector(
           onTap: () => Navigator.pop(context),
           child: InteractiveViewer(
-            child: CachedNetworkImage(
-              imageUrl: url,
-              fit: BoxFit.contain,
-              errorWidget: (_, failedUrl, ___) {
-                _recoverImageUrl(failedUrl);
-                return const Icon(Icons.broken_image, color: Colors.white);
-              },
-            ),
-          ),
+              child: CachedNetworkImage(imageUrl: url, fit: BoxFit.contain)),
         ),
       ),
     );
@@ -1194,17 +1172,7 @@ class _ProfileScreenState extends State<ProfileScreen>
             backgroundColor: Colors.black,
             appBar: AppBar(backgroundColor: Colors.transparent),
             body: Center(
-              child: InteractiveViewer(
-                child: CachedNetworkImage(
-                  imageUrl: avatarUrl,
-                  fit: BoxFit.contain,
-                  errorWidget: (_, failedUrl, ___) {
-                    _recoverImageUrl(failedUrl);
-                    return const Icon(Icons.broken_image, color: Colors.white);
-                  },
-                ),
-              ),
-            ),
+                child: InteractiveViewer(child: Image.network(avatarUrl))),
           ),
         ));
   }

@@ -1,10 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
-import 'package:provider/provider.dart';
-
-import '../providers/auth_provider.dart';
-import '../services/upload_cache_recovery_service.dart';
 
 class AvatarCache {
   AvatarCache._();
@@ -125,43 +121,18 @@ class _CachedAvatarState extends State<CachedAvatar> {
       return;
     }
     _retryScheduled = true;
-    _recoverFromCache(sourceUrl).then((recovered) {
-      final afterRecovery =
-          recovered ? AvatarCache.evict(sourceUrl) : Future<void>.value();
-      afterRecovery.whenComplete(() {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted || widget.imageUrl != sourceUrl) return;
-          setState(() {
-            _retryScheduled = false;
-            if (recovered) {
-              _retryAttempt++;
-              _providerUrl = null;
-              _imageProvider = null;
-              _prepareImage();
-            }
-          });
-        });
-      });
-    });
-  }
-
-  Future<bool> _recoverFromCache(String sourceUrl) async {
-    try {
-      return await UploadCacheRecoveryService.recover(
-        imageUrl: sourceUrl,
-        dio: context.read<AuthProvider>().dio,
-        cacheManager: AvatarCache.manager,
-        fallbackCacheManagers: [DefaultCacheManager()],
-      );
-    } catch (_) {
+    AvatarCache.evict(sourceUrl).whenComplete(() {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted || widget.imageUrl != sourceUrl) return;
         setState(() {
           _retryScheduled = false;
+          _retryAttempt++;
+          _providerUrl = null;
+          _imageProvider = null;
+          _prepareImage();
         });
       });
-      return false;
-    }
+    });
   }
 
   @override

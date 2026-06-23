@@ -46,9 +46,7 @@ class ErkeParser {
     return null;
   }
 
-  /// 按精确 ID 从文档中提取 span 文本，并解析为 double
-  /// 找不到节点或值非数字时抛 ErkePageChangedException
-  /// 支持 ASP.NET ClientID 前缀（ctl00_..._CountA1）
+  /// 按 ID 查找 span 并解析为 double，找不到节点抛异常，空值默认 0.0
   static double _requireSpanValue(Document doc, String id) {
     final el = _findByIdOrSuffix(doc, id);
     if (el == null) {
@@ -59,8 +57,9 @@ class ErkeParser {
     }
     final text =
         (el.text.isNotEmpty ? el.text : el.attributes['value'] ?? '').trim();
+    if (text.isEmpty) return 0.0; // 空占位节点 → 0
     final value = double.tryParse(text);
-    if (value == null || text.isEmpty) {
+    if (value == null) {
       throw ErkePageChangedException(
         '无法解析 #$id 的值: "$text"',
         missingElementId: id,
@@ -69,19 +68,19 @@ class ErkeParser {
     return value;
   }
 
-  /// 检查页面是否包含完整可解析的成绩数据
-  /// A~E 的 CountX1 必须全部存在且为有效数字，缺一不可
+  /// 检查页面是否已包含本学年得分数据
+  /// 只要 CountA1~E1 和 SunCount1 节点存在即可（空值视为 0）
   static bool _hasScoreData(Document doc) {
     const requiredIds = [
-      'CountA1', 'CountB1', 'CountC1', 'CountD1', 'CountE1',
-      'SunCount1', 'CountTotalSum',
+      'CountA1',
+      'CountB1',
+      'CountC1',
+      'CountD1',
+      'CountE1',
+      'SunCount1',
     ];
     for (final id in requiredIds) {
-      final el = _findByIdOrSuffix(doc, id);
-      if (el == null) return false;
-      final raw = (el.text.isNotEmpty ? el.text : el.attributes['value'] ?? '')
-          .trim();
-      if (double.tryParse(raw) == null) return false;
+      if (_findByIdOrSuffix(doc, id) == null) return false;
     }
     return true;
   }

@@ -34,6 +34,7 @@ import 'theme/AppTheme.dart';
 import 'config/api_constants.dart';
 import 'utils/app_navigator.dart';
 import 'utils/private_message_notification.dart';
+import 'utils/notification_open_target.dart';
 import 'services/diagnostic_log_service.dart';
 import 'package:crypto/crypto.dart';
 import 'dart:convert';
@@ -212,51 +213,17 @@ const MethodChannel _privateMessageNotificationChannel = MethodChannel(
 final PendingPrivateMessageOpen _pendingPrivateMessageOpen =
     PendingPrivateMessageOpen();
 
-typedef NavigatorAction = void Function(NavigatorState navigator);
+/// 冷启动时普通通知数据临时存放
+final PendingNotificationOpen _pendingNotificationOpen =
+    PendingNotificationOpen();
 
-class PendingNavigatorAction {
-  PendingNavigatorAction({this.ttl = const Duration(seconds: 10)});
-  final Duration ttl;
-  NavigatorAction? _action;
-  DateTime? _readyAt;
+bool _jpushHandlersRegistered = false;
+bool _pendingNotificationProcessScheduled = false;
 
-  void store(NavigatorAction action) {
-    _action = action;
-    _readyAt = null;
-  }
+void _ensureJPushHandlersRegistered() {
+  if (_jpushHandlersRegistered) return;
+  _jpushHandlersRegistered = true;
 
-  void markReady(DateTime now) {
-    if (_action == null || _readyAt != null) return;
-    _readyAt = now;
-  }
-
-  NavigatorAction? consume(DateTime now) {
-    final action = _action;
-    if (action == null) return null;
-    final readyAt = _readyAt;
-    if (readyAt != null && now.difference(readyAt) > ttl) {
-      clear();
-      return null;
-    }
-    clear();
-    return action;
-  }
-
-  void clear() {
-    _action = null;
-    _readyAt = null;
-  }
-}
-
-final PendingNavigatorAction _pendingNavigatorAction = PendingNavigatorAction();
-
-Future<void> setupJPush(AuthProvider authProvider) async {
-  jpush.setup(
-    appKey: ApiConstants.jpushAppKey,
-    channel: 'developer-default',
-    production: false,
-    debug: true,
-  );
   jpush.addEventHandler(
     onReceiveNotification: (Map<String, dynamic> message) async {
       await _handlePrivateMessageNotification(message, opened: false);
@@ -265,51 +232,147 @@ Future<void> setupJPush(AuthProvider authProvider) async {
       await _handlePrivateMessageNotification(message, opened: false);
     },
     onOpenNotification: (Map<String, dynamic> message) async {
+      debugPrint('点击通知原始数据: $message');
+
       if (await _handleUpdateNotification(message)) return;
       if (await _handlePrivateMessageNotification(message, opened: true)) {
         return;
       }
 
-      final extras = extractJPushExtras(message);
-      final type = extras['type']?.toString();
+      final target = NotificationOpenTarget.parse(message);
 
-      WidgetBuilder? routeBuilder;
-
-      if (type == 'reply') {
-        final postId = intFromNotificationExtra(extras['post_id']);
-        final replyId = intFromNotificationExtra(extras['reply_id']);
-        if (postId != null) {
-          routeBuilder = (_) => PostDetailScreen(postId: postId, targetReplyId: replyId);
-        } else {
-          routeBuilder = (_) => const UserRepliesScreen();
-        }
-      } else if (type == 'market_post') {
-        final postId = intFromNotificationExtra(extras['post_id']);
-        if (postId != null) {
-          routeBuilder = (_) => PostDetailScreen(postId: postId);
-        }
-      } else {
-        routeBuilder = (_) => const UserRepliesScreen();
+      if (target == null) {
+        final extras = extractJPushExtras(message);
+        debugPrint('忽略未知或无效通知: type=${extras['type']}');
+        return;
       }
 
-      if (routeBuilder != null) {
-        // 尝试拉起 App
-        const channel = MethodChannel('shenliyuan/foreground');
-        channel.invokeMethod('bringToForeground').catchError((e) {});
-
-        void doNavigation(NavigatorState navigator) {
-          navigator.popUntil((route) => route.isFirst);
-          navigator.push(MaterialPageRoute(builder: routeBuilder!));
-        }
-
-        if (appNavigatorKey.currentState != null) {
-          doNavigation(appNavigatorKey.currentState!);
-        } else {
-          _pendingNavigatorAction.store(doNavigation);
-        }
-      }
+      _storeOrOpenNotificationTarget(target);
     },
   );
+}
+
+NotificationOpenTarget? _lastOpenedNotificationTarget;
+DateTime? _lastOpenedNotificationAt;
+
+bool _isDuplicateNotificationOpen(
+  NotificationOpenTarget target,
+  DateTime now,
+) {
+  final previous = _lastOpenedNotificationTarget;
+  final previousAt = _lastOpenedNotificationAt;
+
+  if (previous == null || previousAt == null) return false;
+
+  return previous.hasSameDestination(target) &&
+      now.difference(previousAt) < const Duration(seconds: 2);
+}
+
+void _navigateToNotificationTarget(NotificationOpenTarget target) {
+  final navigator = appNavigatorKey.currentState;
+  if (navigator == null) {
+    _pendingNotificationOpen.store(target);
+    _schedulePendingNotificationProcessing();
+    return;
+  }
+
+  final now = DateTime.now();
+  if (_isDuplicateNotificationOpen(target, now)) {
+    debugPrint('忽略重复的通知跳转: ${target.type}');
+    return;
+  }
+  
+  _lastOpenedNotificationTarget = target;
+  _lastOpenedNotificationAt = now;
+
+  // 尝试拉起 App
+  const channel = MethodChannel('shenliyuan/foreground');
+  channel.invokeMethod('bringToForeground').catchError((e) {});
+
+  navigator.popUntil((route) => route.isFirst);
+
+  switch (target.type) {
+    case NotificationOpenType.reply:
+      final postId = target.postId;
+
+      if (postId == null) {
+        navigator.push(
+          MaterialPageRoute(
+            builder: (_) => const UserRepliesScreen(),
+          ),
+        );
+        return;
+      }
+
+      navigator.push(
+        MaterialPageRoute(
+          builder: (_) => PostDetailScreen(
+            postId: postId,
+            targetReplyId: target.replyId,
+          ),
+        ),
+      );
+      return;
+
+    case NotificationOpenType.marketPost:
+      final postId = target.postId;
+      if (postId == null) return;
+
+      navigator.push(
+        MaterialPageRoute(
+          builder: (_) => PostDetailScreen(
+            postId: postId,
+            isMarket: true,
+          ),
+        ),
+      );
+      return;
+  }
+}
+
+void _storeOrOpenNotificationTarget(NotificationOpenTarget target) {
+  final navigator = appNavigatorKey.currentState;
+
+  if (navigator != null) {
+    _navigateToNotificationTarget(target);
+    return;
+  }
+
+  _pendingNotificationOpen.store(target);
+  _schedulePendingNotificationProcessing();
+}
+
+void _schedulePendingNotificationProcessing() {
+  if (_pendingNotificationProcessScheduled) return;
+  _pendingNotificationProcessScheduled = true;
+
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    _pendingNotificationProcessScheduled = false;
+    _processPendingNotificationOpen();
+  });
+}
+
+void _processPendingNotificationOpen() {
+  if (appNavigatorKey.currentState == null) return;
+
+  final now = DateTime.now();
+  final target = _pendingNotificationOpen.consume(now);
+  if (target != null) {
+    debugPrint('🔗 执行延迟普通通知跳转: ${target.type}');
+    _navigateToNotificationTarget(target);
+  }
+}
+
+Future<void> setupJPush(AuthProvider authProvider) async {
+  _ensureJPushHandlersRegistered();
+
+  jpush.setup(
+    appKey: ApiConstants.jpushAppKey,
+    channel: 'developer-default',
+    production: false,
+    debug: true,
+  );
+
   final rid = await jpush.getRegistrationID();
 
   if (rid.isNotEmpty) {
@@ -964,6 +1027,7 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
         _ensureJPush(authProvider);
         _checkNativePrivateMessage();
       }
+      _schedulePendingNotificationProcessing();
     }
   }
 
@@ -1025,8 +1089,8 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
             if (!_jpushSetup && !_jpushSettingUp) {
               _ensureJPush(authProvider);
               _requestNotificationPermissionIfNeeded();
-              _processPendingOpenNotification();
             }
+            _schedulePendingNotificationProcessing();
             _checkNativePrivateMessage();
           });
         }

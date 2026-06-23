@@ -578,14 +578,14 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       body: Stack(
         children: [
           useDesktopShell
-              ? _buildDesktopLayout(isDark, topPadding)
-              : _buildMobileLayout(isDark, topPadding),
+              ? _buildDesktopLayout(isDark)
+              : _buildMobileLayout(isDark),
         ],
       ),
     );
   }
 
-  Widget _buildDesktopLayout(bool isDark, double topPadding) {
+  Widget _buildDesktopLayout(bool isDark) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -604,7 +604,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
           ),
           child: Stack(
             children: [
-              _buildMobileLayout(isDark, topPadding),
+              _buildMobileLayout(isDark),
             ],
           ),
         ),
@@ -684,7 +684,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   // ---- 顶部导航栏 ----
   Widget _buildHomeTopBar(bool isDark) {
     return SizedBox(
-      height: 56,
+      height: 48,
       child: Stack(
         alignment: Alignment.center,
         children: [
@@ -724,19 +724,21 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                           Text(
                             config.label,
                             style: TextStyle(
-                              fontSize: 15,
+                              fontSize: 16,
                               fontWeight:
-                                  active ? FontWeight.w800 : FontWeight.w500,
+                                  active ? FontWeight.w800 : FontWeight.w600,
                               color: active
                                   ? (isDark ? Colors.white : Colors.black87)
-                                  : (isDark ? Colors.white54 : Colors.black45),
+                                  : (isDark
+                                      ? Colors.white54
+                                      : Colors.black.withValues(alpha: 0.62)),
                             ),
                           ),
                           const SizedBox(height: 3),
                           AnimatedContainer(
                             duration: const Duration(milliseconds: 200),
                             height: 3,
-                            width: active ? 18 : 0,
+                            width: active ? 20 : 0,
                             decoration: BoxDecoration(
                               color: active
                                   ? Theme.of(context).primaryColor
@@ -769,7 +771,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                         onPressed: _openMessages,
                         icon: Icon(
                           Icons.chat_bubble_outline_rounded,
-                          size: 24,
+                          size: 25,
                           color: isDark ? Colors.white : Colors.black87,
                         ),
                         padding: EdgeInsets.zero,
@@ -799,20 +801,40 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   }
 
   // ---- Mobile Layout ----
-  Widget _buildMobileLayout(bool isDark, double topPadding) {
-    return Column(
-      children: [
-        SizedBox(height: topPadding + 8),
-        // 顶部栏固定，不参与滚动
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          child: _buildHomeTopBar(isDark),
-        ),
-        // 内容区
-        Expanded(
-          child: _buildFeedContent(isDark, topPadding),
-        ),
-      ],
+  Widget _buildMobileLayout(bool isDark) {
+    return SafeArea(
+      top: true,
+      bottom: false,
+      child: Column(
+        children: [
+          // 顶部栏固定，不参与滚动，带渐变承托
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: isDark
+                    ? [
+                        Colors.black.withValues(alpha: 0.4),
+                        Colors.black.withValues(alpha: 0.1),
+                        Colors.transparent,
+                      ]
+                    : [
+                        Colors.white.withValues(alpha: 0.18),
+                        Colors.white.withValues(alpha: 0.05),
+                        Colors.transparent,
+                      ],
+              ),
+            ),
+            child: _buildHomeTopBar(isDark),
+          ),
+          // 内容区
+          Expanded(
+            child: _buildFeedContent(isDark),
+          ),
+        ],
+      ),
     );
   }
 
@@ -880,7 +902,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   }
 
   // ---- 普通信息流内容（含搜索框折叠） ----
-  Widget _buildFeedContent(bool isDark, double topPadding) {
+  Widget _buildFeedContent(bool isDark) {
     return RefreshIndicator(
       onRefresh: () async {
         await _refresh();
@@ -947,7 +969,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                                 vsync: this,
                                 child: Padding(
                                   padding:
-                                      const EdgeInsets.fromLTRB(12, 6, 12, 8),
+                                      const EdgeInsets.fromLTRB(12, 0, 12, 4),
                                   child: _buildSearchBar(isDark),
                                 ),
                               ),
@@ -1080,7 +1102,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
         decoration: InputDecoration(
           border: InputBorder.none,
           isDense: true,
-          contentPadding: const EdgeInsets.symmetric(vertical: 11),
+          contentPadding: const EdgeInsets.symmetric(vertical: 9),
           hintText: '搜索账号、用户或帖子关键词',
           hintStyle: const TextStyle(fontSize: 14),
           prefixIcon: const Icon(Icons.search, size: 20),
@@ -1166,7 +1188,7 @@ class _SliverSearchBarDelegate extends SliverPersistentHeaderDelegate {
       : _vsync = vsync;
 
   @override
-  double get maxExtent => 56;
+  double get maxExtent => 46;
 
   @override
   double get minExtent => 0;

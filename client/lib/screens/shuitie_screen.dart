@@ -370,24 +370,28 @@ class _ShuitieScreenState extends State<ShuitieScreen>
 
   Future<void> _ensureCheckinStatusLoaded() async {
     if (_checkinStatusLoaded || _checkInLoading) return;
-    await _loadCheckinStatus();
-    if (mounted) {
+    final succeeded = await _loadCheckinStatus();
+    if (mounted && succeeded) {
       _checkinStatusLoaded = true;
     }
   }
 
-  Future<void> _loadCheckinStatus() async {
+  Future<bool> _loadCheckinStatus() async {
     final auth = context.read<AuthProvider>();
-    if (!auth.isLoggedIn) return;
+    if (!auth.isLoggedIn) return false;
     try {
       final resp = await auth.dio.get('/user/checkin/status');
-      if (resp.statusCode == 200 && mounted) {
-        setState(() {
-          _checkedIn = resp.data['checked_in'] ?? false;
-          _streakDays = resp.data['streak_days'] ?? 0;
-        });
+      if (resp.statusCode != 200 || !mounted) {
+        return false;
       }
-    } catch (_) {}
+      setState(() {
+        _checkedIn = resp.data['checked_in'] ?? false;
+        _streakDays = resp.data['streak_days'] ?? 0;
+      });
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   Future<void> _doCheckIn() async {
@@ -594,6 +598,9 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     );
 
     if (authProvider.isLoggedIn != _wasLoggedIn) {
+      if (!_wasLoggedIn && authProvider.isLoggedIn) {
+        _checkinStatusLoaded = false;
+      }
       _wasLoggedIn = authProvider.isLoggedIn;
       _messagesLoadRequested = false;
       WidgetsBinding.instance.addPostFrameCallback((_) {

@@ -321,6 +321,9 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
           );
           _yearData[year] = yearData;
           await _saveCache(year, yearData);
+          if (mounted) {
+            AppFeedback.showSnackBar(context, '成绩已更新');
+          }
         } else {
           debugPrint('成绩查询返回的不是预期的 Map 或 data 字段不是 Map');
         }
@@ -386,87 +389,113 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
     return Column(
       children: [
         _buildYearSelector(isDark),
-        if (_loadingYear)
-          const Padding(
-            padding: EdgeInsets.all(20),
-            child: CircularProgressIndicator(),
-          )
-        else
-          Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-              child: Column(
-                children: [
-                  _buildQrSection(isDark),
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: Column(
+              children: [
+                _buildQrSection(isDark),
+                const SizedBox(height: 16),
+                if (data != null) ...[
+                  _buildSummaryCard(data, isDark),
                   const SizedBox(height: 16),
-                  if (data != null) ...[
-                    _buildSummaryCard(data, isDark),
-                    const SizedBox(height: 16),
-                  ],
-                  if (scores.isNotEmpty)
-                    ...scores.map((s) => _buildScoreCard(s, isDark, _showScore))
-                  else if (data != null)
-                    Padding(
-                      padding: const EdgeInsets.all(40),
+                ],
+                if (scores.isNotEmpty) ...[
+                  const Padding(
+                    padding: EdgeInsets.only(left: 4, bottom: 8, top: 8),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
                       child: Text(
-                        '暂无成绩数据',
+                        '成绩明细',
                         style: TextStyle(
-                          color: isDark ? Colors.white54 : Colors.grey[600],
-                        ),
-                      ),
-                    )
-                  else
-                    Padding(
-                      padding: const EdgeInsets.all(40),
-                      child: Text(
-                        '选择学年查看成绩',
-                        style: TextStyle(
-                          color: isDark ? Colors.white54 : Colors.grey[600],
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
                         ),
                       ),
                     ),
-                ],
-              ),
+                  ),
+                  _buildScoreListCard(scores, isDark, _showScore),
+                ] else if (data != null)
+                  Padding(
+                    padding: const EdgeInsets.all(40),
+                    child: Text(
+                      '暂无成绩数据',
+                      style: TextStyle(
+                        color: isDark ? Colors.white54 : Colors.grey[600],
+                      ),
+                    ),
+                  )
+                else
+                  Padding(
+                    padding: const EdgeInsets.all(40),
+                    child: Text(
+                      '选择学年查看成绩',
+                      style: TextStyle(
+                        color: isDark ? Colors.white54 : Colors.grey[600],
+                      ),
+                    ),
+                  ),
+              ],
             ),
           ),
+        ),
       ],
     );
   }
 
   Widget _buildYearSelector(bool isDark) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      padding: const EdgeInsets.fromLTRB(20, 6, 20, 10),
       child: Row(
         children: [
-          const Text('学年：', style: TextStyle(fontWeight: FontWeight.w600)),
-          const SizedBox(width: 8),
-          Expanded(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: _availableYears
-                    .map(
-                      (y) => Padding(
-                        padding: const EdgeInsets.only(right: 8),
-                        child: ChoiceChip(
-                          label: Text('$y - ${int.parse(y) + 1}'),
-                          selected: _currentYear == y,
-                          selectedColor: const Color(0xFF6366F1),
-                          labelStyle: TextStyle(
-                            color: _currentYear == y ? Colors.white : null,
-                            fontWeight: FontWeight.w600,
-                          ),
-                          onSelected: (_) {
+          const Text('学年', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
+          const Spacer(),
+          GestureDetector(
+            onTap: () {
+              showModalBottomSheet(
+                context: context,
+                backgroundColor: isDark ? Colors.grey[900] : Colors.white,
+                shape: const RoundedRectangleBorder(
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+                ),
+                builder: (context) {
+                  return SafeArea(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Padding(
+                          padding: EdgeInsets.all(16.0),
+                          child: Text('选择学年', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                        ),
+                        ..._availableYears.map((y) => ListTile(
+                          title: Text('$y—${int.parse(y) + 1}', textAlign: TextAlign.center),
+                          trailing: _currentYear == y ? const Icon(Icons.check, color: Color(0xFF6366F1)) : const SizedBox(width: 24),
+                          onTap: () {
+                            Navigator.pop(context);
                             if (mounted) setState(() => _currentYear = y);
                             if (_yearData[y] == null) {
                               _fetchYear(y);
                             }
                           },
-                        ),
-                      ),
-                    )
-                    .toList(),
-              ),
+                        )),
+                      ],
+                    ),
+                  );
+                },
+              );
+            },
+            child: Row(
+              children: [
+                Text(
+                  '${_currentYear.isNotEmpty ? _currentYear : "..."}—${_currentYear.isNotEmpty ? int.parse(_currentYear) + 1 : "..."}',
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                const Icon(Icons.keyboard_arrow_down, size: 20),
+              ],
             ),
           ),
         ],
@@ -476,66 +505,118 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
 
   Widget _buildQrSection(bool isDark) {
     return GestureDetector(
-      onTap: () => setState(() => _showQr = !_showQr),
+      onTap: () {
+        showModalBottomSheet(
+          context: context,
+          backgroundColor: isDark ? Colors.grey[900] : Colors.white,
+          shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          builder: (context) {
+            return SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text('体测身份码', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 24),
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.05),
+                            blurRadius: 10,
+                            spreadRadius: 2,
+                          ),
+                        ],
+                      ),
+                      child: QrImageView(
+                        data: _testCode.isNotEmpty ? _testCode : widget.username,
+                        version: QrVersions.auto,
+                        size: 180,
+                        backgroundColor: Colors.white,
+                        eyeStyle: const QrEyeStyle(
+                          eyeShape: QrEyeShape.square,
+                          color: Color(0xFF6366F1),
+                        ),
+                        dataModuleStyle: const QrDataModuleStyle(
+                          dataModuleShape: QrDataModuleShape.square,
+                          color: Color(0xFF1A1A2E),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    const Text(
+                      '扫码进行体测身份核验',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      '学号：${widget.username}',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: isDark ? Colors.white54 : Colors.grey[600],
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    SizedBox(
+                      width: double.infinity,
+                      child: TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          backgroundColor: isDark ? Colors.white10 : const Color(0xFFF0F1F5),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        child: Text(
+                          '关闭',
+                          style: TextStyle(
+                            fontSize: 16,
+                            color: isDark ? Colors.white : Colors.black87,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
       child: GlassContainer(
-        padding: EdgeInsets.all(_showQr ? 20 : 14),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         borderRadius: 16,
-        child: Column(
+        child: Row(
           children: [
-            Row(
-              children: [
-                const Icon(Icons.qr_code_2, size: 20, color: Color(0xFF6366F1)),
-                const SizedBox(width: 10),
-                const Text(
-                  '体测身份码',
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-                ),
-                const Spacer(),
-                Icon(
-                  _showQr ? Icons.expand_less : Icons.expand_more,
-                  color: isDark ? Colors.white54 : Colors.grey[600],
-                ),
-              ],
+            const Icon(Icons.qr_code_2, size: 20, color: Color(0xFF6366F1)),
+            const SizedBox(width: 10),
+            const Text(
+              '体测身份码',
+              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
             ),
-            if (_showQr) ...[
-              const SizedBox(height: 16),
-              Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: QrImageView(
-                  data: _testCode.isNotEmpty ? _testCode : widget.username,
-                  version: QrVersions.auto,
-                  size: 160,
-                  backgroundColor: Colors.white,
-                  eyeStyle: const QrEyeStyle(
-                    eyeShape: QrEyeShape.square,
-                    color: Color(0xFF6366F1),
-                  ),
-                  dataModuleStyle: const QrDataModuleStyle(
-                    dataModuleShape: QrDataModuleShape.square,
-                    color: Color(0xFF1A1A2E),
-                  ),
-                ),
+            const Spacer(),
+            Text(
+              '查看',
+              style: TextStyle(
+                fontSize: 13,
+                color: isDark ? Colors.white54 : Colors.grey[600],
               ),
-              const SizedBox(height: 10),
-              Text(
-                '扫码进行体测身份核验',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: isDark ? Colors.white54 : Colors.grey[600],
-                ),
-              ),
-              Text(
-                '学号：${widget.username}',
-                style: TextStyle(
-                  fontSize: 11,
-                  color: isDark ? Colors.white38 : Colors.grey[500],
-                ),
-              ),
-            ],
+            ),
+            const SizedBox(width: 2),
+            Icon(
+              Icons.chevron_right,
+              size: 18,
+              color: isDark ? Colors.white54 : Colors.grey[600],
+            ),
           ],
         ),
       ),
@@ -543,103 +624,181 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
   }
 
   Widget _buildSummaryCard(_YearData data, bool isDark) {
+    Color gradeColor;
+    Color gradeBg;
+    if (data.totalGrade == '优秀' || data.totalGrade == '良好' || data.totalGrade == '正常') {
+      gradeColor = const Color(0xFF32A866);
+      gradeBg = const Color(0xFFE8F7EF);
+    } else if (data.totalGrade == '及格') {
+      gradeColor = const Color(0xFF5B6EE1);
+      gradeBg = const Color(0xFFEEF0FF);
+    } else if (data.totalGrade == '不及格') {
+      gradeColor = const Color(0xFFE45757);
+      gradeBg = const Color(0xFFFDECEC);
+    } else {
+      gradeColor = const Color(0xFF8A8F9C);
+      gradeBg = isDark ? Colors.white10 : const Color(0xFFF6F7FB);
+    }
+
     return GlassContainer(
       padding: const EdgeInsets.all(16),
-      borderRadius: 16,
-      child: Row(
+      borderRadius: 18,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: const Color(0xFF6366F1).withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Icon(
-              Icons.emoji_events,
-              color: Color(0xFF6366F1),
-              size: 22,
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Text(
-              '总评：${data.totalGrade}  |  ${data.totalScore}分',
-              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
-            ),
-          ),
-          GestureDetector(
-            onTap: () => setState(() => _showScore = !_showScore),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-              decoration: BoxDecoration(
-                color: const Color(0xFF6366F1).withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(16),
+          Row(
+            children: [
+              const Text(
+                '体测总评',
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
               ),
-              child: const Text(
-                '切换',
+              const Spacer(),
+              if (data.totalGrade.isNotEmpty)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: gradeBg,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    data.totalGrade,
+                    style: TextStyle(
+                      color: gradeColor,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            '${data.totalScore} 分',
+            style: const TextStyle(
+              fontSize: 28,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Text(
+                '当前采用：${_currentYear.isNotEmpty ? _currentYear : ""}年体测标准',
                 style: TextStyle(
-                  color: Color(0xFF6366F1),
-                  fontWeight: FontWeight.w600,
-                  fontSize: 13,
+                  fontSize: 12,
+                  color: isDark ? Colors.white54 : Colors.grey[600],
                 ),
               ),
-            ),
+              const Spacer(),
+              GestureDetector(
+                onTap: () => setState(() => _showScore = !_showScore),
+                child: Text(
+                  _showScore ? '查看等级' : '切换分数',
+                  style: const TextStyle(
+                    color: Color(0xFF5B6EE1),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),
     );
   }
 
-  Widget _buildScoreCard(_GymScoreItem item, bool isDark, bool showScore) {
-    final statusColor = Color(item.statusColorValue);
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: GlassContainer(
-        padding: const EdgeInsets.all(14),
-        borderRadius: 14,
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    item.subName,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
+  Widget _buildScoreListCard(List<_GymScoreItem> scores, bool isDark, bool showScore) {
+    return Container(
+      decoration: BoxDecoration(
+        color: isDark ? Colors.grey[850] : Colors.white,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Column(
+        children: scores.asMap().entries.map((entry) {
+          final index = entry.key;
+          final item = entry.value;
+          
+          Color gradeColor;
+          Color gradeBg;
+          if (item.grade == '优秀' || item.grade == '良好' || item.grade == '正常') {
+            gradeColor = const Color(0xFF32A866);
+            gradeBg = const Color(0xFFE8F7EF);
+          } else if (item.grade == '及格') {
+            gradeColor = const Color(0xFF5B6EE1);
+            gradeBg = const Color(0xFFEEF0FF);
+          } else if (item.grade == '不及格') {
+            gradeColor = const Color(0xFFE45757);
+            gradeBg = const Color(0xFFFDECEC);
+          } else {
+            gradeColor = const Color(0xFF8A8F9C);
+            gradeBg = isDark ? Colors.white10 : const Color(0xFFF6F7FB);
+          }
+
+          return Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                child: Row(
+                  children: [
+                    Expanded(
+                      flex: 2,
+                      child: Text(
+                        item.subName,
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                          color: isDark ? Colors.white70 : const Color(0xFF20232A),
+                        ),
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    item.result,
-                    style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
-                      color: isDark ? Colors.white : const Color(0xFF1A1A2E),
+                    Expanded(
+                      flex: 2,
+                      child: Text(
+                        item.result,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: isDark ? Colors.white : const Color(0xFF1A1A2E),
+                        ),
+                      ),
                     ),
-                  ),
-                ],
-              ),
-            ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-              decoration: BoxDecoration(
-                color: statusColor.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Text(
-                showScore ? '${item.score}分' : item.statusLabel,
-                style: TextStyle(
-                  color: statusColor,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 13,
+                    Expanded(
+                      flex: 1,
+                      child: Align(
+                        alignment: Alignment.centerRight,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: gradeBg,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            showScore ? '${item.score}分' : item.statusLabel,
+                            style: TextStyle(
+                              color: gradeColor,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ),
-          ],
-        ),
+              if (index < scores.length - 1)
+                Divider(
+                  height: 1,
+                  thickness: 1,
+                  color: isDark ? Colors.white12 : const Color(0xFFEEF0F4),
+                  indent: 16,
+                  endIndent: 16,
+                ),
+            ],
+          );
+        }).toList(),
       ),
     );
   }
@@ -710,27 +869,29 @@ class _GymScoreItem {
   });
 
   factory _GymScoreItem.fromJson(Map<String, dynamic> json) {
+    String name = (json['sub_name'] ?? '').toString();
+    if (name == '1000') name = '1000 米跑';
+    if (name == '800') name = '800 米跑';
+    if (name.contains('50米跑')) name = name.replaceAll('50米跑', '50 米跑');
+
+    String rawResult = '${json['result'] ?? ''} ${json['unit'] ?? ''}'.trim();
+    rawResult = rawResult.replaceAll('ml', 'mL');
+    rawResult = rawResult.replaceAll('times', '次');
+    rawResult = rawResult.replaceAll(' min', ' 分钟'); 
+    
+    if (rawResult.contains("m's\"")) {
+      rawResult = rawResult.replaceAll("m's\"", "");
+      rawResult = rawResult.replaceAll("'", "′").replaceAll("\"", "″");
+    }
+    rawResult = rawResult.trim();
+
     return _GymScoreItem(
-      subName: (json['sub_name'] ?? '').toString(),
-      result: '${json['result'] ?? ''} ${json['unit'] ?? ''}'.trim(),
+      subName: name,
+      result: rawResult,
       grade: (json['grade'] ?? '').toString(),
       score: int.tryParse(json['score']?.toString() ?? '') ?? 0,
     );
   }
 
   String get statusLabel => grade.isNotEmpty ? grade : '--';
-
-  int get statusColorValue {
-    switch (grade) {
-      case '优秀':
-      case '正常':
-        return 0xFF16A34A;
-      case '及格':
-        return 0xFF6366F1;
-      case '不及格':
-        return 0xFFEF4444;
-      default:
-        return 0xFF9CA3AF;
-    }
-  }
 }

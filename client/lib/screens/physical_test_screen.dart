@@ -738,47 +738,47 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
   }
 
   Widget _buildDisplayModeSelector(bool isDark) {
-    return Container(
-      decoration: BoxDecoration(
-        color: isDark ? Colors.white10 : const Color(0xFFEEF0F4),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      padding: const EdgeInsets.all(2),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _buildModeButton(0, '得分', isDark),
-          _buildModeButton(1, '评级', isDark),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildModeButton(int mode, String text, bool isDark) {
-    final isSelected = _displayMode == mode;
-    return GestureDetector(
-      onTap: () => setState(() => _displayMode = mode),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        curve: Curves.easeInOut,
-        alignment: Alignment.center,
-        constraints: const BoxConstraints(minWidth: 48, minHeight: 34),
-        padding: const EdgeInsets.symmetric(horizontal: 14),
-        decoration: BoxDecoration(
-          color: isSelected ? const Color(0xFF5B6EE1) : Colors.transparent,
-          borderRadius: BorderRadius.circular(17),
-        ),
-        child: Text(
-          text,
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          '得分',
           style: TextStyle(
-            fontSize: 12,
-            fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-            color: isSelected 
-                ? Colors.white 
-                : (isDark ? Colors.white70 : const Color(0xFF6B7280)),
+            fontSize: 13,
+            fontWeight: _displayMode == 0 ? FontWeight.w600 : FontWeight.w500,
+            color: _displayMode == 0 
+                ? (isDark ? Colors.white : const Color(0xFF1A1A2E))
+                : (isDark ? Colors.white54 : const Color(0xFF8A8F9C)),
           ),
         ),
-      ),
+        const SizedBox(width: 8),
+        SizedBox(
+          height: 22,
+          child: FittedBox(
+            fit: BoxFit.contain,
+            child: Switch(
+              value: _displayMode == 1,
+              onChanged: (val) => setState(() => _displayMode = val ? 1 : 0),
+              activeColor: Colors.white,
+              activeTrackColor: const Color(0xFF5B6EE1),
+              inactiveThumbColor: Colors.white,
+              inactiveTrackColor: isDark ? Colors.white24 : const Color(0xFFD1D5DB),
+              trackOutlineColor: WidgetStateProperty.all(Colors.transparent),
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          '评级',
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: _displayMode == 1 ? FontWeight.w600 : FontWeight.w500,
+            color: _displayMode == 1 
+                ? (isDark ? Colors.white : const Color(0xFF1A1A2E))
+                : (isDark ? Colors.white54 : const Color(0xFF8A8F9C)),
+          ),
+        ),
+      ],
     );
   }
 

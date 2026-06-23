@@ -55,7 +55,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
-    _currentIndex = widget.initialTab;
+    _currentIndex = consumeWidgetTabSwitch() ? 2 : widget.initialTab;
     _visitedTabs = {_currentIndex};
     widgetTabSwitch.addListener(_onWidgetTabSwitch);
     WidgetsBinding.instance.addObserver(this);
@@ -72,6 +72,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   void _onWidgetTabSwitch() {
+    consumeWidgetTabSwitch();
     if (mounted && _currentIndex != 2) {
       _switchTab(2);
     }

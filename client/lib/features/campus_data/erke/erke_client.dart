@@ -295,15 +295,9 @@ class ErkeClient {
     final form = ErkeParser.parseYearPageForm(getHtml);
     final targetYear = year ?? form.selectedYear;
 
-    // 3. 如果 GET 已有成绩 → 直接解析
-    if (ErkeParser.yearlyPageHasScores(getHtml)) {
-      print('[Erke] yearly GET already has scores, skip POST');
-      return getHtml;
-    }
-
-    // 4. 否则需要 POST 提交学年查询
+    // 3. 始终 POST 提交学年查询
     print(
-        '[Erke] yearly POST needed — GET selectedYear=${form.selectedYear} targetYear=$targetYear');
+        '[Erke] yearly POST — GET selectedYear=${form.selectedYear} targetYear=$targetYear');
     if (!form.availableYears.contains(targetYear)) {
       throw Exception('无效的学年: $targetYear (可选: ${form.availableYears})');
     }
@@ -344,9 +338,13 @@ class ErkeClient {
       throw Exception('学年切换失败: 请求 $targetYear，服务器返回 $returnedYear');
     }
 
-    final hasCountA1 = postDoc.getElementById('CountA1') != null ||
-        postDoc.querySelectorAll('[id\$="CountA1"]').isNotEmpty;
-    print('[Erke] yearly POST hasCountA1=$hasCountA1');
+    // 验证 POST 后确实拿到了完整成绩
+    if (!ErkeParser.yearlyPageHasScores(postHtml)) {
+      throw ErkePageChangedException(
+        '学年查询已提交，但返回页面仍没有有效成绩数据',
+      );
+    }
+    print('[Erke] yearly POST hasScores=true');
 
     return postHtml;
   }

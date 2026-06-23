@@ -504,95 +504,123 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
     );
   }
 
-  Widget _buildQrSection(bool isDark) {
-    return GestureDetector(
-      onTap: () {
-        showModalBottomSheet(
-          context: context,
-          backgroundColor: isDark ? Colors.grey[900] : Colors.white,
-          shape: const RoundedRectangleBorder(
-            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-          ),
-          builder: (context) {
-            return SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
+  Future<void> _showPhysicalQrDialog(BuildContext context, bool isDark) async {
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      barrierColor: Colors.black.withValues(alpha: 0.55),
+      builder: (dialogContext) {
+        final screenWidth = MediaQuery.sizeOf(dialogContext).width;
+        final dialogWidth = (screenWidth * 0.84).clamp(300.0, 360.0);
+        final qrSize = (dialogWidth - 72).clamp(220.0, 260.0);
+
+        return Dialog(
+          insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          child: Container(
+            width: dialogWidth,
+            padding: const EdgeInsets.fromLTRB(22, 18, 22, 22),
+            decoration: BoxDecoration(
+              color: isDark ? Colors.grey[900] : Colors.white,
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.16),
+                  blurRadius: 30,
+                  offset: const Offset(0, 12),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
                   children: [
-                    const Text('体测身份码', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 24),
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(16),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.05),
-                            blurRadius: 10,
-                            spreadRadius: 2,
-                          ),
-                        ],
-                      ),
-                      child: QrImageView(
-                        data: _testCode.isNotEmpty ? _testCode : widget.username,
-                        version: QrVersions.auto,
-                        size: 180,
-                        backgroundColor: Colors.white,
-                        eyeStyle: const QrEyeStyle(
-                          eyeShape: QrEyeShape.square,
-                          color: Color(0xFF6366F1),
-                        ),
-                        dataModuleStyle: const QrDataModuleStyle(
-                          dataModuleShape: QrDataModuleShape.square,
-                          color: Color(0xFF1A1A2E),
+                    const SizedBox(width: 36),
+                    Expanded(
+                      child: Text(
+                        '体测身份码',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 19,
+                          fontWeight: FontWeight.w700,
+                          color: isDark ? Colors.white : Colors.black87,
                         ),
                       ),
                     ),
-                    const SizedBox(height: 20),
-                    const Text(
-                      '扫码进行体测身份核验',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      '学号：${widget.username}',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: isDark ? Colors.white54 : Colors.grey[600],
-                      ),
-                    ),
-                    const SizedBox(height: 24),
                     SizedBox(
-                      width: double.infinity,
-                      child: TextButton(
-                        onPressed: () => Navigator.pop(context),
-                        style: TextButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          backgroundColor: isDark ? Colors.white10 : const Color(0xFFF0F1F5),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        ),
-                        child: Text(
-                          '关闭',
-                          style: TextStyle(
-                            fontSize: 16,
-                            color: isDark ? Colors.white : Colors.black87,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
+                      width: 36,
+                      height: 36,
+                      child: IconButton(
+                        padding: EdgeInsets.zero,
+                        onPressed: () => Navigator.of(dialogContext).pop(),
+                        icon: Icon(Icons.close_rounded, size: 21, color: isDark ? Colors.white70 : Colors.black54),
                       ),
                     ),
                   ],
                 ),
-              ),
-            );
-          },
+                const SizedBox(height: 18),
+
+                Container(
+                  width: qrSize,
+                  height: qrSize,
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(20),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.08),
+                        blurRadius: 18,
+                        offset: const Offset(0, 6),
+                      ),
+                    ],
+                  ),
+                  child: QrImageView(
+                    data: _testCode.isNotEmpty ? _testCode : widget.username,
+                    version: QrVersions.auto,
+                    size: qrSize,
+                    backgroundColor: Colors.white,
+                    eyeStyle: const QrEyeStyle(
+                      eyeShape: QrEyeShape.square,
+                      color: Color(0xFF6366F1),
+                    ),
+                    dataModuleStyle: const QrDataModuleStyle(
+                      dataModuleShape: QrDataModuleShape.square,
+                      color: Color(0xFF1A1A2E),
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 18),
+                Text(
+                  '扫码进行体测身份核验',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: isDark ? Colors.white : Colors.black87,
+                  ),
+                ),
+                const SizedBox(height: 7),
+                Text(
+                  '学号：${widget.username}',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: isDark ? Colors.white54 : Colors.grey[600],
+                  ),
+                ),
+              ],
+            ),
+          ),
         );
       },
+    );
+  }
+
+  Widget _buildQrSection(bool isDark) {
+    return GestureDetector(
+      onTap: () => _showPhysicalQrDialog(context, isDark),
       child: GlassContainer(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         borderRadius: 16,

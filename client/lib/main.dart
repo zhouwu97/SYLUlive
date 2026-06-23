@@ -220,15 +220,12 @@ Future<void> setupJPush(AuthProvider authProvider) async {
   );
   jpush.addEventHandler(
     onReceiveNotification: (Map<String, dynamic> message) async {
-      debugPrint('🔔 收到通知: $message');
       await _handlePrivateMessageNotification(message, opened: false);
     },
     onNotifyMessageUnShow: (Map<String, dynamic> message) async {
-      debugPrint('🔕 通知已被原生拦截: $message');
       await _handlePrivateMessageNotification(message, opened: false);
     },
     onOpenNotification: (Map<String, dynamic> message) async {
-      debugPrint('👆 点击通知原始数据: $message');
       if (await _handleUpdateNotification(message)) return;
       if (await _handlePrivateMessageNotification(message, opened: true)) {
         return;
@@ -242,11 +239,9 @@ Future<void> setupJPush(AuthProvider authProvider) async {
     },
   );
   final rid = await jpush.getRegistrationID();
-  debugPrint('🔥 JPush RegistrationID: $rid');
 
   if (rid.isNotEmpty) {
     await authProvider.updateDeviceToken(rid);
-    debugPrint('✅ 成功上报 JPush Device Token: $rid');
   }
   final userId = authProvider.user?.id;
   if (userId != null) {
@@ -286,8 +281,7 @@ Future<void> _initializePrivateMessageNotifications() async {
   );
   await _privateMessageNotifications
       .resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin
-      >()
+          AndroidFlutterLocalNotificationsPlugin>()
       ?.createNotificationChannel(
         const AndroidNotificationChannel(
           'developer-default',
@@ -298,8 +292,7 @@ Future<void> _initializePrivateMessageNotifications() async {
       );
   await _privateMessageNotifications
       .resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin
-      >()
+          AndroidFlutterLocalNotificationsPlugin>()
       ?.createNotificationChannel(
         const AndroidNotificationChannel(
           'private_messages',
@@ -311,8 +304,7 @@ Future<void> _initializePrivateMessageNotifications() async {
   // Android 13+ 运行时通知权限
   await _privateMessageNotifications
       .resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin
-      >()
+          AndroidFlutterLocalNotificationsPlugin>()
       ?.requestNotificationsPermission();
   _privateMessageNotificationsReady = true;
 }
@@ -320,10 +312,9 @@ Future<void> _initializePrivateMessageNotifications() async {
 /// 首帧后请求通知权限（需要 Activity 已创建）
 Future<void> _requestNotificationPermissionIfNeeded() async {
   try {
-    final plugin = _privateMessageNotifications
-        .resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin
-        >();
+    final plugin =
+        _privateMessageNotifications.resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>();
     if (plugin == null) return;
     final granted = await plugin.requestNotificationsPermission();
     debugPrint('通知权限请求结果: $granted');
@@ -337,14 +328,13 @@ Future<bool> _handlePrivateMessageNotification(
   required bool opened,
 }) async {
   final extras = extractJPushExtras(message);
-  debugPrint('📨 解析后extras: $extras');
   if (extras['type']?.toString() != 'private_message') {
     return false;
   }
 
   final target = privateMessageTargetFromJPushMessage(message);
   if (target == null) {
-    debugPrint('私信推送缺少 conversation_id 或 sender_id: $message');
+    debugPrint('私信推送缺少 conversation_id 或 sender_id');
     return true;
   }
 
@@ -472,7 +462,7 @@ Future<bool> _handleUpdateNotification(Map<String, dynamic> message) async {
   final downloadUrl = extras['download_url']?.toString() ?? '';
   final uri = Uri.tryParse(downloadUrl);
   if (uri == null || !uri.hasScheme || !uri.hasAuthority) {
-    debugPrint('更新推送缺少有效下载地址: $message');
+    debugPrint('更新推送缺少有效下载地址');
     return true;
   }
 
@@ -509,8 +499,11 @@ class SafeLogInterceptor extends Interceptor {
       } else if (data is Map) {
         summary = 'Map(keys=${data.keys.take(10).join(',')})';
       } else if (data != null) {
-        summary =
-            'Data(length=${data.toString().length > 50 ? '>50' : data.toString().length})';
+        if (data is String) {
+          summary = 'String(length=${data.length > 50 ? '>50' : data.length})';
+        } else {
+          summary = 'Data(type=${data.runtimeType})';
+        }
       }
       debugPrint(
         '[HTTP] <- ${response.requestOptions.method} ${response.requestOptions.uri.path} ${response.statusCode} $summary',
@@ -522,10 +515,8 @@ class SafeLogInterceptor extends Interceptor {
   @override
   void onError(DioException err, ErrorInterceptorHandler handler) {
     if (kDebugMode) {
-      final msg = err.message ?? err.error?.toString() ?? 'unknown error';
-      final safeMsg = msg.length > 200 ? '${msg.substring(0, 200)}...' : msg;
       debugPrint(
-        '[HTTP] <- ERROR ${err.requestOptions.method} ${err.requestOptions.uri.path} ${err.response?.statusCode} error=$safeMsg',
+        '[HTTP] <- ERROR ${err.requestOptions.method} ${err.requestOptions.uri.path} ${err.response?.statusCode} type=${err.type}',
       );
     }
     super.onError(err, handler);
@@ -689,8 +680,8 @@ class _AppContent extends StatelessWidget {
       routes: {
         '/login': (context) => const LoginScreen(),
         '/timetable': (context) => const PredictiveBackGate(
-          child: GlobalBackgroundWrapper(child: CourseScheduleScreen()),
-        ),
+              child: GlobalBackgroundWrapper(child: CourseScheduleScreen()),
+            ),
       },
       home: const PredictiveBackGate(
         child: GlobalBackgroundWrapper(child: AuthWrapper()),
@@ -755,9 +746,8 @@ class BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
     if (bgPath == null) return _buildDefaultBackground(isDark);
     final isAsset = ThemeProvider.isBundledAssetBackground(bgPath);
     final isLocalFile = ThemeProvider.isLocalFileBackground(bgPath);
-    final resolvedPath = isAsset
-        ? ThemeProvider.resolveBundledAssetPath(bgPath)
-        : bgPath;
+    final resolvedPath =
+        isAsset ? ThemeProvider.resolveBundledAssetPath(bgPath) : bgPath;
 
     const alignment = Alignment.center;
     final fillScreen = themeProvider.getBackgroundFillScreenFor(context);
@@ -765,8 +755,8 @@ class BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
     final imageProvider = isAsset
         ? AssetImage(resolvedPath) as ImageProvider
         : isLocalFile
-        ? FileImage(File(bgPath)) as ImageProvider
-        : NetworkImage(bgPath) as ImageProvider;
+            ? FileImage(File(bgPath)) as ImageProvider
+            : NetworkImage(bgPath) as ImageProvider;
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -817,9 +807,8 @@ class BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
               alignment: alignment,
               gaplessPlayback: true,
               errorBuilder: (_, __, ___) => Container(
-                color: isDark
-                    ? const Color(0xFF131720)
-                    : const Color(0xFFF4F6FB),
+                color:
+                    isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
               ),
             ),
           ),

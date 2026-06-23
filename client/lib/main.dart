@@ -765,6 +765,7 @@ class BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
           alignment: alignment,
           isDark: isDark,
           fillScreen: fillScreen,
+          blur: themeProvider.backgroundBlur,
         ),
         // Color overlay (fixed — componentOpacity controls GlassContainer, not background)
         Container(
@@ -781,6 +782,7 @@ class BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
     required Alignment alignment,
     required bool isDark,
     required bool fillScreen,
+    required double blur,
   }) {
     if (fillScreen) {
       return Image(
@@ -800,7 +802,7 @@ class BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
         Transform.scale(
           scale: 1.06,
           child: ImageFiltered(
-            imageFilter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+            imageFilter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
             child: Image(
               image: imageProvider,
               fit: BoxFit.cover,
@@ -838,6 +840,7 @@ class BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
           alignment: Alignment.center,
           isDark: isDark,
           fillScreen: false,
+          blur: context.read<ThemeProvider>().backgroundBlur,
         ),
         Container(
           color: isDark

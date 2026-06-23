@@ -142,126 +142,118 @@ class BottomNavWrapper extends StatelessWidget {
     );
   }
 
-  // 悬浮模式：胶囊毛玻璃
+  // 悬浮模式：胶囊毛玻璃（纯图标）
   Widget _buildFloatingNav(BuildContext context, bool isDark) {
-    final primaryColor = Theme.of(context).colorScheme.primary;
+    final primaryColor = Theme.of(context).primaryColor;
+    final bottomSafe = MediaQuery.of(context).padding.bottom;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
       mainAxisAlignment: MainAxisAlignment.end,
       children: [
-        SafeArea(
-          minimum: const EdgeInsets.only(
-            left: 20,
-            right: 20,
-            bottom: 12,
+        Container(
+          padding: EdgeInsets.only(
+            top: 12,
+            bottom: bottomSafe > 0 ? bottomSafe : 16,
           ),
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 360),
-            child: SizedBox(
-              height: 64,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(50),
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 4,
-                      vertical: 0,
+            constraints: const BoxConstraints(maxWidth: 280),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(50),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 4,
+                    vertical: 0,
+                  ),
+                  decoration: BoxDecoration(
+                    color: (isDark ? Colors.grey[900]! : Colors.white)
+                        .withValues(alpha: 0.8),
+                    borderRadius: BorderRadius.circular(50),
+                    border: Border.all(
+                      color: isDark
+                          ? Colors.white10
+                          : Colors.black.withValues(alpha: 0.05),
+                      width: 0.5,
                     ),
-                    decoration: BoxDecoration(
-                      color: (isDark ? Colors.grey[900]! : Colors.white)
-                          .withValues(alpha: 0.8),
-                      borderRadius: BorderRadius.circular(50),
-                      border: Border.all(
-                        color: isDark
-                            ? Colors.white10
-                            : Colors.black.withValues(alpha: 0.05),
-                        width: 0.5,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.1),
+                        blurRadius: 10,
+                        spreadRadius: 1,
                       ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.1),
-                          blurRadius: 10,
-                          spreadRadius: 1,
-                        ),
-                      ],
-                    ),
-                    child: LayoutBuilder(
-                      builder: (context, constraints) {
-                        final itemWidth = constraints.maxWidth / 5;
-                        return Stack(
-                          alignment: Alignment.center,
-                          children: [
-                            // 滑动背景指示器
-                            AnimatedPositioned(
-                              duration: const Duration(milliseconds: 350),
-                              curve: Curves.fastLinearToSlowEaseIn,
-                              left: itemWidth * currentIndex,
-                              width: itemWidth,
-                              top: 0,
-                              bottom: 0,
-                              child: Center(
-                                child: Container(
-                                  width: 44,
-                                  height: 44,
-                                  decoration: BoxDecoration(
-                                    color: primaryColor.withValues(alpha: 0.12),
-                                    shape: BoxShape.circle,
-                                  ),
+                    ],
+                  ),
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final itemWidth = constraints.maxWidth / 5;
+                      return Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          // 滑动背景指示器
+                          AnimatedPositioned(
+                            duration: const Duration(milliseconds: 350),
+                            curve: Curves.fastLinearToSlowEaseIn,
+                            left: itemWidth * currentIndex,
+                            width: itemWidth,
+                            top: 0,
+                            bottom: 0,
+                            child: Center(
+                              child: Container(
+                                width: 56,
+                                height: 32,
+                                decoration: BoxDecoration(
+                                  color: primaryColor.withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(16),
                                 ),
                               ),
                             ),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceAround,
-                              crossAxisAlignment: CrossAxisAlignment.center,
-                              children: [
-                                _floatingLabeledItem(
-                                  Icons.home_rounded,
-                                  '首页',
-                                  0,
-                                  context,
-                                  primaryColor,
-                                  itemWidth,
-                                ),
-                                _floatingLabeledItem(
-                                  Icons.storefront_rounded,
-                                  '集市',
-                                  1,
-                                  context,
-                                  primaryColor,
-                                  itemWidth,
-                                ),
-                                _floatingLabeledItem(
-                                  Icons.calendar_month_rounded,
-                                  '课表',
-                                  2,
-                                  context,
-                                  primaryColor,
-                                  itemWidth,
-                                ),
-                                _floatingLabeledItem(
-                                  Icons.apartment_rounded,
-                                  '校园',
-                                  3,
-                                  context,
-                                  primaryColor,
-                                  itemWidth,
-                                ),
-                                _floatingLabeledItem(
-                                  Icons.person_rounded,
-                                  '我的',
-                                  4,
-                                  context,
-                                  primaryColor,
-                                  itemWidth,
-                                ),
-                              ],
-                            ),
-                          ],
-                        );
-                      },
-                    ),
+                          ),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceAround,
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              _iconOnly(
+                                Icons.home_rounded,
+                                0,
+                                context,
+                                primaryColor,
+                                itemWidth,
+                              ),
+                              _iconOnly(
+                                Icons.storefront_rounded,
+                                1,
+                                context,
+                                primaryColor,
+                                itemWidth,
+                              ),
+                              _iconOnly(
+                                Icons.calendar_month_rounded,
+                                2,
+                                context,
+                                primaryColor,
+                                itemWidth,
+                              ),
+                              _iconOnly(
+                                Icons.apartment_rounded,
+                                3,
+                                context,
+                                primaryColor,
+                                itemWidth,
+                              ),
+                              _iconOnly(
+                                Icons.person_rounded,
+                                4,
+                                context,
+                                primaryColor,
+                                itemWidth,
+                              ),
+                            ],
+                          ),
+                        ],
+                      );
+                    },
                   ),
                 ),
               ),
@@ -283,8 +275,9 @@ class BottomNavWrapper extends StatelessWidget {
   ) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final isSelected = currentIndex == index;
-    final color =
-        isSelected ? primaryColor : (isDark ? Colors.white54 : Colors.grey);
+    final color = isSelected
+        ? primaryColor
+        : (isDark ? Colors.white54 : Colors.grey);
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () => onTap(index),
@@ -319,10 +312,9 @@ class BottomNavWrapper extends StatelessWidget {
     );
   }
 
-  // 悬浮模式 Item（图标+文字）
-  Widget _floatingLabeledItem(
+  // 悬浮模式 Item（纯图标）
+  Widget _iconOnly(
     IconData icon,
-    String label,
     int index,
     BuildContext context,
     Color primaryColor,
@@ -332,34 +324,22 @@ class BottomNavWrapper extends StatelessWidget {
     final isSelected = currentIndex == index;
     final color = isSelected
         ? primaryColor
-        : (isDark ? Colors.white54 : const Color(0xFF98A2B3));
+        : (isDark ? Colors.white54 : Colors.grey);
+
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () => onTap(index),
       child: SizedBox(
         width: width,
-        height: 64,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 300),
-              curve: Curves.easeOutBack,
-              transform: Matrix4.identity()..scale(isSelected ? 1.1 : 1.0),
-              transformAlignment: Alignment.center,
-              child: Icon(icon, color: color, size: 22),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              label,
-              style: TextStyle(
-                color: color,
-                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                fontSize: 10,
-              ),
-            ),
-          ],
+        height: 44,
+        child: Center(
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOutBack,
+            transform: Matrix4.identity()..scale(isSelected ? 1.15 : 1.0),
+            transformAlignment: Alignment.center,
+            child: Icon(icon, color: color, size: 24),
+          ),
         ),
       ),
     );

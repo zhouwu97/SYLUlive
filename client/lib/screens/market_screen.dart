@@ -362,38 +362,39 @@ class _MarketScreenState extends State<MarketScreen> {
             icon: const Icon(Icons.add),
             backgroundColor: const Color(0xFF6266D9),
             foregroundColor: Colors.white,
-          onPressed: () async {
-            final authProvider = context.read<AuthProvider>();
-            if (!authProvider.isLoggedIn) {
-              ScaffoldMessenger.of(
+            onPressed: () async {
+              final authProvider = context.read<AuthProvider>();
+              if (!authProvider.isLoggedIn) {
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(const SnackBar(content: Text('请先登录')));
+                Navigator.push(
+                  context,
+                  PageRouteBuilder(
+                    opaque: false,
+                    pageBuilder: (_, __, ___) => const LoginScreen(),
+                  ),
+                );
+                return;
+              }
+              await Navigator.push(
                 context,
-              ).showSnackBar(const SnackBar(content: Text('请先登录')));
-              Navigator.push(
-                context,
-                PageRouteBuilder(
-                  opaque: false,
-                  pageBuilder: (_, __, ___) => const LoginScreen(),
+                MaterialPageRoute(
+                  builder: (_) => CreatePostScreen(
+                    boardId: 2,
+                    defaultPostType: widget.onlyPostTypes != null &&
+                            widget.onlyPostTypes!.contains('lost')
+                        ? 'lost'
+                        : 'sell',
+                    allowedPostTypes: widget.onlyPostTypes,
+                  ),
                 ),
               );
-              return;
-            }
-            await Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => CreatePostScreen(
-                  boardId: 2,
-                  defaultPostType: widget.onlyPostTypes != null &&
-                          widget.onlyPostTypes!.contains('lost')
-                      ? 'lost'
-                      : 'sell',
-                  allowedPostTypes: widget.onlyPostTypes,
-                ),
-              ),
-            );
-            if (mounted) {
-              await _refreshCurrent();
-            }
-          },
+              if (mounted) {
+                await _refreshCurrent();
+              }
+            },
+          ),
         ),
       ),
     );
@@ -562,6 +563,7 @@ class _MarketScreenState extends State<MarketScreen> {
               ],
             ),
           ),
+        ),
       ],
     );
   }

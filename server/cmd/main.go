@@ -1045,7 +1045,7 @@ func main() {
 
 			"gitee_download_url": "https://gitee.com/chunhezi/SYLUlive/releases",
 
-			"update_msg": "1.5.15 更新：修复删后台重进后头像可能只显示文字的问题；优化平板桌面小组件尺寸调整；完善私信通知进入定位、当前会话前台拦截与通知清理；隐藏后台卡片保持独立开关且默认关闭。",
+			"update_msg": "因此正确目标是：\n\n| 功能 | 1.5.15 旧版 |\n| --- | --- |\n| 二课 WebVPN 登录 | 手机本地 |\n| 二课成绩抓取 | 手机本地 |\n| 教务登录 | Python 服务器 |\n| 课表抓取 | Go/Python 服务器 |\n| 成绩抓取 | Go/Python 服务器 |\n| 教务密码 | 会发往服务器 |\n| 教务 Cookie | 服务器使用 |",
 		})
 
 	})

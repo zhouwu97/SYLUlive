@@ -36,9 +36,9 @@ class _ImageUploadWidgetState extends State<ImageUploadWidget> {
 
   Future<void> _pickAndUploadImage(ImageSource source) async {
     if (!_canAddMoreImages) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('最多只能上传${widget.maxImages}张图片')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('最多只能上传${widget.maxImages}张图片')));
       return;
     }
 
@@ -59,7 +59,9 @@ class _ImageUploadWidgetState extends State<ImageUploadWidget> {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
-                  content: Text('图片大小不能超过 10MB'), backgroundColor: Colors.red),
+                content: Text('图片大小不能超过 10MB'),
+                backgroundColor: Colors.red,
+              ),
             );
           }
           return;
@@ -75,19 +77,18 @@ class _ImageUploadWidgetState extends State<ImageUploadWidget> {
         final fileName = image.name.isNotEmpty ? image.name : 'upload.jpg';
 
         final formData = FormData.fromMap({
-          'file': MultipartFile.fromBytes(
-            bytes,
-            filename: fileName,
-          ),
+          'file': MultipartFile.fromBytes(bytes, filename: fileName),
         });
 
-        final response = await dio.post('/upload',
-            data: formData,
-            options: Options(
-              // Increase timeout for file upload if needed, or keep default
-              sendTimeout: const Duration(seconds: 60),
-              receiveTimeout: const Duration(seconds: 60),
-            ));
+        final response = await dio.post(
+          '/upload',
+          data: formData,
+          options: Options(
+            // Increase timeout for file upload if needed, or keep default
+            sendTimeout: const Duration(seconds: 60),
+            receiveTimeout: const Duration(seconds: 60),
+          ),
+        );
 
         if (response.statusCode == 200 &&
             response.data != null &&
@@ -102,7 +103,9 @@ class _ImageUploadWidgetState extends State<ImageUploadWidget> {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
-                  content: Text('图片上传失败'), backgroundColor: Colors.red),
+                content: Text('图片上传失败'),
+                backgroundColor: Colors.red,
+              ),
             );
           }
         }
@@ -232,8 +235,11 @@ class _ImageUploadWidgetState extends State<ImageUploadWidget> {
                               color: Colors.black54,
                               shape: BoxShape.circle,
                             ),
-                            child: const Icon(Icons.close,
-                                color: Colors.white, size: 14),
+                            child: const Icon(
+                              Icons.close,
+                              color: Colors.white,
+                              size: 14,
+                            ),
                           ),
                         ),
                       ),
@@ -252,7 +258,8 @@ class _ImageUploadWidgetState extends State<ImageUploadWidget> {
                 ? const SizedBox(
                     width: 16,
                     height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2))
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
                 : const Icon(Icons.add_photo_alternate),
             label: Text(_uploadedUrls.isEmpty ? '添加图片' : '继续添加'),
           ),

@@ -39,12 +39,12 @@ class ExamModel {
   }
 
   Map<String, dynamic> toJson() => {
-        'name': name,
-        'startTime': startTime.toIso8601String(),
-        'endTime': endTime.toIso8601String(),
-        'location': location,
-        'semester': semester,
-      };
+    'name': name,
+    'startTime': startTime.toIso8601String(),
+    'endTime': endTime.toIso8601String(),
+    'location': location,
+    'semester': semester,
+  };
 }
 
 class ExamScheduleScreen extends StatefulWidget {
@@ -138,9 +138,9 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
 
   Future<void> _exportExams() async {
     if (_exams.where((e) => e.semester == _currentSemester).isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('当前学期没有可导出的考试')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('当前学期没有可导出的考试')));
       return;
     }
 
@@ -159,7 +159,9 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, nameCtrl.text.trim()),
             child: const Text('确定导出'),
@@ -197,7 +199,7 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
         'exams': _exams
             .where((e) => e.semester == _currentSemester)
             .map((e) => e.toJson())
-            .toList()
+            .toList(),
       };
 
       await file.writeAsString(jsonEncode(exportData));
@@ -219,9 +221,9 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
     } catch (e) {
       debugPrint('导出考试存档失败: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('导出失败: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('导出失败: $e')));
       }
     }
   }
@@ -239,15 +241,19 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
 
         if (data.containsKey('exams') && data['exams'] is List) {
           final List<dynamic> examsJson = data['exams'];
-          final List<ExamModel> importedExams =
-              examsJson.map((e) => ExamModel.fromJson(e)).toList();
+          final List<ExamModel> importedExams = examsJson
+              .map((e) => ExamModel.fromJson(e))
+              .toList();
 
           if (mounted) {
             setState(() {
               int addedCount = 0;
               for (var newExam in importedExams) {
-                bool exists = _exams.any((e) =>
-                    e.name == newExam.name && e.startTime == newExam.startTime);
+                bool exists = _exams.any(
+                  (e) =>
+                      e.name == newExam.name &&
+                      e.startTime == newExam.startTime,
+                );
                 if (!exists) {
                   _exams.add(newExam);
                   addedCount++;
@@ -268,9 +274,9 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
     } catch (e) {
       debugPrint('导入考试存档失败: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('导入失败: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('导入失败: $e')));
       }
     }
   }
@@ -282,8 +288,9 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
         final prefs = await SharedPreferences.getInstance();
 
         final now = DateTime.now();
-        final activeExams =
-            _exams.where((e) => e.endTime.isAfter(now)).toList();
+        final activeExams = _exams
+            .where((e) => e.endTime.isAfter(now))
+            .toList();
 
         final examsJson = activeExams.map((e) {
           final dateStr =
@@ -293,8 +300,11 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
           final endTimeStr =
               '${e.endTime.hour.toString().padLeft(2, '0')}:${e.endTime.minute.toString().padLeft(2, '0')}';
 
-          final startDate =
-              DateTime(e.startTime.year, e.startTime.month, e.startTime.day);
+          final startDate = DateTime(
+            e.startTime.year,
+            e.startTime.month,
+            e.startTime.day,
+          );
           final today = DateTime(now.year, now.month, now.day);
           final diffDays = startDate.difference(today).inDays;
 
@@ -382,10 +392,12 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
     String selectedSemester = exam?.semester ?? _currentSemester;
 
     DateTime examDate = exam?.startTime ?? DateTime.now();
-    TimeOfDay startTime =
-        TimeOfDay.fromDateTime(exam?.startTime ?? DateTime.now());
+    TimeOfDay startTime = TimeOfDay.fromDateTime(
+      exam?.startTime ?? DateTime.now(),
+    );
     TimeOfDay endTime = TimeOfDay.fromDateTime(
-        exam?.endTime ?? DateTime.now().add(const Duration(hours: 2)));
+      exam?.endTime ?? DateTime.now().add(const Duration(hours: 2)),
+    );
 
     final jsonController = TextEditingController();
     bool isAiMode = exam == null;
@@ -397,8 +409,9 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
           final isDark = Theme.of(context).brightness == Brightness.dark;
           return AlertDialog(
             backgroundColor: isDark ? const Color(0xFF1E2235) : Colors.white,
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
             contentPadding: const EdgeInsets.all(24),
             content: SingleChildScrollView(
               child: Column(
@@ -408,7 +421,9 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
                   Text(
                     exam == null ? '添加考试' : '编辑考试',
                     style: const TextStyle(
-                        fontSize: 20, fontWeight: FontWeight.bold),
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   const SizedBox(height: 16),
                   if (exam == null) ...[
@@ -430,10 +445,9 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
                     Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: Theme.of(context)
-                            .colorScheme
-                            .secondaryContainer
-                            .withOpacity(0.5),
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.secondaryContainer.withOpacity(0.5),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Column(
@@ -441,39 +455,52 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
                         children: [
                           Row(
                             children: [
-                              Icon(Icons.lightbulb_outline,
-                                  size: 16,
-                                  color:
-                                      Theme.of(context).colorScheme.secondary),
+                              Icon(
+                                Icons.lightbulb_outline,
+                                size: 16,
+                                color: Theme.of(context).colorScheme.secondary,
+                              ),
                               const SizedBox(width: 4),
-                              Text('使用步骤',
-                                  style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 14,
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .secondary)),
+                              Text(
+                                '使用步骤',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.secondary,
+                                ),
+                              ),
                             ],
                           ),
                           const SizedBox(height: 8),
-                          Text('1. 点击下方按钮复制提示词；',
-                              style: TextStyle(
-                                  fontSize: 13,
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .onSurfaceVariant)),
-                          Text('2. 将提示词与考试安排发给AI；',
-                              style: TextStyle(
-                                  fontSize: 13,
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .onSurfaceVariant)),
-                          Text('3. 在下方粘贴 AI 回复的 JSON 代码。',
-                              style: TextStyle(
-                                  fontSize: 13,
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .onSurfaceVariant)),
+                          Text(
+                            '1. 点击下方按钮复制提示词；',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                          Text(
+                            '2. 将提示词与考试安排发给AI；',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                          Text(
+                            '3. 在下方粘贴 AI 回复的 JSON 代码。',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurfaceVariant,
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -482,14 +509,17 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
                       icon: const Icon(Icons.copy, size: 18),
                       label: const Text('一键复制 AI 提示词'),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor:
-                            Theme.of(context).colorScheme.primaryContainer,
-                        foregroundColor:
-                            Theme.of(context).colorScheme.onPrimaryContainer,
+                        backgroundColor: Theme.of(
+                          context,
+                        ).colorScheme.primaryContainer,
+                        foregroundColor: Theme.of(
+                          context,
+                        ).colorScheme.onPrimaryContainer,
                       ),
                       onPressed: () {
                         Clipboard.setData(
-                            ClipboardData(text: generateExamPrompt()));
+                          ClipboardData(text: generateExamPrompt()),
+                        );
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(content: Text('提示词已复制！请前往 AI 助手处粘贴。')),
                         );
@@ -504,26 +534,30 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
                         hintText: '在此粘贴 AI 生成的 JSON 代码...',
                         border: const OutlineInputBorder(),
                         filled: true,
-                        fillColor: Theme.of(context)
-                            .colorScheme
-                            .surfaceContainerHighest
-                            .withOpacity(0.3),
+                        fillColor: Theme.of(
+                          context,
+                        ).colorScheme.surfaceContainerHighest.withOpacity(0.3),
                       ),
                     ),
                   ] else ...[
                     TextField(
                       controller: nameCtrl,
                       decoration: const InputDecoration(
-                          labelText: '科目名称', border: OutlineInputBorder()),
+                        labelText: '科目名称',
+                        border: OutlineInputBorder(),
+                      ),
                     ),
                     const SizedBox(height: 12),
                     DropdownButtonFormField<String>(
                       value: selectedSemester,
                       decoration: const InputDecoration(
-                          labelText: '归属学期', border: OutlineInputBorder()),
+                        labelText: '归属学期',
+                        border: OutlineInputBorder(),
+                      ),
                       items: _availableSemesters
                           .map(
-                              (s) => DropdownMenuItem(value: s, child: Text(s)))
+                            (s) => DropdownMenuItem(value: s, child: Text(s)),
+                          )
                           .toList(),
                       onChanged: (val) {
                         if (val != null)
@@ -547,9 +581,12 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
                       },
                       child: InputDecorator(
                         decoration: const InputDecoration(
-                            labelText: '考试日期', border: OutlineInputBorder()),
+                          labelText: '考试日期',
+                          border: OutlineInputBorder(),
+                        ),
                         child: Text(
-                            '${examDate.year}年${examDate.month}月${examDate.day}日'),
+                          '${examDate.year}年${examDate.month}月${examDate.day}日',
+                        ),
                       ),
                     ),
                     const SizedBox(height: 12),
@@ -571,21 +608,25 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
                                   final endMins =
                                       endTime.hour * 60 + endTime.minute;
                                   if (endMins <= startMins) {
-                                    final newEndMins = startMins +
+                                    final newEndMins =
+                                        startMins +
                                         120; // 2 hours duration default
                                     endTime = TimeOfDay(
-                                        hour: (newEndMins ~/ 60) % 24,
-                                        minute: newEndMins % 60);
+                                      hour: (newEndMins ~/ 60) % 24,
+                                      minute: newEndMins % 60,
+                                    );
                                   }
                                 });
                               }
                             },
                             child: InputDecorator(
                               decoration: const InputDecoration(
-                                  labelText: '开始时间',
-                                  border: OutlineInputBorder()),
+                                labelText: '开始时间',
+                                border: OutlineInputBorder(),
+                              ),
                               child: Text(
-                                  '${startTime.hour.toString().padLeft(2, '0')}:${startTime.minute.toString().padLeft(2, '0')}'),
+                                '${startTime.hour.toString().padLeft(2, '0')}:${startTime.minute.toString().padLeft(2, '0')}',
+                              ),
                             ),
                           ),
                         ),
@@ -605,10 +646,12 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
                             },
                             child: InputDecorator(
                               decoration: const InputDecoration(
-                                  labelText: '结束时间',
-                                  border: OutlineInputBorder()),
+                                labelText: '结束时间',
+                                border: OutlineInputBorder(),
+                              ),
                               child: Text(
-                                  '${endTime.hour.toString().padLeft(2, '0')}:${endTime.minute.toString().padLeft(2, '0')}'),
+                                '${endTime.hour.toString().padLeft(2, '0')}:${endTime.minute.toString().padLeft(2, '0')}',
+                              ),
                             ),
                           ),
                         ),
@@ -618,7 +661,9 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
                     TextField(
                       controller: locCtrl,
                       decoration: const InputDecoration(
-                          labelText: '考试地点', border: OutlineInputBorder()),
+                        labelText: '考试地点',
+                        border: OutlineInputBorder(),
+                      ),
                     ),
                   ],
                   const SizedBox(height: 24),
@@ -626,8 +671,9 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: [
                       TextButton(
-                          onPressed: () => Navigator.pop(ctx),
-                          child: const Text('取消')),
+                        onPressed: () => Navigator.pop(ctx),
+                        child: const Text('取消'),
+                      ),
                       const SizedBox(width: 8),
                       FilledButton(
                         onPressed: () {
@@ -635,14 +681,15 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
                             final code = jsonController.text.trim();
                             if (code.isEmpty) {
                               ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                      content: Text('请粘贴 JSON 代码！')));
+                                const SnackBar(content: Text('请粘贴 JSON 代码！')),
+                              );
                               return;
                             }
                             try {
                               final List dynamicList = jsonDecode(code);
-                              final List<ExamModel> newExams =
-                                  dynamicList.map((e) {
+                              final List<ExamModel> newExams = dynamicList.map((
+                                e,
+                              ) {
                                 return ExamModel(
                                   name: e['name'],
                                   startTime: DateTime.parse(e['startTime']),
@@ -654,47 +701,54 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
                               if (mounted)
                                 setState(() {
                                   _exams.addAll(newExams);
-                                  _exams.sort((a, b) =>
-                                      a.startTime.compareTo(b.startTime));
+                                  _exams.sort(
+                                    (a, b) =>
+                                        a.startTime.compareTo(b.startTime),
+                                  );
                                 });
                               _saveToLocal();
                               Navigator.pop(ctx);
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
-                                    content:
-                                        Text('成功导入 ${newExams.length} 场考试！')),
+                                  content: Text('成功导入 ${newExams.length} 场考试！'),
+                                ),
                               );
                             } catch (e) {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
-                                    content: Text(
-                                        '解析失败: ${e.toString().split('\n').first}')),
+                                  content: Text(
+                                    '解析失败: ${e.toString().split('\n').first}',
+                                  ),
+                                ),
                               );
                             }
                           } else {
                             if (nameCtrl.text.trim().isEmpty) {
                               ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('科目名称不能为空')));
+                                const SnackBar(content: Text('科目名称不能为空')),
+                              );
                               return;
                             }
 
                             final startDateTime = DateTime(
-                                examDate.year,
-                                examDate.month,
-                                examDate.day,
-                                startTime.hour,
-                                startTime.minute);
+                              examDate.year,
+                              examDate.month,
+                              examDate.day,
+                              startTime.hour,
+                              startTime.minute,
+                            );
                             final endDateTime = DateTime(
-                                examDate.year,
-                                examDate.month,
-                                examDate.day,
-                                endTime.hour,
-                                endTime.minute);
+                              examDate.year,
+                              examDate.month,
+                              examDate.day,
+                              endTime.hour,
+                              endTime.minute,
+                            );
 
                             if (endDateTime.isBefore(startDateTime)) {
                               ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                      content: Text('结束时间不能早于开始时间')));
+                                const SnackBar(content: Text('结束时间不能早于开始时间')),
+                              );
                               return;
                             }
                             final newExam = ExamModel(
@@ -711,15 +765,17 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
                                 } else {
                                   _exams.add(newExam);
                                 }
-                                _exams.sort((a, b) =>
-                                    a.startTime.compareTo(b.startTime));
+                                _exams.sort(
+                                  (a, b) => a.startTime.compareTo(b.startTime),
+                                );
                               });
                             _saveToLocal();
                             Navigator.pop(ctx);
                           }
                         },
                         child: Text(
-                            exam == null ? (isAiMode ? '导入' : '添加') : '保存修改'),
+                          exam == null ? (isAiMode ? '导入' : '添加') : '保存修改',
+                        ),
                       ),
                     ],
                   ),
@@ -740,8 +796,9 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    final displayExams =
-        _exams.where((e) => e.semester == _currentSemester).toList();
+    final displayExams = _exams
+        .where((e) => e.semester == _currentSemester)
+        .toList();
 
     final now = DateTime.now();
     displayExams.sort((a, b) {
@@ -754,19 +811,23 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
     final availableSemesters = _availableSemesters;
 
     return Scaffold(
-      backgroundColor:
-          isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
+      backgroundColor: isDark
+          ? const Color(0xFF131720)
+          : const Color(0xFFF4F6FB),
       appBar: AppBar(
         title: DropdownButtonHideUnderline(
           child: DropdownButton<String>(
             value: _currentSemester,
             dropdownColor: isDark ? const Color(0xFF1E2235) : Colors.white,
-            icon: Icon(Icons.arrow_drop_down,
-                color: isDark ? Colors.white : Colors.black87),
+            icon: Icon(
+              Icons.arrow_drop_down,
+              color: isDark ? Colors.white : Colors.black87,
+            ),
             style: TextStyle(
-                color: isDark ? Colors.white : Colors.black87,
-                fontSize: 18,
-                fontWeight: FontWeight.bold),
+              color: isDark ? Colors.white : Colors.black87,
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+            ),
             onChanged: (String? newValue) {
               if (newValue != null) {
                 if (mounted)
@@ -775,13 +836,15 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
                   });
               }
             },
-            items: availableSemesters
-                .map<DropdownMenuItem<String>>((String value) {
+            items: availableSemesters.map<DropdownMenuItem<String>>((
+              String value,
+            ) {
               return DropdownMenuItem<String>(
                 value: value,
-                child: Text(value,
-                    style:
-                        TextStyle(color: isDark ? Colors.white : Colors.black)),
+                child: Text(
+                  value,
+                  style: TextStyle(color: isDark ? Colors.white : Colors.black),
+                ),
               );
             }).toList(),
             selectedItemBuilder: (BuildContext context) {
@@ -790,9 +853,10 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
                   child: Text(
                     item,
                     style: TextStyle(
-                        color: isDark ? Colors.white : Colors.black87,
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold),
+                      color: isDark ? Colors.white : Colors.black87,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 );
               }).toList();
@@ -824,19 +888,27 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.event_note,
-                      size: 64,
-                      color: isDark ? Colors.white38 : Colors.grey[400]),
+                  Icon(
+                    Icons.event_note,
+                    size: 64,
+                    color: isDark ? Colors.white38 : Colors.grey[400],
+                  ),
                   const SizedBox(height: 16),
-                  Text('当前学期暂无考试安排',
-                      style: TextStyle(
-                          color: isDark ? Colors.white54 : Colors.grey[600],
-                          fontSize: 16)),
+                  Text(
+                    '当前学期暂无考试安排',
+                    style: TextStyle(
+                      color: isDark ? Colors.white54 : Colors.grey[600],
+                      fontSize: 16,
+                    ),
+                  ),
                   const SizedBox(height: 8),
-                  Text('点击右上角 + 号添加',
-                      style: TextStyle(
-                          color: isDark ? Colors.white38 : Colors.grey[500],
-                          fontSize: 13)),
+                  Text(
+                    '点击右上角 + 号添加',
+                    style: TextStyle(
+                      color: isDark ? Colors.white38 : Colors.grey[500],
+                      fontSize: 13,
+                    ),
+                  ),
                 ],
               ),
             )
@@ -849,7 +921,8 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
 
                 return Dismissible(
                   key: ValueKey(
-                      '${exam.name}_${exam.startTime.millisecondsSinceEpoch}_$originalIndex'),
+                    '${exam.name}_${exam.startTime.millisecondsSinceEpoch}_$originalIndex',
+                  ),
                   direction: DismissDirection.endToStart,
                   background: Container(
                     margin: const EdgeInsets.only(bottom: 12.0),
@@ -870,14 +943,16 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
                           content: const Text("确定要删除这场考试吗？"),
                           actions: [
                             TextButton(
-                                onPressed: () =>
-                                    Navigator.of(context).pop(false),
-                                child: const Text("取消")),
+                              onPressed: () => Navigator.of(context).pop(false),
+                              child: const Text("取消"),
+                            ),
                             TextButton(
-                                onPressed: () =>
-                                    Navigator.of(context).pop(true),
-                                child: const Text("删除",
-                                    style: TextStyle(color: Colors.red))),
+                              onPressed: () => Navigator.of(context).pop(true),
+                              child: const Text(
+                                "删除",
+                                style: TextStyle(color: Colors.red),
+                              ),
+                            ),
                           ],
                         );
                       },
@@ -889,9 +964,9 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
                         _exams.removeAt(originalIndex);
                       });
                     _saveToLocal();
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('已删除 ${exam.name}')),
-                    );
+                    ScaffoldMessenger.of(
+                      context,
+                    ).showSnackBar(SnackBar(content: Text('已删除 ${exam.name}')));
                   },
                   child: Padding(
                     padding: const EdgeInsets.only(bottom: 12.0),
@@ -922,16 +997,20 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
                                     const SizedBox(height: 6),
                                     Row(
                                       children: [
-                                        Icon(Icons.access_time,
-                                            size: 14,
-                                            color: isDark
-                                                ? Colors.white54
-                                                : Colors.grey[600]),
+                                        Icon(
+                                          Icons.access_time,
+                                          size: 14,
+                                          color: isDark
+                                              ? Colors.white54
+                                              : Colors.grey[600],
+                                        ),
                                         const SizedBox(width: 4),
                                         Expanded(
                                           child: Text(
                                             _formatExamDuration(
-                                                exam.startTime, exam.endTime),
+                                              exam.startTime,
+                                              exam.endTime,
+                                            ),
                                             style: TextStyle(
                                               fontSize: 13,
                                               color: isDark
@@ -948,16 +1027,22 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
                               const SizedBox(width: 12),
                               Container(
                                 padding: const EdgeInsets.symmetric(
-                                    horizontal: 12, vertical: 8),
+                                  horizontal: 12,
+                                  vertical: 8,
+                                ),
                                 decoration: BoxDecoration(
-                                  color:
-                                      const Color(0xFF6366F1).withOpacity(0.12),
+                                  color: const Color(
+                                    0xFF6366F1,
+                                  ).withOpacity(0.12),
                                   borderRadius: BorderRadius.circular(12),
                                 ),
                                 child: Column(
                                   children: [
-                                    const Icon(Icons.location_on,
-                                        color: Color(0xFF6366F1), size: 16),
+                                    const Icon(
+                                      Icons.location_on,
+                                      color: Color(0xFF6366F1),
+                                      size: 16,
+                                    ),
                                     const SizedBox(height: 4),
                                     Text(
                                       exam.location.isNotEmpty
@@ -974,10 +1059,12 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
                               ),
                               const SizedBox(width: 8),
                               IconButton(
-                                icon: Icon(Icons.edit_calendar,
-                                    color: isDark
-                                        ? Colors.white70
-                                        : Colors.grey[600]),
+                                icon: Icon(
+                                  Icons.edit_calendar,
+                                  color: isDark
+                                      ? Colors.white70
+                                      : Colors.grey[600],
+                                ),
                                 tooltip: '添加到系统日历',
                                 onPressed: () => _addToCalendar(exam),
                               ),

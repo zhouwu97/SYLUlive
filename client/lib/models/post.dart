@@ -111,7 +111,8 @@ class Post {
       replyCount: json['reply_count'] ?? 0,
       likeCount: json['like_count'] ?? 0,
       isLiked: json['is_liked'] == true,
-      images: (json['images'] as List<dynamic>?)
+      images:
+          (json['images'] as List<dynamic>?)
               ?.map((e) => PostImage.fromJson(e))
               .toList() ??
           [],

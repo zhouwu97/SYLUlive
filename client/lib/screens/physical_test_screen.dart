@@ -59,12 +59,14 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
     final currentYear = now.month >= 9 ? now.year + 1 : now.year;
     _availableYears = List.generate(4, (i) => (currentYear - i).toString());
 
-    _dio = Dio(BaseOptions(
-      baseUrl: _baseUrl,
-      headers: _headers,
-      connectTimeout: const Duration(seconds: 10),
-      receiveTimeout: const Duration(seconds: 15),
-    ));
+    _dio = Dio(
+      BaseOptions(
+        baseUrl: _baseUrl,
+        headers: _headers,
+        connectTimeout: const Duration(seconds: 10),
+        receiveTimeout: const Duration(seconds: 15),
+      ),
+    );
     _dio.interceptors.add(CookieManager(CookieJar()));
     WidgetsBinding.instance.addPostFrameCallback((_) => _init());
   }
@@ -118,9 +120,11 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
           _yearData[year] = _YearData(
             totalGrade: map['total_grade'] ?? '',
             totalScore: (map['total_score'] ?? 0).toDouble(),
-            scores: (map['scores'] as List?)
-                    ?.map((e) =>
-                        _GymScoreItem.fromJson(e as Map<String, dynamic>))
+            scores:
+                (map['scores'] as List?)
+                    ?.map(
+                      (e) => _GymScoreItem.fromJson(e as Map<String, dynamic>),
+                    )
                     .toList() ??
                 [],
           );
@@ -162,8 +166,10 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
     debugPrint('Payload: $requestData');
 
     try {
-      final resp =
-          await _dio.post('/service/login/mobile/check', data: requestData);
+      final resp = await _dio.post(
+        '/service/login/mobile/check',
+        data: requestData,
+      );
       debugPrint('Status Code: ${resp.statusCode}');
       debugPrint('Response Headers: ${resp.headers}');
       debugPrint('Response Body: ${resp.data}');
@@ -204,9 +210,12 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
             }
             final prefs = await SharedPreferences.getInstance();
             await prefs.setString(
-                'sylu_physical_test_pwd_${widget.username}', widget.password);
+              'sylu_physical_test_pwd_${widget.username}',
+              widget.password,
+            );
             debugPrint(
-                '登录成功！UserId: $_userId, Token: $_token, Year: $_currentYear');
+              '登录成功！UserId: $_userId, Token: $_token, Year: $_currentYear',
+            );
             return true;
           } else {
             debugPrint('登录返回了数据，但未能解析到 userId');
@@ -238,10 +247,12 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
       final resp = await _dio.post(
         '/service/sysUser/mobile/findStudent',
         data: bodyData,
-        options: Options(headers: {
-          'Authorization': _token ?? _userId!,
-          'Cookie': 'userid=$_userId',
-        }),
+        options: Options(
+          headers: {
+            'Authorization': _token ?? _userId!,
+            'Cookie': 'userid=$_userId',
+          },
+        ),
       );
       if (resp.statusCode == 200 && resp.data is Map) {
         final data = resp.data['data'];
@@ -262,10 +273,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
 
     // _token 登录返回已是 "userId:hash" 格式，直接用
     final authValue = _token ?? _userId!;
-    final bodyData = <String, dynamic>{
-      'user_id': _userId,
-      'school_year': year,
-    };
+    final bodyData = <String, dynamic>{'user_id': _userId, 'school_year': year};
     bodyData['sign'] = SignUtils.generateSign(bodyData);
 
     debugPrint('--- [体测成绩查询] 请求开始 ---');
@@ -277,10 +285,9 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
       final resp = await _dio.post(
         '/service/mobile/gymResult/selectUserPlanScore',
         data: bodyData,
-        options: Options(headers: {
-          'Authorization': authValue,
-          'Cookie': 'userid=$_userId',
-        }),
+        options: Options(
+          headers: {'Authorization': authValue, 'Cookie': 'userid=$_userId'},
+        ),
       );
       debugPrint('Status Code: ${resp.statusCode}');
       debugPrint('Response Body: ${resp.data}');
@@ -299,8 +306,10 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
           final list = inner['data_arr'];
           final scores = (list is List)
               ? list
-                  .map((e) => _GymScoreItem.fromJson(e as Map<String, dynamic>))
-                  .toList()
+                    .map(
+                      (e) => _GymScoreItem.fromJson(e as Map<String, dynamic>),
+                    )
+                    .toList()
               : <_GymScoreItem>[];
 
           debugPrint('成功解析到成绩数据，长度: ${scores.length}');
@@ -328,12 +337,14 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor:
-          isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
+      backgroundColor: isDark
+          ? const Color(0xFF131720)
+          : const Color(0xFFF4F6FB),
       appBar: AppBar(
         title: const Text('体测成绩查询'),
-        backgroundColor:
-            isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
+        backgroundColor: isDark
+            ? const Color(0xFF131720)
+            : const Color(0xFFF4F6FB),
         elevation: 0,
         actions: [
           IconButton(
@@ -397,18 +408,22 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
                   else if (data != null)
                     Padding(
                       padding: const EdgeInsets.all(40),
-                      child: Text('暂无成绩数据',
-                          style: TextStyle(
-                              color:
-                                  isDark ? Colors.white54 : Colors.grey[600])),
+                      child: Text(
+                        '暂无成绩数据',
+                        style: TextStyle(
+                          color: isDark ? Colors.white54 : Colors.grey[600],
+                        ),
+                      ),
                     )
                   else
                     Padding(
                       padding: const EdgeInsets.all(40),
-                      child: Text('选择学年查看成绩',
-                          style: TextStyle(
-                              color:
-                                  isDark ? Colors.white54 : Colors.grey[600])),
+                      child: Text(
+                        '选择学年查看成绩',
+                        style: TextStyle(
+                          color: isDark ? Colors.white54 : Colors.grey[600],
+                        ),
+                      ),
                     ),
                 ],
               ),
@@ -471,12 +486,15 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
               children: [
                 const Icon(Icons.qr_code_2, size: 20, color: Color(0xFF6366F1)),
                 const SizedBox(width: 10),
-                const Text('体测身份码',
-                    style:
-                        TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                const Text(
+                  '体测身份码',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                ),
                 const Spacer(),
-                Icon(_showQr ? Icons.expand_less : Icons.expand_more,
-                    color: isDark ? Colors.white54 : Colors.grey[600]),
+                Icon(
+                  _showQr ? Icons.expand_less : Icons.expand_more,
+                  color: isDark ? Colors.white54 : Colors.grey[600],
+                ),
               ],
             ),
             if (_showQr) ...[
@@ -503,14 +521,20 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
                 ),
               ),
               const SizedBox(height: 10),
-              Text('扫码进行体测身份核验',
-                  style: TextStyle(
-                      fontSize: 12,
-                      color: isDark ? Colors.white54 : Colors.grey[600])),
-              Text('学号：${widget.username}',
-                  style: TextStyle(
-                      fontSize: 11,
-                      color: isDark ? Colors.white38 : Colors.grey[500])),
+              Text(
+                '扫码进行体测身份核验',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: isDark ? Colors.white54 : Colors.grey[600],
+                ),
+              ),
+              Text(
+                '学号：${widget.username}',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: isDark ? Colors.white38 : Colors.grey[500],
+                ),
+              ),
             ],
           ],
         ),
@@ -531,8 +555,11 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
               color: const Color(0xFF6366F1).withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(12),
             ),
-            child: const Icon(Icons.emoji_events,
-                color: Color(0xFF6366F1), size: 22),
+            child: const Icon(
+              Icons.emoji_events,
+              color: Color(0xFF6366F1),
+              size: 22,
+            ),
           ),
           const SizedBox(width: 14),
           Expanded(
@@ -577,16 +604,22 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(item.subName,
-                      style: const TextStyle(
-                          fontSize: 14, fontWeight: FontWeight.w600)),
+                  Text(
+                    item.subName,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                   const SizedBox(height: 2),
-                  Text(item.result,
-                      style: TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.bold,
-                          color:
-                              isDark ? Colors.white : const Color(0xFF1A1A2E))),
+                  Text(
+                    item.result,
+                    style: TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                      color: isDark ? Colors.white : const Color(0xFF1A1A2E),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -596,11 +629,14 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
                 color: statusColor.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(16),
               ),
-              child: Text(showScore ? '${item.score}分' : item.statusLabel,
-                  style: TextStyle(
-                      color: statusColor,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 13)),
+              child: Text(
+                showScore ? '${item.score}分' : item.statusLabel,
+                style: TextStyle(
+                  color: statusColor,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13,
+                ),
+              ),
             ),
           ],
         ),
@@ -615,13 +651,19 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.error_outline,
-                size: 48, color: isDark ? Colors.white38 : Colors.grey[500]),
+            Icon(
+              Icons.error_outline,
+              size: 48,
+              color: isDark ? Colors.white38 : Colors.grey[500],
+            ),
             const SizedBox(height: 16),
-            Text(_errorMessage!,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                    color: isDark ? Colors.white54 : Colors.grey[700])),
+            Text(
+              _errorMessage!,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: isDark ? Colors.white54 : Colors.grey[700],
+              ),
+            ),
             const SizedBox(height: 24),
             ElevatedButton.icon(
               onPressed: _init,
@@ -631,7 +673,8 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
                 backgroundColor: const Color(0xFF6366F1),
                 foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
             ),
           ],

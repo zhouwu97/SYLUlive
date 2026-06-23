@@ -130,7 +130,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     super.didUpdateWidget(oldWidget);
     final changedConversation =
         oldWidget.conversationId != widget.conversationId ||
-            oldWidget.targetUser.id != widget.targetUser.id;
+        oldWidget.targetUser.id != widget.targetUser.id;
     if (changedConversation ||
         oldWidget.initialMessageId != widget.initialMessageId) {
       _conversationId = widget.conversationId;
@@ -201,8 +201,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     final currentUserId = context.read<AuthProvider>().user?.id;
     final oldLastId = context.read<MessageProvider>().messages.lastOrNull?.id;
     await context.read<MessageProvider>().refreshMessages(
-          currentUserId: currentUserId,
-        );
+      currentUserId: currentUserId,
+    );
     if (!mounted) return;
     final newLastId = context.read<MessageProvider>().messages.lastOrNull?.id;
     if (wasNearBottom && oldLastId != newLastId) {
@@ -279,9 +279,10 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
 
   void _saveDraft() {
     if (!mounted) return;
-    context
-        .read<MessageProvider>()
-        .updateDraft(widget.targetUser.id, _textController.text);
+    context.read<MessageProvider>().updateDraft(
+      widget.targetUser.id,
+      _textController.text,
+    );
   }
 
   Future<void> _markReadAndClearNotifications(int conversationId) async {
@@ -320,10 +321,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
       requestVersion: requestVersion,
       targetMessageId: targetMessageId,
       jumpToBottomWhenMissing: true,
-    ).timeout(
-      const Duration(seconds: 2),
-      onTimeout: () {},
-    );
+    ).timeout(const Duration(seconds: 2), onTimeout: () {});
   }
 
   Future<void> _settlePosition({
@@ -549,8 +547,11 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.waving_hand_outlined,
-                  size: 56, color: Colors.grey.shade500),
+              Icon(
+                Icons.waving_hand_outlined,
+                size: 56,
+                color: Colors.grey.shade500,
+              ),
               const SizedBox(height: 14),
               Text(
                 '向 ${widget.targetUser.nickname} 打个招呼吧',
@@ -594,9 +595,11 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
           }
           final messageIndex = messageCount - 1 - index;
           final message = provider.messages[messageIndex];
-          final previous =
-              messageIndex > 0 ? provider.messages[messageIndex - 1] : null;
-          final showTime = previous == null ||
+          final previous = messageIndex > 0
+              ? provider.messages[messageIndex - 1]
+              : null;
+          final showTime =
+              previous == null ||
               message.createdAt
                       .difference(previous.createdAt)
                       .inMinutes
@@ -628,9 +631,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
       return Stack(
         children: [
           Positioned.fill(
-            child: ColoredBox(
-              color: Colors.white.withValues(alpha: 0.18),
-            ),
+            child: ColoredBox(color: Colors.white.withValues(alpha: 0.18)),
           ),
           child,
         ],
@@ -677,23 +678,25 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
       children: [
         _buildChatBackgroundImage(
           imageProvider: imageProvider,
-          fillScreen: bgPath != null &&
+          fillScreen:
+              bgPath != null &&
               themeProvider.getBackgroundFillScreenFor(context),
         ),
-        Container(
-          color: Colors.white.withValues(alpha: 0.22),
-        ),
+        Container(color: Colors.white.withValues(alpha: 0.22)),
       ],
     );
   }
 
   ImageProvider _chatBackgroundImageProvider(String? bgPath) {
     if (bgPath == null || bgPath.isEmpty) {
-      final isWide = MediaQuery.of(context).size.width >
+      final isWide =
+          MediaQuery.of(context).size.width >
           MediaQuery.of(context).size.height;
-      return AssetImage(isWide
-          ? 'assets/images/tablet_default_landscape.png'
-          : 'assets/images/morenbeijing.jpeg');
+      return AssetImage(
+        isWide
+            ? 'assets/images/tablet_default_landscape.png'
+            : 'assets/images/morenbeijing.jpeg',
+      );
     }
 
     if (ThemeProvider.isBundledAssetBackground(bgPath)) {
@@ -751,7 +754,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   Widget _buildTimeLabel(DateTime time) {
     final local = AppTime.toShanghai(time);
     final now = AppTime.nowShanghai();
-    final sameDay = local.year == now.year &&
+    final sameDay =
+        local.year == now.year &&
         local.month == now.month &&
         local.day == now.day;
     return Padding(
@@ -761,12 +765,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
         style: TextStyle(
           fontSize: 12,
           color: Colors.grey.shade700,
-          shadows: const [
-            Shadow(
-              color: Colors.white,
-              blurRadius: 6,
-            ),
-          ],
+          shadows: const [Shadow(color: Colors.white, blurRadius: 6)],
         ),
       ),
     );
@@ -787,8 +786,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 5),
       child: Row(
-        mainAxisAlignment:
-            isMine ? MainAxisAlignment.end : MainAxisAlignment.start,
+        mainAxisAlignment: isMine
+            ? MainAxisAlignment.end
+            : MainAxisAlignment.start,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (!isMine) ...[
@@ -815,9 +815,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
                   bottomLeft: Radius.circular(isMine ? 16 : 4),
                   bottomRight: Radius.circular(isMine ? 4 : 16),
                 ),
-                border: Border.all(
-                  color: Colors.black.withValues(alpha: 0.04),
-                ),
+                border: Border.all(color: Colors.black.withValues(alpha: 0.04)),
                 boxShadow: [
                   BoxShadow(
                     color: Colors.black.withValues(alpha: 0.08),
@@ -890,9 +888,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
         decoration: BoxDecoration(
           color: Colors.white,
           border: Border(
-            top: BorderSide(
-              color: Colors.black.withValues(alpha: 0.06),
-            ),
+            top: BorderSide(color: Colors.black.withValues(alpha: 0.06)),
           ),
         ),
         child: Row(
@@ -918,8 +914,10 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
                     borderRadius: BorderRadius.circular(20),
                     borderSide: BorderSide.none,
                   ),
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 10,
+                  ),
                 ),
               ),
             ),

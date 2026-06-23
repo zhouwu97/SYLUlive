@@ -80,8 +80,9 @@ class Report {
       handledAt: json['handled_at'] != null
           ? DateTime.tryParse(json['handled_at'])
           : null,
-      reporter:
-          json['reporter'] != null ? User.fromJson(json['reporter']) : null,
+      reporter: json['reporter'] != null
+          ? User.fromJson(json['reporter'])
+          : null,
       handler: json['handler'] != null ? User.fromJson(json['handler']) : null,
     );
   }
@@ -128,8 +129,9 @@ class Appeal {
       closedAt: json['closed_at'] != null
           ? DateTime.tryParse(json['closed_at'])
           : null,
-      appellant:
-          json['appellant'] != null ? User.fromJson(json['appellant']) : null,
+      appellant: json['appellant'] != null
+          ? User.fromJson(json['appellant'])
+          : null,
       admin: json['admin'] != null ? User.fromJson(json['admin']) : null,
     );
   }

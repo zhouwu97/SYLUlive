@@ -33,8 +33,10 @@ class TeacherProvider extends ChangeNotifier {
     try {
       final params = <String, dynamic>{};
       if (query != null && query.isNotEmpty) params['q'] = query;
-      final resp = await _dio.get('/teachers',
-          queryParameters: params.isEmpty ? null : params);
+      final resp = await _dio.get(
+        '/teachers',
+        queryParameters: params.isEmpty ? null : params,
+      );
       if (resp.statusCode == 200) {
         final seen = <int>{};
         _teachers = (resp.data as List)
@@ -79,10 +81,10 @@ class TeacherProvider extends ChangeNotifier {
   /// 添加教师
   Future<bool> addTeacher(String name, String course) async {
     try {
-      final resp = await _dio.post('/teachers', data: {
-        'name': name,
-        'course': course,
-      });
+      final resp = await _dio.post(
+        '/teachers',
+        data: {'name': name, 'course': course},
+      );
       if (resp.statusCode == 201) {
         await loadTeachers(); // 刷新列表
         return true;
@@ -97,10 +99,10 @@ class TeacherProvider extends ChangeNotifier {
   /// 评价教师（创建或更新）
   Future<bool> rateTeacher(int teacherId, int star, String comment) async {
     try {
-      final resp = await _dio.post('/teachers/$teacherId/rate', data: {
-        'star': star,
-        'comment': comment,
-      });
+      final resp = await _dio.post(
+        '/teachers/$teacherId/rate',
+        data: {'star': star, 'comment': comment},
+      );
       if (resp.statusCode == 200 || resp.statusCode == 201) {
         await loadTeacherDetail(teacherId);
         return true;

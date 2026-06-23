@@ -57,15 +57,16 @@ class _AnnouncementScreenState extends State<AnnouncementScreen>
       }
 
       if (response.statusCode == 200) {
-        final list = (response.data as List)
-            .map((e) => model.Announcement.fromJson(e))
-            .toList()
-          ..sort((a, b) {
-            if (a.isPinned != b.isPinned) {
-              return a.isPinned ? -1 : 1;
-            }
-            return b.createdAt.compareTo(a.createdAt);
-          });
+        final list =
+            (response.data as List)
+                .map((e) => model.Announcement.fromJson(e))
+                .toList()
+              ..sort((a, b) {
+                if (a.isPinned != b.isPinned) {
+                  return a.isPinned ? -1 : 1;
+                }
+                return b.createdAt.compareTo(a.createdAt);
+              });
         if (mounted)
           setState(() {
             _announcements = list;
@@ -115,16 +116,16 @@ class _AnnouncementScreenState extends State<AnnouncementScreen>
                   errorBuilder: (_, __, ___) => _buildDefaultBg(isDark),
                 )
               : path.startsWith('/')
-                  ? Image.file(
-                      File(path),
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => _buildDefaultBg(isDark),
-                    )
-                  : Image.network(
-                      path,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => _buildDefaultBg(isDark),
-                    ),
+              ? Image.file(
+                  File(path),
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => _buildDefaultBg(isDark),
+                )
+              : Image.network(
+                  path,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => _buildDefaultBg(isDark),
+                ),
           Container(
             color: isDark
                 ? Colors.black.withValues(alpha: 0.34)
@@ -150,10 +151,7 @@ class _AnnouncementScreenState extends State<AnnouncementScreen>
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        title: const Text(
-          '公告',
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
+        title: const Text('公告', style: TextStyle(fontWeight: FontWeight.bold)),
         leading: const BackButton(),
       ),
       body: Stack(
@@ -167,55 +165,54 @@ class _AnnouncementScreenState extends State<AnnouncementScreen>
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
                 : _announcements.isEmpty
-                    ? _buildEmptyState(isDark)
-                    : RefreshIndicator(
-                        onRefresh: _loadAnnouncements,
-                        child: ListView(
-                          physics: const BouncingScrollPhysics(),
-                          padding: EdgeInsets.fromLTRB(12, topInset, 12, 100),
-                          children: [
-                            if (pinned.isNotEmpty) ...[
-                              _buildSectionHeader(
-                                isDark,
-                                icon: Icons.push_pin_rounded,
-                                title: '置顶公告',
-                                subtitle: '${pinned.length} 条需要优先查看',
-                                accent: Colors.red,
-                              ),
-                              const SizedBox(height: 10),
-                              ...List.generate(
-                                pinned.length,
-                                (index) => _AnnouncementCard(
-                                  announcement: pinned[index],
-                                  isDark: isDark,
-                                  index: index,
-                                  emphasized: true,
-                                  timeText:
-                                      _formatTime(pinned[index].createdAt),
-                                ),
-                              ),
-                              const SizedBox(height: 6),
-                            ],
-                            _buildSectionHeader(
-                              isDark,
-                              icon: Icons.history_rounded,
-                              title: pinned.isEmpty ? '全部公告' : '最新公告',
-                              subtitle: '${regular.length} 条按时间排序',
-                              accent: Theme.of(context).primaryColor,
+                ? _buildEmptyState(isDark)
+                : RefreshIndicator(
+                    onRefresh: _loadAnnouncements,
+                    child: ListView(
+                      physics: const BouncingScrollPhysics(),
+                      padding: EdgeInsets.fromLTRB(12, topInset, 12, 100),
+                      children: [
+                        if (pinned.isNotEmpty) ...[
+                          _buildSectionHeader(
+                            isDark,
+                            icon: Icons.push_pin_rounded,
+                            title: '置顶公告',
+                            subtitle: '${pinned.length} 条需要优先查看',
+                            accent: Colors.red,
+                          ),
+                          const SizedBox(height: 10),
+                          ...List.generate(
+                            pinned.length,
+                            (index) => _AnnouncementCard(
+                              announcement: pinned[index],
+                              isDark: isDark,
+                              index: index,
+                              emphasized: true,
+                              timeText: _formatTime(pinned[index].createdAt),
                             ),
-                            const SizedBox(height: 10),
-                            ...List.generate(
-                              regular.length,
-                              (index) => _AnnouncementCard(
-                                announcement: regular[index],
-                                isDark: isDark,
-                                index: index + pinned.length,
-                                timeText: _formatTime(regular[index].createdAt),
-                              ),
-                            ),
-                          ],
+                          ),
+                          const SizedBox(height: 6),
+                        ],
+                        _buildSectionHeader(
+                          isDark,
+                          icon: Icons.history_rounded,
+                          title: pinned.isEmpty ? '全部公告' : '最新公告',
+                          subtitle: '${regular.length} 条按时间排序',
+                          accent: Theme.of(context).primaryColor,
                         ),
-                      ),
+                        const SizedBox(height: 10),
+                        ...List.generate(
+                          regular.length,
+                          (index) => _AnnouncementCard(
+                            announcement: regular[index],
+                            isDark: isDark,
+                            index: index + pinned.length,
+                            timeText: _formatTime(regular[index].createdAt),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
           ),
         ],
       ),
@@ -349,10 +346,7 @@ class _AnnouncementCardState extends State<_AnnouncementCard> {
       builder: (context, value, child) {
         return Transform.translate(
           offset: Offset(0, 20 * (1 - value)),
-          child: Opacity(
-            opacity: value,
-            child: child,
-          ),
+          child: Opacity(opacity: value, child: child),
         );
       },
       child: GlassContainer(
@@ -363,8 +357,8 @@ class _AnnouncementCardState extends State<_AnnouncementCard> {
         opacity: widget.isDark ? 0.15 : 0.3,
         backgroundColor: widget.emphasized
             ? (widget.isDark
-                ? const Color(0x99A32020)
-                : const Color(0xFFFDF0F0))
+                  ? const Color(0x99A32020)
+                  : const Color(0xFFFDF0F0))
             : null,
         borderColor: widget.emphasized
             ? Colors.red.withValues(alpha: widget.isDark ? 0.35 : 0.22)
@@ -384,8 +378,10 @@ class _AnnouncementCardState extends State<_AnnouncementCard> {
               children: [
                 if (widget.announcement.isPinned) ...[
                   Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.red.withValues(alpha: 0.2),
                       borderRadius: BorderRadius.circular(8),
@@ -455,11 +451,14 @@ class _AnnouncementCardState extends State<_AnnouncementCard> {
     final urlRegex = RegExp(r'(https?://[^\s]+)');
     final matches = urlRegex.allMatches(text);
     if (matches.isEmpty) {
-      return Text(text,
-          style: TextStyle(
-              fontSize: 14,
-              color: isDark ? Colors.white70 : Colors.black87,
-              height: 1.5));
+      return Text(
+        text,
+        style: TextStyle(
+          fontSize: 14,
+          color: isDark ? Colors.white70 : Colors.black87,
+          height: 1.5,
+        ),
+      );
     }
 
     final spans = <TextSpan>[];
@@ -469,12 +468,16 @@ class _AnnouncementCardState extends State<_AnnouncementCard> {
         spans.add(TextSpan(text: text.substring(lastEnd, match.start)));
       }
       final url = match.group(1)!;
-      spans.add(TextSpan(
-        text: url,
-        style: TextStyle(
-            color: Colors.blue[400], decoration: TextDecoration.underline),
-        recognizer: TapGestureRecognizer()..onTap = () => _openUrl(url),
-      ));
+      spans.add(
+        TextSpan(
+          text: url,
+          style: TextStyle(
+            color: Colors.blue[400],
+            decoration: TextDecoration.underline,
+          ),
+          recognizer: TapGestureRecognizer()..onTap = () => _openUrl(url),
+        ),
+      );
       lastEnd = match.end;
     }
     if (lastEnd < text.length) {
@@ -484,9 +487,10 @@ class _AnnouncementCardState extends State<_AnnouncementCard> {
     return RichText(
       text: TextSpan(
         style: TextStyle(
-            fontSize: 14,
-            color: isDark ? Colors.white70 : Colors.black87,
-            height: 1.5),
+          fontSize: 14,
+          color: isDark ? Colors.white70 : Colors.black87,
+          height: 1.5,
+        ),
         children: spans,
       ),
     );

@@ -122,6 +122,13 @@ class PostProvider extends ChangeNotifier {
   }) =>
       _ensureBoard(boardId, sort: sort, type: type).hasMore;
 
+  int requestVersionFor(
+    int boardId, {
+    String sort = 'time',
+    String? type,
+  }) =>
+      _ensureBoard(boardId, sort: sort, type: type).requestVersion;
+
   Future<void> _savePostsToCache(
     int boardId,
     String sort,

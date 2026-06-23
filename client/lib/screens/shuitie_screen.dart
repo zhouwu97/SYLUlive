@@ -99,7 +99,6 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     return _feedScrollControllers[_feedMode]!;
   }
 
-  late AnimationController _animationController;
   late AnimationController _feedSwitchController;
   late Animation<double> _feedSwitchAnimation;
   double _slideDirection = 0;
@@ -139,10 +138,6 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     };
 
     WidgetsBinding.instance.addObserver(this);
-    _animationController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 700),
-    );
     _feedSwitchController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 220),
@@ -155,11 +150,15 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final postProvider = context.read<PostProvider>();
       postProvider.loadPosts(boardId: 1, sort: 'all');
-      _loadAnnouncements();
-      _loadCheckinStatus();
-      _ensureMessagesLoaded();
-      _animationController.forward();
       _startAutoRefresh();
+      
+      // 延迟加载其他非核心数据
+      Future.delayed(const Duration(seconds: 3), () {
+        if (mounted) {
+          _loadAnnouncements();
+          _ensureMessagesLoaded();
+        }
+      });
     });
   }
 
@@ -203,7 +202,6 @@ class _ShuitieScreenState extends State<ShuitieScreen>
 
     _searchController.dispose();
     _feedSwitchController.dispose();
-    _animationController.dispose();
     super.dispose();
   }
 
@@ -231,16 +229,15 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       }
 
       if (response.statusCode == 200) {
-        final all =
-            (response.data as List)
-                .map((e) => model.Announcement.fromJson(e))
-                .toList()
-              ..sort((a, b) {
-                if (a.isPinned != b.isPinned) {
-                  return a.isPinned ? -1 : 1;
-                }
-                return b.createdAt.compareTo(a.createdAt);
-              });
+        final all = (response.data as List)
+            .map((e) => model.Announcement.fromJson(e))
+            .toList()
+          ..sort((a, b) {
+            if (a.isPinned != b.isPinned) {
+              return a.isPinned ? -1 : 1;
+            }
+            return b.createdAt.compareTo(a.createdAt);
+          });
         final dismissed = await _loadDismissedIds();
         if (!mounted) return;
         setState(() {
@@ -361,8 +358,6 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     final postProvider = context.read<PostProvider>();
     await Future.wait([
       postProvider.refresh(boardId: 1, sort: sortAtStart),
-      postProvider.refresh(boardId: 2, sort: 'time'),
-      _loadCheckinStatus(),
     ]);
     if (!mounted) return;
     // 如果在刷新期间用户已切换了模式，丢弃本次结果，避免数据污染
@@ -604,6 +599,9 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       key: _scaffoldKey,
       backgroundColor: Colors.transparent,
       extendBodyBehindAppBar: true,
+      onDrawerChanged: (isOpened) {
+        if (isOpened) _loadCheckinStatus();
+      },
       drawer: HomeServiceDrawer(
         checkedIn: _checkedIn,
         streakDays: _streakDays,
@@ -748,9 +746,8 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     const tabWidth = 48.0;
     const animationDuration = Duration(milliseconds: 220);
 
-    final activeIndex = _currentModeIndex < 0
-        ? kDefaultFeedModeIndex
-        : _currentModeIndex;
+    final activeIndex =
+        _currentModeIndex < 0 ? kDefaultFeedModeIndex : _currentModeIndex;
 
     return SizedBox(
       width: tabWidth * kFeedModes.length,
@@ -794,9 +791,8 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                         curve: Curves.easeOutCubic,
                         style: TextStyle(
                           fontSize: active ? 15.5 : 15,
-                          fontWeight: active
-                              ? FontWeight.w800
-                              : FontWeight.w500,
+                          fontWeight:
+                              active ? FontWeight.w800 : FontWeight.w500,
                           color: active
                               ? (isDark ? Colors.white : Colors.black87)
                               : (isDark ? Colors.white54 : Colors.black45),
@@ -979,185 +975,179 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 680),
-          child:
-              Selector<
-                PostProvider,
-                ({List<Post> posts, bool isLoading, bool hasMore, int revision})
-              >(
-                selector: (context, postProvider) {
-                  final sort = _currentRemoteSort ?? 'all';
-                  return (
-                    posts: postProvider.postsFor(1, sort: sort),
-                    isLoading: postProvider.isLoadingFor(1, sort: sort),
-                    hasMore: postProvider.hasMoreFor(1, sort: sort),
-                    revision: postProvider.revisionFor(1, sort: sort),
-                  );
+          child: Selector<PostProvider,
+              ({List<Post> posts, bool isLoading, bool hasMore, int revision})>(
+            selector: (context, postProvider) {
+              final sort = _currentRemoteSort ?? 'all';
+              return (
+                posts: postProvider.postsFor(1, sort: sort),
+                isLoading: postProvider.isLoadingFor(1, sort: sort),
+                hasMore: postProvider.hasMoreFor(1, sort: sort),
+                revision: postProvider.revisionFor(1, sort: sort),
+              );
+            },
+            builder: (context, data, child) {
+              final posts = data.posts;
+              final isFeedLoading = data.isLoading;
+              final feedHasMore = data.hasMore;
+
+              final visiblePosts = _resolveVisiblePosts(posts);
+
+              return GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onHorizontalDragStart: _handleFeedSwipeStart,
+                onHorizontalDragUpdate: _handleFeedSwipeUpdate,
+                onHorizontalDragEnd: _handleFeedSwipe,
+                onHorizontalDragCancel: () {
+                  _feedSwipeDx = 0;
+                  _feedSwipeAccepted = false;
+                  _feedSwitchController.forward();
                 },
-                builder: (context, data, child) {
-                  final posts = data.posts;
-                  final isFeedLoading = data.isLoading;
-                  final feedHasMore = data.hasMore;
-
-                  final visiblePosts = _resolveVisiblePosts(posts);
-
-                  return GestureDetector(
-                    behavior: HitTestBehavior.translucent,
-                    onHorizontalDragStart: _handleFeedSwipeStart,
-                    onHorizontalDragUpdate: _handleFeedSwipeUpdate,
-                    onHorizontalDragEnd: _handleFeedSwipe,
-                    onHorizontalDragCancel: () {
-                      _feedSwipeDx = 0;
-                      _feedSwipeAccepted = false;
-                      _feedSwitchController.forward();
-                    },
-                    child: SlideTransition(
-                      position: Tween<Offset>(
-                        begin: Offset(_slideDirection * 0.04, 0),
-                        end: Offset.zero,
-                      ).animate(_feedSwitchAnimation),
-                      child: NotificationListener<ScrollNotification>(
-                        onNotification: (notification) {
-                          if (_currentConfig.supportsRemoteLoading &&
-                              notification.metrics.pixels >=
-                                  notification.metrics.maxScrollExtent - 500 &&
-                              feedHasMore &&
-                              !isFeedLoading) {
-                            context.read<PostProvider>().loadPosts(
+                child: SlideTransition(
+                  position: Tween<Offset>(
+                    begin: Offset(_slideDirection * 0.04, 0),
+                    end: Offset.zero,
+                  ).animate(_feedSwitchAnimation),
+                  child: NotificationListener<ScrollNotification>(
+                    onNotification: (notification) {
+                      if (_currentConfig.supportsRemoteLoading &&
+                          notification.metrics.pixels >=
+                              notification.metrics.maxScrollExtent - 500 &&
+                          feedHasMore &&
+                          !isFeedLoading) {
+                        context.read<PostProvider>().loadPosts(
                               boardId: 1,
                               sort: _currentRemoteSort ?? 'all',
                             );
-                          }
-                          return false;
-                        },
-                        child: CustomScrollView(
-                          key: PageStorageKey<String>(
-                            'home-feed-scroll-$_feedMode',
-                          ),
-                          controller: _currentFeedScrollController,
-                          physics: const AlwaysScrollableScrollPhysics(
-                            parent: BouncingScrollPhysics(),
-                          ),
-                          slivers: [
-                            // 搜索框（可折叠）
-                            SliverPersistentHeader(
-                              pinned: false,
-                              floating: true,
-                              delegate: _SliverSearchBarDelegate(
-                                vsync: this,
-                                child: Padding(
-                                  padding: const EdgeInsets.fromLTRB(
-                                    12,
-                                    2,
-                                    12,
-                                    4,
-                                  ),
-                                  child: _buildSearchBar(isDark),
-                                ),
-                              ),
-                            ),
-                            if (!_currentConfig.supportsRemoteLoading)
-                              SliverFillRemaining(
-                                hasScrollBody: false,
-                                child: _buildFollowingPlaceholder(isDark),
-                              )
-                            else if (isFeedLoading && posts.isEmpty)
-                              const SliverFillRemaining(
-                                child: Center(
-                                  child: CircularProgressIndicator(),
-                                ),
-                              )
-                            else if (visiblePosts.isEmpty)
-                              SliverFillRemaining(
-                                child: _buildEmptyState(
-                                  isDark,
-                                  title: _searchQuery.isNotEmpty
-                                      ? '没有找到匹配帖子'
-                                      : '暂无帖子',
-                                  subtitle: _searchQuery.isNotEmpty
-                                      ? '目前只按标题搜索，换个标题关键词试试'
-                                      : '发布第一条帖子吧',
-                                  onRetry: _refresh,
-                                ),
-                              )
-                            else
-                              SliverList(
-                                delegate: SliverChildBuilderDelegate((
-                                  context,
-                                  index,
-                                ) {
-                                  final post = visiblePosts[index];
-                                  final isSelected =
-                                      _selectedPost?.id == post.id &&
-                                      _selectedUserId == null &&
-                                      ResponsiveUtil.useDesktopShell(context);
-                                  return Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 12,
-                                    ),
-                                    child: Container(
-                                      decoration: isSelected
-                                          ? BoxDecoration(
-                                              borderRadius:
-                                                  BorderRadius.circular(20),
-                                              boxShadow: [
-                                                BoxShadow(
-                                                  color: Theme.of(context)
-                                                      .primaryColor
-                                                      .withValues(alpha: 0.15),
-                                                  blurRadius: 20,
-                                                  spreadRadius: 2,
-                                                ),
-                                              ],
-                                            )
-                                          : null,
-                                      child: PostCard(
-                                        post: post,
-                                        onAuthorTap: _openUserInSplit,
-                                        onTap: () {
-                                          if (ResponsiveUtil.useDesktopShell(
-                                            context,
-                                          )) {
-                                            _openPostInSplit(post);
-                                          } else {
-                                            Navigator.push(
-                                              context,
-                                              MaterialPageRoute(
-                                                builder: (_) =>
-                                                    PostDetailScreen(
-                                                      postId: post.id,
-                                                      isMarket: false,
-                                                      initialPost: post,
-                                                    ),
-                                              ),
-                                            );
-                                          }
-                                        },
-                                      ),
-                                    ),
-                                  );
-                                }, childCount: visiblePosts.length),
-                              ),
-                            if (isFeedLoading && posts.isNotEmpty)
-                              const SliverToBoxAdapter(
-                                child: Padding(
-                                  padding: EdgeInsets.symmetric(vertical: 18),
-                                  child: Center(
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            const SliverToBoxAdapter(
-                              child: SizedBox(height: 80),
-                            ),
-                          ],
-                        ),
+                      }
+                      return false;
+                    },
+                    child: CustomScrollView(
+                      key: PageStorageKey<String>(
+                        'home-feed-scroll-$_feedMode',
                       ),
+                      controller: _currentFeedScrollController,
+                      physics: const AlwaysScrollableScrollPhysics(
+                        parent: BouncingScrollPhysics(),
+                      ),
+                      slivers: [
+                        // 搜索框（可折叠）
+                        SliverPersistentHeader(
+                          pinned: false,
+                          floating: true,
+                          delegate: _SliverSearchBarDelegate(
+                            vsync: this,
+                            child: Padding(
+                              padding: const EdgeInsets.fromLTRB(
+                                12,
+                                2,
+                                12,
+                                4,
+                              ),
+                              child: _buildSearchBar(isDark),
+                            ),
+                          ),
+                        ),
+                        if (!_currentConfig.supportsRemoteLoading)
+                          SliverFillRemaining(
+                            hasScrollBody: false,
+                            child: _buildFollowingPlaceholder(isDark),
+                          )
+                        else if (isFeedLoading && posts.isEmpty)
+                          const SliverFillRemaining(
+                            child: Center(
+                              child: CircularProgressIndicator(),
+                            ),
+                          )
+                        else if (visiblePosts.isEmpty)
+                          SliverFillRemaining(
+                            child: _buildEmptyState(
+                              isDark,
+                              title:
+                                  _searchQuery.isNotEmpty ? '没有找到匹配帖子' : '暂无帖子',
+                              subtitle: _searchQuery.isNotEmpty
+                                  ? '目前只按标题搜索，换个标题关键词试试'
+                                  : '发布第一条帖子吧',
+                              onRetry: _refresh,
+                            ),
+                          )
+                        else
+                          SliverList(
+                            delegate: SliverChildBuilderDelegate((
+                              context,
+                              index,
+                            ) {
+                              final post = visiblePosts[index];
+                              final isSelected = _selectedPost?.id == post.id &&
+                                  _selectedUserId == null &&
+                                  ResponsiveUtil.useDesktopShell(context);
+                              return Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                ),
+                                child: Container(
+                                  decoration: isSelected
+                                      ? BoxDecoration(
+                                          borderRadius:
+                                              BorderRadius.circular(20),
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: Theme.of(context)
+                                                  .primaryColor
+                                                  .withValues(alpha: 0.15),
+                                              blurRadius: 20,
+                                              spreadRadius: 2,
+                                            ),
+                                          ],
+                                        )
+                                      : null,
+                                  child: PostCard(
+                                    post: post,
+                                    onAuthorTap: _openUserInSplit,
+                                    onTap: () {
+                                      if (ResponsiveUtil.useDesktopShell(
+                                        context,
+                                      )) {
+                                        _openPostInSplit(post);
+                                      } else {
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (_) => PostDetailScreen(
+                                              postId: post.id,
+                                              isMarket: false,
+                                              initialPost: post,
+                                            ),
+                                          ),
+                                        );
+                                      }
+                                    },
+                                  ),
+                                ),
+                              );
+                            }, childCount: visiblePosts.length),
+                          ),
+                        if (isFeedLoading && posts.isNotEmpty)
+                          const SliverToBoxAdapter(
+                            child: Padding(
+                              padding: EdgeInsets.symmetric(vertical: 18),
+                              child: Center(
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              ),
+                            ),
+                          ),
+                        const SliverToBoxAdapter(
+                          child: SizedBox(height: 80),
+                        ),
+                      ],
                     ),
-                  );
-                },
-              ),
+                  ),
+                ),
+              );
+            },
+          ),
         ),
       ),
     );
@@ -1169,9 +1159,8 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       borderRadius: 50,
       blur: 16,
       opacity: 0.85,
-      backgroundColor: isDark
-          ? const Color(0xE6171B24)
-          : const Color(0xF2FFFFFF),
+      backgroundColor:
+          isDark ? const Color(0xE6171B24) : const Color(0xF2FFFFFF),
       borderColor: isDark
           ? Colors.white.withValues(alpha: 0.12)
           : Colors.white.withValues(alpha: 0.85),
@@ -1267,7 +1256,7 @@ class _SliverSearchBarDelegate extends SliverPersistentHeaderDelegate {
   final Widget child;
 
   _SliverSearchBarDelegate({required TickerProvider vsync, required this.child})
-    : _vsync = vsync;
+      : _vsync = vsync;
 
   @override
   double get maxExtent => 46;

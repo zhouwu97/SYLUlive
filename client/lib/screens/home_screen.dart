@@ -887,8 +887,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         ),
         Expanded(
           child: ClipRRect(
-            child: FadeIndexedStack(
-              contentKey: _contentKey,
+            child: IndexedStack(
+              key: _contentKey,
               index: _currentIndex,
               children: [
                 const ShuitieScreen(),
@@ -905,8 +905,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Widget _buildNarrowLayout(double bottomSafe, AuthProvider authProvider) {
-    return FadeIndexedStack(
-      contentKey: _contentKey,
+    return IndexedStack(
+      key: _contentKey,
       index: _currentIndex,
       children: [
         const ShuitieScreen(),
@@ -919,81 +919,4 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 }
 
-class FadeIndexedStack extends StatefulWidget {
-  final int index;
-  final List<Widget> children;
-  final Key? contentKey;
-  final Duration duration;
 
-  const FadeIndexedStack({
-    super.key,
-    required this.index,
-    required this.children,
-    this.contentKey,
-    this.duration = const Duration(milliseconds: 300),
-  });
-
-  @override
-  State<FadeIndexedStack> createState() => _FadeIndexedStackState();
-}
-
-class _FadeIndexedStackState extends State<FadeIndexedStack>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  late Animation<Offset> _slideAnimation;
-  late Animation<double> _fadeAnimation;
-  int _direction = 1; // 1 = 向右滑入, -1 = 向左滑入
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(vsync: this, duration: widget.duration);
-    _setupAnimations();
-    _controller.forward();
-  }
-
-  void _setupAnimations() {
-    _fadeAnimation = CurvedAnimation(
-      parent: _controller,
-      curve: Curves.easeOut,
-    );
-    _slideAnimation = Tween<Offset>(
-      begin: Offset(0.15 * _direction, 0),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(
-      parent: _controller,
-      curve: Curves.easeOutCubic,
-    ));
-  }
-
-  @override
-  void didUpdateWidget(FadeIndexedStack oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.index != oldWidget.index) {
-      _direction = widget.index > oldWidget.index ? 1 : -1;
-      _setupAnimations();
-      _controller.forward(from: 0.0);
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return SlideTransition(
-      position: _slideAnimation,
-      child: FadeTransition(
-        opacity: _fadeAnimation,
-        child: IndexedStack(
-          key: widget.contentKey,
-          index: widget.index,
-          children: widget.children,
-        ),
-      ),
-    );
-  }
-}

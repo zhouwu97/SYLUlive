@@ -124,10 +124,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
       final isLocalFile = ThemeProvider.isLocalFileBackground(bgPath);
       final imageProvider = isAsset
           ? AssetImage(ThemeProvider.resolveBundledAssetPath(bgPath))
-                as ImageProvider
+              as ImageProvider
           : isLocalFile
-          ? FileImage(File(bgPath)) as ImageProvider
-          : NetworkImage(bgPath) as ImageProvider;
+              ? FileImage(File(bgPath)) as ImageProvider
+              : NetworkImage(bgPath) as ImageProvider;
       return Stack(
         fit: StackFit.expand,
         children: [
@@ -135,6 +135,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             imageProvider: imageProvider,
             isDark: isDark,
             fillScreen: themeProvider.getBackgroundFillScreenFor(context),
+            blur: themeProvider.backgroundBlur,
           ),
           Container(
             color: isDark
@@ -161,6 +162,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           alignment: Alignment.center,
           isDark: isDark,
           fillScreen: false,
+          blur: context.read<ThemeProvider>().backgroundBlur,
         ),
         Container(
           color: isDark
@@ -175,6 +177,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     required ImageProvider imageProvider,
     required bool isDark,
     required bool fillScreen,
+    required double blur,
     Alignment alignment = Alignment.center,
   }) {
     if (fillScreen) {
@@ -195,16 +198,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
         Transform.scale(
           scale: 1.06,
           child: ImageFiltered(
-            imageFilter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+            imageFilter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
             child: Image(
               image: imageProvider,
               fit: BoxFit.cover,
               alignment: alignment,
               gaplessPlayback: true,
               errorBuilder: (_, __, ___) => Container(
-                color: isDark
-                    ? const Color(0xFF131720)
-                    : const Color(0xFFF4F6FB),
+                color:
+                    isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
               ),
             ),
           ),
@@ -364,8 +366,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             trailing: Transform.scale(
               scale: 0.8,
               child: Switch(
-                value:
-                    _keepAliveStatus.supported &&
+                value: _keepAliveStatus.supported &&
                     _keepAliveStatus.hideRecentsEnabled,
                 onChanged: !_keepAliveStatus.supported || _hideRecentsBusy
                     ? null
@@ -671,9 +672,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         final crossAxisCount = isLandscape
             ? (size.width >= 900 ? 3 : 2)
             : (size.width >= 760 ? 4 : 3);
-        final dialogWidth = size.width < maxDialogWidth + 48
-            ? size.width - 48
-            : maxDialogWidth;
+        final dialogWidth =
+            size.width < maxDialogWidth + 48 ? size.width - 48 : maxDialogWidth;
         final gridMaxHeight = size.height * 0.58;
 
         return Center(
@@ -720,11 +720,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           shrinkWrap: true,
                           gridDelegate:
                               SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: crossAxisCount,
-                                crossAxisSpacing: 12,
-                                mainAxisSpacing: 12,
-                                childAspectRatio: previewRatio,
-                              ),
+                            crossAxisCount: crossAxisCount,
+                            crossAxisSpacing: 12,
+                            mainAxisSpacing: 12,
+                            childAspectRatio: previewRatio,
+                          ),
                           itemCount: backgrounds.length,
                           itemBuilder: (context, index) {
                             final value = backgrounds[index];
@@ -861,12 +861,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
   ) async {
     final remoteUrl = _remoteWallpaperUrl(assetName);
     if (remoteUrl == null) {
-      _setBackground(themeProvider, isLandscape, assetName);
+      _setBackground(themeProvider, isLandscape, assetName, fillScreen: true);
       return;
     }
 
     if (kIsWeb) {
-      _setBackground(themeProvider, isLandscape, remoteUrl);
+      _setBackground(themeProvider, isLandscape, remoteUrl, fillScreen: true);
       return;
     }
 
@@ -874,25 +874,35 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _setBackground(
         themeProvider,
         isLandscape,
-        'wallpaper_thumbs/${path.basenameWithoutExtension(assetName)}.jpg',
+        _wallpaperThumbnailAsset(assetName),
+        fillScreen: true,
       );
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('当前使用压缩预览图，登录后可自动下载高清壁纸'),
+          ),
+        );
+      }
       return;
     }
 
     try {
       final savedPath = await _downloadWallpaper(remoteUrl, assetName);
-      _setBackground(themeProvider, isLandscape, savedPath);
+      _setBackground(themeProvider, isLandscape, savedPath, fillScreen: true);
     } catch (e) {
       debugPrint('Download wallpaper failed: $e');
       _setBackground(
         themeProvider,
         isLandscape,
-        'wallpaper_thumbs/${path.basenameWithoutExtension(assetName)}.jpg',
+        _wallpaperThumbnailAsset(assetName),
+        fillScreen: true,
       );
       if (context.mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(const SnackBar(content: Text('高清壁纸下载失败，已使用内置压缩版')));
+        ).showSnackBar(const SnackBar(content: Text('高清壁纸下载失败，当前使用压缩预览图')));
       }
     }
   }

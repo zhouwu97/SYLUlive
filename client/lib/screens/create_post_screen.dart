@@ -56,8 +56,9 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     if (editingPost != null) {
       _titleController.text = editingPost.title;
       _contentController.text = editingPost.content;
-      _priceController.text =
-          editingPost.price > 0 ? editingPost.price.toString() : '';
+      _priceController.text = editingPost.price > 0
+          ? editingPost.price.toString()
+          : '';
       _contactController.text = editingPost.contact;
       _postType = editingPost.postType;
       _existingImages.addAll(editingPost.images);
@@ -77,16 +78,16 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
 
   Future<void> _pickImage(ImageSource source) async {
     try {
-      final XFile? image = await _imagePicker.pickImage(
-        source: source,
-      );
+      final XFile? image = await _imagePicker.pickImage(source: source);
       if (image != null) {
         final length = await image.length();
         if (length > 10 * 1024 * 1024) {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
-                  content: Text('图片大小不能超过 10MB'), backgroundColor: Colors.red),
+                content: Text('图片大小不能超过 10MB'),
+                backgroundColor: Colors.red,
+              ),
             );
           }
           return;
@@ -100,9 +101,9 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
           }
         } else {
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('最多只能添加9张图片')),
-            );
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(const SnackBar(content: Text('最多只能添加9张图片')));
           }
         }
       }
@@ -168,16 +169,16 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     }
 
     if (_contentController.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请输入内容')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('请输入内容')));
       return;
     }
 
     if (widget.boardId == 2 && _postType.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请选择帖子类型')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('请选择帖子类型')));
       return;
     }
 
@@ -238,8 +239,9 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         : await postProvider.createPost(
             boardId: widget.boardId,
             content: _contentController.text,
-            title:
-                _titleController.text.isNotEmpty ? _titleController.text : null,
+            title: _titleController.text.isNotEmpty
+                ? _titleController.text
+                : null,
             postType: _postType.isNotEmpty ? _postType : null,
             price: double.tryParse(_priceController.text),
             contact: _contactController.text.isNotEmpty
@@ -276,8 +278,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
           _isEditing
               ? '编辑帖子'
               : widget.boardId == 2
-                  ? (_postType == 'exposure' ? '曝光骗子' : '发布商品')
-                  : '发布水贴',
+              ? (_postType == 'exposure' ? '曝光骗子' : '发布商品')
+              : '发布水贴',
         ),
         leading: const BackButton(),
         actions: [
@@ -335,35 +337,45 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                   Expanded(
                     flex: 3,
                     child: DropdownButtonFormField<String>(
-                      decoration: const InputDecoration(
-                        labelText: '类型',
-                      ),
+                      decoration: const InputDecoration(labelText: '类型'),
                       initialValue: _postType.isEmpty ? null : _postType,
                       items: [
                         if (widget.allowedPostTypes == null ||
                             widget.allowedPostTypes!.contains('sell'))
                           const DropdownMenuItem(
-                              value: 'sell', child: Text('出售')),
+                            value: 'sell',
+                            child: Text('出售'),
+                          ),
                         if (widget.allowedPostTypes == null ||
                             widget.allowedPostTypes!.contains('buy'))
                           const DropdownMenuItem(
-                              value: 'buy', child: Text('求购')),
+                            value: 'buy',
+                            child: Text('求购'),
+                          ),
                         if (widget.allowedPostTypes == null ||
                             widget.allowedPostTypes!.contains('proxy'))
                           const DropdownMenuItem(
-                              value: 'proxy', child: Text('代课')),
+                            value: 'proxy',
+                            child: Text('代课'),
+                          ),
                         if (widget.allowedPostTypes == null ||
                             widget.allowedPostTypes!.contains('lost'))
                           const DropdownMenuItem(
-                              value: 'lost', child: Text('求问失物')),
+                            value: 'lost',
+                            child: Text('求问失物'),
+                          ),
                         if (widget.allowedPostTypes == null ||
                             widget.allowedPostTypes!.contains('found'))
                           const DropdownMenuItem(
-                              value: 'found', child: Text('寻找失主')),
+                            value: 'found',
+                            child: Text('寻找失主'),
+                          ),
                         if (widget.allowedPostTypes == null ||
                             widget.allowedPostTypes!.contains('exposure'))
                           const DropdownMenuItem(
-                              value: 'exposure', child: Text('曝光')),
+                            value: 'exposure',
+                            child: Text('曝光'),
+                          ),
                       ],
                       onChanged: (value) {
                         if (mounted) {
@@ -429,10 +441,10 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                 hintText: widget.boardId == 1
                     ? '分享你的想法...'
                     : (_postType == 'exposure'
-                        ? '详细描述被骗经过，上传截图证据...'
-                        : (_postType == 'lost'
-                            ? '描述丢失物品、时间、地点和联系方式...'
-                            : _postType == 'found'
+                          ? '详细描述被骗经过，上传截图证据...'
+                          : (_postType == 'lost'
+                                ? '描述丢失物品、时间、地点和联系方式...'
+                                : _postType == 'found'
                                 ? '描述捡到的物品、地点、时间和领取方式...'
                                 : '详细描述商品或服务...')),
                 alignLabelWithHint: true,
@@ -447,7 +459,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                 height: 100,
                 child: ListView.builder(
                   scrollDirection: Axis.horizontal,
-                  itemCount: _existingImages.length +
+                  itemCount:
+                      _existingImages.length +
                       _selectedImages.length +
                       (_canAddMoreImages ? 1 : 0),
                   itemBuilder: (context, index) {
@@ -466,8 +479,11 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                             border: Border.all(color: Colors.grey[400]!),
                             color: Colors.grey[100],
                           ),
-                          child: Icon(Icons.add,
-                              color: Colors.grey[600], size: 32),
+                          child: Icon(
+                            Icons.add,
+                            color: Colors.grey[600],
+                            size: 32,
+                          ),
                         ),
                       );
                     }
@@ -505,8 +521,11 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                                   color: Colors.black54,
                                   shape: BoxShape.circle,
                                 ),
-                                child: const Icon(Icons.close,
-                                    color: Colors.white, size: 14),
+                                child: const Icon(
+                                  Icons.close,
+                                  color: Colors.white,
+                                  size: 14,
+                                ),
                               ),
                             ),
                           ),
@@ -548,8 +567,11 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                                 color: Colors.black54,
                                 shape: BoxShape.circle,
                               ),
-                              child: const Icon(Icons.close,
-                                  color: Colors.white, size: 14),
+                              child: const Icon(
+                                Icons.close,
+                                color: Colors.white,
+                                size: 14,
+                              ),
                             ),
                           ),
                         ),

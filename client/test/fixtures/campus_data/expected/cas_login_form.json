@@ -1,5 +1,0 @@
-{
-  "pwdEncryptSalt": "TEST_SALT_1234567890_X",
-  "execution": "e1s1_TEST_EXECUTION",
-  "action": "/login?cas_login=true"
-}

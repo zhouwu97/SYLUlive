@@ -28,15 +28,51 @@ class ImageViewerScreen extends StatefulWidget {
 class _ImageBytesResult {
   final Uint8List bytes;
   final String sourceLabel;
+  final String extension;
+  final String mimeType;
 
-  const _ImageBytesResult(this.bytes, this.sourceLabel);
+  const _ImageBytesResult(
+      this.bytes, this.sourceLabel, this.extension, this.mimeType);
+}
+
+String _guessExtensionFromBytes(List<int> bytes, String fallbackExt) {
+  if (bytes.length >= 4) {
+    if (bytes[0] == 0xFF && bytes[1] == 0xD8) return 'jpg';
+    if (bytes[0] == 0x89 &&
+        bytes[1] == 0x50 &&
+        bytes[2] == 0x4E &&
+        bytes[3] == 0x47) return 'png';
+    if (bytes[0] == 0x47 && bytes[1] == 0x49 && bytes[2] == 0x46) return 'gif';
+    if (bytes.length >= 12 &&
+        bytes[0] == 0x52 &&
+        bytes[1] == 0x49 &&
+        bytes[2] == 0x46 &&
+        bytes[3] == 0x46) return 'webp';
+  }
+  return fallbackExt;
+}
+
+String _guessMimeType(String ext) {
+  switch (ext) {
+    case 'jpg':
+    case 'jpeg':
+      return 'image/jpeg';
+    case 'png':
+      return 'image/png';
+    case 'gif':
+      return 'image/gif';
+    case 'webp':
+      return 'image/webp';
+    default:
+      return 'image/png';
+  }
 }
 
 class _ImageViewerScreenState extends State<ImageViewerScreen> {
   late PageController _pageController;
   late int _currentIndex;
   bool _isSaving = false;
-  final Map<int, Uint8List> _downloadedImages = {};
+  final Map<int, _ImageBytesResult> _downloadedImages = {};
 
   @override
   void initState() {
@@ -54,9 +90,10 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
   Future<_ImageBytesResult> _loadImageBytesForSaving(String url) async {
     final alreadyDownloaded = _downloadedImages[_currentIndex];
     if (alreadyDownloaded != null) {
-      return _ImageBytesResult(alreadyDownloaded, '当前图片');
+      return alreadyDownloaded;
     }
 
+    // 尝试直接下载原始字节
     try {
       final response = await Dio().get<List<int>>(
         url,
@@ -64,20 +101,38 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
       );
       final data = response.data;
       if (data != null && data.isNotEmpty) {
-        return _ImageBytesResult(await _normalizeImageBytes(data), '原图');
+        // 解析格式
+        String ext = 'png'; // 默认
+        final contentType = response.headers.value('content-type');
+        if (contentType != null) {
+          if (contentType.contains('jpeg') || contentType.contains('jpg'))
+            ext = 'jpg';
+          else if (contentType.contains('png'))
+            ext = 'png';
+          else if (contentType.contains('webp'))
+            ext = 'webp';
+          else if (contentType.contains('gif')) ext = 'gif';
+        }
+        ext = _guessExtensionFromBytes(data, ext);
+
+        final bytes = Uint8List.fromList(data);
+        return _ImageBytesResult(bytes, '原图', ext, _guessMimeType(ext));
       }
     } catch (_) {
-      // 网络原图不可用时继续尝试本地缓存，典型场景是服务器文件丢失但手机曾经看过这张图。
+      // 网络不可用
     }
 
-    final visible = await _readVisibleImage(url);
-    if (visible != null) {
-      return _ImageBytesResult(visible, '当前显示图片');
-    }
-
+    // 尝试本地缓存
     final cached = await _readCachedImage(url);
     if (cached != null) {
-      return _ImageBytesResult(await _normalizeImageBytes(cached), '缓存图');
+      final ext = _guessExtensionFromBytes(cached, 'png');
+      return _ImageBytesResult(cached, '缓存原图', ext, _guessMimeType(ext));
+    }
+
+    // 最后才尝试渲染提取 (重编码为PNG)
+    final visible = await _readVisibleImage(url);
+    if (visible != null) {
+      return _ImageBytesResult(visible, '重新编码图片', 'png', 'image/png');
     }
 
     throw Exception('原图不可用，且本机没有找到缓存');
@@ -167,42 +222,49 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
         final request = await Gal.requestAccess();
         if (!request) {
           if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('需要相册权限才能保存图片')),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('需要相册权限才能保存图片')));
           if (mounted) setState(() => _isSaving = false);
           return;
         }
       }
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('正在保存图片，原图不可用时会尝试本地缓存...')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('正在保存图片，原图不可用时会尝试本地缓存...')));
 
       final image = await _loadImageBytesForSaving(url);
-      final String filename =
-          'sylulive_${DateTime.now().millisecondsSinceEpoch}.png';
+      final extension = switch (image.extension.toLowerCase()) {
+        'jpg' || 'jpeg' => 'jpg',
+        'png' => 'png',
+        'webp' => 'webp',
+        'gif' => 'gif',
+        _ => 'png',
+      };
+
+      final String filename = 'sylulive_${DateTime.now().millisecondsSinceEpoch}.$extension';
 
       final tempDir = await getTemporaryDirectory();
       final tempPath = '${tempDir.path}/$filename';
       final file = File(tempPath);
-      await file.writeAsBytes(image.bytes);
+      await file.writeAsBytes(image.bytes, flush: true);
 
       await Gal.putImage(tempPath, album: '沈理');
 
       if (!mounted) return;
       setState(() {
-        _downloadedImages[_currentIndex] = image.bytes;
+        _downloadedImages[_currentIndex] = image;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${image.sourceLabel}已保存到"沈理"相册')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('${image.sourceLabel}已保存到"沈理"相册')));
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('保存失败: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('保存失败: $e')));
     } finally {
       if (mounted) {
         setState(() => _isSaving = false);
@@ -249,26 +311,59 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
           }
         },
         itemBuilder: (context, index) {
-          return InteractiveViewer(
-            child: Center(
-              child: _downloadedImages.containsKey(index)
-                  ? Image.memory(
-                      _downloadedImages[index]!,
-                      fit: BoxFit.contain,
-                    )
-                  : CachedNetworkImage(
-                      cacheManager: PostImageCache.manager,
-                      imageUrl: widget.imageUrls[index],
-                      fit: BoxFit.contain,
-                      placeholder: (context, url) => const Center(
-                        child: CircularProgressIndicator(color: Colors.white),
+          return GestureDetector(
+            onLongPress: () {
+              showModalBottomSheet(
+                context: context,
+                backgroundColor: Colors.transparent,
+                builder: (context) => Container(
+                  margin: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).brightness == Brightness.dark
+                        ? const Color(0xFF1E1E1E)
+                        : Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      ListTile(
+                        leading: const Icon(Icons.download),
+                        title: const Text('保存原图'),
+                        onTap: () {
+                          Navigator.pop(context);
+                          _saveImage();
+                        },
                       ),
-                      errorWidget: (context, url, error) => const Icon(
-                        Icons.error,
-                        color: Colors.white,
-                        size: 48,
+                      ListTile(
+                        leading: const Icon(Icons.close),
+                        title: const Text('取消'),
+                        onTap: () => Navigator.pop(context),
                       ),
-                    ),
+                    ],
+                  ),
+                ),
+              );
+            },
+            child: InteractiveViewer(
+              child: Center(
+                child: _downloadedImages.containsKey(index)
+                    ? Image.memory(_downloadedImages[index]!.bytes,
+                        fit: BoxFit.contain)
+                    : CachedNetworkImage(
+                        cacheManager: PostImageCache.manager,
+                        imageUrl: widget.imageUrls[index],
+                        fit: BoxFit.contain,
+                        placeholder: (context, url) => const Center(
+                          child: CircularProgressIndicator(color: Colors.white),
+                        ),
+                        errorWidget: (context, url, error) => const Icon(
+                          Icons.error,
+                          color: Colors.white,
+                          size: 48,
+                        ),
+                      ),
+              ),
             ),
           );
         },

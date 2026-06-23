@@ -21,10 +21,7 @@ class AvatarCache {
   }) {
     return _providers.putIfAbsent(
       url,
-      () => CachedNetworkImageProvider(
-        url,
-        cacheManager: manager,
-      ),
+      () => CachedNetworkImageProvider(url, cacheManager: manager),
     );
   }
 
@@ -94,10 +91,7 @@ class _CachedAvatarState extends State<CachedAvatar> {
     final effectiveUrl = _effectiveUrl(url);
     if (effectiveUrl == _providerUrl && _imageProvider != null) return;
     _providerUrl = effectiveUrl;
-    _imageProvider = AvatarCache.provider(
-      effectiveUrl,
-      radius: widget.radius,
-    );
+    _imageProvider = AvatarCache.provider(effectiveUrl, radius: widget.radius);
     precacheImage(_imageProvider!, context).catchError((_) {
       _scheduleRetryAfterError();
     });

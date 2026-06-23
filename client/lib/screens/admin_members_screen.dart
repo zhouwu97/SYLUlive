@@ -47,8 +47,9 @@ class _AdminMembersScreenState extends State<AdminMembersScreen> {
     final auth = context.watch<AuthProvider>();
 
     return Scaffold(
-      backgroundColor:
-          isDark ? const Color(0xFF10131A) : const Color(0xFFF4F6FB),
+      backgroundColor: isDark
+          ? const Color(0xFF10131A)
+          : const Color(0xFFF4F6FB),
       appBar: AppBar(
         title: const Text('管理人员'),
         backgroundColor: Colors.transparent,
@@ -83,17 +84,20 @@ class _AdminMembersScreenState extends State<AdminMembersScreen> {
             );
           }
 
-          final members = (snap.data ?? const [])
-              .where((u) => u['role'] == 'admin' || u['role'] == 'super_admin')
-              .toList()
-            ..sort((a, b) {
-              final roleA = a['role'] == 'super_admin' ? 0 : 1;
-              final roleB = b['role'] == 'super_admin' ? 0 : 1;
-              if (roleA != roleB) return roleA.compareTo(roleB);
-              return (a['nickname'] ?? '').toString().compareTo(
+          final members =
+              (snap.data ?? const [])
+                  .where(
+                    (u) => u['role'] == 'admin' || u['role'] == 'super_admin',
+                  )
+                  .toList()
+                ..sort((a, b) {
+                  final roleA = a['role'] == 'super_admin' ? 0 : 1;
+                  final roleB = b['role'] == 'super_admin' ? 0 : 1;
+                  if (roleA != roleB) return roleA.compareTo(roleB);
+                  return (a['nickname'] ?? '').toString().compareTo(
                     (b['nickname'] ?? '').toString(),
                   );
-            });
+                });
 
           if (members.isEmpty) {
             return const Center(child: Text('暂无管理人员'));
@@ -125,8 +129,9 @@ class _AdminMembersScreenState extends State<AdminMembersScreen> {
                         width: 46,
                         height: 46,
                         decoration: BoxDecoration(
-                          color:
-                              const Color(0xFF6D5EF9).withValues(alpha: 0.14),
+                          color: const Color(
+                            0xFF6D5EF9,
+                          ).withValues(alpha: 0.14),
                           borderRadius: BorderRadius.circular(14),
                         ),
                         child: const Icon(
@@ -182,8 +187,9 @@ class _AdminMembersScreenState extends State<AdminMembersScreen> {
                       ),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black
-                              .withValues(alpha: isDark ? 0.16 : 0.04),
+                          color: Colors.black.withValues(
+                            alpha: isDark ? 0.16 : 0.04,
+                          ),
                           blurRadius: 20,
                           offset: const Offset(0, 8),
                         ),
@@ -255,8 +261,9 @@ class _AdminMembersScreenState extends State<AdminMembersScreen> {
                                     : '未填写学号',
                                 style: TextStyle(
                                   fontSize: 13,
-                                  color:
-                                      isDark ? Colors.white60 : Colors.black54,
+                                  color: isDark
+                                      ? Colors.white60
+                                      : Colors.black54,
                                 ),
                               ),
                             ],
@@ -269,8 +276,9 @@ class _AdminMembersScreenState extends State<AdminMembersScreen> {
                               vertical: 6,
                             ),
                             decoration: BoxDecoration(
-                              color: const Color(0xFF22C55E)
-                                  .withValues(alpha: 0.12),
+                              color: const Color(
+                                0xFF22C55E,
+                              ).withValues(alpha: 0.12),
                               borderRadius: BorderRadius.circular(999),
                             ),
                             child: const Text(

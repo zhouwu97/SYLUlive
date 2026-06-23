@@ -101,7 +101,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 physics: const BouncingScrollPhysics(),
                 children: [
                   _buildSettingsSection(
-                      context, themeProvider, authProvider, isDark),
+                    context,
+                    themeProvider,
+                    authProvider,
+                    isDark,
+                  ),
                   const SizedBox(height: 40),
                 ],
               ),
@@ -124,17 +128,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
           : isLocalFile
               ? FileImage(File(bgPath)) as ImageProvider
               : NetworkImage(bgPath) as ImageProvider;
-      return Stack(fit: StackFit.expand, children: [
-        _buildBackgroundImage(
-          imageProvider: imageProvider,
-          isDark: isDark,
-          fillScreen: themeProvider.getBackgroundFillScreenFor(context),
-        ),
-        Container(
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          _buildBackgroundImage(
+            imageProvider: imageProvider,
+            isDark: isDark,
+            fillScreen: themeProvider.getBackgroundFillScreenFor(context),
+            blur: themeProvider.backgroundBlur,
+          ),
+          Container(
             color: isDark
                 ? Colors.black.withValues(alpha: 0.4)
-                : Colors.white.withValues(alpha: 0.3)),
-      ]);
+                : Colors.white.withValues(alpha: 0.3),
+          ),
+        ],
+      );
     }
     return _buildDefaultBackground(isDark);
   }
@@ -153,11 +162,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
           alignment: Alignment.center,
           isDark: isDark,
           fillScreen: false,
+          blur: context.read<ThemeProvider>().backgroundBlur,
         ),
         Container(
-            color: isDark
-                ? Colors.black.withValues(alpha: 0.35)
-                : Colors.white.withValues(alpha: 0.25)),
+          color: isDark
+              ? Colors.black.withValues(alpha: 0.35)
+              : Colors.white.withValues(alpha: 0.25),
+        ),
       ],
     );
   }
@@ -166,6 +177,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     required ImageProvider imageProvider,
     required bool isDark,
     required bool fillScreen,
+    required double blur,
     Alignment alignment = Alignment.center,
   }) {
     if (fillScreen) {
@@ -186,7 +198,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         Transform.scale(
           scale: 1.06,
           child: ImageFiltered(
-            imageFilter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+            imageFilter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
             child: Image(
               image: imageProvider,
               fit: BoxFit.cover,
@@ -210,198 +222,213 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Widget _buildSettingsSection(BuildContext context,
-      ThemeProvider themeProvider, AuthProvider authProvider, bool isDark) {
+  Widget _buildSettingsSection(
+    BuildContext context,
+    ThemeProvider themeProvider,
+    AuthProvider authProvider,
+    bool isDark,
+  ) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // 背景设置 — 独立卡片
         _buildSettingsRow(
-            child: _buildSettingsTile(
-          icon: Icons.wallpaper,
-          iconColor: Colors.purple,
-          title: '自定义背景',
-          subtitle: '默认或竖屏时显示的背景',
-          isDark: isDark,
-          onTap: () => _showBackgroundPicker(context, themeProvider, false),
-        )),
-        _buildSettingsRow(
-            child: _buildSettingsTile(
-          icon: Icons.landscape,
-          iconColor: Colors.purpleAccent,
-          title: '横屏自定义背景',
-          subtitle: '平板或宽屏下显示的专属横向背景',
-          isDark: isDark,
-          onTap: () => _showBackgroundPicker(context, themeProvider, true),
-        )),
-        _buildSettingsRow(
-            child: _buildSettingsTile(
-          icon: Icons.opacity,
-          iconColor: Colors.teal,
-          title: '组件透明度',
-          trailing: SizedBox(
-            width: 120,
-            height: 32,
-            child: Slider(
-              value: themeProvider.componentOpacity,
-              min: 0.0,
-              max: 1.0,
-              onChanged: (v) => themeProvider.setComponentOpacity(v),
-              activeColor: Theme.of(context).primaryColor,
-            ),
+          child: _buildSettingsTile(
+            icon: Icons.wallpaper,
+            iconColor: Colors.purple,
+            title: '自定义背景',
+            subtitle: '默认或竖屏时显示的背景',
+            isDark: isDark,
+            onTap: () => _showBackgroundPicker(context, themeProvider, false),
           ),
-          isDark: isDark,
-        )),
+        ),
         _buildSettingsRow(
-            child: _buildSettingsTile(
-          icon: Icons.restore,
-          iconColor: Colors.orange,
-          title: '默认壁纸',
-          subtitle: '恢复为系统默认背景',
-          isDark: isDark,
-          onTap: () => _showRestoreDefaultDialog(context, themeProvider),
-        )),
+          child: _buildSettingsTile(
+            icon: Icons.landscape,
+            iconColor: Colors.purpleAccent,
+            title: '横屏自定义背景',
+            subtitle: '平板或宽屏下显示的专属横向背景',
+            isDark: isDark,
+            onTap: () => _showBackgroundPicker(context, themeProvider, true),
+          ),
+        ),
+        _buildSettingsRow(
+          child: _buildSettingsTile(
+            icon: Icons.opacity,
+            iconColor: Colors.teal,
+            title: '组件透明度',
+            trailing: SizedBox(
+              width: 120,
+              height: 32,
+              child: Slider(
+                value: themeProvider.componentOpacity,
+                min: 0.0,
+                max: 1.0,
+                onChanged: (v) => themeProvider.setComponentOpacity(v),
+                activeColor: Theme.of(context).primaryColor,
+              ),
+            ),
+            isDark: isDark,
+          ),
+        ),
+        _buildSettingsRow(
+          child: _buildSettingsTile(
+            icon: Icons.restore,
+            iconColor: Colors.orange,
+            title: '默认壁纸',
+            subtitle: '恢复为系统默认背景',
+            isDark: isDark,
+            onTap: () => _showRestoreDefaultDialog(context, themeProvider),
+          ),
+        ),
 
         const SizedBox(height: 8),
 
         // 视觉效果 — 独立卡片
         _buildSettingsRow(
-            child: _buildSettingsTile(
-          icon: Icons.blur_on,
-          iconColor: Colors.indigo,
-          title: '液态玻璃效果',
-          trailing: Transform.scale(
-            scale: 0.8,
-            child: Switch(
-              value: themeProvider.liquidGlass,
-              onChanged: (v) =>
-                  _showLiquidGlassWarningDialog(context, themeProvider, v),
-              activeColor: Theme.of(context).primaryColor,
+          child: _buildSettingsTile(
+            icon: Icons.blur_on,
+            iconColor: Colors.indigo,
+            title: '液态玻璃效果',
+            trailing: Transform.scale(
+              scale: 0.8,
+              child: Switch(
+                value: themeProvider.liquidGlass,
+                onChanged: (v) =>
+                    _showLiquidGlassWarningDialog(context, themeProvider, v),
+                activeColor: Theme.of(context).primaryColor,
+              ),
             ),
+            isDark: isDark,
           ),
-          isDark: isDark,
-        )),
+        ),
         _buildSettingsRow(
-            child: _buildSettingsTile(
-          icon: Icons.navigation,
-          iconColor: Colors.orange,
-          title: '悬浮底栏',
-          trailing: Transform.scale(
-            scale: 0.8,
-            child: Switch(
-              value: themeProvider.floatingNavBar,
-              onChanged: (v) => themeProvider.setFloatingNavBar(v),
-              activeColor: Theme.of(context).primaryColor,
+          child: _buildSettingsTile(
+            icon: Icons.navigation,
+            iconColor: Colors.orange,
+            title: '悬浮底栏',
+            trailing: Transform.scale(
+              scale: 0.8,
+              child: Switch(
+                value: themeProvider.floatingNavBar,
+                onChanged: (v) => themeProvider.setFloatingNavBar(v),
+                activeColor: Theme.of(context).primaryColor,
+              ),
             ),
+            isDark: isDark,
           ),
-          isDark: isDark,
-        )),
+        ),
         _buildSettingsRow(
-            child: _buildSettingsTile(
-          icon: Icons.swipe,
-          iconColor: Colors.blue,
-          title: '预测性返回手势',
-          subtitle: 'Android 侧滑返回时预览上一页，关闭后仅顶部返回按钮可用',
-          trailing: Transform.scale(
-            scale: 0.8,
-            child: Switch(
-              value: themeProvider.predictiveBack,
-              onChanged: (v) => themeProvider.setPredictiveBack(v),
-              activeColor: Theme.of(context).primaryColor,
+          child: _buildSettingsTile(
+            icon: Icons.swipe,
+            iconColor: Colors.blue,
+            title: '预测性返回手势',
+            subtitle: 'Android 侧滑返回时预览上一页，关闭后仅顶部返回按钮可用',
+            trailing: Transform.scale(
+              scale: 0.8,
+              child: Switch(
+                value: themeProvider.predictiveBack,
+                onChanged: (v) => themeProvider.setPredictiveBack(v),
+                activeColor: Theme.of(context).primaryColor,
+              ),
             ),
+            isDark: isDark,
           ),
-          isDark: isDark,
-        )),
+        ),
         _buildSettingsRow(
-            child: _buildSettingsTile(
-          icon: Icons.battery_saver,
-          iconColor: Colors.green,
-          title: '后台保活',
-          subtitle: _keepAliveSubtitle(),
-          trailing: Transform.scale(
-            scale: 0.8,
-            child: Switch(
-              value: _keepAliveStatus.supported && _keepAliveStatus.enabled,
-              onChanged: !_keepAliveStatus.supported || _keepAliveBusy
-                  ? null
-                  : _setKeepAliveEnabled,
-              activeThumbColor: Theme.of(context).primaryColor,
+          child: _buildSettingsTile(
+            icon: Icons.battery_saver,
+            iconColor: Colors.green,
+            title: '后台保活',
+            subtitle: _keepAliveSubtitle(),
+            trailing: Transform.scale(
+              scale: 0.8,
+              child: Switch(
+                value: _keepAliveStatus.supported && _keepAliveStatus.enabled,
+                onChanged: !_keepAliveStatus.supported || _keepAliveBusy
+                    ? null
+                    : _setKeepAliveEnabled,
+                activeThumbColor: Theme.of(context).primaryColor,
+              ),
             ),
+            isDark: isDark,
+            onTap: _keepAliveStatus.supported
+                ? () => KeepAliveService.instance.openSettings()
+                : null,
           ),
-          isDark: isDark,
-          onTap: _keepAliveStatus.supported
-              ? () => KeepAliveService.instance.openSettings()
-              : null,
-        )),
+        ),
         _buildSettingsRow(
-            child: _buildSettingsTile(
-          icon: Icons.layers_clear,
-          iconColor: Colors.deepPurple,
-          title: '隐藏后台卡片',
-          subtitle: _hideRecentsSubtitle(),
-          trailing: Transform.scale(
-            scale: 0.8,
-            child: Switch(
-              value: _keepAliveStatus.supported &&
-                  _keepAliveStatus.hideRecentsEnabled,
-              onChanged: !_keepAliveStatus.supported || _hideRecentsBusy
-                  ? null
-                  : _setHideRecentsEnabled,
-              activeThumbColor: Theme.of(context).primaryColor,
+          child: _buildSettingsTile(
+            icon: Icons.layers_clear,
+            iconColor: Colors.deepPurple,
+            title: '隐藏后台卡片',
+            subtitle: _hideRecentsSubtitle(),
+            trailing: Transform.scale(
+              scale: 0.8,
+              child: Switch(
+                value: _keepAliveStatus.supported &&
+                    _keepAliveStatus.hideRecentsEnabled,
+                onChanged: !_keepAliveStatus.supported || _hideRecentsBusy
+                    ? null
+                    : _setHideRecentsEnabled,
+                activeThumbColor: Theme.of(context).primaryColor,
+              ),
             ),
+            isDark: isDark,
           ),
-          isDark: isDark,
-        )),
+        ),
         _buildSettingsRow(
-            child: _buildSettingsTile(
-          icon: Icons.dark_mode,
-          iconColor: isDark ? Colors.indigo : Colors.indigo,
-          title: '夜间模式',
-          trailing: Transform.scale(
-            scale: 0.8,
-            child: Switch(
-              value: themeProvider.isDarkMode,
-              onChanged: (v) => themeProvider.setDarkMode(v),
-              activeColor: Theme.of(context).primaryColor,
+          child: _buildSettingsTile(
+            icon: Icons.dark_mode,
+            iconColor: isDark ? Colors.indigo : Colors.indigo,
+            title: '夜间模式',
+            trailing: Transform.scale(
+              scale: 0.8,
+              child: Switch(
+                value: themeProvider.isDarkMode,
+                onChanged: (v) => themeProvider.setDarkMode(v),
+                activeColor: Theme.of(context).primaryColor,
+              ),
             ),
+            isDark: isDark,
           ),
-          isDark: isDark,
-        )),
+        ),
 
         const SizedBox(height: 8),
 
         // 账号 — 独立卡片
         _buildSettingsRow(
-            child: _buildSettingsTile(
-          icon: Icons.receipt_long_rounded,
-          iconColor: Colors.blue,
-          title: '查看日志',
-          subtitle: '查看保活、推送和异常记录',
-          isDark: isDark,
-          onTap: () {
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => const DiagnosticLogScreen(),
-              ),
-            );
-          },
-        )),
+          child: _buildSettingsTile(
+            icon: Icons.receipt_long_rounded,
+            iconColor: Colors.blue,
+            title: '查看日志',
+            subtitle: '查看保活、推送和异常记录',
+            isDark: isDark,
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const DiagnosticLogScreen()),
+              );
+            },
+          ),
+        ),
         _buildSettingsRow(
-            child: _buildSettingsTile(
-          icon: Icons.lock,
-          iconColor: Colors.orange,
-          title: '修改密码',
-          isDark: isDark,
-          onTap: () => _showChangePasswordDialog(context, authProvider),
-        )),
+          child: _buildSettingsTile(
+            icon: Icons.lock,
+            iconColor: Colors.orange,
+            title: '修改密码',
+            isDark: isDark,
+            onTap: () => _showChangePasswordDialog(context, authProvider),
+          ),
+        ),
         _buildSettingsRow(
-            child: _buildSettingsTile(
-          icon: Icons.info,
-          iconColor: Colors.blue,
-          title: '关于',
-          isDark: isDark,
-          onTap: () => _showAboutDialog(context),
-        )),
+          child: _buildSettingsTile(
+            icon: Icons.info,
+            iconColor: Colors.blue,
+            title: '关于',
+            isDark: isDark,
+            onTap: () => _showAboutDialog(context),
+          ),
+        ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
           child: SizedBox(
@@ -414,10 +441,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
               style: OutlinedButton.styleFrom(
                 foregroundColor: isDark ? Colors.white70 : Colors.grey[700],
                 side: BorderSide(
-                    color: isDark ? Colors.white24 : Colors.grey[300]!),
+                  color: isDark ? Colors.white24 : Colors.grey[300]!,
+                ),
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16)),
+                  borderRadius: BorderRadius.circular(16),
+                ),
               ),
             ),
           ),
@@ -583,20 +612,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                     if (subtitle != null) ...[
                       const SizedBox(height: 2),
-                      Text(subtitle,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                              color: isDark ? Colors.white54 : Colors.grey[600],
-                              fontSize: 11)),
+                      Text(
+                        subtitle,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: isDark ? Colors.white54 : Colors.grey[600],
+                          fontSize: 11,
+                        ),
+                      ),
                     ],
                   ],
                 ),
               ),
               if (trailing != null) trailing,
               if (trailing == null && onTap != null)
-                Icon(Icons.chevron_right,
-                    size: 18,
-                    color: isDark ? Colors.white30 : Colors.grey[400]),
+                Icon(
+                  Icons.chevron_right,
+                  size: 18,
+                  color: isDark ? Colors.white30 : Colors.grey[400],
+                ),
             ],
           ),
         ),
@@ -605,7 +639,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   void _showBackgroundPicker(
-      BuildContext context, ThemeProvider themeProvider, bool isLandscape) {
+    BuildContext context,
+    ThemeProvider themeProvider,
+    bool isLandscape,
+  ) {
     final backgrounds = [
       if (isLandscape) ...[
         'tablet_landscape_01.png',
@@ -816,16 +853,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return 'assets/images/wallpaper_thumbs/${path.basenameWithoutExtension(assetName)}.jpg';
   }
 
-  Future<void> _useBundledBackground(BuildContext context,
-      ThemeProvider themeProvider, String assetName, bool isLandscape) async {
+  Future<void> _useBundledBackground(
+    BuildContext context,
+    ThemeProvider themeProvider,
+    String assetName,
+    bool isLandscape,
+  ) async {
     final remoteUrl = _remoteWallpaperUrl(assetName);
     if (remoteUrl == null) {
-      _setBackground(themeProvider, isLandscape, assetName);
+      _setBackground(themeProvider, isLandscape, assetName, fillScreen: true);
       return;
     }
 
     if (kIsWeb) {
-      _setBackground(themeProvider, isLandscape, remoteUrl);
+      _setBackground(themeProvider, isLandscape, remoteUrl, fillScreen: true);
       return;
     }
 
@@ -833,25 +874,35 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _setBackground(
         themeProvider,
         isLandscape,
-        'wallpaper_thumbs/${path.basenameWithoutExtension(assetName)}.jpg',
+        _wallpaperThumbnailAsset(assetName),
+        fillScreen: true,
       );
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('当前使用压缩预览图，登录后可自动下载高清壁纸'),
+          ),
+        );
+      }
       return;
     }
 
     try {
       final savedPath = await _downloadWallpaper(remoteUrl, assetName);
-      _setBackground(themeProvider, isLandscape, savedPath);
+      _setBackground(themeProvider, isLandscape, savedPath, fillScreen: true);
     } catch (e) {
       debugPrint('Download wallpaper failed: $e');
       _setBackground(
         themeProvider,
         isLandscape,
-        'wallpaper_thumbs/${path.basenameWithoutExtension(assetName)}.jpg',
+        _wallpaperThumbnailAsset(assetName),
+        fillScreen: true,
       );
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('高清壁纸下载失败，已使用内置压缩版')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('高清壁纸下载失败，当前使用压缩预览图')));
       }
     }
   }
@@ -859,16 +910,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<String> _downloadWallpaper(String url, String fileName) async {
     final savedPath = await WallpaperPrefetchService.localPathFor(fileName);
     await WallpaperPrefetchService.downloadAndVerifyImage(
-        Dio(), url, savedPath);
+      Dio(),
+      url,
+      savedPath,
+    );
     return savedPath;
   }
 
-  Future<void> _editBundledBackground(BuildContext context,
-      ThemeProvider themeProvider, String assetName, bool isLandscape) async {
+  Future<void> _editBundledBackground(
+    BuildContext context,
+    ThemeProvider themeProvider,
+    String assetName,
+    bool isLandscape,
+  ) async {
     if (kIsWeb) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('网页版可直接使用内置壁纸，编辑请从相册选择图片')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('网页版可直接使用内置壁纸，编辑请从相册选择图片')));
       return;
     }
 
@@ -892,8 +950,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
       String? savedPath;
       try {
-        savedPath =
-            await _cropAndSaveBackground(sourcePath, isLandscape: isLandscape);
+        savedPath = await _cropAndSaveBackground(
+          sourcePath,
+          isLandscape: isLandscape,
+        );
       } catch (e) {
         debugPrint('Crop failed, possibly corrupted file: $e');
         if (useRemote &&
@@ -905,37 +965,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
           final fallbackSource = await _copyAssetToTempFile(
             'wallpaper_thumbs/${path.basenameWithoutExtension(assetName)}.jpg',
           );
-          savedPath = await _cropAndSaveBackground(fallbackSource,
-              isLandscape: isLandscape);
+          savedPath = await _cropAndSaveBackground(
+            fallbackSource,
+            isLandscape: isLandscape,
+          );
         } else {
           rethrow;
         }
       }
 
       if (savedPath == null) return;
-      _setBackground(
-        themeProvider,
-        isLandscape,
-        savedPath,
-        fillScreen: true,
-      );
+      _setBackground(themeProvider, isLandscape, savedPath, fillScreen: true);
       if (context.mounted) Navigator.pop(context);
     } catch (e) {
       debugPrint('Edit bundled background failed: $e');
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('编辑背景失败'),
-            backgroundColor: Colors.red,
-          ),
+          const SnackBar(content: Text('编辑背景失败'), backgroundColor: Colors.red),
         );
       }
     }
   }
 
   Future<String> _copyAssetToTempFile(String assetName) async {
-    final data =
-        await rootBundle.load(ThemeProvider.resolveBundledAssetPath(assetName));
+    final data = await rootBundle.load(
+      ThemeProvider.resolveBundledAssetPath(assetName),
+    );
     final tempDir = await getTemporaryDirectory();
     final sourcePath = path.join(
       tempDir.path,
@@ -960,21 +1015,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ? await _cropAndSaveBackground(image.path, isLandscape: isLandscape)
           : await _saveBackgroundFile(image.path, isLandscape: isLandscape);
       if (savedPath == null) return;
-      _setBackground(
-        themeProvider,
-        isLandscape,
-        savedPath,
-        fillScreen: edit,
-      );
+      _setBackground(themeProvider, isLandscape, savedPath, fillScreen: edit);
       if (context.mounted) Navigator.pop(context);
     } catch (e) {
       debugPrint('Pick gallery background failed: $e');
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('设置背景失败'),
-            backgroundColor: Colors.red,
-          ),
+          const SnackBar(content: Text('设置背景失败'), backgroundColor: Colors.red),
         );
       }
     }
@@ -994,10 +1041,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         : (isWideScreen ? 16.0 : screenSize.height);
     final cropped = await ImageCropper().cropImage(
       sourcePath: sourcePath,
-      aspectRatio: CropAspectRatio(
-        ratioX: targetRatioX,
-        ratioY: targetRatioY,
-      ),
+      aspectRatio: CropAspectRatio(ratioX: targetRatioX, ratioY: targetRatioY),
       uiSettings: [
         AndroidUiSettings(
           toolbarTitle: isLandscape ? '裁剪横屏背景' : '裁剪竖屏背景',
@@ -1078,7 +1122,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   void _showRestoreDefaultDialog(
-      BuildContext context, ThemeProvider themeProvider) {
+    BuildContext context,
+    ThemeProvider themeProvider,
+  ) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -1087,14 +1133,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
         content: const Text('将清除当前自定义背景，所有页面恢复为系统默认壁纸。'),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
           TextButton(
             onPressed: () {
               themeProvider.clearBackground();
               Navigator.pop(ctx);
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
-                    content: Text('已恢复默认壁纸'), backgroundColor: Colors.green),
+                  content: Text('已恢复默认壁纸'),
+                  backgroundColor: Colors.green,
+                ),
               );
             },
             child: const Text('确认恢复', style: TextStyle(color: Colors.red)),
@@ -1105,7 +1155,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   void _showLiquidGlassWarningDialog(
-      BuildContext context, ThemeProvider themeProvider, bool enable) {
+    BuildContext context,
+    ThemeProvider themeProvider,
+    bool enable,
+  ) {
     if (!enable) {
       themeProvider.setLiquidGlass(false);
       return;
@@ -1114,30 +1167,40 @@ class _SettingsScreenState extends State<SettingsScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Row(children: [
-          Icon(Icons.warning_amber_rounded,
-              color: Colors.orange.shade400, size: 28),
-          const SizedBox(width: 12),
-          const Text('性能警告'),
-        ]),
-        content: const Text('液态玻璃效果基于模糊算法实现，在部分设备上可能会造成卡顿。',
-            style: TextStyle(height: 1.5)),
+        title: Row(
+          children: [
+            Icon(
+              Icons.warning_amber_rounded,
+              color: Colors.orange.shade400,
+              size: 28,
+            ),
+            const SizedBox(width: 12),
+            const Text('性能警告'),
+          ],
+        ),
+        content: const Text(
+          '液态玻璃效果基于模糊算法实现，在部分设备上可能会造成卡顿。',
+          style: TextStyle(height: 1.5),
+        ),
         actions: [
           TextButton(
-              onPressed: () {
-                Navigator.pop(ctx);
-              },
-              child: const Text('了解，但继续开启')),
+            onPressed: () {
+              Navigator.pop(ctx);
+            },
+            child: const Text('了解，但继续开启'),
+          ),
           ElevatedButton(
             onPressed: () {
               Navigator.pop(ctx);
               themeProvider.setLiquidGlass(true);
             },
             style: ElevatedButton.styleFrom(
-                backgroundColor: Theme.of(context).primaryColor,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12))),
+              backgroundColor: Theme.of(context).primaryColor,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
             child: const Text('开启'),
           ),
         ],
@@ -1146,29 +1209,36 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _showEditProfileDialog(
-      BuildContext context, AuthProvider authProvider) async {
+    BuildContext context,
+    AuthProvider authProvider,
+  ) async {
     final controller = TextEditingController(text: authProvider.user?.nickname);
     await showDialog(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('编辑资料'),
         content: TextField(
-            controller: controller,
-            decoration: const InputDecoration(labelText: '昵称')),
+          controller: controller,
+          decoration: const InputDecoration(labelText: '昵称'),
+        ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(context), child: const Text('取消')),
+            onPressed: () => Navigator.pop(context),
+            child: const Text('取消'),
+          ),
           ElevatedButton(
             onPressed: () async {
               final result = await authProvider.updateProfile(controller.text);
               if (context.mounted) {
                 Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                  content: Text(result.success
-                      ? '更新成功'
-                      : (result.errorMessage ?? '更新失败')),
-                  backgroundColor: result.success ? Colors.green : Colors.red,
-                ));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      result.success ? '更新成功' : (result.errorMessage ?? '更新失败'),
+                    ),
+                    backgroundColor: result.success ? Colors.green : Colors.red,
+                  ),
+                );
               }
             },
             child: const Text('保存'),
@@ -1180,39 +1250,52 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _showChangePasswordDialog(
-      BuildContext context, AuthProvider authProvider) async {
+    BuildContext context,
+    AuthProvider authProvider,
+  ) async {
     final oldController = TextEditingController();
     final newController = TextEditingController();
     await showDialog(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('修改密码'),
-        content: Column(mainAxisSize: MainAxisSize.min, children: [
-          TextField(
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
               controller: oldController,
               decoration: const InputDecoration(labelText: '旧密码'),
-              obscureText: true),
-          const SizedBox(height: 16),
-          TextField(
+              obscureText: true,
+            ),
+            const SizedBox(height: 16),
+            TextField(
               controller: newController,
               decoration: const InputDecoration(labelText: '新密码'),
-              obscureText: true),
-        ]),
+              obscureText: true,
+            ),
+          ],
+        ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(context), child: const Text('取消')),
+            onPressed: () => Navigator.pop(context),
+            child: const Text('取消'),
+          ),
           ElevatedButton(
             onPressed: () async {
               final result = await authProvider.changePassword(
-                  oldController.text, newController.text);
+                oldController.text,
+                newController.text,
+              );
               if (context.mounted) {
                 Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                  content: Text(result.success
-                      ? '修改成功'
-                      : (result.errorMessage ?? '修改失败')),
-                  backgroundColor: result.success ? Colors.green : Colors.red,
-                ));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      result.success ? '修改成功' : (result.errorMessage ?? '修改失败'),
+                    ),
+                    backgroundColor: result.success ? Colors.green : Colors.red,
+                  ),
+                );
               }
             },
             child: const Text('确认'),
@@ -1244,10 +1327,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         builder: (context, value, child) {
           return Transform.translate(
             offset: Offset(0, 50 * (1 - value)),
-            child: Opacity(
-              opacity: value,
-              child: child,
-            ),
+            child: Opacity(opacity: value, child: child),
           );
         },
         child: Container(
@@ -1296,10 +1376,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     duration: const Duration(milliseconds: 800),
                     curve: Curves.elasticOut,
                     builder: (context, scale, child) {
-                      return Transform.scale(
-                        scale: scale,
-                        child: child,
-                      );
+                      return Transform.scale(scale: scale, child: child);
                     },
                     child: Container(
                       width: 90,
@@ -1319,8 +1396,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           ),
                         ],
                       ),
-                      child: const Icon(Icons.school_rounded,
-                          color: Colors.white, size: 48),
+                      child: const Icon(
+                        Icons.school_rounded,
+                        color: Colors.white,
+                        size: 48,
+                      ),
                     ),
                   ),
                   const SizedBox(height: 20),
@@ -1344,8 +1424,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                   const SizedBox(height: 12),
                   Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 6,
+                    ),
                     decoration: BoxDecoration(
                       color: primary.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(20),
@@ -1378,11 +1460,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         colors: isDark
                             ? [
                                 Colors.white.withOpacity(0.05),
-                                Colors.white.withOpacity(0.02)
+                                Colors.white.withOpacity(0.02),
                               ]
                             : [
                                 const Color(0xFFF4F7FC),
-                                const Color(0xFFEEF2F9)
+                                const Color(0xFFEEF2F9),
                               ],
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
@@ -1405,8 +1487,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 color: primary.withOpacity(0.15),
                                 borderRadius: BorderRadius.circular(12),
                               ),
-                              child: Icon(Icons.code_rounded,
-                                  size: 20, color: primary),
+                              child: Icon(
+                                Icons.code_rounded,
+                                size: 20,
+                                color: primary,
+                              ),
                             ),
                             const SizedBox(width: 12),
                             Column(
@@ -1485,7 +1570,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           isDark,
                           Colors.orange,
                           onTapOverride: () => _copyToClipboard(
-                              context, '3170305904@qq.com', '邮箱已复制到剪贴板'),
+                            context,
+                            '3170305904@qq.com',
+                            '邮箱已复制到剪贴板',
+                          ),
                         ),
                       ),
                     ],
@@ -1499,9 +1587,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Widget _aboutLink(BuildContext context, IconData icon, String label,
-      String? url, bool isDark, Color color,
-      {VoidCallback? onTapOverride}) {
+  Widget _aboutLink(
+    BuildContext context,
+    IconData icon,
+    String label,
+    String? url,
+    bool isDark,
+    Color color, {
+    VoidCallback? onTapOverride,
+  }) {
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -1548,7 +1642,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   void _copyToClipboard(
-      BuildContext context, String text, String successMessage) {
+    BuildContext context,
+    String text,
+    String successMessage,
+  ) {
     Clipboard.setData(ClipboardData(text: text));
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(

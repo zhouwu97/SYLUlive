@@ -1,4 +1,4 @@
-﻿.dart_tool/
+.dart_tool/
 .flutter-plugins
 .flutter-plugins-dependencies
 .packages
@@ -42,3 +42,6 @@ check_apk.py
 /client/test_credentials.*
 /client/.env
 /client/.env.*
+android/.kotlin/
+*.salive
+

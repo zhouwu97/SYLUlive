@@ -65,6 +65,10 @@ class ErkeRepository {
     fetchError = null;
     String phase = 'init';
 
+    // 提前声明，以便 catch 块在部分成功时保存已获取数据
+    ErkeGraduationSummary? partialGraduation;
+    List<ErkeActivity> partialActivities = [];
+
     try {
       // 1. WebVPN 登录
       phase = 'vpn_login';
@@ -88,12 +92,11 @@ class ErkeRepository {
       hasLiveSession = true;
       debugPrint('[Erke] phase=$phase success');
 
-      // 3. 分别抓取三页数据（每个可独立定位失败阶段）
+      // 3. 毕业要求
       phase = 'graduation_fetch';
       debugPrint('[Erke] phase=$phase start');
-      ErkeGraduationSummary? newGraduation;
       try {
-        newGraduation = await _client!.getGraduationSummary();
+        partialGraduation = await _client!.getGraduationSummary();
         debugPrint('[Erke] phase=$phase success');
       } catch (e, st) {
         debugPrint(
@@ -102,6 +105,7 @@ class ErkeRepository {
         rethrow;
       }
 
+      // 4. 学年要求
       phase = 'yearly_fetch';
       debugPrint('[Erke] phase=$phase start');
       ErkeYearlySummary? newYearly;
@@ -115,11 +119,11 @@ class ErkeRepository {
         rethrow;
       }
 
+      // 5. 活动明细
       phase = 'activities_fetch';
       debugPrint('[Erke] phase=$phase start');
-      List<ErkeActivity> newActivities;
       try {
-        newActivities = await _client!.getActivities();
+        partialActivities = await _client!.getActivities();
         debugPrint('[Erke] phase=$phase success');
       } catch (e, st) {
         debugPrint(
@@ -128,15 +132,14 @@ class ErkeRepository {
         rethrow;
       }
 
-      // 4. 全部成功才替换内存数据
-      graduation = newGraduation;
+      // 全部成功 → 更新内存 + 写缓存
+      graduation = partialGraduation;
       yearly = newYearly;
-      activities = newActivities;
-      activitiesByYear = {newYearly.year: newActivities};
+      activities = partialActivities;
+      activitiesByYear = {newYearly.year: partialActivities};
       availableYears = newYearly.availableYears;
       hasCachedData = true;
 
-      // 5. 写入缓存
       phase = 'cache_save';
       debugPrint('[Erke] phase=$phase start');
       await _cache.saveFullResult(
@@ -153,9 +156,27 @@ class ErkeRepository {
           '[Erke] phase=$phase failed type=${e.runtimeType} message=$e';
       debugPrint(fetchError);
       debugPrintStack(label: '[Erke] $phase stack', stackTrace: stackTrace);
-      hasLiveSession = false;
-      _client = null;
-      // 不覆盖内存中的旧数据
+
+      // 毕业和活动成功 → 保存到内存，不让学年失败拖垮毕业页
+      if (partialGraduation != null && partialActivities.isNotEmpty) {
+        graduation = partialGraduation;
+        activities = partialActivities;
+        hasCachedData = true;
+        // 异步写缓存
+        _cache.saveActivities(partialActivities).catchError((_) {});
+        debugPrint(
+            '[Erke] partial save: graduation+activities (yearly failed)');
+      }
+
+      // 学年失败但登录成功 → 保留 session 供单独重试
+      if (phase == 'yearly_fetch' && _client != null) {
+        hasLiveSession = true;
+        debugPrint('[Erke] session kept alive for yearly retry');
+      } else {
+        hasLiveSession = false;
+        _client = null;
+      }
+
       return false;
     }
   }

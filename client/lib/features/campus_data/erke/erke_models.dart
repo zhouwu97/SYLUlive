@@ -325,3 +325,25 @@ class ErkeSnapshot {
   bool get hasYearlyData => yearly != null;
   bool get hasActivities => activities.isNotEmpty;
 }
+
+// ---- 学年查询表单（GET 返回的初始页面结构）----
+
+class YearPageForm {
+  final List<String> availableYears;
+  final String selectedYear;
+  final Map<String, String> hiddenInputs;
+  final String? submitButtonName;
+  final String? submitButtonValue;
+  final String? eventTarget;
+
+  const YearPageForm({
+    required this.availableYears,
+    required this.selectedYear,
+    required this.hiddenInputs,
+    this.submitButtonName,
+    this.submitButtonValue,
+    this.eventTarget,
+  });
+
+  bool get isResultPage => false; // 表单页不是结果页
+}

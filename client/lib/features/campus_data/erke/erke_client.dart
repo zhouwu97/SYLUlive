@@ -270,21 +270,14 @@ class ErkeClient {
     return ErkeParser.parseGraduationSummary(html);
   }
 
-  /// 获取学年要求汇总页 HTML
-  /// [year] 可选；提供时通过 WebForms POST 切换到指定学年
+  /// 获取学年要求汇总页 HTML（含成绩）
+  ///
+  /// 流程: GET → 解析表单 → 有成绩直接返回 / 无成绩则 WebForms POST
   Future<String> getYearlySummaryHtml({String? year}) async {
     final url = buildVpnUrl(ErkeEndpoints.yearlySummary);
 
-    if (year == null) {
-      final resp = await _dio.get(
-        url,
-        options: Options(responseType: ResponseType.bytes),
-      );
-      return decodeResponseBytes(resp.data as List<int>, resp.headers);
-    }
-
-    // === WebForms 学年切换 ===
-    // 1. 先 GET 页面获取隐藏字段和当前 ViewState
+    // 1. GET 初始页面
+    print('[Erke] yearly GET url=$url');
     final getResp = await _dio.get(
       url,
       options: Options(responseType: ResponseType.bytes),
@@ -293,21 +286,38 @@ class ErkeClient {
         decodeResponseBytes(getResp.data as List<int>, getResp.headers);
     final getDoc = parse(getHtml);
 
-    // 验证要切换的年是否在可选列表中
-    final availableYears = ErkeParser.extractSelectOptions(getDoc, 'YearTime');
-    if (!availableYears.contains(year)) {
-      throw Exception('无效的学年: $year (可选: $availableYears)');
+    print(
+        '[Erke] yearly GET status=${getResp.statusCode} bodyLength=${getHtml.length}');
+    final title = getDoc.querySelector('title')?.text ?? '';
+    print('[Erke] yearly GET title=$title');
+
+    // 2. 解析查询表单（不需要成绩数据）
+    final form = ErkeParser.parseYearPageForm(getHtml);
+    final targetYear = year ?? form.selectedYear;
+
+    // 3. 如果 GET 已有成绩 → 直接解析
+    if (ErkeParser.yearlyPageHasScores(getHtml)) {
+      print('[Erke] yearly GET already has scores, skip POST');
+      return getHtml;
     }
 
-    // 2. 提取所有 hidden 字段
-    final hiddenInputs = ErkeParser.extractYearlyHiddenInputs(getHtml);
+    // 4. 否则需要 POST 提交学年查询
+    print(
+        '[Erke] yearly POST needed — GET selectedYear=${form.selectedYear} targetYear=$targetYear');
+    if (!form.availableYears.contains(targetYear)) {
+      throw Exception('无效的学年: $targetYear (可选: ${form.availableYears})');
+    }
 
-    // 3. 构造 POST (模拟 ASP.NET __doPostBack)
     final formData = <String, dynamic>{
-      ...hiddenInputs,
-      '__EVENTTARGET': 'YearTime',
-      'YearTime': year,
+      ...form.hiddenInputs,
+      'YearTime': targetYear,
     };
+    if (form.submitButtonName != null) {
+      formData[form.submitButtonName!] = form.submitButtonValue ?? '查询';
+    }
+    if (form.eventTarget != null) {
+      formData['__EVENTTARGET'] = form.eventTarget;
+    }
 
     final postResp = await _dio.post(
       url,
@@ -324,13 +334,19 @@ class ErkeClient {
 
     final postHtml =
         decodeResponseBytes(postResp.data as List<int>, postResp.headers);
+    final postDoc = parse(postHtml);
 
-    // 4. 验证返回页面确实切换到了目标学年
-    final returnedYear =
-        ErkeParser.extractSelectedOption(parse(postHtml), 'YearTime');
-    if (returnedYear != null && returnedYear != year) {
-      throw Exception('学年切换失败: 请求 $year，服务器返回 $returnedYear');
+    print(
+        '[Erke] yearly POST status=${postResp.statusCode} bodyLength=${postHtml.length}');
+    final returnedYear = ErkeParser.extractSelectedOption(postDoc, 'YearTime');
+    print('[Erke] yearly POST selectedYear=$returnedYear');
+    if (returnedYear != null && returnedYear != targetYear) {
+      throw Exception('学年切换失败: 请求 $targetYear，服务器返回 $returnedYear');
     }
+
+    final hasCountA1 = postDoc.getElementById('CountA1') != null ||
+        postDoc.querySelectorAll('[id\$="CountA1"]').isNotEmpty;
+    print('[Erke] yearly POST hasCountA1=$hasCountA1');
 
     return postHtml;
   }

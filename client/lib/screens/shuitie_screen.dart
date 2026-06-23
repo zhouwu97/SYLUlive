@@ -730,8 +730,8 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                               color: active
                                   ? (isDark ? Colors.white : Colors.black87)
                                   : (isDark
-                                      ? Colors.white54
-                                      : Colors.black.withValues(alpha: 0.62)),
+                                      ? Colors.white70
+                                      : Colors.black.withValues(alpha: 0.72)),
                             ),
                           ),
                           const SizedBox(height: 3),
@@ -816,13 +816,13 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                 end: Alignment.bottomCenter,
                 colors: isDark
                     ? [
-                        Colors.black.withValues(alpha: 0.4),
-                        Colors.black.withValues(alpha: 0.1),
+                        Colors.black.withValues(alpha: 0.25),
+                        Colors.black.withValues(alpha: 0.05),
                         Colors.transparent,
                       ]
                     : [
-                        Colors.white.withValues(alpha: 0.18),
-                        Colors.white.withValues(alpha: 0.05),
+                        Colors.white.withValues(alpha: 0.12),
+                        Colors.white.withValues(alpha: 0.02),
                         Colors.transparent,
                       ],
               ),
@@ -969,7 +969,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                                 vsync: this,
                                 child: Padding(
                                   padding:
-                                      const EdgeInsets.fromLTRB(12, 0, 12, 4),
+                                      const EdgeInsets.fromLTRB(12, 2, 12, 4),
                                   child: _buildSearchBar(isDark),
                                 ),
                               ),

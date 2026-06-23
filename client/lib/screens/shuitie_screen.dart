@@ -789,8 +789,6 @@ class _ShuitieScreenState extends State<ShuitieScreen>
 
   // ---- Mobile Layout ----
   Widget _buildMobileLayout(bool isDark, double topPadding) {
-    final isFollowingMode = !_currentConfig.supportsRemoteLoading;
-
     return Column(
       children: [
         SizedBox(height: topPadding + 8),
@@ -801,9 +799,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
         ),
         // 内容区
         Expanded(
-          child: isFollowingMode
-              ? _buildFollowingPlaceholder(isDark)
-              : _buildFeedContent(isDark, topPadding),
+          child: _buildFeedContent(isDark, topPadding),
         ),
       ],
     );
@@ -915,7 +911,8 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                       opacity: _feedSwitchAnimation,
                       child: NotificationListener<ScrollNotification>(
                         onNotification: (notification) {
-                          if (notification.metrics.pixels >=
+                          if (_currentConfig.supportsRemoteLoading &&
+                              notification.metrics.pixels >=
                                   notification.metrics.maxScrollExtent - 500 &&
                               feedHasMore &&
                               !isFeedLoading) {
@@ -942,7 +939,12 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                                 ),
                               ),
                             ),
-                            if (isFeedLoading && posts.isEmpty)
+                            if (!_currentConfig.supportsRemoteLoading)
+                              SliverFillRemaining(
+                                hasScrollBody: false,
+                                child: _buildFollowingPlaceholder(isDark),
+                              )
+                            else if (isFeedLoading && posts.isEmpty)
                               const SliverFillRemaining(
                                 child:
                                     Center(child: CircularProgressIndicator()),

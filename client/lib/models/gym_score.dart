@@ -19,10 +19,10 @@ class GymScoreItem {
   }
 
   Map<String, dynamic> toJson() => {
-        'sub_name': subName,
-        'result': result,
-        'score_status': scoreStatus,
-      };
+    'sub_name': subName,
+    'result': result,
+    'score_status': scoreStatus,
+  };
 
   /// 状态文字
   String get statusLabel {

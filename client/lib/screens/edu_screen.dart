@@ -181,9 +181,7 @@ class _EduScreenState extends State<EduScreen> {
               const SizedBox(height: 16),
               TextField(
                 controller: _passwordController,
-                decoration: const InputDecoration(
-                  labelText: '教务密码',
-                ),
+                decoration: const InputDecoration(labelText: '教务密码'),
                 obscureText: true,
                 enabled: !isBinding,
               ),
@@ -221,14 +219,14 @@ class _EduScreenState extends State<EduScreen> {
                       if (context.mounted) {
                         Navigator.pop(context);
                         if (success) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('绑定成功')),
-                          );
+                          ScaffoldMessenger.of(
+                            context,
+                          ).showSnackBar(const SnackBar(content: Text('绑定成功')));
                         } else {
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
-                                content:
-                                    Text(eduProvider.errorMessage ?? '绑定失败')),
+                              content: Text(eduProvider.errorMessage ?? '绑定失败'),
+                            ),
                           );
                         }
                       }
@@ -238,7 +236,9 @@ class _EduScreenState extends State<EduScreen> {
                       width: 20,
                       height: 20,
                       child: CircularProgressIndicator(
-                          strokeWidth: 2, color: Colors.white),
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
                     )
                   : const Text('绑定'),
             ),
@@ -266,9 +266,9 @@ class _EduScreenState extends State<EduScreen> {
               if (context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text(result.success
-                        ? '解绑成功'
-                        : (result.errorMessage ?? '解绑失败')),
+                    content: Text(
+                      result.success ? '解绑成功' : (result.errorMessage ?? '解绑失败'),
+                    ),
                     backgroundColor: result.success ? Colors.green : Colors.red,
                   ),
                 );
@@ -355,14 +355,21 @@ class _EduScreenState extends State<EduScreen> {
                       setDialogState(() => isFetching = true);
                       final scaffoldMessenger = ScaffoldMessenger.of(context);
                       final result = await eduProvider.getCourses(
-                          selectedYear, selectedSemester);
+                        selectedYear,
+                        selectedSemester,
+                      );
                       if (context.mounted) {
                         Navigator.pop(context); // 请求结束后关闭对话框
                         if (result != null &&
                             result.success &&
                             result.data != null) {
-                          _showCoursesResult(context, result.data!,
-                              selectedYear, selectedSemester, eduProvider);
+                          _showCoursesResult(
+                            context,
+                            result.data!,
+                            selectedYear,
+                            selectedSemester,
+                            eduProvider,
+                          );
                         } else {
                           scaffoldMessenger.showSnackBar(
                             SnackBar(
@@ -378,7 +385,9 @@ class _EduScreenState extends State<EduScreen> {
                       width: 20,
                       height: 20,
                       child: CircularProgressIndicator(
-                          strokeWidth: 2, color: Colors.white),
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
                     )
                   : const Text('查询'),
             ),
@@ -389,11 +398,12 @@ class _EduScreenState extends State<EduScreen> {
   }
 
   void _showCoursesResult(
-      BuildContext context,
-      List<Map<String, dynamic>> courses,
-      String year,
-      int semester,
-      EduProvider eduProvider) {
+    BuildContext context,
+    List<Map<String, dynamic>> courses,
+    String year,
+    int semester,
+    EduProvider eduProvider,
+  ) {
     showModalBottomSheet(
       context: appNavigatorKey.currentContext!,
       isScrollControlled: true,
@@ -408,8 +418,10 @@ class _EduScreenState extends State<EduScreen> {
               padding: const EdgeInsets.all(16),
               child: Text(
                 '${year}-${(int.parse(year) + 1).toString()} ${semester == 3 ? "第一学期" : "第二学期"} 课表',
-                style:
-                    const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
             Expanded(
@@ -422,7 +434,9 @@ class _EduScreenState extends State<EduScreen> {
                         final course = courses[index];
                         return Card(
                           margin: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 4),
+                            horizontal: 16,
+                            vertical: 4,
+                          ),
                           child: ListTile(
                             title: Text(course['name'] ?? ''),
                             subtitle: Text(
@@ -450,13 +464,17 @@ class _EduScreenState extends State<EduScreen> {
                     Navigator.pop(ctx); // 关闭底部弹窗
                     try {
                       final success = await eduProvider.syncCourses(
-                          year, semester, courses);
+                        year,
+                        semester,
+                        courses,
+                      );
                       if (success) {
                         final navContext = appNavigatorKey.currentContext;
                         if (navContext != null) {
                           final sc = Provider.of<CourseScheduleProvider>(
-                              navContext,
-                              listen: false);
+                            navContext,
+                            listen: false,
+                          );
                           sc.setSemester(year, semester);
                           sc.applyFetchedCourses(courses);
                         }
@@ -482,7 +500,8 @@ class _EduScreenState extends State<EduScreen> {
                   style: ElevatedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
                 ),
               ),
@@ -566,14 +585,20 @@ class _EduScreenState extends State<EduScreen> {
                       setDialogState(() => isFetching = true);
                       final scaffoldMessenger = ScaffoldMessenger.of(context);
                       final result = await eduProvider.getGrades(
-                          selectedYear, selectedSemester);
+                        selectedYear,
+                        selectedSemester,
+                      );
                       if (context.mounted) {
                         Navigator.pop(context); // 请求结束后关闭对话框
                         if (result != null &&
                             result.success &&
                             result.data != null) {
-                          _showGradesResult(context, result.data!, selectedYear,
-                              selectedSemester);
+                          _showGradesResult(
+                            context,
+                            result.data!,
+                            selectedYear,
+                            selectedSemester,
+                          );
                         } else {
                           scaffoldMessenger.showSnackBar(
                             SnackBar(
@@ -589,7 +614,9 @@ class _EduScreenState extends State<EduScreen> {
                       width: 20,
                       height: 20,
                       child: CircularProgressIndicator(
-                          strokeWidth: 2, color: Colors.white),
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
                     )
                   : const Text('查询'),
             ),
@@ -599,8 +626,12 @@ class _EduScreenState extends State<EduScreen> {
     );
   }
 
-  void _showGradesResult(BuildContext context,
-      List<Map<String, dynamic>> grades, String year, int semester) {
+  void _showGradesResult(
+    BuildContext context,
+    List<Map<String, dynamic>> grades,
+    String year,
+    int semester,
+  ) {
     showModalBottomSheet(
       context: appNavigatorKey.currentContext!,
       isScrollControlled: true,
@@ -615,8 +646,10 @@ class _EduScreenState extends State<EduScreen> {
               padding: const EdgeInsets.all(16),
               child: Text(
                 '${year}-${(int.parse(year) + 1).toString()} ${semester == 3 ? "第一学期" : "第二学期"} 成绩',
-                style:
-                    const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
             Expanded(
@@ -629,7 +662,9 @@ class _EduScreenState extends State<EduScreen> {
                         final grade = grades[index];
                         return Card(
                           margin: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 4),
+                            horizontal: 16,
+                            vertical: 4,
+                          ),
                           child: ListTile(
                             title: Text(grade['name'] ?? ''),
                             subtitle: Text(

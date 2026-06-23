@@ -49,18 +49,21 @@ class _PostCardState extends State<PostCard>
     // 优先使用当前登录用户的最新资料
     final authUser = context.watch<AuthProvider>().user;
     final isMyPost = authUser != null && widget.post.author?.id == authUser.id;
-    final displayAvatar =
-        isMyPost ? authUser.avatar : (widget.post.author?.avatar ?? '');
-    final displayNickname =
-        isMyPost ? authUser.nickname : (widget.post.author?.nickname ?? '匿名');
+    final displayAvatar = isMyPost
+        ? authUser.avatar
+        : (widget.post.author?.avatar ?? '');
+    final displayNickname = isMyPost
+        ? authUser.nickname
+        : (widget.post.author?.nickname ?? '匿名');
 
     return GlassContainer(
       margin: EdgeInsets.only(bottom: isDesktop ? 16 : 8),
       borderRadius: isDesktop ? 16 : 12,
       blur: 12,
       opacity: 0.85,
-      backgroundColor:
-          isDark ? const Color(0xE6171B24) : const Color(0xF2FFFFFF),
+      backgroundColor: isDark
+          ? const Color(0xE6171B24)
+          : const Color(0xF2FFFFFF),
       borderColor: isDark
           ? Colors.white.withValues(alpha: 0.10)
           : Colors.white.withValues(alpha: 0.85),
@@ -112,8 +115,9 @@ class _PostCardState extends State<PostCard>
                               child: Text(
                                 displayNickname,
                                 style: TextStyle(
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: isDesktop ? 15 : 13),
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: isDesktop ? 15 : 13,
+                                ),
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),
@@ -142,8 +146,9 @@ class _PostCardState extends State<PostCard>
                       vertical: 4,
                     ),
                     decoration: BoxDecoration(
-                      color: _getCreditColor(widget.post.author!.creditScore)
-                          .withValues(alpha: 0.2),
+                      color: _getCreditColor(
+                        widget.post.author!.creditScore,
+                      ).withValues(alpha: 0.2),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Row(
@@ -152,15 +157,17 @@ class _PostCardState extends State<PostCard>
                         Icon(
                           Icons.verified,
                           size: isDesktop ? 14 : 12,
-                          color:
-                              _getCreditColor(widget.post.author!.creditScore),
+                          color: _getCreditColor(
+                            widget.post.author!.creditScore,
+                          ),
                         ),
                         const SizedBox(width: 4),
                         Text(
                           '${widget.post.author!.creditScore}%',
                           style: TextStyle(
                             color: _getCreditColor(
-                                widget.post.author!.creditScore),
+                              widget.post.author!.creditScore,
+                            ),
                             fontSize: isDesktop ? 12 : 11,
                             fontWeight: FontWeight.w600,
                           ),
@@ -336,12 +343,14 @@ class _PostCardState extends State<PostCard>
   }
 
   Widget _buildImageGrid(BuildContext context, List<PostImage> images) {
-    final validImages =
-        images.where((image) => image.url.trim().isNotEmpty).toList();
+    final validImages = images
+        .where((image) => image.url.trim().isNotEmpty)
+        .toList();
     final count = validImages.length;
     if (count == 0) return const SizedBox.shrink();
-    final imageUrls =
-        validImages.map((image) => ApiConstants.fullUrl(image.url)).toList();
+    final imageUrls = validImages
+        .map((image) => ApiConstants.fullUrl(image.url))
+        .toList();
 
     if (count == 1) {
       return ClipRRect(
@@ -379,9 +388,9 @@ class _PostCardState extends State<PostCard>
           crossAxisSpacing: 4,
           childAspectRatio: 1,
         ),
-        itemCount: count > 4 ? 4 : count,
+        itemCount: count > 3 ? 3 : count,
         itemBuilder: (context, index) {
-          if (index == 3 && count > 4) {
+          if (index == 2 && count > 3) {
             return GestureDetector(
               onTap: () => _openImageViewer(context, imageUrls, index),
               child: Stack(
@@ -399,7 +408,7 @@ class _PostCardState extends State<PostCard>
                     color: Colors.black54,
                     alignment: Alignment.center,
                     child: Text(
-                      '+${count - 3}',
+                      '+${count - 2}',
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 18,
@@ -430,14 +439,15 @@ class _PostCardState extends State<PostCard>
   }
 
   void _openImageViewer(
-      BuildContext context, List<String> imageUrls, int initialIndex) {
+    BuildContext context,
+    List<String> imageUrls,
+    int initialIndex,
+  ) {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => ImageViewerScreen(
-          imageUrls: imageUrls,
-          initialIndex: initialIndex,
-        ),
+        builder: (_) =>
+            ImageViewerScreen(imageUrls: imageUrls, initialIndex: initialIndex),
       ),
     );
   }
@@ -452,9 +462,7 @@ class _PostCardState extends State<PostCard>
     }
     Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (_) => UserHomeScreen(userId: author.id),
-      ),
+      MaterialPageRoute(builder: (_) => UserHomeScreen(userId: author.id)),
     );
   }
 
@@ -469,8 +477,11 @@ class _PostCardState extends State<PostCard>
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Row(
       children: [
-        Icon(Icons.visibility_outlined,
-            size: 14, color: isDark ? Colors.white30 : Colors.grey[400]),
+        Icon(
+          Icons.visibility_outlined,
+          size: 14,
+          color: isDark ? Colors.white30 : Colors.grey[400],
+        ),
         const SizedBox(width: 4),
         Text(
           '${widget.post.viewCount}',
@@ -480,11 +491,13 @@ class _PostCardState extends State<PostCard>
           ),
         ),
         const SizedBox(width: 12),
-        Icon(widget.post.isLiked ? Icons.thumb_up : Icons.thumb_up_outlined,
-            size: 14,
-            color: widget.post.isLiked
-                ? const Color(0xFFFF6B6B)
-                : (isDark ? Colors.white30 : Colors.grey[400])),
+        Icon(
+          widget.post.isLiked ? Icons.thumb_up : Icons.thumb_up_outlined,
+          size: 14,
+          color: widget.post.isLiked
+              ? const Color(0xFFFF6B6B)
+              : (isDark ? Colors.white30 : Colors.grey[400]),
+        ),
         const SizedBox(width: 4),
         Text(
           '${widget.post.likeCount}',
@@ -496,8 +509,11 @@ class _PostCardState extends State<PostCard>
           ),
         ),
         const SizedBox(width: 12),
-        Icon(Icons.chat_bubble_outline,
-            size: 14, color: isDark ? Colors.white30 : Colors.grey[400]),
+        Icon(
+          Icons.chat_bubble_outline,
+          size: 14,
+          color: isDark ? Colors.white30 : Colors.grey[400],
+        ),
         const SizedBox(width: 4),
         Text(
           '${widget.post.replyCount}',

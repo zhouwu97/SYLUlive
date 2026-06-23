@@ -10,20 +10,20 @@ class SlideFadeRoute<T> extends PageRouteBuilder<T> {
     required this.builder,
     this.duration = const Duration(milliseconds: 320),
   }) : super(
-          transitionDuration: duration,
-          reverseTransitionDuration: duration,
-          allowSnapshotting: true,
-          pageBuilder: (context, animation, secondaryAnimation) =>
-              builder(context),
-          transitionsBuilder: (context, animation, secondaryAnimation, child) {
-            // 预测性返回：secondaryAnimation 驱动前一页面的预览动画
-            return _SlideFadeTransition(
-              animation: animation,
-              secondaryAnimation: secondaryAnimation,
-              child: child,
-            );
-          },
-        );
+         transitionDuration: duration,
+         reverseTransitionDuration: duration,
+         allowSnapshotting: true,
+         pageBuilder: (context, animation, secondaryAnimation) =>
+             builder(context),
+         transitionsBuilder: (context, animation, secondaryAnimation, child) {
+           // 预测性返回：secondaryAnimation 驱动前一页面的预览动画
+           return _SlideFadeTransition(
+             animation: animation,
+             secondaryAnimation: secondaryAnimation,
+             child: child,
+           );
+         },
+       );
 }
 
 /// 共享元素 + 滑入转场（用于从列表到详情的过渡）
@@ -35,19 +35,19 @@ class SharedSlideRoute<T> extends PageRouteBuilder<T> {
     required this.builder,
     this.duration = const Duration(milliseconds: 360),
   }) : super(
-          transitionDuration: duration,
-          reverseTransitionDuration: duration,
-          allowSnapshotting: true,
-          pageBuilder: (context, animation, secondaryAnimation) =>
-              builder(context),
-          transitionsBuilder: (context, animation, secondaryAnimation, child) {
-            return _SlideFadeTransition(
-              animation: animation,
-              secondaryAnimation: secondaryAnimation,
-              child: child,
-            );
-          },
-        );
+         transitionDuration: duration,
+         reverseTransitionDuration: duration,
+         allowSnapshotting: true,
+         pageBuilder: (context, animation, secondaryAnimation) =>
+             builder(context),
+         transitionsBuilder: (context, animation, secondaryAnimation, child) {
+           return _SlideFadeTransition(
+             animation: animation,
+             secondaryAnimation: secondaryAnimation,
+             child: child,
+           );
+         },
+       );
 }
 
 class _SlideFadeTransition extends StatelessWidget {
@@ -70,10 +70,7 @@ class _SlideFadeTransition extends StatelessWidget {
       position: Tween<Offset>(
         begin: const Offset(0.3, 0), // 从右侧 30% 处滑入
         end: Offset.zero,
-      ).animate(CurvedAnimation(
-        parent: animation,
-        curve: Curves.easeOutCubic,
-      )),
+      ).animate(CurvedAnimation(parent: animation, curve: Curves.easeOutCubic)),
       child: FadeTransition(
         opacity: CurvedAnimation(
           parent: animation,
@@ -89,30 +86,27 @@ class _SlideFadeTransition extends StatelessWidget {
 class BottomSheetRoute<T> extends PageRouteBuilder<T> {
   final WidgetBuilder builder;
 
-  BottomSheetRoute({
-    required this.builder,
-  }) : super(
-          transitionDuration: const Duration(milliseconds: 300),
-          reverseTransitionDuration: const Duration(milliseconds: 250),
-          opaque: false,
-          allowSnapshotting: false,
-          pageBuilder: (context, animation, secondaryAnimation) =>
-              builder(context),
-          transitionsBuilder: (context, animation, secondaryAnimation, child) {
-            return SlideTransition(
-              position: Tween<Offset>(
-                begin: const Offset(0, 1),
-                end: Offset.zero,
-              ).animate(
-                CurvedAnimation(
-                  parent: animation,
-                  curve: Curves.easeOutCubic,
+  BottomSheetRoute({required this.builder})
+    : super(
+        transitionDuration: const Duration(milliseconds: 300),
+        reverseTransitionDuration: const Duration(milliseconds: 250),
+        opaque: false,
+        allowSnapshotting: false,
+        pageBuilder: (context, animation, secondaryAnimation) =>
+            builder(context),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          return SlideTransition(
+            position: Tween<Offset>(begin: const Offset(0, 1), end: Offset.zero)
+                .animate(
+                  CurvedAnimation(
+                    parent: animation,
+                    curve: Curves.easeOutCubic,
+                  ),
                 ),
-              ),
-              child: child,
-            );
-          },
-        );
+            child: child,
+          );
+        },
+      );
 }
 
 /// 全局过渡构建器
@@ -129,7 +123,12 @@ class AppPageTransitionsBuilder extends PageTransitionsBuilder {
   ) {
     if (Theme.of(context).platform == TargetPlatform.iOS) {
       return const CupertinoPageTransitionsBuilder().buildTransitions(
-          route, context, animation, secondaryAnimation, child);
+        route,
+        context,
+        animation,
+        secondaryAnimation,
+        child,
+      );
     }
     return child;
   }

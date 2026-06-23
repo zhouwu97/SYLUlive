@@ -55,16 +55,29 @@ class FeedModeConfig {
 /// 默认选中：综合 (index 1)
 const List<FeedModeConfig> kFeedModes = [
   FeedModeConfig(
-      key: 'new', label: '最新', remoteSort: 'time', supportsRemoteLoading: true),
+    key: 'new',
+    label: '最新',
+    remoteSort: 'time',
+    supportsRemoteLoading: true,
+  ),
   FeedModeConfig(
-      key: 'all', label: '综合', remoteSort: 'all', supportsRemoteLoading: true),
+    key: 'all',
+    label: '综合',
+    remoteSort: 'all',
+    supportsRemoteLoading: true,
+  ),
   FeedModeConfig(
-      key: 'hot', label: '热门', remoteSort: 'hot', supportsRemoteLoading: true),
+    key: 'hot',
+    label: '热门',
+    remoteSort: 'hot',
+    supportsRemoteLoading: true,
+  ),
   FeedModeConfig(
-      key: 'following',
-      label: '关注',
-      remoteSort: null,
-      supportsRemoteLoading: false),
+    key: 'following',
+    label: '关注',
+    remoteSort: null,
+    supportsRemoteLoading: false,
+  ),
 ];
 
 const int kDefaultFeedModeIndex = 1; // 综合
@@ -79,7 +92,7 @@ class ShuitieScreen extends StatefulWidget {
 class _ShuitieScreenState extends State<ShuitieScreen>
     with TickerProviderStateMixin, WidgetsBindingObserver {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
-  
+
   late final Map<String, ScrollController> _feedScrollControllers;
 
   ScrollController get _currentFeedScrollController {
@@ -122,9 +135,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
 
     _feedScrollControllers = {
       for (final mode in kFeedModes)
-        mode.key: ScrollController(
-          keepScrollOffset: true,
-        ),
+        mode.key: ScrollController(keepScrollOffset: true),
     };
 
     WidgetsBinding.instance.addObserver(this);
@@ -144,9 +155,6 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final postProvider = context.read<PostProvider>();
       postProvider.loadPosts(boardId: 1, sort: 'all');
-      unawaited(postProvider.loadPosts(boardId: 1, sort: 'time'));
-      unawaited(postProvider.loadPosts(boardId: 1, sort: 'hot'));
-      postProvider.loadPosts(boardId: 2, sort: 'time');
       _loadAnnouncements();
       _loadCheckinStatus();
       _ensureMessagesLoaded();
@@ -223,15 +231,16 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       }
 
       if (response.statusCode == 200) {
-        final all = (response.data as List)
-            .map((e) => model.Announcement.fromJson(e))
-            .toList()
-          ..sort((a, b) {
-            if (a.isPinned != b.isPinned) {
-              return a.isPinned ? -1 : 1;
-            }
-            return b.createdAt.compareTo(a.createdAt);
-          });
+        final all =
+            (response.data as List)
+                .map((e) => model.Announcement.fromJson(e))
+                .toList()
+              ..sort((a, b) {
+                if (a.isPinned != b.isPinned) {
+                  return a.isPinned ? -1 : 1;
+                }
+                return b.createdAt.compareTo(a.createdAt);
+              });
         final dismissed = await _loadDismissedIds();
         if (!mounted) return;
         setState(() {
@@ -381,9 +390,12 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     final auth = context.read<AuthProvider>();
     if (!auth.isLoggedIn) {
       Navigator.push(
-          context,
-          PageRouteBuilder(
-              opaque: false, pageBuilder: (_, __, ___) => const LoginScreen()));
+        context,
+        PageRouteBuilder(
+          opaque: false,
+          pageBuilder: (_, __, ___) => const LoginScreen(),
+        ),
+      );
       return;
     }
     if (_checkInLoading || _checkedIn) return;
@@ -406,9 +418,9 @@ class _ShuitieScreenState extends State<ShuitieScreen>
         if (!already) {
           _showCheckInSuccessDialog(streak, exp);
         } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('今天已经签过到了')),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('今天已经签过到了')));
         }
       }
     } catch (e) {
@@ -429,11 +441,13 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Row(children: [
-          Icon(Icons.celebration, color: Colors.orange[400]),
-          const SizedBox(width: 8),
-          const Text('签到成功！'),
-        ]),
+        title: Row(
+          children: [
+            Icon(Icons.celebration, color: Colors.orange[400]),
+            const SizedBox(width: 8),
+            const Text('签到成功！'),
+          ],
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -463,8 +477,9 @@ class _ShuitieScreenState extends State<ShuitieScreen>
             Text(
               _nextRewardHint(streak),
               style: TextStyle(
-                  fontSize: 13,
-                  color: isDark ? Colors.white60 : Colors.grey[600]),
+                fontSize: 13,
+                color: isDark ? Colors.white60 : Colors.grey[600],
+              ),
               textAlign: TextAlign.center,
             ),
           ],
@@ -502,8 +517,10 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       setState(() => _slideDirection = direction);
     }
     final width = MediaQuery.sizeOf(context).width;
-    _feedSwitchController.value =
-        (1 - (_feedSwipeDx.abs() / width)).clamp(0.0, 1.0);
+    _feedSwitchController.value = (1 - (_feedSwipeDx.abs() / width)).clamp(
+      0.0,
+      1.0,
+    );
   }
 
   Future<void> _handleFeedSwipe(DragEndDetails details) async {
@@ -564,11 +581,13 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     final topPadding = MediaQuery.of(context).padding.top;
 
     // 透明沉浸式状态栏
-    SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle(
-      statusBarColor: Colors.transparent,
-      statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
-      systemNavigationBarColor: Colors.transparent,
-    ));
+    SystemChrome.setSystemUIOverlayStyle(
+      SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
+        systemNavigationBarColor: Colors.transparent,
+      ),
+    );
 
     if (authProvider.isLoggedIn != _wasLoggedIn) {
       _wasLoggedIn = authProvider.isLoggedIn;
@@ -592,18 +611,30 @@ class _ShuitieScreenState extends State<ShuitieScreen>
         announcements: _announcements,
         onCheckIn: _doCheckIn,
         onOpenLostFound: () => Navigator.push(
-            context,
-            MaterialPageRoute(
-                builder: (_) => const MarketScreen(
-                    onlyPostTypes: ['lost', 'found'], titleOverride: '失物招领'))),
+          context,
+          MaterialPageRoute(
+            builder: (_) => const MarketScreen(
+              onlyPostTypes: ['lost', 'found'],
+              titleOverride: '失物招领',
+            ),
+          ),
+        ),
         onOpenToolbox: () => Navigator.push(
-            context, MaterialPageRoute(builder: (_) => const ToolboxScreen())),
-        onOpenAnnouncements: () => Navigator.push(context,
-            MaterialPageRoute(builder: (_) => const AnnouncementScreen())),
-        onOpenExamSchedule: () => Navigator.push(context,
-            MaterialPageRoute(builder: (_) => const ExamScheduleScreen())),
+          context,
+          MaterialPageRoute(builder: (_) => const ToolboxScreen()),
+        ),
+        onOpenAnnouncements: () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const AnnouncementScreen()),
+        ),
+        onOpenExamSchedule: () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const ExamScheduleScreen()),
+        ),
         onOpenFeedback: () => Navigator.push(
-            context, MaterialPageRoute(builder: (_) => const FeedbackScreen())),
+          context,
+          MaterialPageRoute(builder: (_) => const FeedbackScreen()),
+        ),
       ),
       body: Stack(
         children: [
@@ -632,11 +663,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
               ),
             ),
           ),
-          child: Stack(
-            children: [
-              _buildMobileLayout(isDark),
-            ],
-          ),
+          child: Stack(children: [_buildMobileLayout(isDark)]),
         ),
         // 右侧 Detail 详情
         Expanded(
@@ -699,13 +726,19 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.forum_outlined,
-              size: 80, color: isDark ? Colors.white24 : Colors.black12),
+          Icon(
+            Icons.forum_outlined,
+            size: 80,
+            color: isDark ? Colors.white24 : Colors.black12,
+          ),
           const SizedBox(height: 16),
-          Text('点击左侧帖子查看详情',
-              style: TextStyle(
-                  fontSize: 16,
-                  color: isDark ? Colors.white54 : Colors.black54)),
+          Text(
+            '点击左侧帖子查看详情',
+            style: TextStyle(
+              fontSize: 16,
+              color: isDark ? Colors.white54 : Colors.black54,
+            ),
+          ),
         ],
       ),
     );
@@ -715,8 +748,9 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     const tabWidth = 48.0;
     const animationDuration = Duration(milliseconds: 220);
 
-    final activeIndex =
-        _currentModeIndex < 0 ? kDefaultFeedModeIndex : _currentModeIndex;
+    final activeIndex = _currentModeIndex < 0
+        ? kDefaultFeedModeIndex
+        : _currentModeIndex;
 
     return SizedBox(
       width: tabWidth * kFeedModes.length,
@@ -760,13 +794,12 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                         curve: Curves.easeOutCubic,
                         style: TextStyle(
                           fontSize: active ? 15.5 : 15,
-                          fontWeight:
-                              active ? FontWeight.w800 : FontWeight.w500,
+                          fontWeight: active
+                              ? FontWeight.w800
+                              : FontWeight.w500,
                           color: active
                               ? (isDark ? Colors.white : Colors.black87)
-                              : (isDark
-                                  ? Colors.white54
-                                  : Colors.black45),
+                              : (isDark ? Colors.white54 : Colors.black45),
                         ),
                         child: Text(config.label),
                       ),
@@ -806,9 +839,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
             ),
           ),
           // 中间标签（独立居中）
-          Center(
-            child: _buildFeedTabs(isDark),
-          ),
+          Center(child: _buildFeedTabs(isDark)),
           // 右侧私信图标
           Positioned(
             right: 12,
@@ -817,8 +848,9 @@ class _ShuitieScreenState extends State<ShuitieScreen>
               height: 44,
               child: Consumer<MessageProvider>(
                 builder: (context, msgProvider, _) {
-                  final hasUnread =
-                      msgProvider.conversations.any((c) => c.unreadCount > 0);
+                  final hasUnread = msgProvider.conversations.any(
+                    (c) => c.unreadCount > 0,
+                  );
                   return Stack(
                     alignment: Alignment.center,
                     children: [
@@ -868,9 +900,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
             child: _buildHomeTopBar(isDark),
           ),
           // 内容区
-          Expanded(
-            child: _buildFeedContent(isDark),
-          ),
+          Expanded(child: _buildFeedContent(isDark)),
         ],
       ),
     );
@@ -946,123 +976,124 @@ class _ShuitieScreenState extends State<ShuitieScreen>
         await _refresh();
         await _loadAnnouncements();
       },
-      child: FadeTransition(
-        opacity: CurvedAnimation(
-          parent: _animationController,
-          curve: Curves.easeOut,
-        ),
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 680),
-            child: Selector<
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 680),
+          child:
+              Selector<
                 PostProvider,
-                ({
-                  List<Post> posts,
-                  bool isLoading,
-                  bool hasMore,
-                  int revision
-                })>(
-              selector: (context, postProvider) {
-                final sort = _currentRemoteSort ?? 'all';
-                return (
-                  posts: postProvider.postsFor(1, sort: sort),
-                  isLoading: postProvider.isLoadingFor(1, sort: sort),
-                  hasMore: postProvider.hasMoreFor(1, sort: sort),
-                  revision: postProvider.revisionFor(1, sort: sort),
-                );
-              },
-              builder: (context, data, child) {
-                final posts = data.posts;
-                final isFeedLoading = data.isLoading;
-                final feedHasMore = data.hasMore;
+                ({List<Post> posts, bool isLoading, bool hasMore, int revision})
+              >(
+                selector: (context, postProvider) {
+                  final sort = _currentRemoteSort ?? 'all';
+                  return (
+                    posts: postProvider.postsFor(1, sort: sort),
+                    isLoading: postProvider.isLoadingFor(1, sort: sort),
+                    hasMore: postProvider.hasMoreFor(1, sort: sort),
+                    revision: postProvider.revisionFor(1, sort: sort),
+                  );
+                },
+                builder: (context, data, child) {
+                  final posts = data.posts;
+                  final isFeedLoading = data.isLoading;
+                  final feedHasMore = data.hasMore;
 
-                final visiblePosts = _resolveVisiblePosts(posts);
+                  final visiblePosts = _resolveVisiblePosts(posts);
 
-                return GestureDetector(
-                  behavior: HitTestBehavior.translucent,
-                  onHorizontalDragStart: _handleFeedSwipeStart,
-                  onHorizontalDragUpdate: _handleFeedSwipeUpdate,
-                  onHorizontalDragEnd: _handleFeedSwipe,
-                  onHorizontalDragCancel: () {
-                    _feedSwipeDx = 0;
-                    _feedSwipeAccepted = false;
-                    _feedSwitchController.forward();
-                  },
-                  child: SlideTransition(
-                    position: Tween<Offset>(
-                      begin: Offset(_slideDirection * 0.04, 0),
-                      end: Offset.zero,
-                    ).animate(_feedSwitchAnimation),
-                    child: NotificationListener<ScrollNotification>(
-                      onNotification: (notification) {
-                        if (_currentConfig.supportsRemoteLoading &&
-                            notification.metrics.pixels >=
-                                notification.metrics.maxScrollExtent - 500 &&
-                            feedHasMore &&
-                            !isFeedLoading) {
-                          context.read<PostProvider>().loadPosts(
-                                boardId: 1,
-                                sort: _currentRemoteSort ?? 'all',
-                              );
-                        }
-                        return false;
-                      },
-                      child: CustomScrollView(
-                        key: PageStorageKey<String>(
-                          'home-feed-scroll-$_feedMode',
-                        ),
-                        controller: _currentFeedScrollController,
-                        physics: const AlwaysScrollableScrollPhysics(
-                          parent: BouncingScrollPhysics(),
-                        ),
-                        slivers: [
-                          // 搜索框（可折叠）
-                          SliverPersistentHeader(
-                            pinned: false,
-                            floating: true,
-                            delegate: _SliverSearchBarDelegate(
-                              vsync: this,
-                              child: Padding(
-                                padding:
-                                    const EdgeInsets.fromLTRB(12, 2, 12, 4),
-                                child: _buildSearchBar(isDark),
+                  return GestureDetector(
+                    behavior: HitTestBehavior.translucent,
+                    onHorizontalDragStart: _handleFeedSwipeStart,
+                    onHorizontalDragUpdate: _handleFeedSwipeUpdate,
+                    onHorizontalDragEnd: _handleFeedSwipe,
+                    onHorizontalDragCancel: () {
+                      _feedSwipeDx = 0;
+                      _feedSwipeAccepted = false;
+                      _feedSwitchController.forward();
+                    },
+                    child: SlideTransition(
+                      position: Tween<Offset>(
+                        begin: Offset(_slideDirection * 0.04, 0),
+                        end: Offset.zero,
+                      ).animate(_feedSwitchAnimation),
+                      child: NotificationListener<ScrollNotification>(
+                        onNotification: (notification) {
+                          if (_currentConfig.supportsRemoteLoading &&
+                              notification.metrics.pixels >=
+                                  notification.metrics.maxScrollExtent - 500 &&
+                              feedHasMore &&
+                              !isFeedLoading) {
+                            context.read<PostProvider>().loadPosts(
+                              boardId: 1,
+                              sort: _currentRemoteSort ?? 'all',
+                            );
+                          }
+                          return false;
+                        },
+                        child: CustomScrollView(
+                          key: PageStorageKey<String>(
+                            'home-feed-scroll-$_feedMode',
+                          ),
+                          controller: _currentFeedScrollController,
+                          physics: const AlwaysScrollableScrollPhysics(
+                            parent: BouncingScrollPhysics(),
+                          ),
+                          slivers: [
+                            // 搜索框（可折叠）
+                            SliverPersistentHeader(
+                              pinned: false,
+                              floating: true,
+                              delegate: _SliverSearchBarDelegate(
+                                vsync: this,
+                                child: Padding(
+                                  padding: const EdgeInsets.fromLTRB(
+                                    12,
+                                    2,
+                                    12,
+                                    4,
+                                  ),
+                                  child: _buildSearchBar(isDark),
+                                ),
                               ),
                             ),
-                          ),
-                          if (!_currentConfig.supportsRemoteLoading)
-                            SliverFillRemaining(
-                              hasScrollBody: false,
-                              child: _buildFollowingPlaceholder(isDark),
-                            )
-                          else if (isFeedLoading && posts.isEmpty)
-                            const SliverFillRemaining(
-                              child: Center(child: CircularProgressIndicator()),
-                            )
-                          else if (visiblePosts.isEmpty)
-                            SliverFillRemaining(
-                              child: _buildEmptyState(
-                                isDark,
-                                title: _searchQuery.isNotEmpty
-                                    ? '没有找到匹配帖子'
-                                    : '暂无帖子',
-                                subtitle: _searchQuery.isNotEmpty
-                                    ? '目前只按标题搜索，换个标题关键词试试'
-                                    : '发布第一条帖子吧',
-                                onRetry: _refresh,
-                              ),
-                            )
-                          else
-                            SliverList(
-                              delegate: SliverChildBuilderDelegate(
-                                (context, index) {
+                            if (!_currentConfig.supportsRemoteLoading)
+                              SliverFillRemaining(
+                                hasScrollBody: false,
+                                child: _buildFollowingPlaceholder(isDark),
+                              )
+                            else if (isFeedLoading && posts.isEmpty)
+                              const SliverFillRemaining(
+                                child: Center(
+                                  child: CircularProgressIndicator(),
+                                ),
+                              )
+                            else if (visiblePosts.isEmpty)
+                              SliverFillRemaining(
+                                child: _buildEmptyState(
+                                  isDark,
+                                  title: _searchQuery.isNotEmpty
+                                      ? '没有找到匹配帖子'
+                                      : '暂无帖子',
+                                  subtitle: _searchQuery.isNotEmpty
+                                      ? '目前只按标题搜索，换个标题关键词试试'
+                                      : '发布第一条帖子吧',
+                                  onRetry: _refresh,
+                                ),
+                              )
+                            else
+                              SliverList(
+                                delegate: SliverChildBuilderDelegate((
+                                  context,
+                                  index,
+                                ) {
                                   final post = visiblePosts[index];
-                                  final isSelected = _selectedPost?.id ==
-                                          post.id &&
+                                  final isSelected =
+                                      _selectedPost?.id == post.id &&
                                       _selectedUserId == null &&
                                       ResponsiveUtil.useDesktopShell(context);
                                   return Padding(
                                     padding: const EdgeInsets.symmetric(
-                                        horizontal: 12),
+                                      horizontal: 12,
+                                    ),
                                     child: Container(
                                       decoration: isSelected
                                           ? BoxDecoration(
@@ -1075,7 +1106,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                                                       .withValues(alpha: 0.15),
                                                   blurRadius: 20,
                                                   spreadRadius: 2,
-                                                )
+                                                ),
                                               ],
                                             )
                                           : null,
@@ -1084,7 +1115,8 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                                         onAuthorTap: _openUserInSplit,
                                         onTap: () {
                                           if (ResponsiveUtil.useDesktopShell(
-                                              context)) {
+                                            context,
+                                          )) {
                                             _openPostInSplit(post);
                                           } else {
                                             Navigator.push(
@@ -1092,10 +1124,10 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                                               MaterialPageRoute(
                                                 builder: (_) =>
                                                     PostDetailScreen(
-                                                  postId: post.id,
-                                                  isMarket: false,
-                                                  initialPost: post,
-                                                ),
+                                                      postId: post.id,
+                                                      isMarket: false,
+                                                      initialPost: post,
+                                                    ),
                                               ),
                                             );
                                           }
@@ -1103,32 +1135,29 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                                       ),
                                     ),
                                   );
-                                },
-                                childCount: visiblePosts.length,
+                                }, childCount: visiblePosts.length),
                               ),
-                            ),
-                          if (isFeedLoading && posts.isNotEmpty)
-                            const SliverToBoxAdapter(
-                              child: Padding(
-                                padding: EdgeInsets.symmetric(vertical: 18),
-                                child: Center(
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
+                            if (isFeedLoading && posts.isNotEmpty)
+                              const SliverToBoxAdapter(
+                                child: Padding(
+                                  padding: EdgeInsets.symmetric(vertical: 18),
+                                  child: Center(
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
                                   ),
                                 ),
                               ),
+                            const SliverToBoxAdapter(
+                              child: SizedBox(height: 80),
                             ),
-                          const SliverToBoxAdapter(
-                            child: SizedBox(height: 80),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
-                  ),
-                );
-              },
-            ),
-          ),
+                  );
+                },
+              ),
         ),
       ),
     );
@@ -1140,8 +1169,9 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       borderRadius: 50,
       blur: 16,
       opacity: 0.85,
-      backgroundColor:
-          isDark ? const Color(0xE6171B24) : const Color(0xF2FFFFFF),
+      backgroundColor: isDark
+          ? const Color(0xE6171B24)
+          : const Color(0xF2FFFFFF),
       borderColor: isDark
           ? Colors.white.withValues(alpha: 0.12)
           : Colors.white.withValues(alpha: 0.85),
@@ -1237,7 +1267,7 @@ class _SliverSearchBarDelegate extends SliverPersistentHeaderDelegate {
   final Widget child;
 
   _SliverSearchBarDelegate({required TickerProvider vsync, required this.child})
-      : _vsync = vsync;
+    : _vsync = vsync;
 
   @override
   double get maxExtent => 46;
@@ -1257,7 +1287,10 @@ class _SliverSearchBarDelegate extends SliverPersistentHeaderDelegate {
 
   @override
   Widget build(
-      BuildContext context, double shrinkOffset, bool overlapsContent) {
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
     final visibleFraction = (1.0 - shrinkOffset / maxExtent).clamp(0.0, 1.0);
     return Opacity(
       opacity: visibleFraction,

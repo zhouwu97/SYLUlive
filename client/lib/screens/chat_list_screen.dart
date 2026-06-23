@@ -144,7 +144,8 @@ class _ChatListScreenState extends State<ChatListScreen>
   Widget _buildPrivateMessageBackground() {
     final themeProvider = context.watch<ThemeProvider>();
     final bgPath = themeProvider.getBackgroundImageFor(context);
-    final fillScreen = bgPath != null &&
+    final fillScreen =
+        bgPath != null &&
         bgPath.isNotEmpty &&
         themeProvider.getBackgroundFillScreenFor(context);
     final imageProvider = _privateMessageBackgroundProvider(bgPath);
@@ -163,11 +164,14 @@ class _ChatListScreenState extends State<ChatListScreen>
 
   ImageProvider _privateMessageBackgroundProvider(String? bgPath) {
     if (bgPath == null || bgPath.isEmpty) {
-      final isWide = MediaQuery.of(context).size.width >
+      final isWide =
+          MediaQuery.of(context).size.width >
           MediaQuery.of(context).size.height;
-      return AssetImage(isWide
-          ? 'assets/images/tablet_default_landscape.png'
-          : 'assets/images/morenbeijing.jpeg');
+      return AssetImage(
+        isWide
+            ? 'assets/images/tablet_default_landscape.png'
+            : 'assets/images/morenbeijing.jpeg',
+      );
     }
 
     if (ThemeProvider.isBundledAssetBackground(bgPath)) {
@@ -239,7 +243,8 @@ class _ChatListScreenState extends State<ChatListScreen>
 
     return ChatDetailScreen(
       key: ValueKey(
-          'chat-detail-${_selectedConversationId ?? selectedTarget.id}'),
+        'chat-detail-${_selectedConversationId ?? selectedTarget.id}',
+      ),
       conversationId: _selectedConversationId,
       targetUser: selectedTarget,
       embedded: true,
@@ -260,7 +265,8 @@ class _ChatListScreenState extends State<ChatListScreen>
       return;
     }
 
-    final currentSelectionExists = _selectedConversationId != null &&
+    final currentSelectionExists =
+        _selectedConversationId != null &&
         provider.conversations.any(
           (conversation) => conversation.id == _selectedConversationId,
         );
@@ -314,10 +320,7 @@ class _ChatListScreenState extends State<ChatListScreen>
           Icon(Icons.forum_outlined, size: 72, color: Colors.grey.shade400),
           const SizedBox(height: 16),
           const Center(
-            child: Text(
-              '暂无私信\n可以从其他用户主页发起聊天',
-              textAlign: TextAlign.center,
-            ),
+            child: Text('暂无私信\n可以从其他用户主页发起聊天', textAlign: TextAlign.center),
           ),
         ],
       );
@@ -335,8 +338,10 @@ class _ChatListScreenState extends State<ChatListScreen>
             '私信会话数据异常: conversation=${conversation.id}, currentUser=$currentUserId, users=${conversation.user1Id}/${conversation.user2Id}',
           );
           return ListTile(
-            contentPadding:
-                const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 7,
+            ),
             leading: Icon(Icons.error_outline, color: Colors.red.shade400),
             title: const Text('会话数据异常'),
             subtitle: Text('会话 ${conversation.id} 无法匹配当前用户'),
@@ -361,16 +366,17 @@ class _ChatListScreenState extends State<ChatListScreen>
     final preview = lastMessage == null
         ? '暂无消息'
         : lastMessage.content.trim().isNotEmpty
-            ? lastMessage.content.trim()
-            : lastMessage.file != null
-                ? '[图片]'
-                : '暂无消息';
+        ? lastMessage.content.trim()
+        : lastMessage.file != null
+        ? '[图片]'
+        : '暂无消息';
     final selected = splitMode && _selectedConversationId == conversation.id;
 
     return ListTile(
       selected: selected,
-      selectedTileColor:
-          Theme.of(context).colorScheme.primary.withValues(alpha: 0.10),
+      selectedTileColor: Theme.of(
+        context,
+      ).colorScheme.primary.withValues(alpha: 0.10),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
       leading: CachedAvatar(
         imageUrl: targetUser.avatar.isEmpty

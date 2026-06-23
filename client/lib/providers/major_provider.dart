@@ -8,40 +8,42 @@ class MajorItem {
   final int ratingCount;
   final double averageStar;
 
-  MajorItem(
-      {required this.id,
-      required this.name,
-      required this.level,
-      this.ratingCount = 0,
-      this.averageStar = 0});
+  MajorItem({
+    required this.id,
+    required this.name,
+    required this.level,
+    this.ratingCount = 0,
+    this.averageStar = 0,
+  });
 
   factory MajorItem.fromJson(Map<String, dynamic> j) => MajorItem(
-        id: j['id'] ?? 0,
-        name: j['name'] ?? '',
-        level: j['level'] ?? '',
-        ratingCount: j['rating_count'] ?? 0,
-        averageStar: (j['average_star'] ?? 0).toDouble(),
-      );
+    id: j['id'] ?? 0,
+    name: j['name'] ?? '',
+    level: j['level'] ?? '',
+    ratingCount: j['rating_count'] ?? 0,
+    averageStar: (j['average_star'] ?? 0).toDouble(),
+  );
 }
 
 class MajorRating {
   final int id, majorId, userId, star;
   final String comment, userName;
-  MajorRating(
-      {required this.id,
-      required this.majorId,
-      required this.userId,
-      required this.star,
-      required this.comment,
-      this.userName = ''});
+  MajorRating({
+    required this.id,
+    required this.majorId,
+    required this.userId,
+    required this.star,
+    required this.comment,
+    this.userName = '',
+  });
   factory MajorRating.fromJson(Map<String, dynamic> j) => MajorRating(
-        id: j['id'] ?? 0,
-        majorId: j['major_id'] ?? 0,
-        userId: j['user_id'] ?? 0,
-        star: j['star'] ?? 0,
-        comment: j['comment'] ?? '',
-        userName: j['user_name'] ?? '',
-      );
+    id: j['id'] ?? 0,
+    majorId: j['major_id'] ?? 0,
+    userId: j['user_id'] ?? 0,
+    star: j['star'] ?? 0,
+    comment: j['comment'] ?? '',
+    userName: j['user_name'] ?? '',
+  );
 }
 
 class MajorProvider extends ChangeNotifier {
@@ -116,8 +118,10 @@ class MajorProvider extends ChangeNotifier {
 
   Future<bool> rate(int id, int star, String comment) async {
     try {
-      await _dio
-          .post('/majors/$id/rate', data: {'star': star, 'comment': comment});
+      await _dio.post(
+        '/majors/$id/rate',
+        data: {'star': star, 'comment': comment},
+      );
       await loadDetail(id);
       return true;
     } catch (_) {

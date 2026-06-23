@@ -27,7 +27,8 @@ class MarketExposureScreen extends StatelessWidget {
       body: Stack(
         children: [
           Positioned.fill(
-              child: _buildBackground(context, themeProvider, isDark)),
+            child: _buildBackground(context, themeProvider, isDark),
+          ),
           Consumer<PostProvider>(
             builder: (context, postProvider, child) {
               final exposurePosts = postProvider
@@ -118,7 +119,10 @@ class MarketExposureScreen extends StatelessWidget {
   }
 
   Widget _buildBackground(
-      BuildContext context, ThemeProvider themeProvider, bool isDark) {
+    BuildContext context,
+    ThemeProvider themeProvider,
+    bool isDark,
+  ) {
     if (themeProvider.isBackgroundVisible &&
         themeProvider.getBackgroundImageFor(context) != null) {
       final bgPath = themeProvider.getBackgroundImageFor(context)!;
@@ -133,18 +137,16 @@ class MarketExposureScreen extends StatelessWidget {
                   errorBuilder: (_, __, ___) => _buildDefaultBackground(isDark),
                 )
               : bgPath.startsWith('/')
-                  ? Image.file(
-                      File(bgPath),
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) =>
-                          _buildDefaultBackground(isDark),
-                    )
-                  : Image.network(
-                      bgPath,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) =>
-                          _buildDefaultBackground(isDark),
-                    ),
+              ? Image.file(
+                  File(bgPath),
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => _buildDefaultBackground(isDark),
+                )
+              : Image.network(
+                  bgPath,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => _buildDefaultBackground(isDark),
+                ),
           Container(
             color: isDark
                 ? Colors.black.withValues(alpha: 0.35)

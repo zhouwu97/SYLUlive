@@ -41,13 +41,16 @@ class BottomNavWrapper extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             ClipRRect(
-              borderRadius:
-                  const BorderRadius.vertical(top: Radius.circular(16)),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(16),
+              ),
               child: BackdropFilter(
                 filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
                 child: Container(
                   padding: EdgeInsets.only(
-                      top: 2, bottom: bottomSafe > 0 ? bottomSafe : 2),
+                    top: 2,
+                    bottom: bottomSafe > 0 ? bottomSafe : 2,
+                  ),
                   decoration: BoxDecoration(
                     color: (isDark ? const Color(0xFF1A1A2E) : Colors.white)
                         .withValues(alpha: 0.85),
@@ -86,16 +89,46 @@ class BottomNavWrapper extends StatelessWidget {
                         mainAxisAlignment: MainAxisAlignment.spaceAround,
                         crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
-                          _labeledItem(Icons.home_rounded, '首页', 0, context,
-                              primaryColor, itemWidth),
-                          _labeledItem(Icons.storefront_rounded, '集市', 1,
-                              context, primaryColor, itemWidth),
-                          _labeledItem(Icons.calendar_month_rounded, '课表', 2,
-                              context, primaryColor, itemWidth),
-                          _labeledItem(Icons.apartment_rounded, '校园', 3,
-                              context, primaryColor, itemWidth),
-                          _labeledItem(Icons.person_rounded, '我', 4, context,
-                              primaryColor, itemWidth),
+                          _labeledItem(
+                            Icons.home_rounded,
+                            '首页',
+                            0,
+                            context,
+                            primaryColor,
+                            itemWidth,
+                          ),
+                          _labeledItem(
+                            Icons.storefront_rounded,
+                            '集市',
+                            1,
+                            context,
+                            primaryColor,
+                            itemWidth,
+                          ),
+                          _labeledItem(
+                            Icons.calendar_month_rounded,
+                            '课表',
+                            2,
+                            context,
+                            primaryColor,
+                            itemWidth,
+                          ),
+                          _labeledItem(
+                            Icons.apartment_rounded,
+                            '校园',
+                            3,
+                            context,
+                            primaryColor,
+                            itemWidth,
+                          ),
+                          _labeledItem(
+                            Icons.person_rounded,
+                            '我',
+                            4,
+                            context,
+                            primaryColor,
+                            itemWidth,
+                          ),
                         ],
                       ),
                     ],
@@ -130,25 +163,28 @@ class BottomNavWrapper extends StatelessWidget {
               child: BackdropFilter(
                 filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
                 child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 4, vertical: 0),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 4,
+                    vertical: 0,
+                  ),
                   decoration: BoxDecoration(
-                      color: (isDark ? Colors.grey[900]! : Colors.white)
-                          .withValues(alpha: 0.8),
-                      borderRadius: BorderRadius.circular(50),
-                      border: Border.all(
-                        color: isDark
-                            ? Colors.white10
-                            : Colors.black.withValues(alpha: 0.05),
-                        width: 0.5,
+                    color: (isDark ? Colors.grey[900]! : Colors.white)
+                        .withValues(alpha: 0.8),
+                    borderRadius: BorderRadius.circular(50),
+                    border: Border.all(
+                      color: isDark
+                          ? Colors.white10
+                          : Colors.black.withValues(alpha: 0.05),
+                      width: 0.5,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.1),
+                        blurRadius: 10,
+                        spreadRadius: 1,
                       ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.1),
-                          blurRadius: 10,
-                          spreadRadius: 1,
-                        )
-                      ]),
+                    ],
+                  ),
                   child: LayoutBuilder(
                     builder: (context, constraints) {
                       final itemWidth = constraints.maxWidth / 5;
@@ -178,16 +214,41 @@ class BottomNavWrapper extends StatelessWidget {
                             mainAxisAlignment: MainAxisAlignment.spaceAround,
                             crossAxisAlignment: CrossAxisAlignment.center,
                             children: [
-                              _iconOnly(Icons.home_rounded, 0, context,
-                                  primaryColor, itemWidth),
-                              _iconOnly(Icons.storefront_rounded, 1, context,
-                                  primaryColor, itemWidth),
-                              _iconOnly(Icons.calendar_month_rounded, 2,
-                                  context, primaryColor, itemWidth),
-                              _iconOnly(Icons.apartment_rounded, 3, context,
-                                  primaryColor, itemWidth),
-                              _iconOnly(Icons.person_rounded, 4, context,
-                                  primaryColor, itemWidth),
+                              _iconOnly(
+                                Icons.home_rounded,
+                                0,
+                                context,
+                                primaryColor,
+                                itemWidth,
+                              ),
+                              _iconOnly(
+                                Icons.storefront_rounded,
+                                1,
+                                context,
+                                primaryColor,
+                                itemWidth,
+                              ),
+                              _iconOnly(
+                                Icons.calendar_month_rounded,
+                                2,
+                                context,
+                                primaryColor,
+                                itemWidth,
+                              ),
+                              _iconOnly(
+                                Icons.apartment_rounded,
+                                3,
+                                context,
+                                primaryColor,
+                                itemWidth,
+                              ),
+                              _iconOnly(
+                                Icons.person_rounded,
+                                4,
+                                context,
+                                primaryColor,
+                                itemWidth,
+                              ),
                             ],
                           ),
                         ],
@@ -204,12 +265,19 @@ class BottomNavWrapper extends StatelessWidget {
   }
 
   // 标准模式 Item（图标+文字）
-  Widget _labeledItem(IconData icon, String label, int index,
-      BuildContext context, Color primaryColor, double width) {
+  Widget _labeledItem(
+    IconData icon,
+    String label,
+    int index,
+    BuildContext context,
+    Color primaryColor,
+    double width,
+  ) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final isSelected = currentIndex == index;
-    final color =
-        isSelected ? primaryColor : (isDark ? Colors.white54 : Colors.grey);
+    final color = isSelected
+        ? primaryColor
+        : (isDark ? Colors.white54 : Colors.grey);
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () => onTap(index),
@@ -218,36 +286,45 @@ class BottomNavWrapper extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 4),
           child: Column(
-              mainAxisSize: MainAxisSize.min,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 300),
-                  curve: Curves.easeOutBack,
-                  transform: Matrix4.identity()..scale(isSelected ? 1.1 : 1.0),
-                  transformAlignment: Alignment.center,
-                  child: Icon(icon, color: color, size: 22),
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeOutBack,
+                transform: Matrix4.identity()..scale(isSelected ? 1.1 : 1.0),
+                transformAlignment: Alignment.center,
+                child: Icon(icon, color: color, size: 22),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                label,
+                style: TextStyle(
+                  color: color,
+                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                  fontSize: 10,
                 ),
-                const SizedBox(height: 2),
-                Text(label,
-                    style: TextStyle(
-                        color: color,
-                        fontWeight:
-                            isSelected ? FontWeight.w700 : FontWeight.w500,
-                        fontSize: 10)),
-              ]),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
   // 悬浮模式 Item（纯图标）
-  Widget _iconOnly(IconData icon, int index, BuildContext context,
-      Color primaryColor, double width) {
+  Widget _iconOnly(
+    IconData icon,
+    int index,
+    BuildContext context,
+    Color primaryColor,
+    double width,
+  ) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final isSelected = currentIndex == index;
-    final color =
-        isSelected ? primaryColor : (isDark ? Colors.white54 : Colors.grey);
+    final color = isSelected
+        ? primaryColor
+        : (isDark ? Colors.white54 : Colors.grey);
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,

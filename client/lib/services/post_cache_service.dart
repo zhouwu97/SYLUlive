@@ -64,8 +64,9 @@ class PostCacheService {
     if (newPosts.isEmpty) return;
     final existing = await loadPosts(boardId, sort: sort);
     final existingIds = existing.map((p) => p.id).toSet();
-    final uniqueNew =
-        newPosts.where((p) => !existingIds.contains(p.id)).toList();
+    final uniqueNew = newPosts
+        .where((p) => !existingIds.contains(p.id))
+        .toList();
     final merged = [...uniqueNew, ...existing];
     // 限制缓存数量，防止无限增长
     if (merged.length > 200) {
@@ -95,21 +96,23 @@ class PostCacheService {
       'status': post.status,
       'view_count': post.viewCount,
       'images': post.images
-          .map((img) => {
-                'id': img.id,
-                'post_id': img.postId,
-                'file_id': img.fileId,
-                'sort_order': img.sortOrder,
-                'file': img.file != null
-                    ? {
-                        'id': img.file!.id,
-                        'hash': img.file!.hash,
-                        'path': img.file!.path,
-                        'size': img.file!.size,
-                        'mime_type': img.file!.mimeType,
-                      }
-                    : null,
-              })
+          .map(
+            (img) => {
+              'id': img.id,
+              'post_id': img.postId,
+              'file_id': img.fileId,
+              'sort_order': img.sortOrder,
+              'file': img.file != null
+                  ? {
+                      'id': img.file!.id,
+                      'hash': img.file!.hash,
+                      'path': img.file!.path,
+                      'size': img.file!.size,
+                      'mime_type': img.file!.mimeType,
+                    }
+                  : null,
+            },
+          )
           .toList(),
       'author': post.author != null
           ? {

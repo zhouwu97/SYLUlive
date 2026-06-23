@@ -34,8 +34,7 @@ class HomeWidgetService {
           return false;
         }
         return true;
-      }).toList()
-        ..sort((a, b) => a.startSection.compareTo(b.startSection));
+      }).toList()..sort((a, b) => a.startSection.compareTo(b.startSection));
 
       // 上课时间表
       const starts = [
@@ -50,7 +49,7 @@ class HomeWidgetService {
         '16:40',
         '17:35',
         '18:30',
-        '19:25'
+        '19:25',
       ];
       const ends = [
         '08:45',
@@ -64,7 +63,7 @@ class HomeWidgetService {
         '17:25',
         '18:20',
         '19:15',
-        '20:10'
+        '20:10',
       ];
 
       final coursesJson = todayCourses.map((c) {

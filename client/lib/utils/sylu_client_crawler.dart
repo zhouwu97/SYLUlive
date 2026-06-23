@@ -30,25 +30,28 @@ class SyluClientCrawler {
   static const String _targetDomain = 'xg.sylu.edu.cn';
 
   SyluClientCrawler({CookieJar? cookieJar, Dio? dio}) {
-    _dio = dio ??
-        Dio(BaseOptions(
-          connectTimeout: const Duration(seconds: 30),
-          receiveTimeout: const Duration(seconds: 30),
-          headers: {
-            'User-Agent':
-                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept':
-                'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-            'Accept-Language': 'zh-CN,zh;q=0.9',
-            'Connection': 'keep-alive',
-            'Upgrade-Insecure-Requests': '1',
-          },
-          // 关闭自动跟随重定向，我们手动处理，以防止 Cookie 丢失
-          followRedirects: false,
-          validateStatus: (status) {
-            return status != null && status < 600; // 捕获所有状态码
-          },
-        ));
+    _dio =
+        dio ??
+        Dio(
+          BaseOptions(
+            connectTimeout: const Duration(seconds: 30),
+            receiveTimeout: const Duration(seconds: 30),
+            headers: {
+              'User-Agent':
+                  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+              'Accept':
+                  'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+              'Accept-Language': 'zh-CN,zh;q=0.9',
+              'Connection': 'keep-alive',
+              'Upgrade-Insecure-Requests': '1',
+            },
+            // 关闭自动跟随重定向，我们手动处理，以防止 Cookie 丢失
+            followRedirects: false,
+            validateStatus: (status) {
+              return status != null && status < 600; // 捕获所有状态码
+            },
+          ),
+        );
 
     // 【核心修复】：强制信任所有证书
     _dio.httpClientAdapter = IOHttpClientAdapter(
@@ -90,8 +93,11 @@ class SyluClientCrawler {
   }
 
   /// 执行登录并返回结果状态
-  Future<String> login(String username, String password,
-      [String? vpnTicket]) async {
+  Future<String> login(
+    String username,
+    String password, [
+    String? vpnTicket,
+  ]) async {
     // 1. 初始化 Cookie
     if (vpnTicket != null) {
       await _injectVpnCookie(vpnTicket);
@@ -136,8 +142,10 @@ class SyluClientCrawler {
       throw Exception('无法访问登录页，状态码: ${getResp.statusCode}');
     }
 
-    final htmlStr =
-        _decodeResponseBytes(getResp.data as List<int>, getResp.headers);
+    final htmlStr = _decodeResponseBytes(
+      getResp.data as List<int>,
+      getResp.headers,
+    );
     final doc = parse(htmlStr);
 
     final viewState = _getInputValue(doc, '__VIEWSTATE');
@@ -190,8 +198,10 @@ class SyluClientCrawler {
       ),
     );
 
-    final postHtml =
-        _decodeResponseBytes(postResp.data as List<int>, postResp.headers);
+    final postHtml = _decodeResponseBytes(
+      postResp.data as List<int>,
+      postResp.headers,
+    );
 
     final postDoc = parse(postHtml);
     for (final script in postDoc.querySelectorAll('script')) {
@@ -208,11 +218,15 @@ class SyluClientCrawler {
         print('[Crawler] 成绩页URL: $mainUrl');
         final mainResp = await _dio.get(
           mainUrl,
-          options:
-              Options(responseType: ResponseType.bytes, followRedirects: true),
+          options: Options(
+            responseType: ResponseType.bytes,
+            followRedirects: true,
+          ),
         );
-        final mainHtml =
-            _decodeResponseBytes(mainResp.data as List<int>, mainResp.headers);
+        final mainHtml = _decodeResponseBytes(
+          mainResp.data as List<int>,
+          mainResp.headers,
+        );
         print('[Crawler] 成绩页获取成功，长度: ${mainHtml.length}');
         return mainHtml;
       }
@@ -237,10 +251,9 @@ class SyluClientCrawler {
       cookieStr = 'wengine_vpn_ticketwebvpn_sylu_edu_cn=$vpnTicket';
     }
 
-    await _cookieJar.saveFromResponse(
-      vpnUri,
-      [Cookie.fromSetCookieValue(cookieStr)],
-    );
+    await _cookieJar.saveFromResponse(vpnUri, [
+      Cookie.fromSetCookieValue(cookieStr),
+    ]);
   }
 
   /// 构造 WebVPN 加密后的目标 URL
@@ -264,7 +277,10 @@ class SyluClientCrawler {
       cipher.processBlock(block, 0, outBlock, 0);
 
       cipherBytes.setRange(
-          offset, offset + chunkSize, outBlock.take(chunkSize));
+        offset,
+        offset + chunkSize,
+        outBlock.take(chunkSize),
+      );
       offset += chunkSize;
     }
 
@@ -307,7 +323,9 @@ class SyluClientCrawler {
       }
 
       final rsaPublicKey = pc.RSAPublicKey(
-          modulus.valueAsBigInteger, exponent.valueAsBigInteger);
+        modulus.valueAsBigInteger,
+        exponent.valueAsBigInteger,
+      );
 
       final cipher = pc.PKCS1Encoding(pc.RSAEngine())
         ..init(true, pc.PublicKeyParameter<pc.RSAPublicKey>(rsaPublicKey));
@@ -349,8 +367,9 @@ class SyluClientCrawler {
       for (var table in tables) {
         final text = table.text;
         // 匹配 "思想成长(13.0/10.0)" 这种典型结构
-        final regex =
-            RegExp(r'([^\d\s\(\/]+)[\s\(\)]*([\d\.]+)\s*/\s*([\d\.]+)');
+        final regex = RegExp(
+          r'([^\d\s\(\/]+)[\s\(\)]*([\d\.]+)\s*/\s*([\d\.]+)',
+        );
         final matches = regex.allMatches(text);
 
         if (matches.isNotEmpty) {
@@ -382,8 +401,8 @@ class SyluClientCrawler {
           final itemName = columns[0].text.trim();
           final score = columns[7].text.trim(); // 活动分值
           final date = columns[2].text.trim(); // 活动时间
-          var category =
-              columns[3].text.trim(); // 活动类型（思想成长/志愿公益/...)  columns[1]是申请单位
+          var category = columns[3].text
+              .trim(); // 活动类型（思想成长/志愿公益/...)  columns[1]是申请单位
 
           if (itemName.isNotEmpty &&
               !itemName.contains('活动名称') &&
@@ -433,8 +452,9 @@ class SyluClientCrawler {
           final score = categoryTotals[cat] ?? 0;
           summary.add({
             'category': cat,
-            'score':
-                score.toStringAsFixed(score == score.roundToDouble() ? 0 : 1),
+            'score': score.toStringAsFixed(
+              score == score.roundToDouble() ? 0 : 1,
+            ),
             'required': requiredScores[cat]!.toStringAsFixed(0),
           });
         }
@@ -445,10 +465,7 @@ class SyluClientCrawler {
       print('解析二课数据失败: $e');
     }
 
-    return {
-      'summary': summary,
-      'scores': scores,
-    };
+    return {'summary': summary, 'scores': scores};
   }
 
   /// 保持向下兼容

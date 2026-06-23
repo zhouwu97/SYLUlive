@@ -60,9 +60,10 @@ class _CampusCalendarScreenState extends State<CampusCalendarScreen>
       duration: const Duration(milliseconds: 200),
       vsync: this,
     );
-    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _fadeController, curve: Curves.easeOut),
-    );
+    _fadeAnimation = Tween<double>(
+      begin: 0.0,
+      end: 1.0,
+    ).animate(CurvedAnimation(parent: _fadeController, curve: Curves.easeOut));
     _fadeController.forward();
   }
 
@@ -102,10 +103,7 @@ class _CampusCalendarScreenState extends State<CampusCalendarScreen>
                 child: AnimatedBuilder(
                   animation: _fadeAnimation,
                   builder: (context, child) {
-                    return Opacity(
-                      opacity: _fadeAnimation.value,
-                      child: child,
-                    );
+                    return Opacity(opacity: _fadeAnimation.value, child: child);
                   },
                   child: Image.asset(
                     'assets/images/xiaoli.jpg',
@@ -146,13 +144,16 @@ class _CampusCalendarScreenState extends State<CampusCalendarScreen>
               right: 0,
               child: Center(
                 child: GlassContainer(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
                   borderRadius: 20,
                   blur: 8,
                   opacity: 0.3,
-                  backgroundColor:
-                      isDark ? const Color(0xFF1A1A2E) : Colors.white,
+                  backgroundColor: isDark
+                      ? const Color(0xFF1A1A2E)
+                      : Colors.white,
                   child: Text(
                     '${(_currentScale * 100).toInt()}%',
                     style: TextStyle(
@@ -171,10 +172,11 @@ class _CampusCalendarScreenState extends State<CampusCalendarScreen>
 
   Widget _buildEventsPanel(bool isDark, Color primaryColor) {
     final now = DateTime.now();
-    final upcomingEvents = _events
-        .where((e) => e.date.isAfter(now.subtract(const Duration(days: 7))))
-        .toList()
-      ..sort((a, b) => a.date.compareTo(b.date));
+    final upcomingEvents =
+        _events
+            .where((e) => e.date.isAfter(now.subtract(const Duration(days: 7))))
+            .toList()
+          ..sort((a, b) => a.date.compareTo(b.date));
 
     return GlassContainer(
       borderRadius: 24.0,
@@ -275,7 +277,11 @@ class _CampusCalendarScreenState extends State<CampusCalendarScreen>
   }
 
   Widget _buildEventCard(
-      _CalendarEvent event, bool isDark, bool isToday, bool isPast) {
+    _CalendarEvent event,
+    bool isDark,
+    bool isToday,
+    bool isPast,
+  ) {
     final daysUntil = event.date.difference(DateTime.now()).inDays;
     String timeLabel;
     if (isToday) {
@@ -312,17 +318,15 @@ class _CampusCalendarScreenState extends State<CampusCalendarScreen>
                   color: event.color.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: Icon(
-                  event.icon,
-                  size: 16,
-                  color: event.color,
-                ),
+                child: Icon(event.icon, size: 16, color: event.color),
               ),
               const Spacer(),
               if (isToday)
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
                     color: event.color,
                     borderRadius: BorderRadius.circular(6),
@@ -413,8 +417,10 @@ class _CampusCalendarScreenState extends State<CampusCalendarScreen>
               ),
               const SizedBox(height: 8),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   color: isDark
                       ? Colors.white.withValues(alpha: 0.08)

@@ -107,7 +107,9 @@ class _CampusScreenState extends State<CampusScreen>
                 flexibleSpace: FlexibleSpaceBar(
                   expandedTitleScale: 1.2,
                   titlePadding: const EdgeInsets.only(
-                      left: 20, bottom: 62), // 标题位置，避开下方 Tab
+                    left: 20,
+                    bottom: 62,
+                  ), // 标题位置，避开下方 Tab
                   title: Text(
                     '校园',
                     style: TextStyle(
@@ -125,10 +127,12 @@ class _CampusScreenState extends State<CampusScreen>
                             begin: Alignment.topCenter,
                             end: Alignment.bottomCenter,
                             colors: [
-                              (isDark ? Colors.black : Colors.white)
-                                  .withValues(alpha: 0.7),
-                              (isDark ? Colors.black : Colors.white)
-                                  .withValues(alpha: 0.0),
+                              (isDark ? Colors.black : Colors.white).withValues(
+                                alpha: 0.7,
+                              ),
+                              (isDark ? Colors.black : Colors.white).withValues(
+                                alpha: 0.0,
+                              ),
                             ],
                           ),
                         ),
@@ -189,10 +193,7 @@ class _CampusScreenState extends State<CampusScreen>
             ),
           ],
         ),
-        labelStyle: const TextStyle(
-          fontWeight: FontWeight.w700,
-          fontSize: 13,
-        ),
+        labelStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
         unselectedLabelStyle: const TextStyle(
           fontWeight: FontWeight.w600,
           fontSize: 13,
@@ -215,11 +216,7 @@ class _CampusScreenState extends State<CampusScreen>
     return Tab(
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(icon, size: 18),
-          const SizedBox(width: 6),
-          Text(label),
-        ],
+        children: [Icon(icon, size: 18), const SizedBox(width: 6), Text(label)],
       ),
     );
   }

@@ -39,7 +39,8 @@ class Reply {
       status: json['status'] ?? 'normal',
       likeCount: json['like_count'] ?? 0,
       isLiked: json['is_liked'] == true,
-      images: (json['images'] as List<dynamic>?)
+      images:
+          (json['images'] as List<dynamic>?)
               ?.map((e) => ReplyImage.fromJson(e))
               .toList() ??
           [],

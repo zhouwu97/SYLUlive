@@ -9,8 +9,9 @@ class DiagnosticLogService {
   static const MethodChannel _channel = MethodChannel('shenliyuan/keep_alive');
 
   Future<List<DiagnosticLogEntry>> getLogs() async {
-    final result =
-        await _channel.invokeMethod<List<dynamic>>('getDiagnosticLogs');
+    final result = await _channel.invokeMethod<List<dynamic>>(
+      'getDiagnosticLogs',
+    );
 
     if (result == null) return const [];
 

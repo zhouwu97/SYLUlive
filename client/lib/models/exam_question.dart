@@ -29,7 +29,8 @@ class ExamQuestion {
       question: json['question'] as String? ?? '',
       questionType: json['questionType'] as String? ?? '',
       chapter: json['chapter'] as String?,
-      options: (json['options'] as List<dynamic>?)
+      options:
+          (json['options'] as List<dynamic>?)
               ?.map((e) => ExamOption.fromJson(e as Map<String, dynamic>))
               .toList() ??
           [],
@@ -40,16 +41,16 @@ class ExamQuestion {
   }
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'index': index,
-        'question': question,
-        'questionType': questionType,
-        'chapter': chapter,
-        'options': options.map((e) => e.toJson()).toList(),
-        'answer': answer,
-        'analysis': analysis,
-        'score': score,
-      };
+    'id': id,
+    'index': index,
+    'question': question,
+    'questionType': questionType,
+    'chapter': chapter,
+    'options': options.map((e) => e.toJson()).toList(),
+    'answer': answer,
+    'analysis': analysis,
+    'score': score,
+  };
 }
 
 class ExamOption {
@@ -59,9 +60,9 @@ class ExamOption {
   ExamOption({required this.label, required this.text});
 
   factory ExamOption.fromJson(Map<String, dynamic> json) => ExamOption(
-        label: json['label'] as String? ?? '',
-        text: json['text'] as String? ?? '',
-      );
+    label: json['label'] as String? ?? '',
+    text: json['text'] as String? ?? '',
+  );
 
   Map<String, dynamic> toJson() => {'label': label, 'text': text};
 }
@@ -210,7 +211,8 @@ class ExamMarkdownConverter {
     if (q.options.isNotEmpty) {
       buf.writeln('**选项：**');
       for (final opt in q.options) {
-        final isCorrect = markCorrectAnswers &&
+        final isCorrect =
+            markCorrectAnswers &&
             q.answer != null &&
             q.answer!.contains(opt.label);
         if (isCorrect) {

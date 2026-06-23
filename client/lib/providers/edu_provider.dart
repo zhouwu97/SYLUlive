@@ -58,11 +58,13 @@ class EduProvider extends ChangeNotifier {
 
   EduProvider(Dio authDio) {
     _authDio = authDio;
-    _eduDio = Dio(BaseOptions(
-      baseUrl: ApiConstants.eduServiceUrl,
-      connectTimeout: const Duration(seconds: 30),
-      receiveTimeout: const Duration(seconds: 60),
-    ));
+    _eduDio = Dio(
+      BaseOptions(
+        baseUrl: ApiConstants.eduServiceUrl,
+        connectTimeout: const Duration(seconds: 30),
+        receiveTimeout: const Duration(seconds: 60),
+      ),
+    );
   }
 
   void setUserId(String userId) {
@@ -162,8 +164,11 @@ class EduProvider extends ChangeNotifier {
   }
 
   // 绑定教务账号
-  Future<bool> bind(String studentId, String password,
-      {bool isSilent = false}) async {
+  Future<bool> bind(
+    String studentId,
+    String password, {
+    bool isSilent = false,
+  }) async {
     if (_userId == null) {
       if (!isSilent) {
         _errorMessage = '用户未登录';
@@ -267,7 +272,9 @@ class EduProvider extends ChangeNotifier {
 
   // 获取课表
   Future<OperationResult<List<Map<String, dynamic>>>?> getCourses(
-      String year, int semester) async {
+    String year,
+    int semester,
+  ) async {
     if (_userId == null) {
       return OperationResult.fail('用户未登录');
     }
@@ -276,17 +283,15 @@ class EduProvider extends ChangeNotifier {
       // 调用 Go 服务器，由 Go 使用存储的 cookie 访问教务系统
       final response = await _authDio.post(
         '/edu/courses',
-        data: {
-          'year': year,
-          'semester': semester,
-        },
+        data: {'year': year, 'semester': semester},
       );
 
       if (response.statusCode == 200) {
         final data = response.data;
         if (data['courses'] != null && (data['courses'] as List).isNotEmpty) {
           return OperationResult.ok(
-              List<Map<String, dynamic>>.from(data['courses']));
+            List<Map<String, dynamic>>.from(data['courses']),
+          );
         }
         final errorMsg =
             (data['error'] ?? data['message'] ?? data['detail'] ?? '')
@@ -312,13 +317,16 @@ class EduProvider extends ChangeNotifier {
         final rebindSuccess = await _trySilentRelogin();
         if (rebindSuccess) {
           try {
-            final retryResp = await _authDio.post('/edu/courses',
-                data: {'year': year, 'semester': semester});
+            final retryResp = await _authDio.post(
+              '/edu/courses',
+              data: {'year': year, 'semester': semester},
+            );
             if (retryResp.statusCode == 200 &&
                 retryResp.data['courses'] != null &&
                 (retryResp.data['courses'] as List).isNotEmpty) {
               return OperationResult.ok(
-                  List<Map<String, dynamic>>.from(retryResp.data['courses']));
+                List<Map<String, dynamic>>.from(retryResp.data['courses']),
+              );
             }
           } catch (_) {}
         } else {
@@ -332,7 +340,9 @@ class EduProvider extends ChangeNotifier {
 
   // 获取成绩
   Future<OperationResult<List<Map<String, dynamic>>>?> getGrades(
-      String year, int semester) async {
+    String year,
+    int semester,
+  ) async {
     if (_userId == null) {
       return OperationResult.fail('用户未登录');
     }
@@ -341,17 +351,15 @@ class EduProvider extends ChangeNotifier {
       // 调用 Go 服务器，由 Go 使用存储的 cookie 访问教务系统
       final response = await _authDio.post(
         '/edu/grades',
-        data: {
-          'year': year,
-          'semester': semester,
-        },
+        data: {'year': year, 'semester': semester},
       );
 
       if (response.statusCode == 200) {
         final data = response.data;
         if (data['grades'] != null) {
           return OperationResult.ok(
-              List<Map<String, dynamic>>.from(data['grades']));
+            List<Map<String, dynamic>>.from(data['grades']),
+          );
         }
         if (data['error'] != null) {
           return OperationResult.fail(data['error'].toString());
@@ -371,12 +379,15 @@ class EduProvider extends ChangeNotifier {
         final rebindSuccess = await _trySilentRelogin();
         if (rebindSuccess) {
           try {
-            final retryResp = await _authDio.post('/edu/grades',
-                data: {'year': year, 'semester': semester});
+            final retryResp = await _authDio.post(
+              '/edu/grades',
+              data: {'year': year, 'semester': semester},
+            );
             if (retryResp.statusCode == 200 &&
                 retryResp.data['grades'] != null) {
               return OperationResult.ok(
-                  List<Map<String, dynamic>>.from(retryResp.data['grades']));
+                List<Map<String, dynamic>>.from(retryResp.data['grades']),
+              );
             }
           } catch (_) {}
         } else {
@@ -391,7 +402,10 @@ class EduProvider extends ChangeNotifier {
   /// 将课表同步到本地数据库（供课表页展示）
   /// [courses] 为 fetch 返回的原始课程列表
   Future<bool> syncCourses(
-      String year, int semester, List<Map<String, dynamic>> courses) async {
+    String year,
+    int semester,
+    List<Map<String, dynamic>> courses,
+  ) async {
     if (_userId == null) return false;
 
     final kbList = courses.map((c) {

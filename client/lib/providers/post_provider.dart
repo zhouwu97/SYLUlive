@@ -68,20 +68,17 @@ class PostProvider extends ChangeNotifier {
   final bool _enableCache;
 
   final Map<String, _BoardState> _boards = {};
+  final Map<String, Future<void>> _inflightRequests = {};
   final int _activeBoardId = 1;
 
   PostProvider(this._dio, {bool enableCache = true})
-      : _enableCache = enableCache;
+    : _enableCache = enableCache;
 
   String _stateKey(int boardId, String sort, String? type) {
     return '$boardId|$sort|${type ?? ''}';
   }
 
-  _BoardState _ensureBoard(
-    int boardId, {
-    String sort = 'time',
-    String? type,
-  }) {
+  _BoardState _ensureBoard(int boardId, {String sort = 'time', String? type}) {
     final key = _stateKey(boardId, sort, type);
     return _boards.putIfAbsent(key, () {
       final state = _BoardState();
@@ -99,51 +96,26 @@ class PostProvider extends ChangeNotifier {
 
   _BoardState get _board => _ensureBoard(_activeBoardId);
 
-  List<Post> postsFor(
-    int boardId, {
-    String sort = 'time',
-    String? type,
-  }) =>
+  List<Post> postsFor(int boardId, {String sort = 'time', String? type}) =>
       _ensureBoard(boardId, sort: sort, type: type).posts;
-  bool isLoadingFor(
-    int boardId, {
-    String sort = 'time',
-    String? type,
-  }) =>
+  bool isLoadingFor(int boardId, {String sort = 'time', String? type}) =>
       _ensureBoard(boardId, sort: sort, type: type).isLoading;
-  bool hasLoadedFor(
-    int boardId, {
-    String sort = 'time',
-    String? type,
-  }) =>
+  bool hasLoadedFor(int boardId, {String sort = 'time', String? type}) =>
       _ensureBoard(boardId, sort: sort, type: type).hasLoaded;
-  bool hasMoreFor(
-    int boardId, {
-    String sort = 'time',
-    String? type,
-  }) =>
+  bool hasMoreFor(int boardId, {String sort = 'time', String? type}) =>
       _ensureBoard(boardId, sort: sort, type: type).hasMore;
 
-  int requestVersionFor(
-    int boardId, {
-    String sort = 'time',
-    String? type,
-  }) =>
+  int requestVersionFor(int boardId, {String sort = 'time', String? type}) =>
       _ensureBoard(boardId, sort: sort, type: type).requestVersion;
 
-  int revisionFor(
-    int boardId, {
-    String sort = 'time',
-    String? type,
-  }) =>
+  int revisionFor(int boardId, {String sort = 'time', String? type}) =>
       _ensureBoard(boardId, sort: sort, type: type).revision;
 
   DateTime? lastSuccessfulRefreshAtFor(
     int boardId, {
     String sort = 'time',
     String? type,
-  }) =>
-      _ensureBoard(boardId, sort: sort, type: type).lastSuccessfulRefreshAt;
+  }) => _ensureBoard(boardId, sort: sort, type: type).lastSuccessfulRefreshAt;
 
   Future<void> _savePostsToCache(
     int boardId,
@@ -159,8 +131,11 @@ class PostProvider extends ChangeNotifier {
   }
 
   /// SWR 模式：先读缓存秒开 → 后台增量拉取
-  Future<void> _loadCachedThenRefresh(int boardId,
-      {String? type, String sort = 'time'}) async {
+  Future<void> _loadCachedThenRefresh(
+    int boardId, {
+    String? type,
+    String sort = 'time',
+  }) async {
     final board = _ensureBoard(boardId, sort: sort, type: type);
     if (board.hasCacheLoaded) return;
     board.hasCacheLoaded = true;
@@ -212,7 +187,7 @@ class PostProvider extends ChangeNotifier {
           // 第四步：增量合并 — 更新已有帖子，插入新帖子
           bool changed = false;
           final existingIndexMap = {
-            for (var i = 0; i < board.posts.length; i++) board.posts[i].id: i
+            for (var i = 0; i < board.posts.length; i++) board.posts[i].id: i,
           };
           final uniqueNew = <Post>[];
 
@@ -238,8 +213,9 @@ class PostProvider extends ChangeNotifier {
         }
 
         final total = (data['total'] as num?)?.toInt();
-        board.hasMore =
-            total != null ? board.posts.length < total : newPosts.length >= 20;
+        board.hasMore = total != null
+            ? board.posts.length < total
+            : newPosts.length >= 20;
         board.currentPage = 2;
       }
     } on DioException catch (e) {
@@ -256,8 +232,27 @@ class PostProvider extends ChangeNotifier {
   }
 
   /// 加载更多（翻页）
-  Future<void> loadPosts(
-      {int boardId = 1, String? type, String sort = 'time'}) async {
+  Future<void> loadPosts({
+    int boardId = 1,
+    String? type,
+    String sort = 'time',
+  }) {
+    final key = 'load_${boardId}_${type}_$sort';
+    if (_inflightRequests.containsKey(key)) return _inflightRequests[key]!;
+
+    final future = _loadPostsInternal(boardId: boardId, type: type, sort: sort)
+        .whenComplete(() {
+          _inflightRequests.remove(key);
+        });
+    _inflightRequests[key] = future;
+    return future;
+  }
+
+  Future<void> _loadPostsInternal({
+    int boardId = 1,
+    String? type,
+    String sort = 'time',
+  }) async {
     final board = _ensureBoard(boardId, sort: sort, type: type);
 
     // 首次加载走 SWR
@@ -305,7 +300,7 @@ class PostProvider extends ChangeNotifier {
           board.posts = newPosts;
         } else {
           final existingIndexMap = {
-            for (var i = 0; i < board.posts.length; i++) board.posts[i].id: i
+            for (var i = 0; i < board.posts.length; i++) board.posts[i].id: i,
           };
           for (final np in newPosts) {
             final idx = existingIndexMap[np.id];
@@ -318,8 +313,9 @@ class PostProvider extends ChangeNotifier {
         }
 
         final total = (data['total'] as num?)?.toInt();
-        board.hasMore =
-            total != null ? board.posts.length < total : newPosts.length >= 20;
+        board.hasMore = total != null
+            ? board.posts.length < total
+            : newPosts.length >= 20;
         if (!usesSnapshot) {
           board.currentPage++;
         }
@@ -339,8 +335,23 @@ class PostProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> refresh(
-      {int boardId = 1, String? type, String sort = 'time'}) async {
+  Future<void> refresh({int boardId = 1, String? type, String sort = 'time'}) {
+    final key = 'refresh_${boardId}_${type}_$sort';
+    if (_inflightRequests.containsKey(key)) return _inflightRequests[key]!;
+
+    final future = _refreshInternal(boardId: boardId, type: type, sort: sort)
+        .whenComplete(() {
+          _inflightRequests.remove(key);
+        });
+    _inflightRequests[key] = future;
+    return future;
+  }
+
+  Future<void> _refreshInternal({
+    int boardId = 1,
+    String? type,
+    String sort = 'time',
+  }) async {
     final board = _ensureBoard(boardId, sort: sort, type: type);
     final requestVersion = ++board.requestVersion;
     board.currentSort = sort;
@@ -379,8 +390,9 @@ class PostProvider extends ChangeNotifier {
         await _savePostsToCache(boardId, sort, board.posts);
 
         final total = (response.data['total'] as num?)?.toInt();
-        board.hasMore =
-            total != null ? newPosts.length < total : newPosts.length >= 20;
+        board.hasMore = total != null
+            ? newPosts.length < total
+            : newPosts.length >= 20;
         board.currentPage = 2;
       }
     } on DioException catch (e) {
@@ -407,14 +419,17 @@ class PostProvider extends ChangeNotifier {
     if (trimmed.isEmpty) return [];
 
     try {
-      final response = await _dio.get('/posts', queryParameters: {
-        'board': boardId,
-        'type': type,
-        'sort': sort,
-        'page': 1,
-        'limit': limit,
-        'q': trimmed,
-      });
+      final response = await _dio.get(
+        '/posts',
+        queryParameters: {
+          'board': boardId,
+          'type': type,
+          'sort': sort,
+          'page': 1,
+          'limit': limit,
+          'q': trimmed,
+        },
+      );
 
       if (response.statusCode == 200) {
         final data = response.data;
@@ -458,7 +473,9 @@ class PostProvider extends ChangeNotifier {
         return const CreatePostResult(success: true);
       }
       return CreatePostResult(
-          success: false, errorMessage: '发布失败 (${response.statusCode})');
+        success: false,
+        errorMessage: '发布失败 (${response.statusCode})',
+      );
     } on DioException catch (e) {
       final msg = AppFeedback.dioErrorMessage(e, fallback: '发布失败');
       return CreatePostResult(success: false, errorMessage: msg);
@@ -513,7 +530,8 @@ class PostProvider extends ChangeNotifier {
       if (filePath.startsWith('content://')) {
         final tempDir = Directory.systemTemp;
         final tempFile = File(
-            '${tempDir.path}/upload_${DateTime.now().millisecondsSinceEpoch}.jpg');
+          '${tempDir.path}/upload_${DateTime.now().millisecondsSinceEpoch}.jpg',
+        );
         await File(filePath).copy(tempFile.path);
         uploadPath = tempFile.path;
       }
@@ -549,7 +567,9 @@ class PostProvider extends ChangeNotifier {
         return const DeletePostResult(success: true);
       }
       return DeletePostResult(
-          success: false, errorMessage: '删除失败 (${response.statusCode})');
+        success: false,
+        errorMessage: '删除失败 (${response.statusCode})',
+      );
     } on DioException catch (e) {
       final msg = AppFeedback.dioErrorMessage(e, fallback: '删除帖子失败');
       return DeletePostResult(success: false, errorMessage: msg);
@@ -571,7 +591,9 @@ class PostProvider extends ChangeNotifier {
         return const DeletePostResult(success: true);
       }
       return DeletePostResult(
-          success: false, errorMessage: '删除失败 (${response.statusCode})');
+        success: false,
+        errorMessage: '删除失败 (${response.statusCode})',
+      );
     } on DioException catch (e) {
       final msg = AppFeedback.dioErrorMessage(e, fallback: '删除评论失败');
       return DeletePostResult(success: false, errorMessage: msg);

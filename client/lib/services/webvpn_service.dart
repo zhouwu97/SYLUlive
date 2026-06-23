@@ -18,32 +18,28 @@ class WebVpnService {
 
   WebVpnService() {
     _jar = CookieJar();
-    _dio = Dio(BaseOptions(
-      followRedirects: false,
-      validateStatus: (s) => s != null && s < 500,
-      connectTimeout: const Duration(seconds: 15),
-      receiveTimeout: const Duration(seconds: 20),
-      headers: {
-        'User-Agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept':
-            'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-        'Accept-Language': 'zh-CN,zh;q=0.9',
-        'Upgrade-Insecure-Requests': '1',
-      },
-    ));
+    _dio = Dio(
+      BaseOptions(
+        followRedirects: false,
+        validateStatus: (s) => s != null && s < 500,
+        connectTimeout: const Duration(seconds: 15),
+        receiveTimeout: const Duration(seconds: 20),
+        headers: {
+          'User-Agent':
+              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept':
+              'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+          'Accept-Language': 'zh-CN,zh;q=0.9',
+          'Upgrade-Insecure-Requests': '1',
+        },
+      ),
+    );
     (_dio.httpClientAdapter as IOHttpClientAdapter).onHttpClientCreate =
         (client) {
-      client.badCertificateCallback = (cert, host, port) => true; // 忽略证书校验
-      return client;
-    };
+          client.badCertificateCallback = (cert, host, port) => true; // 忽略证书校验
+          return client;
+        };
     _dio.interceptors.add(CookieManager(_jar));
-    _dio.interceptors.add(LogInterceptor(
-        requestHeader: true,
-        responseHeader: true,
-        requestBody: false,
-        responseBody: false,
-        logPrint: (obj) => print(obj.toString())));
   }
 
   Future<bool> login(String username, String password) async {
@@ -59,8 +55,9 @@ class WebVpnService {
       if (nextUrl == null || nextUrl.isEmpty) {
         // VPN 首页返回 200，无 Location 头 — 从 HTML 中查找 CAS 登录链接
         final html = resp.data.toString();
-        final casLinkMatch =
-            RegExp(r'href="([^"]*cas_login[^"]*)"').firstMatch(html);
+        final casLinkMatch = RegExp(
+          r'href="([^"]*cas_login[^"]*)"',
+        ).firstMatch(html);
         if (casLinkMatch != null) {
           final casLink = casLinkMatch.group(1)!.replaceAll('&amp;', '&');
           debugPrint('[VPN] 首页无重定向，从HTML提取CAS链接: $casLink');
@@ -78,7 +75,8 @@ class WebVpnService {
         debugPrint('[VPN] 请求: $url');
         resp = await _dio.get(url);
         debugPrint(
-            '[VPN] 状态: ${resp.statusCode}, Location: ${resp.headers.value('location') ?? '无'}');
+          '[VPN] 状态: ${resp.statusCode}, Location: ${resp.headers.value('location') ?? '无'}',
+        );
         final html = resp.data.toString();
 
         // 打印页面摘要
@@ -109,8 +107,9 @@ class WebVpnService {
 
         // 仅在没有 HTTP 重定向且未到达 CAS 时，跟随 HTML 中的 CAS 链接（并解码 &amp;）
         if (!reachedCas) {
-          final casLinkMatch =
-              RegExp(r'href="([^"]*cas_login[^"]*)"').firstMatch(html);
+          final casLinkMatch = RegExp(
+            r'href="([^"]*cas_login[^"]*)"',
+          ).firstMatch(html);
           if (casLinkMatch != null) {
             final casLink = casLinkMatch.group(1)!;
             debugPrint('[VPN] 跟随CAS链接: $casLink');
@@ -149,13 +148,15 @@ class WebVpnService {
       for (final c in setCookies) {
         final name = c.split('=')[0].split(';')[0].trim();
         if (name.isNotEmpty)
-          casCookiesRaw
-              .add('$name=${c.split(';')[0].split('=').skip(1).join('=')}');
+          casCookiesRaw.add(
+            '$name=${c.split(';')[0].split('=').skip(1).join('=')}',
+          );
       }
     }
     debugPrint('[CAS] CAS页面Set-Cookie原始: $setCookies');
     debugPrint(
-        '[CAS] 提取的Cookie名: ${casCookiesRaw.map((c) => c.split("=")[0]).toList()}');
+      '[CAS] 提取的Cookie名: ${casCookiesRaw.map((c) => c.split("=")[0]).toList()}',
+    );
 
     // 提取关键字段 — 打印完整的 input 列表辅助调试
     final allInputs = doc.querySelectorAll('input');
@@ -176,13 +177,15 @@ class WebVpnService {
     final lt = _extractValue(doc, 'lt') ?? '';
 
     debugPrint(
-        '[CAS] salt=$salt execution=${execution.substring(0, min(40, execution.length))}...');
+      '[CAS] salt=$salt execution=${execution.substring(0, min(40, execution.length))}...',
+    );
     debugPrint('[CAS] eventId=$eventId cllt=$cllt dllt=$dllt lt=$lt');
 
     // AES 加密密码 — 注意: 密码字段名是 userPassword，但要提交为 password
     final encryptedPwd = _encryptPassword(password, salt);
     debugPrint(
-        '[CAS] 加密密码(length=${encryptedPwd.length}): ${encryptedPwd.substring(0, min(40, encryptedPwd.length))}...');
+      '[CAS] 加密密码(length=${encryptedPwd.length}): ${encryptedPwd.substring(0, min(40, encryptedPwd.length))}...',
+    );
 
     // 打印当前 Cookie
     final cookies = await _jar.loadForRequest(Uri.parse(pageUrl));
@@ -208,8 +211,9 @@ class WebVpnService {
         final base = fa.startsWith('http') ? fa : _resolveUrl(fa, pageUrl);
         // 如果 form action 不带 service 参数，从页面 URL 提取（保持原始编码）
         if (!base.contains('service=') && pageUrl.contains('service=')) {
-          final serviceMatch =
-              RegExp(r'[?&]service=([^&]+)').firstMatch(pageUrl);
+          final serviceMatch = RegExp(
+            r'[?&]service=([^&]+)',
+          ).firstMatch(pageUrl);
           if (serviceMatch != null) {
             action = '$base?service=${serviceMatch.group(1)!}';
           } else {
@@ -222,7 +226,8 @@ class WebVpnService {
     }
     debugPrint('[CAS] form action: ${form?.attributes['action']}');
     debugPrint(
-        '[CAS] POST URL: ${action.substring(0, min(100, action.length))}...');
+      '[CAS] POST URL: ${action.substring(0, min(100, action.length))}...',
+    );
 
     // POST — 拼上 VPN cookie + CAS session cookies
     final allCookies = <String>{};
@@ -265,7 +270,8 @@ class WebVpnService {
 
     if (loginResp.statusCode == 401) {
       debugPrint(
-          '[CAS] 401! body前200: ${loginResp.data.toString().substring(0, min(200, loginResp.data.toString().length))}');
+        '[CAS] 401! body前200: ${loginResp.data.toString().substring(0, min(200, loginResp.data.toString().length))}',
+      );
       debugPrint('[CAS] 响应头: ${loginResp.headers}');
       return false;
     }
@@ -277,11 +283,13 @@ class WebVpnService {
         return false;
       }
       // 某些情况下 200 页面里包含 JavaScript 跳转
-      final redirectMatch =
-          RegExp(r"window\.location\.href\s*=\s*'([^']+)'").firstMatch(body);
+      final redirectMatch = RegExp(
+        r"window\.location\.href\s*=\s*'([^']+)'",
+      ).firstMatch(body);
       if (redirectMatch != null) {
         return await _followRedirects(
-            _resolveUrl(redirectMatch.group(1)!, pageUrl));
+          _resolveUrl(redirectMatch.group(1)!, pageUrl),
+        );
       }
     }
 
@@ -300,7 +308,8 @@ class WebVpnService {
     // 提前返回会导致后续访问内网资源时依然被重定向回门户登录页。
     for (int i = 0; i < 10 && nextUrl != null; i++) {
       debugPrint(
-          '[VPN] 重定向 $i: ${nextUrl.substring(0, min(100, nextUrl.length))}');
+        '[VPN] 重定向 $i: ${nextUrl.substring(0, min(100, nextUrl.length))}',
+      );
       final resp = await _dio.get(nextUrl);
 
       // 记录 ticket 值（不立即返回，继续跟完剩余的重定向）
@@ -362,16 +371,21 @@ class WebVpnService {
     const chars =
         'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
     final rnd = Random();
-    final prefix =
-        List.generate(64, (_) => chars[rnd.nextInt(chars.length)]).join();
+    final prefix = List.generate(
+      64,
+      (_) => chars[rnd.nextInt(chars.length)],
+    ).join();
     final plaintext = prefix + rawPassword;
     final key = encrypt.Key.fromUtf8(salt);
     // 16位随机字符作为 IV — 不能用全零，否则 Java 后端 UTF-8 解码崩溃
-    final ivStr =
-        List.generate(16, (_) => chars[rnd.nextInt(chars.length)]).join();
+    final ivStr = List.generate(
+      16,
+      (_) => chars[rnd.nextInt(chars.length)],
+    ).join();
     final iv = encrypt.IV.fromUtf8(ivStr);
-    final encrypter =
-        encrypt.Encrypter(encrypt.AES(key, mode: encrypt.AESMode.cbc));
+    final encrypter = encrypt.Encrypter(
+      encrypt.AES(key, mode: encrypt.AESMode.cbc),
+    );
     return encrypter.encrypt(plaintext, iv: iv).base64;
   }
 

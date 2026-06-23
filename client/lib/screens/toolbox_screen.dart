@@ -66,9 +66,11 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                     title: '二课分查询',
                     subtitle: '支持 WebVPN 穿透',
                     onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (_) => const ErkeScoreScreen())),
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const ErkeScoreScreen(),
+                      ),
+                    ),
                   ),
                   _buildToolCard(
                     context,
@@ -77,9 +79,11 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                     title: '雨课堂',
                     subtitle: '测验与课件',
                     onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (_) => const YuketangClassScreen())),
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const YuketangClassScreen(),
+                      ),
+                    ),
                   ),
                   _buildToolCard(
                     context,
@@ -104,9 +108,9 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                     title: '抽奖活动',
                     subtitle: '公平福利派送',
                     onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (_) => const LotteryScreen())),
+                      context,
+                      MaterialPageRoute(builder: (_) => const LotteryScreen()),
+                    ),
                   ),
                   _buildToolCard(
                     context,
@@ -115,9 +119,11 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                     title: '考试日程',
                     subtitle: 'AI一键提取',
                     onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (_) => const ExamScheduleScreen())),
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const ExamScheduleScreen(),
+                      ),
+                    ),
                   ),
                   _buildToolCard(
                     context,
@@ -171,19 +177,15 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
     final auth = context.read<AuthProvider>();
     final username = auth.user?.studentId ?? '';
     if (username.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请先登录')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('请先登录')));
       return;
     }
 
     Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (_) => _PhysicalTestGate(
-          username: username,
-        ),
-      ),
+      MaterialPageRoute(builder: (_) => _PhysicalTestGate(username: username)),
     );
   }
 
@@ -210,9 +212,9 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
       await launchUrl(uri, mode: mode, webOnlyWindowName: '_self');
     } else {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('无法打开链接')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('无法打开链接')));
       }
     }
   }
@@ -226,16 +228,22 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
         fit: StackFit.expand,
         children: [
           isAsset
-              ? Image.asset('assets/images/$bgPath',
+              ? Image.asset(
+                  'assets/images/$bgPath',
                   fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => _buildDefaultBg(isDark))
+                  errorBuilder: (_, __, ___) => _buildDefaultBg(isDark),
+                )
               : bgPath.startsWith('/')
-                  ? Image.file(File(bgPath),
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => _buildDefaultBg(isDark))
-                  : Image.network(bgPath,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => _buildDefaultBg(isDark)),
+              ? Image.file(
+                  File(bgPath),
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => _buildDefaultBg(isDark),
+                )
+              : Image.network(
+                  bgPath,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => _buildDefaultBg(isDark),
+                ),
           Container(
             color: isDark
                 ? Colors.black.withValues(alpha: 0.35)
@@ -251,13 +259,13 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
     return Stack(
       fit: StackFit.expand,
       children: [
-        Image.asset('assets/images/morenbeijing.jpeg',
-            fit: BoxFit.cover,
-            errorBuilder: (_, __, ___) => Container(
-                  color: isDark
-                      ? const Color(0xFF131720)
-                      : const Color(0xFFF4F6FB),
-                )),
+        Image.asset(
+          'assets/images/morenbeijing.jpeg',
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => Container(
+            color: isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
+          ),
+        ),
         Container(
           color: isDark
               ? Colors.black.withValues(alpha: 0.35)
@@ -288,8 +296,8 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
         borderColor: is520 ? const Color(0x668BE197) : null,
         backgroundColor: is520
             ? (isDark
-                ? Colors.black.withValues(alpha: 0.3)
-                : Colors.white.withValues(alpha: 0.5))
+                  ? Colors.black.withValues(alpha: 0.3)
+                  : Colors.white.withValues(alpha: 0.5))
             : null,
         child: SizedBox.expand(
           child: Column(
@@ -386,18 +394,16 @@ class _PhysicalTestGateState extends State<_PhysicalTestGate> {
     final pwd = inputPwd == ('•' * _realPwd.length) ? _realPwd : inputPwd;
 
     if (pwd.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请输入体测密码')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('请输入体测密码')));
       return;
     }
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(
-        builder: (_) => PhysicalTestPage(
-          username: widget.username,
-          password: pwd,
-        ),
+        builder: (_) =>
+            PhysicalTestPage(username: widget.username, password: pwd),
       ),
     );
   }
@@ -407,8 +413,9 @@ class _PhysicalTestGateState extends State<_PhysicalTestGate> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor:
-          isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
+      backgroundColor: isDark
+          ? const Color(0xFF131720)
+          : const Color(0xFFF4F6FB),
       appBar: AppBar(
         title: const Text('体测成绩查询'),
         backgroundColor: Colors.transparent,
@@ -424,15 +431,19 @@ class _PhysicalTestGateState extends State<_PhysicalTestGate> {
                 borderRadius: 16,
                 child: Row(
                   children: [
-                    const Icon(Icons.info_outline,
-                        color: Colors.blue, size: 20),
+                    const Icon(
+                      Icons.info_outline,
+                      color: Colors.blue,
+                      size: 20,
+                    ),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
                         '学号 ${widget.username} 已自动识别，请输入体测密码查询',
                         style: TextStyle(
-                            fontSize: 13,
-                            color: isDark ? Colors.white70 : Colors.black87),
+                          fontSize: 13,
+                          color: isDark ? Colors.white70 : Colors.black87,
+                        ),
                       ),
                     ),
                   ],
@@ -447,19 +458,27 @@ class _PhysicalTestGateState extends State<_PhysicalTestGate> {
                   children: [
                     Row(
                       children: [
-                        const Icon(Icons.fitness_center,
-                            color: Colors.blue, size: 22),
+                        const Icon(
+                          Icons.fitness_center,
+                          color: Colors.blue,
+                          size: 22,
+                        ),
                         const SizedBox(width: 10),
-                        const Text('体测密码',
-                            style: TextStyle(
-                                fontSize: 15, fontWeight: FontWeight.bold)),
+                        const Text(
+                          '体测密码',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                         const Spacer(),
-                        Text('初始密码默认为111111',
-                            style: TextStyle(
-                                fontSize: 10,
-                                color: isDark
-                                    ? Colors.white38
-                                    : Colors.grey[500])),
+                        Text(
+                          '初始密码默认为111111',
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: isDark ? Colors.white38 : Colors.grey[500],
+                          ),
+                        ),
                       ],
                     ),
                     const SizedBox(height: 16),
@@ -473,10 +492,11 @@ class _PhysicalTestGateState extends State<_PhysicalTestGate> {
                         prefixIcon: const Icon(Icons.lock_outline, size: 18),
                         suffixIcon: IconButton(
                           icon: Icon(
-                              _obscurePwd
-                                  ? Icons.visibility_off
-                                  : Icons.visibility,
-                              size: 18),
+                            _obscurePwd
+                                ? Icons.visibility_off
+                                : Icons.visibility,
+                            size: 18,
+                          ),
                           onPressed: () =>
                               setState(() => _obscurePwd = !_obscurePwd),
                         ),
@@ -485,8 +505,9 @@ class _PhysicalTestGateState extends State<_PhysicalTestGate> {
                             ? Colors.white.withValues(alpha: 0.05)
                             : Colors.black.withValues(alpha: 0.03),
                         border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide.none),
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide.none,
+                        ),
                       ),
                     ),
                   ],
@@ -502,12 +523,14 @@ class _PhysicalTestGateState extends State<_PhysicalTestGate> {
                     backgroundColor: Theme.of(context).primaryColor,
                     foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16)),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
                     elevation: 0,
                   ),
-                  child: const Text('开始查询',
-                      style:
-                          TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  child: const Text(
+                    '开始查询',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
                 ),
               ),
             ],

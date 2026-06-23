@@ -32,7 +32,7 @@ class _CampusMapTabPageState extends State<CampusMapTabPage>
                       color: Colors.black12,
                       blurRadius: 6,
                       offset: Offset(0, 2),
-                    )
+                    ),
                   ],
                 ),
                 clipBehavior: Clip.antiAlias, // 剪裁圆角
@@ -56,11 +56,15 @@ class _CampusMapTabPageState extends State<CampusMapTabPage>
                   foregroundColor: Colors.black87,
                   side: BorderSide(color: Colors.grey[300]!), // 极简白色边框
                   shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8)),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
                   elevation: 1,
                 ),
-                icon:
-                    const Icon(Icons.zoom_in, size: 18, color: Colors.black87),
+                icon: const Icon(
+                  Icons.zoom_in,
+                  size: 18,
+                  color: Colors.black87,
+                ),
                 label: const Text(
                   '进入操控模式 (Only Scale)',
                   style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
@@ -162,9 +166,10 @@ class _MapControlFullscreenOverlayState
                     Text(
                       '当前：缩放操控模式',
                       style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 13,
-                          fontWeight: FontWeight.bold),
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                     SizedBox(height: 4),
                     Text(
@@ -184,15 +189,22 @@ class _MapControlFullscreenOverlayState
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   _buildWhiteButton(
-                      icon: Icons.add, label: '放大', onTap: _zoomIn),
+                    icon: Icons.add,
+                    label: '放大',
+                    onTap: _zoomIn,
+                  ),
                   const SizedBox(height: 12),
                   _buildWhiteButton(
-                      icon: Icons.remove, label: '缩小', onTap: _zoomOut),
+                    icon: Icons.remove,
+                    label: '缩小',
+                    onTap: _zoomOut,
+                  ),
                   const SizedBox(height: 12),
                   _buildWhiteButton(
-                      icon: Icons.close,
-                      label: '退出',
-                      onTap: () => Navigator.of(context).pop()),
+                    icon: Icons.close,
+                    label: '退出',
+                    onTap: () => Navigator.of(context).pop(),
+                  ),
                 ],
               ),
             ),
@@ -202,10 +214,11 @@ class _MapControlFullscreenOverlayState
     );
   }
 
-  Widget _buildWhiteButton(
-      {required IconData icon,
-      required String label,
-      required VoidCallback onTap}) {
+  Widget _buildWhiteButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -216,7 +229,10 @@ class _MapControlFullscreenOverlayState
           borderRadius: BorderRadius.circular(8),
           boxShadow: const [
             BoxShadow(
-                color: Colors.black45, blurRadius: 5, offset: Offset(0, 2))
+              color: Colors.black45,
+              blurRadius: 5,
+              offset: Offset(0, 2),
+            ),
           ],
         ),
         child: Column(
@@ -224,11 +240,14 @@ class _MapControlFullscreenOverlayState
           children: [
             Icon(icon, color: Colors.black87, size: 20),
             const SizedBox(height: 2),
-            Text(label,
-                style: const TextStyle(
-                    color: Colors.black87,
-                    fontSize: 10,
-                    fontWeight: FontWeight.bold)),
+            Text(
+              label,
+              style: const TextStyle(
+                color: Colors.black87,
+                fontSize: 10,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ],
         ),
       ),

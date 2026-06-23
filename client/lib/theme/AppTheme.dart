@@ -71,8 +71,10 @@ class AppTheme {
       // 输入框 — 紧凑
       inputDecorationTheme: InputDecorationTheme(
         isDense: true,
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 12,
+          vertical: 10,
+        ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(borderRadius),
         ),
@@ -105,9 +107,7 @@ class AppTheme {
       ),
       // FloatingActionButton
       floatingActionButtonTheme: FloatingActionButtonThemeData(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(14),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         elevation: 2,
       ),
     );

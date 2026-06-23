@@ -201,8 +201,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     final currentUserId = context.read<AuthProvider>().user?.id;
     final oldLastId = context.read<MessageProvider>().messages.lastOrNull?.id;
     await context.read<MessageProvider>().refreshMessages(
-      currentUserId: currentUserId,
-    );
+          currentUserId: currentUserId,
+        );
     if (!mounted) return;
     final newLastId = context.read<MessageProvider>().messages.lastOrNull?.id;
     if (wasNearBottom && oldLastId != newLastId) {
@@ -517,7 +517,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     User? currentUser, {
     required bool includeBackdrop,
   }) {
-    if (provider.messageLoading && !_initialLoadFinished && provider.messages.isEmpty) {
+    if (provider.messageLoading &&
+        !_initialLoadFinished &&
+        provider.messages.isEmpty) {
       return _wrapMessageBackdrop(
         const Center(child: CircularProgressIndicator()),
         includeBackdrop,

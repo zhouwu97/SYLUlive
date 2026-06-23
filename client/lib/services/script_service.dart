@@ -17,8 +17,9 @@ class ScriptService {
   Future<String?> getInjectScript() async {
     // 强制每次获取最新脚本，避免热重载时缓存导致不生效
     try {
-      final response = await _dio.get('${ApiConstants.baseUrl}/v1/config/inject-script');
-      
+      final response =
+          await _dio.get('${ApiConstants.baseUrl}/v1/config/inject-script');
+
       if (response.statusCode == 200 && response.data['success'] == true) {
         _cachedScript = response.data['script'] as String?;
         debugPrint('成功从服务器获取并缓存 JS 探针脚本');

@@ -77,8 +77,11 @@ class Report {
       result: json['result'] ?? '',
       deleteReason: json['delete_reason'] ?? '',
       createdAt: DateTime.tryParse(json['created_at'] ?? '') ?? DateTime.now(),
-      handledAt: json['handled_at'] != null ? DateTime.tryParse(json['handled_at']) : null,
-      reporter: json['reporter'] != null ? User.fromJson(json['reporter']) : null,
+      handledAt: json['handled_at'] != null
+          ? DateTime.tryParse(json['handled_at'])
+          : null,
+      reporter:
+          json['reporter'] != null ? User.fromJson(json['reporter']) : null,
       handler: json['handler'] != null ? User.fromJson(json['handler']) : null,
     );
   }
@@ -122,8 +125,11 @@ class Appeal {
       status: json['status'] ?? 'pending',
       result: json['result'] ?? '',
       createdAt: DateTime.tryParse(json['created_at'] ?? '') ?? DateTime.now(),
-      closedAt: json['closed_at'] != null ? DateTime.tryParse(json['closed_at']) : null,
-      appellant: json['appellant'] != null ? User.fromJson(json['appellant']) : null,
+      closedAt: json['closed_at'] != null
+          ? DateTime.tryParse(json['closed_at'])
+          : null,
+      appellant:
+          json['appellant'] != null ? User.fromJson(json['appellant']) : null,
       admin: json['admin'] != null ? User.fromJson(json['admin']) : null,
     );
   }
@@ -191,7 +197,9 @@ class Invitation {
       inviterId: json['inviter_id'] ?? 0,
       status: json['status'] ?? 'pending',
       createdAt: DateTime.tryParse(json['created_at'] ?? '') ?? DateTime.now(),
-      acceptedAt: json['accepted_at'] != null ? DateTime.tryParse(json['accepted_at']) : null,
+      acceptedAt: json['accepted_at'] != null
+          ? DateTime.tryParse(json['accepted_at'])
+          : null,
       user: json['user'] != null ? User.fromJson(json['user']) : null,
       inviter: json['inviter'] != null ? User.fromJson(json['inviter']) : null,
     );

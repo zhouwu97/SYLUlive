@@ -37,7 +37,8 @@ import 'services/diagnostic_log_service.dart';
 import 'package:crypto/crypto.dart';
 import 'dart:convert';
 
-String _hashError(String level, String source, String type, String summary, String detail) {
+String _hashError(
+    String level, String source, String type, String summary, String detail) {
   final bytes = utf8.encode('$level$source$type$summary$detail');
   return md5.convert(bytes).toString();
 }
@@ -55,12 +56,12 @@ void _safeRecord({
 }) {
   final now = DateTime.now().millisecondsSinceEpoch;
   final lastTime = _dedupTimes[dedupKey] ?? 0;
-  
+
   if (now - lastTime < dedupMs) {
     return; // Deduplicate
   }
   _dedupTimes[dedupKey] = now;
-  
+
   // Clean up old entries to prevent memory leak
   if (_dedupTimes.length > 100) {
     _dedupTimes.removeWhere((_, time) => now - time > 60 * 60 * 1000);
@@ -96,10 +97,10 @@ Future<void> main() async {
 
         if (exceptionText.contains('_ClientSocketException') &&
             details.library == 'image resource service') {
-          
-          final hostMatch = RegExp(r'address\s*=\s*([^\s,:]+)').firstMatch(exceptionText);
+          final hostMatch =
+              RegExp(r'address\s*=\s*([^\s,:]+)').firstMatch(exceptionText);
           final host = hostMatch?.group(1) ?? 'unknown';
-          
+
           _safeRecord(
             level: 'warning',
             source: '图片',
@@ -119,7 +120,12 @@ Future<void> main() async {
           type: details.exception.runtimeType.toString(),
           summary: exceptionText,
           detail: fullString,
-          dedupKey: _hashError('error', 'Flutter', details.exception.runtimeType.toString(), exceptionText, fullString),
+          dedupKey: _hashError(
+              'error',
+              'Flutter',
+              details.exception.runtimeType.toString(),
+              exceptionText,
+              fullString),
           dedupMs: 2000,
         );
       };
@@ -134,7 +140,8 @@ Future<void> main() async {
           type: error.runtimeType.toString(),
           summary: exceptionText,
           detail: fullString,
-          dedupKey: _hashError('error', 'Flutter', error.runtimeType.toString(), exceptionText, fullString),
+          dedupKey: _hashError('error', 'Flutter', error.runtimeType.toString(),
+              exceptionText, fullString),
           dedupMs: 2000,
         );
         return true;
@@ -161,7 +168,8 @@ Future<void> main() async {
         type: error.runtimeType.toString(),
         summary: exceptionText,
         detail: fullString,
-        dedupKey: _hashError('error', 'Dart', error.runtimeType.toString(), exceptionText, fullString),
+        dedupKey: _hashError('error', 'Dart', error.runtimeType.toString(),
+            exceptionText, fullString),
         dedupMs: 2000,
       );
     },

@@ -26,7 +26,8 @@ class MarketExposureScreen extends StatelessWidget {
       ),
       body: Stack(
         children: [
-          Positioned.fill(child: _buildBackground(context, themeProvider, isDark)),
+          Positioned.fill(
+              child: _buildBackground(context, themeProvider, isDark)),
           Consumer<PostProvider>(
             builder: (context, postProvider, child) {
               final exposurePosts = postProvider
@@ -116,8 +117,10 @@ class MarketExposureScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildBackground(BuildContext context, ThemeProvider themeProvider, bool isDark) {
-    if (themeProvider.isBackgroundVisible && themeProvider.getBackgroundImageFor(context) != null) {
+  Widget _buildBackground(
+      BuildContext context, ThemeProvider themeProvider, bool isDark) {
+    if (themeProvider.isBackgroundVisible &&
+        themeProvider.getBackgroundImageFor(context) != null) {
       final bgPath = themeProvider.getBackgroundImageFor(context)!;
       final isAsset = !bgPath.startsWith('http') && !bgPath.startsWith('/');
       return Stack(

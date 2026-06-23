@@ -142,7 +142,8 @@ class ExamMarkdownConverter {
     for (final q in questions) {
       final type = q.questionType.isNotEmpty ? q.questionType : '未知';
       typeCount[type] = (typeCount[type] ?? 0) + 1;
-      typeScore[type] = (typeScore[type] ?? 0) + (double.tryParse(q.score ?? '0') ?? 0);
+      typeScore[type] =
+          (typeScore[type] ?? 0) + (double.tryParse(q.score ?? '0') ?? 0);
     }
 
     buf.writeln();

@@ -156,6 +156,8 @@ class PostProvider extends ChangeNotifier {
       } catch (_) {}
     }
 
+    bool succeeded = false;
+
     // 第二步：重新拉取最新第一页，刷新作者头像、图片、统计等完整数据。
     // 只按 since 增量拉取会让旧缓存里的作者资料长期停留在过期状态，
     // 杀后台重启后就容易看到文字头像或旧头像。
@@ -173,6 +175,7 @@ class PostProvider extends ChangeNotifier {
       final response = await _dio.get('/posts', queryParameters: params);
       if (requestVersion != board.requestVersion) return;
       if (response.statusCode == 200) {
+        succeeded = true;
         final data = response.data;
         if (data['session_id'] != null) {
           board.sessionId = data['session_id'];
@@ -220,13 +223,15 @@ class PostProvider extends ChangeNotifier {
       }
     } on DioException catch (e) {
       // 网络失败时，缓存已上屏，静默忽略
-      debugPrint('增量拉取失败(board=$boardId): ${e.message}');
+      debugPrint('增量拉取失败(board=$boardId): ${e.type}');
     } catch (e) {
-      debugPrint('增量拉取异常(board=$boardId): $e');
+      debugPrint('增量拉取异常(board=$boardId)');
     }
 
     board.hasLoaded = true;
-    board.lastSuccessfulRefreshAt = DateTime.now();
+    if (succeeded) {
+      board.lastSuccessfulRefreshAt = DateTime.now();
+    }
     board.revision++;
     notifyListeners();
   }

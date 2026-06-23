@@ -80,14 +80,14 @@ class MarketPostCard extends StatelessWidget {
           children: [
             // Left Image
             if (validImages.isNotEmpty)
-              _buildCover(context, validImages, 112, 112, isDark, isGrid: false)
+              _buildCover(context, validImages, 120, 120, isDark, isGrid: false)
             else
-              _buildNoImageCover(112, 112, isDark),
+              _buildNoImageCover(120, 120, isDark),
             const SizedBox(width: 12),
             // Right Text
             Expanded(
               child: SizedBox(
-                height: 112,
+                height: 120,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -104,7 +104,7 @@ class MarketPostCard extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                       ),
                     if (post.title.isNotEmpty && post.content.isNotEmpty) ...[
-                      const SizedBox(height: 4),
+                      const SizedBox(height: 3),
                       Text(
                         post.content,
                         maxLines: 1,
@@ -236,11 +236,11 @@ class MarketPostCard extends StatelessWidget {
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.5),
+                  color: Colors.black.withValues(alpha: 0.48),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
-                  '共 $count 图',
+                  '${count}图',
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 10,
@@ -259,7 +259,7 @@ class MarketPostCard extends StatelessWidget {
       color: isDark ? const Color(0xFF2A2A35) : const Color(0xFFF1F3F6),
       child: Center(
         child: Icon(Icons.image_outlined,
-            color: isDark ? Colors.white12 : Colors.black12, size: 28),
+            color: isDark ? Colors.white12 : const Color(0xFFC9CED6), size: 28),
       ),
     );
   }
@@ -274,7 +274,7 @@ class MarketPostCard extends StatelessWidget {
       ),
       child: Center(
         child: Icon(Icons.shopping_bag_outlined,
-            color: isDark ? Colors.white12 : Colors.black12, size: 32),
+            color: isDark ? Colors.white12 : const Color(0xFFC9CED6), size: 24),
       ),
     );
   }
@@ -370,7 +370,7 @@ class MarketPostCard extends StatelessWidget {
         GestureDetector(
           onTap: () => _openAuthor(context),
           child: CachedAvatar(
-            radius: 9,
+            radius: 8,
             imageUrl: displayAvatar.isNotEmpty
                 ? ApiConstants.fullUrl(displayAvatar)
                 : null,
@@ -383,9 +383,9 @@ class MarketPostCard extends StatelessWidget {
             onTap: () => _openAuthor(context),
             child: Text(
               displayNickname,
-              style: TextStyle(
+              style: const TextStyle(
                 fontSize: 11,
-                color: isDark ? Colors.white60 : Colors.black54,
+                color: Color(0xFF8A9099),
               ),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
@@ -394,9 +394,9 @@ class MarketPostCard extends StatelessWidget {
         ),
         Text(
           _formatTime(post.createdAt),
-          style: TextStyle(
-            fontSize: 11,
-            color: isDark ? Colors.white38 : Colors.black38,
+          style: const TextStyle(
+            fontSize: 10,
+            color: Color(0xFF8A9099),
           ),
         ),
       ],

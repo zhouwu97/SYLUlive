@@ -16,7 +16,13 @@ class ErkeRepository {
   ErkeClient? _client;
 
   /// 本地是否有数据（缓存命中，含旧缓存迁移）
-  bool hasData = false;
+  bool hasCachedData = false;
+
+  /// 是否有毕业要求汇总数据
+  bool get hasGraduationSummary => graduation != null;
+
+  /// 是否有学年要求汇总数据
+  bool get hasYearlySummary => yearly != null;
 
   /// 当前是否持有在线二课会话（_client != null && 已成功 loginToErke）
   bool hasLiveSession = false;
@@ -54,7 +60,7 @@ class ErkeRepository {
     activities = snapshot.activities;
     activitiesByYear = snapshot.activitiesByYear;
     availableYears = snapshot.yearly?.availableYears ?? [];
-    hasData = snapshot.hasActivities || snapshot.hasGraduationData;
+    hasCachedData = snapshot.hasActivities || snapshot.hasGraduationData;
     // 缓存命中不代表有在线会话 — 切换学年需要重新验证
     hasLiveSession = false;
   }
@@ -97,7 +103,7 @@ class ErkeRepository {
       activities = results[2] as List<ErkeActivity>;
       activitiesByYear = {yearly!.year: activities};
       availableYears = yearly!.availableYears;
-      hasData = true;
+      hasCachedData = true;
 
       // 5. 写入缓存
       await _cache.saveFullResult(
@@ -107,6 +113,9 @@ class ErkeRepository {
       );
     } catch (e) {
       fetchError = e.toString();
+      // 失败时保留旧数据，仅清除未完成的在线状态
+      hasLiveSession = false;
+      _client = null;
       rethrow;
     }
   }
@@ -169,7 +178,8 @@ class ErkeRepository {
     activities = [];
     activitiesByYear = {};
     availableYears = [];
-    hasData = false;
+    hasCachedData = false;
+    hasLiveSession = false;
     hasLiveSession = false;
     _client = null;
     fetchError = null;

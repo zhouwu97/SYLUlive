@@ -380,6 +380,134 @@ void main() {
     });
   });
 
+  group('旧缓存只有活动无汇总', () {
+    test('fromLegacyCache 生成快照含活动但无 graduation/yearly', () {
+      final snapshot = ErkeSnapshot.fromLegacyCache(
+        scores: [
+          {
+            'item': '活动',
+            'score': '1.0',
+            'date': '2025-01-01',
+            'category': '思想成长'
+          },
+        ],
+        summary: null,
+      );
+      expect(snapshot.hasActivities, true);
+      expect(snapshot.hasGraduationData, false);
+      expect(snapshot.hasYearlyData, false);
+      // 活动应该存在，页面不应空白
+      expect(snapshot.activities.length, 1);
+    });
+
+    test('只有旧活动缓存时页面不空白', () {
+      // 模拟用户升级后场景：只有旧 scores，没有 snapshot
+      final snapshot = ErkeSnapshot.fromLegacyCache(
+        scores: [
+          {
+            'item': '旧活动',
+            'score': '2.0',
+            'date': '2024-01-01',
+            'category': '志愿公益'
+          },
+        ],
+        summary: null,
+      );
+      // 验证：hasData=true, graduation=null, yearly=null
+      expect(snapshot.hasGraduationData, false);
+      expect(snapshot.hasYearlyData, false);
+      expect(snapshot.hasActivities, true);
+      // UI 层应显示 _buildNeedsRelogin 而非空白
+    });
+  });
+
+  group('重新登录补全数据', () {
+    test('完整新快照包含 graduation + yearly + activities', () {
+      final htmlG = _loadFixture('fixture_graduation.html');
+      final htmlY = _loadFixture('fixture_yearly.html');
+      final grad = ErkeParser.parseGraduationSummary(htmlG);
+      final yr = ErkeParser.parseYearlySummary(htmlY);
+
+      final snapshot = ErkeSnapshot(
+        graduation: grad,
+        yearly: yr,
+        yearlyByYear: {yr.year: yr},
+        activities: [
+          ErkeActivity(
+              item: '活动', score: '1', date: '2025-01-01', category: 'A'),
+        ],
+        activitiesByYear: {
+          yr.year: [
+            ErkeActivity(
+                item: '活动', score: '1', date: '2025-01-01', category: 'A'),
+          ],
+        },
+        fetchedAt: DateTime.now(),
+      );
+
+      expect(snapshot.hasGraduationData, true);
+      expect(snapshot.hasYearlyData, true);
+      expect(snapshot.hasActivities, true);
+    });
+
+    test('重新登录失败时旧活动仍保留', () {
+      // 模拟场景：先有旧数据，然后登录失败
+      final oldSnapshot = ErkeSnapshot.fromLegacyCache(
+        scores: [
+          {
+            'item': '旧活动',
+            'score': '1.0',
+            'date': '2024-01-01',
+            'category': '思想成长'
+          },
+        ],
+        summary: null,
+      );
+
+      // 登录失败后：不应清除旧数据
+      expect(oldSnapshot.activities.length, 1);
+      expect(oldSnapshot.hasGraduationData, false);
+    });
+
+    test('状态分离：hasCachedData / hasGraduationSummary / hasYearlySummary', () {
+      // 旧缓存：hasCachedData=true, graduation=false, yearly=false
+      final oldOnly = ErkeSnapshot.fromLegacyCache(
+        scores: [
+          {'item': 'x', 'score': '1', 'date': '2025-01-01', 'category': 'A'}
+        ],
+        summary: null,
+      );
+      expect(oldOnly.hasGraduationData, false);
+      expect(oldOnly.hasYearlyData, false);
+      expect(oldOnly.hasActivities, true);
+
+      // 完整新快照：全部 true
+      final full = ErkeSnapshot(
+        graduation: ErkeGraduationSummary(
+          requiredTotal: 40,
+          earnedTotal: 38.7,
+          totalGap: 1.3,
+          unmetCount: 2,
+          officialConclusion: 'B得分不足、总分不足',
+          categories: [],
+        ),
+        yearly: ErkeYearlySummary(
+          year: '2025-2026',
+          availableYears: [],
+          requiredTotal: 25,
+          yearEarnedTotal: 8.95,
+          cumulativeTotal: 38.7,
+          yearGap: 16.05,
+          officialConclusion: 'B得分不足',
+          categories: [],
+        ),
+        activities: [],
+      );
+      expect(full.hasGraduationData, true);
+      expect(full.hasYearlyData, true);
+    });
+  });
+
   group('总分不一致检测', () {
     test('分类合计与 SunCount 不一致应抛异常', () {
       // 构造一个 SunCount = 50 但分类合计 = 40 的页面

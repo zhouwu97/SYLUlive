@@ -189,16 +189,24 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
     }
   }
 
-  Future<void> _switchYear(String year) async {
+  bool _switchingYear = false;
+
+  Future<void> _switchYear(String targetYear) async {
+    if (_switchingYear) return;
     if (!_repo.hasLiveSession) {
       AppFeedback.showSnackBar(context, '会话已过期，请重新登录', isError: true);
       return;
     }
-    await _repo.fetchYearlySummary(year);
-    if (_repo.yearlyError != null && mounted) {
-      AppFeedback.showSnackBar(context, _repo.yearlyError!, isError: true);
+    _switchingYear = true;
+    try {
+      await _repo.fetchYearlySummary(targetYear);
+      if (_repo.yearlyError != null && mounted) {
+        AppFeedback.showSnackBar(context, _repo.yearlyError!, isError: true);
+      }
+    } finally {
+      _switchingYear = false;
+      if (mounted) setState(() {});
     }
-    if (mounted) setState(() {});
   }
 
   void _updateMessage(String msg) {

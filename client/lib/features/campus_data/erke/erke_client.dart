@@ -272,79 +272,50 @@ class ErkeClient {
 
   /// 获取学年要求汇总页 HTML（含成绩）
   ///
-  /// 流程: GET → 解析表单 → 有成绩直接返回 / 无成绩则 WebForms POST
+  /// 流程: GET → 比较年份 → 同年有成绩直接解析 / 否则 WebForms POST
   Future<String> getYearlySummaryHtml({String? year}) async {
     final url = buildVpnUrl(ErkeEndpoints.yearlySummary);
 
     // 1. GET 初始页面
-    print('[Erke] yearly GET url=$url');
     final getResp = await _dio.get(
       url,
       options: Options(responseType: ResponseType.bytes),
     );
     final getHtml =
         decodeResponseBytes(getResp.data as List<int>, getResp.headers);
-    final getDoc = parse(getHtml);
 
-    print(
-        '[Erke] yearly GET status=${getResp.statusCode} bodyLength=${getHtml.length}');
-    final title = getDoc.querySelector('title')?.text ?? '';
-    print('[Erke] yearly GET title=$title');
-    // 保存 GET HTML 前 2000 字符用于诊断（分段打印避免 logcat 截断）
-    final preview =
-        getHtml.length < 2000 ? getHtml : getHtml.substring(0, 2000);
-    print('[Erke] yearly GET html-preview $preview');
-
-    // 2. 解析查询表单
+    // 2. 解析表单
     final form = ErkeParser.parseYearPageForm(getHtml);
-    final targetYear = year ?? form.selectedYear;
+    final requestedYear = year;
 
-    // 诊断：打印表单中所有 input 的 name/id（不打印 value，不含隐私）
-    print('[Erke] yearly GET form inputs:');
-    for (final inp in getDoc.querySelectorAll('input')) {
-      final name = inp.attributes['name'] ?? '';
-      final id = inp.attributes['id'] ?? '';
-      final type = inp.attributes['type'] ?? 'text';
-      if (name.isNotEmpty || id.isNotEmpty) {
-        print('[Erke]   input name=$name id=$id type=$type');
-      }
-    }
-    // 找所有 button/submit
-    for (final btn in getDoc.querySelectorAll(
-        'input[type="submit"], button, input[type="button"]')) {
-      print(
-          '[Erke]   button name=${btn.attributes["name"]} id=${btn.attributes["id"]} value=${btn.attributes["value"]}');
-    }
-    // 找 __doPostBack 调用
-    final doPostBackRe =
-        RegExp(r"__doPostBack\s*\(\s*'([^']+)'\s*,\s*'([^']*)'\s*\)");
-    for (final m in doPostBackRe.allMatches(getHtml)) {
-      print('[Erke]   __doPostBack target=${m.group(1)} arg=${m.group(2)}');
-    }
+    print('[Erke] yearly requestedYear=$requestedYear'
+        ' getSelectedYear=${form.selectedYear}');
 
-    // 3. GET 已有成绩 → 直接解析；无成绩 → POST
-    final getHasScores = ErkeParser.yearlyPageHasScores(getHtml);
-    if (getHasScores) {
-      print('[Erke] yearly GET has scores, parse directly');
+    // 3. 判断是否需要 POST（年份不同时必须 POST）
+    final hasScores = ErkeParser.yearlyPageHasScores(getHtml);
+    final canUseGet = hasScores &&
+        (requestedYear == null || requestedYear == form.selectedYear);
+
+    print('[Erke] yearly shouldPost=${!canUseGet}');
+
+    if (canUseGet) {
       return getHtml;
     }
 
-    print(
-        '[Erke] yearly POST — GET selectedYear=${form.selectedYear} targetYear=$targetYear');
+    // 4. 执行 WebForms POST（模拟 __doPostBack('YearTime','')）
+    final targetYear = requestedYear ?? form.selectedYear;
     if (!form.availableYears.contains(targetYear)) {
       throw Exception('无效的学年: $targetYear (可选: ${form.availableYears})');
     }
 
+    print('[Erke] yearly POST eventTarget=YearTime'
+        ' targetYear=$targetYear');
     final formData = <String, dynamic>{
       ...form.hiddenInputs,
+      '__EVENTTARGET': 'YearTime',
+      '__EVENTARGUMENT': '',
       'YearTime': targetYear,
     };
-    if (form.submitButtonName != null) {
-      formData[form.submitButtonName!] = form.submitButtonValue ?? '查询';
-    }
-    if (form.eventTarget != null) {
-      formData['__EVENTTARGET'] = form.eventTarget;
-    }
 
     final postResp = await _dio.post(
       url,
@@ -361,23 +332,24 @@ class ErkeClient {
 
     final postHtml =
         decodeResponseBytes(postResp.data as List<int>, postResp.headers);
-    final postDoc = parse(postHtml);
 
-    print(
-        '[Erke] yearly POST status=${postResp.statusCode} bodyLength=${postHtml.length}');
-    final returnedYear = ErkeParser.extractSelectedOption(postDoc, 'YearTime');
-    print('[Erke] yearly POST selectedYear=$returnedYear');
-    if (returnedYear != null && returnedYear != targetYear) {
-      throw Exception('学年切换失败: 请求 $targetYear，服务器返回 $returnedYear');
-    }
+    // 5. 验证 POST 结果
+    final returnedForm = ErkeParser.parseYearPageForm(postHtml);
+    print('[Erke] yearly POST returnedYear=${returnedForm.selectedYear}'
+        ' hasScores=${ErkeParser.yearlyPageHasScores(postHtml)}');
 
-    // 验证 POST 后确实拿到了完整成绩
-    if (!ErkeParser.yearlyPageHasScores(postHtml)) {
+    if (returnedForm.selectedYear != targetYear) {
       throw ErkePageChangedException(
-        '学年查询已提交，但返回页面仍没有有效成绩数据',
+        '学年切换失败：请求 $targetYear，'
+        '服务器返回 ${returnedForm.selectedYear}',
       );
     }
-    print('[Erke] yearly POST hasScores=true');
+
+    if (!ErkeParser.yearlyPageHasScores(postHtml)) {
+      throw ErkePageChangedException(
+        '学年查询已提交，但返回页面没有成绩数据',
+      );
+    }
 
     return postHtml;
   }

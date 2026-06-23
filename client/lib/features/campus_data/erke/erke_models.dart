@@ -74,22 +74,28 @@ class ErkeRequirementCategory {
 class ErkeGraduationSummary {
   final double requiredTotal;
   final double earnedTotal;
-  final double totalGap; // max(0, requiredTotal - earnedTotal)
+  final double rawTotalGap; // max(0, requiredTotal - earnedTotal)
+  final double categoryGap; // 所有分类 max(0, required - earned) 的总和
+  final double graduationGap; // max(rawTotalGap, categoryGap)
   final int unmetCount;
-  final String officialConclusion; // 学校 Status span 原文
+  final String officialConclusion;
   final List<ErkeRequirementCategory> categories;
 
   const ErkeGraduationSummary({
     required this.requiredTotal,
     required this.earnedTotal,
-    required this.totalGap,
+    required this.rawTotalGap,
+    required this.categoryGap,
+    required this.graduationGap,
     required this.unmetCount,
     required this.officialConclusion,
     required this.categories,
   });
 
-  double get percentage =>
-      requiredTotal > 0 ? (earnedTotal / requiredTotal * 100).clamp(0, 100) : 0;
+  /// 实际完成百分比 = (requiredTotal - graduationGap) / requiredTotal
+  double get percentage => requiredTotal > 0
+      ? ((requiredTotal - graduationGap) / requiredTotal * 100).clamp(0, 100)
+      : 0;
 
   factory ErkeGraduationSummary.fromJson(Map<String, dynamic> json) {
     final cats = (json['categories'] as List<dynamic>?)
@@ -100,7 +106,9 @@ class ErkeGraduationSummary {
     return ErkeGraduationSummary(
       requiredTotal: (json['requiredTotal'] as num?)?.toDouble() ?? 0,
       earnedTotal: (json['earnedTotal'] as num?)?.toDouble() ?? 0,
-      totalGap: (json['totalGap'] as num?)?.toDouble() ?? 0,
+      rawTotalGap: (json['rawTotalGap'] as num?)?.toDouble() ?? 0,
+      categoryGap: (json['categoryGap'] as num?)?.toDouble() ?? 0,
+      graduationGap: (json['graduationGap'] as num?)?.toDouble() ?? 0,
       unmetCount: json['unmetCount'] as int? ?? 0,
       officialConclusion: json['officialConclusion'] as String? ?? '',
       categories: cats,
@@ -110,7 +118,9 @@ class ErkeGraduationSummary {
   Map<String, dynamic> toJson() => {
         'requiredTotal': requiredTotal,
         'earnedTotal': earnedTotal,
-        'totalGap': totalGap,
+        'rawTotalGap': rawTotalGap,
+        'categoryGap': categoryGap,
+        'graduationGap': graduationGap,
         'unmetCount': unmetCount,
         'officialConclusion': officialConclusion,
         'categories': categories.map((c) => c.toJson()).toList(),

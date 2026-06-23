@@ -131,15 +131,21 @@ class ErkeParser {
 
     final conclusion = _getSpanTextOr(doc, 'Status', '');
 
-    final double totalGap = officialEarnedTotal < officialRequiredTotal
+    final double rawTotalGap = officialEarnedTotal < officialRequiredTotal
         ? (officialRequiredTotal - officialEarnedTotal)
         : 0.0;
+    final double categoryGap = categories.fold(0.0,
+        (sum, c) => sum + (c.earned < c.required ? c.required - c.earned : 0));
+    final double graduationGap =
+        rawTotalGap > categoryGap ? rawTotalGap : categoryGap;
     final unmetCount = categories.where((c) => !c.meetsNumerically).length;
 
     return ErkeGraduationSummary(
       requiredTotal: officialRequiredTotal,
       earnedTotal: officialEarnedTotal,
-      totalGap: totalGap,
+      rawTotalGap: rawTotalGap,
+      categoryGap: categoryGap,
+      graduationGap: graduationGap,
       unmetCount: unmetCount,
       officialConclusion: conclusion,
       categories: categories,

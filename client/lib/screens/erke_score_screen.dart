@@ -549,7 +549,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
 
   Widget _buildGraduationProgressCard(ErkeGraduationSummary grad, bool isDark) {
     final percentage = grad.percentage;
-    final isComplete = grad.totalGap <= 0;
+    final isComplete = grad.graduationGap <= 0;
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -612,12 +612,12 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
           // 差距信息
           Row(
             children: [
-              if (grad.totalGap > 0) ...[
-                _infoTag('总分还差 ${grad.totalGap.toStringAsFixed(1)}',
+              if (grad.graduationGap > 0) ...[
+                _infoTag('还差 ${grad.graduationGap.toStringAsFixed(1)} 分',
                     isComplete ? Colors.green : Colors.orange),
                 const SizedBox(width: 12),
               ] else ...[
-                _infoTag('总分已达标 ✓', Colors.green),
+                _infoTag('已达标 ✓', Colors.green),
                 const SizedBox(width: 12),
               ],
               if (grad.unmetCount > 0)
@@ -636,6 +636,9 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
               style: const TextStyle(fontSize: 12, color: Color(0xFF8A8F9C)),
             ),
           ],
+          const SizedBox(height: 10),
+          Text('累计活动总分 ${grad.earnedTotal.toStringAsFixed(1)}',
+              style: const TextStyle(fontSize: 12, color: Color(0xFF8A8F9C))),
         ],
       ),
     );
@@ -914,12 +917,18 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
 
   Widget _buildYearlyCategoryRow(ErkeYearlyCategory cat, bool isDark) {
     final isOk = cat.meetsNumerically;
+    final scoreStr = cat.yearEarned == cat.yearEarned.roundToDouble()
+        ? cat.yearEarned.toInt().toString()
+        : cat.yearEarned.toStringAsFixed(1);
+    final reqStr = cat.required == cat.required.roundToDouble()
+        ? cat.required.toInt().toString()
+        : cat.required.toStringAsFixed(1);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 第一行：名称 + 状态
+          // 第一行：名称 + 状态 + 分值（与毕业要求相同结构）
           Row(children: [
             Expanded(
               child: Text(cat.name,
@@ -946,22 +955,27 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
                 ),
               ),
             ),
-          ]),
-          const SizedBox(height: 6),
-          // 第二行：本学年得分 + 累计
-          Row(children: [
-            Text(
-              '本学年 ${cat.yearEarned.toStringAsFixed(cat.yearEarned == cat.yearEarned.roundToDouble() ? 0 : 1)} / 要求 ${cat.required.toStringAsFixed(0)}',
-              style: TextStyle(
-                  fontSize: 13,
-                  color: isDark ? Colors.white54 : const Color(0xFF6366F1)),
+            const SizedBox(width: 12),
+            SizedBox(
+              width: 58,
+              child: Text(
+                '$scoreStr / $reqStr',
+                textAlign: TextAlign.right,
+                style: const TextStyle(fontSize: 13, color: Color(0xFF8A8F9C)),
+              ),
             ),
-            const Spacer(),
-            Text(
+          ]),
+          const SizedBox(height: 5),
+          // 第二行：累计（右对齐，淡色）
+          Align(
+            alignment: Alignment.centerRight,
+            child: Text(
               '累计 ${cat.cumulative.toStringAsFixed(1)}',
-              style: const TextStyle(fontSize: 12, color: Color(0xFF8A8F9C)),
+              style: TextStyle(
+                  fontSize: 11,
+                  color: isDark ? Colors.white30 : const Color(0xFFB5B8C2)),
             ),
-          ]),
+          ),
         ],
       ),
     );

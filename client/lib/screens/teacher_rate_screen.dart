@@ -83,7 +83,9 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
             Expanded(
               child: _tabCtrl.index == 0
                   ? _buildCanteenList(isDark)
-                  : (_tabCtrl.index == 1 ? _buildSubjectList(isDark) : _buildMajorList(isDark)),
+                  : (_tabCtrl.index == 1
+                      ? _buildSubjectList(isDark)
+                      : _buildMajorList(isDark)),
             ),
           ],
         ),
@@ -222,7 +224,9 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
           child: TextField(
             controller: _searchCtrl,
             decoration: InputDecoration(
-              hintText: _tabCtrl.index == 0 ? '搜索食堂...' : (_tabCtrl.index == 1 ? '搜索学科或教师...' : '搜索专业...'),
+              hintText: _tabCtrl.index == 0
+                  ? '搜索食堂...'
+                  : (_tabCtrl.index == 1 ? '搜索学科或教师...' : '搜索专业...'),
               prefixIcon: const Icon(Icons.search, size: 20),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
@@ -300,7 +304,8 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
           child: ResponsiveUtil.isDesktop(context)
               ? MasonryGridView.count(
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
-                  crossAxisCount: MediaQuery.of(context).size.width > 900 ? 3 : 2,
+                  crossAxisCount:
+                      MediaQuery.of(context).size.width > 900 ? 3 : 2,
                   mainAxisSpacing: 16,
                   crossAxisSpacing: 16,
                   itemCount: groups.length,
@@ -368,7 +373,8 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
           child: ResponsiveUtil.isDesktop(context)
               ? MasonryGridView.count(
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
-                  crossAxisCount: MediaQuery.of(context).size.width > 900 ? 3 : 2,
+                  crossAxisCount:
+                      MediaQuery.of(context).size.width > 900 ? 3 : 2,
                   mainAxisSpacing: 16,
                   crossAxisSpacing: 16,
                   itemCount: majors.length,
@@ -567,99 +573,109 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
   }
 
   Widget _buildCanteenList(bool isDark) {
-      final user = context.watch<AuthProvider>().user;
-      final isAdmin = user?.role == 'admin' || user?.role == 'super_admin';
-      
-      return Consumer<CanteenProvider>(builder: (_, provider, __) {
-        final query = _currentQuery?.toLowerCase();
-        final canteens = query == null
-            ? provider.canteens
-            : provider.canteens
-                .where((m) => m.name.toLowerCase().contains(query))
-                .toList();
+    final user = context.watch<AuthProvider>().user;
+    final isAdmin = user?.role == 'admin' || user?.role == 'super_admin';
 
-        if (provider.isLoading && provider.canteens.isEmpty) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        if (canteens.isEmpty) {
-          return Center(
-            child: Text(
-              '暂无食堂',
-              style: TextStyle(
-                color: isDark ? Colors.white54 : Colors.grey[600],
+    return Consumer<CanteenProvider>(builder: (_, provider, __) {
+      final query = _currentQuery?.toLowerCase();
+      final canteens = query == null
+          ? provider.canteens
+          : provider.canteens
+              .where((m) => m.name.toLowerCase().contains(query))
+              .toList();
+
+      if (provider.isLoading && provider.canteens.isEmpty) {
+        return const Center(child: CircularProgressIndicator());
+      }
+      if (canteens.isEmpty) {
+        return Center(
+          child: Text(
+            '暂无食堂',
+            style: TextStyle(
+              color: isDark ? Colors.white54 : Colors.grey[600],
+            ),
+          ),
+        );
+      }
+
+      Widget buildCard(int index) {
+        final canteen = canteens[index];
+        return _buildLeaderboardCard(
+          isDark: isDark,
+          rank: index + 1,
+          title: canteen.name,
+          subtitle: '评分: ${canteen.averageStar.toStringAsFixed(1)}',
+          average: canteen.averageStar,
+          count: canteen.ratingCount,
+          extraLabel: '食堂评分',
+          icon: Icons.restaurant,
+          imageUrl: canteen.image != null && canteen.image.isNotEmpty
+              ? ApiConstants.fullUrl(canteen.image)
+              : null,
+          onLongPress: isAdmin
+              ? () {
+                  showDialog(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      title: const Text('删除店铺'),
+                      content: Text('确定要删除食堂/店铺 "${canteen.name}" 吗？'),
+                      actions: [
+                        TextButton(
+                            onPressed: () => Navigator.pop(ctx),
+                            child: const Text('取消')),
+                        TextButton(
+                          onPressed: () async {
+                            Navigator.pop(ctx);
+                            final success = await context
+                                .read<CanteenProvider>()
+                                .deleteCanteen(canteen.id);
+                            if (success && mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('删除成功')));
+                              context.read<CanteenProvider>().loadCanteens();
+                            }
+                          },
+                          child: const Text('删除',
+                              style: TextStyle(color: Colors.red)),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+              : null,
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => CanteenDetailScreen(
+                canteenId: canteen.id,
+                canteenName: canteen.name,
               ),
             ),
-          );
-        }
-
-        Widget buildCard(int index) {
-          final canteen = canteens[index];
-          return _buildLeaderboardCard(
-            isDark: isDark,
-            rank: index + 1,
-            title: canteen.name,
-            subtitle: '评分: ${canteen.averageStar.toStringAsFixed(1)}',
-            average: canteen.averageStar,
-            count: canteen.ratingCount,
-            extraLabel: '食堂评分',
-            icon: Icons.restaurant,
-            imageUrl: canteen.image != null && canteen.image.isNotEmpty ? ApiConstants.fullUrl(canteen.image) : null,
-            onLongPress: isAdmin ? () {
-              showDialog(
-                context: context,
-                builder: (ctx) => AlertDialog(
-                  title: const Text('删除店铺'),
-                  content: Text('确定要删除食堂/店铺 "${canteen.name}" 吗？'),
-                  actions: [
-                    TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
-                    TextButton(
-                      onPressed: () async {
-                        Navigator.pop(ctx);
-                        final success = await context.read<CanteenProvider>().deleteCanteen(canteen.id);
-                        if (success && mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('删除成功')));
-                          context.read<CanteenProvider>().loadCanteens();
-                        }
-                      },
-                      child: const Text('删除', style: TextStyle(color: Colors.red)),
-                    ),
-                  ],
-                ),
-              );
-            } : null,
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => CanteenDetailScreen(
-                  canteenId: canteen.id,
-                  canteenName: canteen.name,
-                ),
-              ),
-            ).then((_) {
-              if (!mounted) return;
-              context.read<CanteenProvider>().loadCanteens();
-            }),
-          );
-        }
-
-        return RefreshIndicator(
-          onRefresh: () => context.read<CanteenProvider>().loadCanteens(),
-          child: ResponsiveUtil.isDesktop(context)
-              ? MasonryGridView.count(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
-                  crossAxisCount: MediaQuery.of(context).size.width > 900 ? 3 : 2,
-                  mainAxisSpacing: 16,
-                  crossAxisSpacing: 16,
-                  itemCount: canteens.length,
-                  itemBuilder: (_, index) => buildCard(index),
-                )
-              : ListView.builder(
-                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 80),
-                  itemCount: canteens.length,
-                  itemBuilder: (_, index) => buildCard(index),
-                ),
+          ).then((_) {
+            if (!mounted) return;
+            context.read<CanteenProvider>().loadCanteens();
+          }),
         );
-      });
+      }
+
+      return RefreshIndicator(
+        onRefresh: () => context.read<CanteenProvider>().loadCanteens(),
+        child: ResponsiveUtil.isDesktop(context)
+            ? MasonryGridView.count(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
+                crossAxisCount: MediaQuery.of(context).size.width > 900 ? 3 : 2,
+                mainAxisSpacing: 16,
+                crossAxisSpacing: 16,
+                itemCount: canteens.length,
+                itemBuilder: (_, index) => buildCard(index),
+              )
+            : ListView.builder(
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 80),
+                itemCount: canteens.length,
+                itemBuilder: (_, index) => buildCard(index),
+              ),
+      );
+    });
   }
 
   Future<void> _showAddDialog() async {
@@ -721,7 +737,7 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
               final name = nameCtrl.text.trim();
               final course = courseCtrl.text.trim();
               if (name.isEmpty) return;
-              
+
               if (isTeacher && course.length < 2) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('请填写完整课程名称')),
@@ -734,9 +750,9 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
                 );
                 return;
               }
-              
+
               Navigator.pop(ctx);
-              
+
               if (isTeacher) {
                 await context.read<TeacherProvider>().addTeacher(name, course);
                 if (!mounted) return;
@@ -750,9 +766,12 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
                 if (!mounted) return;
                 await context.read<MajorProvider>().loadMajors();
               } else if (isCanteen) {
-                final success = await context.read<CanteenProvider>().addCanteen(name, uploadedImageUrls.first);
+                final success = await context
+                    .read<CanteenProvider>()
+                    .addCanteen(name, uploadedImageUrls.first);
                 if (success) {
-                   ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('添加成功，经验+10')));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('添加成功，经验+10')));
                 }
                 if (!mounted) return;
                 await context.read<CanteenProvider>().loadCanteens();

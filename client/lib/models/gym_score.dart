@@ -1,7 +1,7 @@
 /// 体测成绩单项模型
 class GymScoreItem {
-  final String subName;   // 项目名称：肺活量、50米等
-  final String result;    // 成绩数值
+  final String subName; // 项目名称：肺活量、50米等
+  final String result; // 成绩数值
   final String scoreStatus; // 状态：1=优秀 2=及格 3=不及格 等
 
   const GymScoreItem({

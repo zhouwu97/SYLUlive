@@ -33,7 +33,8 @@ class TeacherProvider extends ChangeNotifier {
     try {
       final params = <String, dynamic>{};
       if (query != null && query.isNotEmpty) params['q'] = query;
-      final resp = await _dio.get('/teachers', queryParameters: params.isEmpty ? null : params);
+      final resp = await _dio.get('/teachers',
+          queryParameters: params.isEmpty ? null : params);
       if (resp.statusCode == 200) {
         final seen = <int>{};
         _teachers = (resp.data as List)
@@ -57,7 +58,9 @@ class TeacherProvider extends ChangeNotifier {
       if (resp.statusCode == 200) {
         final data = resp.data;
         _selectedTeacher = Teacher.fromJson(data['teacher']);
-        _ratings = (data['ratings'] as List).map((j) => TeacherRating.fromJson(j)).toList();
+        _ratings = (data['ratings'] as List)
+            .map((j) => TeacherRating.fromJson(j))
+            .toList();
         _ratingCount = data['rating_count'] ?? 0;
         _averageStar = (data['average_star'] ?? 0).toDouble();
         if (data['my_rating'] != null) {

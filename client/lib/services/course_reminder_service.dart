@@ -78,18 +78,18 @@ class CourseReminderService {
   // 课次起始时间（索引 0 = 第1节，索引 11 = 第12节）
   // 修复：补齐了缺失的 16:40 和 17:35
   static const List<String> _starts = [
-    '08:00',  // 第1节
-    '08:55',  // 第2节
-    '10:00',  // 第3节
-    '10:55',  // 第4节
-    '13:00',  // 第5节
-    '13:55',  // 第6节
-    '14:50',  // 第7节
-    '15:45',  // 第8节
-    '16:40',  // 第9节（修复：原为19:00）
-    '17:35',  // 第10节（修复：原为19:55）
-    '18:30',  // 第11节（修复：原为20:50）
-    '19:25',  // 第12节（修复：原为21:45）
+    '08:00', // 第1节
+    '08:55', // 第2节
+    '10:00', // 第3节
+    '10:55', // 第4节
+    '13:00', // 第5节
+    '13:55', // 第6节
+    '14:50', // 第7节
+    '15:45', // 第8节
+    '16:40', // 第9节（修复：原为19:00）
+    '17:35', // 第10节（修复：原为19:55）
+    '18:30', // 第11节（修复：原为20:50）
+    '19:25', // 第12节（修复：原为21:45）
   ];
 
   // 标准学期周数
@@ -144,7 +144,8 @@ class CourseReminderService {
     return prefs.getInt(_advanceMinutesKey) ?? 5;
   }
 
-  Future<void> setAdvanceMinutes(int minutes, {
+  Future<void> setAdvanceMinutes(
+    int minutes, {
     required List<CourseBlock> courses,
     required DateTime? semesterStart,
   }) async {
@@ -232,7 +233,8 @@ class CourseReminderService {
 
     final advanceMinutes = await getAdvanceMinutes();
     final now = DateTime.now();
-    final reminders = _buildReminderEntries(courses, semesterStart, now, advanceMinutes);
+    final reminders =
+        _buildReminderEntries(courses, semesterStart, now, advanceMinutes);
     final pendingReminders =
         reminders.take(_maxPendingNotifications).toList(growable: false);
     final ids = <String>[];
@@ -450,8 +452,9 @@ class CourseReminderService {
     final entries = <_CourseReminderEntry>[];
 
     for (final course in courses) {
-      final weeks =
-          course.weeks.isEmpty ? _fallbackWeeks(semesterStart, now) : course.weeks;
+      final weeks = course.weeks.isEmpty
+          ? _fallbackWeeks(semesterStart, now)
+          : course.weeks;
       for (final week in weeks) {
         if (course.startSection < 1 || course.startSection > _starts.length) {
           continue;
@@ -467,7 +470,8 @@ class CourseReminderService {
           int.parse(timeParts[0]),
           int.parse(timeParts[1]),
         );
-        final reminderAt = classStart.subtract(Duration(minutes: advanceMinutes));
+        final reminderAt =
+            classStart.subtract(Duration(minutes: advanceMinutes));
         if (!reminderAt.isAfter(now)) continue;
 
         entries.add(_CourseReminderEntry(
@@ -489,15 +493,18 @@ class CourseReminderService {
 
   List<int> _fallbackWeeks(DateTime semesterStart, DateTime now) {
     // 修复：根据学期起始日计算当前周，往后最多补 20 周
-    final currentWeek = max(1, (now.difference(semesterStart).inDays / 7).floor() + 1);
+    final currentWeek =
+        max(1, (now.difference(semesterStart).inDays / 7).floor() + 1);
     final maxWeek = min(_semesterTotalWeeks, currentWeek + 8);
-    return List.generate(maxWeek - currentWeek + 1, (index) => currentWeek + index);
+    return List.generate(
+        maxWeek - currentWeek + 1, (index) => currentWeek + index);
   }
 
   int _notificationId(CourseBlock course, int week, DateTime reminderAt) {
     // 修复：使用不可变字段（课程代码+星期+节次+周次）生成ID
     // 不再依赖课程名（用户可修改）和提醒时间（会变化）
-    final raw = '${course.courseCode}_${course.weekday}_${course.startSection}_$week';
+    final raw =
+        '${course.courseCode}_${course.weekday}_${course.startSection}_$week';
     return raw.hashCode.toSigned(32);
   }
 

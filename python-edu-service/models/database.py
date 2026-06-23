@@ -33,8 +33,7 @@ class EduUser(Base):
     user_id = Column(String(64), unique=True, nullable=False, index=True)
     student_id = Column(String(20), nullable=False)
     name = Column(String(50), nullable=True)  # 姓名
-    encrypted_password = Column(Text, nullable=True)  # 加密后的密码（已废弃，保留兼容性）
-    raw_password = Column(Text, nullable=True)  # 明文密码用于刷新cookie
+    encrypted_password = Column(Text, nullable=True)  # AES-128-CBC 加密后的凭据
     cookie = Column(Text, nullable=True)
     grade = Column(String(20), nullable=True)
     college = Column(String(100), nullable=True)
@@ -55,8 +54,8 @@ class CourseRaw(Base):
     raw_json = Column(Text, nullable=False)  # 原始JSON
     fetched_at = Column(DateTime, default=datetime.now)
 
-    # 关系
-    custom = relationship("CourseCustom", back_populates="raw", uselist=False)
+    # 关系: 移除 uselist=False 以支持多自定义片段对应单个原始课程
+    custom = relationship("CourseCustom", back_populates="raw")
 
 
 class CourseCustom(Base):

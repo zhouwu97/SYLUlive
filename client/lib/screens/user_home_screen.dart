@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:ui';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:dio/dio.dart';
@@ -85,8 +86,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
     }
 
     final user = _user!;
-    final isMe =
-        widget.userId == null ||
+    final isMe = widget.userId == null ||
         widget.userId == context.read<AuthProvider>().user?.id;
 
     final pageBackground = isDark
@@ -99,6 +99,235 @@ class _UserHomeScreenState extends State<UserHomeScreen>
     final screenWidth = MediaQuery.sizeOf(context).width;
     final heroHeight = (screenWidth * 1.03).clamp(390.0, 480.0);
 
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        if (width >= 820) {
+          return _buildWideProfileLayout(
+            context,
+            user,
+            isMe,
+            isDark,
+            pageBackground,
+            panelColor,
+            width,
+          );
+        }
+        return _buildCompactProfileLayout(
+          context,
+          user,
+          isMe,
+          isDark,
+          pageBackground,
+          panelColor,
+          width,
+        );
+      },
+    );
+  }
+
+  Widget _buildWideProfileLayout(
+    BuildContext context,
+    User user,
+    bool isMe,
+    bool isDark,
+    Color pageBackground,
+    Color panelColor,
+    double width,
+  ) {
+    return Scaffold(
+      backgroundColor: pageBackground,
+      body: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 左侧资料栏
+          SizedBox(
+            width: width >= 1000 ? 380 : 320,
+            child: CustomScrollView(
+              slivers: [
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(24),
+                      child: Container(
+                        color: panelColor,
+                        child: Column(
+                          children: [
+                            // 顶部背景和资料堆叠
+                            SizedBox(
+                              height: 480,
+                              child: Stack(
+                                fit: StackFit.expand,
+                                children: [
+                                  // 模糊的 cover 底图
+                                  GestureDetector(
+                                    onTap: () {
+                                      if (user.background.isNotEmpty) {
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (_) => ImageViewerScreen(
+                                              imageUrls: [
+                                                ApiConstants.fullUrl(
+                                                    user.background)
+                                              ],
+                                            ),
+                                          ),
+                                        );
+                                      }
+                                    },
+                                    child: user.background.isNotEmpty
+                                        ? Stack(
+                                            fit: StackFit.expand,
+                                            children: [
+                                              CachedNetworkImage(
+                                                imageUrl: ApiConstants.fullUrl(
+                                                    user.background),
+                                                fit: BoxFit.cover,
+                                                imageBuilder:
+                                                    (context, imageProvider) =>
+                                                        Container(
+                                                  decoration: BoxDecoration(
+                                                    image: DecorationImage(
+                                                      image: imageProvider,
+                                                      fit: BoxFit.cover,
+                                                    ),
+                                                  ),
+                                                  child: BackdropFilter(
+                                                    filter: ImageFilter.blur(
+                                                        sigmaX: 10, sigmaY: 10),
+                                                    child: Container(
+                                                        color: Colors.black
+                                                            .withValues(
+                                                                alpha: 0.2)),
+                                                  ),
+                                                ),
+                                              ),
+                                              CachedNetworkImage(
+                                                imageUrl: ApiConstants.fullUrl(
+                                                    user.background),
+                                                fit: BoxFit.contain,
+                                              ),
+                                            ],
+                                          )
+                                        : Image.asset(
+                                            'assets/images/morenbeijing.jpeg',
+                                            fit: BoxFit.cover,
+                                          ),
+                                  ),
+
+                                  // 渐变遮罩
+                                  const DecoratedBox(
+                                    decoration: BoxDecoration(
+                                      gradient: LinearGradient(
+                                        begin: Alignment.topCenter,
+                                        end: Alignment.bottomCenter,
+                                        stops: [0.0, 0.42, 1.0],
+                                        colors: [
+                                          Colors.transparent,
+                                          Color(0x22000000),
+                                          Color(0xDD000000),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+
+                                  // 左上角返回
+                                  Positioned(
+                                    top: 12,
+                                    left: 12,
+                                    child: _buildCircleButton(
+                                      icon: Icons.arrow_back,
+                                      onTap: () => Navigator.maybePop(context),
+                                    ),
+                                  ),
+
+                                  // 底部覆盖资料
+                                  Positioned(
+                                    left: 20,
+                                    right: 20,
+                                    bottom: 24,
+                                    child: _buildProfileOverlay(
+                                        context, user, isMe),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // 右侧帖子区域
+          Expanded(
+            child: Container(
+              margin: const EdgeInsets.only(top: 16, right: 16, bottom: 16),
+              decoration: BoxDecoration(
+                color: panelColor,
+                borderRadius: BorderRadius.circular(24),
+              ),
+              child: Column(
+                children: [
+                  TabBar(
+                    controller: _tabController,
+                    indicatorSize: TabBarIndicatorSize.label,
+                    indicatorWeight: 3,
+                    indicatorColor: Theme.of(context).colorScheme.primary,
+                    labelColor: Theme.of(context).colorScheme.primary,
+                    unselectedLabelColor:
+                        isDark ? Colors.white60 : Colors.black54,
+                    tabs: [
+                      Tab(text: '帖子 '),
+                      const Tab(text: '智能体 0'),
+                    ],
+                  ),
+                  Expanded(
+                    child: TabBarView(
+                      controller: _tabController,
+                      children: [
+                        _isLoading
+                            ? const Center(child: CircularProgressIndicator())
+                            : _posts.isEmpty
+                                ? const Center(child: Text('暂无帖子'))
+                                : ListView.builder(
+                                    padding: const EdgeInsets.all(16),
+                                    itemCount: _posts.length,
+                                    itemBuilder: (context, index) {
+                                      return PostCard(
+                                        post: _posts[index],
+                                        disableAuthorNavigation: true,
+                                      );
+                                    },
+                                  ),
+                        const Center(child: Text('暂无智能体')),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCompactProfileLayout(
+    BuildContext context,
+    User user,
+    bool isMe,
+    bool isDark,
+    Color pageBackground,
+    Color panelColor,
+    double screenWidth,
+  ) {
+    final heroHeight = (screenWidth * 1.03).clamp(390.0, 480.0);
     return Scaffold(
       backgroundColor: panelColor,
       body: RefreshIndicator(
@@ -126,13 +355,51 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                     children: [
                       // 背景图
                       GestureDetector(
-                        onTap: isMe
-                            ? () => _showEditSheet(context, user)
-                            : null,
+                        onTap: () {
+                          if (user.background.isNotEmpty) {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => ImageViewerScreen(
+                                  imageUrls: [
+                                    ApiConstants.fullUrl(user.background)
+                                  ],
+                                ),
+                              ),
+                            );
+                          }
+                        },
                         child: user.background.isNotEmpty
-                            ? CachedNetworkImage(
-                                imageUrl: ApiConstants.fullUrl(user.background),
-                                fit: BoxFit.cover,
+                            ? Stack(
+                                fit: StackFit.expand,
+                                children: [
+                                  CachedNetworkImage(
+                                    imageUrl:
+                                        ApiConstants.fullUrl(user.background),
+                                    fit: BoxFit.cover,
+                                    imageBuilder: (context, imageProvider) =>
+                                        Container(
+                                      decoration: BoxDecoration(
+                                        image: DecorationImage(
+                                          image: imageProvider,
+                                          fit: BoxFit.cover,
+                                        ),
+                                      ),
+                                      child: BackdropFilter(
+                                        filter: ImageFilter.blur(
+                                            sigmaX: 10, sigmaY: 10),
+                                        child: Container(
+                                            color: Colors.black
+                                                .withValues(alpha: 0.2)),
+                                      ),
+                                    ),
+                                  ),
+                                  CachedNetworkImage(
+                                    imageUrl:
+                                        ApiConstants.fullUrl(user.background),
+                                    fit: BoxFit.contain,
+                                  ),
+                                ],
                               )
                             : Image.asset(
                                 'assets/images/morenbeijing.jpeg',
@@ -221,9 +488,8 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                       indicatorWeight: 3,
                       indicatorColor: Theme.of(context).colorScheme.primary,
                       labelColor: Theme.of(context).colorScheme.primary,
-                      unselectedLabelColor: isDark
-                          ? Colors.white60
-                          : Colors.black54,
+                      unselectedLabelColor:
+                          isDark ? Colors.white60 : Colors.black54,
                       labelStyle: const TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
@@ -248,17 +514,17 @@ class _UserHomeScreenState extends State<UserHomeScreen>
               _isLoading
                   ? const Center(child: CircularProgressIndicator())
                   : _posts.isEmpty
-                  ? const Center(child: Text('暂无帖子'))
-                  : ListView.builder(
-                      padding: const EdgeInsets.fromLTRB(12, 10, 12, 24),
-                      itemCount: _posts.length,
-                      itemBuilder: (context, index) {
-                        return PostCard(
-                          post: _posts[index],
-                          disableAuthorNavigation: true,
-                        );
-                      },
-                    ),
+                      ? const Center(child: Text('暂无帖子'))
+                      : ListView.builder(
+                          padding: const EdgeInsets.fromLTRB(12, 10, 12, 24),
+                          itemCount: _posts.length,
+                          itemBuilder: (context, index) {
+                            return PostCard(
+                              post: _posts[index],
+                              disableAuthorNavigation: true,
+                            );
+                          },
+                        ),
               const Center(child: Text('暂无智能体')),
             ],
           ),
@@ -530,8 +796,8 @@ class _UserHomeScreenState extends State<UserHomeScreen>
         text: '已关注',
         onPressed: () async {
           final success = await context.read<SocialProvider>().unfollow(
-            user.id,
-          );
+                user.id,
+              );
           if (success && mounted) {
             setState(() {
               _user!.isFollowing = false;
@@ -551,8 +817,8 @@ class _UserHomeScreenState extends State<UserHomeScreen>
         child: InkWell(
           onTap: () async {
             final success = await context.read<SocialProvider>().follow(
-              user.id,
-            );
+                  user.id,
+                );
             if (success && mounted) {
               setState(() {
                 _user!.isFollowing = true;

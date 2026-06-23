@@ -17,6 +17,8 @@ class _BoardState {
   String currentSort = 'time';
   String? sessionId;
   int requestVersion = 0;
+  int revision = 0;
+  DateTime? lastSuccessfulRefreshAt;
 }
 
 /// 创建帖子的返回结果
@@ -129,6 +131,20 @@ class PostProvider extends ChangeNotifier {
   }) =>
       _ensureBoard(boardId, sort: sort, type: type).requestVersion;
 
+  int revisionFor(
+    int boardId, {
+    String sort = 'time',
+    String? type,
+  }) =>
+      _ensureBoard(boardId, sort: sort, type: type).revision;
+
+  DateTime? lastSuccessfulRefreshAtFor(
+    int boardId, {
+    String sort = 'time',
+    String? type,
+  }) =>
+      _ensureBoard(boardId, sort: sort, type: type).lastSuccessfulRefreshAt;
+
   Future<void> _savePostsToCache(
     int boardId,
     String sort,
@@ -158,6 +174,7 @@ class PostProvider extends ChangeNotifier {
         if (requestVersion != board.requestVersion) return;
         if (cached.isNotEmpty) {
           board.posts = cached;
+          board.revision++;
           notifyListeners();
         }
       } catch (_) {}
@@ -233,6 +250,8 @@ class PostProvider extends ChangeNotifier {
     }
 
     board.hasLoaded = true;
+    board.lastSuccessfulRefreshAt = DateTime.now();
+    board.revision++;
     notifyListeners();
   }
 
@@ -256,6 +275,7 @@ class PostProvider extends ChangeNotifier {
     board.isLoading = true;
     board.error = null;
     final requestVersion = board.requestVersion;
+    board.revision++;
     notifyListeners();
 
     try {
@@ -313,6 +333,8 @@ class PostProvider extends ChangeNotifier {
     if (requestVersion == board.requestVersion) {
       board.isLoading = false;
       board.hasLoaded = true;
+      board.lastSuccessfulRefreshAt = DateTime.now();
+      board.revision++;
       notifyListeners();
     }
   }
@@ -327,6 +349,7 @@ class PostProvider extends ChangeNotifier {
 
     if (board.posts.isEmpty) {
       board.isLoading = true;
+      board.revision++;
       notifyListeners();
     }
 
@@ -367,6 +390,8 @@ class PostProvider extends ChangeNotifier {
     if (requestVersion == board.requestVersion) {
       board.isLoading = false;
       board.hasLoaded = true;
+      board.lastSuccessfulRefreshAt = DateTime.now();
+      board.revision++;
       notifyListeners();
     }
   }
@@ -509,10 +534,18 @@ class PostProvider extends ChangeNotifier {
     try {
       final response = await _dio.delete('/posts/$postId');
       if (response.statusCode == 200) {
+        bool changedAny = false;
         for (final board in _boards.values) {
+          final beforeLen = board.posts.length;
           board.posts.removeWhere((p) => p.id == postId);
+          if (board.posts.length != beforeLen) {
+            board.revision++;
+            changedAny = true;
+          }
         }
-        notifyListeners();
+        if (changedAny) {
+          notifyListeners();
+        }
         return const DeletePostResult(success: true);
       }
       return DeletePostResult(
@@ -588,6 +621,7 @@ class PostProvider extends ChangeNotifier {
       final index = board.posts.indexWhere((p) => p.id == updated.id);
       if (index >= 0) {
         board.posts[index] = updated;
+        board.revision++;
         // 同步持久化到本地缓存，防止杀后台后数据(如浏览量)倒退
         _savePostsToCache(boardId, sort, board.posts);
       }

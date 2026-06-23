@@ -249,25 +249,53 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
     return Scaffold(
       backgroundColor: isDark
           ? const Color(0xFF131720)
-          : const Color(0xFFF4F6FB),
+          : const Color(0xFFF6F7FB),
       appBar: AppBar(
         title: const Text('二课成绩查询'),
+        centerTitle: true,
         backgroundColor: Colors.transparent,
         elevation: 0,
         actions: [
           if (_scores != null)
-            TextButton(
+            IconButton(
+              icon: _isLoading 
+                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.refresh),
               onPressed: _isLoading ? null : _queryScores,
-              child: _isLoading
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Text(
-                      '重新拉取',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
+            ),
+          if (_scores != null)
+            PopupMenuButton<String>(
+              onSelected: (value) async {
+                if (value == 'logout' || value == 'relogin') {
+                  setState(() {
+                    _scores = null;
+                    _filterCategory = null;
+                  });
+                } else if (value == 'clear_cache') {
+                  final prefs = await SharedPreferences.getInstance();
+                  await prefs.remove('erke_scores_cache');
+                  await prefs.remove('erke_summary_cache');
+                  if (context.mounted) {
+                    AppFeedback.showSnackBar(context, '本地缓存已清除');
+                  }
+                }
+              },
+              itemBuilder: (BuildContext context) {
+                return [
+                  const PopupMenuItem<String>(
+                    value: 'logout',
+                    child: Text('更换账号'),
+                  ),
+                  const PopupMenuItem<String>(
+                    value: 'relogin',
+                    child: Text('重新登录'),
+                  ),
+                  const PopupMenuItem<String>(
+                    value: 'clear_cache',
+                    child: Text('清除本地缓存'),
+                  ),
+                ];
+              },
             ),
         ],
       ),
@@ -561,49 +589,51 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
       children: [
         if (_summary != null && _summary!.isNotEmpty)
           _buildSummaryHeader(isDark),
-        // 筛选条
-        if (categoryList.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: [
-                  _filterChip(
-                    '全部',
-                    _filterCategory == null,
-                    onTap: () => setState(() => _filterCategory = null),
-                  ),
-                  ...categoryList.map(
-                    (c) => _filterChip(
-                      c,
-                      _filterCategory == c,
-                      onTap: () => setState(() => _filterCategory = c),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
           child: Row(
             children: [
               Text(
-                '${_filterCategory ?? '查询结果'} (${filtered.length})',
-                style: const TextStyle(
-                  fontSize: 18,
+                '${_filterCategory ?? '查询结果'} ${filtered.length}',
+                style: TextStyle(
+                  fontSize: 16,
                   fontWeight: FontWeight.bold,
+                  color: isDark ? Colors.white : const Color(0xFF20232A),
                 ),
               ),
               const Spacer(),
-              TextButton(
-                onPressed: () => setState(() {
-                  _scores = null;
-                  _filterCategory = null;
-                }),
-                child: const Text('切换账号/密码'),
-              ),
+              if (categoryList.isNotEmpty)
+                InkWell(
+                  borderRadius: BorderRadius.circular(18),
+                  onTap: () => _showFilterSheet(context, categoryList),
+                  child: Container(
+                    height: 36,
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                    decoration: BoxDecoration(
+                      color: isDark ? Colors.white10 : const Color(0xFFF0F1F5),
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          '筛选',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: isDark ? Colors.white70 : const Color(0xFF5C6273),
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Icon(
+                          Icons.filter_list, 
+                          size: 16, 
+                          color: isDark ? Colors.white70 : const Color(0xFF5C6273),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
             ],
           ),
         ),
@@ -631,25 +661,60 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
     );
   }
 
-  Widget _filterChip(String label, bool selected, {VoidCallback? onTap}) {
-    return Padding(
-      padding: const EdgeInsets.only(right: 8),
-      child: ChoiceChip(
-        label: Text(
-          label,
-          style: TextStyle(fontSize: 13, color: selected ? Colors.white : null),
-        ),
-        selected: selected,
-        selectedColor: const Color(0xFF6366F1),
-        backgroundColor: Colors.transparent,
-        side: BorderSide(
-          color: selected
-              ? const Color(0xFF6366F1)
-              : Colors.grey.withValues(alpha: 0.3),
-        ),
-        onSelected: (_) => onTap?.call(),
+  void _showFilterSheet(BuildContext context, List<String> categories) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Theme.of(context).brightness == Brightness.dark ? Colors.grey[900] : Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
+      builder: (context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Padding(
+                padding: EdgeInsets.all(16.0),
+                child: Text('选择分类', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              ),
+              ListTile(
+                title: const Text('全部'),
+                trailing: _filterCategory == null ? const Icon(Icons.check, color: Color(0xFF5B6EE1)) : null,
+                onTap: () {
+                  setState(() => _filterCategory = null);
+                  Navigator.pop(context);
+                },
+              ),
+              ...categories.map((c) => ListTile(
+                title: Text(c),
+                trailing: _filterCategory == c ? const Icon(Icons.check, color: Color(0xFF5B6EE1)) : null,
+                onTap: () {
+                  setState(() => _filterCategory = c);
+                  Navigator.pop(context);
+                },
+              )),
+            ],
+          ),
+        );
+      },
     );
+  }
+
+  String _formatDate(String dateStr) {
+    if (dateStr.isEmpty) return '';
+    String s = dateStr.replaceAll('-', '.').replaceAll('至', '–');
+    s = s.replaceAll(' 00:00:00', '');
+    s = s.replaceAllMapped(RegExp(r'(\d{2}:\d{2}):00'), (match) => match.group(1)!);
+
+    final sameDayRegex = RegExp(r'^(\d{4}\.\d{2}\.\d{2})(.*?)–\1(.*?)$');
+    final sameYearRegex = RegExp(r'^(\d{4})\.(.*?)–\1\.(.*?)$');
+
+    if (sameDayRegex.hasMatch(s)) {
+      s = s.replaceFirstMapped(sameDayRegex, (match) => '${match.group(1)}${match.group(2)}–${match.group(3)?.trim()}');
+    } else if (sameYearRegex.hasMatch(s)) {
+      s = s.replaceFirstMapped(sameYearRegex, (match) => '${match.group(1)}.${match.group(2)}–${match.group(3)}');
+    }
+    return s;
   }
 
   Widget _buildSummaryHeader(bool isDark) {
@@ -666,218 +731,200 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
       }
     }
 
+    final List<Widget> categoryWidgets = [];
+    for (int i = 0; i < _summary!.length; i++) {
+      final item = _summary![i];
+      final score = double.tryParse(item['score'] ?? '0') ?? 0;
+      final required = double.tryParse(item['required'] ?? '0') ?? 0;
+      final gap = required - score;
+      final isFull = gap <= 0;
+
+      categoryWidgets.add(
+        Container(
+          width: 90,
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          child: Column(
+            children: [
+              Text(
+                item['category'] ?? '',
+                style: const TextStyle(fontSize: 13, color: Color(0xFF8A8F9C)),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 6),
+              Text(
+                '${score.toStringAsFixed(score == score.roundToDouble() ? 0 : 1)} / $required',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: isDark ? Colors.white : const Color(0xFF20232A),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                isFull ? '已完成' : '还差 ${gap.toStringAsFixed(gap == gap.roundToDouble() ? 0 : 1)}',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: isFull ? const Color(0xFF42B36F) : const Color(0xFFF3A640),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+
+      if (i < _summary!.length - 1) {
+        categoryWidgets.add(
+          Container(
+            width: 1,
+            height: 32,
+            margin: const EdgeInsets.symmetric(horizontal: 4),
+            color: isDark ? Colors.white12 : const Color(0xFFF0F1F5),
+          ),
+        );
+      }
+    }
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // 分类卡片横向滚动
-          SizedBox(
-            height: 106,
-            child: ListView.builder(
-              scrollDirection: Axis.horizontal,
-              itemCount: _summary!.length,
-              itemBuilder: (context, index) {
-                final item = _summary![index];
-                final score = double.tryParse(item['score'] ?? '0') ?? 0;
-                final required = double.tryParse(item['required'] ?? '0') ?? 0;
-                final gap = required - score;
-                final isFull = gap <= 0;
-
-                return Container(
-                  width: 130,
-                  margin: const EdgeInsets.only(right: 10),
-                  child: GlassContainer(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 10,
-                    ),
-                    borderRadius: 14,
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          item['category'] ?? '',
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: isDark ? Colors.white70 : Colors.black87,
-                            fontWeight: FontWeight.w700,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(height: 6),
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            Text(
-                              score.toStringAsFixed(
-                                score == score.roundToDouble() ? 0 : 1,
-                              ),
-                              style: TextStyle(
-                                fontSize: 20,
-                                color: Theme.of(context).primaryColor,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            Text(
-                              ' / $required',
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: isDark
-                                    ? Colors.white38
-                                    : Colors.grey[500],
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          isFull
-                              ? '✓ 已完成'
-                              : '还差 ${gap.toStringAsFixed(gap == gap.roundToDouble() ? 0 : 1)} 分',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: isFull
-                                ? Colors.green
-                                : (isDark ? Colors.white54 : Colors.grey[700]),
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-          const SizedBox(height: 10),
-          // 总计行
-          GlassContainer(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            borderRadius: 12,
-            child: Row(
+      child: Container(
+        padding: const EdgeInsets.only(left: 16, right: 16, top: 16, bottom: 22),
+        decoration: BoxDecoration(
+          color: isDark ? Colors.grey[850] : Colors.white,
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
               children: [
-                const Text(
-                  '总计',
-                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                Text(
+                  '总学分',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: isDark ? Colors.white : const Color(0xFF20232A)),
                 ),
                 const Spacer(),
-                Text(
-                  '${totalScore.toStringAsFixed(totalScore == totalScore.roundToDouble() ? 0 : 1)} / $totalRequired',
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF6366F1),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 2,
-                  ),
-                  decoration: BoxDecoration(
-                    color: totalGap <= 0
-                        ? Colors.green.withValues(alpha: 0.12)
-                        : Colors.orange.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    totalGap <= 0
-                        ? '已完成 ✓'
-                        : '还差 ${totalGap.toStringAsFixed(totalGap == totalGap.roundToDouble() ? 0 : 1)}',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: totalGap <= 0 ? Colors.green : Colors.orange,
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      '${totalScore.toStringAsFixed(totalScore == totalScore.roundToDouble() ? 0 : 1)} / $totalRequired',
+                      style: const TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF5B6EE1),
+                      ),
                     ),
-                  ),
+                    if (totalGap > 0) ...[
+                      const SizedBox(height: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF3A640).withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          '距离目标还差 ${totalGap.toStringAsFixed(totalGap == totalGap.roundToDouble() ? 0 : 1)}',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFFF3A640),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ],
             ),
-          ),
-        ],
+            const SizedBox(height: 20),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  minWidth: MediaQuery.of(context).size.width - 64,
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: categoryWidgets,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildScoreItem(Map<String, dynamic> item, bool isDark) {
+    final formattedDate = _formatDate(item['date'] ?? '');
+    
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: GlassContainer(
-        padding: const EdgeInsets.all(16),
-        borderRadius: 20,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Container(
+        decoration: BoxDecoration(
+          color: isDark ? Colors.grey[850] : Colors.white,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Stack(
           children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: Text(
-                    item['item'] ?? '未知项目',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                    ),
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.green.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    '+${item['score']}',
-                    style: const TextStyle(
-                      color: Colors.green,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                if (item['category'] != null)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 3,
-                    ),
-                    margin: const EdgeInsets.only(right: 8),
-                    decoration: BoxDecoration(
-                      color: Theme.of(
-                        context,
-                      ).primaryColor.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(right: 54),
                     child: Text(
-                      item['category'],
+                      item['item'] ?? '未知项目',
                       style: TextStyle(
-                        fontSize: 11,
-                        color: Theme.of(context).primaryColor,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 15,
+                        height: 1.35,
+                        color: isDark ? Colors.white : const Color(0xFF20232A),
                       ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                Expanded(
-                  child: Text(
-                    item['date'] ?? '',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: isDark ? Colors.white38 : Colors.grey[600],
-                    ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      if (item['category'] != null && item['category'].toString().isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: Text(
+                            item['category'],
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFF5B6EE1),
+                            ),
+                          ),
+                        ),
+                      Expanded(
+                        child: Text(
+                          formattedDate,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Color(0xFF8A8F9C),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
+                ],
+              ),
+            ),
+            Positioned(
+              top: 14,
+              right: 14,
+              child: Text(
+                '+${item['score']}',
+                style: const TextStyle(
+                  color: Color(0xFF42B36F),
+                  fontWeight: FontWeight.bold,
+                  fontSize: 15,
                 ),
-              ],
+              ),
             ),
           ],
         ),

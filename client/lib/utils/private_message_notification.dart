@@ -24,10 +24,7 @@ class PrivateMessageTarget {
     return conversationId == other.conversationId && senderId == other.senderId;
   }
 
-  PrivateMessageTarget copyWith({
-    String? senderName,
-    String? senderAvatar,
-  }) {
+  PrivateMessageTarget copyWith({String? senderName, String? senderAvatar}) {
     return PrivateMessageTarget(
       conversationId: conversationId,
       senderId: senderId,
@@ -39,9 +36,7 @@ class PrivateMessageTarget {
 }
 
 class PendingPrivateMessageOpen {
-  PendingPrivateMessageOpen({
-    this.ttl = const Duration(seconds: 10),
-  });
+  PendingPrivateMessageOpen({this.ttl = const Duration(seconds: 10)});
 
   final Duration ttl;
   PrivateMessageTarget? _target;

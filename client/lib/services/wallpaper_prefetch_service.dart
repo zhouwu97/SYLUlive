@@ -56,7 +56,10 @@ class WallpaperPrefetchService {
   }
 
   static Future<void> downloadAndVerifyImage(
-      Dio dio, String url, String targetPath) async {
+    Dio dio,
+    String url,
+    String targetPath,
+  ) async {
     final targetFile = File(targetPath);
 
     // 如果已经存在且有效，则跳过
@@ -115,9 +118,7 @@ class WallpaperPrefetchService {
   }
 
   static Future<void> prefetchAll() async {
-    final dio = Dio(BaseOptions(
-      connectTimeout: const Duration(seconds: 10),
-    ));
+    final dio = Dio(BaseOptions(connectTimeout: const Duration(seconds: 10)));
 
     for (final fileName in bundledWallpaperNames) {
       final savedPath = await localPathFor(fileName);

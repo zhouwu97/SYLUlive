@@ -13,7 +13,6 @@ type Config struct {
 	UploadDir        string // 文件上传目录
 	MaxFileSize      int64  // 最大文件大小(字节)
 	EduServiceURL    string // Python教务服务地址
-	InternalServiceKey string // 内部服务通信密钥
 	SMTPHost         string // SMTP 地址
 	SMTPPort         string // SMTP 端口
 	SMTPUser         string // SMTP 用户名
@@ -78,11 +77,6 @@ func Load() *Config {
 		eduServiceURL = "http://python-edu-service:8000"
 	}
 
-	internalServiceKey := os.Getenv("INTERNAL_SERVICE_KEY")
-	if internalServiceKey == "" || internalServiceKey == "dev_internal_key" {
-		panic(fmt.Errorf("必须设置安全的 INTERNAL_SERVICE_KEY 环境变量，不能为默认值或空"))
-	}
-
 	smtpHost := os.Getenv("SMTP_HOST")
 	smtpPort := os.Getenv("SMTP_PORT")
 	if smtpPort == "" {
@@ -120,7 +114,6 @@ func Load() *Config {
 		UploadDir:         uploadDir,
 		MaxFileSize:       10 * 1024 * 1024, // 10MB
 		EduServiceURL:     eduServiceURL,
-		InternalServiceKey: internalServiceKey,
 		SMTPHost:          smtpHost,
 		SMTPPort:          smtpPort,
 		SMTPUser:          smtpUser,

@@ -197,8 +197,9 @@ class _LotteryScreenState extends State<LotteryScreen> {
     final isSuperAdmin = user?.isSuperAdmin == true;
 
     return Scaffold(
-      backgroundColor:
-          isDark ? const Color(0xFF06080D) : const Color(0xFFF4F6FB),
+      backgroundColor: isDark
+          ? const Color(0xFF06080D)
+          : const Color(0xFFF4F6FB),
       appBar: AppBar(
         title: const Text('官方抽奖'),
         elevation: 0,
@@ -232,26 +233,27 @@ class _LotteryScreenState extends State<LotteryScreen> {
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
                 : _errorMessage != null
-                    ? Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.inbox_rounded,
-                                size: 80,
-                                color:
-                                    isDark ? Colors.white30 : Colors.black26),
-                            const SizedBox(height: 16),
-                            Text(_errorMessage!,
-                                style: TextStyle(
-                                    fontSize: 16,
-                                    color: isDark
-                                        ? Colors.white70
-                                        : Colors.black54)),
-                          ],
+                ? Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.inbox_rounded,
+                          size: 80,
+                          color: isDark ? Colors.white30 : Colors.black26,
                         ),
-                      )
-                    : _buildEventContent(
-                        context, primary, isDark, isSuperAdmin),
+                        const SizedBox(height: 16),
+                        Text(
+                          _errorMessage!,
+                          style: TextStyle(
+                            fontSize: 16,
+                            color: isDark ? Colors.white70 : Colors.black54,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                : _buildEventContent(context, primary, isDark, isSuperAdmin),
           ),
         ],
       ),
@@ -259,7 +261,11 @@ class _LotteryScreenState extends State<LotteryScreen> {
   }
 
   Widget _buildEventContent(
-      BuildContext context, Color primary, bool isDark, bool isSuperAdmin) {
+    BuildContext context,
+    Color primary,
+    bool isDark,
+    bool isSuperAdmin,
+  ) {
     final ev = _event!;
     final isOngoing = ev.status == 0;
     final titleColor = isDark ? Colors.white : const Color(0xFF111827);
@@ -267,8 +273,9 @@ class _LotteryScreenState extends State<LotteryScreen> {
     final giftColor = isDark
         ? Colors.white.withValues(alpha: 0.86)
         : primary.withValues(alpha: 0.68);
-    final cardColor =
-        isDark ? const Color(0xCC111827) : Colors.white.withValues(alpha: 0.96);
+    final cardColor = isDark
+        ? const Color(0xCC111827)
+        : Colors.white.withValues(alpha: 0.96);
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
@@ -311,16 +318,19 @@ class _LotteryScreenState extends State<LotteryScreen> {
                   color: Colors.black.withValues(alpha: isDark ? 0.24 : 0.08),
                   blurRadius: 20,
                   offset: const Offset(0, 10),
-                )
+                ),
               ],
             ),
             child: Column(
               children: [
-                const Text('🎁 奖品',
-                    style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.grey)),
+                const Text(
+                  '🎁 奖品',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey,
+                  ),
+                ),
                 const SizedBox(height: 8),
                 Text(
                   ev.prizeName,
@@ -338,9 +348,10 @@ class _LotteryScreenState extends State<LotteryScreen> {
                   children: [
                     _buildStatItem('当前参与', '$_participantCount人', isDark),
                     _buildStatItem(
-                        '预计开奖',
-                        isOngoing ? _formatCountdown(ev.drawTime) : '已结束',
-                        isDark),
+                      '预计开奖',
+                      isOngoing ? _formatCountdown(ev.drawTime) : '已结束',
+                      isDark,
+                    ),
                   ],
                 ),
               ],
@@ -350,13 +361,16 @@ class _LotteryScreenState extends State<LotteryScreen> {
           if (isOngoing) ...[
             if (_joined)
               Container(
-                padding:
-                    const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
+                padding: const EdgeInsets.symmetric(
+                  vertical: 16,
+                  horizontal: 24,
+                ),
                 decoration: BoxDecoration(
                   color: Colors.green.withValues(alpha: 0.2),
                   borderRadius: BorderRadius.circular(100),
-                  border:
-                      Border.all(color: Colors.green.withValues(alpha: 0.5)),
+                  border: Border.all(
+                    color: Colors.green.withValues(alpha: 0.5),
+                  ),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -391,9 +405,13 @@ class _LotteryScreenState extends State<LotteryScreen> {
                   ),
                   child: _isSubmitting
                       ? const CircularProgressIndicator(color: Colors.white)
-                      : const Text('立即参与',
+                      : const Text(
+                          '立即参与',
                           style: TextStyle(
-                              fontSize: 18, fontWeight: FontWeight.bold)),
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                 ),
               ),
           ] else ...[
@@ -415,12 +433,14 @@ class _LotteryScreenState extends State<LotteryScreen> {
               ),
               child: Column(
                 children: [
-                  Text('🎉 中奖名单',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: titleColor,
-                      )),
+                  Text(
+                    '🎉 中奖名单',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: titleColor,
+                    ),
+                  ),
                   const SizedBox(height: 16),
                   if (ev.winner != null)
                     Row(
@@ -437,7 +457,9 @@ class _LotteryScreenState extends State<LotteryScreen> {
                         Text(
                           ev.winner!.nickname,
                           style: const TextStyle(
-                              fontSize: 18, fontWeight: FontWeight.bold),
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ],
                     )
@@ -452,12 +474,16 @@ class _LotteryScreenState extends State<LotteryScreen> {
             TextButton.icon(
               onPressed: _adminDraw,
               icon: const Icon(Icons.flash_on, color: Colors.orange),
-              label:
-                  const Text('管理员手动开奖', style: TextStyle(color: Colors.orange)),
+              label: const Text(
+                '管理员手动开奖',
+                style: TextStyle(color: Colors.orange),
+              ),
               style: TextButton.styleFrom(
                 backgroundColor: Colors.orange.withValues(alpha: 0.1),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 12,
+                ),
               ),
             ),
           ],
@@ -469,16 +495,22 @@ class _LotteryScreenState extends State<LotteryScreen> {
   Widget _buildStatItem(String label, String value, bool isDark) {
     return Column(
       children: [
-        Text(label,
-            style: TextStyle(
-                fontSize: 12,
-                color: isDark ? Colors.white54 : Colors.grey[600])),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            color: isDark ? Colors.white54 : Colors.grey[600],
+          ),
+        ),
         const SizedBox(height: 6),
-        Text(value,
-            style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: isDark ? Colors.white : Colors.black87)),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: isDark ? Colors.white : Colors.black87,
+          ),
+        ),
       ],
     );
   }

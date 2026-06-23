@@ -29,7 +29,10 @@ class _SocialListScreenState extends State<SocialListScreen>
   void initState() {
     super.initState();
     _tabController = TabController(
-        length: 2, vsync: this, initialIndex: widget.initialIndex);
+      length: 2,
+      vsync: this,
+      initialIndex: widget.initialIndex,
+    );
   }
 
   @override
@@ -170,8 +173,10 @@ class _UserListState extends State<_UserList> {
           slivers: [
             SliverFillRemaining(
               child: Center(
-                child: Text(widget.type == 'following' ? '暂无关注' : '暂无粉丝',
-                    style: const TextStyle(color: Colors.grey)),
+                child: Text(
+                  widget.type == 'following' ? '暂无关注' : '暂无粉丝',
+                  style: const TextStyle(color: Colors.grey),
+                ),
               ),
             ),
           ],
@@ -189,10 +194,11 @@ class _UserListState extends State<_UserList> {
           if (index == _users.length) {
             _loadData();
             return const Center(
-                child: Padding(
-              padding: EdgeInsets.all(8.0),
-              child: CircularProgressIndicator(),
-            ));
+              child: Padding(
+                padding: EdgeInsets.all(8.0),
+                child: CircularProgressIndicator(),
+              ),
+            );
           }
 
           final user = _users[index];
@@ -204,18 +210,21 @@ class _UserListState extends State<_UserList> {
                   ? ApiConstants.fullUrl(user.avatar)
                   : null,
               radius: 20,
-              fallbackText:
-                  user.nickname.isNotEmpty ? user.nickname : '用户${user.id}',
+              fallbackText: user.nickname.isNotEmpty
+                  ? user.nickname
+                  : '用户${user.id}',
             ),
-            title:
-                Text(user.nickname.isNotEmpty ? user.nickname : '用户${user.id}'),
+            title: Text(
+              user.nickname.isNotEmpty ? user.nickname : '用户${user.id}',
+            ),
             subtitle: Text('Lv.${user.level}'),
             trailing: isMe ? null : _buildFollowButton(user),
             onTap: () {
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                    builder: (_) => UserHomeScreen(userId: user.id)),
+                  builder: (_) => UserHomeScreen(userId: user.id),
+                ),
               );
             },
           );

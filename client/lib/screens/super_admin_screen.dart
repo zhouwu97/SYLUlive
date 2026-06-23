@@ -48,9 +48,10 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
 
   Future<void> _loadUsers() async {
     try {
-      final res = await _dio.get('/super/users', queryParameters: {
-        if (_searchQuery.isNotEmpty) 'search': _searchQuery,
-      });
+      final res = await _dio.get(
+        '/super/users',
+        queryParameters: {if (_searchQuery.isNotEmpty) 'search': _searchQuery},
+      );
       _users = res.data as List;
     } catch (_) {}
   }
@@ -90,7 +91,9 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
           ElevatedButton(
             onPressed: () {
               final value = ctrl.text.trim();
@@ -108,20 +111,19 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
     try {
       await _dio.post(
         '/super/invitations/${inv['id']}/approve',
-        data: {
-          'reject': !approve,
-          'reason': reason,
-        },
+        data: {'reject': !approve, 'reason': reason},
       );
       if (mounted) {
         // 本地移除该代办
         if (mounted)
-          setState(() =>
-              _pendingInvitations.removeWhere((i) => i['id'] == inv['id']));
+          setState(
+            () => _pendingInvitations.removeWhere((i) => i['id'] == inv['id']),
+          );
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-              content: Text(approve ? '已提交同意审批' : '已驳回'),
-              backgroundColor: approve ? Colors.green : Colors.red),
+            content: Text(approve ? '已提交同意审批' : '已驳回'),
+            backgroundColor: approve ? Colors.green : Colors.red,
+          ),
         );
       }
     } on DioException catch (e) {
@@ -179,29 +181,32 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
   }
 
   Widget _buildUsersTab() {
-    return Column(children: [
-      Padding(
-        padding: const EdgeInsets.all(8),
-        child: TextField(
-          decoration: const InputDecoration(
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(8),
+          child: TextField(
+            decoration: const InputDecoration(
               hintText: '搜索学号/昵称...',
               prefixIcon: Icon(Icons.search),
-              border: OutlineInputBorder()),
-          onChanged: (v) {
-            _searchQuery = v;
-            _loadUsers();
-          },
+              border: OutlineInputBorder(),
+            ),
+            onChanged: (v) {
+              _searchQuery = v;
+              _loadUsers();
+            },
+          ),
         ),
-      ),
-      Expanded(
-        child: _users.isEmpty
-            ? const Center(child: Text('暂无用户'))
-            : ListView.builder(
-                itemCount: _users.length,
-                itemBuilder: (_, i) => _buildUserItem(_users[i]),
-              ),
-      ),
-    ]);
+        Expanded(
+          child: _users.isEmpty
+              ? const Center(child: Text('暂无用户'))
+              : ListView.builder(
+                  itemCount: _users.length,
+                  itemBuilder: (_, i) => _buildUserItem(_users[i]),
+                ),
+        ),
+      ],
+    );
   }
 
   Widget _buildUserItem(dynamic user) {
@@ -209,15 +214,19 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       child: ListTile(
         leading: CircleAvatar(
-            child: Text((user['nickname'] ?? '?').toString().substring(0, 1))),
+          child: Text((user['nickname'] ?? '?').toString().substring(0, 1)),
+        ),
         title: Text(user['nickname'] ?? '未知'),
-        subtitle:
-            Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('学号: ${user['student_id']}'),
-          Text('角色: ${user['role']} | 诚信: ${user['credit_score']}%'),
-          Text(
-              '云考余额: ¥${(((user['ai_balance_cents'] ?? 0) as num).toDouble() / 100).toStringAsFixed(2)}'),
-        ]),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('学号: ${user['student_id']}'),
+            Text('角色: ${user['role']} | 诚信: ${user['credit_score']}%'),
+            Text(
+              '云考余额: ¥${(((user['ai_balance_cents'] ?? 0) as num).toDouble() / 100).toStringAsFixed(2)}',
+            ),
+          ],
+        ),
         isThreeLine: true,
         trailing: PopupMenuButton<String>(
           onSelected: (v) => _handleUserAction(user, v),
@@ -240,7 +249,8 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
       _showChangeRoleDialog(user);
     else if (action == 'reset')
       _resetPassword(user['id']);
-    else if (action == 'delete') _deleteUser(user['id']);
+    else if (action == 'delete')
+      _deleteUser(user['id']);
   }
 
   void _showRechargeDialog(dynamic user) {
@@ -260,8 +270,9 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
             const SizedBox(height: 12),
             TextField(
               controller: amountCtrl,
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
               decoration: const InputDecoration(
                 labelText: '充值金额 (元)',
                 border: OutlineInputBorder(),
@@ -295,24 +306,22 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
               final cents = (yuan * 100).round();
               try {
                 await _dio.post(
-                    '/super/users/${user['id']}/ai_balance/recharge',
-                    data: {
-                      'amount_cents': cents,
-                      'note': noteCtrl.text.trim(),
-                    });
+                  '/super/users/${user['id']}/ai_balance/recharge',
+                  data: {'amount_cents': cents, 'note': noteCtrl.text.trim()},
+                );
                 if (!mounted) return;
                 messenger.showSnackBar(
                   SnackBar(
-                      content: Text(
-                          '已为 ${user['nickname']} 充值 ¥${yuan.toStringAsFixed(2)}')),
+                    content: Text(
+                      '已为 ${user['nickname']} 充值 ¥${yuan.toStringAsFixed(2)}',
+                    ),
+                  ),
                 );
                 if (navigator.mounted) navigator.pop();
                 _loadUsers();
               } catch (_) {
                 if (mounted) {
-                  messenger.showSnackBar(
-                    const SnackBar(content: Text('充值失败')),
-                  );
+                  messenger.showSnackBar(const SnackBar(content: Text('充值失败')));
                 }
               }
             },
@@ -343,39 +352,61 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
             child: Padding(
               padding: const EdgeInsets.all(14),
               child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(children: [
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
                       CircleAvatar(
-                          radius: 18,
-                          child: Text((user['nickname'] ?? '?')
-                              .toString()
-                              .substring(0, 1))),
+                        radius: 18,
+                        child: Text(
+                          (user['nickname'] ?? '?').toString().substring(0, 1),
+                        ),
+                      ),
                       const SizedBox(width: 10),
                       Expanded(
-                          child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                            Text(user['nickname'] ?? '未知',
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.w600)),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
                             Text(
-                                '学号: ${user['student_id']} | 诚信: ${user['credit_score']}%',
-                                style: const TextStyle(
-                                    fontSize: 12, color: Colors.grey)),
-                            Text('邀请人: ${inviter['nickname'] ?? '未知'}',
-                                style: const TextStyle(
-                                    fontSize: 12, color: Colors.grey)),
-                          ])),
-                    ]),
-                    const SizedBox(height: 12),
-                    Row(mainAxisAlignment: MainAxisAlignment.end, children: [
+                              user['nickname'] ?? '未知',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            Text(
+                              '学号: ${user['student_id']} | 诚信: ${user['credit_score']}%',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey,
+                              ),
+                            ),
+                            Text(
+                              '邀请人: ${inviter['nickname'] ?? '未知'}',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
                       TextButton.icon(
                         onPressed: () => _approveInvitation(inv, false),
-                        icon: const Icon(Icons.close,
-                            size: 16, color: Colors.red),
-                        label: const Text('驳回',
-                            style: TextStyle(color: Colors.red)),
+                        icon: const Icon(
+                          Icons.close,
+                          size: 16,
+                          color: Colors.red,
+                        ),
+                        label: const Text(
+                          '驳回',
+                          style: TextStyle(color: Colors.red),
+                        ),
                       ),
                       const SizedBox(width: 8),
                       ElevatedButton.icon(
@@ -383,11 +414,14 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
                         icon: const Icon(Icons.check, size: 16),
                         label: const Text('同意'),
                         style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.green,
-                            foregroundColor: Colors.white),
+                          backgroundColor: Colors.green,
+                          foregroundColor: Colors.white,
+                        ),
                       ),
-                    ]),
-                  ]),
+                    ],
+                  ),
+                ],
+              ),
             ),
           );
         },
@@ -405,17 +439,19 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
         actions: [
           if (user['role'] != 'super_admin')
             TextButton(
-                onPressed: () {
-                  _changeRole(user['id'], 'user');
-                  Navigator.pop(ctx);
-                },
-                child: const Text('普通用户')),
-          TextButton(
               onPressed: () {
-                _changeRole(user['id'], 'admin');
+                _changeRole(user['id'], 'user');
                 Navigator.pop(ctx);
               },
-              child: const Text('管理员')),
+              child: const Text('普通用户'),
+            ),
+          TextButton(
+            onPressed: () {
+              _changeRole(user['id'], 'admin');
+              Navigator.pop(ctx);
+            },
+            child: const Text('管理员'),
+          ),
         ],
       ),
     );
@@ -425,8 +461,9 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
     try {
       await _dio.put('/super/users/$uid/role', data: {'role': role});
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('角色修改成功')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('角色修改成功')));
         _loadUsers();
       }
     } catch (_) {}
@@ -436,28 +473,31 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
     try {
       await _dio.post('/super/users/$uid/reset_password');
       if (mounted)
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('密码已重置')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('密码已重置')));
     } catch (_) {}
   }
 
   Future<void> _deleteUser(int uid) async {
     final ok = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-              title: const Text('确认删除'),
-              content: const Text('不可撤销'),
-              actions: [
-                TextButton(
-                    onPressed: () => Navigator.pop(ctx, false),
-                    child: const Text('取消')),
-                ElevatedButton(
-                    onPressed: () => Navigator.pop(ctx, true),
-                    style:
-                        ElevatedButton.styleFrom(backgroundColor: Colors.red),
-                    child: const Text('删除')),
-              ],
-            ));
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('确认删除'),
+        content: const Text('不可撤销'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
     if (ok == true) {
       try {
         await _dio.delete('/super/users/$uid');
@@ -482,10 +522,10 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
       urlCtrl.text = res.data['base_url'] ?? '';
       keyCtrl.text = res.data['api_key'] ?? '';
       modelCtrl.text = res.data['model_name'] ?? '';
-      inputTokenCtrl.text =
-          (res.data['input_price_per_1k_cents'] ?? '2').toString();
-      outputTokenCtrl.text =
-          (res.data['output_price_per_1k_cents'] ?? '4').toString();
+      inputTokenCtrl.text = (res.data['input_price_per_1k_cents'] ?? '2')
+          .toString();
+      outputTokenCtrl.text = (res.data['output_price_per_1k_cents'] ?? '4')
+          .toString();
       cacheHitCtrl.text = (res.data['cache_hit_price_cents'] ?? '1').toString();
       minLiveCtrl.text = (res.data['min_live_price_cents'] ?? '2').toString();
 
@@ -500,11 +540,13 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
         currentProvider = 'qwen';
       else if (url.contains('xiaomi') || url.contains('mimo'))
         currentProvider = 'mimo';
-      else if (url.contains('openai.com')) currentProvider = 'openai';
+      else if (url.contains('openai.com'))
+        currentProvider = 'openai';
     } catch (_) {
       if (mounted)
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('加载配置失败')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('加载配置失败')));
     }
 
     bool isFetchingModels = false;
@@ -512,7 +554,8 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
       if (urlCtrl.text.isEmpty || keyCtrl.text.isEmpty) {
         if (mounted)
           ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('请先填写 Base URL 和 API Key')));
+            const SnackBar(content: Text('请先填写 Base URL 和 API Key')),
+          );
         return;
       }
       setDialogState(() => isFetchingModels = true);
@@ -525,7 +568,8 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
         final res = await dio.get(
           url,
           options: Options(
-              headers: {'Authorization': 'Bearer ${keyCtrl.text.trim()}'}),
+            headers: {'Authorization': 'Bearer ${keyCtrl.text.trim()}'},
+          ),
         );
         if (res.statusCode == 200 && res.data['data'] != null) {
           final List data = res.data['data'];
@@ -550,18 +594,21 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
             }
           } else {
             if (mounted)
-              ScaffoldMessenger.of(context)
-                  .showSnackBar(const SnackBar(content: Text('未获取到模型列表')));
+              ScaffoldMessenger.of(
+                context,
+              ).showSnackBar(const SnackBar(content: Text('未获取到模型列表')));
           }
         } else {
           if (mounted)
-            ScaffoldMessenger.of(context)
-                .showSnackBar(const SnackBar(content: Text('获取失败')));
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(const SnackBar(content: Text('获取失败')));
         }
       } catch (e) {
         if (mounted)
-          ScaffoldMessenger.of(context)
-              .showSnackBar(SnackBar(content: Text('请求失败: $e')));
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('请求失败: $e')));
       } finally {
         setDialogState(() => isFetchingModels = false);
       }
@@ -593,196 +640,210 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
 
     await showDialog(
       context: context,
-      builder: (ctx) => StatefulBuilder(builder: (context, setDialogState) {
-        return AlertDialog(
-          title: const Text('系统全局 AI 兜底配置'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('此配置为系统默认的官方大模型。\n当用户未填写自定义 API Key 时，会走此配置并按余额扣费。',
-                    style: TextStyle(fontSize: 12, color: Colors.grey)),
-                const SizedBox(height: 16),
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: Colors.amber.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(10),
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            title: const Text('系统全局 AI 兜底配置'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    '此配置为系统默认的官方大模型。\n当用户未填写自定义 API Key 时，会走此配置并按余额扣费。',
+                    style: TextStyle(fontSize: 12, color: Colors.grey),
                   ),
-                  child: const Text(
-                    '建议把官方接口价格设置得低于市场直连价。\n缓存命中会走更低单价，未命中才按真实 token 结算。',
-                    style: TextStyle(fontSize: 12, color: Colors.black87),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                DropdownButtonFormField<String>(
-                  value: currentProvider,
-                  decoration: const InputDecoration(
-                    labelText: '快速预设提供商',
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                  items: const [
-                    DropdownMenuItem(
-                        value: 'deepseek', child: Text('DeepSeek')),
-                    DropdownMenuItem(value: 'kimi', child: Text('Kimi (月之暗面)')),
-                    DropdownMenuItem(value: 'zhipu', child: Text('智谱清言')),
-                    DropdownMenuItem(value: 'qwen', child: Text('通义千问')),
-                    DropdownMenuItem(value: 'openai', child: Text('OpenAI')),
-                    DropdownMenuItem(value: 'mimo', child: Text('小米 MiMo')),
-                    DropdownMenuItem(
-                        value: 'custom', child: Text('自定义 (Custom)')),
-                  ],
-                  onChanged: (val) {
-                    setDialogState(() {
-                      currentProvider = val!;
-                      applyProviderDefaults(currentProvider);
-                    });
-                  },
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: keyCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'API Key (必填)',
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                  obscureText: true,
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: urlCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Base URL',
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: modelCtrl,
-                        decoration: const InputDecoration(
-                          labelText: 'Model Name',
-                          border: OutlineInputBorder(),
-                          isDense: true,
-                        ),
-                      ),
+                  const SizedBox(height: 16),
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(10),
                     ),
-                    const SizedBox(width: 8),
-                    isFetchingModels
-                        ? const CircularProgressIndicator()
-                        : IconButton(
-                            icon: const Icon(Icons.sync),
-                            onPressed: () => fetchModels(setDialogState),
-                            tooltip: '获取可用模型',
+                    child: const Text(
+                      '建议把官方接口价格设置得低于市场直连价。\n缓存命中会走更低单价，未命中才按真实 token 结算。',
+                      style: TextStyle(fontSize: 12, color: Colors.black87),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    value: currentProvider,
+                    decoration: const InputDecoration(
+                      labelText: '快速预设提供商',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    items: const [
+                      DropdownMenuItem(
+                        value: 'deepseek',
+                        child: Text('DeepSeek'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'kimi',
+                        child: Text('Kimi (月之暗面)'),
+                      ),
+                      DropdownMenuItem(value: 'zhipu', child: Text('智谱清言')),
+                      DropdownMenuItem(value: 'qwen', child: Text('通义千问')),
+                      DropdownMenuItem(value: 'openai', child: Text('OpenAI')),
+                      DropdownMenuItem(value: 'mimo', child: Text('小米 MiMo')),
+                      DropdownMenuItem(
+                        value: 'custom',
+                        child: Text('自定义 (Custom)'),
+                      ),
+                    ],
+                    onChanged: (val) {
+                      setDialogState(() {
+                        currentProvider = val!;
+                        applyProviderDefaults(currentProvider);
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: keyCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'API Key (必填)',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    obscureText: true,
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: urlCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Base URL',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: modelCtrl,
+                          decoration: const InputDecoration(
+                            labelText: 'Model Name',
+                            border: OutlineInputBorder(),
+                            isDense: true,
                           ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: inputTokenCtrl,
-                        keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(
-                          labelText: '输入 1K token 单价 (分)',
-                          border: OutlineInputBorder(),
-                          isDense: true,
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: TextField(
-                        controller: outputTokenCtrl,
-                        keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(
-                          labelText: '输出 1K token 单价 (分)',
-                          border: OutlineInputBorder(),
-                          isDense: true,
+                      const SizedBox(width: 8),
+                      isFetchingModels
+                          ? const CircularProgressIndicator()
+                          : IconButton(
+                              icon: const Icon(Icons.sync),
+                              onPressed: () => fetchModels(setDialogState),
+                              tooltip: '获取可用模型',
+                            ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: inputTokenCtrl,
+                          keyboardType: TextInputType.number,
+                          decoration: const InputDecoration(
+                            labelText: '输入 1K token 单价 (分)',
+                            border: OutlineInputBorder(),
+                            isDense: true,
+                          ),
                         ),
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: cacheHitCtrl,
-                        keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(
-                          labelText: '缓存命中价格 (分)',
-                          border: OutlineInputBorder(),
-                          isDense: true,
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: TextField(
+                          controller: outputTokenCtrl,
+                          keyboardType: TextInputType.number,
+                          decoration: const InputDecoration(
+                            labelText: '输出 1K token 单价 (分)',
+                            border: OutlineInputBorder(),
+                            isDense: true,
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: TextField(
-                        controller: minLiveCtrl,
-                        keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(
-                          labelText: '实时调用最低价格 (分)',
-                          border: OutlineInputBorder(),
-                          isDense: true,
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: cacheHitCtrl,
+                          keyboardType: TextInputType.number,
+                          decoration: const InputDecoration(
+                            labelText: '缓存命中价格 (分)',
+                            border: OutlineInputBorder(),
+                            isDense: true,
+                          ),
                         ),
                       ),
-                    ),
-                  ],
-                ),
-              ],
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: TextField(
+                          controller: minLiveCtrl,
+                          keyboardType: TextInputType.number,
+                          decoration: const InputDecoration(
+                            labelText: '实时调用最低价格 (分)',
+                            border: OutlineInputBorder(),
+                            isDense: true,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('取消'),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                final messenger = ScaffoldMessenger.of(context);
-                final navigator = Navigator.of(ctx);
-                try {
-                  await _dio.put('/super/ai_config', data: {
-                    'base_url': urlCtrl.text.trim(),
-                    'api_key': keyCtrl.text.trim(),
-                    'model_name': modelCtrl.text.trim(),
-                    'input_price_per_1k_cents':
-                        int.tryParse(inputTokenCtrl.text.trim()) ?? 2,
-                    'output_price_per_1k_cents':
-                        int.tryParse(outputTokenCtrl.text.trim()) ?? 4,
-                    'cache_hit_price_cents':
-                        int.tryParse(cacheHitCtrl.text.trim()) ?? 1,
-                    'min_live_price_cents':
-                        int.tryParse(minLiveCtrl.text.trim()) ?? 2,
-                  });
-                  if (!mounted) return;
-                  messenger.showSnackBar(
-                    const SnackBar(content: Text('系统 AI 配置已更新')),
-                  );
-                  if (navigator.mounted) navigator.pop();
-                } catch (_) {
-                  if (mounted) {
-                    messenger.showSnackBar(
-                      const SnackBar(content: Text('更新失败')),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('取消'),
+              ),
+              ElevatedButton(
+                onPressed: () async {
+                  final messenger = ScaffoldMessenger.of(context);
+                  final navigator = Navigator.of(ctx);
+                  try {
+                    await _dio.put(
+                      '/super/ai_config',
+                      data: {
+                        'base_url': urlCtrl.text.trim(),
+                        'api_key': keyCtrl.text.trim(),
+                        'model_name': modelCtrl.text.trim(),
+                        'input_price_per_1k_cents':
+                            int.tryParse(inputTokenCtrl.text.trim()) ?? 2,
+                        'output_price_per_1k_cents':
+                            int.tryParse(outputTokenCtrl.text.trim()) ?? 4,
+                        'cache_hit_price_cents':
+                            int.tryParse(cacheHitCtrl.text.trim()) ?? 1,
+                        'min_live_price_cents':
+                            int.tryParse(minLiveCtrl.text.trim()) ?? 2,
+                      },
                     );
+                    if (!mounted) return;
+                    messenger.showSnackBar(
+                      const SnackBar(content: Text('系统 AI 配置已更新')),
+                    );
+                    if (navigator.mounted) navigator.pop();
+                  } catch (_) {
+                    if (mounted) {
+                      messenger.showSnackBar(
+                        const SnackBar(content: Text('更新失败')),
+                      );
+                    }
                   }
-                }
-              },
-              child: const Text('保存全局配置'),
-            ),
-          ],
-        );
-      }),
+                },
+                child: const Text('保存全局配置'),
+              ),
+            ],
+          );
+        },
+      ),
     );
 
     keyCtrl.dispose();
@@ -837,8 +898,10 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
                   ),
                 ),
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.orange.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(8),
@@ -855,10 +918,7 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
               ],
             ),
             const SizedBox(height: 6),
-            Text(
-              '$action — $target',
-              style: const TextStyle(fontSize: 13),
-            ),
+            Text('$action — $target', style: const TextStyle(fontSize: 13)),
             const SizedBox(height: 4),
             Text(
               _formatLogTime(createdAt),
@@ -872,8 +932,10 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
                   onPressed: () =>
                       _showRevokeExpDialog(adminId, adminName, adminExp),
                   icon: const Icon(Icons.undo, size: 16, color: Colors.red),
-                  label: const Text('追回经验',
-                      style: TextStyle(color: Colors.red, fontSize: 12)),
+                  label: const Text(
+                    '追回经验',
+                    style: TextStyle(color: Colors.red, fontSize: 12),
+                  ),
                 ),
               ),
           ],
@@ -930,15 +992,16 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
                 return;
               }
               try {
-                await _dio.post('/super/admin_logs/revoke_exp', data: {
-                  'admin_id': adminId,
-                  'amount': amount,
-                  'reason': reasonCtrl.text.trim(),
-                });
-                if (!mounted) return;
-                messenger.showSnackBar(
-                  const SnackBar(content: Text('经验已追回')),
+                await _dio.post(
+                  '/super/admin_logs/revoke_exp',
+                  data: {
+                    'admin_id': adminId,
+                    'amount': amount,
+                    'reason': reasonCtrl.text.trim(),
+                  },
                 );
+                if (!mounted) return;
+                messenger.showSnackBar(const SnackBar(content: Text('经验已追回')));
                 _loadAdminLogs();
                 if (navigator.mounted) navigator.pop();
               } on DioException catch (e) {
@@ -1007,7 +1070,9 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
                         child: Text(
                           '当前活动: ${event['title'] ?? ''}',
                           style: const TextStyle(
-                              fontSize: 16, fontWeight: FontWeight.bold),
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
                       IconButton(
@@ -1050,9 +1115,11 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
                         return ListTile(
                           leading: CircleAvatar(
                             backgroundImage: avatar.isNotEmpty
-                                ? NetworkImage(avatar.startsWith('http')
-                                    ? avatar
-                                    : 'https://sylu.zhouwu.ccwu.cc$avatar')
+                                ? NetworkImage(
+                                    avatar.startsWith('http')
+                                        ? avatar
+                                        : 'https://sylu.zhouwu.ccwu.cc$avatar',
+                                  )
                                 : null,
                             child: avatar.isEmpty
                                 ? Text(nickname.isNotEmpty ? nickname[0] : '?')
@@ -1060,10 +1127,13 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
                           ),
                           title: Text(nickname),
                           subtitle: Text(
-                              '学号: ${user['student_id']} | 权重: ${p['weight']}'),
+                            '学号: ${user['student_id']} | 权重: ${p['weight']}',
+                          ),
                           trailing: IconButton(
-                            icon: const Icon(Icons.remove_circle,
-                                color: Colors.red),
+                            icon: const Icon(
+                              Icons.remove_circle,
+                              color: Colors.red,
+                            ),
                             tooltip: '踢出',
                             onPressed: () => _kickLotteryParticipant(
                               eventId: event['id'],
@@ -1147,8 +1217,9 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
         content: const Text('确定删除当前抽奖吗？参与记录也会一起删除，此操作不可恢复。'),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('取消')),
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: Colors.red),
             onPressed: () => Navigator.pop(ctx, true),
@@ -1162,8 +1233,9 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
     try {
       await _dio.delete('/super/lottery/$eventId');
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('抽奖已删除')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('抽奖已删除')));
       _refreshLotteryTab();
     } on DioException catch (e) {
       final data = e.response?.data;
@@ -1190,28 +1262,33 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
         content: Text('确定要将 $userLabel 踢出本次抽奖吗？'),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('取消')),
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('取消'),
+          ),
           TextButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('踢出', style: TextStyle(color: Colors.red))),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('踢出', style: TextStyle(color: Colors.red)),
+          ),
         ],
       ),
     );
 
     if (confirm != true) return;
     try {
-      final res =
-          await _dio.delete('/super/lottery/participants/$eventId/$userId');
+      final res = await _dio.delete(
+        '/super/lottery/participants/$eventId/$userId',
+      );
       if (res.statusCode == 200 && mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('已踢出该用户')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('已踢出该用户')));
         _refreshLotteryTab();
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('踢出失败: $e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('踢出失败: $e')));
       }
     }
   }
@@ -1259,8 +1336,9 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
                       context: ctx,
                       initialDate: drawTime,
                       firstDate: _nowBeijingWallTime(),
-                      lastDate:
-                          _nowBeijingWallTime().add(const Duration(days: 365)),
+                      lastDate: _nowBeijingWallTime().add(
+                        const Duration(days: 365),
+                      ),
                     );
                     if (date == null) return;
                     if (!ctx.mounted) return;
@@ -1286,11 +1364,12 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
           ),
           actions: [
             TextButton(
-                onPressed: () {
-                  FocusManager.instance.primaryFocus?.unfocus();
-                  Navigator.pop(ctx, false);
-                },
-                child: const Text('取消')),
+              onPressed: () {
+                FocusManager.instance.primaryFocus?.unfocus();
+                Navigator.pop(ctx, false);
+              },
+              child: const Text('取消'),
+            ),
             FilledButton(
               onPressed: () async {
                 final navigator = Navigator.of(ctx);
@@ -1309,12 +1388,15 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
                   return;
                 }
                 try {
-                  await _dio.post('/super/lottery', data: {
-                    'title': title,
-                    'prize_name': prize,
-                    'description': descCtrl.text.trim(),
-                    'draw_time': _beijingWallTimeToRfc3339(drawTime),
-                  });
+                  await _dio.post(
+                    '/super/lottery',
+                    data: {
+                      'title': title,
+                      'prize_name': prize,
+                      'description': descCtrl.text.trim(),
+                      'draw_time': _beijingWallTimeToRfc3339(drawTime),
+                    },
+                  );
                   FocusManager.instance.primaryFocus?.unfocus();
                   if (navigator.mounted) navigator.pop(true);
                 } on DioException catch (e) {
@@ -1339,8 +1421,9 @@ class _SuperAdminScreenState extends State<SuperAdminScreen>
     descCtrl.dispose();
 
     if (created == true && mounted) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('抽奖已发布')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('抽奖已发布')));
       _refreshLotteryTab();
     }
   }

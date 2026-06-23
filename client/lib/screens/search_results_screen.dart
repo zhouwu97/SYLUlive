@@ -18,11 +18,7 @@ class SearchResultsScreen extends StatefulWidget {
   final String query;
   final int boardId;
 
-  const SearchResultsScreen({
-    super.key,
-    required this.query,
-    this.boardId = 1,
-  });
+  const SearchResultsScreen({super.key, required this.query, this.boardId = 1});
 
   @override
   State<SearchResultsScreen> createState() => _SearchResultsScreenState();
@@ -116,31 +112,34 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
   Future<void> _fetchPage(int page) async {
     try {
       final auth = context.read<AuthProvider>();
-      final response = await auth.dio.get('/search', queryParameters: {
-        'q': _query,
-        'type': _type,
-        'sort': _sort,
-        'page': page,
-        'limit': _pageSize,
-        if (_type == 'posts') 'board': widget.boardId,
-      });
+      final response = await auth.dio.get(
+        '/search',
+        queryParameters: {
+          'q': _query,
+          'type': _type,
+          'sort': _sort,
+          'page': page,
+          'limit': _pageSize,
+          if (_type == 'posts') 'board': widget.boardId,
+        },
+      );
       if (!mounted) return;
 
       final items = (response.data['items'] as List?) ?? const [];
       final total = (response.data['total'] as num?)?.toInt() ?? items.length;
       setState(() {
         if (_type == 'posts') {
-          _posts.addAll(items.map(
-            (item) => Post.fromJson(
-              Map<String, dynamic>.from(item as Map),
+          _posts.addAll(
+            items.map(
+              (item) => Post.fromJson(Map<String, dynamic>.from(item as Map)),
             ),
-          ));
+          );
         } else {
-          _users.addAll(items.map(
-            (item) => User.fromJson(
-              Map<String, dynamic>.from(item as Map),
+          _users.addAll(
+            items.map(
+              (item) => User.fromJson(Map<String, dynamic>.from(item as Map)),
             ),
-          ));
+          );
         }
         _total = total;
         _page = page;
@@ -261,15 +260,8 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
 
   Widget _buildSortBar(bool isDark) {
     final options = _type == 'posts'
-        ? const [
-            ('relevance', '综合'),
-            ('latest', '最新'),
-            ('hot', '热门'),
-          ]
-        : const [
-            ('relevance', '综合'),
-            ('newest', '最新注册'),
-          ];
+        ? const [('relevance', '综合'), ('latest', '最新'), ('hot', '热门')]
+        : const [('relevance', '综合'), ('newest', '最新注册')];
 
     return SizedBox(
       height: 45,
@@ -306,10 +298,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
               const SizedBox(height: 12),
               const Text('搜索失败，请检查网络后重试'),
               const SizedBox(height: 14),
-              FilledButton.tonal(
-                onPressed: _search,
-                child: const Text('重新搜索'),
-              ),
+              FilledButton.tonal(onPressed: _search, child: const Text('重新搜索')),
             ],
           ),
         ),
@@ -402,8 +391,9 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
       child: Row(
         children: [
           CachedAvatar(
-            imageUrl:
-                user.avatar.isEmpty ? null : ApiConstants.fullUrl(user.avatar),
+            imageUrl: user.avatar.isEmpty
+                ? null
+                : ApiConstants.fullUrl(user.avatar),
             radius: 25,
             fallbackText: user.nickname,
           ),
@@ -480,18 +470,16 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
                   errorBuilder: (_, __, ___) => _buildDefaultBackground(isDark),
                 )
               : path.startsWith('/')
-                  ? Image.file(
-                      File(path),
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) =>
-                          _buildDefaultBackground(isDark),
-                    )
-                  : Image.network(
-                      path,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) =>
-                          _buildDefaultBackground(isDark),
-                    ),
+              ? Image.file(
+                  File(path),
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => _buildDefaultBackground(isDark),
+                )
+              : Image.network(
+                  path,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => _buildDefaultBackground(isDark),
+                ),
           Container(
             color: isDark
                 ? Colors.black.withValues(alpha: 0.32)

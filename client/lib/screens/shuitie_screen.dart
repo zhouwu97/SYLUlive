@@ -75,8 +75,8 @@ const List<FeedModeConfig> kFeedModes = [
   FeedModeConfig(
     key: 'following',
     label: '关注',
-    remoteSort: null,
-    supportsRemoteLoading: false,
+    remoteSort: 'following',
+    supportsRemoteLoading: true,
   ),
 ];
 
@@ -127,6 +127,11 @@ class _ShuitieScreenState extends State<ShuitieScreen>
 
   String? get _currentRemoteSort => _currentConfig.remoteSort;
 
+  bool _canLoadFeedMode(String mode) {
+    if (mode != 'following') return true;
+    return context.read<AuthProvider>().isLoggedIn;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -164,7 +169,8 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      if (_currentConfig.supportsRemoteLoading) {
+      if (_currentConfig.supportsRemoteLoading &&
+          _canLoadFeedMode(_feedMode)) {
         _refresh();
       }
       _loadAnnouncements();
@@ -178,7 +184,8 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     _stopAutoRefresh();
     _autoRefreshTimer = Timer.periodic(_autoRefreshInterval, (_) {
       if (!mounted) return;
-      if (_currentConfig.supportsRemoteLoading) {
+      if (_currentConfig.supportsRemoteLoading &&
+          _canLoadFeedMode(_feedMode)) {
         _refresh();
       }
       _loadAnnouncements();
@@ -302,6 +309,8 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   }
 
   void _refreshFeedMode(String mode) {
+    if (!_canLoadFeedMode(mode)) return;
+
     final config = kFeedModes.firstWhere((m) => m.key == mode);
     if (!config.supportsRemoteLoading || config.remoteSort == null) return;
     final sort = config.remoteSort!;
@@ -326,9 +335,6 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   List<Post> _resolveVisiblePosts(List<Post> posts) {
     if (_searchQuery.isNotEmpty) return _searchResults;
 
-    // 关注模式不显示任何帖子
-    if (!_currentConfig.supportsRemoteLoading) return [];
-
     List<Post> sortedPosts = List.from(posts);
 
     // 排序逻辑已下沉至服务端，客户端只需原样返回
@@ -351,6 +357,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
 
   Future<void> _refresh() async {
     if (!_currentConfig.supportsRemoteLoading) return;
+    if (!_canLoadFeedMode(_feedMode)) return;
     final modeAtStart = _feedMode;
     final sortAtStart = _currentRemoteSort;
     if (sortAtStart == null) return;
@@ -707,8 +714,13 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       }
       _wasLoggedIn = authProvider.isLoggedIn;
       _messagesLoadRequested = false;
+      // 登录/退出时清除关注信息流，避免跨账号数据残留
+      context.read<PostProvider>().invalidateFollowingFeed();
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (_currentConfig.supportsRemoteLoading) _refresh();
+        if (_currentConfig.supportsRemoteLoading &&
+            _canLoadFeedMode(_feedMode)) {
+          _refresh();
+        }
         _ensureMessagesLoaded();
       });
     }
@@ -986,11 +998,8 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     );
   }
 
-  // ---- 关注模式占位 ----
+  // ---- 关注模式未登录占位 ----
   Widget _buildFollowingPlaceholder(bool isDark) {
-    final auth = context.watch<AuthProvider>();
-    final isLoggedIn = auth.isLoggedIn;
-
     return Center(
       child: GlassContainer(
         padding: const EdgeInsets.all(24),
@@ -1001,13 +1010,13 @@ class _ShuitieScreenState extends State<ShuitieScreen>
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
-              isLoggedIn ? Icons.people_outline_rounded : Icons.login_rounded,
+              Icons.login_rounded,
               size: 64,
               color: isDark ? Colors.white60 : Colors.grey[400],
             ),
             const SizedBox(height: 16),
             Text(
-              isLoggedIn ? '关注动态暂未开放' : '登录后查看关注动态',
+              '登录后查看关注动态',
               style: TextStyle(
                 fontSize: 18,
                 color: isDark ? Colors.white70 : Colors.grey[600],
@@ -1015,7 +1024,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
             ),
             const SizedBox(height: 8),
             Text(
-              isLoggedIn ? '后续支持后，你关注的同学发布的内容会显示在这里' : '关注感兴趣的同学，他们发布的内容会显示在这里',
+              '关注感兴趣的同学，他们发布的内容会显示在这里',
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 14,
@@ -1024,25 +1033,64 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                     : Colors.grey[400],
               ),
             ),
-            if (!isLoggedIn) ...[
-              const SizedBox(height: 16),
-              OutlinedButton.icon(
-                onPressed: () => Navigator.push(
-                  context,
-                  PageRouteBuilder(
-                    opaque: false,
-                    pageBuilder: (_, __, ___) => const LoginScreen(),
-                  ),
-                ),
-                icon: const Icon(Icons.login, size: 18),
-                label: const Text('去登录'),
-                style: OutlinedButton.styleFrom(
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
+            const SizedBox(height: 16),
+            OutlinedButton.icon(
+              onPressed: () => Navigator.push(
+                context,
+                PageRouteBuilder(
+                  opaque: false,
+                  pageBuilder: (_, __, ___) => const LoginScreen(),
                 ),
               ),
-            ],
+              icon: const Icon(Icons.login, size: 18),
+              label: const Text('去登录'),
+              style: OutlinedButton.styleFrom(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ---- 关注模式已登录但无帖子 ----
+  Widget _buildFollowingEmptyState(bool isDark) {
+    return Center(
+      child: GlassContainer(
+        padding: const EdgeInsets.all(24),
+        borderRadius: 20,
+        blur: 15,
+        opacity: 0.1,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.people_outline_rounded,
+              size: 64,
+              color: isDark ? Colors.white60 : Colors.grey[400],
+            ),
+            const SizedBox(height: 16),
+            Text(
+              '还没有关注动态',
+              style: TextStyle(
+                fontSize: 18,
+                color: isDark ? Colors.white70 : Colors.grey[600],
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '关注的同学发布帖子后，会显示在这里',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 14,
+                color: isDark
+                    ? Colors.white.withValues(alpha: 0.4)
+                    : Colors.grey[400],
+              ),
+            ),
           ],
         ),
       ),
@@ -1094,11 +1142,15 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                   ).animate(_feedSwitchAnimation),
                   child: NotificationListener<ScrollNotification>(
                     onNotification: (notification) {
+                      final canLoadMore =
+                          _feedMode != 'following' ||
+                          context.read<AuthProvider>().isLoggedIn;
                       if (_currentConfig.supportsRemoteLoading &&
                           notification.metrics.pixels >=
                               notification.metrics.maxScrollExtent - 500 &&
                           feedHasMore &&
-                          !isFeedLoading) {
+                          !isFeedLoading &&
+                          canLoadMore) {
                         context.read<PostProvider>().loadPosts(
                               boardId: 1,
                               sort: _currentRemoteSort ?? 'all',
@@ -1132,7 +1184,8 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                             ),
                           ),
                         ),
-                        if (!_currentConfig.supportsRemoteLoading)
+                        if (_feedMode == 'following' &&
+                            !context.read<AuthProvider>().isLoggedIn)
                           SliverFillRemaining(
                             hasScrollBody: false,
                             child: _buildFollowingPlaceholder(isDark),
@@ -1145,15 +1198,19 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                           )
                         else if (visiblePosts.isEmpty)
                           SliverFillRemaining(
-                            child: _buildEmptyState(
-                              isDark,
-                              title:
-                                  _searchQuery.isNotEmpty ? '没有找到匹配帖子' : '暂无帖子',
-                              subtitle: _searchQuery.isNotEmpty
-                                  ? '目前只按标题搜索，换个标题关键词试试'
-                                  : '发布第一条帖子吧',
-                              onRetry: _refresh,
-                            ),
+                            child: _feedMode == 'following'
+                                ? _buildFollowingEmptyState(isDark)
+                                : _buildEmptyState(
+                                    isDark,
+                                    title:
+                                        _searchQuery.isNotEmpty
+                                            ? '没有找到匹配帖子'
+                                            : '暂无帖子',
+                                    subtitle: _searchQuery.isNotEmpty
+                                        ? '目前只按标题搜索，换个标题关键词试试'
+                                        : '发布第一条帖子吧',
+                                    onRetry: _refresh,
+                                  ),
                           )
                         else
                           SliverList(

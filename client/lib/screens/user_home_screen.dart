@@ -10,6 +10,7 @@ import '../config/api_constants.dart';
 import '../models/user.dart';
 import '../models/post.dart';
 import '../providers/social_provider.dart';
+import '../providers/post_provider.dart';
 import '../widgets/post_card.dart';
 import '../widgets/cached_avatar.dart';
 import 'social_list_screen.dart';
@@ -806,6 +807,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
               );
             });
             context.read<AuthProvider>().refreshUser();
+            context.read<PostProvider>().invalidateFollowingFeed();
           }
         },
       );
@@ -824,6 +826,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                 _user!.followersCount++;
               });
               context.read<AuthProvider>().refreshUser();
+              context.read<PostProvider>().invalidateFollowingFeed();
             }
           },
           borderRadius: BorderRadius.circular(22),

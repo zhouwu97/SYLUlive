@@ -138,6 +138,23 @@ func (h *PostHandler) GetList(c *gin.Context) {
 		}
 	}
 
+	// 关注信息流：仅显示当前用户关注的人发布的帖子
+	if sort == "following" {
+		rawUserID, exists := c.Get("user_id")
+		userID, ok := rawUserID.(uint)
+		if !exists || !ok || userID == 0 {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"error": "登录后才能查看关注动态",
+			})
+			return
+		}
+		followingSubQuery := h.db.
+			Model(&models.UserFollow{}).
+			Select("following_id").
+			Where("follower_id = ?", userID)
+		query = query.Where("author_id IN (?)", followingSubQuery)
+	}
+
 	if searchQuery != "" {
 		searchLike := "%" + searchQuery + "%"
 		query = query.Where(
@@ -181,6 +198,8 @@ func (h *PostHandler) GetList(c *gin.Context) {
 			query = query.Order("price ASC").Order("created_at DESC")
 		case "price_desc":
 			query = query.Order("price DESC").Order("created_at DESC")
+		case "following":
+			query = query.Order("created_at DESC")
 		default:
 			query = query.Order("created_at DESC")
 		}

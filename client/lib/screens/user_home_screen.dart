@@ -933,7 +933,9 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
 
     final cropped = await ImageCropper().cropImage(
       sourcePath: picked.path,
-      aspectRatio: const CropAspectRatio(ratioX: 3, ratioY: 4),
+      maxWidth: 2560,
+      maxHeight: 2560,
+      compressQuality: 92,
       uiSettings: [
         AndroidUiSettings(
           toolbarTitle: '裁剪背景图',
@@ -941,10 +943,13 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
           toolbarWidgetColor: Colors.white,
           statusBarColor: Colors.black,
           backgroundColor: Colors.black,
-          initAspectRatio: CropAspectRatioPreset.ratio3x2,
-          lockAspectRatio: true,
+          lockAspectRatio: false,
         ),
-        IOSUiSettings(title: '裁剪背景图', aspectRatioLockEnabled: true),
+        IOSUiSettings(
+          title: '裁剪背景图',
+          aspectRatioLockEnabled: false,
+          resetAspectRatioEnabled: true,
+        ),
       ],
     );
 

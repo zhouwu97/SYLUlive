@@ -892,7 +892,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       final savedPath = await _downloadWallpaper(remoteUrl, assetName);
       _setBackground(themeProvider, isLandscape, savedPath, fillScreen: true);
     } catch (e) {
-      debugPrint('Download wallpaper failed: ');
+      debugPrint('Download wallpaper failed: $e');
       _setBackground(
         themeProvider,
         isLandscape,

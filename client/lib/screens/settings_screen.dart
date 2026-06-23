@@ -861,12 +861,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
   ) async {
     final remoteUrl = _remoteWallpaperUrl(assetName);
     if (remoteUrl == null) {
-      _setBackground(themeProvider, isLandscape, assetName);
+      _setBackground(themeProvider, isLandscape, assetName, fillScreen: true);
       return;
     }
 
     if (kIsWeb) {
-      _setBackground(themeProvider, isLandscape, remoteUrl);
+      _setBackground(themeProvider, isLandscape, remoteUrl, fillScreen: true);
       return;
     }
 
@@ -874,25 +874,35 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _setBackground(
         themeProvider,
         isLandscape,
-        'wallpaper_thumbs/${path.basenameWithoutExtension(assetName)}.jpg',
+        _wallpaperThumbnailAsset(assetName),
+        fillScreen: true,
       );
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('当前使用压缩预览图，登录后可自动下载高清壁纸'),
+          ),
+        );
+      }
       return;
     }
 
     try {
       final savedPath = await _downloadWallpaper(remoteUrl, assetName);
-      _setBackground(themeProvider, isLandscape, savedPath);
+      _setBackground(themeProvider, isLandscape, savedPath, fillScreen: true);
     } catch (e) {
-      debugPrint('Download wallpaper failed: $e');
+      debugPrint('Download wallpaper failed: ');
       _setBackground(
         themeProvider,
         isLandscape,
-        'wallpaper_thumbs/${path.basenameWithoutExtension(assetName)}.jpg',
+        _wallpaperThumbnailAsset(assetName),
+        fillScreen: true,
       );
       if (context.mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(const SnackBar(content: Text('高清壁纸下载失败，已使用内置压缩版')));
+        ).showSnackBar(const SnackBar(content: Text('高清壁纸下载失败，当前使用压缩预览图')));
       }
     }
   }

@@ -91,8 +91,6 @@ class ShuitieScreen extends StatefulWidget {
 
 class _ShuitieScreenState extends State<ShuitieScreen>
     with TickerProviderStateMixin, WidgetsBindingObserver {
-
-
   late final Map<String, ScrollController> _feedScrollControllers;
 
   ScrollController get _currentFeedScrollController {
@@ -583,7 +581,8 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   }
 
   Future<void> _openHomeServicePanel() async {
-    unawaited(_ensureCheckinStatusLoaded());
+    await _ensureCheckinStatusLoaded();
+    if (!mounted) return;
 
     await showGeneralDialog(
       context: context,
@@ -635,7 +634,8 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                   _closePanelThenOpen(dialogContext, () {
                     Navigator.push(
                       context,
-                      MaterialPageRoute(builder: (_) => const AnnouncementScreen()),
+                      MaterialPageRoute(
+                          builder: (_) => const AnnouncementScreen()),
                     );
                   });
                 },
@@ -643,7 +643,8 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                   _closePanelThenOpen(dialogContext, () {
                     Navigator.push(
                       context,
-                      MaterialPageRoute(builder: (_) => const ExamScheduleScreen()),
+                      MaterialPageRoute(
+                          builder: (_) => const ExamScheduleScreen()),
                     );
                   });
                 },

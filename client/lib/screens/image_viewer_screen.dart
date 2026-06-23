@@ -236,13 +236,20 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
       ).showSnackBar(const SnackBar(content: Text('正在保存图片，原图不可用时会尝试本地缓存...')));
 
       final image = await _loadImageBytesForSaving(url);
-      final String filename =
-          'sylulive_${DateTime.now().millisecondsSinceEpoch}.png';
+      final extension = switch (image.extension.toLowerCase()) {
+        'jpg' || 'jpeg' => 'jpg',
+        'png' => 'png',
+        'webp' => 'webp',
+        'gif' => 'gif',
+        _ => 'png',
+      };
+
+      final String filename = 'sylulive_.';
 
       final tempDir = await getTemporaryDirectory();
-      final tempPath = '${tempDir.path}/$filename';
+      final tempPath = '/';
       final file = File(tempPath);
-      await file.writeAsBytes(image.bytes);
+      await file.writeAsBytes(image.bytes, flush: true);
 
       await Gal.putImage(tempPath, album: '沈理');
 

@@ -98,7 +98,6 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   Post? _selectedPost;
   int? _selectedUserId;
   bool _messagesLoadRequested = false;
-  final Map<String, DateTime> _lastRefreshTimes = {};
 
   static const _autoRefreshInterval = Duration(seconds: 60);
 
@@ -284,14 +283,13 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     final postProvider = context.read<PostProvider>();
 
     final now = DateTime.now();
-    final lastRefresh = _lastRefreshTimes[mode];
+    final lastRefresh = postProvider.lastSuccessfulRefreshAtFor(1, sort: sort);
     final hasLoaded = postProvider.hasLoadedFor(1, sort: sort);
     if (hasLoaded &&
         lastRefresh != null &&
         now.difference(lastRefresh) < const Duration(seconds: 60)) {
       return;
     }
-    _lastRefreshTimes[mode] = now;
 
     if (hasLoaded) {
       unawaited(postProvider.refresh(boardId: 1, sort: sort));
@@ -331,7 +329,6 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     final modeAtStart = _feedMode;
     final sortAtStart = _currentRemoteSort;
     if (sortAtStart == null) return;
-    _lastRefreshTimes[modeAtStart] = DateTime.now();
     final postProvider = context.read<PostProvider>();
     await Future.wait([
       postProvider.refresh(boardId: 1, sort: sortAtStart),
@@ -935,7 +932,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                   List<Post> posts,
                   bool isLoading,
                   bool hasMore,
-                  int version
+                  int revision
                 })>(
               selector: (context, postProvider) {
                 final sort = _currentRemoteSort ?? 'all';
@@ -943,7 +940,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                   posts: postProvider.postsFor(1, sort: sort),
                   isLoading: postProvider.isLoadingFor(1, sort: sort),
                   hasMore: postProvider.hasMoreFor(1, sort: sort),
-                  version: postProvider.requestVersionFor(1, sort: sort),
+                  revision: postProvider.revisionFor(1, sort: sort),
                 );
               },
               builder: (context, data, child) {

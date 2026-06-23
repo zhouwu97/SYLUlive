@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -36,6 +37,9 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
 
   /// 0 = 毕业要求, 1 = 学年要求
   int _selectedMode = 0;
+
+  /// 强制显示登录表单（即使有缓存数据）
+  bool _forceShowLogin = false;
 
   static const _loadingMessages = [
     '正在穿透学校内网，请稍候…',
@@ -154,29 +158,31 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
 
     try {
       _updateMessage('正在通过统一认证…');
-      await _repo.loginAndFetch(studentId, casPwd, erkePwd);
+      final ok = await _repo.loginAndFetch(studentId, casPwd, erkePwd);
 
-      if (_repo.fetchError != null) {
-        AppFeedback.showSnackBar(context, _repo.fetchError!, isError: true);
+      if (!ok) {
+        final message = _repo.fetchError ?? '查询失败';
+        AppFeedback.showSnackBar(context, '查询失败：$message', isError: true);
+        _forceShowLogin = false; // 保留旧缓存展示
         if (mounted) setState(() {});
         return;
       }
 
+      _forceShowLogin = false;
       if (mounted) setState(() {});
       AppFeedback.showSnackBar(context, '查询并缓存成功');
-    } catch (e) {
-      String errMsg = '未知错误';
-      final errStr = e.toString().toLowerCase();
-      if (errStr.contains('登录失败')) {
-        errMsg = e.toString();
-      } else if (errStr.contains('timeout')) {
-        errMsg = '网络请求超时';
-      } else if (errStr.contains('connection')) {
-        errMsg = '网络连接失败';
-      } else if (errStr.contains('500') || errStr.contains('502')) {
-        errMsg = '学校服务器响应异常';
-      }
-      AppFeedback.showSnackBar(context, '查询失败: $errMsg', isError: true);
+    } catch (e, stackTrace) {
+      final rawError = (_repo.fetchError?.trim().isNotEmpty == true)
+          ? _repo.fetchError!
+          : e.toString();
+      debugPrint('[Erke] 查询失败: $rawError');
+      debugPrintStack(label: '[Erke] stack', stackTrace: stackTrace);
+
+      AppFeedback.showSnackBar(
+        context,
+        '查询失败：$rawError',
+        isError: true,
+      );
     } finally {
       _stopMessageRotation();
       if (mounted) setState(() => _isLoading = false);
@@ -238,10 +244,13 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
             PopupMenuButton<String>(
               onSelected: (value) async {
                 if (value == 'relogin') {
-                  await _repo.clearAll();
+                  // 保留缓存，只重置在线会话
+                  _repo.resetLiveSession();
+                  _forceShowLogin = true;
                   setState(() {});
                 } else if (value == 'clear_cache') {
-                  await _repo.clearAll();
+                  await _repo.clearCachedData();
+                  _forceShowLogin = true;
                   if (context.mounted) {
                     AppFeedback.showSnackBar(context, '本地缓存已清除');
                     setState(() {});
@@ -257,7 +266,9 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
         ],
       ),
       body: SafeArea(
-        child: _repo.hasCachedData ? _buildDataView(isDark) : _buildLoginForm(),
+        child: (_repo.hasCachedData && !_forceShowLogin)
+            ? _buildDataView(isDark)
+            : _buildLoginForm(),
       ),
     );
   }

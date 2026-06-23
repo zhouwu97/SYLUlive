@@ -326,6 +326,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
     Color panelColor,
     double screenWidth,
   ) {
+    final heroHeight = (screenWidth * 1.03).clamp(390.0, 480.0);
     return Scaffold(
       backgroundColor: panelColor,
       body: RefreshIndicator(

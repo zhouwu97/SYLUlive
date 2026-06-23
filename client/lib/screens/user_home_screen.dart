@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:ui';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:dio/dio.dart';
@@ -76,9 +77,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
 
     if (_user == null) {
       if (_isLoading) {
-        return const Scaffold(
-          body: Center(child: CircularProgressIndicator()),
-        );
+        return const Scaffold(body: Center(child: CircularProgressIndicator()));
       }
       return Scaffold(
         appBar: AppBar(title: const Text('错误')),
@@ -95,13 +94,239 @@ class _UserHomeScreenState extends State<UserHomeScreen>
         : Theme.of(context).scaffoldBackgroundColor;
 
     // 标签栏和内容区共用的面板色
-    final panelColor = isDark
-        ? const Color(0xFF1A1B1E)
-        : Colors.white;
+    final panelColor = isDark ? const Color(0xFF1A1B1E) : Colors.white;
 
     final screenWidth = MediaQuery.sizeOf(context).width;
-    final heroHeight = (screenWidth * 1.03).clamp(390.0, 480.0);
 
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        if (width >= 820) {
+          return _buildWideProfileLayout(
+            context,
+            user,
+            isMe,
+            isDark,
+            pageBackground,
+            panelColor,
+            width,
+          );
+        }
+        return _buildCompactProfileLayout(
+          context,
+          user,
+          isMe,
+          isDark,
+          pageBackground,
+          panelColor,
+          width,
+        );
+      },
+    );
+  }
+
+  Widget _buildWideProfileLayout(
+    BuildContext context,
+    User user,
+    bool isMe,
+    bool isDark,
+    Color pageBackground,
+    Color panelColor,
+    double width,
+  ) {
+    return Scaffold(
+      backgroundColor: pageBackground,
+      body: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 左侧资料栏
+          SizedBox(
+            width: width >= 1000 ? 380 : 320,
+            child: CustomScrollView(
+              slivers: [
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(24),
+                      child: Container(
+                        color: panelColor,
+                        child: Column(
+                          children: [
+                            // 顶部背景和资料堆叠
+                            SizedBox(
+                              height: 480,
+                              child: Stack(
+                                fit: StackFit.expand,
+                                children: [
+                                  // 模糊的 cover 底图
+                                  GestureDetector(
+                                    onTap: () {
+                                      if (user.background.isNotEmpty) {
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (_) => ImageViewerScreen(
+                                              imageUrls: [
+                                                ApiConstants.fullUrl(
+                                                    user.background)
+                                              ],
+                                            ),
+                                          ),
+                                        );
+                                      }
+                                    },
+                                    child: user.background.isNotEmpty
+                                        ? Stack(
+                                            fit: StackFit.expand,
+                                            children: [
+                                              CachedNetworkImage(
+                                                imageUrl: ApiConstants.fullUrl(
+                                                    user.background),
+                                                fit: BoxFit.cover,
+                                                imageBuilder:
+                                                    (context, imageProvider) =>
+                                                        Container(
+                                                  decoration: BoxDecoration(
+                                                    image: DecorationImage(
+                                                      image: imageProvider,
+                                                      fit: BoxFit.cover,
+                                                    ),
+                                                  ),
+                                                  child: BackdropFilter(
+                                                    filter: ImageFilter.blur(
+                                                        sigmaX: 10, sigmaY: 10),
+                                                    child: Container(
+                                                        color: Colors.black
+                                                            .withValues(
+                                                                alpha: 0.2)),
+                                                  ),
+                                                ),
+                                              ),
+                                              CachedNetworkImage(
+                                                imageUrl: ApiConstants.fullUrl(
+                                                    user.background),
+                                                fit: BoxFit.contain,
+                                              ),
+                                            ],
+                                          )
+                                        : Image.asset(
+                                            'assets/images/morenbeijing.jpeg',
+                                            fit: BoxFit.cover,
+                                          ),
+                                  ),
+
+                                  // 渐变遮罩
+                                  const DecoratedBox(
+                                    decoration: BoxDecoration(
+                                      gradient: LinearGradient(
+                                        begin: Alignment.topCenter,
+                                        end: Alignment.bottomCenter,
+                                        stops: [0.0, 0.42, 1.0],
+                                        colors: [
+                                          Colors.transparent,
+                                          Color(0x22000000),
+                                          Color(0xDD000000),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+
+                                  // 左上角返回
+                                  Positioned(
+                                    top: 12,
+                                    left: 12,
+                                    child: _buildCircleButton(
+                                      icon: Icons.arrow_back,
+                                      onTap: () => Navigator.maybePop(context),
+                                    ),
+                                  ),
+
+                                  // 底部覆盖资料
+                                  Positioned(
+                                    left: 20,
+                                    right: 20,
+                                    bottom: 24,
+                                    child: _buildProfileOverlay(
+                                        context, user, isMe),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // 右侧帖子区域
+          Expanded(
+            child: Container(
+              margin: const EdgeInsets.only(top: 16, right: 16, bottom: 16),
+              decoration: BoxDecoration(
+                color: panelColor,
+                borderRadius: BorderRadius.circular(24),
+              ),
+              child: Column(
+                children: [
+                  TabBar(
+                    controller: _tabController,
+                    indicatorSize: TabBarIndicatorSize.label,
+                    indicatorWeight: 3,
+                    indicatorColor: Theme.of(context).colorScheme.primary,
+                    labelColor: Theme.of(context).colorScheme.primary,
+                    unselectedLabelColor:
+                        isDark ? Colors.white60 : Colors.black54,
+                    tabs: [
+                      Tab(text: '帖子 '),
+                      const Tab(text: '智能体 0'),
+                    ],
+                  ),
+                  Expanded(
+                    child: TabBarView(
+                      controller: _tabController,
+                      children: [
+                        _isLoading
+                            ? const Center(child: CircularProgressIndicator())
+                            : _posts.isEmpty
+                                ? const Center(child: Text('暂无帖子'))
+                                : ListView.builder(
+                                    padding: const EdgeInsets.all(16),
+                                    itemCount: _posts.length,
+                                    itemBuilder: (context, index) {
+                                      return PostCard(
+                                        post: _posts[index],
+                                        disableAuthorNavigation: true,
+                                      );
+                                    },
+                                  ),
+                        const Center(child: Text('暂无智能体')),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCompactProfileLayout(
+    BuildContext context,
+    User user,
+    bool isMe,
+    bool isDark,
+    Color pageBackground,
+    Color panelColor,
+    double screenWidth,
+  ) {
+    final heroHeight = (screenWidth * 1.03).clamp(390.0, 480.0);
     return Scaffold(
       backgroundColor: panelColor,
       body: RefreshIndicator(
@@ -129,14 +354,51 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                     children: [
                       // 背景图
                       GestureDetector(
-                        onTap: isMe
-                            ? () => _showEditSheet(context, user)
-                            : null,
+                        onTap: () {
+                          if (user.background.isNotEmpty) {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => ImageViewerScreen(
+                                  imageUrls: [
+                                    ApiConstants.fullUrl(user.background)
+                                  ],
+                                ),
+                              ),
+                            );
+                          }
+                        },
                         child: user.background.isNotEmpty
-                            ? CachedNetworkImage(
-                                imageUrl:
-                                    ApiConstants.fullUrl(user.background),
-                                fit: BoxFit.cover,
+                            ? Stack(
+                                fit: StackFit.expand,
+                                children: [
+                                  CachedNetworkImage(
+                                    imageUrl:
+                                        ApiConstants.fullUrl(user.background),
+                                    fit: BoxFit.cover,
+                                    imageBuilder: (context, imageProvider) =>
+                                        Container(
+                                      decoration: BoxDecoration(
+                                        image: DecorationImage(
+                                          image: imageProvider,
+                                          fit: BoxFit.cover,
+                                        ),
+                                      ),
+                                      child: BackdropFilter(
+                                        filter: ImageFilter.blur(
+                                            sigmaX: 10, sigmaY: 10),
+                                        child: Container(
+                                            color: Colors.black
+                                                .withValues(alpha: 0.2)),
+                                      ),
+                                    ),
+                                  ),
+                                  CachedNetworkImage(
+                                    imageUrl:
+                                        ApiConstants.fullUrl(user.background),
+                                    fit: BoxFit.contain,
+                                  ),
+                                ],
                               )
                             : Image.asset(
                                 'assets/images/morenbeijing.jpeg',
@@ -194,11 +456,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                         left: 20,
                         right: 20,
                         bottom: 64,
-                        child: _buildProfileOverlay(
-                          context,
-                          user,
-                          isMe,
-                        ),
+                        child: _buildProfileOverlay(context, user, isMe),
                       ),
                     ],
                   ),
@@ -227,10 +485,8 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                       controller: _tabController,
                       indicatorSize: TabBarIndicatorSize.label,
                       indicatorWeight: 3,
-                      indicatorColor:
-                          Theme.of(context).colorScheme.primary,
-                      labelColor:
-                          Theme.of(context).colorScheme.primary,
+                      indicatorColor: Theme.of(context).colorScheme.primary,
+                      labelColor: Theme.of(context).colorScheme.primary,
                       unselectedLabelColor:
                           isDark ? Colors.white60 : Colors.black54,
                       labelStyle: const TextStyle(
@@ -259,8 +515,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                   : _posts.isEmpty
                       ? const Center(child: Text('暂无帖子'))
                       : ListView.builder(
-                          padding:
-                              const EdgeInsets.fromLTRB(12, 10, 12, 24),
+                          padding: const EdgeInsets.fromLTRB(12, 10, 12, 24),
                           itemCount: _posts.length,
                           itemBuilder: (context, index) {
                             return PostCard(
@@ -299,11 +554,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
 
   // ============ 覆盖在背景上的个人资料 ============
 
-  Widget _buildProfileOverlay(
-    BuildContext context,
-    User user,
-    bool isMe,
-  ) {
+  Widget _buildProfileOverlay(BuildContext context, User user, bool isMe) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
@@ -372,10 +623,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
             ),
             const SizedBox(width: 8),
             Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 9,
-                vertical: 3,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
               decoration: BoxDecoration(
                 color: Color(user.levelColorValue),
                 borderRadius: BorderRadius.circular(12),
@@ -409,10 +657,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                 'ID ${user.studentId}  ${user.eduCollege.isNotEmpty ? user.eduCollege : '未知归属'}',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: Colors.white70,
-                  fontSize: 12,
-                ),
+                style: const TextStyle(color: Colors.white70, fontSize: 12),
               ),
             ),
           ],
@@ -422,11 +667,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
         const SizedBox(height: 14),
         Row(
           children: [
-            _buildOverlayStat(
-              user.totalLikesReceived.toString(),
-              '获赞',
-              null,
-            ),
+            _buildOverlayStat(user.totalLikesReceived.toString(), '获赞', null),
             const SizedBox(width: 28),
             _buildOverlayStat(
               user.followingCount.toString(),
@@ -469,16 +710,11 @@ class _UserHomeScreenState extends State<UserHomeScreen>
         // 等级进度 + 积分半透明条
         const SizedBox(height: 14),
         Container(
-          padding: const EdgeInsets.symmetric(
-            horizontal: 14,
-            vertical: 12,
-          ),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           decoration: BoxDecoration(
             color: Colors.white.withValues(alpha: 0.14),
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: Colors.white.withValues(alpha: 0.18),
-            ),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
           ),
           child: Row(
             children: [
@@ -507,17 +743,10 @@ class _UserHomeScreenState extends State<UserHomeScreen>
               const SizedBox(width: 10),
               Text(
                 '${user.exp}/${user.expToNextLevel}',
-                style: const TextStyle(
-                  color: Colors.white70,
-                  fontSize: 11,
-                ),
+                style: const TextStyle(color: Colors.white70, fontSize: 11),
               ),
               const SizedBox(width: 14),
-              const Icon(
-                Icons.monetization_on,
-                color: Colors.amber,
-                size: 16,
-              ),
+              const Icon(Icons.monetization_on, color: Colors.amber, size: 16),
               const SizedBox(width: 4),
               Text(
                 '${user.credits}',
@@ -546,10 +775,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
         onTap: onPressed,
         borderRadius: BorderRadius.circular(22),
         child: Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: 18,
-            vertical: 9,
-          ),
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
           child: Text(
             text,
             style: const TextStyle(
@@ -568,13 +794,16 @@ class _UserHomeScreenState extends State<UserHomeScreen>
       return _buildOverlayButton(
         text: '已关注',
         onPressed: () async {
-          final success =
-              await context.read<SocialProvider>().unfollow(user.id);
+          final success = await context.read<SocialProvider>().unfollow(
+                user.id,
+              );
           if (success && mounted) {
             setState(() {
               _user!.isFollowing = false;
-              _user!.followersCount =
-                  (_user!.followersCount - 1).clamp(0, 999999);
+              _user!.followersCount = (_user!.followersCount - 1).clamp(
+                0,
+                999999,
+              );
             });
             context.read<AuthProvider>().refreshUser();
           }
@@ -586,8 +815,9 @@ class _UserHomeScreenState extends State<UserHomeScreen>
         borderRadius: BorderRadius.circular(22),
         child: InkWell(
           onTap: () async {
-            final success =
-                await context.read<SocialProvider>().follow(user.id);
+            final success = await context.read<SocialProvider>().follow(
+                  user.id,
+                );
             if (success && mounted) {
               setState(() {
                 _user!.isFollowing = true;
@@ -598,10 +828,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
           },
           borderRadius: BorderRadius.circular(22),
           child: const Padding(
-            padding: EdgeInsets.symmetric(
-              horizontal: 22,
-              vertical: 9,
-            ),
+            padding: EdgeInsets.symmetric(horizontal: 22, vertical: 9),
             child: Text(
               '关注',
               style: TextStyle(
@@ -616,11 +843,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
     }
   }
 
-  Widget _buildOverlayStat(
-    String count,
-    String label,
-    VoidCallback? onTap,
-  ) {
+  Widget _buildOverlayStat(String count, String label, VoidCallback? onTap) {
     return InkWell(
       onTap: onTap,
       child: Text.rich(
@@ -636,10 +859,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
             ),
             TextSpan(
               text: ' $label',
-              style: const TextStyle(
-                color: Colors.white70,
-                fontSize: 13,
-              ),
+              style: const TextStyle(color: Colors.white70, fontSize: 13),
             ),
           ],
         ),
@@ -673,10 +893,7 @@ class AnimatedCount extends StatelessWidget {
       duration: const Duration(milliseconds: 800),
       curve: Curves.easeOutQuart,
       builder: (context, value, child) {
-        return Text(
-          value.toInt().toString(),
-          style: style,
-        );
+        return Text(value.toInt().toString(), style: style);
       },
     );
   }
@@ -717,7 +934,9 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
 
     final cropped = await ImageCropper().cropImage(
       sourcePath: picked.path,
-      aspectRatio: const CropAspectRatio(ratioX: 3, ratioY: 4),
+      maxWidth: 2560,
+      maxHeight: 2560,
+      compressQuality: 92,
       uiSettings: [
         AndroidUiSettings(
           toolbarTitle: '裁剪背景图',
@@ -725,10 +944,13 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
           toolbarWidgetColor: Colors.white,
           statusBarColor: Colors.black,
           backgroundColor: Colors.black,
-          initAspectRatio: CropAspectRatioPreset.ratio3x2,
-          lockAspectRatio: true,
+          lockAspectRatio: false,
         ),
-        IOSUiSettings(title: '裁剪背景图', aspectRatioLockEnabled: true),
+        IOSUiSettings(
+          title: '裁剪背景图',
+          aspectRatioLockEnabled: false,
+          resetAspectRatioEnabled: true,
+        ),
       ],
     );
 
@@ -755,14 +977,16 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
         await auth.refreshUser();
         widget.onSaved(); // 触发主页刷新
         if (mounted) {
-          ScaffoldMessenger.of(context)
-              .showSnackBar(const SnackBar(content: Text('背景更换成功')));
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('背景更换成功')));
         }
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('上传失败: $e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('上传失败: $e')));
       }
     } finally {
       if (mounted) {
@@ -778,22 +1002,24 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
     setState(() => _isSaving = true);
     try {
       final auth = context.read<AuthProvider>();
-      await auth.dio.put('/user/profile', data: {
-        'nickname': newNickname,
-        'gender': _selectedGender,
-      });
+      await auth.dio.put(
+        '/user/profile',
+        data: {'nickname': newNickname, 'gender': _selectedGender},
+      );
 
       await auth.refreshUser();
       widget.onSaved();
       if (mounted) {
         Navigator.pop(context);
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('资料已保存')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('资料已保存')));
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('保存失败: $e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('保存失败: $e')));
       }
     } finally {
       if (mounted) {
@@ -821,7 +1047,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
             color: Colors.black.withOpacity(0.1),
             blurRadius: 20,
             spreadRadius: 5,
-          )
+          ),
         ],
       ),
       child: Column(
@@ -837,11 +1063,14 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
             ),
           ),
           const SizedBox(height: 20),
-          Text('编辑资料',
-              style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: isDark ? Colors.white : Colors.black87)),
+          Text(
+            '编辑资料',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: isDark ? Colors.white : Colors.black87,
+            ),
+          ),
           const SizedBox(height: 24),
 
           // 更改背景
@@ -871,8 +1100,9 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
             controller: _nicknameController,
             decoration: InputDecoration(
               labelText: '昵称',
-              border:
-                  OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
               prefixIcon: const Icon(Icons.person_outline),
             ),
           ),
@@ -887,13 +1117,15 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
                 child: SegmentedButton<String>(
                   segments: const [
                     ButtonSegment(
-                        value: 'male',
-                        label: Text('男生'),
-                        icon: Icon(Icons.male)),
+                      value: 'male',
+                      label: Text('男生'),
+                      icon: Icon(Icons.male),
+                    ),
                     ButtonSegment(
-                        value: 'female',
-                        label: Text('女生'),
-                        icon: Icon(Icons.female)),
+                      value: 'female',
+                      label: Text('女生'),
+                      icon: Icon(Icons.female),
+                    ),
                     ButtonSegment(value: '', label: Text('保密')),
                   ],
                   selected: {_selectedGender},
@@ -916,16 +1148,22 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
               style: ElevatedButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
               child: _isSaving
                   ? const SizedBox(
                       width: 20,
                       height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Text('保存',
-                      style:
-                          TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text(
+                      '保存',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
             ),
           ),
         ],

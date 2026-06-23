@@ -38,10 +38,11 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       markCorrectAnswers: _markCorrect,
       groupByChapter: _groupByChapter,
     );
-    if (mounted) setState(() {
-      _markdown = converter.convert(widget.questions);
-      _loaded = true;
-    });
+    if (mounted)
+      setState(() {
+        _markdown = converter.convert(widget.questions);
+        _loaded = true;
+      });
   }
 
   Future<void> _saveToFile() async {
@@ -51,9 +52,9 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       final file = File('${dir.path}/练习题_$timestamp.md');
       await file.writeAsString(_markdown);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('已保存到: ${file.path}')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('已保存到: ${file.path}')));
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -83,14 +84,18 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         backgroundColor: Colors.transparent,
         elevation: 0,
         actions: [
-          IconButton(icon: const Icon(Icons.save_alt), onPressed: _saveToFile, tooltip: '保存为文件'),
+          IconButton(
+            icon: const Icon(Icons.save_alt),
+            onPressed: _saveToFile,
+            tooltip: '保存为文件',
+          ),
           IconButton(
             icon: const Icon(Icons.copy),
             onPressed: () {
               Clipboard.setData(ClipboardData(text: _markdown));
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('已复制到剪贴板')),
-              );
+              ScaffoldMessenger.of(
+                context,
+              ).showSnackBar(const SnackBar(content: Text('已复制到剪贴板')));
             },
             tooltip: '复制全文',
           ),
@@ -124,19 +129,31 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                   child: Row(
                     children: [
                       _optionChip('目录', _includeToc, (v) {
-                        setState(() { _includeToc = v; _convert(); });
+                        setState(() {
+                          _includeToc = v;
+                          _convert();
+                        });
                       }),
                       const SizedBox(width: 4),
                       _optionChip('统计', _includeStats, (v) {
-                        setState(() { _includeStats = v; _convert(); });
+                        setState(() {
+                          _includeStats = v;
+                          _convert();
+                        });
                       }),
                       const SizedBox(width: 4),
                       _optionChip('标答案', _markCorrect, (v) {
-                        setState(() { _markCorrect = v; _convert(); });
+                        setState(() {
+                          _markCorrect = v;
+                          _convert();
+                        });
                       }),
                       const SizedBox(width: 4),
                       _optionChip('按章节', _groupByChapter, (v) {
-                        setState(() { _groupByChapter = v; _convert(); });
+                        setState(() {
+                          _groupByChapter = v;
+                          _convert();
+                        });
                       }),
                     ],
                   ),
@@ -183,7 +200,10 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           ),
         ),
         const SizedBox(height: 4),
-        Text(label, style: const TextStyle(color: Colors.white70, fontSize: 13)),
+        Text(
+          label,
+          style: const TextStyle(color: Colors.white70, fontSize: 13),
+        ),
       ],
     );
   }

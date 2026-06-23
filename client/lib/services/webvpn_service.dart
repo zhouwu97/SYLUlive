@@ -18,27 +18,28 @@ class WebVpnService {
 
   WebVpnService() {
     _jar = CookieJar();
-    _dio = Dio(BaseOptions(
-      followRedirects: false,
-      validateStatus: (s) => s != null && s < 500,
-      connectTimeout: const Duration(seconds: 15),
-      receiveTimeout: const Duration(seconds: 20),
-      headers: {
-        'User-Agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept':
-            'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-        'Accept-Language': 'zh-CN,zh;q=0.9',
-        'Upgrade-Insecure-Requests': '1',
-      },
-    ));
+    _dio = Dio(
+      BaseOptions(
+        followRedirects: false,
+        validateStatus: (s) => s != null && s < 500,
+        connectTimeout: const Duration(seconds: 15),
+        receiveTimeout: const Duration(seconds: 20),
+        headers: {
+          'User-Agent':
+              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept':
+              'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+          'Accept-Language': 'zh-CN,zh;q=0.9',
+          'Upgrade-Insecure-Requests': '1',
+        },
+      ),
+    );
     (_dio.httpClientAdapter as IOHttpClientAdapter).onHttpClientCreate =
         (client) {
-      client.badCertificateCallback = (cert, host, port) => true; // 忽略证书校验
-      return client;
-    };
+          client.badCertificateCallback = (cert, host, port) => true; // 忽略证书校验
+          return client;
+        };
     _dio.interceptors.add(CookieManager(_jar));
-    _dio.interceptors.add(LogInterceptor(requestHeader: true, responseHeader: true, requestBody: false, responseBody: false, logPrint: (obj) => print(obj.toString())));
   }
 
   Future<bool> login(String username, String password) async {
@@ -46,7 +47,7 @@ class WebVpnService {
       // 清除旧会话 Cookie，防止残留 cookie 使服务器跳过 CAS 重定向
       await _jar.deleteAll();
       _vpnCookie = null;
-      
+
       // 1. 访问 VPN 首页 → 跟重定向到 CAS
       debugPrint('[VPN] 访问首页...');
       var resp = await _dio.get(_vpnHost);
@@ -54,7 +55,9 @@ class WebVpnService {
       if (nextUrl == null || nextUrl.isEmpty) {
         // VPN 首页返回 200，无 Location 头 — 从 HTML 中查找 CAS 登录链接
         final html = resp.data.toString();
-        final casLinkMatch = RegExp(r'href="([^"]*cas_login[^"]*)"').firstMatch(html);
+        final casLinkMatch = RegExp(
+          r'href="([^"]*cas_login[^"]*)"',
+        ).firstMatch(html);
         if (casLinkMatch != null) {
           final casLink = casLinkMatch.group(1)!.replaceAll('&amp;', '&');
           debugPrint('[VPN] 首页无重定向，从HTML提取CAS链接: $casLink');
@@ -71,11 +74,14 @@ class WebVpnService {
         final url = _resolveUrl(nextUrl);
         debugPrint('[VPN] 请求: $url');
         resp = await _dio.get(url);
-        debugPrint('[VPN] 状态: ${resp.statusCode}, Location: ${resp.headers.value('location') ?? '无'}');
+        debugPrint(
+          '[VPN] 状态: ${resp.statusCode}, Location: ${resp.headers.value('location') ?? '无'}',
+        );
         final html = resp.data.toString();
 
         // 打印页面摘要
-        final title = RegExp(r'<title>([^<]+)</title>').firstMatch(html)?.group(1) ?? '';
+        final title =
+            RegExp(r'<title>([^<]+)</title>').firstMatch(html)?.group(1) ?? '';
         debugPrint('[VPN] 页面标题: $title, 长度: ${html.length}');
 
         // 注意: 不在此处检查 cookie jar 中的 wrdvpn- ticket！
@@ -101,7 +107,9 @@ class WebVpnService {
 
         // 仅在没有 HTTP 重定向且未到达 CAS 时，跟随 HTML 中的 CAS 链接（并解码 &amp;）
         if (!reachedCas) {
-          final casLinkMatch = RegExp(r'href="([^"]*cas_login[^"]*)"').firstMatch(html);
+          final casLinkMatch = RegExp(
+            r'href="([^"]*cas_login[^"]*)"',
+          ).firstMatch(html);
           if (casLinkMatch != null) {
             final casLink = casLinkMatch.group(1)!;
             debugPrint('[VPN] 跟随CAS链接: $casLink');
@@ -139,11 +147,16 @@ class WebVpnService {
     if (setCookies != null) {
       for (final c in setCookies) {
         final name = c.split('=')[0].split(';')[0].trim();
-        if (name.isNotEmpty) casCookiesRaw.add('$name=${c.split(';')[0].split('=').skip(1).join('=')}');
+        if (name.isNotEmpty)
+          casCookiesRaw.add(
+            '$name=${c.split(';')[0].split('=').skip(1).join('=')}',
+          );
       }
     }
     debugPrint('[CAS] CAS页面Set-Cookie原始: $setCookies');
-    debugPrint('[CAS] 提取的Cookie名: ${casCookiesRaw.map((c) => c.split("=")[0]).toList()}');
+    debugPrint(
+      '[CAS] 提取的Cookie名: ${casCookiesRaw.map((c) => c.split("=")[0]).toList()}',
+    );
 
     // 提取关键字段 — 打印完整的 input 列表辅助调试
     final allInputs = doc.querySelectorAll('input');
@@ -155,7 +168,7 @@ class WebVpnService {
         debugPrint('[CAS]   可见: $n ($t)');
       }
     }
-    
+
     final salt = _extractValue(doc, 'pwdEncryptSalt') ?? '';
     final execution = _extractValue(doc, 'execution') ?? '';
     final eventId = _extractValue(doc, '_eventId') ?? 'submit';
@@ -163,12 +176,16 @@ class WebVpnService {
     final dllt = 'generalLogin';
     final lt = _extractValue(doc, 'lt') ?? '';
 
-    debugPrint('[CAS] salt=$salt execution=${execution.substring(0, min(40, execution.length))}...');
+    debugPrint(
+      '[CAS] salt=$salt execution=${execution.substring(0, min(40, execution.length))}...',
+    );
     debugPrint('[CAS] eventId=$eventId cllt=$cllt dllt=$dllt lt=$lt');
 
     // AES 加密密码 — 注意: 密码字段名是 userPassword，但要提交为 password
     final encryptedPwd = _encryptPassword(password, salt);
-    debugPrint('[CAS] 加密密码(length=${encryptedPwd.length}): ${encryptedPwd.substring(0, min(40, encryptedPwd.length))}...');
+    debugPrint(
+      '[CAS] 加密密码(length=${encryptedPwd.length}): ${encryptedPwd.substring(0, min(40, encryptedPwd.length))}...',
+    );
 
     // 打印当前 Cookie
     final cookies = await _jar.loadForRequest(Uri.parse(pageUrl));
@@ -194,7 +211,9 @@ class WebVpnService {
         final base = fa.startsWith('http') ? fa : _resolveUrl(fa, pageUrl);
         // 如果 form action 不带 service 参数，从页面 URL 提取（保持原始编码）
         if (!base.contains('service=') && pageUrl.contains('service=')) {
-          final serviceMatch = RegExp(r'[?&]service=([^&]+)').firstMatch(pageUrl);
+          final serviceMatch = RegExp(
+            r'[?&]service=([^&]+)',
+          ).firstMatch(pageUrl);
           if (serviceMatch != null) {
             action = '$base?service=${serviceMatch.group(1)!}';
           } else {
@@ -206,7 +225,9 @@ class WebVpnService {
       }
     }
     debugPrint('[CAS] form action: ${form?.attributes['action']}');
-    debugPrint('[CAS] POST URL: ${action.substring(0, min(100, action.length))}...');
+    debugPrint(
+      '[CAS] POST URL: ${action.substring(0, min(100, action.length))}...',
+    );
 
     // POST — 拼上 VPN cookie + CAS session cookies
     final allCookies = <String>{};
@@ -214,14 +235,18 @@ class WebVpnService {
     // 从 CookieJar 已有的 cookie
     final jarCookies = await _jar.loadForRequest(Uri.parse(pageUrl));
     for (final c in jarCookies) {
-      if (c.name.contains('wengine') || c.name.contains('JSESSIONID') || c.name.contains('CASTGC')) {
+      if (c.name.contains('wengine') ||
+          c.name.contains('JSESSIONID') ||
+          c.name.contains('CASTGC')) {
         allCookies.add('${c.name}=${c.value}');
       }
     }
     // 手动提取的 CAS Set-Cookie
     for (final c in casCookiesRaw) {
       final name = c.split('=')[0];
-      if (name.contains('JSESSIONID') || name.contains('CAS') || name.contains('SESSION')) {
+      if (name.contains('JSESSIONID') ||
+          name.contains('CAS') ||
+          name.contains('SESSION')) {
         allCookies.add(c);
       }
     }
@@ -244,7 +269,9 @@ class WebVpnService {
     debugPrint('[CAS] 登录响应: ${loginResp.statusCode}');
 
     if (loginResp.statusCode == 401) {
-      debugPrint('[CAS] 401! body前200: ${loginResp.data.toString().substring(0, min(200, loginResp.data.toString().length))}');
+      debugPrint(
+        '[CAS] 401! body前200: ${loginResp.data.toString().substring(0, min(200, loginResp.data.toString().length))}',
+      );
       debugPrint('[CAS] 响应头: ${loginResp.headers}');
       return false;
     }
@@ -256,11 +283,13 @@ class WebVpnService {
         return false;
       }
       // 某些情况下 200 页面里包含 JavaScript 跳转
-      final redirectMatch = RegExp(r"window\.location\.href\s*=\s*'([^']+)'")
-          .firstMatch(body);
+      final redirectMatch = RegExp(
+        r"window\.location\.href\s*=\s*'([^']+)'",
+      ).firstMatch(body);
       if (redirectMatch != null) {
         return await _followRedirects(
-            _resolveUrl(redirectMatch.group(1)!, pageUrl));
+          _resolveUrl(redirectMatch.group(1)!, pageUrl),
+        );
       }
     }
 
@@ -278,13 +307,16 @@ class WebVpnService {
     // WebVPN 的会话在服务端仅当客户端完整走完全部重定向链后才会激活，
     // 提前返回会导致后续访问内网资源时依然被重定向回门户登录页。
     for (int i = 0; i < 10 && nextUrl != null; i++) {
-      debugPrint('[VPN] 重定向 $i: ${nextUrl.substring(0, min(100, nextUrl.length))}');
+      debugPrint(
+        '[VPN] 重定向 $i: ${nextUrl.substring(0, min(100, nextUrl.length))}',
+      );
       final resp = await _dio.get(nextUrl);
 
       // 记录 ticket 值（不立即返回，继续跟完剩余的重定向）
       final cookies = await _jar.loadForRequest(Uri.parse(_vpnHost));
       for (final c in cookies) {
-        if (c.name.contains('wengine_vpn_ticket') && c.value.startsWith('wrdvpn-')) {
+        if (c.name.contains('wengine_vpn_ticket') &&
+            c.value.startsWith('wrdvpn-')) {
           _vpnCookie = '${c.name}=${c.value}';
           debugPrint('[VPN] 🔑 检测到 VPN ticket，继续走完重定向...');
         }
@@ -302,7 +334,8 @@ class WebVpnService {
     // 全部重定向走完后，再做最终验证
     final finalCookies = await _jar.loadForRequest(Uri.parse(_vpnHost));
     for (final c in finalCookies) {
-      if (c.name.contains('wengine_vpn_ticket') && c.value.startsWith('wrdvpn-')) {
+      if (c.name.contains('wengine_vpn_ticket') &&
+          c.value.startsWith('wrdvpn-')) {
         _vpnCookie = '${c.name}=${c.value}';
         debugPrint('[VPN] ✅ 拿到 VPN ticket! 会话已建立');
         return true;
@@ -335,15 +368,24 @@ class WebVpnService {
 
   /// CAS AES 加密: 64位随机前缀 + 密码 → AES-CBC(salt as key, random IV) → Base64
   String _encryptPassword(String rawPassword, String salt) {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    const chars =
+        'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
     final rnd = Random();
-    final prefix = List.generate(64, (_) => chars[rnd.nextInt(chars.length)]).join();
+    final prefix = List.generate(
+      64,
+      (_) => chars[rnd.nextInt(chars.length)],
+    ).join();
     final plaintext = prefix + rawPassword;
     final key = encrypt.Key.fromUtf8(salt);
     // 16位随机字符作为 IV — 不能用全零，否则 Java 后端 UTF-8 解码崩溃
-    final ivStr = List.generate(16, (_) => chars[rnd.nextInt(chars.length)]).join();
+    final ivStr = List.generate(
+      16,
+      (_) => chars[rnd.nextInt(chars.length)],
+    ).join();
     final iv = encrypt.IV.fromUtf8(ivStr);
-    final encrypter = encrypt.Encrypter(encrypt.AES(key, mode: encrypt.AESMode.cbc));
+    final encrypter = encrypt.Encrypter(
+      encrypt.AES(key, mode: encrypt.AESMode.cbc),
+    );
     return encrypter.encrypt(plaintext, iv: iv).base64;
   }
 

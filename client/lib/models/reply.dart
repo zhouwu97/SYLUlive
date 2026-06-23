@@ -39,9 +39,11 @@ class Reply {
       status: json['status'] ?? 'normal',
       likeCount: json['like_count'] ?? 0,
       isLiked: json['is_liked'] == true,
-      images: (json['images'] as List<dynamic>?)
-          ?.map((e) => ReplyImage.fromJson(e))
-          .toList() ?? [],
+      images:
+          (json['images'] as List<dynamic>?)
+              ?.map((e) => ReplyImage.fromJson(e))
+              .toList() ??
+          [],
       author: json['author'] != null ? User.fromJson(json['author']) : null,
       createdAt: DateTime.tryParse(json['created_at'] ?? '') ?? DateTime.now(),
     );

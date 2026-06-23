@@ -37,31 +37,39 @@ class CourseBlock {
   int get span => endSection - startSection + 1;
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'course_code': courseCode,
-        'name': name,
-        'teacher': teacher,
-        'location': location,
-        'color': color,
-        'weekday': weekday,
-        'start_section': startSection,
-        'end_section': endSection,
-        'weeks': weeks,
-        'note': note,
-      };
+    'id': id,
+    'course_code': courseCode,
+    'name': name,
+    'teacher': teacher,
+    'location': location,
+    'color': color,
+    'weekday': weekday,
+    'start_section': startSection,
+    'end_section': endSection,
+    'weeks': weeks,
+    'note': note,
+  };
 
   factory CourseBlock.fromJson(Map<String, dynamic> json) {
     return CourseBlock(
       id: (json['id'] as num?)?.toInt() ?? 0,
       courseCode: json['course_code']?.toString() ?? '',
-      name: (json['custom_name']?.toString() ?? json['original_name']?.toString() ?? json['name']?.toString() ?? ''),
+      name:
+          (json['custom_name']?.toString() ??
+          json['original_name']?.toString() ??
+          json['name']?.toString() ??
+          ''),
       teacher: json['teacher']?.toString(),
       location: json['location']?.toString(),
       color: json['color']?.toString() ?? '#6366F1',
       weekday: (json['weekday'] as num?)?.toInt() ?? 1,
       startSection: (json['start_section'] as num?)?.toInt() ?? 1,
       endSection: (json['end_section'] as num?)?.toInt() ?? 1,
-      weeks: (json['weeks'] as List<dynamic>?)?.map((e) => (e as num).toInt()).toList() ?? [],
+      weeks:
+          (json['weeks'] as List<dynamic>?)
+              ?.map((e) => (e as num).toInt())
+              .toList() ??
+          [],
       note: json['note']?.toString(),
     );
   }
@@ -82,11 +90,11 @@ class CourseArchive {
   });
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'name': name,
-        'created_at': createdAt.toIso8601String(),
-        'course_count': courseCount,
-      };
+    'id': id,
+    'name': name,
+    'created_at': createdAt.toIso8601String(),
+    'course_count': courseCount,
+  };
 
   factory CourseArchive.fromJson(Map<String, dynamic> json) {
     return CourseArchive(
@@ -101,7 +109,7 @@ class CourseArchive {
 /// 课表数据提供者 —— 只负责课程网格数据，不管理教务绑定
 /// 绑定状态由 [EduProvider] 统一管理，本 Provider 只负责拉取和展示本地课程
 class CourseScheduleProvider extends ChangeNotifier {
-  final Dio _dio;
+  late final Dio _eduDio;
 
   String? _userId;
   bool _isLoading = false;
@@ -119,8 +127,10 @@ class CourseScheduleProvider extends ChangeNotifier {
   static const String _cacheKeyPrefix = 'course_cache_v4_';
   static const int _cacheVersion = 4;
 
-  String get _currentCacheKey => '$_cacheKeyPrefix${_userId}_${_selectedYear}_$_selectedSemester';
-  String get _hiddenCoursesCacheKey => 'course_hidden_v4_${_userId}_${_selectedYear}_$_selectedSemester';
+  String get _currentCacheKey =>
+      '$_cacheKeyPrefix${_userId}_${_selectedYear}_$_selectedSemester';
+  String get _hiddenCoursesCacheKey =>
+      'course_hidden_v4_${_userId}_${_selectedYear}_$_selectedSemester';
   Set<int> _hiddenCourseIds = {};
 
   // 存档相关
@@ -128,8 +138,10 @@ class CourseScheduleProvider extends ChangeNotifier {
   static const String _archiveDataKeyPrefix = 'course_archive_data_v1_';
   static const String _activeArchiveIdKeyPrefix = 'active_archive_v1_';
   List<CourseArchive> _archives = [];
-  String get _archiveListKey => '$_archiveListKeyPrefix${_userId}_${_selectedYear}_$_selectedSemester';
-  String get _activeArchiveKey => '$_activeArchiveIdKeyPrefix${_userId}_${_selectedYear}_$_selectedSemester';
+  String get _archiveListKey =>
+      '$_archiveListKeyPrefix${_userId}_${_selectedYear}_$_selectedSemester';
+  String get _activeArchiveKey =>
+      '$_activeArchiveIdKeyPrefix${_userId}_${_selectedYear}_$_selectedSemester';
 
   // 学期起始日期（用于推算教学周）
   DateTime? _semesterStart;
@@ -146,14 +158,21 @@ class CourseScheduleProvider extends ChangeNotifier {
   String? get cacheUserId => _userId;
   List<CourseArchive> get archives => _archives;
 
-  CourseScheduleProvider(this._dio) {
+  CourseScheduleProvider() {
+    _eduDio = Dio(
+      BaseOptions(
+        baseUrl: ApiConstants.eduServiceUrl,
+        connectTimeout: const Duration(seconds: 30),
+        receiveTimeout: const Duration(seconds: 60),
+      ),
+    );
     _initDefaults();
   }
 
   void _initDefaults() {
     final now = DateTime.now();
     int currentYear = now.year;
-    
+
     // 如果当前是 2月到7月（春季学期），则属于上一年的秋季入学的学年，正方系统通常用 12 表示春季(第二学期)
     if (now.month >= 2 && now.month <= 7) {
       _selectedYear = (currentYear - 1).toString();
@@ -172,9 +191,13 @@ class CourseScheduleProvider extends ChangeNotifier {
   /// 设置当前用户，但不自动拉取数据（由调用方决定何时拉取）
   /// 切换用户时自动清空内存中的旧数据，防止跨账号泄漏
   void setUserId(String userId) {
-    debugPrint('Schedule: setUserId called with $userId, current is $_userId at ${DateTime.now()}');
+    debugPrint(
+      'Schedule: setUserId called with $userId, current is $_userId at ${DateTime.now()}',
+    );
     if (_userId == userId) return;
-    debugPrint('Schedule: Wiping data because userId changed from $_userId to $userId at ${DateTime.now()}');
+    debugPrint(
+      'Schedule: Wiping data because userId changed from $_userId to $userId at ${DateTime.now()}',
+    );
     // 切换到了不同用户 → 立刻清空旧数据
     _courses = [];
     _gridData = {};
@@ -237,7 +260,8 @@ class CourseScheduleProvider extends ChangeNotifier {
   }
 
   Future<void> applyFetchedCourses(
-      List<Map<String, dynamic>> rawCourses) async {
+    List<Map<String, dynamic>> rawCourses,
+  ) async {
     if (_userId == null) return;
 
     _courses = rawCourses.map(_courseFromFetchedMap).toList();
@@ -260,7 +284,7 @@ class CourseScheduleProvider extends ChangeNotifier {
     final weekday = map['week_day'] as int? ?? 1;
     final teacher = map['teacher'] as String? ?? '';
     final loc = map['location'] as String? ?? '';
-    
+
     // 生成稳定的正数 ID
     final idStr = '$name-$weekday-$time-$endTime-$teacher-$loc';
     int id = idStr.hashCode.abs();
@@ -300,7 +324,10 @@ class CourseScheduleProvider extends ChangeNotifier {
     try {
       if (_userId == null) return;
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_hiddenCoursesCacheKey, jsonEncode(_hiddenCourseIds.toList()));
+      await prefs.setString(
+        _hiddenCoursesCacheKey,
+        jsonEncode(_hiddenCourseIds.toList()),
+      );
     } catch (e) {
       debugPrint('保存隐藏课程失败: $e');
     }
@@ -310,8 +337,12 @@ class CourseScheduleProvider extends ChangeNotifier {
   /// [forceRefresh] 强制拉取（用于静默同步或手动刷新）
   /// [onlyCache] 为 true 时，如果没有缓存则不自动拉取，直接返回
   /// [isManualRefresh] 为 true 时，表示用户手动点击了“从教务刷新”，会清除当前存档状态
-  Future<void> loadCourses(
-      {bool forceRefresh = false, bool onlyCache = false, bool clearUi = false, bool isManualRefresh = false}) async {
+  Future<void> loadCourses({
+    bool forceRefresh = false,
+    bool onlyCache = false,
+    bool clearUi = false,
+    bool isManualRefresh = false,
+  }) async {
     if (_userId == null) return;
 
     final cacheKey = _currentCacheKey;
@@ -333,12 +364,15 @@ class CourseScheduleProvider extends ChangeNotifier {
         debugPrint('📱 从手机缓存加载: ${_courses.length}门课');
         for (final c in _courses) {
           debugPrint(
-              '  ${c.name} | 周${c.weekday} | 第${c.startSection}-${c.endSection}节');
+            '  ${c.name} | 周${c.weekday} | 第${c.startSection}-${c.endSection}节',
+          );
         }
         _isLoading = false;
         notifyListeners();
         _syncWidget(); // 更新桌面小部件
-        debugPrint('Schedule: Cache Loaded. Course Count: ${_courses.length}, Archive Count: ${_archives.length} at ${DateTime.now()}');
+        debugPrint(
+          'Schedule: Cache Loaded. Course Count: ${_courses.length}, Archive Count: ${_archives.length} at ${DateTime.now()}',
+        );
         return; // 缓存命中，不请求网络
       }
     }
@@ -376,9 +410,10 @@ class CourseScheduleProvider extends ChangeNotifier {
     bool localSuccess = false;
     bool networkSuccess = false;
     try {
-      final localResp = await _dio.get(
-        '/edu/courses/local',
+      final localResp = await _eduDio.get(
+        '/api/edu/courses/local',
         queryParameters: {
+          'user_id': _userId,
           'year': _selectedYear,
           'semester': _selectedSemester,
         },
@@ -398,7 +433,8 @@ class CourseScheduleProvider extends ChangeNotifier {
           debugPrint('✅ 从服务器本地加载: ${_courses.length}门课');
           for (final c in _courses) {
             debugPrint(
-                '  ${c.name} | 周${c.weekday} | 第${c.startSection}-${c.endSection}节');
+              '  ${c.name} | 周${c.weekday} | 第${c.startSection}-${c.endSection}节',
+            );
           }
         }
       }
@@ -409,9 +445,10 @@ class CourseScheduleProvider extends ChangeNotifier {
     // Step 2: 服务器本地为空，从教务系统拉取原始数据
     if (!localSuccess) {
       try {
-        final fetchResp = await _dio.post(
-          '/edu/courses',
+        final fetchResp = await _eduDio.post(
+          '/api/edu/courses/fetch',
           data: {
+            'user_id': _userId,
             'year': _selectedYear,
             'semester': _selectedSemester,
           },
@@ -421,25 +458,28 @@ class CourseScheduleProvider extends ChangeNotifier {
           final data = fetchResp.data;
           if (data['success'] == true) {
             final rawCourses = data['courses'] as List<dynamic>? ?? [];
-            if (rawCourses.isEmpty && backupCourses.isNotEmpty && !isManualRefresh) {
-               // 自动刷新（_silentSync）拉取到了 0 门课，但本地明明有课，这极大概率是教务系统抽风。
-               // 忽略这次更新，保留本地课表！
-               debugPrint('🌐 教务系统返回0门课，但本地已有课程。忽略本次更新以防数据丢失。');
-               _courses = backupCourses;
-               _buildGrid();
-               networkSuccess = false; // 假装请求失败，防止后续清理缓存
+            if (rawCourses.isEmpty &&
+                backupCourses.isNotEmpty &&
+                !isManualRefresh) {
+              // 自动刷新（_silentSync）拉取到了 0 门课，但本地明明有课，这极大概率是教务系统抽风。
+              // 忽略这次更新，保留本地课表！
+              debugPrint('🌐 教务系统返回0门课，但本地已有课程。忽略本次更新以防数据丢失。');
+              _courses = backupCourses;
+              _buildGrid();
+              networkSuccess = false; // 假装请求失败，防止后续清理缓存
             } else {
-               _courses = rawCourses
-                   .map((c) => _courseFromFetchedMap(c as Map<String, dynamic>))
-                   .where((c) => !_hiddenCourseIds.contains(c.id))
-                   .toList();
-               _buildGrid();
-               networkSuccess = true;
+              _courses = rawCourses
+                  .map((c) => _courseFromFetchedMap(c as Map<String, dynamic>))
+                  .where((c) => !_hiddenCourseIds.contains(c.id))
+                  .toList();
+              _buildGrid();
+              networkSuccess = true;
             }
             debugPrint('🌐 从教务拉取原始数据: ${_courses.length}门课');
             for (final c in _courses) {
               debugPrint(
-                  '  ${c.name} | 周${c.weekday} | 第${c.startSection}-${c.endSection}节 | ${c.teacher} | ${c.location}');
+                '  ${c.name} | 周${c.weekday} | 第${c.startSection}-${c.endSection}节 | ${c.teacher} | ${c.location}',
+              );
             }
           } else {
             _errorMessage = data['message'] as String?;
@@ -470,7 +510,9 @@ class CourseScheduleProvider extends ChangeNotifier {
     _isLoading = false;
     notifyListeners();
     _syncWidget(); // 更新桌面小部件
-    debugPrint('Schedule: Network Fetch Finished. Course Count: ${_courses.length}, Archive Count: ${_archives.length} at ${DateTime.now()}');
+    debugPrint(
+      'Schedule: Network Fetch Finished. Course Count: ${_courses.length}, Archive Count: ${_archives.length} at ${DateTime.now()}',
+    );
   }
 
   /// 同步课程数据到桌面小部件（非阻塞）
@@ -576,8 +618,11 @@ class CourseScheduleProvider extends ChangeNotifier {
   /// 设置学期起始日期（周一），持久化到 SharedPreferences
   Future<void> setSemesterStart(DateTime date) async {
     // 对齐到周一
-    _semesterStart = DateTime(date.year, date.month, date.day)
-        .subtract(Duration(days: date.weekday - 1));
+    _semesterStart = DateTime(
+      date.year,
+      date.month,
+      date.day,
+    ).subtract(Duration(days: date.weekday - 1));
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_semesterStartKey, _semesterStart!.toIso8601String());
     notifyListeners();
@@ -615,12 +660,11 @@ class CourseScheduleProvider extends ChangeNotifier {
     String? teacher,
     String? location,
   }) async {
-    final weeks = List.generate(
-      endWeek - startWeek + 1,
-      (i) => startWeek + i,
-    );
+    final weeks = List.generate(endWeek - startWeek + 1, (i) => startWeek + i);
     final colorIdx = name.hashCode.abs() % _colorPool.length;
-    final newId = -(DateTime.now().millisecondsSinceEpoch * 100 + _courses.length); // 负数ID区分自定义课程
+    final newId =
+        -(DateTime.now().millisecondsSinceEpoch * 100 +
+            _courses.length); // 负数ID区分自定义课程
 
     final course = CourseBlock(
       id: newId,
@@ -662,10 +706,7 @@ class CourseScheduleProvider extends ChangeNotifier {
     final idx = _courses.indexWhere((c) => c.id == id);
     if (idx < 0) throw Exception('课程不存在');
 
-    final weeks = List.generate(
-      endWeek - startWeek + 1,
-      (i) => startWeek + i,
-    );
+    final weeks = List.generate(endWeek - startWeek + 1, (i) => startWeek + i);
     final oldCourse = _courses[idx];
 
     final course = CourseBlock(
@@ -724,8 +765,12 @@ class CourseScheduleProvider extends ChangeNotifier {
       final jsonStr = prefs.getString(_archiveListKey);
       if (jsonStr != null) {
         final List<dynamic> list = jsonDecode(jsonStr);
-        _archives = list.map((e) => CourseArchive.fromJson(e as Map<String, dynamic>)).toList();
-        debugPrint('Schedule: Archive List Loaded. Archive Count: ${_archives.length} at ${DateTime.now()}');
+        _archives = list
+            .map((e) => CourseArchive.fromJson(e as Map<String, dynamic>))
+            .toList();
+        debugPrint(
+          'Schedule: Archive List Loaded. Archive Count: ${_archives.length} at ${DateTime.now()}',
+        );
       } else {
         _archives = [];
         debugPrint('Schedule: Archive List is empty at ${DateTime.now()}');
@@ -779,7 +824,9 @@ class CourseScheduleProvider extends ChangeNotifier {
   Future<void> importArchiveFromJson(String name, String jsonStr) async {
     final List<dynamic> list = jsonDecode(jsonStr);
     // 简单验证格式
-    final courses = list.map((e) => CourseBlock.fromJson(e as Map<String, dynamic>)).toList();
+    final courses = list
+        .map((e) => CourseBlock.fromJson(e as Map<String, dynamic>))
+        .toList();
     if (courses.isEmpty) throw Exception('课表数据为空或格式不正确');
 
     final id = 'archive_${DateTime.now().millisecondsSinceEpoch}';
@@ -791,7 +838,10 @@ class CourseScheduleProvider extends ChangeNotifier {
     );
 
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('$_archiveDataKeyPrefix$id', jsonEncode(courses.map((c) => c.toJson()).toList()));
+    await prefs.setString(
+      '$_archiveDataKeyPrefix$id',
+      jsonEncode(courses.map((c) => c.toJson()).toList()),
+    );
 
     _archives.insert(0, archive);
     await _saveArchiveList();
@@ -805,7 +855,9 @@ class CourseScheduleProvider extends ChangeNotifier {
     if (jsonStr == null) throw Exception('存档数据不存在');
 
     final List<dynamic> list = jsonDecode(jsonStr);
-    _courses = list.map((e) => CourseBlock.fromJson(e as Map<String, dynamic>)).toList();
+    _courses = list
+        .map((e) => CourseBlock.fromJson(e as Map<String, dynamic>))
+        .toList();
     _buildGrid();
 
     // 保存当前使用的存档ID

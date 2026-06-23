@@ -23,6 +23,7 @@ import 'providers/canteen_provider.dart';
 import 'providers/social_provider.dart';
 import 'models/user.dart';
 import 'screens/chat_detail_screen.dart';
+import 'screens/post_detail_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/course_schedule_screen.dart';
@@ -37,7 +38,13 @@ import 'services/diagnostic_log_service.dart';
 import 'package:crypto/crypto.dart';
 import 'dart:convert';
 
-String _hashError(String level, String source, String type, String summary, String detail) {
+String _hashError(
+  String level,
+  String source,
+  String type,
+  String summary,
+  String detail,
+) {
   final bytes = utf8.encode('$level$source$type$summary$detail');
   return md5.convert(bytes).toString();
 }
@@ -55,12 +62,12 @@ void _safeRecord({
 }) {
   final now = DateTime.now().millisecondsSinceEpoch;
   final lastTime = _dedupTimes[dedupKey] ?? 0;
-  
+
   if (now - lastTime < dedupMs) {
     return; // Deduplicate
   }
   _dedupTimes[dedupKey] = now;
-  
+
   // Clean up old entries to prevent memory leak
   if (_dedupTimes.length > 100) {
     _dedupTimes.removeWhere((_, time) => now - time > 60 * 60 * 1000);
@@ -96,10 +103,11 @@ Future<void> main() async {
 
         if (exceptionText.contains('_ClientSocketException') &&
             details.library == 'image resource service') {
-          
-          final hostMatch = RegExp(r'address\s*=\s*([^\s,:]+)').firstMatch(exceptionText);
+          final hostMatch = RegExp(
+            r'address\s*=\s*([^\s,:]+)',
+          ).firstMatch(exceptionText);
           final host = hostMatch?.group(1) ?? 'unknown';
-          
+
           _safeRecord(
             level: 'warning',
             source: '图片',
@@ -119,7 +127,13 @@ Future<void> main() async {
           type: details.exception.runtimeType.toString(),
           summary: exceptionText,
           detail: fullString,
-          dedupKey: _hashError('error', 'Flutter', details.exception.runtimeType.toString(), exceptionText, fullString),
+          dedupKey: _hashError(
+            'error',
+            'Flutter',
+            details.exception.runtimeType.toString(),
+            exceptionText,
+            fullString,
+          ),
           dedupMs: 2000,
         );
       };
@@ -134,7 +148,13 @@ Future<void> main() async {
           type: error.runtimeType.toString(),
           summary: exceptionText,
           detail: fullString,
-          dedupKey: _hashError('error', 'Flutter', error.runtimeType.toString(), exceptionText, fullString),
+          dedupKey: _hashError(
+            'error',
+            'Flutter',
+            error.runtimeType.toString(),
+            exceptionText,
+            fullString,
+          ),
           dedupMs: 2000,
         );
         return true;
@@ -142,15 +162,20 @@ Future<void> main() async {
 
       // 强制沉浸式（Edge-to-Edge），解决悬浮底栏下方的系统黑条空挡问题
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-      SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-        systemNavigationBarColor: Colors.transparent,
-        statusBarColor: Colors.transparent,
-      ));
+      SystemChrome.setSystemUIOverlayStyle(
+        const SystemUiOverlayStyle(
+          systemNavigationBarColor: Colors.transparent,
+          statusBarColor: Colors.transparent,
+        ),
+      );
 
       await Hive.initFlutter();
-      await CourseReminderService.instance.initialize();
-      await _initializePrivateMessageNotifications();
       runApp(const MyApp());
+
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        CourseReminderService.instance.initialize();
+        _initializePrivateMessageNotifications();
+      });
     },
     (error, stack) {
       final exceptionText = error.toString();
@@ -161,7 +186,13 @@ Future<void> main() async {
         type: error.runtimeType.toString(),
         summary: exceptionText,
         detail: fullString,
-        dedupKey: _hashError('error', 'Dart', error.runtimeType.toString(), exceptionText, fullString),
+        dedupKey: _hashError(
+          'error',
+          'Dart',
+          error.runtimeType.toString(),
+          exceptionText,
+          fullString,
+        ),
         dedupMs: 2000,
       );
     },
@@ -173,12 +204,51 @@ var jpush = JPush.newJPush();
 final FlutterLocalNotificationsPlugin _privateMessageNotifications =
     FlutterLocalNotificationsPlugin();
 bool _privateMessageNotificationsReady = false;
-const MethodChannel _privateMessageNotificationChannel =
-    MethodChannel('shenliyuan/private_message_notifications');
+const MethodChannel _privateMessageNotificationChannel = MethodChannel(
+  'shenliyuan/private_message_notifications',
+);
 
 /// 冷启动时通知数据临时存放（navigator 未就绪前）
 final PendingPrivateMessageOpen _pendingPrivateMessageOpen =
     PendingPrivateMessageOpen();
+
+typedef NavigatorAction = void Function(NavigatorState navigator);
+
+class PendingNavigatorAction {
+  PendingNavigatorAction({this.ttl = const Duration(seconds: 10)});
+  final Duration ttl;
+  NavigatorAction? _action;
+  DateTime? _readyAt;
+
+  void store(NavigatorAction action) {
+    _action = action;
+    _readyAt = null;
+  }
+
+  void markReady(DateTime now) {
+    if (_action == null || _readyAt != null) return;
+    _readyAt = now;
+  }
+
+  NavigatorAction? consume(DateTime now) {
+    final action = _action;
+    if (action == null) return null;
+    final readyAt = _readyAt;
+    if (readyAt != null && now.difference(readyAt) > ttl) {
+      clear();
+      return null;
+    }
+    clear();
+    return action;
+  }
+
+  void clear() {
+    _action = null;
+    _readyAt = null;
+  }
+}
+
+final PendingNavigatorAction _pendingNavigatorAction = PendingNavigatorAction();
 
 Future<void> setupJPush(AuthProvider authProvider) async {
   jpush.setup(
@@ -189,33 +259,61 @@ Future<void> setupJPush(AuthProvider authProvider) async {
   );
   jpush.addEventHandler(
     onReceiveNotification: (Map<String, dynamic> message) async {
-      debugPrint('🔔 收到通知: $message');
       await _handlePrivateMessageNotification(message, opened: false);
     },
     onNotifyMessageUnShow: (Map<String, dynamic> message) async {
-      debugPrint('🔕 通知已被原生拦截: $message');
       await _handlePrivateMessageNotification(message, opened: false);
     },
     onOpenNotification: (Map<String, dynamic> message) async {
-      debugPrint('👆 点击通知原始数据: $message');
       if (await _handleUpdateNotification(message)) return;
       if (await _handlePrivateMessageNotification(message, opened: true)) {
         return;
       }
-      if (appNavigatorKey.currentState != null) {
-        appNavigatorKey.currentState!.popUntil((route) => route.isFirst);
-        appNavigatorKey.currentState!.push(
-          MaterialPageRoute(builder: (_) => const UserRepliesScreen()),
-        );
+
+      final extras = extractJPushExtras(message);
+      final type = extras['type']?.toString();
+
+      WidgetBuilder? routeBuilder;
+
+      if (type == 'reply') {
+        final postId = intFromNotificationExtra(extras['post_id']);
+        final replyId = intFromNotificationExtra(extras['reply_id']);
+        if (postId != null) {
+          routeBuilder = (_) => PostDetailScreen(postId: postId, targetReplyId: replyId);
+        } else {
+          routeBuilder = (_) => const UserRepliesScreen();
+        }
+      } else if (type == 'market_post') {
+        final postId = intFromNotificationExtra(extras['post_id']);
+        if (postId != null) {
+          routeBuilder = (_) => PostDetailScreen(postId: postId);
+        }
+      } else {
+        routeBuilder = (_) => const UserRepliesScreen();
+      }
+
+      if (routeBuilder != null) {
+        // 尝试拉起 App
+        const channel = MethodChannel('shenliyuan/foreground');
+        channel.invokeMethod('bringToForeground').catchError((e) {});
+
+        void doNavigation(NavigatorState navigator) {
+          navigator.popUntil((route) => route.isFirst);
+          navigator.push(MaterialPageRoute(builder: routeBuilder!));
+        }
+
+        if (appNavigatorKey.currentState != null) {
+          doNavigation(appNavigatorKey.currentState!);
+        } else {
+          _pendingNavigatorAction.store(doNavigation);
+        }
       }
     },
   );
   final rid = await jpush.getRegistrationID();
-  debugPrint('🔥 JPush RegistrationID: $rid');
 
   if (rid.isNotEmpty) {
     await authProvider.updateDeviceToken(rid);
-    debugPrint('✅ 成功上报 JPush Device Token: $rid');
   }
   final userId = authProvider.user?.id;
   if (userId != null) {
@@ -302,14 +400,13 @@ Future<bool> _handlePrivateMessageNotification(
   required bool opened,
 }) async {
   final extras = extractJPushExtras(message);
-  debugPrint('📨 解析后extras: $extras');
   if (extras['type']?.toString() != 'private_message') {
     return false;
   }
 
   final target = privateMessageTargetFromJPushMessage(message);
   if (target == null) {
-    debugPrint('私信推送缺少 conversation_id 或 sender_id: $message');
+    debugPrint('私信推送缺少 conversation_id 或 sender_id');
     return true;
   }
 
@@ -415,16 +512,25 @@ PrivateMessageTarget _resolvePrivateMessageTarget(PrivateMessageTarget target) {
 void _processPendingOpenNotification() {
   final now = DateTime.now();
   _pendingPrivateMessageOpen.markReady(now);
+  _pendingNavigatorAction.markReady(now);
+  
   if (appNavigatorKey.currentState == null) {
     debugPrint('📌 等待 navigator 就绪后再处理私信通知');
     return;
   }
+  
   final target = _pendingPrivateMessageOpen.consume(now);
   if (target != null) {
     debugPrint(
       '✅ 处理缓冲通知: conv=${target.conversationId} sender=${target.senderId}',
     );
     _navigateToPrivateMessage(target);
+  }
+
+  final action = _pendingNavigatorAction.consume(now);
+  if (action != null) {
+    debugPrint('✅ 处理通用缓冲路由通知');
+    action(appNavigatorKey.currentState!);
   }
 }
 
@@ -437,7 +543,7 @@ Future<bool> _handleUpdateNotification(Map<String, dynamic> message) async {
   final downloadUrl = extras['download_url']?.toString() ?? '';
   final uri = Uri.tryParse(downloadUrl);
   if (uri == null || !uri.hasScheme || !uri.hasAuthority) {
-    debugPrint('更新推送缺少有效下载地址: $message');
+    debugPrint('更新推送缺少有效下载地址');
     return true;
   }
 
@@ -455,32 +561,65 @@ Future<bool> _handleUpdateNotification(Map<String, dynamic> message) async {
   return true;
 }
 
+class SafeLogInterceptor extends Interceptor {
+  @override
+  void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
+    if (kDebugMode) {
+      debugPrint('[HTTP] -> ${options.method} ${options.uri.path}');
+    }
+    super.onRequest(options, handler);
+  }
+
+  @override
+  void onResponse(Response response, ResponseInterceptorHandler handler) {
+    if (kDebugMode) {
+      final data = response.data;
+      String summary = '';
+      if (data is List) {
+        summary = 'List(length=${data.length})';
+      } else if (data is Map) {
+        summary = 'Map(keys=${data.keys.take(10).join(',')})';
+      } else if (data != null) {
+        if (data is String) {
+          summary = 'String(length=${data.length > 50 ? '>50' : data.length})';
+        } else {
+          summary = 'Data(type=${data.runtimeType})';
+        }
+      }
+      debugPrint(
+        '[HTTP] <- ${response.requestOptions.method} ${response.requestOptions.uri.path} ${response.statusCode} $summary',
+      );
+    }
+    super.onResponse(response, handler);
+  }
+
+  @override
+  void onError(DioException err, ErrorInterceptorHandler handler) {
+    if (kDebugMode) {
+      debugPrint(
+        '[HTTP] <- ERROR ${err.requestOptions.method} ${err.requestOptions.uri.path} ${err.response?.statusCode} type=${err.type}',
+      );
+    }
+    super.onError(err, handler);
+  }
+}
+
 Dio? _sharedDio;
 
 Dio getSharedDio() {
   if (_sharedDio == null) {
-    final dio = Dio(BaseOptions(
-      baseUrl: ApiConstants.baseUrl,
-      connectTimeout: ApiConstants.connectTimeout,
-      receiveTimeout: ApiConstants.receiveTimeout,
-      sendTimeout: ApiConstants.sendTimeout,
-    ));
+    final dio = Dio(
+      BaseOptions(
+        baseUrl: ApiConstants.baseUrl,
+        connectTimeout: ApiConstants.connectTimeout,
+        receiveTimeout: ApiConstants.receiveTimeout,
+        sendTimeout: ApiConstants.sendTimeout,
+      ),
+    );
 
     if (kDebugMode) {
-      dio.interceptors.add(LogInterceptor(
-        requestBody: true,
-        responseBody: true,
-        logPrint: (o) => debugPrint(o.toString()),
-      ));
+      dio.interceptors.add(SafeLogInterceptor());
     }
-
-    dio.interceptors.add(InterceptorsWrapper(
-      onError: (error, handler) {
-        debugPrint(
-            'DioError [${error.response?.statusCode}]: ${error.requestOptions.uri}');
-        handler.next(error);
-      },
-    ));
 
     _sharedDio = dio;
   }
@@ -501,15 +640,13 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => PostProvider(dio)),
         ChangeNotifierProvider(create: (_) => MessageProvider(dio)),
         ChangeNotifierProvider(create: (_) => EduProvider(dio)),
-        ChangeNotifierProvider(create: (_) => CourseScheduleProvider(dio)),
+        ChangeNotifierProvider(create: (_) => CourseScheduleProvider()),
         ChangeNotifierProvider(create: (_) => TeacherProvider(dio)),
         ChangeNotifierProvider(create: (_) => MajorProvider(dio)),
         ChangeNotifierProvider(create: (_) => CanteenProvider(dio)),
         ChangeNotifierProvider(create: (_) => SocialProvider(dio)),
       ],
-      child: const _WidgetDeepLinkHandler(
-        child: _AppContent(),
-      ),
+      child: const _WidgetDeepLinkHandler(child: _AppContent()),
     );
   }
 }
@@ -547,7 +684,8 @@ class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
         } else if (uri != null && uri.startsWith('widget_exam') && mounted) {
           appNavigatorKey.currentState?.popUntil((route) => route.isFirst);
           appNavigatorKey.currentState?.push(
-              MaterialPageRoute(builder: (_) => const ExamScheduleScreen()));
+            MaterialPageRoute(builder: (_) => const ExamScheduleScreen()),
+          );
         }
       }
     });
@@ -577,7 +715,8 @@ class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
       } else if (uri != null && uri.startsWith('widget_exam') && mounted) {
         appNavigatorKey.currentState?.popUntil((route) => route.isFirst);
         appNavigatorKey.currentState?.push(
-            MaterialPageRoute(builder: (_) => const ExamScheduleScreen()));
+          MaterialPageRoute(builder: (_) => const ExamScheduleScreen()),
+        );
       }
     } catch (e) {
       debugPrint('深度链接检查失败: $e');
@@ -622,15 +761,11 @@ class _AppContent extends StatelessWidget {
       routes: {
         '/login': (context) => const LoginScreen(),
         '/timetable': (context) => const PredictiveBackGate(
-              child: GlobalBackgroundWrapper(
-                child: CourseScheduleScreen(),
-              ),
+              child: GlobalBackgroundWrapper(child: CourseScheduleScreen()),
             ),
       },
       home: const PredictiveBackGate(
-        child: GlobalBackgroundWrapper(
-          child: AuthWrapper(),
-        ),
+        child: GlobalBackgroundWrapper(child: AuthWrapper()),
       ),
     );
   }
@@ -642,10 +777,7 @@ final GlobalKey<BackgroundWrapperState> backgroundWrapperKey =
 class GlobalBackgroundWrapper extends StatefulWidget {
   final Widget child;
 
-  const GlobalBackgroundWrapper({
-    super.key,
-    required this.child,
-  });
+  const GlobalBackgroundWrapper({super.key, required this.child});
 
   @override
   State<GlobalBackgroundWrapper> createState() => BackgroundWrapperState();
@@ -714,6 +846,7 @@ class BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
           alignment: alignment,
           isDark: isDark,
           fillScreen: fillScreen,
+          blur: themeProvider.backgroundBlur,
         ),
         // Color overlay (fixed — componentOpacity controls GlassContainer, not background)
         Container(
@@ -730,6 +863,7 @@ class BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
     required Alignment alignment,
     required bool isDark,
     required bool fillScreen,
+    required double blur,
   }) {
     if (fillScreen) {
       return Image(
@@ -749,7 +883,7 @@ class BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
         Transform.scale(
           scale: 1.06,
           child: ImageFiltered(
-            imageFilter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+            imageFilter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
             child: Image(
               image: imageProvider,
               fit: BoxFit.cover,
@@ -787,6 +921,7 @@ class BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
           alignment: Alignment.center,
           isDark: isDark,
           fillScreen: false,
+          blur: context.read<ThemeProvider>().backgroundBlur,
         ),
         Container(
           color: isDark
@@ -839,10 +974,8 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
     _checkingNativePrivateMessage = true;
 
     try {
-      final payload =
-          await _privateMessageNotificationChannel.invokeMethod<String>(
-        'getPendingPrivateMessage',
-      );
+      final payload = await _privateMessageNotificationChannel
+          .invokeMethod<String>('getPendingPrivateMessage');
 
       if (payload == null || payload.isEmpty) return;
 

@@ -27,7 +27,8 @@ class Conversation {
       id: json['id'] ?? 0,
       user1Id: json['user1_id'] ?? 0,
       user2Id: json['user2_id'] ?? 0,
-      lastMessageAt: DateTime.tryParse(json['last_message_at'] ?? '') ??
+      lastMessageAt:
+          DateTime.tryParse(json['last_message_at'] ?? '') ??
           DateTime.tryParse(json['created_at'] ?? '') ??
           DateTime.now(),
       user1: json['user1'] != null ? User.fromJson(json['user1']) : null,
@@ -93,8 +94,9 @@ class Message {
       content: json['content'] ?? '',
       fileId: json['file_id'],
       createdAt: DateTime.tryParse(json['created_at'] ?? '') ?? DateTime.now(),
-      readAt:
-          json['read_at'] != null ? DateTime.tryParse(json['read_at']) : null,
+      readAt: json['read_at'] != null
+          ? DateTime.tryParse(json['read_at'])
+          : null,
       sender: json['sender'] != null ? User.fromJson(json['sender']) : null,
       file: json['file'] != null ? FileItem.fromJson(json['file']) : null,
     );

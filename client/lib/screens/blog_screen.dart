@@ -123,7 +123,9 @@ class _BlogScreenState extends State<BlogScreen> {
             colors: [Color(0xFF1E293B), Color(0xFF0F172A)],
           ),
           border: Border.all(
-              color: const Color(0xFF22C55E).withValues(alpha: 0.25), width: 1),
+            color: const Color(0xFF22C55E).withValues(alpha: 0.25),
+            width: 1,
+          ),
           boxShadow: [
             BoxShadow(
               color: const Color(0xFF22C55E).withValues(alpha: 0.08),
@@ -143,10 +145,11 @@ class _BlogScreenState extends State<BlogScreen> {
                 child: Text(
                   '</>',
                   style: TextStyle(
-                      fontSize: 120,
-                      fontWeight: FontWeight.w900,
-                      color: Colors.green[300],
-                      fontFamily: 'monospace'),
+                    fontSize: 120,
+                    fontWeight: FontWeight.w900,
+                    color: Colors.green[300],
+                    fontFamily: 'monospace',
+                  ),
                 ),
               ),
             ),
@@ -161,21 +164,29 @@ class _BlogScreenState extends State<BlogScreen> {
                     children: [
                       Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 3),
+                          horizontal: 8,
+                          vertical: 3,
+                        ),
                         decoration: BoxDecoration(
-                          color:
-                              const Color(0xFF22C55E).withValues(alpha: 0.15),
+                          color: const Color(
+                            0xFF22C55E,
+                          ).withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(4),
                           border: Border.all(
-                              color: const Color(0xFF22C55E)
-                                  .withValues(alpha: 0.3)),
+                            color: const Color(
+                              0xFF22C55E,
+                            ).withValues(alpha: 0.3),
+                          ),
                         ),
-                        child: const Text('精选',
-                            style: TextStyle(
-                                color: Color(0xFF22C55E),
-                                fontSize: 10,
-                                fontWeight: FontWeight.w600,
-                                fontFamily: 'monospace')),
+                        child: const Text(
+                          '精选',
+                          style: TextStyle(
+                            color: Color(0xFF22C55E),
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                            fontFamily: 'monospace',
+                          ),
+                        ),
                       ),
                     ],
                   ),
@@ -223,7 +234,11 @@ class _BlogScreenState extends State<BlogScreen> {
   }) {
     return GestureDetector(
       onTap: () => _openArticle(
-          title: title, content: _sampleFlutterArticle, tags: tags, date: date),
+        title: title,
+        content: _sampleFlutterArticle,
+        tags: tags,
+        date: date,
+      ),
       child: Container(
         padding: const EdgeInsets.all(18),
         decoration: BoxDecoration(
@@ -239,19 +254,26 @@ class _BlogScreenState extends State<BlogScreen> {
               spacing: 6,
               runSpacing: 4,
               children: tags
-                  .map((t) => Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF334155),
-                          borderRadius: BorderRadius.circular(4),
+                  .map(
+                    (t) => Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF334155),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        t,
+                        style: const TextStyle(
+                          color: Color(0xFF94A3B8),
+                          fontSize: 10,
+                          fontFamily: 'monospace',
                         ),
-                        child: Text(t,
-                            style: const TextStyle(
-                                color: Color(0xFF94A3B8),
-                                fontSize: 10,
-                                fontFamily: 'monospace')),
-                      ))
+                      ),
+                    ),
+                  )
                   .toList(),
             ),
             const SizedBox(height: 12),
@@ -283,14 +305,20 @@ class _BlogScreenState extends State<BlogScreen> {
             // 日期 + 箭头
             Row(
               children: [
-                Text(date,
-                    style: const TextStyle(
-                        color: Color(0xFF475569),
-                        fontSize: 11,
-                        fontFamily: 'monospace')),
+                Text(
+                  date,
+                  style: const TextStyle(
+                    color: Color(0xFF475569),
+                    fontSize: 11,
+                    fontFamily: 'monospace',
+                  ),
+                ),
                 const Spacer(),
-                const Icon(Icons.arrow_forward,
-                    color: Color(0xFF475569), size: 16),
+                const Icon(
+                  Icons.arrow_forward,
+                  color: Color(0xFF475569),
+                  size: 16,
+                ),
               ],
             ),
           ],
@@ -360,15 +388,13 @@ class _ArticleReaderState extends State<_ArticleReader> {
 
   void _addComment() {
     if (_commentController.text.isEmpty) return;
-    if (mounted) setState(() {
-      _comments.insert(
+    if (mounted)
+      setState(() {
+        _comments.insert(
           0,
-          _BlogComment(
-            author: '我',
-            text: _commentController.text,
-            time: '刚刚',
-          ));
-    });
+          _BlogComment(author: '我', text: _commentController.text, time: '刚刚'),
+        );
+      });
     _commentController.clear();
   }
 
@@ -389,12 +415,15 @@ class _ArticleReaderState extends State<_ArticleReader> {
           icon: const Icon(Icons.arrow_back, color: Color(0xFF94A3B8)),
           onPressed: () => Navigator.pop(context),
         ),
-        title: Text(widget.title,
-            style: const TextStyle(
-                fontFamily: 'monospace',
-                fontWeight: FontWeight.w600,
-                fontSize: 16,
-                color: Color(0xFFE2E8F0))),
+        title: Text(
+          widget.title,
+          style: const TextStyle(
+            fontFamily: 'monospace',
+            fontWeight: FontWeight.w600,
+            fontSize: 16,
+            color: Color(0xFFE2E8F0),
+          ),
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.share, color: Color(0xFF64748B), size: 20),
@@ -411,45 +440,60 @@ class _ArticleReaderState extends State<_ArticleReader> {
               // 标签
               Row(
                 children: [
-                  ...widget.tags.map((t) => Padding(
-                        padding: const EdgeInsets.only(right: 8),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 3),
-                          decoration: BoxDecoration(
-                            color:
-                                const Color(0xFF22C55E).withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(t,
-                              style: const TextStyle(
-                                  color: Color(0xFF22C55E),
-                                  fontSize: 10,
-                                  fontFamily: 'monospace')),
+                  ...widget.tags.map(
+                    (t) => Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 3,
                         ),
-                      )),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF22C55E).withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          t,
+                          style: const TextStyle(
+                            color: Color(0xFF22C55E),
+                            fontSize: 10,
+                            fontFamily: 'monospace',
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
                   const Spacer(),
-                  Text(widget.date,
-                      style: const TextStyle(
-                          color: Color(0xFF475569),
-                          fontSize: 11,
-                          fontFamily: 'monospace')),
+                  Text(
+                    widget.date,
+                    style: const TextStyle(
+                      color: Color(0xFF475569),
+                      fontSize: 11,
+                      fontFamily: 'monospace',
+                    ),
+                  ),
                 ],
               ),
               const SizedBox(height: 20),
-              Text(widget.title,
-                  style: const TextStyle(
-                      color: Color(0xFFF1F5F9),
-                      fontSize: 22,
-                      fontWeight: FontWeight.w700,
-                      fontFamily: 'monospace',
-                      height: 1.3)),
+              Text(
+                widget.title,
+                style: const TextStyle(
+                  color: Color(0xFFF1F5F9),
+                  fontSize: 22,
+                  fontWeight: FontWeight.w700,
+                  fontFamily: 'monospace',
+                  height: 1.3,
+                ),
+              ),
               const SizedBox(height: 8),
-              const Text('作者: 沈理校园 · 阅读 5 min',
-                  style: TextStyle(
-                      color: Color(0xFF64748B),
-                      fontSize: 12,
-                      fontFamily: 'monospace')),
+              const Text(
+                '作者: 沈理校园 · 阅读 5 min',
+                style: TextStyle(
+                  color: Color(0xFF64748B),
+                  fontSize: 12,
+                  fontFamily: 'monospace',
+                ),
+              ),
               const SizedBox(height: 24),
               Divider(color: Colors.white.withValues(alpha: 0.06)),
               const SizedBox(height: 20),
@@ -482,15 +526,21 @@ class _ArticleReaderState extends State<_ArticleReader> {
         const SizedBox(height: 12),
         Row(
           children: [
-            const Icon(Icons.chat_bubble_outline,
-                color: Color(0xFF475569), size: 15),
+            const Icon(
+              Icons.chat_bubble_outline,
+              color: Color(0xFF475569),
+              size: 15,
+            ),
             const SizedBox(width: 6),
-            Text('评论 ${_comments.length}',
-                style: const TextStyle(
-                    color: Color(0xFF64748B),
-                    fontSize: 12,
-                    fontFamily: 'monospace',
-                    fontWeight: FontWeight.w600)),
+            Text(
+              '评论 ${_comments.length}',
+              style: const TextStyle(
+                color: Color(0xFF64748B),
+                fontSize: 12,
+                fontFamily: 'monospace',
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ],
         ),
         const SizedBox(height: 10),
@@ -511,15 +561,17 @@ class _ArticleReaderState extends State<_ArticleReader> {
                 child: TextField(
                   controller: _commentController,
                   style: const TextStyle(
-                      color: Color(0xFFCBD5E1),
-                      fontSize: 13,
-                      fontFamily: 'monospace'),
+                    color: Color(0xFFCBD5E1),
+                    fontSize: 13,
+                    fontFamily: 'monospace',
+                  ),
                   decoration: const InputDecoration(
                     hintText: '写下你的问题或想法...',
                     hintStyle: TextStyle(
-                        color: Color(0xFF475569),
-                        fontSize: 12,
-                        fontFamily: 'monospace'),
+                      color: Color(0xFF475569),
+                      fontSize: 12,
+                      fontFamily: 'monospace',
+                    ),
                     border: InputBorder.none,
                     isDense: true,
                     contentPadding: EdgeInsets.symmetric(vertical: 10),
@@ -530,8 +582,11 @@ class _ArticleReaderState extends State<_ArticleReader> {
               const SizedBox(width: 8),
               GestureDetector(
                 onTap: _addComment,
-                child: const Icon(Icons.send_rounded,
-                    color: Color(0xFF22C55E), size: 20),
+                child: const Icon(
+                  Icons.send_rounded,
+                  color: Color(0xFF22C55E),
+                  size: 20,
+                ),
               ),
             ],
           ),
@@ -554,12 +609,15 @@ class _ArticleReaderState extends State<_ArticleReader> {
               borderRadius: BorderRadius.circular(8),
             ),
             alignment: Alignment.center,
-            child: Text(comment.author[0].toUpperCase(),
-                style: const TextStyle(
-                    color: Color(0xFF22C55E),
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    fontFamily: 'monospace')),
+            child: Text(
+              comment.author[0].toUpperCase(),
+              style: const TextStyle(
+                color: Color(0xFF22C55E),
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                fontFamily: 'monospace',
+              ),
+            ),
           ),
           const SizedBox(width: 10),
           Expanded(
@@ -568,27 +626,36 @@ class _ArticleReaderState extends State<_ArticleReader> {
               children: [
                 Row(
                   children: [
-                    Text(comment.author,
-                        style: const TextStyle(
-                            color: Color(0xFFE2E8F0),
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            fontFamily: 'monospace')),
+                    Text(
+                      comment.author,
+                      style: const TextStyle(
+                        color: Color(0xFFE2E8F0),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        fontFamily: 'monospace',
+                      ),
+                    ),
                     const SizedBox(width: 8),
-                    Text(comment.time,
-                        style: const TextStyle(
-                            color: Color(0xFF475569),
-                            fontSize: 10,
-                            fontFamily: 'monospace')),
+                    Text(
+                      comment.time,
+                      style: const TextStyle(
+                        color: Color(0xFF475569),
+                        fontSize: 10,
+                        fontFamily: 'monospace',
+                      ),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 3),
-                Text(comment.text,
-                    style: const TextStyle(
-                        color: Color(0xFF94A3B8),
-                        fontSize: 13,
-                        fontFamily: 'monospace',
-                        height: 1.45)),
+                Text(
+                  comment.text,
+                  style: const TextStyle(
+                    color: Color(0xFF94A3B8),
+                    fontSize: 13,
+                    fontFamily: 'monospace',
+                    height: 1.45,
+                  ),
+                ),
               ],
             ),
           ),
@@ -602,11 +669,14 @@ class _ArticleReaderState extends State<_ArticleReader> {
       children: [
         Icon(icon, color: const Color(0xFF64748B), size: 18),
         const SizedBox(width: 6),
-        Text(label,
-            style: const TextStyle(
-                color: Color(0xFF64748B),
-                fontSize: 13,
-                fontFamily: 'monospace')),
+        Text(
+          label,
+          style: const TextStyle(
+            color: Color(0xFF64748B),
+            fontSize: 13,
+            fontFamily: 'monospace',
+          ),
+        ),
       ],
     );
   }
@@ -629,40 +699,49 @@ class _ArticleReaderState extends State<_ArticleReader> {
 
       if (line.startsWith('## ')) {
         if (spans.isNotEmpty) spans.add(const TextSpan(text: '\n'));
-        spans.add(TextSpan(
-          text: '${line.substring(3)}\n',
-          style: const TextStyle(
+        spans.add(
+          TextSpan(
+            text: '${line.substring(3)}\n',
+            style: const TextStyle(
               fontWeight: FontWeight.w700,
               fontSize: 18,
               color: Color(0xFFE2E8F0),
               fontFamily: 'monospace',
-              height: 1.5),
-        ));
+              height: 1.5,
+            ),
+          ),
+        );
         continue;
       }
 
       if (line.startsWith('- ')) {
-        spans.add(TextSpan(
-          text: '  › ${line.substring(2)}\n',
-          style: const TextStyle(
+        spans.add(
+          TextSpan(
+            text: '  › ${line.substring(2)}\n',
+            style: const TextStyle(
               color: Color(0xFFCBD5E1),
               fontSize: 15,
               fontFamily: 'monospace',
-              height: 1.7),
-        ));
+              height: 1.7,
+            ),
+          ),
+        );
         continue;
       }
 
       if (inCodeBlock) {
-        spans.add(TextSpan(
-          text: '  $line\n',
-          style: const TextStyle(
+        spans.add(
+          TextSpan(
+            text: '  $line\n',
+            style: const TextStyle(
               color: Color(0xFF22C55E),
               fontSize: 13,
               fontFamily: 'monospace',
               backgroundColor: Color(0x111E293B),
-              height: 1.6),
-        ));
+              height: 1.6,
+            ),
+          ),
+        );
         continue;
       }
 
@@ -672,59 +751,72 @@ class _ArticleReaderState extends State<_ArticleReader> {
         int lastEnd = 0;
         for (final match in matches) {
           if (match.start > lastEnd) {
-            spans.add(TextSpan(
-              text: line.substring(lastEnd, match.start),
-              style: const TextStyle(
+            spans.add(
+              TextSpan(
+                text: line.substring(lastEnd, match.start),
+                style: const TextStyle(
                   color: Color(0xFFCBD5E1),
                   fontSize: 15,
                   fontFamily: 'monospace',
-                  height: 1.7),
-            ));
+                  height: 1.7,
+                ),
+              ),
+            );
           }
           final url = match.group(0)!;
-          spans.add(TextSpan(
-            text: url,
-            style: const TextStyle(
+          spans.add(
+            TextSpan(
+              text: url,
+              style: const TextStyle(
                 color: Color(0xFF22C55E),
                 fontSize: 15,
                 fontFamily: 'monospace',
                 decoration: TextDecoration.underline,
-                height: 1.7),
-            recognizer: TapGestureRecognizer()..onTap = () => _launchUrl(url),
-          ));
+                height: 1.7,
+              ),
+              recognizer: TapGestureRecognizer()..onTap = () => _launchUrl(url),
+            ),
+          );
           lastEnd = match.end;
         }
         if (lastEnd < line.length) {
-          spans.add(TextSpan(
-            text: '${line.substring(lastEnd)}\n',
-            style: const TextStyle(
+          spans.add(
+            TextSpan(
+              text: '${line.substring(lastEnd)}\n',
+              style: const TextStyle(
                 color: Color(0xFFCBD5E1),
                 fontSize: 15,
                 fontFamily: 'monospace',
-                height: 1.7),
-          ));
+                height: 1.7,
+              ),
+            ),
+          );
         } else {
           spans.add(const TextSpan(text: '\n'));
         }
       } else {
-        spans.add(TextSpan(
-          text: '$line\n',
-          style: const TextStyle(
+        spans.add(
+          TextSpan(
+            text: '$line\n',
+            style: const TextStyle(
               color: Color(0xFFCBD5E1),
               fontSize: 15,
               fontFamily: 'monospace',
-              height: 1.7),
-        ));
+              height: 1.7,
+            ),
+          ),
+        );
       }
     }
 
     return SelectableText.rich(
       TextSpan(children: spans),
       style: const TextStyle(
-          color: Color(0xFFCBD5E1),
-          fontSize: 15,
-          fontFamily: 'monospace',
-          height: 1.7),
+        color: Color(0xFFCBD5E1),
+        fontSize: 15,
+        fontFamily: 'monospace',
+        height: 1.7,
+      ),
       cursorColor: const Color(0xFF22C55E),
     );
   }
@@ -736,8 +828,11 @@ class _BlogComment {
   final String author;
   final String text;
   final String time;
-  const _BlogComment(
-      {required this.author, required this.text, required this.time});
+  const _BlogComment({
+    required this.author,
+    required this.text,
+    required this.time,
+  });
 }
 
 // ---- 点阵背景绘制器 ----

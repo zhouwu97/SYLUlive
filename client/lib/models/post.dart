@@ -111,9 +111,11 @@ class Post {
       replyCount: json['reply_count'] ?? 0,
       likeCount: json['like_count'] ?? 0,
       isLiked: json['is_liked'] == true,
-      images: (json['images'] as List<dynamic>?)
-          ?.map((e) => PostImage.fromJson(e))
-          .toList() ?? [],
+      images:
+          (json['images'] as List<dynamic>?)
+              ?.map((e) => PostImage.fromJson(e))
+              .toList() ??
+          [],
       author: json['author'] != null ? User.fromJson(json['author']) : null,
       createdAt: DateTime.tryParse(json['created_at'] ?? '') ?? DateTime.now(),
     );

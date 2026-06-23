@@ -47,12 +47,15 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
 
     try {
       final auth = context.read<AuthProvider>();
-      final response = await auth.dio.post('/feedback', data: {
-        'content': content,
-        'type': _type,
-        'images': _uploadedImages,
-        'contact': _contactController.text.trim(),
-      });
+      final response = await auth.dio.post(
+        '/feedback',
+        data: {
+          'content': content,
+          'type': _type,
+          'images': _uploadedImages,
+          'contact': _contactController.text.trim(),
+        },
+      );
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         if (mounted) {
@@ -74,11 +77,20 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
     }
   }
 
-  Widget _buildTypeButton(String type, String label, IconData icon, Color color) {
+  Widget _buildTypeButton(
+    String type,
+    String label,
+    IconData icon,
+    Color color,
+  ) {
     final isSelected = _type == type;
     final primaryColor = Theme.of(context).colorScheme.primary;
-    final borderColor = isSelected ? primaryColor : Theme.of(context).dividerColor;
-    final bgColor = isSelected ? primaryColor.withValues(alpha: 0.1) : Colors.transparent;
+    final borderColor = isSelected
+        ? primaryColor
+        : Theme.of(context).dividerColor;
+    final bgColor = isSelected
+        ? primaryColor.withValues(alpha: 0.1)
+        : Colors.transparent;
     final contentColor = isSelected ? primaryColor : Colors.grey[600];
 
     return Expanded(
@@ -88,7 +100,10 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
           padding: const EdgeInsets.symmetric(vertical: 12),
           decoration: BoxDecoration(
             color: bgColor,
-            border: Border.all(color: borderColor, width: isSelected ? 2.0 : 1.0),
+            border: Border.all(
+              color: borderColor,
+              width: isSelected ? 2.0 : 1.0,
+            ),
             borderRadius: BorderRadius.circular(8),
           ),
           child: Row(
@@ -136,9 +151,19 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
             const SizedBox(height: 12),
             Row(
               children: [
-                _buildTypeButton('bug', '报告 Bug', Icons.bug_report_outlined, Colors.red),
+                _buildTypeButton(
+                  'bug',
+                  '报告 Bug',
+                  Icons.bug_report_outlined,
+                  Colors.red,
+                ),
                 const SizedBox(width: 16),
-                _buildTypeButton('suggestion', '功能建议', Icons.lightbulb_outline, Colors.blue),
+                _buildTypeButton(
+                  'suggestion',
+                  '功能建议',
+                  Icons.lightbulb_outline,
+                  Colors.blue,
+                ),
               ],
             ),
             const SizedBox(height: 24),
@@ -160,9 +185,17 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
               controller: _contentController,
               maxLines: 10,
               maxLength: 500,
-              buildCounter: (context, {required currentLength, required isFocused, maxLength}) => null,
+              buildCounter:
+                  (
+                    context, {
+                    required currentLength,
+                    required isFocused,
+                    maxLength,
+                  }) => null,
               decoration: InputDecoration(
-                hintText: _type == 'bug' ? '请描述您遇到的问题、设备型号及复现步骤...' : '请输入您的宝贵建议...',
+                hintText: _type == 'bug'
+                    ? '请描述您遇到的问题、设备型号及复现步骤...'
+                    : '请输入您的宝贵建议...',
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
@@ -194,7 +227,10 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
               ),
             ),
             const SizedBox(height: 40),
@@ -216,7 +252,10 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
                       )
                     : const Text(
                         '提 交',
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
               ),
             ),

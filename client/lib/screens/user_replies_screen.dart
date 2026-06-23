@@ -26,32 +26,38 @@ class _UserRepliesScreenState extends State<UserRepliesScreen> {
   }
 
   Future<void> _loadReplies() async {
-    if (mounted) setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
+    if (mounted)
+      setState(() {
+        _isLoading = true;
+        _errorMessage = null;
+      });
 
     try {
       final auth = context.read<AuthProvider>();
       final response = await auth.dio.get('/user/replies/received');
       if (response.statusCode == 200) {
-        final list = (response.data as List).map((e) => Reply.fromJson(e)).toList();
+        final list = (response.data as List)
+            .map((e) => Reply.fromJson(e))
+            .toList();
         list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-        if (mounted) setState(() {
-          _replies = list;
-          _isLoading = false;
-        });
+        if (mounted)
+          setState(() {
+            _replies = list;
+            _isLoading = false;
+          });
       } else {
-        if (mounted) setState(() {
-          _errorMessage = '获取失败: ${response.statusCode}';
-          _isLoading = false;
-        });
+        if (mounted)
+          setState(() {
+            _errorMessage = '获取失败: ${response.statusCode}';
+            _isLoading = false;
+          });
       }
     } catch (e) {
-      if (mounted) setState(() {
-        _errorMessage = '暂无网络或后端接口未部署\n详细信息: $e';
-        _isLoading = false;
-      });
+      if (mounted)
+        setState(() {
+          _errorMessage = '暂无网络或后端接口未部署\n详细信息: $e';
+          _isLoading = false;
+        });
     }
   }
 
@@ -70,30 +76,28 @@ class _UserRepliesScreenState extends State<UserRepliesScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('收到的回复'),
-        elevation: 0,
-      ),
+      appBar: AppBar(title: const Text('收到的回复'), elevation: 0),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _errorMessage != null
-              ? _buildErrorView(isDark)
-              : _replies.isEmpty
-                  ? _buildEmptyView(isDark)
-                  : RefreshIndicator(
-                      onRefresh: _loadReplies,
-                      child: ListView.separated(
-                        physics: const AlwaysScrollableScrollPhysics(
-                            parent: BouncingScrollPhysics()),
-                        padding: const EdgeInsets.all(16),
-                        itemCount: _replies.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 8),
-                        itemBuilder: (context, index) {
-                          final reply = _replies[index];
-                          return _buildReplyCard(reply, isDark);
-                        },
-                      ),
-                    ),
+          ? _buildErrorView(isDark)
+          : _replies.isEmpty
+          ? _buildEmptyView(isDark)
+          : RefreshIndicator(
+              onRefresh: _loadReplies,
+              child: ListView.separated(
+                physics: const AlwaysScrollableScrollPhysics(
+                  parent: BouncingScrollPhysics(),
+                ),
+                padding: const EdgeInsets.all(16),
+                itemCount: _replies.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 8),
+                itemBuilder: (context, index) {
+                  final reply = _replies[index];
+                  return _buildReplyCard(reply, isDark);
+                },
+              ),
+            ),
     );
   }
 
@@ -103,10 +107,8 @@ class _UserRepliesScreenState extends State<UserRepliesScreen> {
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (context) => PostDetailScreen(
-              postId: reply.postId,
-              targetReplyId: reply.id,
-            ),
+            builder: (context) =>
+                PostDetailScreen(postId: reply.postId, targetReplyId: reply.id),
           ),
         );
       },
@@ -185,13 +187,19 @@ class _UserRepliesScreenState extends State<UserRepliesScreen> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.forum_outlined,
-              size: 64, color: isDark ? Colors.white30 : Colors.grey[400]),
+          Icon(
+            Icons.forum_outlined,
+            size: 64,
+            color: isDark ? Colors.white30 : Colors.grey[400],
+          ),
           const SizedBox(height: 16),
-          Text('暂无收到的回复',
-              style: TextStyle(
-                  color: isDark ? Colors.white60 : Colors.grey[600],
-                  fontSize: 16)),
+          Text(
+            '暂无收到的回复',
+            style: TextStyle(
+              color: isDark ? Colors.white60 : Colors.grey[600],
+              fontSize: 16,
+            ),
+          ),
         ],
       ),
     );
@@ -204,15 +212,19 @@ class _UserRepliesScreenState extends State<UserRepliesScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.error_outline,
-                size: 64, color: isDark ? Colors.white30 : Colors.grey[400]),
+            Icon(
+              Icons.error_outline,
+              size: 64,
+              color: isDark ? Colors.white30 : Colors.grey[400],
+            ),
             const SizedBox(height: 16),
             Text(
               _errorMessage ?? '加载失败',
               textAlign: TextAlign.center,
               style: TextStyle(
-                  color: isDark ? Colors.white60 : Colors.grey[600],
-                  fontSize: 14),
+                color: isDark ? Colors.white60 : Colors.grey[600],
+                fontSize: 14,
+              ),
             ),
             const SizedBox(height: 24),
             ElevatedButton.icon(

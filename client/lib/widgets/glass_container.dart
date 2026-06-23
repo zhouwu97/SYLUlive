@@ -103,7 +103,9 @@ class GlassContainer extends StatelessWidget {
                   ),
                   boxShadow: [
                     BoxShadow(
-                      color: (isDark ? Colors.black : Colors.grey).withValues(alpha: 0.15),
+                      color: (isDark ? Colors.black : Colors.grey).withValues(
+                        alpha: 0.15,
+                      ),
                       blurRadius: blur * 2,
                       offset: const Offset(0, 2),
                     ),
@@ -174,7 +176,8 @@ class PremiumCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final colors = gradientColors ??
+    final colors =
+        gradientColors ??
         (isDark
             ? [Colors.grey[800]!, Colors.grey[900]!]
             : [Colors.white, Colors.grey[50]!]);
@@ -191,7 +194,9 @@ class PremiumCard extends StatelessWidget {
           ),
           boxShadow: [
             BoxShadow(
-              color: (isDark ? Colors.black : Colors.grey).withValues(alpha: 0.1),
+              color: (isDark ? Colors.black : Colors.grey).withValues(
+                alpha: 0.1,
+              ),
               blurRadius: 20,
               offset: const Offset(0, 4),
             ),
@@ -202,10 +207,7 @@ class PremiumCard extends StatelessWidget {
           child: InkWell(
             onTap: onTap,
             borderRadius: BorderRadius.circular(borderRadius),
-            child: Padding(
-              padding: padding!,
-              child: child,
-            ),
+            child: Padding(padding: padding!, child: child),
           ),
         ),
       ),
@@ -232,10 +234,13 @@ class PremiumIconButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final bgColor = backgroundColor ??
-        (isDark ? Colors.grey[800]! : Theme.of(context).primaryColor.withValues(alpha: 0.1));
-    final icColor = iconColor ??
-        (isDark ? Colors.white : Theme.of(context).primaryColor);
+    final bgColor =
+        backgroundColor ??
+        (isDark
+            ? Colors.grey[800]!
+            : Theme.of(context).primaryColor.withValues(alpha: 0.1));
+    final icColor =
+        iconColor ?? (isDark ? Colors.white : Theme.of(context).primaryColor);
 
     return Container(
       width: size,
@@ -276,8 +281,12 @@ class GradientButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = gradientColors ??
-        [Theme.of(context).primaryColor, Theme.of(context).primaryColor.withValues(alpha: 0.7)];
+    final colors =
+        gradientColors ??
+        [
+          Theme.of(context).primaryColor,
+          Theme.of(context).primaryColor.withValues(alpha: 0.7),
+        ];
 
     return Container(
       height: height,

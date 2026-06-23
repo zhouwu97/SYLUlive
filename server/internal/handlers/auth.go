@@ -28,6 +28,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/go-resty/resty/v2"
+
 	"golang.org/x/crypto/bcrypt"
 
 	"gorm.io/gorm"
@@ -40,11 +42,11 @@ import (
 // EduServiceConfig 鏁欏姟鏈嶅姟閰嶇疆
 
 var EduServiceConfig = struct {
-	BaseURL     string
-	InternalKey string
+	BaseURL string
 }{
-	BaseURL:     "", // 从 config 加载
-	InternalKey: "", // 从 config 加载
+
+	BaseURL: "", // 浠巆onfig鍔犺浇
+
 }
 
 var VerifyCodeConfig = struct {
@@ -654,146 +656,238 @@ type EduRegisterInput struct {
 	Nickname string `json:"nickname"`
 }
 
-// RegisterWithEdu 教务验证后注册（学号必须先通过教务验证）
+// RegisterWithEdu 鏁欏姟楠岃瘉鍚庢敞鍐岋紙瀛﹀彿蹇呴』鍏堥氳繃鏁欏姟楠岃瘉锛
+
 func (h *AuthHandler) RegisterWithEdu(c *gin.Context) {
+
 	var input EduRegisterInput
+
 	if err := c.ShouldBindJSON(&input); err != nil {
+
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+
 		return
+
 	}
+
+	// 妫鏌ュ﹀彿鏄鍚﹀凡瀛樺湪
 
 	var count int64
+
 	h.db.Model(&models.User{}).Where("student_id = ?", input.StudentID).Count(&count)
+
 	if count > 0 {
+
 		c.JSON(http.StatusBadRequest, gin.H{"error": "该学号已注册，请直接登录"})
+
 		return
+
 	}
 
-	verifyResult, err := verifyEduWithPython(input.StudentID, input.EduPassword)
+	verifyResult, err := verifyEduWithPython(input.StudentID, input.EduPassword, input.Password)
+
 	if err != nil {
+
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+
 		return
+
 	}
+
 	if !verifyResult.Success {
-		msg := verifyResult.Message
-		if msg == "" {
-			msg = "教务验证失败"
+
+		if verifyResult.Message == "" {
+
+			verifyResult.Message = "教务验证失败"
+
 		}
-		c.JSON(http.StatusUnauthorized, gin.H{"error": msg})
+
+		c.JSON(http.StatusUnauthorized, gin.H{"error": verifyResult.Message})
+
 		return
+
 	}
+
+	if verifyResult.StudentID != "" && verifyResult.StudentID != input.StudentID {
+
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "教务账号与当前学号不一致"})
+
+		return
+
+	}
+
+	// 鍝堝笇App瀵嗙爜
 
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
+
 	if err != nil {
+
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "密码加密失败"})
+
 		return
+
 	}
 
+	// 鍏堝垱寤虹敤鎴
+
 	nickname := input.Nickname
+
 	if nickname == "" {
+
 		nickname = "新用户"
+
 	}
 
 	user := models.User{
-		StudentID:    input.StudentID,
-		Nickname:     nickname,
+
+		StudentID: input.StudentID,
+
+		Nickname: nickname,
+
 		PasswordHash: string(hashedPassword),
-		Role:         models.RoleUser,
-		CreditScore:  100,
+
+		Role: models.RoleUser,
+
+		CreditScore: 100,
+
 		EduStudentID: input.StudentID,
-		EduBound:     false,
+
+		EduPassword: input.EduPassword,
+
+		EduBound: true,
+
+		EduGrade: verifyResult.Grade,
+
+		EduCollege: verifyResult.College,
+
+		EduMajor: verifyResult.Major,
 	}
 
-	// 开启事务创建用户
-	tx := h.db.Begin()
-	if err := tx.Create(&user).Error; err != nil {
-		tx.Rollback()
+	if err := h.db.Create(&user).Error; err != nil {
+
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建用户失败"})
+
 		return
+
 	}
+
+	// 鐢ㄦ埛娌″～鏄电О鏃舵墠鐢ㄩ粯璁ゅ
 
 	if input.Nickname == "" {
-		user.Nickname = "校园用户" + strconv.FormatUint(uint64(user.ID), 10)
-		if err := tx.Model(&user).Update("nickname", user.Nickname).Error; err != nil {
-			tx.Rollback()
+
+		if err := h.db.Model(&user).Update("nickname", "校园用户"+strconv.FormatUint(uint64(user.ID), 10)).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
 			return
 		}
+
+		user.Nickname = "校园用户" + strconv.FormatUint(uint64(user.ID), 10)
+
 	}
 
-	// 4. 调用 Python bind
-	client := NewEduServiceClient()
-	resp, err := client.Post("/api/edu/bind", map[string]interface{}{
-		"user_id":    strconv.FormatUint(uint64(user.ID), 10),
-		"student_id": input.StudentID,
-		"password":   input.EduPassword,
-	})
+	// 闈欓粯缁戝畾锛氳皟鐢≒ython鐨刡ind鎺ュ彛鑾峰彇cookie
 
-	if err != nil || resp.StatusCode() != http.StatusOK {
-		tx.Rollback()
-		errMsg := "教务绑定服务不可用"
-		if resp != nil {
-			errMsg = ExtractError(resp)
+	client := resty.New()
+
+	client.SetTimeout(10 * time.Second)
+
+	resp, err := client.R().
+		SetHeader("Content-Type", "application/json").
+		SetBody(map[string]interface{}{
+
+			"user_id": strconv.FormatUint(uint64(user.ID), 10),
+
+			"student_id": input.StudentID,
+
+			"password": input.EduPassword,
+		}).
+		Post(EduServiceConfig.BaseURL + "/api/edu/bind")
+
+	if err != nil {
+
+		// Python璋冪敤澶辫触锛屽彧鏍囪板凡缁戝畾锛堝悗缁鍙鎵嬪姩鍒锋柊cookie锛
+
+		h.db.Model(&user).Updates(map[string]interface{}{
+
+			"edu_student_id": input.StudentID,
+
+			"edu_password": input.EduPassword,
+
+			"edu_bound": true,
+		})
+
+		user.EduBound = true
+
+	} else {
+
+		var bindResult struct {
+			Success bool `json:"success"`
+
+			Message string `json:"message"`
+
+			Name string `json:"name"`
+
+			Cookie string `json:"cookie"`
+
+			Grade string `json:"grade"`
+
+			College string `json:"college"`
+
+			Major string `json:"major"`
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "绑定教务失败: " + errMsg})
-		return
-	}
 
-	var bindResult struct {
-		Success bool   `json:"success"`
-		Message string `json:"message"`
-		Name    string `json:"name"`
-		Grade   string `json:"grade"`
-		College string `json:"college"`
-		Major   string `json:"major"`
-	}
-	if err := json.Unmarshal(resp.Body(), &bindResult); err != nil {
-		tx.Rollback()
-		if rollbackErr := compensateUnbind(client, user.ID); rollbackErr != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "解析教务绑定结果失败，且教务侧回滚失败: " + rollbackErr.Error()})
-			return
+		json.Unmarshal(resp.Body(), &bindResult)
+
+		if bindResult.Success {
+
+			h.db.Model(&user).Updates(map[string]interface{}{
+
+				"edu_student_id": input.StudentID,
+
+				"edu_password": input.EduPassword,
+
+				"edu_cookie": bindResult.Cookie,
+
+				"edu_bound": true,
+
+				"edu_grade": bindResult.Grade,
+
+				"edu_college": bindResult.College,
+
+				"edu_major": bindResult.Major,
+			})
+
+			user.EduBound = true
+
+			user.EduCookie = bindResult.Cookie
+
+			user.EduGrade = bindResult.Grade
+
+			user.EduCollege = bindResult.College
+
+			user.EduMajor = bindResult.Major
+
+		} else {
+
+			h.db.Model(&user).Updates(map[string]interface{}{
+
+				"edu_student_id": input.StudentID,
+
+				"edu_password": input.EduPassword,
+
+				"edu_bound": true,
+
+				"edu_grade": verifyResult.Grade,
+
+				"edu_college": verifyResult.College,
+
+				"edu_major": verifyResult.Major,
+			})
+
+			user.EduBound = true
+
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "解析教务绑定结果失败"})
-		return
-	}
 
-	if !bindResult.Success {
-		tx.Rollback()
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "教务绑定失败: " + bindResult.Message})
-		return
 	}
-
-	// 更新教务信息
-	if err := tx.Model(&user).Updates(map[string]interface{}{
-		"edu_bound":   true,
-		"edu_grade":   bindResult.Grade,
-		"edu_college": bindResult.College,
-		"edu_major":   bindResult.Major,
-		"edu_name":    bindResult.Name,
-	}).Error; err != nil {
-		tx.Rollback()
-		if rollbackErr := compensateUnbind(client, user.ID); rollbackErr != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "更新教务状态失败，且教务侧回滚失败: " + rollbackErr.Error()})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新教务状态失败"})
-		return
-	}
-
-	if err := tx.Commit().Error; err != nil {
-		if rollbackErr := compensateUnbind(client, user.ID); rollbackErr != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "事务提交失败，且教务侧回滚失败: " + rollbackErr.Error()})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "事务提交失败"})
-		return
-	}
-
-	user.EduBound = true
-	user.EduGrade = bindResult.Grade
-	user.EduCollege = bindResult.College
-	user.EduMajor = bindResult.Major
-	user.EduName = bindResult.Name
 
 	token, err := middleware.GenerateToken(user.ID, string(user.Role), user.TokenVersion, h.jwtSecret)
 	if err != nil {
@@ -804,10 +898,14 @@ func (h *AuthHandler) RegisterWithEdu(c *gin.Context) {
 	secure := os.Getenv("SSL") == "true" || os.Getenv("ENV") == "production"
 	c.SetSameSite(http.SameSiteLaxMode)
 	c.SetCookie("jwt", token, 7*24*3600, "/api", "", secure, true)
+
 	c.JSON(http.StatusCreated, gin.H{
+
 		"token": token,
-		"user":  user,
+
+		"user": user,
 	})
+
 }
 
 // LoginInput 鐧诲綍杈撳叆
@@ -844,33 +942,133 @@ type eduVerifyResult struct {
 	Major string `json:"major"`
 }
 
-// LoginEdu 统一登录（仅用于验证教务密码登录App）
+// LoginEdu 缁熶竴鐧诲綍锛堟暀鍔￠獙璇+鑷鍔ㄦ敞鍐岋級
+
 func (h *AuthHandler) LoginEdu(c *gin.Context) {
+
 	var input LoginEduInput
+
 	if err := c.ShouldBindJSON(&input); err != nil {
+
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+
 		return
+
 	}
+
+	// 妫鏌ョ敤鎴锋槸鍚﹀凡瀛樺湪
 
 	var user models.User
-	if err := h.db.Where("student_id = ?", input.StudentID).First(&user).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "该账号尚未注册，请先注册"})
-		} else {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "查询账号失败"})
-		}
-		return
-	}
 
-	// 验证教务密码
-	verifyResult, err := verifyEduWithPython(input.StudentID, input.EduPassword)
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "教务验证失败: " + err.Error()})
-		return
-	}
-	if !verifyResult.Success {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": verifyResult.Message})
-		return
+	err := h.db.Where("student_id = ?", input.StudentID).First(&user).Error
+
+	isNewUser := err == gorm.ErrRecordNotFound
+
+	if isNewUser {
+
+		// 鏂扮敤鎴凤細閫氳繃Python鏈嶅姟楠岃瘉鏁欏姟
+
+		client := resty.New()
+
+		client.SetTimeout(10 * time.Second)
+
+		resp, err := client.R().
+			SetHeader("Content-Type", "application/json").
+			SetBody(map[string]string{
+
+				"student_id": input.StudentID,
+
+				"edu_password": input.EduPassword,
+
+				"password": input.Password,
+			}).
+			Post(EduServiceConfig.BaseURL + "/api/edu/login_edu")
+
+		if err != nil {
+
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "无法连接教务服务"})
+
+			return
+
+		}
+
+		var result eduVerifyResult
+
+		if err := json.Unmarshal(resp.Body(), &result); err != nil {
+
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "解析响应失败"})
+
+			return
+
+		}
+
+		if !result.Success {
+
+			c.JSON(http.StatusUnauthorized, gin.H{"error": result.Message})
+
+			return
+
+		}
+
+		// 鍝堝笇APP瀵嗙爜
+
+		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
+
+		if err != nil {
+
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "密码加密失败"})
+
+			return
+
+		}
+
+		// 鍒涘缓鐢ㄦ埛
+
+		user = models.User{
+
+			StudentID: input.StudentID,
+
+			Nickname: input.StudentID,
+
+			PasswordHash: string(hashedPassword),
+
+			Role: models.RoleUser,
+
+			CreditScore: 100,
+
+			EduStudentID: result.StudentID,
+
+			EduPassword: input.EduPassword,
+
+			EduBound: true,
+
+			EduGrade: result.Grade,
+
+			EduCollege: result.College,
+
+			EduMajor: result.Major,
+		}
+
+		if err := h.db.Create(&user).Error; err != nil {
+
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "创建用户失败"})
+
+			return
+
+		}
+
+	} else {
+
+		// 鑰佺敤鎴凤細楠岃瘉APP瀵嗙爜
+
+		if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(input.Password)); err != nil {
+
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "APP密码错误"})
+
+			return
+
+		}
+
 	}
 
 	token, err := middleware.GenerateToken(user.ID, string(user.Role), user.TokenVersion, h.jwtSecret)
@@ -884,9 +1082,12 @@ func (h *AuthHandler) LoginEdu(c *gin.Context) {
 	c.SetCookie("jwt", token, 7*24*3600, "/api", "", secure, true)
 
 	c.JSON(http.StatusOK, gin.H{
+
 		"token": token,
-		"user":  user,
+
+		"user": user,
 	})
+
 }
 
 // ForgotPasswordInput 蹇樿板瘑鐮佽緭鍏
@@ -899,74 +1100,175 @@ type ForgotPasswordInput struct {
 	NewPassword string `json:"new_password" binding:"required,min=8,max=32"`
 }
 
-// ForgotPassword 通过教务账号找回密码
+// ForgotPassword 浠呭凡娉ㄥ唽杞浠惰处鍙峰彲閫氳繃鏁欏姟璐﹀彿楠岃瘉韬浠藉悗閲嶇疆 APP 瀵嗙爜
+
 func (h *AuthHandler) ForgotPassword(c *gin.Context) {
+
 	var input ForgotPasswordInput
+
 	if err := c.ShouldBindJSON(&input); err != nil {
+
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+
 		return
+
 	}
 
 	var user models.User
+
 	if err := h.db.Where("student_id = ?", input.StudentID).First(&user).Error; err != nil {
+
 		c.JSON(http.StatusNotFound, gin.H{"error": "该学号尚未注册，请先注册"})
+
 		return
+
 	}
 
-	result, err := verifyEduWithPython(input.StudentID, input.EduPassword)
+	result, err := verifyEduWithPython(input.StudentID, input.EduPassword, input.NewPassword)
+
 	if err != nil {
+
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+
 		return
+
 	}
 
 	if !result.Success {
-		msg := result.Message
-		if msg == "" {
-			msg = "教务验证失败"
+
+		if result.Message == "" {
+
+			result.Message = "教务验证失败"
+
 		}
-		c.JSON(http.StatusUnauthorized, gin.H{"error": msg})
+
+		c.JSON(http.StatusUnauthorized, gin.H{"error": result.Message})
+
 		return
+
+	}
+
+	if result.StudentID != "" && result.StudentID != input.StudentID {
+
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "教务账号与当前学号不一致"})
+
+		return
+
 	}
 
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(input.NewPassword), bcrypt.DefaultCost)
+
 	if err != nil {
+
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "密码加密失败"})
+
 		return
+
 	}
 
 	updates := map[string]interface{}{
+
 		"password_hash": string(hashedPassword),
+
+		"edu_student_id": input.StudentID,
+
+		"edu_password": input.EduPassword,
+
+		"edu_bound": true,
+	}
+
+	if result.Grade != "" {
+
+		updates["edu_grade"] = result.Grade
+
+	}
+
+	if result.College != "" {
+
+		updates["edu_college"] = result.College
+
+	}
+
+	if result.Major != "" {
+
+		updates["edu_major"] = result.Major
+
 	}
 
 	if err := h.db.Model(&user).Updates(updates).Error; err != nil {
+
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "密码重置失败"})
+
 		return
+
 	}
 
 	clearLoginFailures(normalizeLoginAccount(input.StudentID))
+
 	c.JSON(http.StatusOK, gin.H{"message": "密码已重置，请使用新密码登录"})
+
 }
 
-func verifyEduWithPython(studentID, eduPassword string) (*eduVerifyResult, error) {
-	client := NewEduServiceClient()
-	resp, err := client.Post("/api/edu/pre_verify", map[string]string{
-		"student_id": studentID,
-		"password":   eduPassword,
-	})
+func verifyEduWithPython(studentID, eduPassword, appPassword string) (*eduVerifyResult, error) {
+
+	client := resty.New()
+
+	client.SetTimeout(10 * time.Second)
+
+	resp, err := client.R().
+		SetHeader("Content-Type", "application/json").
+		SetBody(map[string]string{
+
+			"student_id": studentID,
+
+			"edu_password": eduPassword,
+
+			"password": appPassword,
+		}).
+		Post(EduServiceConfig.BaseURL + "/api/edu/login_edu")
+
 	if err != nil {
+
 		return nil, err
+
 	}
 
 	if resp.StatusCode() != http.StatusOK {
-		return nil, errors.New(ExtractError(resp))
+
+		var errResp struct {
+			Error string `json:"error"`
+
+			Detail string `json:"detail"`
+		}
+
+		_ = json.Unmarshal(resp.Body(), &errResp)
+
+		if errResp.Error != "" {
+
+			return nil, errors.New(errResp.Error)
+
+		}
+
+		if errResp.Detail != "" {
+
+			return nil, errors.New(errResp.Detail)
+
+		}
+
+		return nil, errors.New("教务服务验证失败")
+
 	}
 
 	var result eduVerifyResult
+
 	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+
 		return nil, errors.New("解析教务服务响应失败")
+
 	}
 
 	return &result, nil
+
 }
 
 // Login 鐧诲綍
@@ -1126,11 +1428,4 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 	c.SetSameSite(http.SameSiteLaxMode)
 	c.SetCookie("jwt", "", -1, "/api", "", secure, true)
 	c.JSON(http.StatusOK, gin.H{"message": "已退出登录"})
-}
-
-func compensateUnbind(client *EduServiceClient, userID uint) error {
-	resp, err := client.Delete("/api/edu/bind", map[string]string{
-		"user_id": strconv.FormatUint(uint64(userID), 10),
-	})
-	return ensureEduServiceSuccess(resp, err, "补偿解绑")
 }

@@ -83,15 +83,13 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
             Expanded(
               child: _tabCtrl.index == 0
                   ? _buildCanteenList(isDark)
-                  : (_tabCtrl.index == 1 ? _buildSubjectList(isDark) : _buildMajorList(isDark)),
+                  : (_tabCtrl.index == 1
+                        ? _buildSubjectList(isDark)
+                        : _buildMajorList(isDark)),
             ),
           ],
         ),
-        Positioned(
-          right: 20,
-          bottom: 20,
-          child: _buildFAB(context),
-        ),
+        Positioned(right: 20, bottom: 20, child: _buildFAB(context)),
       ],
     );
   }
@@ -109,15 +107,9 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
         ),
         child: Row(
           children: [
-            Expanded(
-              child: _buildSegmentItem(0, '食堂榜', isDark),
-            ),
-            Expanded(
-              child: _buildSegmentItem(1, '学科榜', isDark),
-            ),
-            Expanded(
-              child: _buildSegmentItem(2, '专业榜', isDark),
-            ),
+            Expanded(child: _buildSegmentItem(0, '食堂榜', isDark)),
+            Expanded(child: _buildSegmentItem(1, '学科榜', isDark)),
+            Expanded(child: _buildSegmentItem(2, '专业榜', isDark)),
           ],
         ),
       ),
@@ -170,217 +162,221 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
   }
 
   Widget _buildDisclaimer(bool isDark) => GlassContainer(
-        margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-        padding: const EdgeInsets.all(12),
-        borderRadius: 14,
-        blur: 12,
-        opacity: 0.18,
-        backgroundColor:
-            isDark ? const Color(0xA3182033) : const Color(0xCCEAF1FF),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(
-              Icons.info_outline,
-              size: 20,
-              color: isDark ? Colors.blue[300] : Colors.blue[700],
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                '教师榜已按学科聚合。添加教师时请填写完整课程名称，例如“数据结构”“高等数学A1”，避免同一学科被拆散。',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: isDark ? Colors.grey[300] : Colors.grey[700],
-                  height: 1.45,
-                ),
-              ),
-            ),
-            GestureDetector(
-              onTap: () async {
-                if (mounted) setState(() => _showDisclaimer = false);
-                final prefs = await SharedPreferences.getInstance();
-                await prefs.setBool('has_shown_teacher_disclaimer', true);
-              },
-              child: const Icon(Icons.close, size: 16, color: Colors.grey),
-            ),
-          ],
+    margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+    padding: const EdgeInsets.all(12),
+    borderRadius: 14,
+    blur: 12,
+    opacity: 0.18,
+    backgroundColor: isDark ? const Color(0xA3182033) : const Color(0xCCEAF1FF),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(
+          Icons.info_outline,
+          size: 20,
+          color: isDark ? Colors.blue[300] : Colors.blue[700],
         ),
-      );
-
-  Widget _buildSearchBar(bool isDark) => Padding(
-        padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-        child: GlassContainer(
-          borderRadius: 50,
-          blur: 12,
-          opacity: 0.18,
-          backgroundColor:
-              isDark ? const Color(0x99171B24) : const Color(0xCCFFFFFF),
-          borderColor: isDark
-              ? Colors.white.withValues(alpha: 0.08)
-              : Colors.white.withValues(alpha: 0.72),
-          child: TextField(
-            controller: _searchCtrl,
-            decoration: InputDecoration(
-              hintText: _tabCtrl.index == 0 ? '搜索食堂...' : (_tabCtrl.index == 1 ? '搜索学科或教师...' : '搜索专业...'),
-              prefixIcon: const Icon(Icons.search, size: 20),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide.none,
-              ),
-              contentPadding: const EdgeInsets.symmetric(vertical: 10),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            '教师榜已按学科聚合。添加教师时请填写完整课程名称，例如“数据结构”“高等数学A1”，避免同一学科被拆散。',
+            style: TextStyle(
+              fontSize: 12,
+              color: isDark ? Colors.grey[300] : Colors.grey[700],
+              height: 1.45,
             ),
-            onChanged: (value) {
-              if (_tabCtrl.index == 1) {
-                context
-                    .read<TeacherProvider>()
-                    .loadTeachers(query: value.trim().isEmpty ? null : value);
-              } else {
-                setState(() {});
-              }
-            },
           ),
         ),
-      );
-
-  Widget _buildSubjectList(bool isDark) =>
-      Consumer<TeacherProvider>(builder: (_, provider, __) {
-        if (provider.isLoading && provider.teachers.isEmpty) {
-          return const Center(child: CircularProgressIndicator());
-        }
-
-        final groups = _buildSubjectGroups(provider.teachers, _currentQuery);
-        if (groups.isEmpty) {
-          return Center(
-            child: Text(
-              '暂无学科数据',
-              style: TextStyle(
-                color: isDark ? Colors.white54 : Colors.grey[600],
-              ),
-            ),
-          );
-        }
-
-        Widget buildCard(int index) {
-          final group = groups[index];
-          final topTeachers =
-              group.teachers.take(3).map((t) => t.name).join(' · ');
-          return _buildLeaderboardCard(
-            isDark: isDark,
-            rank: index + 1,
-            title: group.subject,
-            subtitle: topTeachers.isEmpty ? '暂无教师' : '代表教师 · $topTeachers',
-            average: group.averageStar,
-            count: group.ratingCount,
-            extraLabel: '${group.teachers.length} 位教师',
-            icon: Icons.auto_stories_outlined,
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => SubjectRankingDetailScreen(
-                  subjectName: group.subject,
-                  teachers: group.teachers,
-                ),
-              ),
-            ).then((changed) async {
-              if (changed != true || !mounted) return;
-              await context
-                  .read<TeacherProvider>()
-                  .loadTeachers(query: _currentQuery);
-            }),
-          );
-        }
-
-        return RefreshIndicator(
-          onRefresh: () async {
-            await context
-                .read<TeacherProvider>()
-                .loadTeachers(query: _currentQuery);
+        GestureDetector(
+          onTap: () async {
+            if (mounted) setState(() => _showDisclaimer = false);
+            final prefs = await SharedPreferences.getInstance();
+            await prefs.setBool('has_shown_teacher_disclaimer', true);
           },
-          child: ResponsiveUtil.isDesktop(context)
-              ? MasonryGridView.count(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
-                  crossAxisCount: MediaQuery.of(context).size.width > 900 ? 3 : 2,
-                  mainAxisSpacing: 16,
-                  crossAxisSpacing: 16,
-                  itemCount: groups.length,
-                  itemBuilder: (_, index) => buildCard(index),
-                )
-              : ListView.builder(
-                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 80),
-                  itemCount: groups.length,
-                  itemBuilder: (_, index) => buildCard(index),
-                ),
-        );
-      });
+          child: const Icon(Icons.close, size: 16, color: Colors.grey),
+        ),
+      ],
+    ),
+  );
 
-  Widget _buildMajorList(bool isDark) =>
-      Consumer<MajorProvider>(builder: (_, provider, __) {
-        final query = _currentQuery?.toLowerCase();
-        final majors = query == null
-            ? provider.majors
-            : provider.majors
+  Widget _buildSearchBar(bool isDark) => Padding(
+    padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+    child: GlassContainer(
+      borderRadius: 50,
+      blur: 12,
+      opacity: 0.18,
+      backgroundColor: isDark
+          ? const Color(0x99171B24)
+          : const Color(0xCCFFFFFF),
+      borderColor: isDark
+          ? Colors.white.withValues(alpha: 0.08)
+          : Colors.white.withValues(alpha: 0.72),
+      child: TextField(
+        controller: _searchCtrl,
+        decoration: InputDecoration(
+          hintText: _tabCtrl.index == 0
+              ? '搜索食堂...'
+              : (_tabCtrl.index == 1 ? '搜索学科或教师...' : '搜索专业...'),
+          prefixIcon: const Icon(Icons.search, size: 20),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide.none,
+          ),
+          contentPadding: const EdgeInsets.symmetric(vertical: 10),
+        ),
+        onChanged: (value) {
+          if (_tabCtrl.index == 1) {
+            context.read<TeacherProvider>().loadTeachers(
+              query: value.trim().isEmpty ? null : value,
+            );
+          } else {
+            setState(() {});
+          }
+        },
+      ),
+    ),
+  );
+
+  Widget _buildSubjectList(bool isDark) => Consumer<TeacherProvider>(
+    builder: (_, provider, __) {
+      if (provider.isLoading && provider.teachers.isEmpty) {
+        return const Center(child: CircularProgressIndicator());
+      }
+
+      final groups = _buildSubjectGroups(provider.teachers, _currentQuery);
+      if (groups.isEmpty) {
+        return Center(
+          child: Text(
+            '暂无学科数据',
+            style: TextStyle(color: isDark ? Colors.white54 : Colors.grey[600]),
+          ),
+        );
+      }
+
+      Widget buildCard(int index) {
+        final group = groups[index];
+        final topTeachers = group.teachers
+            .take(3)
+            .map((t) => t.name)
+            .join(' · ');
+        return _buildLeaderboardCard(
+          isDark: isDark,
+          rank: index + 1,
+          title: group.subject,
+          subtitle: topTeachers.isEmpty ? '暂无教师' : '代表教师 · $topTeachers',
+          average: group.averageStar,
+          count: group.ratingCount,
+          extraLabel: '${group.teachers.length} 位教师',
+          icon: Icons.auto_stories_outlined,
+          onTap: () =>
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => SubjectRankingDetailScreen(
+                    subjectName: group.subject,
+                    teachers: group.teachers,
+                  ),
+                ),
+              ).then((changed) async {
+                if (changed != true || !mounted) return;
+                await context.read<TeacherProvider>().loadTeachers(
+                  query: _currentQuery,
+                );
+              }),
+        );
+      }
+
+      return RefreshIndicator(
+        onRefresh: () async {
+          await context.read<TeacherProvider>().loadTeachers(
+            query: _currentQuery,
+          );
+        },
+        child: ResponsiveUtil.isDesktop(context)
+            ? MasonryGridView.count(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
+                crossAxisCount: MediaQuery.of(context).size.width > 900 ? 3 : 2,
+                mainAxisSpacing: 16,
+                crossAxisSpacing: 16,
+                itemCount: groups.length,
+                itemBuilder: (_, index) => buildCard(index),
+              )
+            : ListView.builder(
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 80),
+                itemCount: groups.length,
+                itemBuilder: (_, index) => buildCard(index),
+              ),
+      );
+    },
+  );
+
+  Widget _buildMajorList(bool isDark) => Consumer<MajorProvider>(
+    builder: (_, provider, __) {
+      final query = _currentQuery?.toLowerCase();
+      final majors = query == null
+          ? provider.majors
+          : provider.majors
                 .where((m) => m.name.toLowerCase().contains(query))
                 .toList();
 
-        if (provider.isLoading && provider.majors.isEmpty) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        if (majors.isEmpty) {
-          return Center(
-            child: Text(
-              '暂无专业',
-              style: TextStyle(
-                color: isDark ? Colors.white54 : Colors.grey[600],
-              ),
-            ),
-          );
-        }
-
-        Widget buildCard(int index) {
-          final major = majors[index];
-          return _buildLeaderboardCard(
-            isDark: isDark,
-            rank: index + 1,
-            title: major.name,
-            subtitle: major.level,
-            average: major.averageStar,
-            count: major.ratingCount,
-            extraLabel: '专业评分',
-            icon: Icons.school_outlined,
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => MajorDetailScreen(
-                  majorId: major.id,
-                  majorName: major.name,
-                ),
-              ),
-            ).then((_) {
-              if (!mounted) return;
-              context.read<MajorProvider>().loadMajors();
-            }),
-          );
-        }
-
-        return RefreshIndicator(
-          onRefresh: () => context.read<MajorProvider>().loadMajors(),
-          child: ResponsiveUtil.isDesktop(context)
-              ? MasonryGridView.count(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
-                  crossAxisCount: MediaQuery.of(context).size.width > 900 ? 3 : 2,
-                  mainAxisSpacing: 16,
-                  crossAxisSpacing: 16,
-                  itemCount: majors.length,
-                  itemBuilder: (_, index) => buildCard(index),
-                )
-              : ListView.builder(
-                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 80),
-                  itemCount: majors.length,
-                  itemBuilder: (_, index) => buildCard(index),
-                ),
+      if (provider.isLoading && provider.majors.isEmpty) {
+        return const Center(child: CircularProgressIndicator());
+      }
+      if (majors.isEmpty) {
+        return Center(
+          child: Text(
+            '暂无专业',
+            style: TextStyle(color: isDark ? Colors.white54 : Colors.grey[600]),
+          ),
         );
-      });
+      }
+
+      Widget buildCard(int index) {
+        final major = majors[index];
+        return _buildLeaderboardCard(
+          isDark: isDark,
+          rank: index + 1,
+          title: major.name,
+          subtitle: major.level,
+          average: major.averageStar,
+          count: major.ratingCount,
+          extraLabel: '专业评分',
+          icon: Icons.school_outlined,
+          onTap: () =>
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => MajorDetailScreen(
+                    majorId: major.id,
+                    majorName: major.name,
+                  ),
+                ),
+              ).then((_) {
+                if (!mounted) return;
+                context.read<MajorProvider>().loadMajors();
+              }),
+        );
+      }
+
+      return RefreshIndicator(
+        onRefresh: () => context.read<MajorProvider>().loadMajors(),
+        child: ResponsiveUtil.isDesktop(context)
+            ? MasonryGridView.count(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
+                crossAxisCount: MediaQuery.of(context).size.width > 900 ? 3 : 2,
+                mainAxisSpacing: 16,
+                crossAxisSpacing: 16,
+                itemCount: majors.length,
+                itemBuilder: (_, index) => buildCard(index),
+              )
+            : ListView.builder(
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 80),
+                itemCount: majors.length,
+                itemBuilder: (_, index) => buildCard(index),
+              ),
+      );
+    },
+  );
 
   Widget _buildLeaderboardCard({
     required bool isDark,
@@ -401,8 +397,9 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
       borderRadius: 20,
       blur: 12,
       opacity: 0.18,
-      backgroundColor:
-          isDark ? const Color(0x99171B24) : const Color(0xCCFFFFFF),
+      backgroundColor: isDark
+          ? const Color(0x99171B24)
+          : const Color(0xCCFFFFFF),
       borderColor: isDark
           ? Colors.white.withValues(alpha: 0.08)
           : Colors.white.withValues(alpha: 0.72),
@@ -533,14 +530,18 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
   }
 
   List<_SubjectGroup> _buildSubjectGroups(
-      List<Teacher> teachers, String? query) {
+    List<Teacher> teachers,
+    String? query,
+  ) {
     final keyword = query?.trim().toLowerCase();
     final map = <String, List<Teacher>>{};
 
     for (final teacher in teachers) {
-      final subject =
-          teacher.course.trim().isEmpty ? '未分类课程' : teacher.course.trim();
-      final hit = keyword == null ||
+      final subject = teacher.course.trim().isEmpty
+          ? '未分类课程'
+          : teacher.course.trim();
+      final hit =
+          keyword == null ||
           subject.toLowerCase().contains(keyword) ||
           teacher.name.toLowerCase().contains(keyword);
       if (!hit) continue;
@@ -548,7 +549,8 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
     }
 
     final groups = map.entries.map((entry) {
-      final items = [...entry.value]..sort((a, b) {
+      final items = [...entry.value]
+        ..sort((a, b) {
           final compare = b.averageStar.compareTo(a.averageStar);
           if (compare != 0) return compare;
           return b.ratingCount.compareTo(a.ratingCount);
@@ -567,16 +569,17 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
   }
 
   Widget _buildCanteenList(bool isDark) {
-      final user = context.watch<AuthProvider>().user;
-      final isAdmin = user?.role == 'admin' || user?.role == 'super_admin';
-      
-      return Consumer<CanteenProvider>(builder: (_, provider, __) {
+    final user = context.watch<AuthProvider>().user;
+    final isAdmin = user?.role == 'admin' || user?.role == 'super_admin';
+
+    return Consumer<CanteenProvider>(
+      builder: (_, provider, __) {
         final query = _currentQuery?.toLowerCase();
         final canteens = query == null
             ? provider.canteens
             : provider.canteens
-                .where((m) => m.name.toLowerCase().contains(query))
-                .toList();
+                  .where((m) => m.name.toLowerCase().contains(query))
+                  .toList();
 
         if (provider.isLoading && provider.canteens.isEmpty) {
           return const Center(child: CircularProgressIndicator());
@@ -603,42 +606,57 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
             count: canteen.ratingCount,
             extraLabel: '食堂评分',
             icon: Icons.restaurant,
-            imageUrl: canteen.image != null && canteen.image.isNotEmpty ? ApiConstants.fullUrl(canteen.image) : null,
-            onLongPress: isAdmin ? () {
-              showDialog(
-                context: context,
-                builder: (ctx) => AlertDialog(
-                  title: const Text('删除店铺'),
-                  content: Text('确定要删除食堂/店铺 "${canteen.name}" 吗？'),
-                  actions: [
-                    TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
-                    TextButton(
-                      onPressed: () async {
-                        Navigator.pop(ctx);
-                        final success = await context.read<CanteenProvider>().deleteCanteen(canteen.id);
-                        if (success && mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('删除成功')));
-                          context.read<CanteenProvider>().loadCanteens();
-                        }
-                      },
-                      child: const Text('删除', style: TextStyle(color: Colors.red)),
+            imageUrl: canteen.image != null && canteen.image.isNotEmpty
+                ? ApiConstants.fullUrl(canteen.image)
+                : null,
+            onLongPress: isAdmin
+                ? () {
+                    showDialog(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        title: const Text('删除店铺'),
+                        content: Text('确定要删除食堂/店铺 "${canteen.name}" 吗？'),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(ctx),
+                            child: const Text('取消'),
+                          ),
+                          TextButton(
+                            onPressed: () async {
+                              Navigator.pop(ctx);
+                              final success = await context
+                                  .read<CanteenProvider>()
+                                  .deleteCanteen(canteen.id);
+                              if (success && mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('删除成功')),
+                                );
+                                context.read<CanteenProvider>().loadCanteens();
+                              }
+                            },
+                            child: const Text(
+                              '删除',
+                              style: TextStyle(color: Colors.red),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+                : null,
+            onTap: () =>
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => CanteenDetailScreen(
+                      canteenId: canteen.id,
+                      canteenName: canteen.name,
                     ),
-                  ],
-                ),
-              );
-            } : null,
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => CanteenDetailScreen(
-                  canteenId: canteen.id,
-                  canteenName: canteen.name,
-                ),
-              ),
-            ).then((_) {
-              if (!mounted) return;
-              context.read<CanteenProvider>().loadCanteens();
-            }),
+                  ),
+                ).then((_) {
+                  if (!mounted) return;
+                  context.read<CanteenProvider>().loadCanteens();
+                }),
           );
         }
 
@@ -647,7 +665,9 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
           child: ResponsiveUtil.isDesktop(context)
               ? MasonryGridView.count(
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
-                  crossAxisCount: MediaQuery.of(context).size.width > 900 ? 3 : 2,
+                  crossAxisCount: MediaQuery.of(context).size.width > 900
+                      ? 3
+                      : 2,
                   mainAxisSpacing: 16,
                   crossAxisSpacing: 16,
                   itemCount: canteens.length,
@@ -659,7 +679,8 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
                   itemBuilder: (_, index) => buildCard(index),
                 ),
         );
-      });
+      },
+    );
   }
 
   Future<void> _showAddDialog() async {
@@ -721,38 +742,43 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
               final name = nameCtrl.text.trim();
               final course = courseCtrl.text.trim();
               if (name.isEmpty) return;
-              
+
               if (isTeacher && course.length < 2) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('请填写完整课程名称')),
-                );
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(const SnackBar(content: Text('请填写完整课程名称')));
                 return;
               }
               if (isCanteen && uploadedImageUrls.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('请上传一张食堂封面图片')),
-                );
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(const SnackBar(content: Text('请上传一张食堂封面图片')));
                 return;
               }
-              
+
               Navigator.pop(ctx);
-              
+
               if (isTeacher) {
                 await context.read<TeacherProvider>().addTeacher(name, course);
                 if (!mounted) return;
-                await context
-                    .read<TeacherProvider>()
-                    .loadTeachers(query: _currentQuery);
+                await context.read<TeacherProvider>().loadTeachers(
+                  query: _currentQuery,
+                );
               } else if (isMajor) {
-                await context
-                    .read<MajorProvider>()
-                    .addMajor(name, levelCtrl.text);
+                await context.read<MajorProvider>().addMajor(
+                  name,
+                  levelCtrl.text,
+                );
                 if (!mounted) return;
                 await context.read<MajorProvider>().loadMajors();
               } else if (isCanteen) {
-                final success = await context.read<CanteenProvider>().addCanteen(name, uploadedImageUrls.first);
+                final success = await context
+                    .read<CanteenProvider>()
+                    .addCanteen(name, uploadedImageUrls.first);
                 if (success) {
-                   ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('添加成功，经验+10')));
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(const SnackBar(content: Text('添加成功，经验+10')));
                 }
                 if (!mounted) return;
                 await context.read<CanteenProvider>().loadCanteens();

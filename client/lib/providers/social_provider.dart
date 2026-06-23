@@ -31,12 +31,16 @@ class SocialProvider extends ChangeNotifier {
     }
   }
 
-  Future<Map<String, dynamic>> getFollowers(int userId, {int page = 1, int limit = 20}) async {
+  Future<Map<String, dynamic>> getFollowers(
+    int userId, {
+    int page = 1,
+    int limit = 20,
+  }) async {
     try {
-      final response = await _dio.get('/user/$userId/followers', queryParameters: {
-        'page': page,
-        'limit': limit,
-      });
+      final response = await _dio.get(
+        '/user/$userId/followers',
+        queryParameters: {'page': page, 'limit': limit},
+      );
       return response.data;
     } catch (e) {
       debugPrint('获取粉丝失败: $e');
@@ -44,12 +48,16 @@ class SocialProvider extends ChangeNotifier {
     }
   }
 
-  Future<Map<String, dynamic>> getFollowing(int userId, {int page = 1, int limit = 20}) async {
+  Future<Map<String, dynamic>> getFollowing(
+    int userId, {
+    int page = 1,
+    int limit = 20,
+  }) async {
     try {
-      final response = await _dio.get('/user/$userId/following', queryParameters: {
-        'page': page,
-        'limit': limit,
-      });
+      final response = await _dio.get(
+        '/user/$userId/following',
+        queryParameters: {'page': page, 'limit': limit},
+      );
       return response.data;
     } catch (e) {
       debugPrint('获取关注列表失败: $e');
@@ -73,12 +81,16 @@ class SocialProvider extends ChangeNotifier {
     }
   }
 
-  Future<List<Post>> getUserPosts(int userId, {int page = 1, int limit = 20}) async {
+  Future<List<Post>> getUserPosts(
+    int userId, {
+    int page = 1,
+    int limit = 20,
+  }) async {
     try {
-      final response = await _dio.get('/user/$userId/posts', queryParameters: {
-        'page': page,
-        'limit': limit,
-      });
+      final response = await _dio.get(
+        '/user/$userId/posts',
+        queryParameters: {'page': page, 'limit': limit},
+      );
       final List<dynamic> data = response.data;
       return data.map((json) => Post.fromJson(json)).toList();
     } catch (e) {

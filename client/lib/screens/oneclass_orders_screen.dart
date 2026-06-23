@@ -24,12 +24,15 @@ class _OneClassOrdersScreenState extends State<OneClassOrdersScreen> {
 
   Future<Map<String, dynamic>> _loadOrders() async {
     final auth = context.read<AuthProvider>();
-    final res = await auth.dio.get('/oneclass/admin/orders', queryParameters: {
-      if (_status.isNotEmpty) 'status': _status,
-      if (_tier.isNotEmpty) 'tier': _tier,
-      'page': 1,
-      'page_size': 50,
-    });
+    final res = await auth.dio.get(
+      '/oneclass/admin/orders',
+      queryParameters: {
+        if (_status.isNotEmpty) 'status': _status,
+        if (_tier.isNotEmpty) 'tier': _tier,
+        'page': 1,
+        'page_size': 50,
+      },
+    );
     return Map<String, dynamic>.from(res.data as Map);
   }
 
@@ -73,7 +76,9 @@ class _OneClassOrdersScreenState extends State<OneClassOrdersScreen> {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
-      backgroundColor: isDark ? const Color(0xFF10131A) : const Color(0xFFF4F6FB),
+      backgroundColor: isDark
+          ? const Color(0xFF10131A)
+          : const Color(0xFFF4F6FB),
       appBar: AppBar(
         title: const Text('OneClass 订单'),
         backgroundColor: Colors.transparent,
@@ -112,8 +117,14 @@ class _OneClassOrdersScreenState extends State<OneClassOrdersScreen> {
                     items: const [
                       DropdownMenuItem(value: '', child: Text('全部')),
                       DropdownMenuItem(value: 'one_time', child: Text('一次性购买')),
-                      DropdownMenuItem(value: 'lifetime_updates', child: Text('长期更新')),
-                      DropdownMenuItem(value: 'upgrade_updates', child: Text('补差升级')),
+                      DropdownMenuItem(
+                        value: 'lifetime_updates',
+                        child: Text('长期更新'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'upgrade_updates',
+                        child: Text('补差升级'),
+                      ),
                     ],
                     onChanged: (v) {
                       setState(() => _tier = v ?? '');
@@ -135,8 +146,8 @@ class _OneClassOrdersScreenState extends State<OneClassOrdersScreen> {
                   final error = snap.error;
                   final message = error is DioException
                       ? (error.response?.data is Map
-                          ? '${(error.response?.data as Map)['error'] ?? error.message}'
-                          : '${error.message}')
+                            ? '${(error.response?.data as Map)['error'] ?? error.message}'
+                            : '${error.message}')
                       : '$error';
                   return Center(child: Text('加载失败：$message'));
                 }
@@ -170,19 +181,25 @@ class _OneClassOrdersScreenState extends State<OneClassOrdersScreen> {
                                   Expanded(
                                     child: Text(
                                       '${order['order_no'] ?? '-'}',
-                                      style: const TextStyle(fontWeight: FontWeight.bold),
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                      ),
                                     ),
                                   ),
                                   Chip(
                                     label: Text(status),
-                                    labelStyle: const TextStyle(color: Colors.white),
+                                    labelStyle: const TextStyle(
+                                      color: Colors.white,
+                                    ),
                                     backgroundColor: _statusColor(status),
                                   ),
                                 ],
                               ),
                               const SizedBox(height: 6),
                               Text('用户：${_userLabel(order)}'),
-                              Text('套餐：${_tierLabel(order)} · ${_money(order['amount_cents'])}'),
+                              Text(
+                                '套餐：${_tierLabel(order)} · ${_money(order['amount_cents'])}',
+                              ),
                               Text('机器码：${order['machine_id'] ?? '-'}'),
                               Text('支付宝交易号：${order['trade_no'] ?? '-'}'),
                               Text('授权：${hasToken ? '已签发' : '未签发'}'),

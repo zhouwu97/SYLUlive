@@ -13,8 +13,11 @@ class TeacherDetailScreen extends StatefulWidget {
   final int teacherId;
   final String teacherName;
 
-  const TeacherDetailScreen(
-      {super.key, required this.teacherId, required this.teacherName});
+  const TeacherDetailScreen({
+    super.key,
+    required this.teacherId,
+    required this.teacherName,
+  });
 
   @override
   State<TeacherDetailScreen> createState() => _TeacherDetailScreenState();
@@ -47,7 +50,10 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
         title: const Text('确认删除'),
         content: Text('确定要删除教师「${widget.teacherName}」吗？此操作不可撤销。'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
@@ -62,12 +68,16 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
       final dio = context.read<AuthProvider>().dio;
       await dio.delete('/teachers/${widget.teacherId}/reject');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('教师已删除')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('教师已删除')));
         Navigator.pop(context, true);
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('删除失败: $e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('删除失败: $e')));
       }
     }
   }
@@ -84,13 +94,16 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
         Navigator.pop(context, _didChange);
       },
       child: Scaffold(
-        backgroundColor: isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
+        backgroundColor: isDark
+            ? const Color(0xFF131720)
+            : const Color(0xFFF4F6FB),
         extendBodyBehindAppBar: false, // 修复重叠：不再将 body 延伸到 AppBar 后方
         appBar: AppBar(
           systemOverlayStyle: SystemUiOverlayStyle(
             statusBarColor: Colors.transparent,
-            statusBarIconBrightness:
-                isDark ? Brightness.light : Brightness.dark,
+            statusBarIconBrightness: isDark
+                ? Brightness.light
+                : Brightness.dark,
           ),
           centerTitle: true,
           titleTextStyle: TextStyle(
@@ -118,52 +131,65 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
           ],
         ),
         body: Consumer<TeacherProvider>(
-              builder: (context, provider, _) {
-                if (provider.isLoading) {
-                  return const Center(child: CircularProgressIndicator());
-                }
+          builder: (context, provider, _) {
+            if (provider.isLoading) {
+              return const Center(child: CircularProgressIndicator());
+            }
 
-                final teacher = provider.selectedTeacher;
-                if (teacher == null) return const Center(child: Text('加载失败'));
+            final teacher = provider.selectedTeacher;
+            if (teacher == null) return const Center(child: Text('加载失败'));
 
-                return ListView(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 80), // 顶部边距设为 0
-                  children: [
-                    _buildHeader(teacher, provider, isDark),
-                    const SizedBox(height: 16),
-                    _buildMyRating(provider, isDark),
-                    const SizedBox(height: 20),
-                    if (provider.ratings.isNotEmpty) ...[
-                      Text('${provider.ratingCount}人评价', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: isDark ? Colors.white : Colors.black87)),
-                      const SizedBox(height: 8),
-                      GlassContainer(
-                        padding: const EdgeInsets.all(12),
-                        borderRadius: 12,
-                        blur: 10,
-                        opacity: 0.1,
-                        backgroundColor: isDark ? const Color(0x99171B24) : const Color(0xCCFFFFFF),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Icon(Icons.warning_amber_rounded, color: Colors.orange[700], size: 20),
-                            const SizedBox(width: 8),
-                            const Expanded(
-                              child: Text(
-                                '禁止对老师造成人格侮辱，只准对课堂行为评价。',
-                                style: TextStyle(fontSize: 13, color: Colors.grey),
-                              ),
-                            ),
-                          ],
+            return ListView(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 80), // 顶部边距设为 0
+              children: [
+                _buildHeader(teacher, provider, isDark),
+                const SizedBox(height: 16),
+                _buildMyRating(provider, isDark),
+                const SizedBox(height: 20),
+                if (provider.ratings.isNotEmpty) ...[
+                  Text(
+                    '${provider.ratingCount}人评价',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: isDark ? Colors.white : Colors.black87,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  GlassContainer(
+                    padding: const EdgeInsets.all(12),
+                    borderRadius: 12,
+                    blur: 10,
+                    opacity: 0.1,
+                    backgroundColor: isDark
+                        ? const Color(0x99171B24)
+                        : const Color(0xCCFFFFFF),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(
+                          Icons.warning_amber_rounded,
+                          color: Colors.orange[700],
+                          size: 20,
                         ),
-                      ),
-                      const SizedBox(height: 12),
-                      ...provider.ratings.map((r) => _buildRatingCard(r, isDark)),
-                    ],
-                    const SizedBox(height: 80),
-                  ],
-                );
-              },
-            ),
+                        const SizedBox(width: 8),
+                        const Expanded(
+                          child: Text(
+                            '禁止对老师造成人格侮辱，只准对课堂行为评价。',
+                            style: TextStyle(fontSize: 13, color: Colors.grey),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  ...provider.ratings.map((r) => _buildRatingCard(r, isDark)),
+                ],
+                const SizedBox(height: 80),
+              ],
+            );
+          },
+        ),
       ),
     );
   }
@@ -173,36 +199,50 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
       borderRadius: 16,
       blur: 12,
       opacity: 0.16,
-      backgroundColor:
-          isDark ? const Color(0x99171B24) : const Color(0xCCFFFFFF),
+      backgroundColor: isDark
+          ? const Color(0x99171B24)
+          : const Color(0xCCFFFFFF),
       child: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
           children: [
             CircleAvatar(
-                radius: 36,
-                backgroundColor: const Color(0xFF6366F1),
-                child: Text(teacher.name.isNotEmpty ? teacher.name[0] : '?',
-                    style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 28,
-                        fontWeight: FontWeight.bold))),
+              radius: 36,
+              backgroundColor: const Color(0xFF6366F1),
+              child: Text(
+                teacher.name.isNotEmpty ? teacher.name[0] : '?',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 28,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
             const SizedBox(height: 12),
-            Text(teacher.name,
-                style:
-                    const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+            Text(
+              teacher.name,
+              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+            ),
             const SizedBox(height: 4),
-            Text(teacher.course,
-                style: TextStyle(fontSize: 15, color: Colors.grey[600])),
+            Text(
+              teacher.course,
+              style: TextStyle(fontSize: 15, color: Colors.grey[600]),
+            ),
             const SizedBox(height: 12),
-            Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-              _buildStarRowLarge(provider.averageStar),
-              const SizedBox(width: 8),
-              Text(
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _buildStarRowLarge(provider.averageStar),
+                const SizedBox(width: 8),
+                Text(
                   '${provider.averageStar.toStringAsFixed(1)} (${provider.ratingCount}人)',
                   style: const TextStyle(
-                      fontSize: 16, fontWeight: FontWeight.w600)),
-            ]),
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
           ],
         ),
       ),
@@ -216,10 +256,13 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
         borderRadius: 12,
         blur: 12,
         opacity: 0.16,
-        backgroundColor:
-            isDark ? const Color(0x99171B24) : const Color(0xCCFFFFFF),
+        backgroundColor: isDark
+            ? const Color(0x99171B24)
+            : const Color(0xCCFFFFFF),
         child: const Padding(
-            padding: EdgeInsets.all(16), child: Center(child: Text('请先登录后评价'))),
+          padding: EdgeInsets.all(16),
+          child: Center(child: Text('请先登录后评价')),
+        ),
       );
     }
 
@@ -227,48 +270,57 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
       borderRadius: 12,
       blur: 12,
       opacity: 0.16,
-      backgroundColor:
-          isDark ? const Color(0x99171B24) : const Color(0xCCFFFFFF),
+      backgroundColor: isDark
+          ? const Color(0x99171B24)
+          : const Color(0xCCFFFFFF),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(children: [
-              Text('我的评价',
+            Row(
+              children: [
+                Text(
+                  '我的评价',
                   style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                      color: isDark ? Colors.white : Colors.black87)),
-              const Spacer(),
-              if (provider.myRating != null && !_isEditing)
-                TextButton(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: isDark ? Colors.white : Colors.black87,
+                  ),
+                ),
+                const Spacer(),
+                if (provider.myRating != null && !_isEditing)
+                  TextButton(
                     onPressed: () {
-                      if (mounted) setState(() {
-                        _isEditing = true;
-                        _star = provider.myRating!.star;
-                        _commentCtrl.text = provider.myRating!.comment;
-                      });
+                      if (mounted)
+                        setState(() {
+                          _isEditing = true;
+                          _star = provider.myRating!.star;
+                          _commentCtrl.text = provider.myRating!.comment;
+                        });
                     },
-                    child: const Text('修改')),
-            ]),
+                    child: const Text('修改'),
+                  ),
+              ],
+            ),
             const SizedBox(height: 8),
             if (!_isEditing && provider.myRating != null) ...[
               _buildStarRowLarge(provider.myRating!.star.toDouble()),
             ] else ...[
               // 评分星星
               Row(
-                  children: List.generate(
-                      5,
-                      (i) => GestureDetector(
-                            onTap: () => setState(() => _star = i + 1),
-                            child: Icon(
-                                i < _star ? Icons.star : Icons.star_border,
-                                size: 36,
-                                color: i < _star
-                                    ? Colors.amber
-                                    : Colors.grey[400]),
-                          ))),
+                children: List.generate(
+                  5,
+                  (i) => GestureDetector(
+                    onTap: () => setState(() => _star = i + 1),
+                    child: Icon(
+                      i < _star ? Icons.star : Icons.star_border,
+                      size: 36,
+                      color: i < _star ? Colors.amber : Colors.grey[400],
+                    ),
+                  ),
+                ),
+              ),
               const SizedBox(height: 12),
               TextField(
                 controller: _commentCtrl,
@@ -281,46 +333,60 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
                     borderSide: BorderSide.none,
                   ),
                   filled: true,
-                  fillColor: isDark ? const Color(0x33FFFFFF) : const Color(0x0A000000),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                  fillColor: isDark
+                      ? const Color(0x33FFFFFF)
+                      : const Color(0x0A000000),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 12,
+                  ),
                 ),
-                style: TextStyle(fontSize: 14, color: isDark ? Colors.white : Colors.black87),
+                style: TextStyle(
+                  fontSize: 14,
+                  color: isDark ? Colors.white : Colors.black87,
+                ),
               ),
               const SizedBox(height: 12),
               // 提交按钮
-              Row(mainAxisAlignment: MainAxisAlignment.end, children: [
-                if (_isEditing)
-                  TextButton(
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  if (_isEditing)
+                    TextButton(
                       onPressed: () => setState(() => _isEditing = false),
-                      child: const Text('取消')),
-                const SizedBox(width: 8),
-                ElevatedButton(
-                  onPressed: _star == 0
-                      ? null
-                      : () async {
-                          final ok = await provider.rateTeacher(
-                              widget.teacherId, _star, _commentCtrl.text.trim());
-                          if (ok && mounted) {
-                            _didChange = true;
-                            if (mounted) setState(() => _isEditing = false);
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                  content: Text('评价成功'),
-                                  backgroundColor: Colors.green),
+                      child: const Text('取消'),
+                    ),
+                  const SizedBox(width: 8),
+                  ElevatedButton(
+                    onPressed: _star == 0
+                        ? null
+                        : () async {
+                            final ok = await provider.rateTeacher(
+                              widget.teacherId,
+                              _star,
+                              _commentCtrl.text.trim(),
                             );
-                          }
-                        },
-                  child: Text(_isEditing ? '更新' : '提交评价'),
-                ),
-              ]),
+                            if (ok && mounted) {
+                              _didChange = true;
+                              if (mounted) setState(() => _isEditing = false);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('评价成功'),
+                                  backgroundColor: Colors.green,
+                                ),
+                              );
+                            }
+                          },
+                    child: Text(_isEditing ? '更新' : '提交评价'),
+                  ),
+                ],
+              ),
             ],
           ],
         ),
       ),
     );
   }
-
-
 
   Widget _buildRatingCard(TeacherRating r, bool isDark) {
     return Card(
@@ -329,37 +395,72 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       child: Padding(
         padding: const EdgeInsets.all(12),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [
-            CircleAvatar(radius: 14, backgroundColor: const Color(0xFF6366F1), child: Text(r.userName.isNotEmpty ? r.userName[0] : '?', style: const TextStyle(color: Colors.white, fontSize: 12))),
-            const SizedBox(width: 8),
-            Expanded(child: Text(r.userName.isNotEmpty ? r.userName : '匿名', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14))),
-            _buildStarRowSmall(r.star.toDouble()),
-          ]),
-          if (r.comment.isNotEmpty)
-            Padding(padding: const EdgeInsets.only(top: 6), child: Text(r.comment, style: TextStyle(color: isDark ? Colors.grey[300] : Colors.grey[700], fontSize: 14))),
-        ]),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                CircleAvatar(
+                  radius: 14,
+                  backgroundColor: const Color(0xFF6366F1),
+                  child: Text(
+                    r.userName.isNotEmpty ? r.userName[0] : '?',
+                    style: const TextStyle(color: Colors.white, fontSize: 12),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    r.userName.isNotEmpty ? r.userName : '匿名',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14,
+                    ),
+                  ),
+                ),
+                _buildStarRowSmall(r.star.toDouble()),
+              ],
+            ),
+            if (r.comment.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text(
+                  r.comment,
+                  style: TextStyle(
+                    color: isDark ? Colors.grey[300] : Colors.grey[700],
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildStarRowLarge(double avg) {
     return Row(
-        mainAxisSize: MainAxisSize.min,
-        children: List.generate(5, (i) {
-          return Icon(i < avg.round() ? Icons.star : Icons.star_border,
-              size: 28,
-              color: i < avg.round() ? Colors.amber : Colors.grey[350]);
-        }));
+      mainAxisSize: MainAxisSize.min,
+      children: List.generate(5, (i) {
+        return Icon(
+          i < avg.round() ? Icons.star : Icons.star_border,
+          size: 28,
+          color: i < avg.round() ? Colors.amber : Colors.grey[350],
+        );
+      }),
+    );
   }
 
   Widget _buildStarRowSmall(double avg) {
     return Row(
-        mainAxisSize: MainAxisSize.min,
-        children: List.generate(5, (i) {
-          return Icon(i < avg.round() ? Icons.star : Icons.star_border,
-              size: 14,
-              color: i < avg.round() ? Colors.amber : Colors.grey[400]);
-        }));
+      mainAxisSize: MainAxisSize.min,
+      children: List.generate(5, (i) {
+        return Icon(
+          i < avg.round() ? Icons.star : Icons.star_border,
+          size: 14,
+          color: i < avg.round() ? Colors.amber : Colors.grey[400],
+        );
+      }),
+    );
   }
 }

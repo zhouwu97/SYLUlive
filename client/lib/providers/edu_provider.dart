@@ -22,6 +22,7 @@ class OperationResult<T> {
 }
 
 class EduProvider extends ChangeNotifier {
+  late final Dio _eduDio; // Python 教务服务专用
   late final Dio _authDio; // Go 服务器（获取当前用户信息）
 
   String? _userId;
@@ -57,21 +58,19 @@ class EduProvider extends ChangeNotifier {
 
   EduProvider(Dio authDio) {
     _authDio = authDio;
+    _eduDio = Dio(
+      BaseOptions(
+        baseUrl: ApiConstants.eduServiceUrl,
+        connectTimeout: const Duration(seconds: 30),
+        receiveTimeout: const Duration(seconds: 60),
+      ),
+    );
   }
 
   void setUserId(String userId) {
     if (_userId == userId) return;
     _userId = userId;
-    
-    // 切换用户时立即清空内存字段
-    _isBound = false;
-    _studentId = '';
-    _name = '';
-    _grade = '';
-    _college = '';
-    _major = '';
     _statusLoaded = false;
-    
     loadStatus();
   }
 
@@ -129,7 +128,6 @@ class EduProvider extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('edu_bound_$_userId', _isBound);
     await prefs.setString('edu_student_id_$_userId', _studentId);
-    await prefs.setString('edu_name_$_userId', _name);
     await prefs.setString('edu_grade_$_userId', _grade);
     await prefs.setString('edu_college_$_userId', _college);
     await prefs.setString('edu_major_$_userId', _major);
@@ -139,38 +137,38 @@ class EduProvider extends ChangeNotifier {
     if (_userId == null) return false;
     final prefs = await SharedPreferences.getInstance();
     _studentId = prefs.getString('edu_student_id_$_userId') ?? '';
-    _name = prefs.getString('edu_name_$_userId') ?? '';
     _grade = prefs.getString('edu_grade_$_userId') ?? '';
     _college = prefs.getString('edu_college_$_userId') ?? '';
     _major = prefs.getString('edu_major_$_userId') ?? '';
     return prefs.getBool('edu_bound_$_userId') ?? false;
   }
 
-  // 保留仅用于清理旧版遗留密码的逻辑
-  Future<void> _deleteEduPassword(String studentId) async {
-    if (!kIsWeb) {
-      const storage = FlutterSecureStorage();
-      await storage.delete(key: 'edu_pwd_$studentId');
-    } else {
+  Future<void> _saveEduPassword(String studentId, String password) async {
+    if (kIsWeb) {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.remove('edu_pwd_$studentId');
+      await prefs.setString('edu_pwd_$studentId', password);
+    } else {
+      const storage = FlutterSecureStorage();
+      await storage.write(key: 'edu_pwd_$studentId', value: password);
     }
   }
 
-  Future<void> _clearBoundStatus() async {
-    if (_userId == null) return;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('edu_bound_$_userId');
-    await prefs.remove('edu_student_id_$_userId');
-    await prefs.remove('edu_name_$_userId');
-    await prefs.remove('edu_grade_$_userId');
-    await prefs.remove('edu_college_$_userId');
-    await prefs.remove('edu_major_$_userId');
+  Future<String?> _loadEduPassword(String studentId) async {
+    if (kIsWeb) {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString('edu_pwd_$studentId');
+    } else {
+      const storage = FlutterSecureStorage();
+      return await storage.read(key: 'edu_pwd_$studentId');
+    }
   }
 
   // 绑定教务账号
-  Future<bool> bind(String studentId, String password,
-      {bool isSilent = false}) async {
+  Future<bool> bind(
+    String studentId,
+    String password, {
+    bool isSilent = false,
+  }) async {
     if (_userId == null) {
       if (!isSilent) {
         _errorMessage = '用户未登录';
@@ -186,9 +184,10 @@ class EduProvider extends ChangeNotifier {
     }
 
     try {
-      final response = await _authDio.post(
-        '/edu/bind',
+      final response = await _eduDio.post(
+        '/api/edu/bind',
         data: {
+          'user_id': _userId,
           'student_id': studentId,
           'password': password,
         },
@@ -208,6 +207,7 @@ class EduProvider extends ChangeNotifier {
         _errorMessage = null;
         _statusLoaded = true;
         await _saveBoundStatus();
+        await _saveEduPassword(_studentId, password);
         notifyListeners();
         return true;
       }
@@ -235,13 +235,12 @@ class EduProvider extends ChangeNotifier {
     }
 
     try {
-      final response = await _authDio.delete('/edu/bind');
+      final response = await _eduDio.delete(
+        '/api/edu/bind',
+        queryParameters: {'user_id': _userId},
+      );
 
       if (response.statusCode == 200) {
-        final oldStudentId = _studentId;
-        await _deleteEduPassword(oldStudentId);
-        await _clearBoundStatus();
-
         _isBound = false;
         _studentId = '';
         _name = '';
@@ -260,9 +259,22 @@ class EduProvider extends ChangeNotifier {
     }
   }
 
+  // 尝试后台静默恢复教务登录
+  Future<bool> _trySilentRelogin() async {
+    final pwd = await _loadEduPassword(_studentId);
+    if (pwd != null && pwd.isNotEmpty) {
+      debugPrint('后台尝试静默恢复教务登录...');
+      AppFeedback.showGlobalToast('检测到教务登录已过期，自动为您重新登录中...');
+      return await bind(_studentId, pwd, isSilent: true);
+    }
+    return false;
+  }
+
   // 获取课表
   Future<OperationResult<List<Map<String, dynamic>>>?> getCourses(
-      String year, int semester) async {
+    String year,
+    int semester,
+  ) async {
     if (_userId == null) {
       return OperationResult.fail('用户未登录');
     }
@@ -271,27 +283,25 @@ class EduProvider extends ChangeNotifier {
       // 调用 Go 服务器，由 Go 使用存储的 cookie 访问教务系统
       final response = await _authDio.post(
         '/edu/courses',
-        data: {
-          'year': year,
-          'semester': semester,
-        },
+        data: {'year': year, 'semester': semester},
       );
 
       if (response.statusCode == 200) {
         final data = response.data;
-        if (data['success'] == false) {
-          final errorMsg =
-              (data['message'] ?? data['error'] ?? data['detail'] ?? '获取课表失败')
-                  .toString();
+        if (data['courses'] != null && (data['courses'] as List).isNotEmpty) {
+          return OperationResult.ok(
+            List<Map<String, dynamic>>.from(data['courses']),
+          );
+        }
+        final errorMsg =
+            (data['error'] ?? data['message'] ?? data['detail'] ?? '')
+                .toString();
+        if (errorMsg.isNotEmpty) {
           return OperationResult.fail(errorMsg);
         }
-        
-        final courses = data['courses'];
-        if (courses is List) {
-          return OperationResult.ok(
-              List<Map<String, dynamic>>.from(courses));
+        if (data['success'] == false) {
+          return OperationResult.fail(data['message'] ?? '获取课表失败');
         }
-        return OperationResult.fail('课表响应格式异常');
       }
       return OperationResult.fail('获取课表失败');
     } on DioException catch (e) {
@@ -301,9 +311,27 @@ class EduProvider extends ChangeNotifier {
           errorMsg.contains('重新登录') ||
           errorMsg.contains('会话') ||
           errorMsg.contains('cookie') ||
+          errorMsg.contains('暂未开放') ||
           errorMsg.contains('失效') ||
           errorMsg.contains('Cookie')) {
-        return OperationResult.fail('教务登录状态已失效，请重新绑定');
+        final rebindSuccess = await _trySilentRelogin();
+        if (rebindSuccess) {
+          try {
+            final retryResp = await _authDio.post(
+              '/edu/courses',
+              data: {'year': year, 'semester': semester},
+            );
+            if (retryResp.statusCode == 200 &&
+                retryResp.data['courses'] != null &&
+                (retryResp.data['courses'] as List).isNotEmpty) {
+              return OperationResult.ok(
+                List<Map<String, dynamic>>.from(retryResp.data['courses']),
+              );
+            }
+          } catch (_) {}
+        } else {
+          return OperationResult.fail('教务登录状态已失效，请重新绑定');
+        }
       }
       debugPrint('获取课表失败: $errorMsg');
       return OperationResult.fail(errorMsg);
@@ -312,7 +340,9 @@ class EduProvider extends ChangeNotifier {
 
   // 获取成绩
   Future<OperationResult<List<Map<String, dynamic>>>?> getGrades(
-      String year, int semester) async {
+    String year,
+    int semester,
+  ) async {
     if (_userId == null) {
       return OperationResult.fail('用户未登录');
     }
@@ -321,17 +351,15 @@ class EduProvider extends ChangeNotifier {
       // 调用 Go 服务器，由 Go 使用存储的 cookie 访问教务系统
       final response = await _authDio.post(
         '/edu/grades',
-        data: {
-          'year': year,
-          'semester': semester,
-        },
+        data: {'year': year, 'semester': semester},
       );
 
       if (response.statusCode == 200) {
         final data = response.data;
         if (data['grades'] != null) {
           return OperationResult.ok(
-              List<Map<String, dynamic>>.from(data['grades']));
+            List<Map<String, dynamic>>.from(data['grades']),
+          );
         }
         if (data['error'] != null) {
           return OperationResult.fail(data['error'].toString());
@@ -345,9 +373,26 @@ class EduProvider extends ChangeNotifier {
           errorMsg.contains('重新登录') ||
           errorMsg.contains('会话') ||
           errorMsg.contains('cookie') ||
+          errorMsg.contains('暂未开放') ||
           errorMsg.contains('失效') ||
           errorMsg.contains('Cookie')) {
-        return OperationResult.fail('教务登录状态已失效，请重新绑定');
+        final rebindSuccess = await _trySilentRelogin();
+        if (rebindSuccess) {
+          try {
+            final retryResp = await _authDio.post(
+              '/edu/grades',
+              data: {'year': year, 'semester': semester},
+            );
+            if (retryResp.statusCode == 200 &&
+                retryResp.data['grades'] != null) {
+              return OperationResult.ok(
+                List<Map<String, dynamic>>.from(retryResp.data['grades']),
+              );
+            }
+          } catch (_) {}
+        } else {
+          return OperationResult.fail('教务登录状态已失效，请重新绑定');
+        }
       }
       debugPrint('获取成绩失败: $errorMsg');
       return OperationResult.fail(errorMsg);
@@ -357,7 +402,10 @@ class EduProvider extends ChangeNotifier {
   /// 将课表同步到本地数据库（供课表页展示）
   /// [courses] 为 fetch 返回的原始课程列表
   Future<bool> syncCourses(
-      String year, int semester, List<Map<String, dynamic>> courses) async {
+    String year,
+    int semester,
+    List<Map<String, dynamic>> courses,
+  ) async {
     if (_userId == null) return false;
 
     final kbList = courses.map((c) {
@@ -376,9 +424,10 @@ class EduProvider extends ChangeNotifier {
     final rawJson = jsonEncode({'kbList': kbList});
 
     try {
-      final response = await _authDio.post(
-        '/edu/courses/sync',
+      final response = await _eduDio.post(
+        '/api/edu/courses/sync',
         data: {
+          'user_id': _userId,
           'year': year,
           'semester': semester,
           'raw_json': rawJson,

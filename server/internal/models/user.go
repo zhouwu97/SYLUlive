@@ -1,7 +1,12 @@
 package models
 
 import (
+	"strings"
 	"time"
+
+	"gorm.io/gorm"
+	"shenliyuan/internal/config"
+	"shenliyuan/internal/utils"
 )
 
 // Role 用户角色
@@ -38,7 +43,8 @@ type User struct {
 
 	// 教务系统绑定信息（整合学长项目）
 	EduStudentID string `gorm:"size:20" json:"edu_student_id"`  // 教务学号
-	EduName      string `gorm:"size:100" json:"edu_name"`       // 教务姓名
+	EduPassword  string `gorm:"size:255" json:"-"`              // 教务密码（加密存储）
+	EduCookie    string `gorm:"size:1000" json:"-"`             // 登录Cookie
 	EduBound     bool   `gorm:"default:false" json:"edu_bound"` // 是否已绑定教务
 	EduGrade     string `gorm:"size:20" json:"edu_grade"`       // 年级
 	EduCollege   string `gorm:"size:100" json:"edu_college"`    // 学院
@@ -55,4 +61,24 @@ type User struct {
 	FollowersCount     int `gorm:"default:0;index" json:"followers_count"`
 	FollowingCount     int `gorm:"default:0;index" json:"following_count"`
 	TotalLikesReceived int `gorm:"default:0;index" json:"total_likes_received"`
+}
+
+func (u *User) BeforeSave(tx *gorm.DB) (err error) {
+	if u.EduPassword != "" && !strings.HasPrefix(u.EduPassword, "ENC:") {
+		encrypted, err := utils.EncryptAES(u.EduPassword, config.Load().JWTSecret)
+		if err == nil {
+			u.EduPassword = "ENC:" + encrypted
+		}
+	}
+	return nil
+}
+
+func (u *User) AfterFind(tx *gorm.DB) (err error) {
+	if strings.HasPrefix(u.EduPassword, "ENC:") {
+		decrypted, err := utils.DecryptAES(strings.TrimPrefix(u.EduPassword, "ENC:"), config.Load().JWTSecret)
+		if err == nil {
+			u.EduPassword = decrypted
+		}
+	}
+	return nil
 }

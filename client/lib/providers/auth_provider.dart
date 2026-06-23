@@ -27,11 +27,8 @@ class AuthResult {
 
   factory AuthResult.success() => const AuthResult(success: true);
 
-  factory AuthResult.failure(String message, {int? statusCode}) => AuthResult(
-        success: false,
-        errorMessage: message,
-        statusCode: statusCode,
-      );
+  factory AuthResult.failure(String message, {int? statusCode}) =>
+      AuthResult(success: false, errorMessage: message, statusCode: statusCode);
 }
 
 class AuthProvider extends ChangeNotifier {
@@ -39,6 +36,7 @@ class AuthProvider extends ChangeNotifier {
   static const String _userKey = 'auth_user';
 
   final Dio _dio;
+  late final Dio _eduDio; // Python 教务服务
 
   User? _user;
   String? _token;
@@ -54,31 +52,40 @@ class AuthProvider extends ChangeNotifier {
   PersistCookieJar? _cookieJar;
 
   AuthProvider(this._dio) {
+    _eduDio = Dio(
+      BaseOptions(
+        baseUrl: ApiConstants.eduServiceUrl,
+        connectTimeout: ApiConstants.connectTimeout,
+        receiveTimeout: ApiConstants.receiveTimeout,
+      ),
+    );
     // 添加 401 拦截器：自动登出并提示重新登录
-    _dio.interceptors.add(InterceptorsWrapper(
-      onRequest: (options, handler) {
-        _applyAuthHeader();
-        handler.next(options);
-      },
-      onError: (error, handler) {
-        if (error.response?.statusCode == 401 && _token != null) {
-          // 无效令牌，自动登出
-          debugPrint('检测到 401，自动登出');
-          _token = null;
-          _user = null;
-          _dio.options.headers.remove('Authorization');
-          _clearStoredAuth();
-          notifyListeners();
-          // 重置 overlay 标记，允许再次弹出
-          AuthExpiredManager.resetSessionFlag();
-          // 延迟一帧弹出重新登录提示
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            _showAuthExpiredOverlay();
-          });
-        }
-        handler.next(error);
-      },
-    ));
+    _dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          _applyAuthHeader();
+          handler.next(options);
+        },
+        onError: (error, handler) {
+          if (error.response?.statusCode == 401 && _token != null) {
+            // 无效令牌，自动登出
+            debugPrint('检测到 401，自动登出');
+            _token = null;
+            _user = null;
+            _dio.options.headers.remove('Authorization');
+            _clearStoredAuth();
+            notifyListeners();
+            // 重置 overlay 标记，允许再次弹出
+            AuthExpiredManager.resetSessionFlag();
+            // 延迟一帧弹出重新登录提示
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              _showAuthExpiredOverlay();
+            });
+          }
+          handler.next(error);
+        },
+      ),
+    );
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadStoredAuth());
   }
 
@@ -173,8 +180,12 @@ class AuthProvider extends ChangeNotifier {
     return AppFeedback.dioErrorMessage(e, fallback: '操作失败，请稍后再试');
   }
 
-  Future<AuthResult> register(String studentId, String password,
-      {String? nickname, String? qq}) async {
+  Future<AuthResult> register(
+    String studentId,
+    String password, {
+    String? nickname,
+    String? qq,
+  }) async {
     _isLoading = true;
     notifyListeners();
 
@@ -222,10 +233,10 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final response = await _dio.post('/login', data: {
-        'student_id': studentId,
-        'password': password,
-      });
+      final response = await _dio.post(
+        '/login',
+        data: {'student_id': studentId, 'password': password},
+      );
 
       _isLoading = false;
       if (response.statusCode == 200) {
@@ -243,10 +254,7 @@ class AuthProvider extends ChangeNotifier {
       notifyListeners();
       final errorMsg = _parseDioError(e);
       debugPrint('登录失败: $errorMsg');
-      return AuthResult.failure(
-        errorMsg,
-        statusCode: e.response?.statusCode,
-      );
+      return AuthResult.failure(errorMsg, statusCode: e.response?.statusCode);
     } catch (e) {
       _isLoading = false;
       notifyListeners();
@@ -299,8 +307,10 @@ class AuthProvider extends ChangeNotifier {
 
   Future<AuthResult> updateProfile(String nickname) async {
     try {
-      final response =
-          await _dio.put('/user/profile', data: {'nickname': nickname});
+      final response = await _dio.put(
+        '/user/profile',
+        data: {'nickname': nickname},
+      );
       if (response.statusCode == 200) {
         _user = User.fromJson(response.data);
         await _saveAuth();
@@ -331,7 +341,9 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> applyAuthPayload(
-      String token, Map<String, dynamic> userJson) async {
+    String token,
+    Map<String, dynamic> userJson,
+  ) async {
     _token = token;
     _user = User.fromJson(userJson);
     _applyAuthHeader();
@@ -355,8 +367,10 @@ class AuthProvider extends ChangeNotifier {
       final avatarUrl = uploadResponse.data['url'] as String;
 
       // 步骤2: 更新用户头像URL
-      final response =
-          await _dio.put('/user/avatar', data: {'avatar': avatarUrl});
+      final response = await _dio.put(
+        '/user/avatar',
+        data: {'avatar': avatarUrl},
+      );
       if (response.statusCode == 200) {
         // 刷新用户信息以获取最新的avatar
         final profileResponse = await _dio.get('/user/profile');
@@ -376,12 +390,14 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<AuthResult> changePassword(
-      String oldPassword, String newPassword) async {
+    String oldPassword,
+    String newPassword,
+  ) async {
     try {
-      final response = await _dio.post('/change_password', data: {
-        'old_password': oldPassword,
-        'new_password': newPassword,
-      });
+      final response = await _dio.post(
+        '/change_password',
+        data: {'old_password': oldPassword, 'new_password': newPassword},
+      );
       if (response.statusCode == 200) {
         return AuthResult.success();
       }
@@ -399,11 +415,14 @@ class AuthProvider extends ChangeNotifier {
     String newPassword,
   ) async {
     try {
-      final response = await _dio.post('/forgot_password', data: {
-        'student_id': studentId,
-        'edu_password': eduPassword,
-        'new_password': newPassword,
-      });
+      final response = await _dio.post(
+        '/forgot_password',
+        data: {
+          'student_id': studentId,
+          'edu_password': eduPassword,
+          'new_password': newPassword,
+        },
+      );
       if (response.statusCode == 200) {
         return AuthResult.success();
       }
@@ -434,8 +453,10 @@ class AuthProvider extends ChangeNotifier {
   /// 校验验证码
   Future<AuthResult> verifyCode(String qq, String code) async {
     try {
-      final response =
-          await _dio.post('/verify_code', data: {'qq': qq, 'code': code});
+      final response = await _dio.post(
+        '/verify_code',
+        data: {'qq': qq, 'code': code},
+      );
       if (response.statusCode == 200 && response.data['success'] == true) {
         return AuthResult.success();
       }
@@ -448,16 +469,16 @@ class AuthProvider extends ChangeNotifier {
   /// 验证教务账号（注册前验证学号是否属于自己）
   Future<AuthResult> verifyEdu(String studentId, String eduPassword) async {
     try {
-      // 教务验证服务由 Go 提供代理
+      // 教务服务使用专用的 eduDio，路由是 /api/edu/pre_verify
       debugPrint('=== verifyEdu 开始 ===');
       debugPrint('student_id: $studentId');
-      debugPrint('baseUrl: ${_dio.options.baseUrl}');
-      debugPrint('fullUrl: ${_dio.options.baseUrl}/edu/pre_verify');
+      debugPrint('baseUrl: ${_eduDio.options.baseUrl}');
+      debugPrint('fullUrl: ${_eduDio.options.baseUrl}/api/edu/pre_verify');
 
-      final response = await _dio.post('/edu/pre_verify', data: {
-        'student_id': studentId,
-        'password': eduPassword,
-      });
+      final response = await _eduDio.post(
+        '/api/edu/pre_verify',
+        data: {'student_id': studentId, 'password': eduPassword},
+      );
 
       debugPrint('=== verifyEdu 响应 ===');
       debugPrint('statusCode: ${response.statusCode}');
@@ -494,11 +515,14 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final response = await _dio.post('/login_edu', data: {
-        'student_id': studentId,
-        'edu_password': eduPassword,
-        'password': appPassword,
-      });
+      final response = await _dio.post(
+        '/login_edu',
+        data: {
+          'student_id': studentId,
+          'edu_password': eduPassword,
+          'password': appPassword,
+        },
+      );
 
       _isLoading = false;
       if (response.statusCode == 200) {
@@ -536,12 +560,15 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final response = await _dio.post('/register_with_edu', data: {
-        'student_id': studentId,
-        'password': appPassword,
-        'edu_password': eduPassword,
-        if (nickname != null && nickname.isNotEmpty) 'nickname': nickname,
-      });
+      final response = await _dio.post(
+        '/register_with_edu',
+        data: {
+          'student_id': studentId,
+          'password': appPassword,
+          'edu_password': eduPassword,
+          if (nickname != null && nickname.isNotEmpty) 'nickname': nickname,
+        },
+      );
 
       _isLoading = false;
       if (response.statusCode == 201) {
@@ -572,8 +599,10 @@ class AuthProvider extends ChangeNotifier {
   Future<void> updateDeviceToken(String registrationId) async {
     if (!isLoggedIn || registrationId.isEmpty) return;
     try {
-      await _dio
-          .put('/user/device_token', data: {'device_token': registrationId});
+      await _dio.put(
+        '/user/device_token',
+        data: {'device_token': registrationId},
+      );
     } catch (e) {
       debugPrint('更新设备Token失败: $e');
     }
@@ -588,12 +617,15 @@ class AuthProvider extends ChangeNotifier {
     _isLoading = true;
     notifyListeners();
     try {
-      final response = await _dio.post('/register', data: {
-        'qq': qq,
-        'code': code,
-        'password': password,
-        if (nickname != null && nickname.isNotEmpty) 'nickname': nickname,
-      });
+      final response = await _dio.post(
+        '/register',
+        data: {
+          'qq': qq,
+          'code': code,
+          'password': password,
+          if (nickname != null && nickname.isNotEmpty) 'nickname': nickname,
+        },
+      );
 
       _isLoading = false;
       if (response.statusCode == 201) {

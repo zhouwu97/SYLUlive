@@ -8,29 +8,16 @@ class CourtScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('公众法庭'),
-        leading: const BackButton(),
-      ),
+      appBar: AppBar(title: const Text('公众法庭'), leading: const BackButton()),
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              Icons.gavel,
-              size: 80,
-              color: Theme.of(context).primaryColor,
-            ),
+            Icon(Icons.gavel, size: 80, color: Theme.of(context).primaryColor),
             const SizedBox(height: 16),
-            Text(
-              '申诉投票',
-              style: Theme.of(context).textTheme.headlineSmall,
-            ),
+            Text('申诉投票', style: Theme.of(context).textTheme.headlineSmall),
             const SizedBox(height: 8),
-            const Text(
-              '请仔细阅读帖子内容和删除理由\n做出公正的判断',
-              textAlign: TextAlign.center,
-            ),
+            const Text('请仔细阅读帖子内容和删除理由\n做出公正的判断', textAlign: TextAlign.center),
             const SizedBox(height: 24),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,

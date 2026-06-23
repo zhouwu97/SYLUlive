@@ -98,6 +98,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   Post? _selectedPost;
   int? _selectedUserId;
   bool _messagesLoadRequested = false;
+  final Map<String, DateTime> _lastRefreshTimes = {};
 
   static const _autoRefreshInterval = Duration(seconds: 60);
 
@@ -281,7 +282,18 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     if (!config.supportsRemoteLoading || config.remoteSort == null) return;
     final sort = config.remoteSort!;
     final postProvider = context.read<PostProvider>();
-    if (postProvider.hasLoadedFor(1, sort: sort)) {
+
+    final now = DateTime.now();
+    final lastRefresh = _lastRefreshTimes[mode];
+    final hasLoaded = postProvider.hasLoadedFor(1, sort: sort);
+    if (hasLoaded &&
+        lastRefresh != null &&
+        now.difference(lastRefresh) < const Duration(seconds: 60)) {
+      return;
+    }
+    _lastRefreshTimes[mode] = now;
+
+    if (hasLoaded) {
       unawaited(postProvider.refresh(boardId: 1, sort: sort));
     } else {
       unawaited(postProvider.loadPosts(boardId: 1, sort: sort));
@@ -319,6 +331,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     final modeAtStart = _feedMode;
     final sortAtStart = _currentRemoteSort;
     if (sortAtStart == null) return;
+    _lastRefreshTimes[modeAtStart] = DateTime.now();
     final postProvider = context.read<PostProvider>();
     await Future.wait([
       postProvider.refresh(boardId: 1, sort: sortAtStart),
@@ -916,12 +929,27 @@ class _ShuitieScreenState extends State<ShuitieScreen>
         child: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 680),
-            child: Consumer<PostProvider>(
-              builder: (context, postProvider, child) {
+            child: Selector<
+                PostProvider,
+                ({
+                  List<Post> posts,
+                  bool isLoading,
+                  bool hasMore,
+                  int version
+                })>(
+              selector: (context, postProvider) {
                 final sort = _currentRemoteSort ?? 'all';
-                final posts = postProvider.postsFor(1, sort: sort);
-                final isFeedLoading = postProvider.isLoadingFor(1, sort: sort);
-                final feedHasMore = postProvider.hasMoreFor(1, sort: sort);
+                return (
+                  posts: postProvider.postsFor(1, sort: sort),
+                  isLoading: postProvider.isLoadingFor(1, sort: sort),
+                  hasMore: postProvider.hasMoreFor(1, sort: sort),
+                  version: postProvider.requestVersionFor(1, sort: sort),
+                );
+              },
+              builder: (context, data, child) {
+                final posts = data.posts;
+                final isFeedLoading = data.isLoading;
+                final feedHasMore = data.hasMore;
 
                 final visiblePosts = _resolveVisiblePosts(posts);
 
@@ -937,139 +965,134 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                   },
                   child: SlideTransition(
                     position: Tween<Offset>(
-                      begin: Offset(_slideDirection * 0.12, 0),
+                      begin: Offset(_slideDirection * 0.04, 0),
                       end: Offset.zero,
                     ).animate(_feedSwitchAnimation),
-                    child: FadeTransition(
-                      opacity: _feedSwitchAnimation,
-                      child: NotificationListener<ScrollNotification>(
-                        onNotification: (notification) {
-                          if (_currentConfig.supportsRemoteLoading &&
-                              notification.metrics.pixels >=
-                                  notification.metrics.maxScrollExtent - 500 &&
-                              feedHasMore &&
-                              !isFeedLoading) {
-                            postProvider.loadPosts(
-                              boardId: 1,
-                              sort: sort,
-                            );
-                          }
-                          return false;
-                        },
-                        child: CustomScrollView(
-                          physics: const AlwaysScrollableScrollPhysics(
-                            parent: BouncingScrollPhysics(),
-                          ),
-                          slivers: [
-                            // 搜索框（可折叠）
-                            SliverPersistentHeader(
-                              pinned: false,
-                              floating: true,
-                              delegate: _SliverSearchBarDelegate(
-                                vsync: this,
-                                child: Padding(
-                                  padding:
-                                      const EdgeInsets.fromLTRB(12, 2, 12, 4),
-                                  child: _buildSearchBar(isDark),
-                                ),
+                    child: NotificationListener<ScrollNotification>(
+                      onNotification: (notification) {
+                        if (_currentConfig.supportsRemoteLoading &&
+                            notification.metrics.pixels >=
+                                notification.metrics.maxScrollExtent - 500 &&
+                            feedHasMore &&
+                            !isFeedLoading) {
+                          context.read<PostProvider>().loadPosts(
+                                boardId: 1,
+                                sort: _currentRemoteSort ?? 'all',
+                              );
+                        }
+                        return false;
+                      },
+                      child: CustomScrollView(
+                        physics: const AlwaysScrollableScrollPhysics(
+                          parent: BouncingScrollPhysics(),
+                        ),
+                        slivers: [
+                          // 搜索框（可折叠）
+                          SliverPersistentHeader(
+                            pinned: false,
+                            floating: true,
+                            delegate: _SliverSearchBarDelegate(
+                              vsync: this,
+                              child: Padding(
+                                padding:
+                                    const EdgeInsets.fromLTRB(12, 2, 12, 4),
+                                child: _buildSearchBar(isDark),
                               ),
                             ),
-                            if (!_currentConfig.supportsRemoteLoading)
-                              SliverFillRemaining(
-                                hasScrollBody: false,
-                                child: _buildFollowingPlaceholder(isDark),
-                              )
-                            else if (isFeedLoading && posts.isEmpty)
-                              const SliverFillRemaining(
-                                child:
-                                    Center(child: CircularProgressIndicator()),
-                              )
-                            else if (visiblePosts.isEmpty)
-                              SliverFillRemaining(
-                                child: _buildEmptyState(
-                                  isDark,
-                                  title: _searchQuery.isNotEmpty
-                                      ? '没有找到匹配帖子'
-                                      : '暂无帖子',
-                                  subtitle: _searchQuery.isNotEmpty
-                                      ? '目前只按标题搜索，换个标题关键词试试'
-                                      : '发布第一条帖子吧',
-                                  onRetry: _refresh,
-                                ),
-                              )
-                            else
-                              SliverList(
-                                delegate: SliverChildBuilderDelegate(
-                                  (context, index) {
-                                    final post = visiblePosts[index];
-                                    final isSelected = _selectedPost?.id ==
-                                            post.id &&
-                                        _selectedUserId == null &&
-                                        ResponsiveUtil.useDesktopShell(context);
-                                    return Padding(
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 12),
-                                      child: Container(
-                                        decoration: isSelected
-                                            ? BoxDecoration(
-                                                borderRadius:
-                                                    BorderRadius.circular(20),
-                                                boxShadow: [
-                                                  BoxShadow(
-                                                    color: Theme.of(context)
-                                                        .primaryColor
-                                                        .withValues(
-                                                            alpha: 0.15),
-                                                    blurRadius: 20,
-                                                    spreadRadius: 2,
-                                                  )
-                                                ],
-                                              )
-                                            : null,
-                                        child: PostCard(
-                                          post: post,
-                                          onAuthorTap: _openUserInSplit,
-                                          onTap: () {
-                                            if (ResponsiveUtil.useDesktopShell(
-                                                context)) {
-                                              _openPostInSplit(post);
-                                            } else {
-                                              Navigator.push(
-                                                context,
-                                                MaterialPageRoute(
-                                                  builder: (_) =>
-                                                      PostDetailScreen(
-                                                    postId: post.id,
-                                                    isMarket: false,
-                                                    initialPost: post,
-                                                  ),
-                                                ),
-                                              );
-                                            }
-                                          },
-                                        ),
-                                      ),
-                                    );
-                                  },
-                                  childCount: visiblePosts.length,
-                                ),
+                          ),
+                          if (!_currentConfig.supportsRemoteLoading)
+                            SliverFillRemaining(
+                              hasScrollBody: false,
+                              child: _buildFollowingPlaceholder(isDark),
+                            )
+                          else if (isFeedLoading && posts.isEmpty)
+                            const SliverFillRemaining(
+                              child: Center(child: CircularProgressIndicator()),
+                            )
+                          else if (visiblePosts.isEmpty)
+                            SliverFillRemaining(
+                              child: _buildEmptyState(
+                                isDark,
+                                title: _searchQuery.isNotEmpty
+                                    ? '没有找到匹配帖子'
+                                    : '暂无帖子',
+                                subtitle: _searchQuery.isNotEmpty
+                                    ? '目前只按标题搜索，换个标题关键词试试'
+                                    : '发布第一条帖子吧',
+                                onRetry: _refresh,
                               ),
-                            if (isFeedLoading && posts.isNotEmpty)
-                              const SliverToBoxAdapter(
-                                child: Padding(
-                                  padding: EdgeInsets.symmetric(vertical: 18),
-                                  child: Center(
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
+                            )
+                          else
+                            SliverList(
+                              delegate: SliverChildBuilderDelegate(
+                                (context, index) {
+                                  final post = visiblePosts[index];
+                                  final isSelected = _selectedPost?.id ==
+                                          post.id &&
+                                      _selectedUserId == null &&
+                                      ResponsiveUtil.useDesktopShell(context);
+                                  return Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 12),
+                                    child: Container(
+                                      decoration: isSelected
+                                          ? BoxDecoration(
+                                              borderRadius:
+                                                  BorderRadius.circular(20),
+                                              boxShadow: [
+                                                BoxShadow(
+                                                  color: Theme.of(context)
+                                                      .primaryColor
+                                                      .withValues(alpha: 0.15),
+                                                  blurRadius: 20,
+                                                  spreadRadius: 2,
+                                                )
+                                              ],
+                                            )
+                                          : null,
+                                      child: PostCard(
+                                        post: post,
+                                        onAuthorTap: _openUserInSplit,
+                                        onTap: () {
+                                          if (ResponsiveUtil.useDesktopShell(
+                                              context)) {
+                                            _openPostInSplit(post);
+                                          } else {
+                                            Navigator.push(
+                                              context,
+                                              MaterialPageRoute(
+                                                builder: (_) =>
+                                                    PostDetailScreen(
+                                                  postId: post.id,
+                                                  isMarket: false,
+                                                  initialPost: post,
+                                                ),
+                                              ),
+                                            );
+                                          }
+                                        },
+                                      ),
                                     ),
+                                  );
+                                },
+                                childCount: visiblePosts.length,
+                              ),
+                            ),
+                          if (isFeedLoading && posts.isNotEmpty)
+                            const SliverToBoxAdapter(
+                              child: Padding(
+                                padding: EdgeInsets.symmetric(vertical: 18),
+                                child: Center(
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
                                   ),
                                 ),
                               ),
-                            const SliverToBoxAdapter(
-                              child: SizedBox(height: 80),
                             ),
-                          ],
-                        ),
+                          const SliverToBoxAdapter(
+                            child: SizedBox(height: 80),
+                          ),
+                        ],
                       ),
                     ),
                   ),

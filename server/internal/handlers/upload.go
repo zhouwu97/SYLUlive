@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -109,6 +110,119 @@ func (h *UploadHandler) Upload(c *gin.Context) {
 		"file_id": fileRecord.ID,
 		"url":     fileRecord.Path,
 		"hash":    hashStr,
+	})
+}
+
+// RecoverUpload restores a missing /uploads file from a client-side cache copy.
+// Unlike the normal upload endpoint, this writes to the requested legacy path so
+// existing post/avatar records start working again even when cached bytes differ.
+func (h *UploadHandler) RecoverUpload(c *gin.Context) {
+	expectedPath := path.Clean("/" + strings.TrimSpace(c.PostForm("expected_path")))
+	if !strings.HasPrefix(expectedPath, "/uploads/") {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "恢复路径无效"})
+		return
+	}
+
+	relPath := strings.TrimPrefix(expectedPath, "/uploads/")
+	if relPath == "" || strings.Contains(relPath, "..") {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "恢复路径无效"})
+		return
+	}
+
+	ext := strings.ToLower(filepath.Ext(relPath))
+	if ext != ".jpg" && ext != ".jpeg" && ext != ".png" && ext != ".gif" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "只支持 jpg/png/gif 格式"})
+		return
+	}
+
+	file, err := c.FormFile("file")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请选择要恢复的文件"})
+		return
+	}
+	if file.Size > h.maxSize {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "文件大小不能超过10MB"})
+		return
+	}
+
+	dstPath := filepath.Join(h.uploadDir, filepath.FromSlash(relPath))
+	uploadRoot, err := filepath.Abs(h.uploadDir)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "恢复目录无效"})
+		return
+	}
+	dstAbs, err := filepath.Abs(dstPath)
+	if err != nil || (dstAbs != uploadRoot && !strings.HasPrefix(dstAbs, uploadRoot+string(os.PathSeparator))) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "恢复路径无效"})
+		return
+	}
+
+	if _, err := os.Stat(dstAbs); err == nil {
+		c.JSON(http.StatusOK, gin.H{"url": expectedPath, "already_exists": true})
+		return
+	} else if !os.IsNotExist(err) {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "检查文件失败"})
+		return
+	}
+
+	src, err := file.Open()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取文件失败"})
+		return
+	}
+	defer src.Close()
+
+	hash := sha256.New()
+	if _, err := io.Copy(hash, src); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "计算文件哈希失败"})
+		return
+	}
+	hashStr := hex.EncodeToString(hash.Sum(nil))
+
+	if err := os.MkdirAll(filepath.Dir(dstAbs), 0755); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建上传目录失败"})
+		return
+	}
+
+	dst, err := os.Create(dstAbs)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建文件失败"})
+		return
+	}
+	defer dst.Close()
+
+	if _, err := src.Seek(0, 0); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取文件失败"})
+		return
+	}
+	if _, err := io.Copy(dst, src); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存文件失败"})
+		return
+	}
+
+	var fileRecord models.File
+	if err := h.db.Where("path = ?", expectedPath).First(&fileRecord).Error; err == nil {
+		h.db.Model(&fileRecord).Updates(map[string]interface{}{
+			"size":      file.Size,
+			"mime_type": getMimeType(ext),
+		})
+	} else if err == gorm.ErrRecordNotFound {
+		pathHash := strings.TrimSuffix(filepath.Base(relPath), ext)
+		if len(pathHash) != 64 {
+			pathHash = hashStr
+		}
+		_ = h.db.Create(&models.File{
+			Hash:     pathHash,
+			Path:     expectedPath,
+			Size:     file.Size,
+			MimeType: getMimeType(ext),
+			RefCount: 1,
+		}).Error
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"url":  expectedPath,
+		"hash": hashStr,
 	})
 }
 

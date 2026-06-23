@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -8,6 +9,7 @@ import '../config/privileged_accounts.dart';
 import '../models/post.dart';
 import '../providers/auth_provider.dart';
 import '../providers/post_provider.dart';
+import '../services/upload_cache_recovery_service.dart';
 import '../widgets/glass_container.dart';
 
 class CreatePostScreen extends StatefulWidget {
@@ -38,6 +40,18 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   bool _isLoading = false;
   final List<XFile> _selectedImages = [];
   final List<PostImage> _existingImages = [];
+
+  void _recoverImageUrl(String url) {
+    try {
+      UploadCacheRecoveryService.recover(
+        imageUrl: url,
+        dio: context.read<AuthProvider>().dio,
+        cacheManager: DefaultCacheManager(),
+      ).then((recovered) {
+        if (recovered && mounted) setState(() {});
+      }).catchError((_) {});
+    } catch (_) {}
+  }
 
   bool get _isEditing => widget.editingPost != null;
   bool get _canUploadUnlimitedImages {
@@ -487,10 +501,13 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                               child: CachedNetworkImage(
                                 imageUrl: ApiConstants.fullUrl(image.url),
                                 fit: BoxFit.cover,
-                                errorWidget: (_, __, ___) => Container(
-                                  color: Colors.grey[300],
-                                  child: const Icon(Icons.broken_image),
-                                ),
+                                errorWidget: (_, url, ___) {
+                                  _recoverImageUrl(url);
+                                  return Container(
+                                    color: Colors.grey[300],
+                                    child: const Icon(Icons.broken_image),
+                                  );
+                                },
                               ),
                             ),
                           ),

@@ -79,6 +79,13 @@ class ShuitieScreen extends StatefulWidget {
 class _ShuitieScreenState extends State<ShuitieScreen>
     with TickerProviderStateMixin, WidgetsBindingObserver {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+  
+  late final Map<String, ScrollController> _feedScrollControllers;
+
+  ScrollController get _currentFeedScrollController {
+    return _feedScrollControllers[_feedMode]!;
+  }
+
   late AnimationController _animationController;
   late AnimationController _feedSwitchController;
   late Animation<double> _feedSwitchAnimation;
@@ -112,6 +119,14 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   @override
   void initState() {
     super.initState();
+
+    _feedScrollControllers = {
+      for (final mode in kFeedModes)
+        mode.key: ScrollController(
+          keepScrollOffset: true,
+        ),
+    };
+
     WidgetsBinding.instance.addObserver(this);
     _animationController = AnimationController(
       vsync: this,
@@ -119,7 +134,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     );
     _feedSwitchController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 180),
+      duration: const Duration(milliseconds: 220),
       value: 1.0,
     );
     _feedSwitchAnimation = CurvedAnimation(
@@ -173,6 +188,11 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _stopAutoRefresh();
+
+    for (final controller in _feedScrollControllers.values) {
+      controller.dispose();
+    }
+
     _searchController.dispose();
     _feedSwitchController.dispose();
     _animationController.dispose();
@@ -691,6 +711,76 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     );
   }
 
+  Widget _buildFeedTabs(bool isDark) {
+    const tabWidth = 48.0;
+    const animationDuration = Duration(milliseconds: 220);
+
+    final activeIndex =
+        _currentModeIndex < 0 ? kDefaultFeedModeIndex : _currentModeIndex;
+
+    return SizedBox(
+      width: tabWidth * kFeedModes.length,
+      height: 44,
+      child: Stack(
+        children: [
+          // 所有标签共用的一条指示线
+          AnimatedPositioned(
+            duration: animationDuration,
+            curve: Curves.easeOutCubic,
+            left: activeIndex * tabWidth + (tabWidth - 22) / 2,
+            bottom: 3,
+            width: 22,
+            height: 3,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.primary,
+                borderRadius: BorderRadius.circular(999),
+              ),
+            ),
+          ),
+
+          Row(
+            children: List.generate(kFeedModes.length, (index) {
+              final config = kFeedModes[index];
+              final active = index == activeIndex;
+
+              return SizedBox(
+                width: tabWidth,
+                height: 44,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => _changeFeedMode(config.key),
+                  child: Center(
+                    child: AnimatedScale(
+                      duration: animationDuration,
+                      curve: Curves.easeOutCubic,
+                      scale: active ? 1.04 : 1.0,
+                      child: AnimatedDefaultTextStyle(
+                        duration: animationDuration,
+                        curve: Curves.easeOutCubic,
+                        style: TextStyle(
+                          fontSize: active ? 15.5 : 15,
+                          fontWeight:
+                              active ? FontWeight.w800 : FontWeight.w500,
+                          color: active
+                              ? (isDark ? Colors.white : Colors.black87)
+                              : (isDark
+                                  ? Colors.white54
+                                  : Colors.black45),
+                        ),
+                        child: Text(config.label),
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            }),
+          ),
+        ],
+      ),
+    );
+  }
+
   // ---- 顶部导航栏 ----
   Widget _buildHomeTopBar(bool isDark) {
     return SizedBox(
@@ -717,52 +807,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
           ),
           // 中间标签（独立居中）
           Center(
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: List.generate(kFeedModes.length, (index) {
-                final config = kFeedModes[index];
-                final active = _feedMode == config.key;
-                return GestureDetector(
-                  onTap: () => _changeFeedMode(config.key),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    child: SizedBox(
-                      height: 44,
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            config.label,
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight:
-                                  active ? FontWeight.w800 : FontWeight.w600,
-                              color: active
-                                  ? (isDark ? Colors.white : Colors.black87)
-                                  : (isDark
-                                      ? Colors.white70
-                                      : Colors.black.withValues(alpha: 0.72)),
-                            ),
-                          ),
-                          const SizedBox(height: 3),
-                          AnimatedContainer(
-                            duration: const Duration(milliseconds: 200),
-                            height: 3,
-                            width: active ? 20 : 0,
-                            decoration: BoxDecoration(
-                              color: active
-                                  ? Theme.of(context).primaryColor
-                                  : Colors.transparent,
-                              borderRadius: BorderRadius.circular(2),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                );
-              }),
-            ),
+            child: _buildFeedTabs(isDark),
           ),
           // 右侧私信图标
           Positioned(
@@ -817,26 +862,9 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       bottom: false,
       child: Column(
         children: [
-          // 顶部栏固定，不参与滚动，带渐变承托
-          Container(
+          // 顶部栏固定，不参与滚动，保持透明
+          Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: isDark
-                    ? [
-                        Colors.black.withValues(alpha: 0.25),
-                        Colors.black.withValues(alpha: 0.05),
-                        Colors.transparent,
-                      ]
-                    : [
-                        Colors.white.withValues(alpha: 0.12),
-                        Colors.white.withValues(alpha: 0.02),
-                        Colors.transparent,
-                      ],
-              ),
-            ),
             child: _buildHomeTopBar(isDark),
           ),
           // 内容区
@@ -980,6 +1008,10 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                         return false;
                       },
                       child: CustomScrollView(
+                        key: PageStorageKey<String>(
+                          'home-feed-scroll-$_feedMode',
+                        ),
+                        controller: _currentFeedScrollController,
                         physics: const AlwaysScrollableScrollPhysics(
                           parent: BouncingScrollPhysics(),
                         ),

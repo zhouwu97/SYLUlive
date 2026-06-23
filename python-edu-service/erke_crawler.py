@@ -67,7 +67,8 @@ class SyluCrawler:
     AES_IV = b"wrdvpnisthebest!"                 # AES-CFB128 初始向量 (16 字节)
 
     # ── 登录页路径 ──────────────────────────────────────────────
-    LOGIN_PATH = "/SyluTW/Sys/SystemForm/Login.aspx"
+    LOGIN_PATH = "/SyluTW/Sys/UserLogin.aspx"
+    SCORE_PATH = "/SyluTW/Sys/SystemForm/StuAction/StuActionSearch.aspx"
 
     # ── queryBtn 按钮的 GBK 原始字节 ─────────────────────────────
     # 服务器期望的表单值为: %B5%C7++++++++++++%C2%BC
@@ -99,6 +100,7 @@ class SyluCrawler:
         """
         # ── 创建 requests.Session (保持全局 Cookie) ──
         self.session = requests.Session()
+        self.session.verify = False  # WebVPN 证书链不完整
         self.session.headers["User-Agent"] = self.USER_AGENT
 
         # ── 注入 WebVPN 票据 ──
@@ -273,75 +275,17 @@ class SyluCrawler:
             return ""
         return element.get("value", "")
 
-    def _fetch_captcha(self, soup):
-        """
-        从登录页 HTML 中定位验证码图片 URL、下载并通过 OCR 识别
-
-        验证码图片特征:
-          - 通常在 <img> 标签中，src 指向 CheckCode.aspx 等动态页面
-          - 需转换为 VPN 代理 URL 后再请求
-
-        Args:
-            soup: 登录页 HTML 的 BeautifulSoup 对象
-
-        Returns:
-            str: 识别出的 4 位字母/数字验证码 (例如 "A3x9")
-                 若识别失败则返回 "0000" 作为降级值
-        """
-        captcha_img = None
-
-        # ── 策略 1: 按 id 精确匹配 ──
-        for img_id in ("ImageCode", "imgCode", "validCode", "codeImg"):
-            captcha_img = soup.find("img", {"id": img_id})
-            if captcha_img:
-                break
-
-        # ── 策略 2: 按 src 包含关键字匹配 ──
-        if not captcha_img:
-            keywords = ("checkcode", "validatecode", "code", "captcha", "verify")
-            captcha_img = soup.find("img", {
-                "src": lambda s: s and any(kw in s.lower() for kw in keywords)
-            })
-
-        # ── 策略 3: 遍历所有 img，选中 src 最小的图片 (验证码图通常较小) ──
-        if not captcha_img:
-            all_imgs = soup.find_all("img")
-            for img in all_imgs:
-                src = (img.get("src") or "").lower()
-                if any(kw in src for kw in ("code", "check", "valid", "captcha")):
-                    captcha_img = img
-                    break
-
-        if not captcha_img:
-            print("[WARN]  未找到验证码图片元素，使用降级值 '0000'")
-            return "0000"
-
-        # ── 构造验证码 URL ──
-        captcha_src = captcha_img.get("src", "")
-        # 去除 WebVPN 可能追加的查询参数 (如 ?vpn-xxx)
-        base_src = re.sub(r"\?.*$", "", captcha_src)
-
-        if base_src.startswith("http"):
-            captcha_url = base_src
-        else:
-            captcha_url = self.get_vpn_url(base_src)
-
-        try:
-            img_resp = self.session.get(captcha_url, timeout=10)
-            if img_resp.status_code != 200:
-                print(f"[WARN]  验证码下载失败 (HTTP {img_resp.status_code})，使用降级值")
-                return "0000"
-
-            captcha_code = self.ocr.classification(img_resp.content)
-            print(f"[INFO]  验证码识别结果: {captcha_code}")
-            return captcha_code
-
-        except requests.RequestException as e:
-            print(f"[WARN]  验证码下载网络错误: {e}，使用降级值")
-            return "0000"
-        except Exception as e:
-            print(f"[WARN]  验证码 OCR 识别异常: {e}，使用降级值")
-            return "0000"
+    def _extract_captcha(self, soup):
+        """从登录页提取伪验证码 (位于 #code-box 的纯文本，非图片)"""
+        code_box = soup.find(id="code-box") or soup.find(attrs={"id": "code-box"})
+        if code_box:
+            captcha = code_box.get_text(strip=True)
+            if captcha:
+                print(f"[INFO]  提取伪验证码: {captcha}")
+                return captcha
+        # 兜底
+        print("[WARN]  未找到 #code-box，使用兜底验证码 'K777'")
+        return "K777"
 
     def _gbk_urlencode(self, data):
         """
@@ -465,9 +409,9 @@ class SyluCrawler:
                 }
 
             # ════════════════════════════════════════════════
-            #  步骤 3: 下载并 OCR 识别验证码
+            #  步骤 3: 提取伪验证码 (#code-box 文本)
             # ════════════════════════════════════════════════
-            captcha_code = self._fetch_captcha(soup)
+            captcha_code = self._extract_captcha(soup)
 
             # ════════════════════════════════════════════════
             #  步骤 4: RSA 公钥加密密码
@@ -481,15 +425,17 @@ class SyluCrawler:
             #  步骤 5: 构造表单并 POST 登录
             # ════════════════════════════════════════════════
             post_data = {
+                "__EVENTTARGET":        "",
+                "__EVENTARGUMENT":      "",
                 "__VIEWSTATE":          viewstate,
                 "__VIEWSTATEGENERATOR": viewstate_gen,
                 "__EVENTVALIDATION":    event_validation,
                 "UserName":             username,
-                "Password":             password,        # 明文密码 (部分 ASP.NET 后端校验需要)
-                "pwd":                  pwd_encrypted,   # RSA 加密 + Base64 后的密文
-                "pubKey":               pub_key,         # 公钥原样回传
-                "codeInput":            captcha_code,    # OCR 识别的验证码
-                "queryBtn":             self.QUERY_BTN_RAW,  # 登录按钮 (GBK 字节)
+                "Password":             password,
+                "pwd":                  pwd_encrypted,
+                "pubKey":               pub_key,
+                "codeInput":            captcha_code,
+                "queryBtn":             self.QUERY_BTN_RAW,
             }
 
             # 使用 GBK 编码整个表单 (ASP.NET 服务器期望 GBK)
@@ -504,34 +450,42 @@ class SyluCrawler:
             )
 
             # ════════════════════════════════════════════════
-            #  判断登录结果
+            #  判断登录结果（检查重定向脚本）
             # ════════════════════════════════════════════════
+            post_soup = BeautifulSoup(resp.text, "html.parser")
 
-            # 成功: URL 发生了跳转 (进入 main.htm 或 SystemForm 内部页面)
-            final_url = resp.url
-            if any(keyword in final_url for keyword in ("main.htm", "Default.aspx", "SystemForm")):
-                cookies = self.session.cookies.get_dict()
-                return {
-                    "success": True,
-                    "message": "登录成功",
-                    "data": {
-                        "cookies": cookies,
-                        "redirect_url": final_url,
-                    },
-                }
+            # 方式 1 — 检查 JS 重定向脚本
+            for script in post_soup.find_all("script"):
+                if script.string and (
+                    "window.location.href='SystemForm/main.htm'" in script.string or
+                    'window.location.href="SystemForm/main.htm"' in script.string
+                ):
+                    print("[INFO]  登录成功！获取成绩页...")
+                    # 构造成绩页 URL
+                    score_url = login_url.replace("UserLogin.aspx", "SystemForm/StuAction/StuActionSearch.aspx")
+                    score_resp = self.session.get(score_url, timeout=15)
+                    cookies = self.session.cookies.get_dict()
+                    return {
+                        "success": True,
+                        "message": "登录成功",
+                        "data": {
+                            "cookies": cookies,
+                            "score_html": score_resp.text,
+                            "score_url": score_url,
+                        },
+                    }
 
-            # 失败: 从响应中提取错误原因
-            # 方式 1 — JavaScript alert('错误信息')
+            # 方式 2 — JavaScript alert 错误
             alert_match = re.search(r"alert\s*\(\s*'([^']+)'\s*\)", resp.text)
             if alert_match:
                 return {"success": False, "message": alert_match.group(1)}
 
-            # 方式 2 — 页面内的错误提示元素
-            error_elem = soup.find(attrs={"id": lambda x: x and "error" in x.lower() if x else False})
-            if error_elem:
-                return {"success": False, "message": error_elem.get_text(strip=True)}
+            # 方式 3 — 页面错误元素
+            for eid in ("msg", "error", "lblMsg"):
+                error_elem = post_soup.find(id=eid) or post_soup.find(attrs={"id": eid})
+                if error_elem and error_elem.get_text(strip=True):
+                    return {"success": False, "message": error_elem.get_text(strip=True)}
 
-            # 方式 3 — 通用错误
             return {
                 "success": False,
                 "message": "登录失败，请检查学号、密码或验证码是否正确",

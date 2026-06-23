@@ -255,14 +255,6 @@ class EduCrawler:
                 error_match = re.search(r'alert\("([^"]+)"\)', resp.text)
                 if error_match:
                     raise LoginFailedError(error_match.group(1))
-            # 尝试获取JSESSIONID
-            set_cookie = resp.headers.get("set-cookie", "")
-            if 'JSESSIONID' in set_cookie:
-                for part in set_cookie.split(','):
-                    if 'JSESSIONID' in part:
-                        match = re.search(r'JSESSIONID=([^;]+)', part)
-                        if match:
-                            return f"JSESSIONID={match.group(1)}"
             raise LoginFailedError("登录失败，请检查账号密码")
         elif resp.status_code == 200:
             error_match = re.search(r'alert\("([^"]+)"\)', resp.text)
@@ -292,6 +284,8 @@ class EduCrawler:
             raise CookieLapseError("获取学生信息失败，Cookie可能已失效")
 
         body = resp.text
+        if "登录" in body and "login_slogin.html" in body:
+            raise CookieLapseError("获取学生信息失败，Cookie验证不通过，被重定向至登录页")
 
         # 解析学生信息（HTML结构：id="col_xxx"下有<p>标签）
         name = ""
@@ -318,6 +312,9 @@ class EduCrawler:
         zy_match = re.search(r'id="col_zyh_id"[^>]*>.*?<p[^>]*>([^<]+)</p>', body, re.DOTALL)
         if zy_match:
             major = zy_match.group(1).strip()
+
+        if not name.strip():
+            raise LoginFailedError("无法确认学生身份信息")
 
         return StudentInfo(name=name, grade=grade, college=college, major=major)
 
@@ -346,7 +343,7 @@ class EduCrawler:
                     week_day=str(item.get("xqj", "1")),
                     week_str=item.get("zcd", "")
                 )
-                key = (course.name, course.week_day, course.time)
+                key = (course.name, course.teacher, course.location, course.week_day, course.time, course.week_str)
                 if key not in seen:
                     seen.add(key)
                     all_courses.append(course)
@@ -373,9 +370,10 @@ class EduCrawler:
                 timeout=10.0
             )
             print(f"  [DESK] status={resp.status_code}, len={len(resp.text)}")
-            # 901 = session expired; 302 = redirected to login page
             if resp.status_code in (901, 302):
                 raise CookieLapseError("Cookie已过期 (DESK)")
+            if resp.status_code != 200:
+                raise NetworkError(f"获取课表(DESK)请求失败，状态码: {resp.status_code}")
             if resp.status_code == 200 and resp.text.strip() not in ("null", ""):
                 data = resp.json()
                 kb_list = data.get("kbList", [])
@@ -398,12 +396,28 @@ class EduCrawler:
                     headers=base_headers,
                     timeout=10.0
                 )
+                if resp.status_code in (302, 901):
+                    raise CookieLapseError("教务登录状态已失效")
+                if resp.status_code != 200:
+                    raise NetworkError(f"获取课表(MOBILE)请求失败，状态码: {resp.status_code}")
+                
+                content_type = resp.headers.get("content-type", "").lower()
+                if "text/html" in content_type:
+                    raise CookieLapseError("教务返回登录页面")
+
                 if resp.status_code == 200 and resp.text.strip() not in ("null", ""):
-                    data = resp.json()
+                    try:
+                        data = resp.json()
+                    except ValueError as exc:
+                        raise NetworkError("移动端课表响应格式异常") from exc
                     kb_list = data.get("kbList", [])
                     _add_from_kblist(kb_list, "MOBILE")
+            except CookieLapseError:
+                raise
+            except EduError:
+                raise
             except Exception as e:
-                print(f"  [MOBILE] 失败: {e}")
+                raise NetworkError(f"移动端课表请求异常: {e}") from e
 
         if not all_courses:
             raise CourseNotOpenError("当前学期课表暂未开放")
@@ -433,7 +447,9 @@ class EduCrawler:
         )
 
         if resp.status_code != 200:
-            raise CookieLapseError("获取成绩失败，Cookie可能已失效")
+            if resp.status_code in (302, 901):
+                raise CookieLapseError("获取成绩失败，Cookie可能已失效")
+            raise NetworkError(f"获取成绩失败，状态码: {resp.status_code}")
 
         content_type = resp.headers.get("Content-Type", "")
         if "text/html" in content_type:
@@ -454,30 +470,38 @@ class EduCrawler:
 # ============== 辅助函数 ==============
 
 def parse_weeks(week_str: str) -> List[int]:
-    """解析周数字符串，如 '1-16周,18周' -> [1,2,3,...,16,18]"""
+    """解析周数字符串，如 '1-16周,18周', '(单)1-15周', '(双)2-16周'"""
     weeks = []
     if not week_str:
         return weeks
 
-    # 移除"周"字
-    week_str = week_str.replace("周", "")
+    is_odd = "(单)" in week_str or "单" in week_str
+    is_even = "(双)" in week_str or "双" in week_str
 
-    # 按逗号分割
+    week_str = week_str.replace("周", "").replace("(单)", "").replace("(双)", "").replace("单", "").replace("双", "")
+
     parts = week_str.split(",")
     for part in parts:
         part = part.strip()
         if "-" in part:
-            # 范围，如 "1-16"
             try:
-                start, end = part.split("-")
-                for i in range(int(start), int(end) + 1):
+                start, end = map(int, part.split("-"))
+                for i in range(start, end + 1):
+                    if is_odd and i % 2 == 0:
+                        continue
+                    if is_even and i % 2 != 0:
+                        continue
                     weeks.append(i)
             except ValueError:
                 continue
         else:
-            # 单周
             try:
-                weeks.append(int(part))
+                i = int(part)
+                if is_odd and i % 2 == 0:
+                    continue
+                if is_even and i % 2 != 0:
+                    continue
+                weeks.append(i)
             except ValueError:
                 continue
 

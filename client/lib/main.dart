@@ -33,22 +33,139 @@ import 'theme/AppTheme.dart';
 import 'config/api_constants.dart';
 import 'utils/app_navigator.dart';
 import 'utils/private_message_notification.dart';
+import 'services/diagnostic_log_service.dart';
+import 'package:crypto/crypto.dart';
+import 'dart:convert';
+
+String _hashError(String level, String source, String type, String summary, String detail) {
+  final bytes = utf8.encode('$level$source$type$summary$detail');
+  return md5.convert(bytes).toString();
+}
+
+final Map<String, int> _dedupTimes = {};
+
+void _safeRecord({
+  required String level,
+  required String source,
+  required String type,
+  required String summary,
+  required String detail,
+  required String dedupKey,
+  required int dedupMs,
+}) {
+  final now = DateTime.now().millisecondsSinceEpoch;
+  final lastTime = _dedupTimes[dedupKey] ?? 0;
+  
+  if (now - lastTime < dedupMs) {
+    return; // Deduplicate
+  }
+  _dedupTimes[dedupKey] = now;
+  
+  // Clean up old entries to prevent memory leak
+  if (_dedupTimes.length > 100) {
+    _dedupTimes.removeWhere((_, time) => now - time > 60 * 60 * 1000);
+  }
+
+  if (level == 'warning') {
+    DiagnosticLogService.instance.record(
+      level: 'warning',
+      source: source,
+      type: type,
+      summary: summary,
+      detail: detail,
+    );
+  } else {
+    DiagnosticLogService.instance.recordError(
+      source: source,
+      type: type,
+      summary: summary,
+      detail: detail,
+    );
+  }
+}
 
 Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+  await runZonedGuarded<Future<void>>(
+    () async {
+      WidgetsFlutterBinding.ensureInitialized();
 
-  // 强制沉浸式（Edge-to-Edge），解决悬浮底栏下方的系统黑条空挡问题
-  SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-    systemNavigationBarColor: Colors.transparent,
-    statusBarColor: Colors.transparent,
-  ));
+      FlutterError.onError = (FlutterErrorDetails details) {
+        FlutterError.presentError(details);
 
-  await Hive.initFlutter();
-  await CourseReminderService.instance.initialize();
-  await _initializePrivateMessageNotifications();
+        final exceptionText = details.exceptionAsString();
 
-  runApp(const MyApp());
+        if (exceptionText.contains('_ClientSocketException') &&
+            details.library == 'image resource service') {
+          
+          final hostMatch = RegExp(r'address\s*=\s*([^\s,:]+)').firstMatch(exceptionText);
+          final host = hostMatch?.group(1) ?? 'unknown';
+          
+          _safeRecord(
+            level: 'warning',
+            source: '图片',
+            type: '图片加载失败',
+            summary: '图片连接被中途断开',
+            detail: exceptionText,
+            dedupKey: 'image_error_$host',
+            dedupMs: 10 * 60 * 1000, // 10 minutes
+          );
+          return;
+        }
+
+        final fullString = details.toString();
+        _safeRecord(
+          level: 'error',
+          source: 'Flutter',
+          type: details.exception.runtimeType.toString(),
+          summary: exceptionText,
+          detail: fullString,
+          dedupKey: _hashError('error', 'Flutter', details.exception.runtimeType.toString(), exceptionText, fullString),
+          dedupMs: 2000,
+        );
+      };
+
+      PlatformDispatcher.instance.onError = (error, stack) {
+        final exceptionText = error.toString();
+        final fullString = '$error\n\n$stack';
+
+        _safeRecord(
+          level: 'error',
+          source: 'Flutter',
+          type: error.runtimeType.toString(),
+          summary: exceptionText,
+          detail: fullString,
+          dedupKey: _hashError('error', 'Flutter', error.runtimeType.toString(), exceptionText, fullString),
+          dedupMs: 2000,
+        );
+        return true;
+      };
+
+      // 强制沉浸式（Edge-to-Edge），解决悬浮底栏下方的系统黑条空挡问题
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+      SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+        systemNavigationBarColor: Colors.transparent,
+        statusBarColor: Colors.transparent,
+      ));
+
+      await Hive.initFlutter();
+      await CourseReminderService.instance.initialize();
+      await _initializePrivateMessageNotifications();
+      runApp(const MyApp());
+    },
+    (error, stack) {
+      final exceptionText = error.toString();
+      final fullString = '$error\n\n$stack';
+      _safeRecord(
+        level: 'error',
+        source: 'Dart',
+        type: error.runtimeType.toString(),
+        summary: exceptionText,
+        detail: fullString,
+        dedupKey: _hashError('error', 'Dart', error.runtimeType.toString(), exceptionText, fullString),
+        dedupMs: 2000,
+      );
+    },
+  );
 }
 
 /// 极光推送初始化
@@ -384,7 +501,7 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => PostProvider(dio)),
         ChangeNotifierProvider(create: (_) => MessageProvider(dio)),
         ChangeNotifierProvider(create: (_) => EduProvider(dio)),
-        ChangeNotifierProvider(create: (_) => CourseScheduleProvider()),
+        ChangeNotifierProvider(create: (_) => CourseScheduleProvider(dio)),
         ChangeNotifierProvider(create: (_) => TeacherProvider(dio)),
         ChangeNotifierProvider(create: (_) => MajorProvider(dio)),
         ChangeNotifierProvider(create: (_) => CanteenProvider(dio)),
@@ -688,8 +805,77 @@ class AuthWrapper extends StatefulWidget {
   State<AuthWrapper> createState() => _AuthWrapperState();
 }
 
-class _AuthWrapperState extends State<AuthWrapper> {
+class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
   bool _jpushSetup = false;
+  bool _jpushSettingUp = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      final authProvider = context.read<AuthProvider>();
+      if (authProvider.isLoggedIn) {
+        _ensureJPush(authProvider);
+        _checkNativePrivateMessage();
+      }
+    }
+  }
+
+  bool _checkingNativePrivateMessage = false;
+
+  Future<void> _checkNativePrivateMessage() async {
+    if (_checkingNativePrivateMessage) return;
+    _checkingNativePrivateMessage = true;
+
+    try {
+      final payload =
+          await _privateMessageNotificationChannel.invokeMethod<String>(
+        'getPendingPrivateMessage',
+      );
+
+      if (payload == null || payload.isEmpty) return;
+
+      final target = privateMessageTargetFromLocalPayload(payload);
+      if (target == null) {
+        debugPrint('原生私信通知参数解析失败: $payload');
+        return;
+      }
+
+      await _clearPrivateMessageNotifications(target.conversationId);
+      _openPrivateMessage(target);
+    } catch (e) {
+      debugPrint('读取原生待处理私信失败: $e');
+    } finally {
+      _checkingNativePrivateMessage = false;
+    }
+  }
+
+  Future<void> _ensureJPush(AuthProvider authProvider) async {
+    if (_jpushSetup || _jpushSettingUp) return;
+
+    _jpushSettingUp = true;
+    try {
+      await setupJPush(authProvider);
+      _jpushSetup = true;
+      debugPrint('✅ JPush 初始化成功');
+    } catch (e, stack) {
+      debugPrint('JPush 初始化失败，将在下次恢复时重试: $e');
+      debugPrintStack(stackTrace: stack);
+    } finally {
+      _jpushSettingUp = false;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -701,12 +887,14 @@ class _AuthWrapperState extends State<AuthWrapper> {
           );
         }
 
-        if (authProvider.isLoggedIn && !_jpushSetup) {
-          _jpushSetup = true;
-          setupJPush(authProvider);
+        if (authProvider.isLoggedIn) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            _requestNotificationPermissionIfNeeded();
-            _processPendingOpenNotification();
+            if (!_jpushSetup && !_jpushSettingUp) {
+              _ensureJPush(authProvider);
+              _requestNotificationPermissionIfNeeded();
+              _processPendingOpenNotification();
+            }
+            _checkNativePrivateMessage();
           });
         }
 

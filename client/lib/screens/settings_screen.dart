@@ -19,6 +19,7 @@ import '../services/keep_alive_service.dart';
 import '../services/wallpaper_prefetch_service.dart';
 import '../utils/update_checker.dart';
 import '../widgets/glass_container.dart';
+import 'diagnostic_log_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -372,11 +373,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
         // 账号 — 独立卡片
         _buildSettingsRow(
             child: _buildSettingsTile(
-          icon: Icons.person,
+          icon: Icons.receipt_long_rounded,
           iconColor: Colors.blue,
-          title: '编辑资料',
+          title: '查看日志',
+          subtitle: '查看保活、推送和异常记录',
           isDark: isDark,
-          onTap: () => _showEditProfileDialog(context, authProvider),
+          onTap: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => const DiagnosticLogScreen(),
+              ),
+            );
+          },
         )),
         _buildSettingsRow(
             child: _buildSettingsTile(
@@ -495,7 +503,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
       builder: (dialogContext) => AlertDialog(
         title: const Text('后台保活提示'),
         content: const Text(
-          '请在接下来的系统页面里允许自启动、后台运行，并把电池策略设为无限制。保活状态请看常驻通知或快捷设置开关。',
+          '请在接下来的系统页面里开启以下权限或设置：\n\n'
+          '• 电池使用：无限制\n'
+          '• 允许应用自启动\n'
+          '• 允许后台活动\n'
+          '• 最近任务中锁定应用\n\n'
+          '保活状态请看常驻通知或快捷设置开关。',
         ),
         actions: [
           TextButton(

@@ -17,10 +17,9 @@ type JPushClient struct {
 
 // PushPayload 极光 V3 接口 JSON 结构体
 type PushPayload struct {
-	Platform      string       `json:"platform"`
-	Audience      Audience     `json:"audience"`
-	Notification  Notification `json:"notification"`
-	OverrideMsgID string       `json:"override_msg_id,omitempty"`
+	Platform     string       `json:"platform"`
+	Audience     Audience     `json:"audience"`
+	Notification Notification `json:"notification"`
 }
 
 // Audience 推送目标
@@ -70,14 +69,9 @@ func (c *JPushClient) SendNotification(rid, title, alert string, extras map[stri
 }
 
 // SendAliasNotification pushes a notification to the given JPush alias.
-func (c *JPushClient) SendAliasNotification(alias, title, alert string, extras map[string]interface{}, overrideMsgID ...string) error {
-	override := ""
-	if len(overrideMsgID) > 0 {
-		override = overrideMsgID[0]
-	}
+func (c *JPushClient) SendAliasNotification(alias, title, alert string, extras map[string]interface{}) error {
 	return c.send(PushPayload{
-		Platform:      "android",
-		OverrideMsgID: override,
+		Platform: "android",
 		Audience: Audience{
 			Alias: []string{alias},
 		},

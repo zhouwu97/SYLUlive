@@ -13,7 +13,6 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.plugin.common.MethodChannel
 import org.json.JSONObject
-import java.util.zip.Adler32
 
 class MainActivity : FlutterActivity() {
 
@@ -24,12 +23,103 @@ class MainActivity : FlutterActivity() {
         private const val KEEP_ALIVE_CHANNEL = "shenliyuan/keep_alive"
         private const val PRIVATE_MESSAGE_NOTIFICATION_CHANNEL =
             "shenliyuan/private_message_notifications"
+
+        const val ACTION_OPEN_PRIVATE_MESSAGE =
+            "com.example.shenliyuan.OPEN_PRIVATE_MESSAGE"
+
+        const val EXTRA_PRIVATE_MESSAGE_JSON =
+            "private_message_json"
     }
 
     private var pendingDeepLink: String? = null
+    
+    private val pendingLock = Any()
+    private var pendingPrivateMessageJson: String? = null
+
+    private val keepAliveHandler = android.os.Handler(android.os.Looper.getMainLooper())
+
+    private var keepAliveVerifyPending = false
+
+    private val keepAliveVerifyRunnable = Runnable {
+        if (!keepAliveVerifyPending) return@Runnable
+        keepAliveVerifyPending = false
+
+        val status = KeepAliveForegroundService.status(this)
+
+        if (status["enabled"] != true) {
+            DiagnosticLogStore.info(
+                this,
+                source = "保活",
+                type = "前台自愈验证取消",
+                summary = "用户已关闭后台保活，不再验证服务恢复状态",
+                detail = "当前状态: $status",
+            )
+            return@Runnable
+        }
+
+        if (status["serviceRunning"] == true) {
+            DiagnosticLogStore.info(
+                this,
+                source = "保活",
+                type = "前台自愈成功",
+                summary = "前台服务已恢复运行",
+                detail = "当前状态: $status",
+            )
+        } else {
+            DiagnosticLogStore.critical(
+                this,
+                level = "error",
+                source = "保活",
+                type = "前台自愈失败",
+                summary = "恢复服务后仍未运行",
+                detail = "当前状态: $status",
+            )
+        }
+    }
+
+    private val keepAliveHealRunnable = Runnable {
+        val status = KeepAliveForegroundService.status(this)
+        if (status["enabled"] == true && status["serviceRunning"] != true) {
+            DiagnosticLogStore.warning(
+                this,
+                source = "保活",
+                type = "前台自愈",
+                summary = "检测到保活服务未运行，正在尝试恢复",
+                detail = status.entries.joinToString("\n") {
+                    "${it.key}=${it.value}"
+                },
+            )
+
+            try {
+                KeepAliveForegroundService.startIfEnabled(this)
+                keepAliveVerifyPending = true
+                keepAliveHandler.removeCallbacks(keepAliveVerifyRunnable)
+                keepAliveHandler.postDelayed(keepAliveVerifyRunnable, 1500L)
+            } catch (e: Exception) {
+                DiagnosticLogStore.critical(
+                    this,
+                    level = "error",
+                    source = "保活",
+                    type = e.javaClass.simpleName,
+                    summary = "前台自动恢复保活服务失败",
+                    detail = android.util.Log.getStackTraceString(e),
+                )
+            }
+        }
+    }
+
+    private fun consumePendingPrivateMessage(): String? =
+        synchronized(pendingLock) {
+            pendingPrivateMessageJson.also {
+                pendingPrivateMessageJson = null
+            }
+        }
 
     override fun onCreate(savedInstanceState: android.os.Bundle?) {
         super.onCreate(savedInstanceState)
+        
+        handlePrivateMessageIntent(intent)
+        
         createHighPriorityNotificationChannels()
         applyExcludeFromRecents(KeepAliveForegroundService.isHideRecentsEnabled(this))
     }
@@ -44,15 +134,50 @@ class MainActivity : FlutterActivity() {
         super.onPause()
     }
 
+    override fun onStart() {
+        super.onStart()
+        keepAliveHandler.removeCallbacks(keepAliveHealRunnable)
+        keepAliveHandler.removeCallbacks(keepAliveVerifyRunnable)
+        keepAliveVerifyPending = false
+        keepAliveHandler.postDelayed(keepAliveHealRunnable, 1500L)
+    }
+
+    override fun onStop() {
+        keepAliveHandler.removeCallbacks(keepAliveHealRunnable)
+        keepAliveHandler.removeCallbacks(keepAliveVerifyRunnable)
+        keepAliveVerifyPending = false
+        super.onStop()
+    }
+
+    override fun onDestroy() {
+        keepAliveHandler.removeCallbacksAndMessages(null)
+        super.onDestroy()
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        setIntent(intent)
+        
+        handlePrivateMessageIntent(intent)
         handleDeepLink(intent)
+        
         pendingDeepLink?.let { link ->
             flutterEngine?.let { engine ->
                 MethodChannel(engine.dartExecutor.binaryMessenger, DEEPLINK_CHANNEL)
                     .invokeMethod("onDeepLink", link)
                 pendingDeepLink = null
             }
+        }
+    }
+
+    private fun handlePrivateMessageIntent(intent: Intent?) {
+        if (intent?.action != ACTION_OPEN_PRIVATE_MESSAGE) {
+            return
+        }
+
+        synchronized(pendingLock) {
+            pendingPrivateMessageJson =
+                intent.getStringExtra(EXTRA_PRIVATE_MESSAGE_JSON)
         }
     }
 
@@ -161,6 +286,9 @@ class MainActivity : FlutterActivity() {
             PRIVATE_MESSAGE_NOTIFICATION_CHANNEL
         ).setMethodCallHandler { call, result ->
             when (call.method) {
+                "getPendingPrivateMessage" -> {
+                    result.success(consumePendingPrivateMessage())
+                }
                 "clearConversationNotifications" -> {
                     val conversationId = call.argument<Number>("conversationId")?.toLong()
                     clearPrivateMessageNotifications(conversationId)
@@ -207,6 +335,63 @@ class MainActivity : FlutterActivity() {
                         KeepAliveForegroundService.syncAuthToken(
                             this,
                             call.argument<String>("token")
+                        )
+                        result.success(true)
+                    }
+                    "getDiagnosticLogs" -> {
+                        DiagnosticLogStore.getLogs(
+                            this,
+                            onSuccess = { logs ->
+                                runOnUiThread {
+                                    result.success(logs)
+                                }
+                            },
+                            onError = { error ->
+                                runOnUiThread {
+                                    result.error(
+                                        "DIAGNOSTIC_LOG_READ_FAILED",
+                                        error.message,
+                                        null
+                                    )
+                                }
+                            }
+                        )
+                    }
+                    "clearDiagnosticLogs" -> {
+                        DiagnosticLogStore.clearLogs(
+                            this,
+                            onSuccess = {
+                                runOnUiThread {
+                                    result.success(true)
+                                }
+                            },
+                            onError = { error ->
+                                runOnUiThread {
+                                    result.error(
+                                        "DIAGNOSTIC_LOG_CLEAR_FAILED",
+                                        error.message,
+                                        null
+                                    )
+                                }
+                            }
+                        )
+                    }
+                    "writeDiagnosticLog" -> {
+                        val level = call.argument<String>("level") ?: "info"
+                        val source = call.argument<String>("source") ?: "Flutter"
+                        val type = call.argument<String>("type") ?: "日志"
+                        val summary = call.argument<String>("summary") ?: ""
+                        val detail = call.argument<String>("detail") ?: ""
+                        
+                        val safeLevel = if (level in listOf("info", "warning", "error")) level else "info"
+                        
+                        DiagnosticLogStore.writeFromFlutter(
+                            this,
+                            safeLevel,
+                            source,
+                            type,
+                            summary,
+                            detail
                         )
                         result.success(true)
                     }
@@ -274,21 +459,22 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun clearPrivateMessageNotifications(conversationId: Long?) {
-        val manager = getSystemService(NotificationManager::class.java) ?: return
-        val expectedId = conversationId?.let {
-            jpushNotificationId("private_message_conversation_$it")
-        }
-        if (expectedId != null && expectedId > 0) {
-            manager.cancel(expectedId)
+        if (conversationId != null) {
+            PrivateMessageNotificationStore.clear(
+                this,
+                conversationId,
+            )
         }
 
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
+
+        val manager = getSystemService(NotificationManager::class.java) ?: return
+
         manager.activeNotifications
             ?.filter { it.packageName == packageName }
             ?.filter { isPrivateMessageNotification(it.notification) }
             ?.filter { notification ->
                 conversationId == null ||
-                    notification.id == expectedId ||
                     notificationMatchesConversation(notification.notification, conversationId)
             }
             ?.forEach { notification ->
@@ -342,14 +528,7 @@ class MainActivity : FlutterActivity() {
         return false
     }
 
-    private fun jpushNotificationId(messageId: String): Int {
-        if (messageId.isEmpty()) return 0
-        messageId.toIntOrNull()?.let { return it }
-        val adler32 = Adler32()
-        adler32.update(messageId.toByteArray())
-        val value = adler32.value.toInt()
-        return if (value < 0) kotlin.math.abs(value) else value
-    }
+
 
     /** 在 JPush SDK 初始化前创建高优先级通知渠道，实现悬浮弹窗 */
     private fun createHighPriorityNotificationChannels() {

@@ -6,6 +6,12 @@ from sqlalchemy import select
 from models.database import EduUser, get_db
 from models.schemas import GradesInput, GradesResponse, GradeInfo
 from services.crawler import EduCrawler, CookieLapseError, GradesNotOpenError, NetworkError, LoginFailedError
+from services.credential_crypto import decrypt_credential
+from services.error_codes import (
+    EDU_CREDENTIAL_EXPIRED,
+    EDU_NOT_BOUND,
+    coded_http_exception,
+)
 
 router = APIRouter(prefix="/api/edu/grades", tags=["成绩"])
 
@@ -22,10 +28,10 @@ async def get_grades(
     edu_user = result.scalar_one_or_none()
 
     if not edu_user or not edu_user.bound:
-        raise HTTPException(status_code=400, detail="请先绑定教务账号")
+        raise coded_http_exception(400, EDU_NOT_BOUND, "请先绑定教务账号")
 
     if not edu_user.cookie:
-        raise HTTPException(status_code=401, detail="Cookie已失效，请重新绑定")
+        raise coded_http_exception(401, EDU_CREDENTIAL_EXPIRED, "Cookie已失效，请重新绑定")
 
     async with EduCrawler() as crawler:
         cookie = edu_user.cookie
@@ -35,17 +41,21 @@ async def get_grades(
                 raw_grades = await crawler.fetch_grades(cookie, input.year, input.semester)
             except CookieLapseError:
                 if attempt == 1:
-                    raise HTTPException(status_code=401, detail="Cookie已失效且自动登录失败，请重新绑定教务账号")
-                if not edu_user.raw_password:
-                    raise HTTPException(status_code=401, detail="Cookie已失效，请重新绑定教务账号")
+                    raise coded_http_exception(401, EDU_CREDENTIAL_EXPIRED, "Cookie已失效且自动登录失败，请重新绑定教务账号")
+                if not edu_user.encrypted_password:
+                    raise coded_http_exception(401, EDU_CREDENTIAL_EXPIRED, "Cookie已失效，请重新绑定教务账号")
                 print(f"  [AUTO] Cookie过期，使用存储密码自动重新登录...")
                 try:
-                    cookie = await crawler.login(edu_user.student_id, edu_user.raw_password)
+                    password = decrypt_credential(edu_user.encrypted_password)
+                except Exception:
+                    raise coded_http_exception(401, EDU_CREDENTIAL_EXPIRED, "凭据解密失败，请重新绑定教务账号")
+                try:
+                    cookie = await crawler.login(edu_user.student_id, password)
                     edu_user.cookie = cookie
                     await db.commit()
                     print(f"  [AUTO] 重新登录成功，重试抓取成绩...")
                 except LoginFailedError as e:
-                    raise HTTPException(status_code=401, detail=f"账号密码可能已变更: {e}")
+                    raise coded_http_exception(401, EDU_CREDENTIAL_EXPIRED, f"账号密码可能已变更: {e}")
                 continue
             except GradesNotOpenError as e:
                 return GradesResponse(success=False, year=input.year, semester=input.semester, grades=[], message=str(e))

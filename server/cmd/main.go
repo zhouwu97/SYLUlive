@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"log"
 	"net/http"
@@ -283,6 +284,7 @@ func main() {
 	// 初始化教务服务配置
 
 	handlers.EduServiceConfig.BaseURL = cfg.EduServiceURL
+	handlers.EduServiceConfig.InternalKey = cfg.InternalServiceKey
 
 	handlers.VerifyCodeConfig.SMTPHost = cfg.SMTPHost
 
@@ -299,6 +301,34 @@ func main() {
 	// 启动后台定时任务
 
 	tasks.StartLotteryCron(db)
+
+	// 健康检查接口
+	r.GET("/health", func(c *gin.Context) {
+		sqlDB, err := db.DB()
+		if err != nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{
+				"status": "error",
+			})
+			return
+		}
+
+		ctx, cancel := context.WithTimeout(
+			c.Request.Context(),
+			2*time.Second,
+		)
+		defer cancel()
+
+		if err := sqlDB.PingContext(ctx); err != nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{
+				"status": "error",
+			})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"status": "ok",
+		})
+	})
 
 	// 静态文件服务
 
@@ -746,6 +776,10 @@ func main() {
 		edu.DELETE("/bind", middleware.AuthMiddleware(db, cfg.JWTSecret), eduHandler.UnbindEdu)
 
 		edu.POST("/courses", middleware.AuthMiddleware(db, cfg.JWTSecret), eduHandler.GetCourses)
+		
+		edu.GET("/courses/local", middleware.AuthMiddleware(db, cfg.JWTSecret), eduHandler.GetLocalCourses)
+		
+		edu.POST("/courses/sync", middleware.AuthMiddleware(db, cfg.JWTSecret), eduHandler.SyncCourses)
 
 		edu.POST("/grades", middleware.AuthMiddleware(db, cfg.JWTSecret), eduHandler.GetGrades)
 

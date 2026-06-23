@@ -274,11 +274,11 @@ class _MarketScreenState extends State<MarketScreen> {
                         delegate: SliverChildListDelegate([
                           _buildSearchBar(isDark),
                           if (widget.onlyPostTypes == null) ...[
-                            const SizedBox(height: 8),
+                            const SizedBox(height: 6),
                             _buildExposureEntry(isDark, exposurePosts),
-                            const SizedBox(height: 12),
+                            const SizedBox(height: 10),
                           ] else
-                            const SizedBox(height: 12),
+                            const SizedBox(height: 10),
                           _buildSectionHeader(isDark),
                         ]),
                       ),
@@ -311,7 +311,7 @@ class _MarketScreenState extends State<MarketScreen> {
                             AppLayout.floatingNavHeight +
                                 AppLayout.floatingNavBottomMargin +
                                 AppLayout.fabNavGap +
-                                140),
+                                170),
                         sliver: SliverList(
                           delegate: SliverChildBuilderDelegate(
                             (context, index) =>
@@ -329,7 +329,7 @@ class _MarketScreenState extends State<MarketScreen> {
                             AppLayout.floatingNavHeight +
                                 AppLayout.floatingNavBottomMargin +
                                 AppLayout.fabNavGap +
-                                140),
+                                170),
                         sliver: SliverMasonryGrid.extent(
                           maxCrossAxisExtent: 300,
                           mainAxisSpacing: 16,
@@ -351,14 +351,15 @@ class _MarketScreenState extends State<MarketScreen> {
         padding: const EdgeInsets.only(
           bottom: AppLayout.floatingNavHeight +
               AppLayout.floatingNavBottomMargin +
-              AppLayout.fabNavGap,
+              AppLayout.fabNavGap +
+              16,
         ),
         child: SizedBox(
           height: 48,
           child: FloatingActionButton.extended(
             heroTag: 'market_fab',
             elevation: 2,
-            label: const Text('发布闲置'),
+            label: const Text('发布'),
             icon: const Icon(Icons.add),
             backgroundColor: const Color(0xFF6266D9),
             foregroundColor: Colors.white,
@@ -411,29 +412,36 @@ class _MarketScreenState extends State<MarketScreen> {
       borderColor: isDark
           ? Colors.white.withValues(alpha: 0.08)
           : Colors.white.withValues(alpha: 0.72),
-      child: TextField(
-        controller: _searchController,
-        onChanged: _onSearchChanged,
-        onSubmitted: _runSearch,
-        textInputAction: TextInputAction.search,
-        style: const TextStyle(fontSize: 14),
-        decoration: InputDecoration(
-          border: InputBorder.none,
-          isDense: true,
-          contentPadding: const EdgeInsets.symmetric(vertical: 10),
-          hintText: '搜索商品名称，支持模糊匹配',
-          hintStyle: const TextStyle(fontSize: 14),
-          prefixIcon: const Icon(Icons.search, size: 20),
-          suffixIcon: _searchController.text.isEmpty
-              ? null
-              : IconButton(
-                  icon: const Icon(Icons.close, size: 16),
-                  onPressed: () {
-                    _searchController.clear();
-                    _runSearch('');
-                    setState(() {});
-                  },
-                ),
+      child: SizedBox(
+        height: 44,
+        child: Center(
+          child: TextField(
+            controller: _searchController,
+            onChanged: _onSearchChanged,
+            onSubmitted: _runSearch,
+            textInputAction: TextInputAction.search,
+            style: const TextStyle(fontSize: 14),
+            decoration: InputDecoration(
+              border: InputBorder.none,
+              isDense: true,
+              contentPadding: const EdgeInsets.symmetric(vertical: 12),
+              hintText: '搜索商品、用户或关键词',
+              hintStyle: const TextStyle(fontSize: 14),
+              prefixIcon: const Icon(Icons.search, size: 20),
+              prefixIconConstraints:
+                  const BoxConstraints(minWidth: 36, minHeight: 36),
+              suffixIcon: _searchController.text.isEmpty
+                  ? null
+                  : IconButton(
+                      icon: const Icon(Icons.close, size: 16),
+                      onPressed: () {
+                        _searchController.clear();
+                        _runSearch('');
+                        setState(() {});
+                      },
+                    ),
+            ),
+          ),
         ),
       ),
     );
@@ -469,7 +477,7 @@ class _MarketScreenState extends State<MarketScreen> {
                 size: 16,
               ),
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: 8),
             Text(
               '曝光台',
               style: TextStyle(
@@ -487,8 +495,8 @@ class _MarketScreenState extends State<MarketScreen> {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  fontSize: 13,
-                  color: isDark ? Colors.white60 : const Color(0xFF98A2B3),
+                  fontSize: 12,
+                  color: isDark ? Colors.white70 : const Color(0xFF666D7A),
                 ),
               ),
             ),
@@ -496,7 +504,7 @@ class _MarketScreenState extends State<MarketScreen> {
             Icon(
               Icons.chevron_right_rounded,
               size: 16,
-              color: isDark ? Colors.white38 : const Color(0xFF98A2B3),
+              color: isDark ? Colors.white60 : const Color(0xFF666D7A),
             ),
           ],
         ),

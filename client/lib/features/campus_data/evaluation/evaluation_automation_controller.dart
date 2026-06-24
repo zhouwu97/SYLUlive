@@ -379,6 +379,7 @@ class EvaluationAutomationController extends ChangeNotifier {
     }
 
     return null;
+  }
 
   Future<bool> _waitForForm(int token, String expectedFingerprint) async {
     const pollInterval = Duration(milliseconds: 250);

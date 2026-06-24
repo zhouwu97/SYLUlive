@@ -166,10 +166,13 @@ class PrivateMessageJPushReceiver : JPushEventReceiver() {
                     KeepAliveForegroundService.getAliasGeneration(context)
                 val hasToken =
                     KeepAliveForegroundService.hasAuthToken(context)
+                val currentAlias =
+                    KeepAliveForegroundService.getStoredAlias(context)
 
                 if (currentState != "active"
                     || currentGen != generation
-                    || !hasToken) {
+                    || !hasToken
+                    || currentAlias.isNullOrBlank()) {
                     DiagnosticLogStore.info(
                         context,
                         source = "推送",
@@ -183,8 +186,7 @@ class PrivateMessageJPushReceiver : JPushEventReceiver() {
 
                 val sequence = restoreSequence(generation)
                 try {
-                    JPushInterface.setAlias(context, sequence,
-                        KeepAliveForegroundService.getStoredAlias(context))
+                    JPushInterface.setAlias(context, sequence, currentAlias)
                     DiagnosticLogStore.info(
                         context,
                         source = "推送",
@@ -306,6 +308,14 @@ class PrivateMessageJPushReceiver : JPushEventReceiver() {
     ) {
         super.onAliasOperatorResult(context, jPushMessage)
 
+        // JPush 回调可能在 worker 线程 → 统一串行到主线程处理
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            retryHandler.post {
+                onAliasOperatorResult(context, jPushMessage)
+            }
+            return
+        }
+
         val sequence = jPushMessage.sequence
 
         when {
@@ -357,7 +367,13 @@ class PrivateMessageJPushReceiver : JPushEventReceiver() {
                     val currentGen =
                         KeepAliveForegroundService.getAliasGeneration(context)
 
-                    if (currentState != "active" || currentGen != requestGen) {
+                    val currentAlias =
+                        KeepAliveForegroundService.getStoredAlias(context)
+                    val callbackAlias = jPushMessage.alias.orEmpty()
+
+                    if (currentState != "active"
+                        || currentGen != requestGen
+                        || callbackAlias != (currentAlias ?: "")) {
                         restoreRetries.remove(requestGen)
                         scheduledRestoreGenerations.remove(requestGen)
                         val hasToken =

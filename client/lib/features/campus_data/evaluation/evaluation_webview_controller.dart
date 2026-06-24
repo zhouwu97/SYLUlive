@@ -105,9 +105,9 @@ class EvaluationWebViewController {
 
       if (kDebugMode) {
         debugPrint(
-          '[Evaluation] fill: ${_lastFillResult!.completedGroups}/'
-          '${_lastFillResult!.totalGroups} groups, '
-          '${_lastFillResult!.unresolvedGroups.length} unresolved, '
+          '[Evaluation] fill: radio ${_lastFillResult!.radioCompletedGroups}/${_lastFillResult!.radioTotalGroups}, '
+          'score ${_lastFillResult!.scoreInputCompletedCount}/${_lastFillResult!.scoreInputCount}, '
+          '${_lastFillResult!.unresolvedRadioGroups.length + _lastFillResult!.unresolvedScoreInputs.length} unresolved, '
           '${_lastFillResult!.warnings.length} warnings',
         );
       }

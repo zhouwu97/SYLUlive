@@ -344,7 +344,7 @@ class _EvaluationScreenState extends State<EvaluationScreen> {
         }
       },
       onReceivedHttpError: (controller, request, errorResponse) {
-        if (!request.isForMainFrame) return;
+        if (request.isForMainFrame != true) return;
         final code = errorResponse.statusCode;
         _evalCtrl.onHttpError(code);
         // Only surface meaningful HTTP errors for the main frame

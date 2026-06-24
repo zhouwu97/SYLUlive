@@ -29,6 +29,7 @@ class EvaluationAutomationController extends ChangeNotifier {
   
   int _consecutiveIdenticalFingerprint = 0;
   String _lastSeenFingerprint = '';
+  bool _submitMode = false;
 
   EvaluationAutomationController({required this.webViewController});
 
@@ -67,7 +68,7 @@ class EvaluationAutomationController extends ChangeNotifier {
   }
 
   /// Start the full batch process.
-  Future<void> startBatch() async {
+  Future<void> startBatch({bool submitMode = false}) async {
     if (_progress.state != EvaluationAutomationState.idle &&
         _progress.state != EvaluationAutomationState.completed &&
         _progress.state != EvaluationAutomationState.failed &&
@@ -78,6 +79,7 @@ class EvaluationAutomationController extends ChangeNotifier {
     _processedFingerprints.clear();
     _consecutiveIdenticalFingerprint = 0;
     _lastSeenFingerprint = '';
+    _submitMode = submitMode;
     
     _startOp(EvaluationAutomationState.probing);
     final token = _currentToken;
@@ -274,9 +276,9 @@ class EvaluationAutomationController extends ChangeNotifier {
     }
 
     // 4. Save
-    _updateProgress(state: EvaluationAutomationState.saving, message: '正在执行保存...');
-    final saveRaw = await ctrl.evaluateJavascript(source: buildSaveCurrentScript());
-    final saveRes = jsonDecode(saveRaw as String) as Map<String, dynamic>;
+    _updateProgress(state: EvaluationAutomationState.saving, message: _submitMode ? '正在提交...' : '正在保存...');
+    final rawSave = await ctrl.evaluateJavascript(source: _submitMode ? buildSubmitCurrentScript() : buildSaveCurrentScript());
+    final saveRes = jsonDecode(rawSave as String) as Map<String, dynamic>;
     if (saveRes['error'] != null) {
       throw Exception('保存请求失败: ${saveRes['error']}');
     }
@@ -309,7 +311,7 @@ class EvaluationAutomationController extends ChangeNotifier {
         if (current.successMarkerCount > preSave.successMarkerCount) return true;
         if (current.savedCount > preSave.savedCount) return true;
         if (current.rowStatus != null && current.rowStatus != preSave.rowStatus && 
-            (current.rowStatus!.contains('已评') || current.rowStatus!.contains('保存'))) {
+            (current.rowStatus!.contains('已评') || current.rowStatus!.contains('保存') || current.rowStatus!.contains('提交'))) {
           return true;
         }
       }

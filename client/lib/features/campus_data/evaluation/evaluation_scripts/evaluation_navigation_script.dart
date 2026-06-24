@@ -39,15 +39,19 @@ String buildGoToNextPageScript() {
 (function () {
   'use strict';
   try {
-    var nextBtns = document.querySelectorAll('.ui-pg-button[id^="next_"]');
-    var target = null;
-    for (var i = 0; i < nextBtns.length; i++) {
-      if (!nextBtns[i].classList.contains('ui-state-disabled')) {
-        target = nextBtns[i];
-        break;
+    function findNextBtn() {
+      var candidates = document.querySelectorAll('.ui-pg-button[id^="next_"], [title="下一页"], .ui-icon-seek-next');
+      for (var i = 0; i < candidates.length; i++) {
+        var c = candidates[i];
+        var btn = c.closest('.ui-pg-button') || c;
+        if (btn && !btn.classList.contains('ui-state-disabled')) {
+          return btn;
+        }
       }
+      return null;
     }
 
+    var target = findNextBtn();
     if (!target) {
       return JSON.stringify({ error: '已到达最后一页或找不到下一页按钮' });
     }

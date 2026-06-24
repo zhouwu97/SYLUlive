@@ -205,7 +205,7 @@ var jpush = JPush.newJPush();
 final FlutterLocalNotificationsPlugin _privateMessageNotifications =
     FlutterLocalNotificationsPlugin();
 bool _privateMessageNotificationsReady = false;
-const MethodChannel _privateMessageNotificationChannel = MethodChannel(
+const MethodChannel privateMessageNotificationChannel = MethodChannel(
   'shenliyuan/private_message_notifications',
 );
 
@@ -459,7 +459,7 @@ Future<void> _tryBindAlias(String userId) async {
 
       // 同步 alias 到原生层，供保活服务恢复时使用
       try {
-        await _privateMessageNotificationChannel.invokeMethod(
+        await privateMessageNotificationChannel.invokeMethod(
           'syncAlias',
           {'userId': userId},
         );
@@ -674,7 +674,7 @@ Future<void> _showPrivateMessageLocalNotification(
 
 Future<void> _clearPrivateMessageNotifications(int conversationId) async {
   try {
-    await _privateMessageNotificationChannel.invokeMethod(
+    await privateMessageNotificationChannel.invokeMethod(
       'clearConversationNotifications',
       {'conversationId': conversationId},
     );
@@ -1212,7 +1212,7 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
     _checkingNativePrivateMessage = true;
 
     try {
-      final payload = await _privateMessageNotificationChannel
+      final payload = await privateMessageNotificationChannel
           .invokeMethod<String>('getPendingPrivateMessage');
 
       if (payload == null || payload.isEmpty) return;

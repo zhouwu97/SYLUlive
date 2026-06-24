@@ -9,6 +9,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import cn.jpush.android.api.JPushInterface
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.plugin.common.MethodChannel
@@ -307,6 +308,9 @@ class MainActivity : FlutterActivity() {
                     KeepAliveForegroundService.syncAlias(this, userId)
                     result.success(true)
                 }
+                "getPushDiagnostics" -> {
+                    result.success(getPushDiagnostics())
+                }
                 else -> result.notImplemented()
             }
         }
@@ -534,6 +538,39 @@ class MainActivity : FlutterActivity() {
     }
 
 
+
+    /** 收集推送诊断信息供 Flutter 设置页展示 */
+    private fun getPushDiagnostics(): Map<String, Any?> {
+        val info = mutableMapOf<String, Any?>()
+
+        // RegistrationID
+        val rid = JPushInterface.getRegistrationID(this)
+        info["registrationId"] = rid.ifBlank { null }
+
+        // 系统通知总权限
+        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        info["notificationsEnabled"] = nm.areNotificationsEnabled()
+
+        // 私信通知渠道状态
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = nm.getNotificationChannel("private_messages")
+            info["privateMessageChannelExists"] = channel != null
+            if (channel != null) {
+                info["privateMessageChannelImportance"] = channel.importance
+                info["privateMessageChannelBlocked"] =
+                    channel.importance == NotificationManager.IMPORTANCE_NONE
+            }
+        } else {
+            info["privateMessageChannelExists"] = true // pre-Oreo no channels
+            info["privateMessageChannelImportance"] = -1
+            info["privateMessageChannelBlocked"] = false
+        }
+
+        // 保活服务存储的 Alias
+        info["storedAlias"] = KeepAliveForegroundService.getStoredAlias(this)
+
+        return info
+    }
 
     /** 在 JPush SDK 初始化前创建高优先级通知渠道，实现悬浮弹窗 */
     private fun createHighPriorityNotificationChannels() {

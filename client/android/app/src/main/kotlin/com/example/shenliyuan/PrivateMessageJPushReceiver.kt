@@ -40,6 +40,9 @@ class PrivateMessageJPushReceiver : JPushEventReceiver() {
         /** 已安排的重试计数（key: generation, value: retryCount） */
         private val deleteRetries = mutableMapOf<Int, Int>()
 
+        /** 已有延迟任务的 generation（防重复安排） */
+        private val scheduledDeleteGenerations = mutableSetOf<Int>()
+
         private val retryHandler = Handler(Looper.getMainLooper())
 
         /** 安排删除重试 */
@@ -47,6 +50,9 @@ class PrivateMessageJPushReceiver : JPushEventReceiver() {
             context: Context,
             generation: Int,
         ) {
+            // 防止同一 generation 安排多个并发重试
+            if (!scheduledDeleteGenerations.add(generation)) return
+
             val retryCount = deleteRetries.getOrDefault(generation, 0)
             if (retryCount >= MAX_DELETE_RETRIES) {
                 DiagnosticLogStore.warning(
@@ -57,6 +63,7 @@ class PrivateMessageJPushReceiver : JPushEventReceiver() {
                     detail = "gen=$generation",
                 )
                 deleteRetries.remove(generation)
+                scheduledDeleteGenerations.remove(generation)
                 return
             }
 
@@ -85,6 +92,7 @@ class PrivateMessageJPushReceiver : JPushEventReceiver() {
                         detail = "state=$currentState gen=$currentGen expectedGen=$generation",
                     )
                     deleteRetries.remove(generation)
+                    scheduledDeleteGenerations.remove(generation)
                     return@postDelayed
                 }
 
@@ -107,6 +115,7 @@ class PrivateMessageJPushReceiver : JPushEventReceiver() {
                         summary = "deleteAlias 调用异常，继续重试",
                         detail = "gen=$generation error=${e.message}",
                     )
+                    scheduledDeleteGenerations.remove(generation)
                     scheduleDeleteRetry(context, generation)
                 }
             }, delay)
@@ -224,6 +233,7 @@ class PrivateMessageJPushReceiver : JPushEventReceiver() {
                         .clearStoredAliasIfPendingDelete(context, gen)
                     if (cleared) {
                         deleteRetries.remove(gen)
+                        scheduledDeleteGenerations.remove(gen)
                         DiagnosticLogStore.info(
                             context,
                             source = "推送",
@@ -254,13 +264,35 @@ class PrivateMessageJPushReceiver : JPushEventReceiver() {
             }
 
             isRestoreSequence(sequence) -> {
+                val requestGen = generationFromSequence(sequence)
                 if (jPushMessage.errorCode == 0) {
+                    val currentState =
+                        KeepAliveForegroundService.getAliasState(context)
+                    val currentGen =
+                        KeepAliveForegroundService.getAliasGeneration(context)
+
+                    if (currentState != "active" || currentGen != requestGen) {
+                        // 恢复回调已过期：用户可能已退出或切换账号
+                        DiagnosticLogStore.warning(
+                            context,
+                            source = "推送",
+                            type = "Alias 恢复过期",
+                            summary = "setAlias 成功回调已过期，重新协调当前状态",
+                            detail = "reqGen=$requestGen curState=$currentState curGen=$currentGen",
+                        )
+                        // 重新协调：如果现在需要删除，执行删除
+                        KeepAliveForegroundService.reconcileAliasState(
+                            context,
+                        )
+                        return
+                    }
+
                     DiagnosticLogStore.info(
                         context,
                         source = "推送",
                         type = "Alias 恢复成功",
                         summary = "保活服务 Alias 绑定成功",
-                        detail = "sequence=$sequence",
+                        detail = "sequence=$sequence gen=$requestGen",
                     )
                 } else {
                     DiagnosticLogStore.warning(

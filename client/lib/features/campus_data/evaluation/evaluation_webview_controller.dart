@@ -160,48 +160,15 @@ class EvaluationWebViewController {
   /// Clear cookies for教务-related domains using per-cookie domain/path.
   Future<void> clearCookies() async {
     final manager = CookieManager.instance();
-    int deletedCount = 0;
+    await manager.deleteAllCookies();
 
-    for (final origin in EvaluationUrls.cookieDomains) {
-      try {
-        final cookies = await manager.getCookies(url: WebUri(origin));
-        for (final cookie in cookies) {
-          try {
-            // Prefer domain+path when available; fall back to name-only.
-            if (cookie.domain != null && cookie.path != null) {
-              await manager.deleteCookie(
-                url: WebUri(origin),
-                name: cookie.name,
-                domain: cookie.domain!,
-                path: cookie.path!,
-              );
-            } else {
-              await manager.deleteCookie(
-                url: WebUri(origin),
-                name: cookie.name,
-              );
-            }
-            deletedCount++;
-          } catch (_) {
-            // try without domain/path as last resort
-            try {
-              await manager.deleteCookie(
-                url: WebUri(origin),
-                name: cookie.name,
-              );
-              deletedCount++;
-            } catch (_) {
-              /* skip */
-            }
-          }
-        }
-      } catch (_) {
-        /* domain may not have cookies */
-      }
-    }
+    try {
+      final webStorageManager = WebStorageManager.instance();
+      await webStorageManager.deleteAllData();
+    } catch (_) {}
 
     if (kDebugMode) {
-      debugPrint('[Evaluation] Cleared $deletedCount cookies from教务 domains');
+      debugPrint('[Evaluation] Cleared all cookies and web storage');
     }
   }
 

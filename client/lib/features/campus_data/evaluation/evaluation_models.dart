@@ -13,6 +13,88 @@ enum EvaluationPageType {
   unknown,
 }
 
+/// Where the score range was found.
+enum ScoreRangeSource {
+  minMax,
+  dataAttr,
+  placeholder,
+  text,
+}
+
+/// Describes a numeric score input (text or number type).
+class ScoreInput {
+  final String? id;
+  final String? name;
+  final String? className;
+  final String? type;
+  final String? placeholder;
+  final bool disabled;
+  final bool readOnly;
+  final bool isVisible;
+  final String? framePath;
+  
+  final double? minScore;
+  final double? maxScore;
+  final ScoreRangeSource? rangeSource;
+  final bool rangeIsAmbiguous;
+  final bool isOptionalComment;
+
+  const ScoreInput({
+    this.id,
+    this.name,
+    this.className,
+    this.type,
+    this.placeholder,
+    this.disabled = false,
+    this.readOnly = false,
+    this.isVisible = true,
+    this.framePath,
+    this.minScore,
+    this.maxScore,
+    this.rangeSource,
+    this.rangeIsAmbiguous = false,
+    this.isOptionalComment = false,
+  });
+
+  factory ScoreInput.fromJson(Map<String, dynamic> json) {
+    ScoreRangeSource? src;
+    if (json['rangeSource'] != null) {
+      switch (json['rangeSource']) {
+        case 'minMax': src = ScoreRangeSource.minMax; break;
+        case 'dataAttr': src = ScoreRangeSource.dataAttr; break;
+        case 'placeholder': src = ScoreRangeSource.placeholder; break;
+        case 'text': src = ScoreRangeSource.text; break;
+      }
+    }
+    return ScoreInput(
+      id: json['id'] as String?,
+      name: json['name'] as String?,
+      className: json['className'] as String?,
+      type: json['type'] as String?,
+      placeholder: json['placeholder'] as String?,
+      disabled: json['disabled'] == true,
+      readOnly: json['readOnly'] == true,
+      isVisible: json['isVisible'] != false, // Default true if omitted
+      framePath: json['framePath'] as String?,
+      minScore: (json['minScore'] as num?)?.toDouble(),
+      maxScore: (json['maxScore'] as num?)?.toDouble(),
+      rangeSource: src,
+      rangeIsAmbiguous: json['rangeIsAmbiguous'] == true,
+      isOptionalComment: json['isOptionalComment'] == true,
+    );
+  }
+
+  bool get isReliableScore =>
+      !disabled &&
+      !readOnly &&
+      isVisible &&
+      !isOptionalComment &&
+      !rangeIsAmbiguous &&
+      minScore != null &&
+      maxScore != null &&
+      maxScore! > minScore!;
+}
+
 /// Describes one radio button option collected by the probe script.
 class RadioOption {
   final String? name;
@@ -123,7 +205,9 @@ class EvaluationProbeResult {
   final String pageTextSample;
   final int radioCount;
   final List<RadioOption> radioOptions;
-  final int textareaCount;
+  final List<ScoreInput> scoreInputs;
+  final int textareaCount; // Legacy textarea count, kept for backwards compatibility or general stats
+  final int optionalCommentCount;
   final List<Map<String, dynamic>> forms;
   final List<Map<String, dynamic>> buttons;
   final List<Map<String, dynamic>> possibleCourseRows;
@@ -145,7 +229,9 @@ class EvaluationProbeResult {
     required this.pageTextSample,
     required this.radioCount,
     required this.radioOptions,
+    this.scoreInputs = const [],
     required this.textareaCount,
+    this.optionalCommentCount = 0,
     required this.forms,
     required this.buttons,
     required this.possibleCourseRows,
@@ -161,6 +247,7 @@ class EvaluationProbeResult {
 
   factory EvaluationProbeResult.fromJson(Map<String, dynamic> json) {
     final radioRaw = json['radioOptions'] as List<dynamic>?;
+    final scoreRaw = json['scoreInputs'] as List<dynamic>?;
     return EvaluationProbeResult(
       url: (json['url'] as String?) ?? '',
       title: (json['title'] as String?) ?? '',
@@ -171,7 +258,13 @@ class EvaluationProbeResult {
               ?.map((e) => RadioOption.fromJson(e as Map<String, dynamic>))
               .toList() ??
           [],
+      scoreInputs:
+          scoreRaw
+              ?.map((e) => ScoreInput.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          [],
       textareaCount: (json['textareaCount'] as int?) ?? 0,
+      optionalCommentCount: (json['optionalCommentCount'] as int?) ?? 0,
       forms: _listOfMaps(json['forms']),
       buttons: _listOfMaps(json['buttons']),
       possibleCourseRows: _listOfMaps(json['possibleCourseRows']),
@@ -205,34 +298,37 @@ class EvaluationProbeResult {
 
 /// Result from the fill script execution.
 class EvaluationFillResult {
-  final int totalGroups;
-  final int completedGroups;
-  final List<String> unresolvedGroups;
-  final int alreadyCompletedGroups;
-  final int textareaCount;
-  final List<String> requiredTextareas;
+  final int radioTotalGroups;
+  final int radioCompletedGroups;
+  final int scoreInputCount;
+  final int scoreInputCompletedCount;
+  final List<String> unresolvedRadioGroups;
+  final List<String> unresolvedScoreInputs;
+  final int optionalCommentCount;
   final List<String> warnings;
   final String? error;
 
   const EvaluationFillResult({
-    required this.totalGroups,
-    required this.completedGroups,
-    required this.unresolvedGroups,
-    required this.alreadyCompletedGroups,
-    required this.textareaCount,
-    required this.requiredTextareas,
+    this.radioTotalGroups = 0,
+    this.radioCompletedGroups = 0,
+    this.scoreInputCount = 0,
+    this.scoreInputCompletedCount = 0,
+    this.unresolvedRadioGroups = const [],
+    this.unresolvedScoreInputs = const [],
+    this.optionalCommentCount = 0,
     required this.warnings,
     this.error,
   });
 
   factory EvaluationFillResult.fromJson(Map<String, dynamic> json) {
     return EvaluationFillResult(
-      totalGroups: (json['totalGroups'] as int?) ?? 0,
-      completedGroups: (json['completedGroups'] as int?) ?? 0,
-      unresolvedGroups: _stringList(json['unresolvedGroups']),
-      alreadyCompletedGroups: (json['alreadyCompletedGroups'] as int?) ?? 0,
-      textareaCount: (json['textareaCount'] as int?) ?? 0,
-      requiredTextareas: _stringList(json['requiredTextareas']),
+      radioTotalGroups: (json['radioTotalGroups'] as int?) ?? 0,
+      radioCompletedGroups: (json['radioCompletedGroups'] as int?) ?? 0,
+      scoreInputCount: (json['scoreInputCount'] as int?) ?? 0,
+      scoreInputCompletedCount: (json['scoreInputCompletedCount'] as int?) ?? 0,
+      unresolvedRadioGroups: _stringList(json['unresolvedRadioGroups']),
+      unresolvedScoreInputs: _stringList(json['unresolvedScoreInputs']),
+      optionalCommentCount: (json['optionalCommentCount'] as int?) ?? 0,
       warnings: _stringList(json['warnings']),
       error: json['error'] as String?,
     );
@@ -240,21 +336,17 @@ class EvaluationFillResult {
 
   factory EvaluationFillResult.error(String message) {
     return EvaluationFillResult(
-      totalGroups: 0,
-      completedGroups: 0,
-      unresolvedGroups: [],
-      alreadyCompletedGroups: 0,
-      textareaCount: 0,
-      requiredTextareas: [],
       warnings: [],
       error: message,
     );
   }
 
-  bool get hasUnresolved => unresolvedGroups.isNotEmpty;
-  bool get hasRequiredTextareas => requiredTextareas.isNotEmpty;
+  bool get hasUnresolved => unresolvedRadioGroups.isNotEmpty || unresolvedScoreInputs.isNotEmpty;
+  bool get hasRequiredTextareas => false; // Kept for backwards compat signature, but logic handled via warnings if needed
   bool get hasWarnings => warnings.isNotEmpty;
-  bool get allCompleted => totalGroups > 0 && completedGroups >= totalGroups;
+  bool get allCompleted => 
+    (radioTotalGroups > 0 && radioCompletedGroups >= radioTotalGroups) ||
+    (scoreInputCount > 0 && scoreInputCompletedCount >= scoreInputCount);
 
   static List<String> _stringList(dynamic src) {
     if (src is! List) return [];

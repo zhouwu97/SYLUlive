@@ -259,30 +259,32 @@ void main() {
   group('EvaluationFillResult', () {
     test('parses complete', () {
       final json = {
-        'totalGroups': 10,
-        'completedGroups': 8,
-        'unresolvedGroups': ['g1'],
-        'alreadyCompletedGroups': 1,
-        'textareaCount': 2,
-        'requiredTextareas': ['comment1'],
+        'radioTotalGroups': 10,
+        'radioCompletedGroups': 8,
+        'unresolvedRadioGroups': ['g1'],
+        'unresolvedScoreInputs': [],
+        'scoreInputCount': 0,
+        'scoreInputCompletedCount': 0,
+        'optionalCommentCount': 2,
         'warnings': ['Group "g1" has no scoreable options'],
       };
       final r = EvaluationFillResult.fromJson(json);
-      expect(r.totalGroups, 10);
-      expect(r.completedGroups, 8);
+      expect(r.radioTotalGroups, 10);
+      expect(r.radioCompletedGroups, 8);
       expect(r.hasUnresolved, true);
-      expect(r.hasRequiredTextareas, true);
+      expect(r.hasRequiredTextareas, false);
       expect(r.allCompleted, false);
     });
 
     test('all completed', () {
       final json = {
-        'totalGroups': 5,
-        'completedGroups': 5,
-        'unresolvedGroups': <String>[],
-        'alreadyCompletedGroups': 0,
-        'textareaCount': 0,
-        'requiredTextareas': <String>[],
+        'radioTotalGroups': 5,
+        'radioCompletedGroups': 5,
+        'unresolvedRadioGroups': <String>[],
+        'unresolvedScoreInputs': <String>[],
+        'scoreInputCount': 0,
+        'scoreInputCompletedCount': 0,
+        'optionalCommentCount': 0,
         'warnings': <String>[],
       };
       final r = EvaluationFillResult.fromJson(json);
@@ -292,7 +294,7 @@ void main() {
     test('error factory', () {
       final r = EvaluationFillResult.error('bad');
       expect(r.error, 'bad');
-      expect(r.totalGroups, 0);
+      expect(r.radioTotalGroups, 0);
     });
   });
 

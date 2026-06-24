@@ -7,7 +7,7 @@ import 'evaluation_models.dart';
 class EvaluationPageDetector {
   const EvaluationPageDetector();
 
-  EvaluationPageType classify(EvaluationProbeResult probe) {
+  EvaluationPageType classify(EvaluationProbeResult probe, [String? lastHttpError]) {
     if (probe.error != null && probe.error!.isNotEmpty) {
       return EvaluationPageType.unknown;
     }
@@ -20,17 +20,28 @@ class EvaluationPageDetector {
       return EvaluationPageType.sessionExpired;
     }
 
-    // 2. Access denied or maintenance
+    // 2. Evaluation form — must satisfy ALL conditions:
+    //    a) URL path contains /xspjgl/
+    //    b) Multiple valid groups/inputs
+    //    c) Not a course list page
+    if (_isEvaluationFormPage(probe)) {
+      return EvaluationPageType.evaluationForm;
+    }
+
+    // 3. Access denied or maintenance
+    if (lastHttpError != null && (lastHttpError.contains('401') || lastHttpError.contains('403'))) {
+      return EvaluationPageType.accessDenied;
+    }
     if (probe.hasAccessDeniedText || probe.hasMaintenanceText) {
       return EvaluationPageType.accessDenied;
     }
 
-    // 3. Submitted
+    // 4. Submitted
     if (probe.hasSubmittedText) {
       return EvaluationPageType.submitted;
     }
 
-    // 4. Login page
+    // 5. Login page
     if (probe.hasLoginForm) {
       return EvaluationPageType.login;
     }
@@ -38,14 +49,6 @@ class EvaluationPageDetector {
     final title = probe.title.toLowerCase();
     if (title.contains('登录') && title.contains('认证')) {
       return EvaluationPageType.login;
-    }
-
-    // 5. Evaluation form — must satisfy ALL conditions:
-    //    a) URL path contains /xspjgl/
-    //    b) Multiple radio groups with ≥2 options each
-    //    c) Not a course list page
-    if (_isEvaluationFormPage(probe)) {
-      return EvaluationPageType.evaluationForm;
     }
 
     // 6. Course list
@@ -71,16 +74,17 @@ class EvaluationPageDetector {
   }
 
   /// Strict evaluation form detection.
-  /// Requires: /xspjgl/ in URL path AND multiple radio groups (≥2 options each).
+  /// Requires: /xspjgl/ in URL path AND enough evaluation controls.
   bool _isEvaluationFormPage(EvaluationProbeResult probe) {
     // Must have /xspjgl/ in URL path
     if (!probe.url.contains('/xspjgl/')) return false;
 
-    // Must have multiple radio groups where each group has ≥ 2 options
+    // Count reliable controls
     final groups = probe.radioGroups;
-    if (groups.length < 3) return false;
     final multiOptionGroups = groups.where((g) => g.options.length >= 2).length;
-    if (multiOptionGroups < 3) return false;
+    final reliableScoreInputs = probe.scoreInputs.where((s) => s.isReliableScore).length;
+
+    if (multiOptionGroups < 3 && reliableScoreInputs < 3) return false;
 
     // Must not be a course list page
     if (_isCourseList(probe)) return false;
@@ -89,7 +93,7 @@ class EvaluationPageDetector {
     if (probe.hasEvaluationForm) return true;
 
     // At least have evaluation-related buttons or forms
-    return groups.length >= 5;
+    return multiOptionGroups >= 5 || reliableScoreInputs >= 5;
   }
 
   bool _isCourseList(EvaluationProbeResult probe) {

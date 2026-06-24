@@ -308,6 +308,15 @@ class MainActivity : FlutterActivity() {
                     KeepAliveForegroundService.syncAlias(this, userId)
                     result.success(true)
                 }
+                "clearAlias" -> {
+                    try {
+                        JPushInterface.deleteAlias(this, 0)
+                    } catch (_: Exception) {
+                        // JPush may not be initialized; ignore
+                    }
+                    KeepAliveForegroundService.clearStoredAlias(this)
+                    result.success(true)
+                }
                 "getPushDiagnostics" -> {
                     result.success(getPushDiagnostics())
                 }

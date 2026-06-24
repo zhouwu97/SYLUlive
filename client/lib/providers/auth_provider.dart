@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show MethodChannel;
 import 'package:dio/dio.dart';
 import 'package:cookie_jar/cookie_jar.dart';
 import 'package:dio_cookie_manager/dio_cookie_manager.dart';
@@ -276,6 +277,13 @@ class AuthProvider extends ChangeNotifier {
       await _cookieJar!.deleteAll();
     }
     await _clearStoredAuth();
+    // 清除极光推送 Alias，防止退出后仍收到前用户私信通知
+    try {
+      await const MethodChannel('shenliyuan/private_message_notifications')
+          .invokeMethod('clearAlias');
+    } catch (e) {
+      debugPrint('清除 JPush Alias 失败: $e');
+    }
     notifyListeners();
   }
 

@@ -205,7 +205,7 @@ var jpush = JPush.newJPush();
 final FlutterLocalNotificationsPlugin _privateMessageNotifications =
     FlutterLocalNotificationsPlugin();
 bool _privateMessageNotificationsReady = false;
-const MethodChannel privateMessageNotificationChannel = MethodChannel(
+const MethodChannel _privateMessageNotificationChannel = MethodChannel(
   'shenliyuan/private_message_notifications',
 );
 
@@ -401,6 +401,14 @@ Future<void> setupJPush(AuthProvider authProvider) async {
 
   final userIdStr = userId.toString();
 
+  // 用户切换 → 重置旧 Alias 追踪状态
+  if (_lastBoundUserId != null && _lastBoundUserId != userIdStr) {
+    debugPrint('检测到用户切换: $_lastBoundUserId → $userIdStr，重置 Alias 状态');
+    _lastBoundUserId = null;
+    _lastBoundRegistrationId = null;
+    _aliasRetryCount = 0;
+  }
+
   // RegistrationID 未变且 Alias 已成功绑定 → 跳过
   if (rid.isNotEmpty &&
       _lastBoundUserId == userIdStr &&
@@ -459,7 +467,7 @@ Future<void> _tryBindAlias(String userId) async {
 
       // 同步 alias 到原生层，供保活服务恢复时使用
       try {
-        await privateMessageNotificationChannel.invokeMethod(
+        await _privateMessageNotificationChannel.invokeMethod(
           'syncAlias',
           {'userId': userId},
         );
@@ -674,7 +682,7 @@ Future<void> _showPrivateMessageLocalNotification(
 
 Future<void> _clearPrivateMessageNotifications(int conversationId) async {
   try {
-    await privateMessageNotificationChannel.invokeMethod(
+    await _privateMessageNotificationChannel.invokeMethod(
       'clearConversationNotifications',
       {'conversationId': conversationId},
     );
@@ -1212,7 +1220,7 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
     _checkingNativePrivateMessage = true;
 
     try {
-      final payload = await privateMessageNotificationChannel
+      final payload = await _privateMessageNotificationChannel
           .invokeMethod<String>('getPendingPrivateMessage');
 
       if (payload == null || payload.isEmpty) return;

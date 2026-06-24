@@ -1,5 +1,4 @@
-/// Controller that manages the InAppWebView lifecycle for the evaluation
-/// assistant: loading, probing, filling, navigation restrictions, and cleanup.
+/// Controller for InAppWebView lifecycle: probing, filling, navigation, cleanup.
 library;
 
 import 'dart:convert';
@@ -10,7 +9,6 @@ import 'evaluation_models.dart';
 import 'evaluation_page_detector.dart';
 import 'evaluation_script_builder.dart';
 
-/// Callbacks that the screen layer listens to.
 typedef EvaluationStateCallback = void Function(EvaluationPageType pageType);
 typedef EvaluationFillCallback = void Function(EvaluationFillResult result);
 typedef EvaluationErrorCallback = void Function(String message);
@@ -39,9 +37,11 @@ class EvaluationWebViewController {
   EvaluationFillCallback? onFillCompleted;
   EvaluationErrorCallback? onError;
 
+  String? _lastHttpError;
+  String? get lastHttpError => _lastHttpError;
+
   bool _disposed = false;
 
-  /// Attach to an already-created InAppWebViewController.
   void attach(InAppWebViewController controller) {
     _webViewController = controller;
   }
@@ -58,9 +58,7 @@ class EvaluationWebViewController {
 
     _isProbing = true;
     try {
-      final raw = await ctrl.evaluateJavascript(
-        source: buildProbeScript(),
-      );
+      final raw = await ctrl.evaluateJavascript(source: buildProbeScript());
       _lastProbe = _parseProbeResult(raw);
       _currentPageType = _detector.classify(_lastProbe!);
 
@@ -77,20 +75,7 @@ class EvaluationWebViewController {
         debugPrint('[Evaluation] probe error: $e');
       }
       _currentPageType = EvaluationPageType.unknown;
-      _lastProbe = EvaluationProbeResult(
-        url: '',
-        title: '',
-        pageTextSample: '',
-        radioCount: 0,
-        radioOptions: [],
-        textareaCount: 0,
-        forms: [],
-        buttons: [],
-        possibleCourseRows: [],
-        hasLoginForm: false,
-        hasEvaluationForm: false,
-        error: 'Dart probe exception: $e',
-      );
+      _lastProbe = _emptyProbe('Dart probe exception: $e');
       onPageTypeChanged?.call(_currentPageType);
       return _currentPageType;
     } finally {
@@ -98,7 +83,7 @@ class EvaluationWebViewController {
     }
   }
 
-  /// Execute the fill script. Only allowed on evaluationForm page.
+  /// Execute the fill script.
   Future<EvaluationFillResult?> fill() async {
     final ctrl = _webViewController;
     if (ctrl == null) return null;
@@ -111,9 +96,7 @@ class EvaluationWebViewController {
 
     _isFilling = true;
     try {
-      final raw = await ctrl.evaluateJavascript(
-        source: buildFillScript(),
-      );
+      final raw = await ctrl.evaluateJavascript(source: buildFillScript());
       _lastFillResult = _parseFillResult(raw);
 
       if (kDebugMode) {
@@ -139,8 +122,8 @@ class EvaluationWebViewController {
     }
   }
 
-  /// Reload the current page.
   Future<void> reload() async {
+    _lastHttpError = null;
     final ctrl = _webViewController;
     if (ctrl == null) return;
     _currentPageType = EvaluationPageType.loading;
@@ -150,8 +133,8 @@ class EvaluationWebViewController {
     await ctrl.reload();
   }
 
-  /// Navigate to the evaluation index page.
   Future<void> goToIndex() async {
+    _lastHttpError = null;
     final ctrl = _webViewController;
     if (ctrl == null) return;
     _currentPageType = EvaluationPageType.loading;
@@ -163,54 +146,73 @@ class EvaluationWebViewController {
     );
   }
 
-  /// Clear cookies for jxw.sylu.edu.cn and related domains.
+  /// Notify controller of an HTTP error from the WebView layer.
+  void onHttpError(int? statusCode) {
+    _lastHttpError = statusCode != null ? 'HTTP $statusCode' : null;
+  }
+
+  /// Clear cookies for教务-related domains using per-cookie domain/path.
   Future<void> clearCookies() async {
-    try {
-      final manager = CookieManager.instance();
-      final domains = [
-        'jxw.sylu.edu.cn',
-        'authserver.sylu.edu.cn',
-        '.sylu.edu.cn'
-      ];
-      for (final domain in domains) {
-        final cookies =
-            await manager.getCookies(url: WebUri('https://$domain'));
+    final manager = CookieManager.instance();
+    int deletedCount = 0;
+
+    for (final origin in EvaluationUrls.cookieDomains) {
+      try {
+        final cookies = await manager.getCookies(url: WebUri(origin));
         for (final cookie in cookies) {
-          await manager.deleteCookie(
-            url: WebUri('https://$domain'),
-            name: cookie.name,
-          );
+          try {
+            await manager.deleteCookie(
+              url: WebUri(origin),
+              name: cookie.name,
+              domain: cookie.domain,
+              path: cookie.path,
+            );
+            deletedCount++;
+          } catch (_) {
+            // Individual cookie deletion failed — try without domain/path
+            try {
+              await manager.deleteCookie(
+                url: WebUri(origin),
+                name: cookie.name,
+              );
+              deletedCount++;
+            } catch (_) {
+              /* skip */
+            }
+          }
         }
+      } catch (_) {
+        /* domain may not have cookies */
       }
-      if (kDebugMode) {
-        debugPrint('[Evaluation] Cleared cookies for教务 domains');
-      }
-    } catch (e) {
-      if (kDebugMode) {
-        debugPrint('[Evaluation] Error clearing cookies: $e');
-      }
-      rethrow;
+    }
+
+    if (kDebugMode) {
+      debugPrint('[Evaluation] Cleared $deletedCount cookies from教务 domains');
     }
   }
 
-  /// Build a sanitized diagnostic message for debugging.
+  /// Build sanitized diagnostic message.
   String buildDiagnosticMessage() {
     final buf = StringBuffer();
     buf.writeln('页面类型: ${EvaluationPageDetector.label(_currentPageType)}');
+    if (_lastHttpError != null) {
+      buf.writeln('HTTP 错误: $_lastHttpError');
+    }
     if (_lastProbe != null) {
       buf.writeln('URL: ${_lastProbe!.url}');
       buf.writeln('标题: ${_lastProbe!.title}');
       buf.writeln(
-          '单选项: ${_lastProbe!.radioCount} (${_lastProbe!.radioGroups.length} 组)');
+        '单选项: ${_lastProbe!.radioCount} (${_lastProbe!.radioGroups.length} 组)',
+      );
       buf.writeln('文本框: ${_lastProbe!.textareaCount}');
       buf.writeln('表单数: ${_lastProbe!.forms.length}');
       buf.writeln('按钮数: ${_lastProbe!.buttons.length}');
-      buf.writeln('课程行: ${_lastProbe!.possibleCourseRows.length}');
     }
     if (_lastFillResult != null) {
       buf.writeln('---');
       buf.writeln(
-          '填写结果: ${_lastFillResult!.completedGroups}/${_lastFillResult!.totalGroups}');
+        '填写结果: ${_lastFillResult!.completedGroups}/${_lastFillResult!.totalGroups}',
+      );
       if (_lastFillResult!.hasUnresolved) {
         buf.writeln('未识别组: ${_lastFillResult!.unresolvedGroups.length}');
       }
@@ -218,12 +220,24 @@ class EvaluationWebViewController {
     return buf.toString();
   }
 
-  /// Determine whether the current URL should be allowed inside the WebView.
   bool shouldAllowNavigation(WebUri? uri) {
     if (uri == null) return false;
+    final scheme = uri.scheme;
+    // Allow only http/https in WebView; other schemes go to system
+    if (scheme != 'http' && scheme != 'https') return false;
     final host = uri.host;
     if (host.isEmpty) return false;
     return EvaluationDomainAllowlist.isAllowed(host);
+  }
+
+  /// Returns true if this uri should be opened in system browser.
+  bool shouldOpenExternally(WebUri? uri) {
+    if (uri == null) return false;
+    final scheme = uri.scheme;
+    // Non http/https schemes (tel:, mailto:, intent:, etc.)
+    if (scheme != 'http' && scheme != 'https') return true;
+    // Http(s) but not in allowlist
+    return !EvaluationDomainAllowlist.isAllowed(uri.host);
   }
 
   void dispose() {
@@ -234,89 +248,56 @@ class EvaluationWebViewController {
     onError = null;
   }
 
-  // ── Private parsers ──
+  // ── Private ──
+
+  EvaluationProbeResult _emptyProbe(String error) => EvaluationProbeResult(
+    url: '',
+    title: '',
+    pageTextSample: '',
+    radioCount: 0,
+    radioOptions: [],
+    textareaCount: 0,
+    forms: [],
+    buttons: [],
+    possibleCourseRows: [],
+    hasLoginForm: false,
+    hasEvaluationForm: false,
+    error: error,
+  );
 
   EvaluationProbeResult _parseProbeResult(dynamic raw) {
-    if (raw == null) {
-      return EvaluationProbeResult(
-        url: '',
-        title: '',
-        pageTextSample: '',
-        radioCount: 0,
-        radioOptions: [],
-        textareaCount: 0,
-        forms: [],
-        buttons: [],
-        possibleCourseRows: [],
-        hasLoginForm: false,
-        hasEvaluationForm: false,
-        error: 'Probe returned null',
-      );
-    }
-
+    if (raw == null) return _emptyProbe('Probe returned null');
     if (raw is String) {
       try {
-        final decoded = jsonDecode(raw) as Map<String, dynamic>;
-        return EvaluationProbeResult.fromJson(decoded);
-      } catch (e) {
-        return EvaluationProbeResult(
-          url: '',
-          title: '',
-          pageTextSample: '',
-          radioCount: 0,
-          radioOptions: [],
-          textareaCount: 0,
-          forms: [],
-          buttons: [],
-          possibleCourseRows: [],
-          hasLoginForm: false,
-          hasEvaluationForm: false,
-          error: 'JSON parse error: $e',
+        return EvaluationProbeResult.fromJson(
+          jsonDecode(raw) as Map<String, dynamic>,
         );
+      } catch (e) {
+        return _emptyProbe('JSON parse error: $e');
       }
     }
-
     if (raw is Map) {
-      return EvaluationProbeResult.fromJson(
-        Map<String, dynamic>.from(raw),
-      );
+      return EvaluationProbeResult.fromJson(Map<String, dynamic>.from(raw));
     }
-
-    return EvaluationProbeResult(
-      url: '',
-      title: '',
-      pageTextSample: '',
-      radioCount: 0,
-      radioOptions: [],
-      textareaCount: 0,
-      forms: [],
-      buttons: [],
-      possibleCourseRows: [],
-      hasLoginForm: false,
-      hasEvaluationForm: false,
-      error: 'Unexpected probe type: ${raw.runtimeType}',
-    );
+    return _emptyProbe('Unexpected probe type: ${raw.runtimeType}');
   }
 
   EvaluationFillResult _parseFillResult(dynamic raw) {
-    if (raw == null) {
-      return EvaluationFillResult.error('Fill returned null');
-    }
-
+    if (raw == null) return EvaluationFillResult.error('Fill returned null');
     if (raw is String) {
       try {
-        final decoded = jsonDecode(raw) as Map<String, dynamic>;
-        return EvaluationFillResult.fromJson(decoded);
+        return EvaluationFillResult.fromJson(
+          jsonDecode(raw) as Map<String, dynamic>,
+        );
       } catch (e) {
         return EvaluationFillResult.error('Fill JSON parse error: $e');
       }
     }
-
     if (raw is Map) {
       return EvaluationFillResult.fromJson(Map<String, dynamic>.from(raw));
     }
-
     return EvaluationFillResult.error(
-        'Unexpected fill type: ${raw.runtimeType}');
+      'Unexpected fill type: ${raw.runtimeType}',
+    );
   }
 }

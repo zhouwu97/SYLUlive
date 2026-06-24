@@ -133,121 +133,29 @@ class KeepAliveForegroundService : Service() {
      * 系统通过 START_STICKY 重新拉起保活服务时，Flutter 进程可能已被杀死，
      * 极光长连接和别名注册随之丢失。在此重新初始化极光 SDK，恢复推送能力。
      */
+    // RegistrationID 重试
+    private val ridRetryDelays = longArrayOf(3_000L, 8_000L, 15_000L)
+    private var ridRetryCount = 0
+
     private fun restoreJPush() {
+        // 快速预检：没登录且无 pending_delete 才跳过
+        val hasAuthToken = !authToken(this).isNullOrBlank()
         val aliasState = getAliasState(this)
         val storedAlias = getStoredAlias(this)
-        val hasAuthToken = !authToken(this).isNullOrBlank()
-
-        // pending_delete 是退出后的清理任务，不依赖登录状态
         val needsPendingDelete =
             aliasState == "pending_delete" && !storedAlias.isNullOrBlank()
 
-        // 没登录且没有待清理任务，才跳过
         if (!hasAuthToken && !needsPendingDelete) {
             Log.d(TAG, "skip JPush restore: no login and no pending cleanup")
             return
         }
 
         try {
-            // Flutter 进程已被清理时，重新启动极光服务
             JPushInterface.init(applicationContext)
             JPushInterface.resumePush(applicationContext)
 
-            handler.postDelayed({
-                val rid = JPushInterface.getRegistrationID(applicationContext)
-                val safeRid = if (rid.isNotBlank()) {
-                    "***${rid.takeLast(6)}"
-                } else {
-                    "empty"
-                }
-
-                if (rid.isBlank()) {
-                    Log.w(TAG, "JPush initialized but registrationId is empty")
-
-                    DiagnosticLogStore.warning(
-                        applicationContext,
-                        source = "推送",
-                        type = "JPush 未注册",
-                        summary = "极光推送已初始化，但 RegistrationID 为空",
-                    )
-                    return@postDelayed
-                }
-
-                Log.i(TAG, "JPush restored, registrationId=$safeRid")
-                DiagnosticLogStore.info(
-                    applicationContext,
-                    source = "推送",
-                    type = "JPush 恢复",
-                    summary = "极光推送连接已恢复",
-                    detail = "registrationId=$safeRid",
-                )
-
-                // 优先处理待删除任务（不依赖登录状态）
-                if (needsPendingDelete) {
-                    val gen = getAliasGeneration(applicationContext)
-                    val sequence =
-                        PrivateMessageJPushReceiver.deleteSequence(gen)
-                    JPushInterface.deleteAlias(
-                        applicationContext,
-                        sequence,
-                    )
-                    Log.i(TAG,
-                        "retry pending alias delete: ***${storedAlias!!.takeLast(4)} gen=$gen")
-                    DiagnosticLogStore.info(
-                        applicationContext,
-                        source = "推送",
-                        type = "Alias 删除重试",
-                        summary = "保活恢复时重试待删除 Alias",
-                        detail = "alias=***${storedAlias!!.takeLast(4)} gen=$gen",
-                    )
-                    return@postDelayed
-                }
-
-                // 正常 Alias 恢复（需要登录状态）
-                if (!hasAuthToken) {
-                    Log.d(TAG, "no auth token, skip alias restore")
-                    return@postDelayed
-                }
-
-                if (aliasState != "active") {
-                    Log.d(TAG, "skip alias restore: state=$aliasState")
-                    return@postDelayed
-                }
-
-                val alias = storedAlias
-                if (!alias.isNullOrBlank()) {
-                    try {
-                        val gen = getAliasGeneration(applicationContext)
-                        val sequence =
-                            PrivateMessageJPushReceiver.restoreSequence(gen)
-                        JPushInterface.setAlias(
-                            applicationContext,
-                            sequence,
-                            alias
-                        )
-                        Log.i(TAG,
-                            "JPush alias restore requested: ***${alias.takeLast(4)} gen=$gen")
-                        DiagnosticLogStore.info(
-                            applicationContext,
-                            source = "推送",
-                            type = "Alias 恢复请求",
-                            summary = "保活服务已发起 Alias 恢复请求",
-                            detail = "alias=***${alias.takeLast(4)} rid=$safeRid gen=$gen",
-                        )
-                    } catch (e: Exception) {
-                        Log.e(TAG, "restore alias failed", e)
-                        DiagnosticLogStore.warning(
-                            applicationContext,
-                            source = "推送",
-                            type = "Alias 恢复异常",
-                            summary = "保活服务恢复 Alias 失败",
-                            detail = Log.getStackTraceString(e),
-                        )
-                    }
-                } else {
-                    Log.d(TAG, "no alias stored, skip alias restore")
-                }
-            }, 3000L)
+            ridRetryCount = 0
+            scheduleRidCheck()
         } catch (e: Exception) {
             Log.e(TAG, "restore JPush failed", e)
             DiagnosticLogStore.error(
@@ -255,8 +163,123 @@ class KeepAliveForegroundService : Service() {
                 source = "推送",
                 type = "JPush 恢复异常",
                 summary = "恢复极光推送服务失败",
-                detail = Log.getStackTraceString(e)
+                detail = Log.getStackTraceString(e),
             )
+        }
+    }
+
+    /** 带重试的 RegistrationID 检查 */
+    private fun scheduleRidCheck() {
+        handler.postDelayed({
+            val rid = JPushInterface.getRegistrationID(applicationContext)
+
+            if (rid.isNotBlank()) {
+                ridRetryCount = 0
+                Log.i(TAG,
+                    "JPush restored, rid=***${rid.takeLast(6)}")
+                DiagnosticLogStore.info(
+                    applicationContext,
+                    source = "推送",
+                    type = "JPush 恢复",
+                    summary = "极光推送连接已恢复",
+                    detail = "rid=***${rid.takeLast(6)}",
+                )
+                reconcileAliasState()
+                return@postDelayed
+            }
+
+            // RegistrationID 仍为空 → 重试
+            ridRetryCount++
+            if (ridRetryCount <= ridRetryDelays.size) {
+                val delay = ridRetryDelays[ridRetryCount - 1]
+                Log.w(TAG, "RID empty, retry ${ridRetryCount} in ${delay}ms")
+                DiagnosticLogStore.warning(
+                    applicationContext,
+                    source = "推送",
+                    type = "JPush RID 等待",
+                    summary = "RegistrationID 为空，${delay}ms 后第 ${ridRetryCount} 次重试",
+                )
+                scheduleRidCheck()
+            } else {
+                DiagnosticLogStore.warning(
+                    applicationContext,
+                    source = "推送",
+                    type = "JPush RID 放弃",
+                    summary = "RegistrationID 多次重试后仍为空，本次放弃 Alias 同步",
+                )
+            }
+        }, if (ridRetryCount == 0) 3_000L else ridRetryDelays[ridRetryCount - 1])
+    }
+
+    /** 统一协调当前 Alias 状态（重读，不使用延迟前的快照） */
+    fun reconcileAliasState(context: Context = applicationContext) {
+        val state = getAliasState(context)
+        val alias = getStoredAlias(context)
+        val gen = getAliasGeneration(context)
+        val hasAuthToken = !authToken(context).isNullOrBlank()
+
+        when {
+            // 优先：待删除
+            state == "pending_delete" && !alias.isNullOrBlank() -> {
+                try {
+                    val sequence =
+                        PrivateMessageJPushReceiver.deleteSequence(gen)
+                    JPushInterface.deleteAlias(context, sequence)
+                    Log.i(TAG,
+                        "reconcile: retry pending delete ***${alias.takeLast(4)} gen=$gen")
+                    DiagnosticLogStore.info(
+                        context,
+                        source = "推送",
+                        type = "Alias 删除重试",
+                        summary = "重新协调删除待处理 Alias",
+                        detail = "alias=***${alias.takeLast(4)} gen=$gen",
+                    )
+                } catch (e: Exception) {
+                    Log.e(TAG, "reconcile delete failed", e)
+                    PrivateMessageJPushReceiver.scheduleDeleteRetry(context, gen)
+                    DiagnosticLogStore.warning(
+                        context,
+                        source = "推送",
+                        type = "Alias 删除异常",
+                        summary = "协调删除 Alias 时异常，安排重试",
+                        detail = Log.getStackTraceString(e),
+                    )
+                }
+            }
+
+            // 正常恢复
+            hasAuthToken
+                && state == "active"
+                && !alias.isNullOrBlank() -> {
+                try {
+                    val sequence =
+                        PrivateMessageJPushReceiver.restoreSequence(gen)
+                    JPushInterface.setAlias(context, sequence, alias)
+                    Log.i(TAG,
+                        "reconcile: restore alias ***${alias.takeLast(4)} gen=$gen")
+                    DiagnosticLogStore.info(
+                        context,
+                        source = "推送",
+                        type = "Alias 恢复请求",
+                        summary = "重新协调绑定 Alias",
+                        detail = "alias=***${alias.takeLast(4)} gen=$gen",
+                    )
+                } catch (e: Exception) {
+                    Log.e(TAG, "reconcile restore failed", e)
+                    DiagnosticLogStore.warning(
+                        context,
+                        source = "推送",
+                        type = "Alias 恢复异常",
+                        summary = "协调恢复 Alias 时异常",
+                        detail = Log.getStackTraceString(e),
+                    )
+                }
+            }
+
+            else -> {
+                Log.d(TAG,
+                    "reconcile: no action state=$state hasToken=$hasAuthToken")
+            }
         }
     }
 

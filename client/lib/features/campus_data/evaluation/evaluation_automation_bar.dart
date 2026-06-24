@@ -219,7 +219,7 @@ class EvaluationAutomationBar extends StatelessWidget {
         title: const Text('自动批量处理'),
         content: const Text(
           '将自动填写并保存所有待评价课程。\n\n'
-          '每次只处理最多2项(防打扰限制)，该操作会自动点击“保存”按钮，但绝对不会提交最终评价。\n\n'
+          '该操作会自动为您填满所有评分和评语并点击“保存”按钮，但绝对不会提交最终评价。\n\n'
           '是否继续？',
         ),
         actions: [

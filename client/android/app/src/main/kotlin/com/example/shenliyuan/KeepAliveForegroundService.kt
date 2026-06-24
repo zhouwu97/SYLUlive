@@ -186,9 +186,9 @@ class KeepAliveForegroundService : Service() {
     private fun restoreJPush() {
         val hasAuthToken = !authToken(this).isNullOrBlank()
         val aliasState = getAliasState(this)
-        val storedAlias = getStoredAlias(this)
-        val needsPendingDelete =
-            aliasState == "pending_delete" && !storedAlias.isNullOrBlank()
+
+        // pending_delete 不依赖 storedAlias 是否存在 — deleteAlias() 不需要 alias 字符串
+        val needsPendingDelete = aliasState == "pending_delete"
 
         if (!hasAuthToken && !needsPendingDelete) {
             Log.d(TAG, "skip JPush restore: no login and no pending cleanup")
@@ -409,7 +409,7 @@ class KeepAliveForegroundService : Service() {
             val loggedIn = hasAuthToken(appContext)
 
             when {
-                state == "pending_delete" && !alias.isNullOrBlank() -> {
+                state == "pending_delete" -> {
                     try {
                         val sequence =
                             PrivateMessageJPushReceiver.deleteSequence(gen)
@@ -525,15 +525,16 @@ class KeepAliveForegroundService : Service() {
                 .getInt(KEY_JPUSH_ALIAS_GEN, 0)
         }
 
-        /** 如果本地仍存有 Alias 值，标记为待删除 */
+        /** 无条件标记为待删除 — deleteAlias() 不需要 alias 字符串 */
         fun ensureAliasPendingDelete(context: Context) {
             val appContext = context.applicationContext
-            val alias = getStoredAlias(appContext)
-            if (!alias.isNullOrBlank()) {
-                markAliasPendingDelete(appContext)
-                Log.d(TAG,
-                    "ensured pending_delete for stale alias ***${alias.takeLast(4)}")
+            val state = getAliasState(appContext)
+            if (state == "pending_delete") {
+                Log.d(TAG, "already pending_delete, gen=${getAliasGeneration(appContext)}")
+                return
             }
+            markAliasPendingDelete(appContext)
+            Log.d(TAG, "ensured pending_delete")
         }
 
         /** 标记 Alias 为待删除（退出时调用，不等异步回调） */
@@ -572,7 +573,7 @@ class KeepAliveForegroundService : Service() {
             p.edit()
                 .remove(KEY_JPUSH_ALIAS)
                 .remove(KEY_JPUSH_ALIAS_STATE)
-                .remove(KEY_JPUSH_ALIAS_GEN)
+                // 不删除 KEY_JPUSH_ALIAS_GEN — 保持跨生命周期单调递增
                 .apply()
             Log.d(TAG, "JPush alias cleared gen=$expectedGeneration")
             return true
@@ -584,7 +585,7 @@ class KeepAliveForegroundService : Service() {
                 .edit()
                 .remove(KEY_JPUSH_ALIAS)
                 .remove(KEY_JPUSH_ALIAS_STATE)
-                .remove(KEY_JPUSH_ALIAS_GEN)
+                // 保留 generation，保证跨生命周期单调
                 .apply()
             Log.d(TAG, "JPush alias cleared (forced)")
         }

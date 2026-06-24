@@ -102,10 +102,30 @@ class EvaluationAutomationBar extends StatelessWidget {
                     onPressed: () async {
                       final confirm = await _showConfirmDialog(context, isDark);
                       if (confirm == true) {
-                        controller.startBatch();
+                        controller.startBatch(submitMode: false);
                       }
                     },
-                    child: const Text('自动完成待评'),
+                    child: const Text('自动完成待评(仅保存)'),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () async {
+                      final confirm = await _showSubmitConfirmDialog(context, isDark);
+                      if (confirm == true) {
+                        controller.startBatch(submitMode: true);
+                      }
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.red[700],
+                      foregroundColor: Colors.white,
+                    ),
+                    child: const Text('全自动提交全部待评 (慎用)'),
                   ),
                 ),
               ],
@@ -230,6 +250,40 @@ class EvaluationAutomationBar extends StatelessWidget {
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('开始'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<bool?> _showSubmitConfirmDialog(BuildContext context, bool isDark) {
+    return showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Colors.red),
+            SizedBox(width: 8),
+            Text('警告：全自动提交'),
+          ],
+        ),
+        content: const Text(
+          '此操作将自动为您填满所有评分和评语并点击“提交”按钮！\n\n'
+          '⚠️ 评价一旦提交将无法修改！\n\n'
+          '为防止意外提交，请您进行二次确认。是否确定要执行【全自动提交全部待评】操作？',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('确认提交'),
           ),
         ],
       ),

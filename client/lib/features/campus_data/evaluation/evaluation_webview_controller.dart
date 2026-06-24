@@ -161,15 +161,23 @@ class EvaluationWebViewController {
         final cookies = await manager.getCookies(url: WebUri(origin));
         for (final cookie in cookies) {
           try {
-            await manager.deleteCookie(
-              url: WebUri(origin),
-              name: cookie.name,
-              domain: cookie.domain,
-              path: cookie.path,
-            );
+            // Prefer domain+path when available; fall back to name-only.
+            if (cookie.domain != null && cookie.path != null) {
+              await manager.deleteCookie(
+                url: WebUri(origin),
+                name: cookie.name,
+                domain: cookie.domain!,
+                path: cookie.path!,
+              );
+            } else {
+              await manager.deleteCookie(
+                url: WebUri(origin),
+                name: cookie.name,
+              );
+            }
             deletedCount++;
           } catch (_) {
-            // Individual cookie deletion failed — try without domain/path
+            // try without domain/path as last resort
             try {
               await manager.deleteCookie(
                 url: WebUri(origin),

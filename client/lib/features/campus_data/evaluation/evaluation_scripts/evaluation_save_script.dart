@@ -64,6 +64,65 @@ String buildSaveCurrentScript() {
 ''';
 }
 
+/// JavaScript to find and click the exact "提交" button.
+String buildSubmitCurrentScript() {
+  return '''
+(function () {
+  'use strict';
+  try {
+    $_isSubmitActionJs
+
+    function findSubmitButton() {
+      var btns = document.querySelectorAll('button, input[type="submit"], input[type="button"], a.btn, a[role="button"]');
+      var candidates = [];
+      for (var i = 0; i < btns.length; i++) {
+        var b = btns[i];
+        if (b.disabled) continue;
+        
+        var style = window.getComputedStyle(b);
+        if (style && (style.display === 'none' || style.visibility === 'hidden')) continue;
+        if (b.offsetWidth === 0 && b.offsetHeight === 0) continue;
+
+        if (isSubmitAction(b)) {
+          candidates.push(b);
+        }
+      }
+      return candidates;
+    }
+
+    var candidates = findSubmitButton();
+    if (candidates.length === 0) {
+      return JSON.stringify({ error: '未找到明确的提交按钮' });
+    }
+
+    var submitBtn = candidates[0];
+    try {
+      submitBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    } catch(e) {}
+
+    // Perform click
+    submitBtn.click();
+
+    // Auto confirm any immediate bootbox/layer confirm modals
+    setTimeout(function() {
+      var confirmBtns = document.querySelectorAll('.bootbox-accept, .layui-layer-btn0, button.confirm, button.ok');
+      for (var j = 0; j < confirmBtns.length; j++) {
+        var cb = confirmBtns[j];
+        var text = (cb.textContent || '').replace(/\\s+/g, '');
+        if (text.indexOf('确定') >= 0 || text.indexOf('确认') >= 0 || text.indexOf('提交') >= 0) {
+           try { cb.click(); } catch(e) {}
+        }
+      }
+    }, 500);
+
+    return JSON.stringify({ success: true, message: '已点击提交按钮' });
+  } catch (e) {
+    return JSON.stringify({ error: 'Submit script exception: ' + (e.message || String(e)) });
+  }
+})();
+''';
+}
+
 /// Snapshot the current state to check if save was successful
 String buildSaveSnapshotScript() {
   return '''
@@ -120,8 +179,41 @@ String buildSaveSnapshotScript() {
     var successEls = document.querySelectorAll('.alert-success, .success, #successMsg');
     for (var i = 0; i < successEls.length; i++) {
       var t = (successEls[i].textContent || '').replace(/\\s+/g, '');
-      if (t.indexOf('保存成功') >= 0 || t.indexOf('操作成功') >= 0) {
+      if (t.indexOf('保存成功') >= 0 || t.indexOf('提交成功') >= 0 || t.indexOf('评价成功') >= 0 || t.indexOf('操作成功') >= 0) {
         successMarkerCount++;
+      }
+    }
+
+    // Generic search for "保存/提交成功" in visible elements
+    var genericFound = false;
+    var allTextEls = document.querySelectorAll('div, span, p, h1, h2, h3, h4');
+    for (var i = 0; i < allTextEls.length; i++) {
+      var el = allTextEls[i];
+      // Only check leaf nodes or text-heavy nodes to avoid matching the whole body
+      if (el.children.length === 0 || el.tagName === 'P' || el.tagName === 'SPAN') {
+        var text = (el.textContent || '').replace(/\\s+/g, '');
+        if (text.indexOf('保存成功') >= 0 || text.indexOf('提交成功') >= 0 || text.indexOf('评价成功') >= 0 || text.indexOf('操作成功') >= 0) {
+          var style = window.getComputedStyle(el);
+          if (style && style.display !== 'none' && style.visibility !== 'hidden' && el.offsetWidth > 0) {
+            genericFound = true;
+            break;
+          }
+        }
+      }
+    }
+
+    if (genericFound) {
+      successMarkerCount++;
+      // Attempt to auto-dismiss the modal by clicking "确定"
+      var btns = document.querySelectorAll('button, a.btn');
+      for (var i = 0; i < btns.length; i++) {
+        var bt = (btns[i].textContent || '').replace(/\\s+/g, '');
+        if (bt === '确定' || bt === '确认' || bt === 'ok' || bt === '关闭') {
+          var bs = window.getComputedStyle(btns[i]);
+          if (bs && bs.display !== 'none' && bs.visibility !== 'hidden' && btns[i].offsetWidth > 0) {
+            try { btns[i].click(); } catch(e){}
+          }
+        }
       }
     }
 

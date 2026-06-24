@@ -76,28 +76,33 @@ class EvaluationPageDetector {
   /// Strict evaluation form detection.
   /// Requires: /xspjgl/ in URL path AND enough evaluation controls.
   bool _isEvaluationFormPage(EvaluationProbeResult probe) {
-    // Must have /xspjgl/ in URL path
     if (!probe.url.contains('/xspjgl/')) return false;
 
-    // Count reliable controls
-    final groups = probe.radioGroups;
-    final multiOptionGroups = groups.where((g) => g.options.length >= 2).length;
-    final reliableScoreInputs = probe.scoreInputs.where((s) => s.isReliableScore).length;
+    final radioGroups = probe.radioGroups
+        .where((group) => group.options.length >= 2)
+        .length;
 
-    if (multiOptionGroups < 3 && reliableScoreInputs < 3) return false;
+    final scoreInputs = probe.scoreInputs
+        .where((input) => input.isReliableScore)
+        .length;
 
-    // Must not be a course list page
-    if (_isCourseList(probe)) return false;
+    if (radioGroups >= 3 || scoreInputs >= 3) {
+      return true;
+    }
 
-    // Must have evaluation form OR enough context
-    if (probe.hasEvaluationForm) return true;
-
-    // At least have evaluation-related buttons or forms
-    return multiOptionGroups >= 5 || reliableScoreInputs >= 5;
+    return false;
   }
 
   bool _isCourseList(EvaluationProbeResult probe) {
-    // Multiple course rows with few radios → list page
+    final reliableScoreInputs =
+        probe.scoreInputs.where((item) => item.isReliableScore).length;
+    final reliableRadioGroups =
+        probe.radioGroups.where((item) => item.options.length >= 2).length;
+
+    if (reliableScoreInputs >= 3 || reliableRadioGroups >= 3) {
+      return false;
+    }
+
     if (probe.possibleCourseRows.length >= 2 && probe.radioCount < 5) {
       return true;
     }

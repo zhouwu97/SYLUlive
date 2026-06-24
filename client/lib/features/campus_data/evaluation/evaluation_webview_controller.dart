@@ -211,18 +211,27 @@ class EvaluationWebViewController {
       buf.writeln('HTTP 错误: $_lastHttpError');
     }
     if (_lastProbe != null) {
-      buf.writeln('URL: ${_lastProbe!.url}');
-      buf.writeln('标题: ${_lastProbe!.title}');
+      final probe = _lastProbe!;
+      buf.writeln('URL: ${probe.url}');
+      buf.writeln('标题: ${probe.title}');
       buf.writeln(
-        '单选项: ${_lastProbe!.radioCount} (${_lastProbe!.radioGroups.length} 组)',
+        '单选项: ${probe.radioCount} (${probe.radioGroups.length} 组)',
       );
-      buf.writeln(
-        '评分输入框: ${_lastProbe!.scoreInputs.where((s) => s.isReliableScore).length} (共 ${_lastProbe!.scoreInputs.length})',
-      );
-      buf.writeln('建议文本框: ${_lastProbe!.optionalCommentCount}');
-      buf.writeln('表单数: ${_lastProbe!.forms.length}');
-      buf.writeln('按钮数: ${_lastProbe!.buttons.length}');
-      if (_lastProbe!.hasAccessDeniedText) {
+      if (probe.scoreInputs.isNotEmpty) {
+        final reliableScores = probe.scoreInputs.where((i) => i.isReliableScore).toList();
+        buf.writeln('  [Score] Count: ${probe.scoreInputs.length}, Reliable: ${reliableScores.length}');
+        for (int i = 0; i < probe.scoreInputs.length; i++) {
+          final inp = probe.scoreInputs[i];
+          final skipMsg = inp.skipReason != null ? ', skip=${inp.skipReason}' : '';
+          final rangeMsg = inp.minScore != null ? ', range=${inp.minScore}..${inp.maxScore}' : '';
+          final phMsg = (inp.placeholder?.isNotEmpty == true) ? ', ph="${inp.placeholder}"' : '';
+          buf.writeln('    #${i + 1}: type=${inp.type}$phMsg$rangeMsg$skipMsg');
+        }
+      }
+      buf.writeln('建议文本框: ${probe.optionalCommentCount}');
+      buf.writeln('表单数: ${probe.forms.length}');
+      buf.writeln('按钮数: ${probe.buttons.length}');
+      if (probe.hasAccessDeniedText) {
         buf.writeln('命中访问受限规则: HTML标题或错误容器包含无权限');
       }
     }

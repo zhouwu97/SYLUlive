@@ -1,25 +1,93 @@
 /// Centralized JavaScript scripts for the evaluation WebView.
 library;
 
-/// Builds the page-probe JavaScript string (READ-ONLY).
-String buildProbeScript() {
-  return r'''
-(function () {
-  'use strict';
-  try {
+const String _sharedJsHelpers = r'''
     var MAX_TEXT_LENGTH = 120;
-    var MAX_TEXT_SAMPLE = 300;
-
     function safeStr(s) {
       if (s == null) return '';
       return String(s).substring(0, MAX_TEXT_LENGTH);
     }
-
     function safeText(n) {
       if (!n) return '';
       var t = (n.textContent || '').replace(/\s+/g, ' ').trim();
       return t.substring(0, MAX_TEXT_LENGTH);
     }
+    function isVisible(el) {
+      try {
+        var style = window.getComputedStyle(el);
+        if (style && (style.display === 'none' || style.visibility === 'hidden')) {
+          var label = null;
+          if (el.id) label = document.querySelector('label[for="' + el.id + '"]');
+          if (!label) label = el.closest('label');
+          if (!label) label = el.closest('tr, li, .radio, .option, .item, td, div[class]');
+          if (label) {
+            var ls = window.getComputedStyle(label);
+            if (ls && ls.display !== 'none' && ls.visibility !== 'hidden') return true;
+          }
+          return false;
+        }
+        if (el.offsetWidth === 0 && el.offsetHeight === 0) return false;
+        return true;
+      } catch (e) { return true; }
+    }
+    var rangeRegex = /(?:打分|评分)?范围\s*[:：]?\s*(-?\d+(?:\.\d+)?)\s*(?:-|－|–|—|~|～|至)\s*(-?\d+(?:\.\d+)?)/gi;
+    function extractRange(el) {
+      if (el.hasAttribute('min') && el.hasAttribute('max')) {
+        return { min: parseFloat(el.getAttribute('min')), max: parseFloat(el.getAttribute('max')), source: 'minMax', ambiguous: false };
+      }
+      if (el.hasAttribute('data-min') && el.hasAttribute('data-max')) {
+        return { min: parseFloat(el.getAttribute('data-min')), max: parseFloat(el.getAttribute('data-max')), source: 'dataAttr', ambiguous: false };
+      }
+      var ph = el.getAttribute('placeholder') || '';
+      rangeRegex.lastIndex = 0;
+      var m = rangeRegex.exec(ph);
+      if (m !== null) {
+        return { min: parseFloat(m[1]), max: parseFloat(m[2]), source: 'placeholder', ambiguous: false };
+      }
+      var container = el.closest('td, li, div.form-group, .question, tr');
+      if (container) {
+        var text = container.textContent || '';
+        rangeRegex.lastIndex = 0;
+        var match1 = rangeRegex.exec(text);
+        if (match1) {
+          var match2 = rangeRegex.exec(text);
+          if (match2 && (match1[1] !== match2[1] || match1[2] !== match2[2])) {
+            return { min: parseFloat(match1[1]), max: parseFloat(match1[2]), source: 'text', ambiguous: true };
+          }
+          return { min: parseFloat(match1[1]), max: parseFloat(match1[2]), source: 'text', ambiguous: false };
+        }
+      }
+      return null;
+    }
+    function isOptionalCommentField(el) {
+      if (el.tagName && el.tagName.toLowerCase() === 'textarea') return true;
+      if (el.isContentEditable) return true;
+      var container = el.closest('td, li, div.form-group, tr');
+      if (container) {
+        var text = container.textContent || '';
+        if (text.indexOf('建议') >= 0 || text.indexOf('意见') >= 0 || text.indexOf('评语') >= 0) {
+          return true;
+        }
+      }
+      return false;
+    }
+    function extractScore(opt) {
+      var candidates = [opt.getAttribute('data-dyf'), opt.getAttribute('data-score'), opt.getAttribute('data-fz')];
+      for (var i = 0; i < candidates.length; i++) {
+        var v = parseFloat(candidates[i]);
+        if (!isNaN(v) && isFinite(v) && v >= 0) return v;
+      }
+      return null;
+    }
+''';
+
+String buildProbeScript() {
+  return '''
+(function () {
+  'use strict';
+  try {
+    $_sharedJsHelpers
+    var MAX_TEXT_SAMPLE = 300;
 
     function traverseFrames(win, callback) {
       try {
@@ -81,59 +149,6 @@ String buildProbeScript() {
     var allButtons = [];
     var possibleCourseRows = [];
 
-    function isVisible(el) {
-      try {
-        var style = window.getComputedStyle(el);
-        if (style && (style.display === 'none' || style.visibility === 'hidden')) return false;
-        if (el.offsetWidth === 0 && el.offsetHeight === 0) return false;
-        return true;
-      } catch(e) { return true; }
-    }
-
-    var rangeRegex = /(?:打分|评分)?范围\s*[:：]?\s*(-?\d+(?:\.\d+)?)\s*(?:-|~|～|至)\s*(-?\d+(?:\.\d+)?)/gi;
-
-    function extractRange(el) {
-      if (el.hasAttribute('min') && el.hasAttribute('max')) {
-        return { min: parseFloat(el.getAttribute('min')), max: parseFloat(el.getAttribute('max')), source: 'minMax', ambiguous: false };
-      }
-      if (el.hasAttribute('data-min') && el.hasAttribute('data-max')) {
-        return { min: parseFloat(el.getAttribute('data-min')), max: parseFloat(el.getAttribute('data-max')), source: 'dataAttr', ambiguous: false };
-      }
-      var ph = el.getAttribute('placeholder') || '';
-      rangeRegex.lastIndex = 0;
-      var m = rangeRegex.exec(ph);
-      if (m !== null) {
-        return { min: parseFloat(m[1]), max: parseFloat(m[2]), source: 'placeholder', ambiguous: false };
-      }
-      var container = el.closest('td, li, div.form-group, .question, tr');
-      if (container) {
-        var text = container.textContent || '';
-        rangeRegex.lastIndex = 0;
-        var match1 = rangeRegex.exec(text);
-        if (match1) {
-          var match2 = rangeRegex.exec(text);
-          if (match2 && (match1[1] !== match2[1] || match1[2] !== match2[2])) {
-            return { min: parseFloat(match1[1]), max: parseFloat(match1[2]), source: 'text', ambiguous: true };
-          }
-          return { min: parseFloat(match1[1]), max: parseFloat(match1[2]), source: 'text', ambiguous: false };
-        }
-      }
-      return null;
-    }
-
-    function isOptionalCommentField(el) {
-      if (el.tagName && el.tagName.toLowerCase() === 'textarea') return true;
-      if (el.isContentEditable) return true;
-      var container = el.closest('td, li, div.form-group, tr');
-      if (container) {
-        var text = container.textContent || '';
-        if (text.indexOf('建议') >= 0 || text.indexOf('意见') >= 0 || text.indexOf('评语') >= 0) {
-          return true;
-        }
-      }
-      return false;
-    }
-
     traverseFrames(window, function(doc, framePath) {
       var radios = doc.querySelectorAll('input[type="radio"]');
       for (var i = 0; i < radios.length; i++) {
@@ -161,21 +176,27 @@ String buildProbeScript() {
       for (var i = 0; i < inputs.length; i++) {
         var inp = inputs[i];
         var type = (inp.getAttribute('type') || '').toLowerCase();
-        if (type !== 'text' && type !== 'number' && type !== '') continue;
+        if (type !== 'text' && type !== 'number' && type !== 'tel' && type !== '') continue;
         
         var nameId = (inp.name || inp.id || '').toLowerCase();
         if (nameId.indexOf('search') >= 0) continue;
 
-        if (isOptionalCommentField(inp)) {
+        var visible = isVisible(inp);
+        var rng = extractRange(inp);
+        var skipReason = null;
+        var isOptionalComment = false;
+
+        if (rng && !rng.ambiguous && rng.max > rng.min) {
+          // valid range
+        } else if (isOptionalCommentField(inp)) {
           optionalCommentCount++;
           continue;
-        }
-
-        var rng = extractRange(inp);
-        var visible = isVisible(inp);
-
-        if (!rng && !inp.disabled && !inp.readOnly && visible) {
-          continue; 
+        } else {
+          if (!visible) skipReason = 'invisible';
+          else if (inp.disabled) skipReason = 'disabled';
+          else if (inp.readOnly) skipReason = 'readOnly';
+          else if (!rng) skipReason = 'noRange';
+          else skipReason = 'ambiguousRange';
         }
 
         allScoreInputs.push({
@@ -192,7 +213,8 @@ String buildProbeScript() {
           maxScore: rng ? rng.max : null,
           rangeSource: rng ? rng.source : null,
           rangeIsAmbiguous: rng ? rng.ambiguous : false,
-          isOptionalComment: false
+          isOptionalComment: isOptionalComment,
+          skipReason: skipReason
         });
       }
 
@@ -325,16 +347,12 @@ String buildProbeScript() {
 ''';
 }
 
-/// Builds the safe fill JavaScript string.
 String buildFillScript() {
-  return r'''
+  return '''
 (function () {
   'use strict';
   try {
-    function safeStr(s) {
-      if (s == null) return '';
-      return String(s).substring(0, 120);
-    }
+    $_sharedJsHelpers
 
     if (window.location.pathname.indexOf('/xspjgl/') < 0) {
       return JSON.stringify({
@@ -350,75 +368,10 @@ String buildFillScript() {
       });
     }
 
-    function extractScore(opt) {
-      var candidates = [
-        opt.getAttribute('data-dyf'),
-        opt.getAttribute('data-score'),
-        opt.getAttribute('data-fz')
-      ];
-      for (var i = 0; i < candidates.length; i++) {
-        var v = parseFloat(candidates[i]);
-        if (!isNaN(v) && isFinite(v) && v >= 0) return v;
-      }
-      return null;
-    }
-
-    function isEffectivelyVisible(el) {
-      try {
-        var style = window.getComputedStyle(el);
-        if (style && (style.display === 'none' || style.visibility === 'hidden')) {
-          var label = null;
-          if (el.id) {
-            label = document.querySelector('label[for="' + el.id + '"]');
-          }
-          if (!label) label = el.closest('label');
-          if (!label) label = el.closest('tr, li, .radio, .option, .item, td, div[class]');
-          if (label) {
-            var ls = window.getComputedStyle(label);
-            if (ls && ls.display !== 'none' && ls.visibility !== 'hidden') return true;
-          }
-          return false;
-        }
-        if (el.offsetWidth === 0 && el.offsetHeight === 0) return false;
-        return true;
-      } catch (e) { return true; }
-    }
-
-    var rangeRegex = /(?:打分|评分)?范围\s*[:：]?\s*(-?\d+(?:\.\d+)?)\s*(?:-|~|～|至)\s*(-?\d+(?:\.\d+)?)/gi;
-
-    function extractRange(el) {
-      if (el.hasAttribute('min') && el.hasAttribute('max')) {
-        return { min: parseFloat(el.getAttribute('min')), max: parseFloat(el.getAttribute('max')), source: 'minMax', ambiguous: false };
-      }
-      if (el.hasAttribute('data-min') && el.hasAttribute('data-max')) {
-        return { min: parseFloat(el.getAttribute('data-min')), max: parseFloat(el.getAttribute('data-max')), source: 'dataAttr', ambiguous: false };
-      }
-      var ph = el.getAttribute('placeholder') || '';
-      rangeRegex.lastIndex = 0;
-      var m = rangeRegex.exec(ph);
-      if (m !== null) {
-        return { min: parseFloat(m[1]), max: parseFloat(m[2]), source: 'placeholder', ambiguous: false };
-      }
-      var container = el.closest('td, li, div.form-group, .question, tr');
-      if (container) {
-        var text = container.textContent || '';
-        rangeRegex.lastIndex = 0;
-        var match1 = rangeRegex.exec(text);
-        if (match1) {
-          var match2 = rangeRegex.exec(text);
-          if (match2 && (match1[1] !== match2[1] || match1[2] !== match2[2])) {
-            return { min: parseFloat(match1[1]), max: parseFloat(match1[2]), source: 'text', ambiguous: true };
-          }
-          return { min: parseFloat(match1[1]), max: parseFloat(match1[2]), source: 'text', ambiguous: false };
-        }
-      }
-      return null;
-    }
-
     var allRadios = [];
     var allScoreInputs = [];
     
-    function traverseFrames(win) {
+    function traverseFramesLocal(win) {
       try {
         var doc = win.document;
         var radios = doc.querySelectorAll('input[type="radio"]');
@@ -428,7 +381,7 @@ String buildFillScript() {
         for (var i = 0; i < inputs.length; i++) {
           var inp = inputs[i];
           var type = (inp.getAttribute('type') || '').toLowerCase();
-          if (type !== 'text' && type !== 'number' && type !== '') continue;
+          if (type !== 'text' && type !== 'number' && type !== 'tel' && type !== '') continue;
           var nameId = (inp.name || inp.id || '').toLowerCase();
           if (nameId.indexOf('search') >= 0) continue;
           allScoreInputs.push(inp);
@@ -436,12 +389,12 @@ String buildFillScript() {
       } catch(e) {}
       try {
         for (var i = 0; i < win.frames.length; i++) {
-          traverseFrames(win.frames[i]);
+          traverseFramesLocal(win.frames[i]);
         }
       } catch(e) {}
     }
 
-    traverseFrames(window);
+    traverseFramesLocal(window);
 
     var groups = {};
     for (var i = 0; i < allRadios.length; i++) {
@@ -467,21 +420,13 @@ String buildFillScript() {
     var validScoreInputs = [];
     for (var i = 0; i < allScoreInputs.length; i++) {
       var inp = allScoreInputs[i];
-      if (inp.disabled || inp.readOnly || !isEffectivelyVisible(inp)) continue;
+      if (inp.disabled || inp.readOnly || !isVisible(inp)) continue;
       
-      var isComment = false;
-      var container = inp.closest('td, li, div.form-group, tr');
-      if (container) {
-        var text = container.textContent || '';
-        if (text.indexOf('建议') >= 0 || text.indexOf('意见') >= 0 || text.indexOf('评语') >= 0) {
-          isComment = true;
-        }
-      }
-      if (isComment) continue;
-
       var rng = extractRange(inp);
       if (rng && !rng.ambiguous && rng.max > rng.min) {
         validScoreInputs.push({ element: inp, max: rng.max });
+      } else if (isOptionalCommentField(inp)) {
+        continue;
       }
     }
 
@@ -523,7 +468,7 @@ String buildFillScript() {
 
       var enabledOpts = [];
       for (var ej = 0; ej < opts.length; ej++) {
-        if (!opts[ej].disabled && isEffectivelyVisible(opts[ej])) {
+        if (!opts[ej].disabled && isVisible(opts[ej])) {
           enabledOpts.push(opts[ej]);
         }
       }
@@ -574,7 +519,6 @@ String buildFillScript() {
           unresolvedRadioGroups.push(safeStr(key));
           warnings.push('Group "' + safeStr(key) + '" has no scoreable options');
         } else {
-          // If the group never had a score attribute, don't complain unless we fall back to it
           radioTotalGroups--; 
         }
       }
@@ -635,7 +579,6 @@ String buildFillScript() {
 ''';
 }
 
-/// Builds a lightweight validation-only script (re-check after fill).
 String buildValidateScript() {
   return r'''
 (function () {
@@ -648,4 +591,3 @@ String buildValidateScript() {
 })();
 ''';
 }
-

@@ -499,7 +499,7 @@ class KeepAliveForegroundService : Service() {
             if (alias.isNullOrBlank()) {
                 editor.remove(KEY_JPUSH_ALIAS)
                 editor.remove(KEY_JPUSH_ALIAS_STATE)
-                editor.remove(KEY_JPUSH_ALIAS_GEN)
+                // 保留 generation — 跨生命周期单调递增
             } else {
                 val gen = p.getInt(KEY_JPUSH_ALIAS_GEN, 0) + 1
                 editor.putString(KEY_JPUSH_ALIAS, alias)

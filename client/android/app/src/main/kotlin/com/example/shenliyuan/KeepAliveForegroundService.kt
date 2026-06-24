@@ -134,9 +134,17 @@ class KeepAliveForegroundService : Service() {
      * 极光长连接和别名注册随之丢失。在此重新初始化极光 SDK，恢复推送能力。
      */
     private fun restoreJPush() {
-        // 没登录时不启动推送，维持"登录后才初始化"的逻辑
-        if (authToken(this).isNullOrBlank()) {
-            Log.d(TAG, "skip JPush restore: user not logged in")
+        val aliasState = getAliasState(this)
+        val storedAlias = getStoredAlias(this)
+        val hasAuthToken = !authToken(this).isNullOrBlank()
+
+        // pending_delete 是退出后的清理任务，不依赖登录状态
+        val needsPendingDelete =
+            aliasState == "pending_delete" && !storedAlias.isNullOrBlank()
+
+        // 没登录且没有待清理任务，才跳过
+        if (!hasAuthToken && !needsPendingDelete) {
+            Log.d(TAG, "skip JPush restore: no login and no pending cleanup")
             return
         }
 
@@ -162,78 +170,82 @@ class KeepAliveForegroundService : Service() {
                         type = "JPush 未注册",
                         summary = "极光推送已初始化，但 RegistrationID 为空",
                     )
-                } else {
-                    Log.i(TAG, "JPush restored, registrationId=$safeRid")
+                    return@postDelayed
+                }
 
+                Log.i(TAG, "JPush restored, registrationId=$safeRid")
+                DiagnosticLogStore.info(
+                    applicationContext,
+                    source = "推送",
+                    type = "JPush 恢复",
+                    summary = "极光推送连接已恢复",
+                    detail = "registrationId=$safeRid",
+                )
+
+                // 优先处理待删除任务（不依赖登录状态）
+                if (needsPendingDelete) {
+                    val gen = getAliasGeneration(applicationContext)
+                    val sequence =
+                        PrivateMessageJPushReceiver.deleteSequence(gen)
+                    JPushInterface.deleteAlias(
+                        applicationContext,
+                        sequence,
+                    )
+                    Log.i(TAG,
+                        "retry pending alias delete: ***${storedAlias!!.takeLast(4)} gen=$gen")
                     DiagnosticLogStore.info(
                         applicationContext,
                         source = "推送",
-                        type = "JPush 恢复",
-                        summary = "极光推送连接已恢复",
-                        detail = "registrationId=$safeRid",
+                        type = "Alias 删除重试",
+                        summary = "保活恢复时重试待删除 Alias",
+                        detail = "alias=***${storedAlias!!.takeLast(4)} gen=$gen",
                     )
+                    return@postDelayed
+                }
 
-                    // 检查 Alias 状态，决定恢复还是重试删除
-                    val aliasState = getAliasState(applicationContext)
-                    when (aliasState) {
-                        "pending_delete" -> {
-                            // 之前的删除未完成，重试
-                            val alias = getStoredAlias(applicationContext)
-                            if (!alias.isNullOrBlank()) {
-                                val gen = getAliasGeneration(applicationContext)
-                                PrivateMessageJPushReceiver.pendingDeleteGeneration = gen
-                                JPushInterface.deleteAlias(
-                                    applicationContext,
-                                    PrivateMessageJPushReceiver.SEQ_ALIAS_DELETE,
-                                )
-                                Log.i(TAG, "retry pending alias delete: ***${alias.takeLast(4)} gen=$gen")
-                                DiagnosticLogStore.info(
-                                    applicationContext,
-                                    source = "推送",
-                                    type = "Alias 删除重试",
-                                    summary = "保活恢复时重试待删除 Alias",
-                                    detail = "alias=***${alias.takeLast(4)} gen=$gen",
-                                )
-                            }
-                            return@postDelayed
-                        }
-                        "active" -> {
-                            // 正常恢复
-                        }
-                        else -> {
-                            Log.d(TAG, "skip alias restore: state=$aliasState")
-                            return@postDelayed
-                        }
+                // 正常 Alias 恢复（需要登录状态）
+                if (!hasAuthToken) {
+                    Log.d(TAG, "no auth token, skip alias restore")
+                    return@postDelayed
+                }
+
+                if (aliasState != "active") {
+                    Log.d(TAG, "skip alias restore: state=$aliasState")
+                    return@postDelayed
+                }
+
+                val alias = storedAlias
+                if (!alias.isNullOrBlank()) {
+                    try {
+                        val gen = getAliasGeneration(applicationContext)
+                        val sequence =
+                            PrivateMessageJPushReceiver.restoreSequence(gen)
+                        JPushInterface.setAlias(
+                            applicationContext,
+                            sequence,
+                            alias
+                        )
+                        Log.i(TAG,
+                            "JPush alias restore requested: ***${alias.takeLast(4)} gen=$gen")
+                        DiagnosticLogStore.info(
+                            applicationContext,
+                            source = "推送",
+                            type = "Alias 恢复请求",
+                            summary = "保活服务已发起 Alias 恢复请求",
+                            detail = "alias=***${alias.takeLast(4)} rid=$safeRid gen=$gen",
+                        )
+                    } catch (e: Exception) {
+                        Log.e(TAG, "restore alias failed", e)
+                        DiagnosticLogStore.warning(
+                            applicationContext,
+                            source = "推送",
+                            type = "Alias 恢复异常",
+                            summary = "保活服务恢复 Alias 失败",
+                            detail = Log.getStackTraceString(e),
+                        )
                     }
-                    val alias = getStoredAlias(applicationContext)
-                    if (!alias.isNullOrBlank()) {
-                        try {
-                            JPushInterface.setAlias(
-                                applicationContext,
-                                PrivateMessageJPushReceiver.SEQ_ALIAS_RESTORE,
-                                alias
-                            )
-                            Log.i(TAG, "JPush alias restore requested: ***${alias.takeLast(4)}")
-                            DiagnosticLogStore.info(
-                                applicationContext,
-                                source = "推送",
-                                type = "Alias 恢复请求",
-                                summary = "保活服务已发起 Alias 恢复请求",
-                                detail = "alias=***${alias.takeLast(4)} rid=$safeRid",
-                            )
-                        } catch (e: Exception) {
-                            Log.e(TAG, "restore alias failed", e)
-                            DiagnosticLogStore.warning(
-                                applicationContext,
-                                source = "推送",
-                                type = "Alias 恢复异常",
-                                summary = "保活服务恢复 Alias 失败",
-                                detail = Log.getStackTraceString(e),
-                            )
-                        }
-                    } else {
-                        Log.d(TAG, "no alias stored, skip alias restore")
-                    }
+                } else {
+                    Log.d(TAG, "no alias stored, skip alias restore")
                 }
             }, 3000L)
         } catch (e: Exception) {
@@ -492,18 +504,27 @@ class KeepAliveForegroundService : Service() {
             return gen
         }
 
-        /** 删除回调确认成功后清除（需校验 generation） */
-        fun clearStoredAliasIfGeneration(
+        /** 删除回调确认成功后清除（需同时校验 generation 和 state） */
+        fun clearStoredAliasIfPendingDelete(
             context: Context,
             expectedGeneration: Int,
         ): Boolean {
             val p = prefs(context.applicationContext)
             val currentGen = p.getInt(KEY_JPUSH_ALIAS_GEN, 0)
+            val currentState = p.getString(KEY_JPUSH_ALIAS_STATE, null)
+
             if (currentGen != expectedGeneration) {
                 Log.w(TAG,
                     "skip alias clear: gen mismatch expected=$expectedGeneration actual=$currentGen")
                 return false
             }
+
+            if (currentState != "pending_delete") {
+                Log.w(TAG,
+                    "skip alias clear: state is '$currentState', expected 'pending_delete'")
+                return false
+            }
+
             p.edit()
                 .remove(KEY_JPUSH_ALIAS)
                 .remove(KEY_JPUSH_ALIAS_STATE)

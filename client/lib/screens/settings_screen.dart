@@ -8,7 +8,6 @@ import 'package:flutter/services.dart'
 import 'package:image_cropper/image_cropper.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
-import 'package:jpush_flutter/jpush_flutter.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
 import 'package:package_info_plus/package_info_plus.dart';
@@ -1797,18 +1796,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               : Colors.red,
                           isDarkSheet,
                         ),
-                        if (info.privateMessageChannelExists) ...[
-                          _diagRow(
-                            '私信通知渠道',
-                            info.privateMessageChannelBlocked ? '已关闭' : '已开启',
-                            info.privateMessageChannelBlocked
-                                ? Icons.cancel
-                                : Icons.check_circle,
-                            info.privateMessageChannelBlocked
-                                ? Colors.red
-                                : Colors.green,
-                            isDarkSheet,
-                          ),
+                        _diagRow(
+                          '私信通知渠道',
+                          !info.privateMessageChannelExists
+                              ? '渠道不存在'
+                              : info.privateMessageChannelBlocked
+                                  ? '已关闭'
+                                  : '已开启',
+                          !info.privateMessageChannelExists ||
+                                  info.privateMessageChannelBlocked
+                              ? Icons.cancel
+                              : Icons.check_circle,
+                          !info.privateMessageChannelExists ||
+                                  info.privateMessageChannelBlocked
+                              ? Colors.red
+                              : Colors.green,
+                          isDarkSheet,
+                        ),
+                        if (info.privateMessageChannelExists)
                           _diagRow(
                             '渠道重要性',
                             _importanceLabel(
@@ -1821,7 +1826,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 : Colors.orange,
                             isDarkSheet,
                           ),
-                        ],
                         _diagRow(
                           '已存储 Alias',
                           info.storedAlias != null
@@ -1851,6 +1855,39 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           isDarkSheet,
                           subtitle: info.aliasLastTime,
                         ),
+                        if (info.error != null) ...[
+                          const SizedBox(height: 12),
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.orange.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                color: Colors.orange.withValues(alpha: 0.3),
+                              ),
+                            ),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Icon(Icons.warning_amber_rounded,
+                                    size: 16, color: Colors.orange),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    info.error!,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: isDarkSheet
+                                          ? Colors.orange[200]
+                                          : Colors.orange[800],
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                         const SizedBox(height: 24),
                         SizedBox(
                           width: double.infinity,
@@ -1882,21 +1919,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<_PushDiagnosticInfo> _gatherPushDiagnostics() async {
-    // 并行查询
-    final results = await Future.wait([
-      // RegistrationID (Flutter JPush plugin)
-      JPush.newJPush().getRegistrationID().then((rid) => rid.isEmpty ? null : rid),
-      // 原生诊断
-      _pushDiagChannel
-          .invokeMethod<Map>('getPushDiagnostics')
-          .then((m) => m?.map((k, v) => MapEntry(k.toString(), v)) ?? {}),
-      // Alias 状态（从诊断日志）
-      DiagnosticLogService.instance.getLogs(),
-    ]);
+    Map<String, dynamic> native = {};
+    List<DiagnosticLogEntry> logs = [];
+    final errors = <String>[];
 
-    final rid = results[0] as String?;
-    final native = results[1] as Map<String, dynamic>;
-    final logs = results[2] as List<DiagnosticLogEntry>;
+    // 原生诊断（含 RegistrationID、权限、渠道状态）
+    try {
+      final result = await _pushDiagChannel
+          .invokeMapMethod<String, dynamic>('getPushDiagnostics');
+      native = result ?? {};
+    } catch (e) {
+      errors.add('原生诊断读取失败: $e');
+    }
+
+    // Alias 状态（从诊断日志）
+    try {
+      logs = await DiagnosticLogService.instance.getLogs();
+    } catch (e) {
+      errors.add('日志读取失败: $e');
+    }
 
     // 从日志中提取最近一次 Alias 绑定状态
     String? aliasLastStatus;
@@ -1905,22 +1946,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
       if (log.source != '推送') continue;
       if (log.type == 'Alias 绑定成功') {
         aliasLastStatus = '成功';
+        final effectiveTime =
+            log.lastSeenAt > 0 ? log.lastSeenAt : log.timestamp;
         aliasLastTime = DateFormat(
           'MM-dd HH:mm:ss',
-        ).format(DateTime.fromMillisecondsSinceEpoch(log.timestamp));
+        ).format(DateTime.fromMillisecondsSinceEpoch(effectiveTime));
         break;
       }
       if (log.type == 'Alias 绑定失败') {
         aliasLastStatus = '失败';
+        final effectiveTime =
+            log.lastSeenAt > 0 ? log.lastSeenAt : log.timestamp;
         aliasLastTime = DateFormat(
           'MM-dd HH:mm:ss',
-        ).format(DateTime.fromMillisecondsSinceEpoch(log.timestamp));
+        ).format(DateTime.fromMillisecondsSinceEpoch(effectiveTime));
         break;
       }
     }
 
     return _PushDiagnosticInfo(
-      registrationId: rid,
+      // 使用原生返回的 RegistrationID，避免重复 JPush 插件查询
+      registrationId: native['registrationId']?.toString(),
       notificationsEnabled: native['notificationsEnabled'] == true,
       privateMessageChannelExists:
           native['privateMessageChannelExists'] == true,
@@ -1931,6 +1977,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       storedAlias: native['storedAlias']?.toString(),
       aliasLastStatus: aliasLastStatus,
       aliasLastTime: aliasLastTime,
+      error: errors.isNotEmpty ? errors.join('\n') : null,
     );
   }
 
@@ -1940,24 +1987,37 @@ class _SettingsScreenState extends State<SettingsScreen> {
   ) {
     final sb = StringBuffer();
     sb.writeln('═══ 推送诊断 ═══');
-    sb.writeln('RegistrationID: ${info.registrationId ?? "未获取"}');
+    sb.writeln('RegistrationID: ${_maskValue(info.registrationId, 6)}');
     sb.writeln('通知总权限: ${info.notificationsEnabled ? "已开启" : "已关闭"}');
     sb.writeln('私信通知渠道存在: ${info.privateMessageChannelExists}');
     sb.writeln('私信通知渠道已关闭: ${info.privateMessageChannelBlocked}');
-    sb.writeln('渠道重要性: ${_importanceLabel(info.privateMessageChannelImportance)}');
-    sb.writeln('已存储 Alias: ${info.storedAlias ?? "未存储"}');
     sb.writeln(
-      'Alias 最近状态: ${info.aliasLastStatus ?? "无记录"}${info.aliasLastTime != null ? " (${info.aliasLastTime})" : ""}',
+      '渠道重要性: ${_importanceLabel(info.privateMessageChannelImportance)}',
     );
+    sb.writeln('已存储 Alias: ${_maskValue(info.storedAlias, 4)}');
+    sb.writeln(
+      'Alias 最近状态: ${info.aliasLastStatus ?? "无记录"}'
+      '${info.aliasLastTime != null ? " (${info.aliasLastTime})" : ""}',
+    );
+    if (info.error != null) {
+      sb.writeln('诊断异常: ${info.error}');
+    }
     Clipboard.setData(ClipboardData(text: sb.toString()));
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('诊断信息已复制到剪贴板'),
+        content: Text('诊断信息已复制到剪贴板（ID 已掩码）'),
         behavior: SnackBarBehavior.floating,
         margin: EdgeInsets.all(16),
         duration: Duration(seconds: 2),
       ),
     );
+  }
+
+  /// 掩码敏感值，仅保留末 N 位
+  String _maskValue(String? value, int visibleLength) {
+    if (value == null || value.isEmpty) return '未获取';
+    if (value.length <= visibleLength) return '***';
+    return '***${value.substring(value.length - visibleLength)}';
   }
 
   String _importanceLabel(int importance) {
@@ -2042,6 +2102,7 @@ class _PushDiagnosticInfo {
   final String? storedAlias;
   final String? aliasLastStatus;
   final String? aliasLastTime;
+  final String? error;
 
   const _PushDiagnosticInfo({
     required this.registrationId,
@@ -2052,5 +2113,6 @@ class _PushDiagnosticInfo {
     required this.storedAlias,
     required this.aliasLastStatus,
     required this.aliasLastTime,
+    this.error,
   });
 }

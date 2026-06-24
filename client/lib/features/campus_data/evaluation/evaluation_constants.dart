@@ -12,14 +12,24 @@ class EvaluationUrls {
       'https://jxw.sylu.edu.cn/xspjgl/xspj_cxXspjIndex.html'
       '?gnmkdm=N401605&layout=default&dltz=yes';
 
+  ///教务 evaluation path prefix used for script-side safety checks.
+  static const String evaluationPathPrefix = '/xspjgl/';
+
   ///教务系统 base.
   static const String jxwBase = 'https://jxw.sylu.edu.cn';
 
-  /// Unified authentication (CAS) domain — needed for login redirects.
+  /// Unified authentication (CAS) domain.
   static const String casDomain = 'authserver.sylu.edu.cn';
 
-  /// WebVPN domain (some users access via VPN).
+  /// WebVPN domain.
   static const String webVpnDomain = 'webvpn.sylu.edu.cn';
+
+  /// Real origin URLs used for cookie operations (no wildcards).
+  static const List<String> cookieDomains = [
+    'https://jxw.sylu.edu.cn/',
+    'https://authserver.sylu.edu.cn/',
+    'https://webvpn.sylu.edu.cn/',
+  ];
 }
 
 /// Allowed domains for in-WebView navigation.
@@ -30,10 +40,9 @@ class EvaluationUrls {
 class EvaluationDomainAllowlist {
   EvaluationDomainAllowlist._();
 
-  static final List<String> _hostSuffixes = [
-    'sylu.edu.cn',
-    'lnu.edu.cn', // Some CAS redirects may go through provincial auth
-  ];
+  /// Only sylu.edu.cn and its subdomains are allowed.
+  /// No other university domains are included without concrete evidence.
+  static final List<String> _hostSuffixes = ['sylu.edu.cn'];
 
   /// Returns true if [host] is allowed to load inside the evaluation WebView.
   static bool isAllowed(String host) {
@@ -56,12 +65,7 @@ class EvaluationButtonPatterns {
     'save',
   ];
 
-  static const List<String> loginPatterns = [
-    '登录',
-    '登 录',
-    'sign in',
-    'login',
-  ];
+  static const List<String> loginPatterns = ['登录', '登 录', 'sign in', 'login'];
 }
 
 /// Recognised page text patterns for session / error detection.
@@ -85,24 +89,9 @@ class EvaluationPageTextPatterns {
     'forbidden',
   ];
 
-  static const List<String> maintenance = [
-    '系统维护',
-    '正在维护',
-    '暂未开放',
-    '系统升级',
-  ];
+  static const List<String> maintenance = ['系统维护', '正在维护', '暂未开放', '系统升级'];
 
-  static const List<String> submitted = [
-    '提交成功',
-    '评价成功',
-    '保存成功',
-    '操作成功',
-    '感谢',
-  ];
+  static const List<String> submitted = ['提交成功', '评价成功', '保存成功', '操作成功', '感谢'];
 
-  static const List<String> alreadyEvaluated = [
-    '已评价',
-    '已完成',
-    '已提交',
-  ];
+  static const List<String> alreadyEvaluated = ['已评价', '已完成', '已提交'];
 }

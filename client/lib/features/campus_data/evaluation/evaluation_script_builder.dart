@@ -1,15 +1,7 @@
 /// Centralized JavaScript scripts for the evaluation WebView.
-///
-/// All scripts are pure functions invoked via `evaluateJavascript`.
-/// - Probe script: read-only DOM inspection, returns JSON.
-/// - Fill script: selects radio options by group, returns JSON result.
-/// - Validate script: re-scans checked state after fill.
 library;
 
-/// Builds the page-probe JavaScript string.
-///
-/// This script is READ-ONLY. It never modifies the DOM, never reads password
-/// field values, never captures cookies, and truncates text samples.
+/// Builds the page-probe JavaScript string (READ-ONLY).
 String buildProbeScript() {
   return r'''
 (function () {
@@ -29,6 +21,33 @@ String buildProbeScript() {
       return t.substring(0, MAX_TEXT_LENGTH);
     }
 
+    // ── Full-body boolean text detection (no full body returned) ──
+    var fullBody = '';
+    try { fullBody = (document.body ? document.body.textContent || '' : ''); } catch(e){}
+
+    function bodyContainsAny(patterns) {
+      for (var i = 0; i < patterns.length; i++) {
+        if (fullBody.indexOf(patterns[i]) >= 0) return true;
+      }
+      return false;
+    }
+
+    var hasSubmittedText = bodyContainsAny([
+      '提交成功','评价成功','保存成功','操作成功','感谢您的评价','评教完成'
+    ]);
+    var hasSessionExpiredText = bodyContainsAny([
+      '会话已过期','session expired','请重新登录','登录超时','未登录','用户未登录'
+    ]);
+    var hasAccessDeniedText = bodyContainsAny([
+      '无权限','禁止访问','403','access denied','forbidden'
+    ]);
+    var hasMaintenanceText = bodyContainsAny([
+      '系统维护','正在维护','暂未开放','系统升级'
+    ]);
+    var hasAlreadyEvaluatedText = bodyContainsAny([
+      '已评价','已完成','已提交','查看评价'
+    ]);
+
     function collectRadios() {
       var result = [];
       try {
@@ -47,9 +66,9 @@ String buildProbeScript() {
               checked: !!r.checked,
               disabled: !!r.disabled
             });
-          } catch (e) { /* skip broken radio */ }
+          } catch (e) {}
         }
-      } catch (e) { /* skip all radios */ }
+      } catch (e) {}
       return result;
     }
 
@@ -66,9 +85,9 @@ String buildProbeScript() {
               action: safeStr(f.action),
               method: safeStr(f.method)
             });
-          } catch (e) { /* skip broken form */ }
+          } catch (e) {}
         }
-      } catch (e) { /* skip all forms */ }
+      } catch (e) {}
       return result;
     }
 
@@ -89,16 +108,15 @@ String buildProbeScript() {
               className: safeStr(b.className),
               type: safeStr(b.type || b.getAttribute('type'))
             });
-          } catch (e) { /* skip broken button */ }
+          } catch (e) {}
         }
-      } catch (e) { /* skip all buttons */ }
+      } catch (e) {}
       return result;
     }
 
     function collectCourseRows() {
       var result = [];
       try {
-        // Look for table rows that might represent courses
         var rows = document.querySelectorAll('tr');
         for (var i = 0; i < rows.length; i++) {
           try {
@@ -111,9 +129,9 @@ String buildProbeScript() {
               }
               result.push({ index: i, cells: rowData });
             }
-          } catch (e) { /* skip broken row */ }
+          } catch (e) {}
         }
-      } catch (e) { /* skip all rows */ }
+      } catch (e) {}
       return result;
     }
 
@@ -143,11 +161,21 @@ String buildProbeScript() {
     function detectEvaluationForm() {
       try {
         var radios = document.querySelectorAll('input[type="radio"]');
-        // If we have a substantial number of radio groups, likely evaulation
-        if (radios.length >= 5) return true;
-        // Check for evaluation-specific text
-        var body = (document.body ? document.body.textContent || '' : '').substring(0, 2000);
-        var evalKeywords = ['评价', '评分', '指标', '教学', '评教', '打分'];
+        var groups = {};
+        for (var i = 0; i < radios.length; i++) {
+          var nm = radios[i].name || '__none__';
+          groups[nm] = (groups[nm] || 0) + 1;
+        }
+        var multiGroups = 0;
+        var keys = Object.keys(groups);
+        for (var k = 0; k < keys.length; k++) {
+          if (groups[keys[k]] >= 2) multiGroups++;
+        }
+        // Need at least 3 groups with ≥2 options to be an evaluation form
+        if (multiGroups >= 3) return true;
+
+        var body = fullBody.substring(0, 2000);
+        var evalKeywords = ['评价指标','教学态度','教学内容','教学方法','评教','打分'];
         var hits = 0;
         for (var i = 0; i < evalKeywords.length; i++) {
           if (body.indexOf(evalKeywords[i]) >= 0) hits++;
@@ -159,15 +187,14 @@ String buildProbeScript() {
     // ── Main ──
     var bodyText = '';
     try {
-      bodyText = (document.body ? document.body.textContent || '' : '')
-        .replace(/\s+/g, ' ').trim().substring(0, MAX_TEXT_SAMPLE);
-    } catch (e) { /* ignore */ }
+      bodyText = fullBody.replace(/\s+/g, ' ').trim().substring(0, MAX_TEXT_SAMPLE);
+    } catch (e) {}
 
     var title = '';
-    try { title = document.title || ''; } catch (e) { /* ignore */ }
+    try { title = document.title || ''; } catch (e) {}
 
     var textareaCount = 0;
-    try { textareaCount = document.querySelectorAll('textarea').length; } catch (e) { /* ignore */ }
+    try { textareaCount = document.querySelectorAll('textarea').length; } catch (e) {}
 
     var radios = collectRadios();
 
@@ -182,7 +209,12 @@ String buildProbeScript() {
       buttons: collectButtons(),
       possibleCourseRows: collectCourseRows(),
       hasLoginForm: detectLoginForm(),
-      hasEvaluationForm: detectEvaluationForm()
+      hasEvaluationForm: detectEvaluationForm(),
+      hasSubmittedText: hasSubmittedText,
+      hasSessionExpiredText: hasSessionExpiredText,
+      hasAccessDeniedText: hasAccessDeniedText,
+      hasMaintenanceText: hasMaintenanceText,
+      hasAlreadyEvaluatedText: hasAlreadyEvaluatedText
     });
   } catch (e) {
     return JSON.stringify({ error: 'Probe script error: ' + (e.message || String(e)) });
@@ -193,8 +225,14 @@ String buildProbeScript() {
 
 /// Builds the safe fill JavaScript string.
 ///
-/// This script selects the highest-scoring radio option in each group.
-/// It NEVER clicks submit/save buttons and NEVER makes HTTP requests.
+/// Safety constraints:
+/// - Only fills groups that have data-dyf/data-score/data-fz attributes
+/// - Never uses radio.value as a score
+/// - Requires location.pathname contains /xspjgl/
+/// - Requires ≥ 3 scorable groups
+/// - Single-click strategy (no duplicate events)
+/// - Hidden radios with visible labels are still fillable
+/// - NEVER clicks submit/save, NEVER makes HTTP requests
 String buildFillScript() {
   return r'''
 (function () {
@@ -205,8 +243,25 @@ String buildFillScript() {
       return String(s).substring(0, 120);
     }
 
+    // ═══ Pre-fill safety gate ═══
+
+    // Gate 1: Must be on /xspjgl/ path
+    if (window.location.pathname.indexOf('/xspjgl/') < 0) {
+      return JSON.stringify({
+        totalGroups: 0,
+        completedGroups: 0,
+        unresolvedGroups: [],
+        alreadyCompletedGroups: 0,
+        textareaCount: 0,
+        requiredTextareas: [],
+        warnings: ['当前页面不在评价路径 (/xspjgl/) 内，拒绝填写'],
+        error: '页面路径不符合评价系统要求'
+      });
+    }
+
+    // ── Extract score from data attributes ONLY ──
+    // Never uses radio.value as a score.
     function extractScore(opt) {
-      // Priority chain: data-dyf → data-score → data-fz → numeric value
       var candidates = [
         opt.getAttribute('data-dyf'),
         opt.getAttribute('data-score'),
@@ -214,33 +269,33 @@ String buildFillScript() {
       ];
       for (var i = 0; i < candidates.length; i++) {
         var v = parseFloat(candidates[i]);
-        if (!isNaN(v) && isFinite(v)) return v;
+        if (!isNaN(v) && isFinite(v) && v >= 0) return v;
       }
-      // Fallback: numeric value
-      var val = parseFloat(opt.value);
-      if (!isNaN(val) && isFinite(val) && val >= 0 && val <= 100) return val;
-      return null;
+      return null; // No explicit score → unresolved
     }
 
-    function triggerEvents(el) {
+    // ── Visibility: check the radio AND its associated label/parent ──
+    function isEffectivelyVisible(el) {
       try {
-        el.dispatchEvent(new Event('input', { bubbles: true }));
-        el.dispatchEvent(new Event('change', { bubbles: true }));
-        // Compat with jQuery if present
-        if (typeof jQuery !== 'undefined' && jQuery.fn) {
-          try { jQuery(el).trigger('change'); } catch (e) { /* jQ trigger fail */ }
-          try { jQuery(el).trigger('click'); } catch (e) { /* jQ trigger fail */ }
-        }
-      } catch (e) { /* event trigger failure */ }
-    }
-
-    function isVisible(el) {
-      try {
+        // Check for explicit hiding via CSS
         var style = window.getComputedStyle(el);
-        if (!style || style.display === 'none' || style.visibility === 'hidden') return false;
-        if (el.offsetWidth === 0 && el.offsetHeight === 0) return false;
+        if (style && (style.display === 'none' || style.visibility === 'hidden')) {
+          // Even if input is hidden, its label or parent container may be visible.
+          // Look for an associated visible element.
+          var label = null;
+          if (el.id) {
+            label = document.querySelector('label[for="' + el.id + '"]');
+          }
+          if (!label) label = el.closest('label');
+          if (!label) label = el.closest('tr, li, .radio, .option, .item, td, div[class]');
+          if (label) {
+            var ls = window.getComputedStyle(label);
+            if (ls && ls.display !== 'none' && ls.visibility !== 'hidden') return true;
+          }
+          return false;
+        }
         return true;
-      } catch (e) { return true; } // conservative: assume visible
+      } catch (e) { return true; } // conservative
     }
 
     // ── Group radios by name ──
@@ -252,25 +307,66 @@ String buildFillScript() {
         var key = r.name || r.id || ('__anon_' + i);
         if (!groups[key]) groups[key] = [];
         groups[key].push(r);
-      } catch (e) { /* skip broken radio */ }
+      } catch (e) {}
     }
 
+    var keys = Object.keys(groups);
+
+    // Gate 2: Need at least 3 groups with ≥2 options
+    var viableGroups = 0;
+    for (var g = 0; g < keys.length; g++) {
+      if (groups[keys[g]].length >= 2) viableGroups++;
+    }
+    if (viableGroups < 3) {
+      return JSON.stringify({
+        totalGroups: keys.length,
+        completedGroups: 0,
+        unresolvedGroups: [],
+        alreadyCompletedGroups: 0,
+        textareaCount: 0,
+        requiredTextareas: [],
+        warnings: ['可评分分组不足 (需要 ≥3 组，当前 ' + viableGroups + ' 组)'],
+        error: '页面评价结构不符合填写要求'
+      });
+    }
+
+    // Gate 3: Need at least 3 groups with explicit score attributes
+    var scoreableCount = 0;
+    for (var g2 = 0; g2 < keys.length; g2++) {
+      var opts = groups[keys[g2]];
+      for (var j = 0; j < opts.length; j++) {
+        if (extractScore(opts[j]) !== null) { scoreableCount++; break; }
+      }
+    }
+    if (scoreableCount < 3) {
+      return JSON.stringify({
+        totalGroups: keys.length,
+        completedGroups: 0,
+        unresolvedGroups: keys.map(function(k){return safeStr(k);}),
+        alreadyCompletedGroups: 0,
+        textareaCount: 0,
+        requiredTextareas: [],
+        warnings: ['仅有 ' + scoreableCount + ' 组具有明确分值属性 (data-dyf/data-score/data-fz)'],
+        error: '页面选项缺少可识别的分值属性，请手动填写'
+      });
+    }
+
+    // ═══ Fill phase ═══
     var totalGroups = 0;
     var completedGroups = 0;
     var alreadyCompletedGroups = 0;
     var unresolvedGroups = [];
     var warnings = [];
 
-    var keys = Object.keys(groups);
-    for (var g = 0; g < keys.length; g++) {
-      var key = keys[g];
+    for (var g3 = 0; g3 < keys.length; g3++) {
+      var key = keys[g3];
       var opts = groups[key];
       totalGroups++;
 
-      // Check if already completed
+      // Check already completed
       var alreadyDone = false;
-      for (var i = 0; i < opts.length; i++) {
-        if (opts[i].checked && !opts[i].disabled) {
+      for (var ai = 0; ai < opts.length; ai++) {
+        if (opts[ai].checked && !opts[ai].disabled) {
           alreadyDone = true;
           break;
         }
@@ -280,11 +376,11 @@ String buildFillScript() {
         continue;
       }
 
-      // Filter to visible, non-disabled options
+      // Filter to non-disabled, effectively visible options
       var enabledOpts = [];
-      for (var j = 0; j < opts.length; j++) {
-        if (!opts[j].disabled && isVisible(opts[j])) {
-          enabledOpts.push(opts[j]);
+      for (var ej = 0; ej < opts.length; ej++) {
+        if (!opts[ej].disabled && isEffectivelyVisible(opts[ej])) {
+          enabledOpts.push(opts[ej]);
         }
       }
 
@@ -294,21 +390,52 @@ String buildFillScript() {
         continue;
       }
 
-      // Find best score
+      // Find best score using EXPLICIT attributes only
       var best = null;
       var bestScore = null;
-      for (var k = 0; k < enabledOpts.length; k++) {
-        var score = extractScore(enabledOpts[k]);
+      for (var bk = 0; bk < enabledOpts.length; bk++) {
+        var score = extractScore(enabledOpts[bk]);
         if (score !== null && (bestScore === null || score > bestScore)) {
           bestScore = score;
-          best = enabledOpts[k];
+          best = enabledOpts[bk];
         }
       }
 
       if (best !== null) {
-        // Select the best option
-        try { best.click(); } catch (e) { best.checked = true; }
-        triggerEvents(best);
+        // ── Single-path click strategy ──
+        var clicked = false;
+        try { best.click(); clicked = true; } catch (e) { /* click threw */ }
+
+        // Verify click worked
+        if (!best.checked && clicked) {
+          // Native click didn't take — try setting checked directly
+          try { best.checked = true; } catch (e) {}
+        }
+
+        if (best.checked) {
+          // Click succeeded — fire one input + one change (no jQuery click)
+          try { best.dispatchEvent(new Event('input', { bubbles: true })); } catch (e) {}
+          try { best.dispatchEvent(new Event('change', { bubbles: true })); } catch (e) {}
+          // jQuery compat: only trigger change (not click) for frameworks
+          if (typeof jQuery !== 'undefined' && jQuery.fn) {
+            try { jQuery(best).trigger('change'); } catch (e) {}
+          }
+        } else {
+          // Click and manual set both failed — try jQuery as last resort
+          if (typeof jQuery !== 'undefined' && jQuery.fn) {
+            try {
+              jQuery(best).prop('checked', true).trigger('change');
+              if (best.checked) clicked = true;
+            } catch (e) {}
+          }
+          // Still not checked — mark unresolved
+          if (!best.checked) {
+            unresolvedGroups.push(safeStr(key));
+            warnings.push('Group "' + safeStr(key) + '": unable to select best option');
+            continue;
+          }
+        }
+
         completedGroups++;
       } else {
         unresolvedGroups.push(safeStr(key));
@@ -335,12 +462,12 @@ String buildFillScript() {
       }
     }
 
-    // ── Post-fill validation: re-scan checked state ──
+    // ── Post-fill validation ──
     var postCheckedCount = 0;
-    for (var g2 = 0; g2 < keys.length; g2++) {
-      var opts2 = groups[keys[g2]];
-      for (var m = 0; m < opts2.length; m++) {
-        if (opts2[m].checked && !opts2[m].disabled) { postCheckedCount++; break; }
+    for (var vg = 0; vg < keys.length; vg++) {
+      var vopts = groups[keys[vg]];
+      for (var vm = 0; vm < vopts.length; vm++) {
+        if (vopts[vm].checked && !vopts[vm].disabled) { postCheckedCount++; break; }
       }
     }
     if (postCheckedCount < completedGroups + alreadyCompletedGroups) {
@@ -378,18 +505,16 @@ String buildValidateScript() {
       try {
         var r = allRadios[i];
         var key = r.name || r.id || ('__anon_' + i);
-        if (!groups[key]) groups[key] = { total: 0, checked: 0, names: [] };
+        if (!groups[key]) groups[key] = { total: 0, checked: 0 };
         groups[key].total++;
-        groups[key].names.push(r.name || r.id || '');
-      } catch (e) { /* skip */ }
+      } catch (e) {}
     }
-    // Re-check checked state
     for (var j = 0; j < allRadios.length; j++) {
       try {
         var r2 = allRadios[j];
         var k = r2.name || r2.id || ('__anon_' + j);
         if (r2.checked && !r2.disabled && groups[k]) groups[k].checked++;
-      } catch (e) { /* skip */ }
+      } catch (e) {}
     }
     var unselected = [];
     var keys = Object.keys(groups);

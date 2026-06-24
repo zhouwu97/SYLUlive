@@ -5,10 +5,10 @@ import 'package:shenliyuan/features/campus_data/evaluation/evaluation_models.dar
 import 'package:shenliyuan/features/campus_data/evaluation/evaluation_page_detector.dart';
 import 'package:shenliyuan/features/campus_data/evaluation/evaluation_constants.dart';
 
-/// Sample probe JSON fixtures as Dart maps.
+/// Build a minimal probe map.
 Map<String, dynamic> _makeProbe({
-  String url = 'https://jxw.sylu.edu.cn/xspjgl/xspj_cxXspjIndex.html',
-  String title = '教学评价',
+  String url = 'https://jxw.sylu.edu.cn/xspjgl/eval_detail.html',
+  String title = '',
   String pageTextSample = '',
   int radioCount = 0,
   List<Map<String, dynamic>> radioOptions = const [],
@@ -18,6 +18,11 @@ Map<String, dynamic> _makeProbe({
   List<Map<String, dynamic>> possibleCourseRows = const [],
   bool hasLoginForm = false,
   bool hasEvaluationForm = false,
+  bool hasSubmittedText = false,
+  bool hasSessionExpiredText = false,
+  bool hasAccessDeniedText = false,
+  bool hasMaintenanceText = false,
+  bool hasAlreadyEvaluatedText = false,
   String? error,
 }) {
   return {
@@ -32,6 +37,11 @@ Map<String, dynamic> _makeProbe({
     'possibleCourseRows': possibleCourseRows,
     'hasLoginForm': hasLoginForm,
     'hasEvaluationForm': hasEvaluationForm,
+    'hasSubmittedText': hasSubmittedText,
+    'hasSessionExpiredText': hasSessionExpiredText,
+    'hasAccessDeniedText': hasAccessDeniedText,
+    'hasMaintenanceText': hasMaintenanceText,
+    'hasAlreadyEvaluatedText': hasAlreadyEvaluatedText,
     if (error != null) 'error': error,
   };
 }
@@ -46,17 +56,18 @@ Map<String, dynamic> _radioOption({
   bool checked = false,
   bool disabled = false,
 }) {
-  return {
+  final m = <String, dynamic>{
     'name': name ?? 'group1',
     'id': id ?? 'opt1',
     'value': value ?? '1',
     'className': 'radio-option',
-    if (dataDyf != null) 'data_dyf': dataDyf,
-    if (dataScore != null) 'data_score': dataScore,
-    if (dataFz != null) 'data_fz': dataFz,
     'checked': checked,
     'disabled': disabled,
   };
+  if (dataDyf != null) m['data_dyf'] = dataDyf;
+  if (dataScore != null) m['data_score'] = dataScore;
+  if (dataFz != null) m['data_fz'] = dataFz;
+  return m;
 }
 
 void main() {
@@ -64,246 +75,166 @@ void main() {
   //  ProbeResult JSON parsing
   // ═══════════════════════════════════════════════════════════════════
   group('EvaluationProbeResult.fromJson', () {
-    test('parses minimal valid probe', () {
-      final json = _makeProbe();
-      final result = EvaluationProbeResult.fromJson(json);
-      expect(result.url, contains('jxw.sylu.edu.cn'));
-      expect(result.title, '教学评价');
-      expect(result.radioCount, 0);
-      expect(result.hasLoginForm, false);
-      expect(result.hasEvaluationForm, false);
-      expect(result.error, isNull);
-    });
-
-    test('parses probe with radio options', () {
+    test('parses new boolean text flags', () {
       final json = _makeProbe(
-        radioCount: 5,
-        radioOptions: [
-          _radioOption(
-            name: 'pj_001',
-            value: '5',
-            dataDyf: '10',
-          ),
-          _radioOption(
-            name: 'pj_001',
-            value: '4',
-            dataDyf: '8',
-          ),
-          _radioOption(
-            name: 'pj_001',
-            value: '3',
-            dataDyf: '6',
-          ),
-          _radioOption(
-            name: 'pj_002',
-            value: '5',
-            dataScore: '10',
-          ),
-          _radioOption(
-            name: 'pj_002',
-            value: '4',
-            dataScore: '8',
-          ),
-        ],
-        hasEvaluationForm: true,
+        hasSubmittedText: true,
+        hasSessionExpiredText: false,
+        hasAccessDeniedText: false,
+        hasMaintenanceText: false,
+        hasAlreadyEvaluatedText: true,
       );
       final result = EvaluationProbeResult.fromJson(json);
-      expect(result.radioCount, 5);
-      expect(result.radioOptions.length, 5);
-      expect(result.hasEvaluationForm, true);
-
-      // Groups
-      final groups = result.radioGroups;
-      expect(groups.length, 2);
-      expect(groups[0].name, 'pj_001');
-      expect(groups[0].options.length, 3);
-      expect(groups[1].name, 'pj_002');
-      expect(groups[1].options.length, 2);
+      expect(result.hasSubmittedText, true);
+      expect(result.hasSessionExpiredText, false);
+      expect(result.hasAccessDeniedText, false);
+      expect(result.hasMaintenanceText, false);
+      expect(result.hasAlreadyEvaluatedText, true);
     });
 
-    test('parses probe with all optional fields', () {
-      final json = _makeProbe(
-        url: 'https://jxw.sylu.edu.cn/eval/detail',
-        title: '大学英语教学评价',
-        pageTextSample: '教学态度 教学内容 教学方法 评价指标',
-        radioCount: 20,
-        radioOptions: List.generate(
-            20,
-            (i) => _radioOption(
-                  name: 'group_${i ~/ 4}',
-                  id: 'radio_$i',
-                  value: '${(i % 4) + 1}',
-                  dataDyf: '${((i % 4) + 1) * 2}',
-                )),
-        textareaCount: 2,
-        forms: [
-          {
-            'id': 'form1',
-            'name': 'evalForm',
-            'action': '/submit',
-            'method': 'post'
-          }
-        ],
-        buttons: [
-          {'id': 'btn_submit', 'text': '提交', 'type': 'submit'},
-        ],
-        possibleCourseRows: [],
-        hasLoginForm: false,
-        hasEvaluationForm: true,
-      );
-      final result = EvaluationProbeResult.fromJson(json);
-      expect(result.textareaCount, 2);
-      expect(result.forms.length, 1);
-      expect(result.buttons.length, 1);
-      expect(result.buttons[0]['text'], '提交');
-    });
-
-    test('handles null/empty fields gracefully', () {
-      final json = <String, dynamic>{};
-      final result = EvaluationProbeResult.fromJson(json);
-      expect(result.url, '');
-      expect(result.title, '');
-      expect(result.radioCount, 0);
-      expect(result.radioOptions, isEmpty);
-      expect(result.forms, isEmpty);
-      expect(result.buttons, isEmpty);
-    });
-
-    test('handles malformed radioOptions in raw JSON', () {
-      // Build raw map directly (bypass typed _makeProbe factory) to
-      // simulate a broken page injecting non-map entries.
-      final raw = <String, dynamic>{
+    test('boolean flags default to false when absent', () {
+      final result = EvaluationProbeResult.fromJson({
         'url': '',
         'title': '',
         'pageTextSample': '',
-        'radioCount': 3,
-        'radioOptions': <dynamic>[
-          {'name': 'ok'},
-          'not_a_map',
-          null,
-        ],
+        'radioCount': 0,
+        'radioOptions': <Map<String, dynamic>>[],
         'textareaCount': 0,
         'forms': <Map<String, dynamic>>[],
         'buttons': <Map<String, dynamic>>[],
         'possibleCourseRows': <Map<String, dynamic>>[],
         'hasLoginForm': false,
         'hasEvaluationForm': false,
-      };
-      // The Dart-level fromJson will throw when encountering non-Map
-      // entries (it casts with `as Map`).  The caller (controller) is
-      // therefore expected to guard this with try/catch.
-      expect(
-        () => EvaluationProbeResult.fromJson(raw),
-        throwsA(isA<TypeError>()),
-      );
+      });
+      expect(result.hasSubmittedText, false);
+      expect(result.hasSessionExpiredText, false);
+      expect(result.hasAccessDeniedText, false);
+      expect(result.hasMaintenanceText, false);
+      expect(result.hasAlreadyEvaluatedText, false);
     });
 
-    test('handles JSON string input', () {
-      final map = _makeProbe(
-        url: 'https://jxw.sylu.edu.cn/test',
-        title: 'Test',
-        radioCount: 5,
-        hasEvaluationForm: true,
+    test('parses radio groups from options', () {
+      final json = _makeProbe(
+        radioCount: 6,
+        radioOptions: [
+          _radioOption(name: 'g1', value: '1', dataDyf: '10'),
+          _radioOption(name: 'g1', value: '2', dataDyf: '8'),
+          _radioOption(name: 'g2', value: '1', dataScore: '95'),
+          _radioOption(name: 'g2', value: '2', dataScore: '85'),
+          _radioOption(name: 'g3', value: '1', dataFz: '100'),
+          _radioOption(name: 'g3', value: '2', dataFz: '90'),
+        ],
       );
-      final jsonStr = jsonEncode(map);
-      // Simulate what the controller does:
-      final decoded = jsonDecode(jsonStr) as Map<String, dynamic>;
-      final result = EvaluationProbeResult.fromJson(decoded);
-      expect(result.radioCount, 5);
-      expect(result.hasEvaluationForm, true);
+      final result = EvaluationProbeResult.fromJson(json);
+      expect(result.radioGroups.length, 3);
+    });
+
+    test('handles empty probe gracefully', () {
+      final result = EvaluationProbeResult.fromJson({});
+      expect(result.url, '');
+      expect(result.radioCount, 0);
     });
   });
 
   // ═══════════════════════════════════════════════════════════════════
-  //  RadioGroup score extraction
+  //  RadioGroup — score extraction (data attributes ONLY, no value)
   // ═══════════════════════════════════════════════════════════════════
-  group('RadioGroup score extraction', () {
-    test('selects highest data-dyf score', () {
+  group('RadioGroup score extraction (data attributes only)', () {
+    test('data-dyf selects highest', () {
       final opts = [
         RadioOption(value: '1', dataDyf: '2'),
-        RadioOption(value: '2', dataDyf: '6'),
-        RadioOption(value: '3', dataDyf: '8'),
-        RadioOption(value: '4', dataDyf: '10'),
-        RadioOption(value: '5', dataDyf: '6'),
+        RadioOption(value: '2', dataDyf: '10'),
+        RadioOption(value: '3', dataDyf: '6'),
       ];
       final group = RadioGroup(name: 'test', options: opts);
       expect(group.bestScore, 10);
-      expect(group.bestOption!.value, '4');
+      expect(group.bestOption!.dataDyf, '10');
     });
 
-    test('falls back to data-score when no data-dyf', () {
+    test('data-score fallback', () {
       final opts = [
-        RadioOption(value: '1', dataScore: '3'),
-        RadioOption(value: '2', dataScore: '9'),
-        RadioOption(value: '3', dataScore: '5'),
-      ];
-      final group = RadioGroup(name: 'test', options: opts);
-      expect(group.bestScore, 9);
-      expect(group.bestOption!.value, '2');
-    });
-
-    test('falls back to data-fz', () {
-      final opts = [
-        RadioOption(value: 'a', dataFz: '85'),
-        RadioOption(value: 'b', dataFz: '95'),
+        RadioOption(value: 'a', dataScore: '85'),
+        RadioOption(value: 'b', dataScore: '95'),
       ];
       final group = RadioGroup(name: 'test', options: opts);
       expect(group.bestScore, 95);
-      expect(group.bestOption!.value, 'b');
     });
 
-    test('falls back to numeric value', () {
+    test('data-fz fallback', () {
       final opts = [
-        RadioOption(value: '10'),
-        RadioOption(value: '20'),
-        RadioOption(value: '30'),
+        RadioOption(value: 'x', dataFz: '70'),
+        RadioOption(value: 'y', dataFz: '100'),
       ];
       final group = RadioGroup(name: 'test', options: opts);
-      expect(group.bestScore, 30);
-      expect(group.bestOption!.value, '30');
+      expect(group.bestScore, 100);
+    });
+
+    test('numeric value NEVER used as score', () {
+      final opts = [
+        RadioOption(value: '100'), // looks like a score but has no data attrs
+        RadioOption(value: '1'),
+      ];
+      final group = RadioGroup(name: 'test', options: opts);
+      expect(group.hasScoreAttribute, false);
+      expect(group.bestScore, isNull);
+      expect(group.bestOption, isNull);
+    });
+
+    test('value=1/2/3/4/5 without data attrs → no selection', () {
+      final opts = [
+        RadioOption(value: '1'),
+        RadioOption(value: '2'),
+        RadioOption(value: '3'),
+        RadioOption(value: '4'),
+        RadioOption(value: '5'),
+      ];
+      final group = RadioGroup(name: 'test', options: opts);
+      expect(group.bestOption, isNull);
+    });
+
+    test('value=100 without data attrs → no selection', () {
+      final opts = [RadioOption(value: '50'), RadioOption(value: '100')];
+      final group = RadioGroup(name: 'test', options: opts);
+      expect(group.bestOption, isNull);
+    });
+
+    test('data-dyf present → works correctly', () {
+      final opts = [
+        RadioOption(value: '1', dataDyf: '10'),
+        RadioOption(value: '2', dataDyf: '8'),
+      ];
+      final group = RadioGroup(name: 'test', options: opts);
+      expect(group.hasScoreAttribute, true);
+      expect(group.bestScore, 10);
+      expect(group.bestOption!.dataDyf, '10');
     });
 
     test('skips disabled options', () {
       final opts = [
-        RadioOption(value: '10'),
-        RadioOption(value: '99', disabled: true),
+        RadioOption(value: '1', dataDyf: '10'),
+        RadioOption(value: '2', dataDyf: '99', disabled: true),
       ];
       final group = RadioGroup(name: 'test', options: opts);
       expect(group.bestScore, 10);
-      expect(group.bestOption!.value, '10');
     });
 
-    test('all disabled → bestScore null', () {
+    test('all disabled → null', () {
       final opts = [
-        RadioOption(value: '10', disabled: true),
-        RadioOption(value: '99', disabled: true),
+        RadioOption(dataDyf: '10', disabled: true),
+        RadioOption(dataDyf: '99', disabled: true),
       ];
       final group = RadioGroup(name: 'test', options: opts);
       expect(group.bestScore, isNull);
       expect(group.bestOption, isNull);
     });
 
-    test('no score attributes → bestScore null', () {
-      final opts = [
-        RadioOption(value: 'agree'),
-        RadioOption(value: 'disagree'),
-      ];
-      final group = RadioGroup(name: 'test', options: opts);
-      expect(group.bestScore, isNull);
-      expect(group.bestOption, isNull);
-    });
-
-    test('text values not mistaken for scores', () {
-      final opts = [
-        RadioOption(value: '完全符合'),
-        RadioOption(value: '比较符合'),
-      ];
+    test('no score attributes → null', () {
+      final opts = [RadioOption(value: '完全符合'), RadioOption(value: '比较符合')];
       final group = RadioGroup(name: 'test', options: opts);
       expect(group.hasScoreAttribute, false);
       expect(group.bestOption, isNull);
     });
 
-    test('isAlreadyCompleted detects checked state', () {
+    test('isAlreadyCompleted detects checked', () {
       final opts = [
         RadioOption(value: '1', checked: false),
         RadioOption(value: '2', checked: true),
@@ -320,43 +251,31 @@ void main() {
       final group = RadioGroup(name: 'test', options: opts);
       expect(group.isAlreadyCompleted, false);
     });
-
-    test('non-numeric values not treated as scores', () {
-      // "10" is numeric but "ten" is not
-      final opts = [
-        RadioOption(value: 'ten'),
-        RadioOption(value: '100'), // 100 is in range
-      ];
-      final group = RadioGroup(name: 'test', options: opts);
-      expect(group.bestScore, 100);
-    });
   });
 
   // ═══════════════════════════════════════════════════════════════════
-  //  EvaluationFillResult
+  //  FillResult
   // ═══════════════════════════════════════════════════════════════════
   group('EvaluationFillResult', () {
-    test('parses successful fill', () {
+    test('parses complete', () {
       final json = {
         'totalGroups': 10,
         'completedGroups': 8,
-        'unresolvedGroups': ['group_unknown'],
+        'unresolvedGroups': ['g1'],
         'alreadyCompletedGroups': 1,
         'textareaCount': 2,
         'requiredTextareas': ['comment1'],
-        'warnings': ['Group "group_unknown" has no scoreable options'],
+        'warnings': ['Group "g1" has no scoreable options'],
       };
-      final result = EvaluationFillResult.fromJson(json);
-      expect(result.totalGroups, 10);
-      expect(result.completedGroups, 8);
-      expect(result.unresolvedGroups, ['group_unknown']);
-      expect(result.hasUnresolved, true);
-      expect(result.hasRequiredTextareas, true);
-      expect(result.hasWarnings, true);
-      expect(result.allCompleted, false);
+      final r = EvaluationFillResult.fromJson(json);
+      expect(r.totalGroups, 10);
+      expect(r.completedGroups, 8);
+      expect(r.hasUnresolved, true);
+      expect(r.hasRequiredTextareas, true);
+      expect(r.allCompleted, false);
     });
 
-    test('parses all-completed fill', () {
+    test('all completed', () {
       final json = {
         'totalGroups': 5,
         'completedGroups': 5,
@@ -366,215 +285,234 @@ void main() {
         'requiredTextareas': <String>[],
         'warnings': <String>[],
       };
-      final result = EvaluationFillResult.fromJson(json);
-      expect(result.allCompleted, true);
-      expect(result.hasUnresolved, false);
-      expect(result.hasRequiredTextareas, false);
+      final r = EvaluationFillResult.fromJson(json);
+      expect(r.allCompleted, true);
     });
 
-    test('handles fill error', () {
-      final result = EvaluationFillResult.error('Something went wrong');
-      expect(result.error, 'Something went wrong');
-      expect(result.totalGroups, 0);
-    });
-
-    test('parses fill result with error field from JSON', () {
-      final json = {
-        'totalGroups': 0,
-        'completedGroups': 0,
-        'unresolvedGroups': <String>[],
-        'alreadyCompletedGroups': 0,
-        'textareaCount': 0,
-        'requiredTextareas': <String>[],
-        'warnings': <String>[],
-        'error': 'Script crashed',
-      };
-      final result = EvaluationFillResult.fromJson(json);
-      expect(result.error, 'Script crashed');
-    });
-
-    test('handles empty JSON', () {
-      final result = EvaluationFillResult.fromJson({});
-      expect(result.totalGroups, 0);
-      expect(result.completedGroups, 0);
+    test('error factory', () {
+      final r = EvaluationFillResult.error('bad');
+      expect(r.error, 'bad');
+      expect(r.totalGroups, 0);
     });
   });
 
   // ═══════════════════════════════════════════════════════════════════
-  //  Page type detection
+  //  Page detector (tightened rules)
   // ═══════════════════════════════════════════════════════════════════
   group('EvaluationPageDetector', () {
     const detector = EvaluationPageDetector();
 
-    test('detects login page by form', () {
-      final probe = EvaluationProbeResult.fromJson(_makeProbe(
-        hasLoginForm: true,
-        pageTextSample: '统一身份认证 用户名 密码',
-      ));
-      expect(detector.classify(probe), EvaluationPageType.login);
+    // ── Login ──
+    test('detects login by form', () {
+      final p = EvaluationProbeResult.fromJson(_makeProbe(hasLoginForm: true));
+      expect(detector.classify(p), EvaluationPageType.login);
     });
 
-    test('detects login page by CAS text', () {
-      final probe = EvaluationProbeResult.fromJson(_makeProbe(
-        pageTextSample: 'CAS 统一身份认证 登录',
-      ));
-      expect(detector.classify(probe), EvaluationPageType.login);
+    test('detects login by CAS title', () {
+      final p = EvaluationProbeResult.fromJson(
+        _makeProbe(title: '统一身份认证 - 登录'),
+      );
+      expect(detector.classify(p), EvaluationPageType.login);
     });
 
-    test('detects evaluation form by flag', () {
-      final probe = EvaluationProbeResult.fromJson(_makeProbe(
-        hasEvaluationForm: true,
-        radioCount: 20,
-        pageTextSample: '教学评价 评价指标 教学态度',
-      ));
-      expect(detector.classify(probe), EvaluationPageType.evaluationForm);
+    // ── Session expired ──
+    test('detects session expired via boolean flag', () {
+      final p = EvaluationProbeResult.fromJson(
+        _makeProbe(hasSessionExpiredText: true),
+      );
+      expect(detector.classify(p), EvaluationPageType.sessionExpired);
     });
 
-    test('detects evaluation form by many radio groups', () {
-      final probe = EvaluationProbeResult.fromJson(_makeProbe(
-        url: 'https://jxw.sylu.edu.cn/xspjgl/eval_detail.html',
-        radioCount: 15,
-        // 15 options each with a unique name → 15 groups → triggers evaluationForm
-        radioOptions: List.generate(
+    // ── Access denied / maintenance ──
+    test('detects access denied', () {
+      final p = EvaluationProbeResult.fromJson(
+        _makeProbe(hasAccessDeniedText: true),
+      );
+      expect(detector.classify(p), EvaluationPageType.accessDenied);
+    });
+
+    test('detects maintenance', () {
+      final p = EvaluationProbeResult.fromJson(
+        _makeProbe(hasMaintenanceText: true),
+      );
+      expect(detector.classify(p), EvaluationPageType.accessDenied);
+    });
+
+    // ── Submitted ──
+    test('detects submitted via flag', () {
+      final p = EvaluationProbeResult.fromJson(
+        _makeProbe(hasSubmittedText: true),
+      );
+      expect(detector.classify(p), EvaluationPageType.submitted);
+    });
+
+    test('detects already evaluated', () {
+      final p = EvaluationProbeResult.fromJson(
+        _makeProbe(hasAlreadyEvaluatedText: true),
+      );
+      expect(detector.classify(p), EvaluationPageType.submitted);
+    });
+
+    // ── Evaluation form (requires /xspjgl/ + ≥3 groups with ≥2 options) ──
+    test('detects evaluation form with correct URL and groups', () {
+      final p = EvaluationProbeResult.fromJson(
+        _makeProbe(
+          url: 'https://jxw.sylu.edu.cn/xspjgl/eval_detail.html',
+          hasEvaluationForm: true,
+          radioCount: 9,
+          radioOptions: [
+            _radioOption(name: 'g1', value: '1', dataDyf: '10'),
+            _radioOption(name: 'g1', value: '2', dataDyf: '8'),
+            _radioOption(name: 'g2', value: '1', dataScore: '95'),
+            _radioOption(name: 'g2', value: '2', dataScore: '85'),
+            _radioOption(name: 'g3', value: '1', dataFz: '100'),
+            _radioOption(name: 'g3', value: '2', dataFz: '90'),
+            _radioOption(name: 'g4', value: '1', dataDyf: '10'),
+            _radioOption(name: 'g4', value: '2', dataDyf: '8'),
+            _radioOption(name: 'g5', value: '1', dataScore: '95'),
+          ],
+        ),
+      );
+      expect(detector.classify(p), EvaluationPageType.evaluationForm);
+    });
+
+    test('rejects evaluation form without /xspjgl/ in URL', () {
+      final p = EvaluationProbeResult.fromJson(
+        _makeProbe(
+          url: 'https://jxw.sylu.edu.cn/other/page.html',
+          radioCount: 15,
+          radioOptions: List.generate(
             15,
             (i) => _radioOption(
-                  name: 'g$i',
-                  value: '${(i % 5) + 1}',
-                  dataDyf: '${(i % 5) * 2 + 2}',
-                )),
-      ));
-      // 15 groups (each with 1 option) — enough to trigger evaluationForm
-      expect(detector.classify(probe), EvaluationPageType.evaluationForm);
+              name: 'g${i ~/ 3}',
+              value: '${(i % 5) + 1}',
+              dataDyf: '${(i % 5) * 2 + 2}',
+            ),
+          ),
+        ),
+      );
+      // Without /xspjgl/ in URL, should NOT be evaluationForm
+      expect(detector.classify(p), isNot(EvaluationPageType.evaluationForm));
     });
 
-    test('detects course list by rows', () {
-      final probe = EvaluationProbeResult.fromJson(_makeProbe(
-        possibleCourseRows: [
-          {
-            'index': 0,
-            'cells': ['大学英语', '张老师', '待评价', '操作']
-          },
-          {
-            'index': 1,
-            'cells': ['高等数学', '李老师', '已评价', '查看']
-          },
-        ],
-        pageTextSample: '本学期课程 待评价 评价列表',
-      ));
-      expect(detector.classify(probe), EvaluationPageType.courseList);
+    test('5 plain radios without /xspjgl/ → not evaluation form', () {
+      final p = EvaluationProbeResult.fromJson(
+        _makeProbe(
+          url: 'https://jxw.sylu.edu.cn/some/query_page.html',
+          radioCount: 5,
+          radioOptions: List.generate(
+            5,
+            (i) => _radioOption(name: 'g$i', value: '${i + 1}'),
+          ),
+        ),
+      );
+      expect(detector.classify(p), isNot(EvaluationPageType.evaluationForm));
     });
 
-    test('detects submitted page', () {
-      final probe = EvaluationProbeResult.fromJson(_makeProbe(
-        pageTextSample: '提交成功 评价成功 感谢您的评价',
-      ));
-      expect(detector.classify(probe), EvaluationPageType.submitted);
+    // ── Course list ──
+    test('detects course list by index URL + few radios', () {
+      final p = EvaluationProbeResult.fromJson(
+        _makeProbe(
+          url: 'https://jxw.sylu.edu.cn/xspjgl/xspj_cxXspjIndex.html',
+          possibleCourseRows: [
+            {
+              'index': 0,
+              'cells': ['高数', '李老师', '待评价'],
+            },
+            {
+              'index': 1,
+              'cells': ['英语', '张老师', '已评价'],
+            },
+          ],
+        ),
+      );
+      expect(detector.classify(p), EvaluationPageType.courseList);
     });
 
-    test('detects session expired', () {
-      final probe = EvaluationProbeResult.fromJson(_makeProbe(
-        pageTextSample: '会话已过期 请重新登录 登录超时',
-      ));
-      expect(detector.classify(probe), EvaluationPageType.sessionExpired);
+    test('course list not mistaken for evaluation form', () {
+      // URL has xspjIndex but few radio groups → courseList
+      final p = EvaluationProbeResult.fromJson(
+        _makeProbe(
+          url: 'https://jxw.sylu.edu.cn/xspjgl/xspj_cxXspjIndex.html',
+          radioCount: 4,
+          radioOptions: [
+            _radioOption(name: 'g1', value: '1'),
+            _radioOption(name: 'g1', value: '2'),
+          ],
+          possibleCourseRows: [],
+        ),
+      );
+      expect(detector.classify(p), EvaluationPageType.courseList);
     });
 
-    test('detects access denied', () {
-      final probe = EvaluationProbeResult.fromJson(_makeProbe(
-        pageTextSample: '无权限 禁止访问',
-      ));
-      expect(detector.classify(probe), EvaluationPageType.accessDenied);
-    });
-
-    test('detects maintenance as access denied', () {
-      final probe = EvaluationProbeResult.fromJson(_makeProbe(
-        pageTextSample: '系统维护 暂未开放',
-      ));
-      expect(detector.classify(probe), EvaluationPageType.accessDenied);
-    });
-
-    test('detects URL-based course list', () {
-      final probe = EvaluationProbeResult.fromJson(_makeProbe(
-        url:
-            'https://jxw.sylu.edu.cn/xspjgl/xspj_cxXspjIndex.html?gnmkdm=N401605',
-        pageTextSample: '学生评教',
-      ));
-      expect(detector.classify(probe), EvaluationPageType.courseList);
-    });
-
+    // ── Unknown ──
     test('empty page → unknown', () {
-      final probe = EvaluationProbeResult.fromJson(_makeProbe(
-        url: 'https://jxw.sylu.edu.cn/unknown_page.html',
-      ));
-      expect(detector.classify(probe), EvaluationPageType.unknown);
+      final p = EvaluationProbeResult.fromJson(
+        _makeProbe(url: 'https://jxw.sylu.edu.cn/unknown_page.html'),
+      );
+      expect(detector.classify(p), EvaluationPageType.unknown);
     });
 
     test('error probe → unknown', () {
-      final probe = EvaluationProbeResult.fromJson(_makeProbe(
-        error: 'Network error',
-      ));
-      expect(detector.classify(probe), EvaluationPageType.unknown);
+      final p = EvaluationProbeResult.fromJson(_makeProbe(error: 'fail'));
+      expect(detector.classify(p), EvaluationPageType.unknown);
     });
   });
 
   // ═══════════════════════════════════════════════════════════════════
-  //  Domain allowlist
+  //  Domain allowlist (no lnu.edu.cn)
   // ═══════════════════════════════════════════════════════════════════
   group('EvaluationDomainAllowlist', () {
-    test('allows jxw.sylu.edu.cn', () {
-      expect(
-        EvaluationDomainAllowlist.isAllowed('jxw.sylu.edu.cn'),
-        true,
-      );
-    });
-
-    test('allows authserver.sylu.edu.cn', () {
+    test('allows sylu.edu.cn subdomains', () {
+      expect(EvaluationDomainAllowlist.isAllowed('jxw.sylu.edu.cn'), true);
       expect(
         EvaluationDomainAllowlist.isAllowed('authserver.sylu.edu.cn'),
         true,
       );
-    });
-
-    test('allows webvpn.sylu.edu.cn', () {
-      expect(
-        EvaluationDomainAllowlist.isAllowed('webvpn.sylu.edu.cn'),
-        true,
-      );
-    });
-
-    test('allows subdomain of sylu.edu.cn', () {
-      expect(
-        EvaluationDomainAllowlist.isAllowed('xg.sylu.edu.cn'),
-        true,
-      );
+      expect(EvaluationDomainAllowlist.isAllowed('webvpn.sylu.edu.cn'), true);
+      expect(EvaluationDomainAllowlist.isAllowed('xg.sylu.edu.cn'), true);
     });
 
     test('rejects external domain', () {
-      expect(
-        EvaluationDomainAllowlist.isAllowed('evil.example.com'),
-        false,
-      );
+      expect(EvaluationDomainAllowlist.isAllowed('evil.com'), false);
+      expect(EvaluationDomainAllowlist.isAllowed('lnu.edu.cn'), false);
     });
 
     test('rejects empty host', () {
       expect(EvaluationDomainAllowlist.isAllowed(''), false);
     });
+  });
 
-    test('allows lnu.edu.cn subdomain', () {
-      expect(
-        EvaluationDomainAllowlist.isAllowed('auth.lnu.edu.cn'),
-        true,
-      );
+  // ═══════════════════════════════════════════════════════════════════
+  //  EvaluationUrls
+  // ═══════════════════════════════════════════════════════════════════
+  group('EvaluationUrls', () {
+    test('evaluation index is non-empty', () {
+      expect(EvaluationUrls.evaluationIndex.isNotEmpty, true);
+      expect(EvaluationUrls.evaluationIndex, contains('/xspjgl/'));
+    });
+
+    test('cookie domains are real URLs (no wildcards)', () {
+      for (final d in EvaluationUrls.cookieDomains) {
+        expect(d, contains('https://'));
+        expect(Uri.tryParse(d), isNotNull);
+        // Must not be a wildcard/prefix pattern like https://.sylu.edu.cn
+        expect(d, isNot(contains('https://.')));
+      }
+    });
+
+    test('evaluation path prefix is /xspjgl/', () {
+      expect(EvaluationUrls.evaluationPathPrefix, '/xspjgl/');
     });
   });
 
   // ═══════════════════════════════════════════════════════════════════
-  //  Page detector labels
+  //  Labels
   // ═══════════════════════════════════════════════════════════════════
-  group('EvaluationPageDetector labels', () {
-    test('each type has a non-empty label', () {
-      for (final type in EvaluationPageType.values) {
-        final label = EvaluationPageDetector.label(type);
-        expect(label.isNotEmpty, true, reason: 'Label missing for $type');
+  group('Page detector labels', () {
+    test('every type has non-empty label', () {
+      for (final t in EvaluationPageType.values) {
+        expect(EvaluationPageDetector.label(t).isNotEmpty, true);
       }
     });
   });

@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'dart:ui';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:dio/dio.dart';
@@ -160,62 +159,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                               child: Stack(
                                 fit: StackFit.expand,
                                 children: [
-                                  // 模糊的 cover 底图
-                                  GestureDetector(
-                                    onTap: () {
-                                      if (user.background.isNotEmpty) {
-                                        Navigator.push(
-                                          context,
-                                          MaterialPageRoute(
-                                            builder: (_) => ImageViewerScreen(
-                                              imageUrls: [
-                                                ApiConstants.fullUrl(
-                                                    user.background)
-                                              ],
-                                            ),
-                                          ),
-                                        );
-                                      }
-                                    },
-                                    child: user.background.isNotEmpty
-                                        ? Stack(
-                                            fit: StackFit.expand,
-                                            children: [
-                                              CachedNetworkImage(
-                                                imageUrl: ApiConstants.fullUrl(
-                                                    user.background),
-                                                fit: BoxFit.cover,
-                                                imageBuilder:
-                                                    (context, imageProvider) =>
-                                                        Container(
-                                                  decoration: BoxDecoration(
-                                                    image: DecorationImage(
-                                                      image: imageProvider,
-                                                      fit: BoxFit.cover,
-                                                    ),
-                                                  ),
-                                                  child: BackdropFilter(
-                                                    filter: ImageFilter.blur(
-                                                        sigmaX: 10, sigmaY: 10),
-                                                    child: Container(
-                                                        color: Colors.black
-                                                            .withValues(
-                                                                alpha: 0.2)),
-                                                  ),
-                                                ),
-                                              ),
-                                              CachedNetworkImage(
-                                                imageUrl: ApiConstants.fullUrl(
-                                                    user.background),
-                                                fit: BoxFit.contain,
-                                              ),
-                                            ],
-                                          )
-                                        : Image.asset(
-                                            'assets/images/morenbeijing.jpeg',
-                                            fit: BoxFit.cover,
-                                          ),
-                                  ),
+                                  _buildProfileBackground(context, user),
 
                                   // 渐变遮罩
                                   const DecoratedBox(
@@ -354,58 +298,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                     fit: StackFit.expand,
                     children: [
                       // 背景图
-                      GestureDetector(
-                        onTap: () {
-                          if (user.background.isNotEmpty) {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => ImageViewerScreen(
-                                  imageUrls: [
-                                    ApiConstants.fullUrl(user.background)
-                                  ],
-                                ),
-                              ),
-                            );
-                          }
-                        },
-                        child: user.background.isNotEmpty
-                            ? Stack(
-                                fit: StackFit.expand,
-                                children: [
-                                  CachedNetworkImage(
-                                    imageUrl:
-                                        ApiConstants.fullUrl(user.background),
-                                    fit: BoxFit.cover,
-                                    imageBuilder: (context, imageProvider) =>
-                                        Container(
-                                      decoration: BoxDecoration(
-                                        image: DecorationImage(
-                                          image: imageProvider,
-                                          fit: BoxFit.cover,
-                                        ),
-                                      ),
-                                      child: BackdropFilter(
-                                        filter: ImageFilter.blur(
-                                            sigmaX: 10, sigmaY: 10),
-                                        child: Container(
-                                            color: Colors.black
-                                                .withValues(alpha: 0.2)),
-                                      ),
-                                    ),
-                                  ),
-                                  CachedNetworkImage(
-                                    imageUrl:
-                                        ApiConstants.fullUrl(user.background),
-                                    fit: BoxFit.contain,
-                                  ),
-                                ],
-                              )
-                            : Image.asset(
-                                'assets/images/morenbeijing.jpeg',
-                                fit: BoxFit.cover,
-                              ),
-                      ),
+                      _buildProfileBackground(context, user),
 
                       // 下部渐暗遮罩
                       const DecoratedBox(
@@ -549,6 +442,50 @@ class _UserHomeScreenState extends State<UserHomeScreen>
           shape: BoxShape.circle,
         ),
         child: Icon(icon, color: Colors.white, size: 20),
+      ),
+    );
+  }
+
+  // ============ 主页背景图（单层原图，cover 裁切，无模糊）============
+
+  Widget _buildProfileBackground(BuildContext context, User user) {
+    if (user.background.isEmpty) {
+      return Image.asset(
+        'assets/images/morenbeijing.jpeg',
+        width: double.infinity,
+        height: double.infinity,
+        fit: BoxFit.cover,
+      );
+    }
+
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ImageViewerScreen(
+              imageUrls: [
+                ApiConstants.fullUrl(user.background),
+              ],
+            ),
+          ),
+        );
+      },
+      child: ClipRect(
+        child: CachedNetworkImage(
+          imageUrl: ApiConstants.fullUrl(user.background),
+          width: double.infinity,
+          height: double.infinity,
+          fit: BoxFit.cover,
+          alignment: Alignment.center,
+          placeholder: (_, __) => Container(
+            color: const Color(0xFFEDEEF1),
+          ),
+          errorWidget: (_, __, ___) => Image.asset(
+            'assets/images/morenbeijing.jpeg',
+            fit: BoxFit.cover,
+          ),
+        ),
       ),
     );
   }
@@ -937,12 +874,12 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
 
     final cropped = await ImageCropper().cropImage(
       sourcePath: picked.path,
-      maxWidth: 2560,
-      maxHeight: 2560,
-      compressQuality: 92,
+      maxWidth: 1920,
+      maxHeight: 1920,
+      compressQuality: 85,
       uiSettings: [
         AndroidUiSettings(
-          toolbarTitle: '裁剪背景图',
+          toolbarTitle: '调整背景图',
           toolbarColor: Colors.black,
           toolbarWidgetColor: Colors.white,
           statusBarColor: Colors.black,
@@ -950,7 +887,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
           lockAspectRatio: false,
         ),
         IOSUiSettings(
-          title: '裁剪背景图',
+          title: '调整背景图',
           aspectRatioLockEnabled: false,
           resetAspectRatioEnabled: true,
         ),
@@ -967,29 +904,53 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
       final croppedBytes = await cropped.readAsBytes();
       final croppedName =
           'background_${DateTime.now().millisecondsSinceEpoch}.jpg';
-      FormData formData = FormData.fromMap({
-        'file': MultipartFile.fromBytes(croppedBytes, filename: croppedName),
+      final formData = FormData.fromMap({
+        'file': MultipartFile.fromBytes(
+          croppedBytes,
+          filename: croppedName,
+          contentType: DioMediaType('image', 'jpeg'),
+        ),
       });
       final uploadRes = await auth.dio.post('/upload', data: formData);
       if (uploadRes.statusCode == 200 && uploadRes.data['url'] != null) {
-        final url = uploadRes.data['url'];
-        // 更新背景
+        final url = uploadRes.data['url'] as String;
         await auth.dio.put('/user/background', data: {'background': url});
 
-        // 更新本地状态
         await auth.refreshUser();
-        widget.onSaved(); // 触发主页刷新
+        widget.onSaved();
         if (mounted) {
           ScaffoldMessenger.of(
             context,
           ).showSnackBar(const SnackBar(content: Text('背景更换成功')));
         }
+      } else {
+        debugPrint('上传失败 (${uploadRes.statusCode}): ${uploadRes.data}');
+        if (mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(
+            const SnackBar(content: Text('背景图上传失败，请稍后重试')),
+          );
+        }
       }
-    } catch (e) {
+    } on DioException catch (e) {
+      debugPrint(
+          '背景上传 DioException: ${e.response?.statusCode} ${e.response?.data}');
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('上传失败: $e')));
+        ).showSnackBar(
+          const SnackBar(content: Text('背景图上传失败，请稍后重试')),
+        );
+      }
+    } catch (e) {
+      debugPrint('背景上传异常: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(
+          const SnackBar(content: Text('背景图上传失败，请稍后重试')),
+        );
       }
     } finally {
       if (mounted) {

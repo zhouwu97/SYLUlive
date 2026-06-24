@@ -10,20 +10,23 @@ String buildSelectNextPendingScript(String rowId) {
     var table = document.querySelector('table.ui-jqgrid-btable');
     if (!table) return JSON.stringify({ error: 'table not found' });
 
-    // Try jqGrid official method first
+    var row = document.getElementById(rowId);
+    if (!row) return JSON.stringify({ error: 'row not found' });
+    
+    try { row.scrollIntoView({ block: 'center' }); } catch(e){}
+    
+    // Always dispatch a native click
+    row.click();
+    
+    // Fallback just in case jqGrid selection is strictly required by some weird bindings
     if (typeof jQuery !== 'undefined' && jQuery.fn && jQuery.fn.jqGrid) {
       try {
-        jQuery(table).jqGrid('setSelection', rowId, true);
-        return JSON.stringify({ success: true, method: 'jqGrid' });
+        var table = document.querySelector('table.ui-jqgrid-btable');
+        if (table) jQuery(table).jqGrid('setSelection', rowId, true);
       } catch (e) {}
     }
 
-    // Fallback click
-    var row = document.getElementById(rowId);
-    if (row) {
-      row.click();
-      return JSON.stringify({ success: true, method: 'click' });
-    }
+    return JSON.stringify({ success: true, method: 'click_first' });
 
     return JSON.stringify({ error: 'row not found' });
   } catch (e) {

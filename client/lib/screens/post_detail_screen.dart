@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:dio/dio.dart';
@@ -96,8 +97,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       final repliesResponse = await _dio.get('/posts/${widget.postId}/replies');
       final fetchedPost = Post.fromJson(response.data);
       final fallbackPost = widget.initialPost;
-      final mergedPost =
-          fallbackPost != null &&
+      final mergedPost = fallbackPost != null &&
               fallbackPost.images.length > fetchedPost.images.length
           ? Post(
               id: fetchedPost.id,
@@ -149,9 +149,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   void _prepareTargetReplyAndScroll() {
     if (widget.targetReplyId == null) return;
-    
+
     // 寻找目标回复
-    final targetReply = _replies.where((r) => r.id == widget.targetReplyId).firstOrNull;
+    final targetReply =
+        _replies.where((r) => r.id == widget.targetReplyId).firstOrNull;
     if (targetReply == null) return;
 
     // 如果目标是子回复，强制展开它的父级楼中楼
@@ -400,62 +401,128 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final currentUser = context.watch<AuthProvider>().user;
-    final canDelete =
-        _post != null &&
+    final canDelete = _post != null &&
         currentUser != null &&
         (currentUser.id == _post!.authorId || currentUser.isAdmin);
     final canEdit = _isCurrentUserPostOwner();
+    final isOwn = _isCurrentUserPostOwner();
+    final isAdmin = currentUser?.isAdmin ?? false;
+
+    // 桌面分栏模式：保持透明背景
+    final bool transparentMode =
+        widget.isDesktopSplitMode && widget.hideBackButton;
 
     return Scaffold(
-      backgroundColor: widget.isDesktopSplitMode && widget.hideBackButton
+      backgroundColor: transparentMode
           ? Colors.transparent
-          : (isDark ? const Color(0xFF131720) : Colors.white),
-      extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        automaticallyImplyLeading: !widget.hideBackButton,
-        leading: widget.hideBackButton ? null : const BackButton(),
-        actions: [
-          if (canEdit)
-            IconButton(
-              icon: const Icon(Icons.edit_outlined),
-              tooltip: '编辑帖子',
-              onPressed: _editPost,
-            ),
-          if (canDelete)
-            IconButton(
-              icon: Icon(Icons.delete_outline, color: Colors.red[300]),
-              tooltip: '删除帖子',
-              onPressed: _deletePost,
-            ),
-          IconButton(
-            icon: Icon(Icons.report_outlined, color: Colors.red[300]),
-            tooltip: '举报',
-            onPressed: () => showReportSheet(
-              context,
-              targetId: widget.postId,
-              targetType: 'post',
-            ),
-          ),
-        ],
-      ),
+          : (isDark ? const Color(0xFF131720) : const Color(0xFFF6F7F9)),
+      appBar: transparentMode
+          ? AppBar(
+              backgroundColor: Colors.transparent,
+              elevation: 0,
+              automaticallyImplyLeading: false,
+            )
+          : _buildWaterAppBar(isDark,
+              canEdit: canEdit,
+              canDelete: canDelete,
+              isOwn: isOwn,
+              isAdmin: isAdmin),
       body: Stack(
         children: [
-          // 内容
-          _isLoading
-              ? const SafeArea(
-                  child: Center(child: CircularProgressIndicator()),
-                )
-              : _errorMessage != null
-              ? SafeArea(child: _buildErrorView(isDark))
-              : _post == null
-              ? SafeArea(child: _buildEmptyView(isDark))
-              : widget.isMarket
-              ? _buildMarketDetail(isDark)
-              : SafeArea(child: _buildWaterDetail(isDark)),
+          if (_isLoading)
+            const SafeArea(
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else if (_errorMessage != null)
+            SafeArea(child: _buildErrorView(isDark))
+          else if (_post == null)
+            SafeArea(child: _buildEmptyView(isDark))
+          else if (widget.isMarket)
+            _buildMarketDetail(isDark)
+          else
+            Column(
+              children: [
+                Expanded(child: _buildWaterDetail(isDark)),
+                _buildWaterReplyBar(isDark),
+              ],
+            ),
         ],
       ),
+    );
+  }
+
+  /// 水帖专用 AppBar：不透明背景 + 居中标题 + 更多菜单
+  PreferredSizeWidget _buildWaterAppBar(
+    bool isDark, {
+    required bool canEdit,
+    required bool canDelete,
+    required bool isOwn,
+    required bool isAdmin,
+  }) {
+    return AppBar(
+      backgroundColor: isDark ? const Color(0xFF131720) : Colors.white,
+      elevation: 0.5,
+      automaticallyImplyLeading: !widget.hideBackButton,
+      leading: widget.hideBackButton ? null : const BackButton(),
+      title: const Text(
+        '帖子详情',
+        style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
+      ),
+      centerTitle: true,
+      actions: [
+        if (_post != null)
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_horiz),
+            onSelected: (value) {
+              switch (value) {
+                case 'edit':
+                  _editPost();
+                  break;
+                case 'delete':
+                  _deletePost();
+                  break;
+                case 'report':
+                  showReportSheet(
+                    context,
+                    targetId: widget.postId,
+                    targetType: 'post',
+                  );
+                  break;
+              }
+            },
+            itemBuilder: (context) {
+              final items = <PopupMenuEntry<String>>[];
+              // 自己的帖子：编辑 + 删除（不举报自己）
+              if (isOwn) {
+                items.add(const PopupMenuItem(
+                  value: 'edit',
+                  child: Text('编辑帖子'),
+                ));
+                items.add(const PopupMenuItem(
+                  value: 'delete',
+                  child: Text('删除帖子', style: TextStyle(color: Colors.red)),
+                ));
+              } else if (isAdmin) {
+                // 管理员看他人帖子：删除 + 举报
+                items.add(const PopupMenuItem(
+                  value: 'delete',
+                  child: Text('删除帖子', style: TextStyle(color: Colors.red)),
+                ));
+                items.add(const PopupMenuItem(
+                  value: 'report',
+                  child: Text('举报帖子'),
+                ));
+              } else {
+                // 普通用户看他人帖子：仅举报
+                items.add(const PopupMenuItem(
+                  value: 'report',
+                  child: Text('举报帖子'),
+                ));
+              }
+              return items;
+            },
+          ),
+      ],
     );
   }
 
@@ -518,7 +585,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
-  // ---- 集市布局 ----
+  // ---- 集市布局（完全保留不变） ----
 
   Widget _buildMarketDetail(bool isDark) {
     final p = _post!;
@@ -616,9 +683,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           // 右侧图片区域
           Container(
             width: 1,
-            color: isDark
-                ? Colors.white10
-                : Colors.black.withValues(alpha: 0.05),
+            color:
+                isDark ? Colors.white10 : Colors.black.withValues(alpha: 0.05),
           ),
           Expanded(
             flex: 4,
@@ -833,70 +899,857 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
-  // ---- 水帖布局 ----
+  // ===================================================================
+  // 水帖详情布局（全新重构）
+  // ===================================================================
 
   Widget _buildWaterDetail(bool isDark) {
     final p = _post!;
-    return Column(
-      children: [
-        Expanded(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 80),
+    return SingleChildScrollView(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Column(
+        children: [
+          // 白色内容卡片：作者 + 标题 + 正文 + 图片 + 信息 + 操作栏
+          Container(
+            color: isDark ? const Color(0xFF131720) : Colors.white,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _buildAuthorCard(p, isDark),
-                const SizedBox(height: 18),
-                if (p.title.isNotEmpty || p.content.isNotEmpty)
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (p.title.isNotEmpty) ...[
-                          Text(
-                            p.title,
-                            style: TextStyle(
-                              fontSize: 22,
-                              fontWeight: FontWeight.bold,
-                              color: isDark ? Colors.white : Colors.black87,
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                        ],
-                        Text(
-                          p.content,
-                          style: TextStyle(
-                            fontSize: 16,
-                            height: 1.75,
-                            color: isDark
-                                ? Colors.white.withValues(alpha: 0.80)
-                                : Colors.black87,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                if (p.images.isNotEmpty) ...[
-                  const SizedBox(height: 18),
-                  _buildImageGrid(p, isDark),
+                const SizedBox(height: 12),
+                _buildWaterAuthorHeader(p, isDark),
+                if (p.title.isNotEmpty || p.content.isNotEmpty) ...[
+                  const SizedBox(height: 14),
+                  _buildWaterPostBody(p, isDark),
                 ],
-                const SizedBox(height: 28),
-                _buildActionBar(isDark),
-                const SizedBox(height: 24),
-                _buildCommentsHeader(isDark),
-                const SizedBox(height: 10),
-                _buildFullReplies(isDark),
+                if (p.images.isNotEmpty) ...[
+                  const SizedBox(height: 14),
+                  _buildAdaptiveWaterImages(p, isDark),
+                ],
+                const SizedBox(height: 12),
+                _buildWaterActionBar(isDark),
               ],
             ),
           ),
+          // 8px 分区
+          Container(
+            height: 8,
+            color: isDark ? const Color(0xFF1A1E28) : const Color(0xFFF0F0F0),
+          ),
+          // 白色评论区卡片
+          Container(
+            color: isDark ? const Color(0xFF131720) : Colors.white,
+            child: _buildWaterCommentsSection(isDark),
+          ),
+          // 底部留白给固定输入栏
+          const SizedBox(height: 60),
+        ],
+      ),
+    );
+  }
+
+  // ---- 水帖作者头部（紧凑，无灰色背景） ----
+
+  Widget _buildWaterAuthorHeader(Post p, bool isDark) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () {
+        if (p.author != null) _openAuthorHome(p.author!.id);
+      },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Row(
+          children: [
+            // 头像
+            GestureDetector(
+              onTap: () {
+                if (p.author?.avatar.isNotEmpty == true) {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => ImageViewerScreen(
+                        imageUrls: [ApiConstants.fullUrl(p.author!.avatar)],
+                      ),
+                    ),
+                  );
+                }
+              },
+              child: CachedAvatar(
+                radius: 22,
+                imageUrl: p.author?.avatar.isNotEmpty == true
+                    ? ApiConstants.fullUrl(p.author!.avatar)
+                    : null,
+                fallbackText: p.author?.nickname,
+              ),
+            ),
+            const SizedBox(width: 12),
+            // 信息
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // 第一行：昵称 + 等级
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          p.author?.nickname ?? '匿名',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 15,
+                            color: isDark ? Colors.white : Colors.black87,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (p.author != null) ...[
+                        const SizedBox(width: 6),
+                        _buildLevelBadge(p.author!, isDark),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 3),
+                  // 第二行：诚信分 + 发布时间
+                  Row(
+                    children: [
+                      _buildCreditBadge(p.author?.creditScore ?? 100),
+                      const SizedBox(width: 8),
+                      Text(
+                        _formatTime(p.createdAt),
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: isDark ? Colors.white30 : Colors.grey[400],
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
-        _buildReplyBar(isDark),
+      ),
+    );
+  }
+
+  Widget _buildCreditBadge(int score) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+      decoration: BoxDecoration(
+        color: _creditColor(score).withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        '诚信 $score%',
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w600,
+          color: _creditColor(score),
+        ),
+      ),
+    );
+  }
+
+  // ---- 水帖正文（无额外内边距） ----
+
+  Widget _buildWaterPostBody(Post p, bool isDark) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (p.title.isNotEmpty) ...[
+            Text(
+              p.title,
+              style: TextStyle(
+                fontSize: 21,
+                fontWeight: FontWeight.w700,
+                height: 1.35,
+                color: isDark ? Colors.white : Colors.black87,
+              ),
+            ),
+            const SizedBox(height: 10),
+          ],
+          if (p.content.isNotEmpty)
+            SelectionContainer.disabled(
+              child: Text(
+                p.content,
+                style: TextStyle(
+                  fontSize: 16,
+                  height: 1.65,
+                  color: isDark
+                      ? Colors.white.withValues(alpha: 0.82)
+                      : const Color(0xFF333333),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  // ---- 自适应图片布局 ----
+
+  Widget _buildAdaptiveWaterImages(Post p, bool isDark) {
+    final urls = _resolvedImageUrls(p);
+    if (urls.isEmpty) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Column(
+        children: [
+          if (urls.length == 1)
+            _buildSingleWaterImage(urls[0], isDark)
+          else if (urls.length == 2)
+            _buildTwoWaterImages(urls, isDark)
+          else if (urls.length == 3)
+            _buildThreeWaterImages(urls, isDark)
+          else if (urls.length == 4)
+            _buildFourWaterImages(urls, isDark)
+          else
+            _buildMultiWaterImageGrid(urls, isDark),
+        ],
+      ),
+    );
+  }
+
+  /// 单张图：模糊背景 + contain 前景，最大高度 420
+  Widget _buildSingleWaterImage(String url, bool isDark) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(14),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxHeight: 420),
+        child: Stack(
+          children: [
+            // 模糊背景
+            Positioned.fill(
+              child: ImageFiltered(
+                imageFilter: ImageFilter.blur(sigmaX: 25, sigmaY: 25),
+                child: CachedNetworkImage(
+                  cacheManager: PostImageCache.manager,
+                  imageUrl: url,
+                  fit: BoxFit.cover,
+                  color: isDark ? Colors.black45 : Colors.white54,
+                  colorBlendMode: BlendMode.darken,
+                  placeholder: (_, __) => Container(
+                    color: isDark ? Colors.white10 : Colors.grey[200],
+                  ),
+                  errorWidget: (_, __, ___) => Container(
+                    color: isDark ? Colors.white10 : Colors.grey[200],
+                  ),
+                ),
+              ),
+            ),
+            // 前景清晰图
+            GestureDetector(
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => ImageViewerScreen(
+                    imageUrls: [url],
+                    initialIndex: 0,
+                  ),
+                ),
+              ),
+              child: Center(
+                child: CachedNetworkImage(
+                  cacheManager: PostImageCache.manager,
+                  imageUrl: url,
+                  fit: BoxFit.contain,
+                  width: double.infinity,
+                  placeholder: (_, __) => const SizedBox.shrink(),
+                  errorWidget: (_, __, ___) => Container(
+                    height: 300,
+                    color: isDark ? Colors.white10 : Colors.grey[200],
+                    child: const Icon(Icons.broken_image,
+                        size: 40, color: Colors.grey),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 两张图：左右各一半
+  Widget _buildTwoWaterImages(List<String> urls, bool isDark) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(14),
+      child: Row(
+        children: urls.map((url) {
+          return Expanded(
+            child: GestureDetector(
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => ImageViewerScreen(
+                    imageUrls: urls,
+                    initialIndex: urls.indexOf(url),
+                  ),
+                ),
+              ),
+              child: Container(
+                margin: urls.indexOf(url) == 0
+                    ? const EdgeInsets.only(right: 2)
+                    : const EdgeInsets.only(left: 2),
+                child: AspectRatio(
+                  aspectRatio: 1,
+                  child: CachedNetworkImage(
+                    cacheManager: PostImageCache.manager,
+                    imageUrl: url,
+                    fit: BoxFit.cover,
+                    placeholder: (_, __) => Container(
+                      color: isDark ? Colors.white10 : Colors.grey[200],
+                    ),
+                    errorWidget: (_, __, ___) => Container(
+                      color: isDark ? Colors.white10 : Colors.grey[200],
+                      child: const Icon(Icons.broken_image,
+                          size: 32, color: Colors.grey),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  /// 三张图：左侧大图 + 右侧两张堆叠
+  Widget _buildThreeWaterImages(List<String> urls, bool isDark) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(14),
+      child: Row(
+        children: [
+          // 左侧大图
+          Expanded(
+            flex: 2,
+            child: GestureDetector(
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) =>
+                      ImageViewerScreen(imageUrls: urls, initialIndex: 0),
+                ),
+              ),
+              child: Container(
+                margin: const EdgeInsets.only(right: 2),
+                child: CachedNetworkImage(
+                  cacheManager: PostImageCache.manager,
+                  imageUrl: urls[0],
+                  fit: BoxFit.cover,
+                  placeholder: (_, __) => Container(
+                    color: isDark ? Colors.white10 : Colors.grey[200],
+                  ),
+                  errorWidget: (_, __, ___) => Container(
+                    color: isDark ? Colors.white10 : Colors.grey[200],
+                    child: const Icon(Icons.broken_image,
+                        size: 32, color: Colors.grey),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          // 右侧两张
+          Expanded(
+            flex: 1,
+            child: Column(
+              children: [
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) =>
+                            ImageViewerScreen(imageUrls: urls, initialIndex: 1),
+                      ),
+                    ),
+                    child: Container(
+                      margin: const EdgeInsets.only(left: 2, bottom: 2),
+                      child: CachedNetworkImage(
+                        cacheManager: PostImageCache.manager,
+                        imageUrl: urls[1],
+                        fit: BoxFit.cover,
+                        width: double.infinity,
+                        height: double.infinity,
+                        placeholder: (_, __) => Container(
+                          color: isDark ? Colors.white10 : Colors.grey[200],
+                        ),
+                        errorWidget: (_, __, ___) => Container(
+                          color: isDark ? Colors.white10 : Colors.grey[200],
+                          child: const Icon(Icons.broken_image,
+                              size: 24, color: Colors.grey),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) =>
+                            ImageViewerScreen(imageUrls: urls, initialIndex: 2),
+                      ),
+                    ),
+                    child: Container(
+                      margin: const EdgeInsets.only(left: 2, top: 2),
+                      child: CachedNetworkImage(
+                        cacheManager: PostImageCache.manager,
+                        imageUrl: urls[2],
+                        fit: BoxFit.cover,
+                        width: double.infinity,
+                        height: double.infinity,
+                        placeholder: (_, __) => Container(
+                          color: isDark ? Colors.white10 : Colors.grey[200],
+                        ),
+                        errorWidget: (_, __, ___) => Container(
+                          color: isDark ? Colors.white10 : Colors.grey[200],
+                          child: const Icon(Icons.broken_image,
+                              size: 24, color: Colors.grey),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 四张图：标准 2×2
+  Widget _buildFourWaterImages(List<String> urls, bool isDark) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(14),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: _buildGridImageTile(urls[0], 0, urls, isDark,
+                    margin: const EdgeInsets.only(right: 2, bottom: 2)),
+              ),
+              Expanded(
+                child: _buildGridImageTile(urls[1], 1, urls, isDark,
+                    margin: const EdgeInsets.only(left: 2, bottom: 2)),
+              ),
+            ],
+          ),
+          Row(
+            children: [
+              Expanded(
+                child: _buildGridImageTile(urls[2], 2, urls, isDark,
+                    margin: const EdgeInsets.only(right: 2, top: 2)),
+              ),
+              Expanded(
+                child: _buildGridImageTile(urls[3], 3, urls, isDark,
+                    margin: const EdgeInsets.only(left: 2, top: 2)),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 5+ 张图：3 列宫格
+  Widget _buildMultiWaterImageGrid(List<String> urls, bool isDark) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(14),
+      child: GridView.builder(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 3,
+          mainAxisSpacing: 4,
+          crossAxisSpacing: 4,
+          childAspectRatio: 1,
+        ),
+        itemCount: urls.length,
+        itemBuilder: (context, index) {
+          return GestureDetector(
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) =>
+                    ImageViewerScreen(imageUrls: urls, initialIndex: index),
+              ),
+            ),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                CachedNetworkImage(
+                  cacheManager: PostImageCache.manager,
+                  imageUrl: urls[index],
+                  fit: BoxFit.cover,
+                  placeholder: (_, __) => Container(
+                    color: isDark ? Colors.white10 : Colors.grey[200],
+                  ),
+                  errorWidget: (_, __, ___) => Container(
+                    color: isDark ? Colors.white10 : Colors.grey[200],
+                    child: const Icon(Icons.broken_image,
+                        size: 24, color: Colors.grey),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildGridImageTile(
+    String url,
+    int index,
+    List<String> allUrls,
+    bool isDark, {
+    EdgeInsetsGeometry? margin,
+  }) {
+    return GestureDetector(
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) =>
+              ImageViewerScreen(imageUrls: allUrls, initialIndex: index),
+        ),
+      ),
+      child: Container(
+        margin: margin,
+        child: AspectRatio(
+          aspectRatio: 1,
+          child: CachedNetworkImage(
+            cacheManager: PostImageCache.manager,
+            imageUrl: url,
+            fit: BoxFit.cover,
+            placeholder: (_, __) => Container(
+              color: isDark ? Colors.white10 : Colors.grey[200],
+            ),
+            errorWidget: (_, __, ___) => Container(
+              color: isDark ? Colors.white10 : Colors.grey[200],
+              child:
+                  const Icon(Icons.broken_image, size: 32, color: Colors.grey),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ---- 水帖操作栏 ----
+
+  Widget _buildWaterActionBar(bool isDark) {
+    return Container(
+      height: 48,
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: BoxDecoration(
+        border: Border(
+          top: BorderSide(
+            color: isDark ? Colors.white10 : const Color(0xFFEEEEEE),
+          ),
+          bottom: BorderSide(
+            color: isDark ? Colors.white10 : const Color(0xFFEEEEEE),
+          ),
+        ),
+      ),
+      child: Row(
+        children: [
+          // 点赞
+          GestureDetector(
+            onTap: _toggleLike,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  _liked ? Icons.thumb_up : Icons.thumb_up_outlined,
+                  size: 18,
+                  color: _liked
+                      ? Theme.of(context).primaryColor
+                      : (isDark ? Colors.white38 : Colors.grey[500]),
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  '$_likeCount',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: _liked
+                        ? Theme.of(context).primaryColor
+                        : (isDark ? Colors.white38 : Colors.grey[500]),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 28),
+          // 评论
+          GestureDetector(
+            onTap: () => _openReplyComposer(),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.chat_bubble_outline,
+                  size: 18,
+                  color: isDark ? Colors.white38 : Colors.grey[500],
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  '评论 ${_post?.replyCount ?? 0}',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: isDark ? Colors.white38 : Colors.grey[500],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Spacer(),
+          // 浏览量
+          Icon(
+            Icons.visibility_outlined,
+            size: 16,
+            color: isDark ? Colors.white24 : Colors.grey[400],
+          ),
+          const SizedBox(width: 3),
+          Text(
+            '浏览 ${_post?.viewCount ?? 0}',
+            style: TextStyle(
+              fontSize: 12,
+              color: isDark ? Colors.white24 : Colors.grey[400],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ---- 水帖评论区 ----
+
+  Widget _buildWaterCommentsSection(bool isDark) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // 评论标题
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+          child: Text(
+            '评论 ${_post?.replyCount ?? _replies.length}',
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+              color: isDark ? Colors.white : Colors.black87,
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
+        // 评论列表
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: _buildFullReplies(isDark),
+        ),
       ],
     );
   }
 
-  // ---- 作者卡片 ----
+  // ---- 水帖底部回复栏 ----
+
+  Widget _buildWaterReplyBar(bool isDark) {
+    if (_isReplyComposerOpen) {
+      // 展开的输入框
+      return Container(
+        padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF131720) : const Color(0xFFF6F7F9),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.06),
+              blurRadius: 12,
+              offset: const Offset(0, -3),
+            ),
+          ],
+        ),
+        child: SafeArea(
+          child: Container(
+            decoration: BoxDecoration(
+              color: isDark
+                  ? const Color(0xFF1E1E32).withValues(alpha: 0.92)
+                  : Colors.white.withValues(alpha: 0.92),
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(14, 8, 8, 8),
+              child: Row(
+                children: [
+                  // 关闭按钮
+                  GestureDetector(
+                    onTap: () {
+                      _replyController.clear();
+                      _replyFocus.unfocus();
+                      if (mounted)
+                        setState(() {
+                          _isReplyComposerOpen = false;
+                          _parentReplyId = null;
+                          _replyToName = null;
+                          _replyToUserId = null;
+                        });
+                    },
+                    child: Container(
+                      width: 36,
+                      height: 36,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: isDark
+                            ? Colors.white10
+                            : Colors.black.withValues(alpha: 0.05),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(
+                        Icons.close,
+                        size: 18,
+                        color: isDark ? Colors.white54 : Colors.grey[700],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: TextField(
+                      controller: _replyController,
+                      focusNode: _replyFocus,
+                      decoration: InputDecoration(
+                        hintText: _replyToName != null
+                            ? '回复 @$_replyToName...'
+                            : '写下你的想法...',
+                        hintStyle: TextStyle(
+                          color: isDark ? Colors.white30 : Colors.grey[400],
+                          fontSize: 14,
+                        ),
+                        border: InputBorder.none,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
+                      ),
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: isDark ? Colors.white : Colors.black87,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  // 发送按钮
+                  GestureDetector(
+                    onTap: _isSending ? null : _sendReply,
+                    child: Container(
+                      width: 42,
+                      height: 42,
+                      decoration: BoxDecoration(
+                        gradient: _isSending
+                            ? const LinearGradient(
+                                colors: [Color(0xFF9CA3AF), Color(0xFF9CA3AF)],
+                              )
+                            : const LinearGradient(
+                                colors: [Color(0xFF667EEA), Color(0xFF764BA2)],
+                              ),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: _isSending
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.5,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Icon(
+                              Icons.send_rounded,
+                              color: Colors.white,
+                              size: 20,
+                            ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    // 折叠状态：说点什么… 入口
+    return Container(
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF131720) : Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 8,
+            offset: const Offset(0, -2),
+          ),
+        ],
+      ),
+      child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+          child: GestureDetector(
+            onTap: () => _openReplyComposer(),
+            child: Container(
+              height: 44,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              decoration: BoxDecoration(
+                color: isDark
+                    ? Colors.white.withValues(alpha: 0.06)
+                    : const Color(0xFFF5F5F5),
+                borderRadius: BorderRadius.circular(22),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.edit_outlined,
+                    size: 16,
+                    color: isDark ? Colors.white38 : Colors.grey[400],
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    '说点什么…',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: isDark ? Colors.white38 : Colors.grey[500],
+                    ),
+                  ),
+                  const Spacer(),
+                  Container(
+                    width: 32,
+                    height: 28,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(8),
+                      color: isDark
+                          ? Colors.white.withValues(alpha: 0.08)
+                          : const Color(0xFFE8E8E8),
+                    ),
+                    child: Icon(
+                      Icons.send_rounded,
+                      size: 14,
+                      color: isDark ? Colors.white30 : Colors.grey[400],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ---- 作者卡片（集市复用，保持不变） ----
 
   Widget _buildAuthorCard(Post p, bool isDark) {
     return GestureDetector(
@@ -1025,126 +1878,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
-  // ---- 图片 ----
-
-  Widget _buildHeroImage(Post p, bool isDark) {
-    final urls = _resolvedImageUrls(p);
-    if (urls.isEmpty) return const SizedBox.shrink();
-    return Column(
-      children: [
-        ClipRRect(
-          borderRadius: BorderRadius.circular(18),
-          child: Container(
-            height: 340,
-            color: isDark
-                ? Colors.white.withValues(alpha: 0.06)
-                : Colors.black.withValues(alpha: 0.04),
-            child: PageView.builder(
-              itemCount: urls.length,
-              onPageChanged: (index) =>
-                  setState(() => _marketImageIndex = index),
-              itemBuilder: (_, index) => GestureDetector(
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) =>
-                        ImageViewerScreen(imageUrls: urls, initialIndex: index),
-                  ),
-                ),
-                child: CachedNetworkImage(
-                  cacheManager: PostImageCache.manager,
-                  imageUrl: urls[index],
-                  width: double.infinity,
-                  fit: BoxFit.contain,
-                  placeholder: (_, __) => Container(
-                    height: 340,
-                    color: isDark ? Colors.white10 : Colors.grey[200],
-                  ),
-                  errorWidget: (_, __, ___) => Container(
-                    height: 340,
-                    color: isDark ? Colors.white10 : Colors.grey[200],
-                    child: const Icon(
-                      Icons.broken_image,
-                      size: 40,
-                      color: Colors.grey,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-        if (urls.length > 1) ...[
-          const SizedBox(height: 10),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: List.generate(
-              urls.length,
-              (index) => AnimatedContainer(
-                duration: const Duration(milliseconds: 180),
-                margin: const EdgeInsets.symmetric(horizontal: 3),
-                width: _marketImageIndex == index ? 18 : 6,
-                height: 6,
-                decoration: BoxDecoration(
-                  color: _marketImageIndex == index
-                      ? Theme.of(context).primaryColor
-                      : Colors.white.withValues(alpha: isDark ? 0.35 : 0.55),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ],
-    );
-  }
-
-  Widget _buildImageGrid(Post p, bool isDark) {
-    final images = _resolvedImageUrls(p);
-    if (images.isEmpty) return const SizedBox.shrink();
-    if (images.length == 1) return _buildHeroImage(p, isDark);
-    final crossCount = images.length == 2 ? 2 : 3;
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(16),
-      child: GridView.builder(
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: crossCount,
-          mainAxisSpacing: 3,
-          crossAxisSpacing: 3,
-          childAspectRatio: 1,
-        ),
-        itemCount: images.length,
-        itemBuilder: (context, index) => GestureDetector(
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) =>
-                  ImageViewerScreen(imageUrls: images, initialIndex: index),
-            ),
-          ),
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              CachedNetworkImage(
-                cacheManager: PostImageCache.manager,
-                imageUrl: images[index],
-                fit: BoxFit.cover,
-                placeholder: (_, __) => Container(color: Colors.grey[300]),
-                errorWidget: (_, __, ___) => Container(
-                  color: Colors.grey[300],
-                  child: const Icon(Icons.broken_image),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  // ---- 操作栏 ----
+  // ---- 操作栏（集市复用，保持不变） ----
 
   Widget _buildActionBar(bool isDark) {
     return Row(
@@ -1249,7 +1983,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
-  // ---- 联系方式 ----
+  // ---- 联系方式（集市复用） ----
 
   Widget _buildContactChip(String contact, bool isDark) {
     return Container(
@@ -1420,18 +2154,18 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   Widget _buildNoComments(bool isDark) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 24),
+      padding: const EdgeInsets.symmetric(vertical: 32),
       child: Center(
         child: Column(
           children: [
             Icon(
               Icons.chat_bubble_outline,
-              size: 32,
-              color: isDark ? Colors.white30 : Colors.grey.shade300,
+              size: 36,
+              color: isDark ? Colors.white24 : Colors.grey[300],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 10),
             Text(
-              '还没有评论',
+              '还没有评论，来说点什么吧',
               style: TextStyle(
                 fontSize: 13,
                 color: isDark ? Colors.white30 : Colors.grey[400],
@@ -1458,13 +2192,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
     final allChildren = childMap[thread.parent.id] ?? [];
     final isExpanded = _expandedThreads.contains(thread.parent.id);
-    final visibleChildren = !isExpanded
-        ? allChildren.take(2).toList()
-        : allChildren;
+    final visibleChildren =
+        !isExpanded ? allChildren.take(2).toList() : allChildren;
     final hasMore = !isExpanded && allChildren.length > 2;
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.only(bottom: 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1473,12 +2206,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           // 子回复区域（扁平化展示）
           if (visibleChildren.isNotEmpty)
             Container(
-              margin: EdgeInsets.only(left: 42.0, top: 4),
+              margin: const EdgeInsets.only(left: 44, top: 4),
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
                 color: isDark
-                    ? Colors.white.withValues(alpha: 0.04)
-                    : Colors.grey.withValues(alpha: 0.06),
+                    ? Colors.white.withValues(alpha: 0.03)
+                    : const Color(0xFFF8F9FA),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Column(
@@ -1498,7 +2231,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                       child: Padding(
                         padding: const EdgeInsets.only(top: 6),
                         child: Text(
-                          '共${allChildren.length}条回复，点击查看',
+                          '共 ${allChildren.length} 条回复，点击查看全部',
                           style: TextStyle(
                             fontSize: 12,
                             color: Theme.of(context).primaryColor,
@@ -1511,29 +2244,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             ),
         ],
       ),
-    );
-  }
-
-  /// 子回复线程：显示扁平化后的所有子回复（不再递归嵌套）
-  Widget _buildChildReplyThread(
-    _ReplyThread thread,
-    bool isDark, {
-    bool compact = false,
-    int depth = 0,
-  }) {
-    // 扁平化后：从 childMap 中获取该顶级评论的所有子回复
-    final childMap = <int, List<Reply>>{};
-    for (final r in _replies) {
-      if (r.parentReplyId != null) {
-        childMap.putIfAbsent(r.parentReplyId!, () => []).add(r);
-      }
-    }
-    final directChildren = childMap[thread.parent.id] ?? [];
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: directChildren
-          .map((child) => _buildChildReply(child, isDark, depth: 0))
-          .toList(),
     );
   }
 
@@ -1561,7 +2271,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 }
               },
               child: CachedAvatar(
-                radius: 16,
+                radius: 18,
                 imageUrl: r.author?.avatar.isNotEmpty == true
                     ? ApiConstants.fullUrl(r.author!.avatar)
                     : null,
@@ -1581,33 +2291,20 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           fontSize: 13,
                           fontWeight: FontWeight.w600,
                           color: isDark
-                              ? Colors.white.withValues(alpha: 0.80)
+                              ? Colors.white.withValues(alpha: 0.82)
                               : Colors.black87,
                         ),
                       ),
                       if (r.author != null) ...[
                         const SizedBox(width: 4),
-                        _buildLevelBadge(r.author!, isDark),
+                        _buildLevelBadgeSmall(r.author!, isDark),
                       ],
-                      const Spacer(),
-                      GestureDetector(
-                        onTap: () => showReportSheet(
-                          context,
-                          targetId: r.id,
-                          targetType: 'reply',
-                        ),
-                        child: Icon(
-                          Icons.report_outlined,
-                          size: 14,
-                          color: isDark ? Colors.white24 : Colors.grey[400],
-                        ),
-                      ),
                       const SizedBox(width: 8),
                       Text(
                         _formatTime(r.createdAt),
                         style: TextStyle(
-                          fontSize: 10,
-                          color: isDark ? Colors.white30 : Colors.grey[400],
+                          fontSize: 11,
+                          color: isDark ? Colors.white24 : Colors.grey[400],
                         ),
                       ),
                     ],
@@ -1618,7 +2315,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                       r.content,
                       style: TextStyle(
                         fontSize: 14,
-                        height: 1.5,
+                        height: 1.55,
                         color: isDark ? Colors.white70 : Colors.grey[800],
                       ),
                     ),
@@ -1628,15 +2325,28 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     children: [
                       Icon(
                         Icons.reply,
-                        size: 14,
-                        color: isDark ? Colors.white30 : Colors.grey[400],
+                        size: 13,
+                        color: isDark ? Colors.white24 : Colors.grey[400],
                       ),
-                      const SizedBox(width: 4),
+                      const SizedBox(width: 3),
                       Text(
                         '回复',
                         style: TextStyle(
                           fontSize: 11,
-                          color: isDark ? Colors.white30 : Colors.grey[400],
+                          color: isDark ? Colors.white24 : Colors.grey[400],
+                        ),
+                      ),
+                      const Spacer(),
+                      GestureDetector(
+                        onTap: () => showReportSheet(
+                          context,
+                          targetId: r.id,
+                          targetType: 'reply',
+                        ),
+                        child: Icon(
+                          Icons.more_horiz,
+                          size: 16,
+                          color: isDark ? Colors.white24 : Colors.grey[300],
                         ),
                       ),
                     ],
@@ -1812,7 +2522,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     return SelectionContainer.disabled(child: textWidget);
   }
 
-  // ---- 回复输入 ----
+  // ---- 回复输入（集市保留） ----
 
   Widget _buildReplyBar(bool isDark) {
     if (!_isReplyComposerOpen) return const SizedBox.shrink();
@@ -1838,8 +2548,15 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             children: [
               GestureDetector(
                 onTap: () {
+                  _replyController.clear();
                   _replyFocus.unfocus();
-                  if (mounted) setState(() => _isReplyComposerOpen = false);
+                  if (mounted)
+                    setState(() {
+                      _isReplyComposerOpen = false;
+                      _parentReplyId = null;
+                      _replyToName = null;
+                      _replyToUserId = null;
+                    });
                 },
                 child: Container(
                   width: 36,

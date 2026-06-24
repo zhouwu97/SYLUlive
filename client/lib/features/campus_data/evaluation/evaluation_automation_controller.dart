@@ -345,7 +345,11 @@ class EvaluationAutomationController extends ChangeNotifier {
       final items = itemsRaw.map((e) => EvaluationListItem.fromJson(e as Map<String, dynamic>)).toList();
 
       for (final item in items) {
-        if (item.status == EvaluationItemStatus.pending && !_processedFingerprints.contains(item.fingerprint)) {
+        final isTarget = _submitMode 
+            ? (item.status == EvaluationItemStatus.pending || item.status == EvaluationItemStatus.saved)
+            : item.status == EvaluationItemStatus.pending;
+
+        if (isTarget && !_processedFingerprints.contains(item.fingerprint)) {
           // Select it
           final rawSel = await ctrl.evaluateJavascript(source: buildSelectNextPendingScript(item.rowId));
           final selData = jsonDecode(rawSel as String) as Map<String, dynamic>;

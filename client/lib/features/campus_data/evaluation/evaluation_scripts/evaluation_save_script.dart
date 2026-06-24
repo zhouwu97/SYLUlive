@@ -76,14 +76,36 @@ String buildSaveSnapshotScript() {
     var savedCount = 0;
     var successMarkerCount = 0;
 
-    // Grab a fingerprint of the current evaluation form (e.g. course title or ID)
-    var titleEl = document.querySelector('.course-title, #courseName, [name="courseName"]');
-    if (titleEl) {
-      fingerprint = titleEl.textContent || titleEl.value || '';
-    } else {
-      var activeRow = document.querySelector('tr.ui-state-highlight');
-      if (activeRow) {
-        fingerprint = activeRow.getAttribute('id') || activeRow.textContent || '';
+    var activeRow = document.querySelector('tr.ui-state-highlight');
+    if (activeRow) {
+      var rowId = activeRow.getAttribute('id') || '';
+      var cells = activeRow.querySelectorAll('td');
+      var headerCells = document.querySelectorAll('.ui-jqgrid-htable th');
+      var statusColIndex = -1, courseColIndex = -1, teacherColIndex = -1;
+      
+      for (var i = 0; i < headerCells.length; i++) {
+        var ht = (headerCells[i].textContent || '').replace(/\\s+/g, '');
+        if (ht.indexOf('状态') >= 0) statusColIndex = i;
+        if (ht.indexOf('课程') >= 0) courseColIndex = i;
+        if (ht.indexOf('教师') >= 0) teacherColIndex = i;
+      }
+      if (statusColIndex === -1) statusColIndex = 6;
+
+      fingerprint = rowId;
+      if (courseColIndex >= 0 && courseColIndex < cells.length) {
+        fingerprint += '|' + (cells[courseColIndex].textContent || '').trim();
+      }
+      if (teacherColIndex >= 0 && teacherColIndex < cells.length) {
+        fingerprint += '|' + (cells[teacherColIndex].textContent || '').trim();
+      }
+
+      if (statusColIndex >= 0 && statusColIndex < cells.length) {
+        var ct = cells[statusColIndex].textContent || '';
+        if (ct.indexOf('保存') >= 0 || ct.indexOf('评价状态') >= 0 || ct.indexOf('已评') >= 0 || ct.indexOf('未评') >= 0) {
+          rowStatus = ct.trim();
+        } else {
+          rowStatus = ct.trim();
+        }
       }
     }
 
@@ -100,19 +122,6 @@ String buildSaveSnapshotScript() {
       var t = (successEls[i].textContent || '').replace(/\\s+/g, '');
       if (t.indexOf('保存成功') >= 0 || t.indexOf('操作成功') >= 0) {
         successMarkerCount++;
-      }
-    }
-
-    // Check active jqGrid row status
-    var activeRow = document.querySelector('tr.ui-state-highlight');
-    if (activeRow) {
-      var cells = activeRow.querySelectorAll('td');
-      for (var i = 0; i < cells.length; i++) {
-        var ct = cells[i].textContent || '';
-        if (ct.indexOf('保存') >= 0 || ct.indexOf('评价状态') >= 0 || ct.indexOf('已评') >= 0 || ct.indexOf('未评') >= 0) {
-          rowStatus = ct.trim();
-          break; // First likely status column
-        }
       }
     }
 

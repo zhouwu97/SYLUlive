@@ -174,6 +174,11 @@ func main() {
 		log.Fatal("私信索引迁移失败:", err)
 	}
 
+	// 回填旧公告的缺失字段默认值（公告模型新增 Status/DisplayMode/Priority）
+	db.Exec(`UPDATE announcements SET status = 'published' WHERE status = ''`)
+	db.Exec(`UPDATE announcements SET display_mode = 'center' WHERE display_mode = ''`)
+	db.Exec(`UPDATE announcements SET priority = 'normal' WHERE priority = ''`)
+
 	// 启动时自动修复可能不同步的评论数和点赞数
 	log.Println("正在同步数据(评论数、帖子点赞、用户总获赞)...")
 	db.Exec(`UPDATE posts SET reply_count = (SELECT COUNT(*) FROM replies WHERE replies.post_id = posts.id AND replies.status = 'normal')`)
@@ -621,11 +626,12 @@ func main() {
 	announcementsAuth.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
 
 	{
-
+		// 静态路由必须在 /:id 之前注册
 		announcementsAuth.GET("/unread", announcementHandler.GetUnread)
+		announcementsAuth.GET("/unread-count", announcementHandler.GetUnreadCount)
+		announcementsAuth.POST("/read-all", announcementHandler.MarkAllRead)
 
 		announcementsAuth.GET("/:id", announcementHandler.GetOne)
-
 		announcementsAuth.POST("/:id/read", announcementHandler.MarkRead)
 
 	}
@@ -635,6 +641,7 @@ func main() {
 	announcementsAdmin.Use(middleware.AuthMiddleware(db, cfg.JWTSecret), middleware.AdminMiddleware())
 
 	{
+		announcementsAdmin.GET("/admin/list", announcementHandler.GetAdminList)
 
 		announcementsAdmin.POST("", announcementHandler.Create)
 
@@ -661,11 +668,12 @@ func main() {
 	noticesAuth.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
 
 	{
-
+		// 静态路由必须在 /:id 之前注册
 		noticesAuth.GET("/unread", announcementHandler.GetUnread)
+		noticesAuth.GET("/unread-count", announcementHandler.GetUnreadCount)
+		noticesAuth.POST("/read-all", announcementHandler.MarkAllRead)
 
 		noticesAuth.GET("/:id", announcementHandler.GetOne)
-
 		noticesAuth.POST("/:id/read", announcementHandler.MarkRead)
 
 	}
@@ -675,6 +683,7 @@ func main() {
 	noticesAdmin.Use(middleware.AuthMiddleware(db, cfg.JWTSecret), middleware.AdminMiddleware())
 
 	{
+		noticesAdmin.GET("/admin/list", announcementHandler.GetAdminList)
 
 		noticesAdmin.POST("", announcementHandler.Create)
 

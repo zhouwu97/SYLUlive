@@ -432,6 +432,14 @@ class KeepAliveForegroundService : Service() {
                 .getString(KEY_JPUSH_ALIAS, null)
         }
 
+        fun clearStoredAlias(context: Context) {
+            prefs(context.applicationContext)
+                .edit()
+                .remove(KEY_JPUSH_ALIAS)
+                .apply()
+            Log.d(TAG, "JPush alias cleared from storage")
+        }
+
         fun status(context: Context): Map<String, Any> {
             val appContext = context.applicationContext
             return mapOf(

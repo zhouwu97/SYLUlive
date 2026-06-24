@@ -12,6 +12,20 @@ import org.json.JSONObject
 class PrivateMessageJPushReceiver : JPushEventReceiver() {
 
     companion object {
+        private const val RECONCILE_DEBOUNCE_MS = 800L
+
+        private var lastReconcileRequested = 0L
+
+        /** 去重协调：同 800ms 内多次触发只执行一次 */
+        fun requestReconcile(context: Context) {
+            val now = System.currentTimeMillis()
+            if (now - lastReconcileRequested < RECONCILE_DEBOUNCE_MS) return
+            lastReconcileRequested = now
+
+            retryHandler.postDelayed({
+                KeepAliveForegroundService.reconcileAliasState(context)
+            }, RECONCILE_DEBOUNCE_MS)
+        }
         // Sequence 编码：高位区分操作类型，低位携带 generation
         // 1_xxx_xxx = Alias 绑定/恢复
         // 2_xxx_xxx = Alias 删除
@@ -284,6 +298,39 @@ class PrivateMessageJPushReceiver : JPushEventReceiver() {
         context.startActivity(intent)
     }
 
+    override fun onRegister(
+        context: Context,
+        registrationId: String,
+    ) {
+        super.onRegister(context, registrationId)
+        if (registrationId.isNotBlank()) {
+            DiagnosticLogStore.info(
+                context,
+                source = "推送",
+                type = "JPush 注册",
+                summary = "RegistrationID 已获取，触发 Alias 协调",
+                detail = "rid=***${registrationId.takeLast(6)}",
+            )
+            requestReconcile(context)
+        }
+    }
+
+    override fun onConnected(
+        context: Context,
+        isConnected: Boolean,
+    ) {
+        super.onConnected(context, isConnected)
+        if (isConnected) {
+            DiagnosticLogStore.info(
+                context,
+                source = "推送",
+                type = "JPush 重连",
+                summary = "极光长连接已恢复，触发 Alias 协调",
+            )
+            requestReconcile(context)
+        }
+    }
+
     override fun onNotifyMessageDismiss(
         context: Context,
         notificationMessage: NotificationMessage,
@@ -306,16 +353,24 @@ class PrivateMessageJPushReceiver : JPushEventReceiver() {
         context: Context,
         jPushMessage: JPushMessage,
     ) {
+        // 父类只调用一次，保证 Flutter 插件正常收到结果
         super.onAliasOperatorResult(context, jPushMessage)
 
-        // JPush 回调可能在 worker 线程 → 统一串行到主线程处理
-        if (Looper.myLooper() != Looper.getMainLooper()) {
-            retryHandler.post {
-                onAliasOperatorResult(context, jPushMessage)
-            }
-            return
-        }
+        val appContext = context.applicationContext
 
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            handleAliasOperatorResult(appContext, jPushMessage)
+        } else {
+            retryHandler.post {
+                handleAliasOperatorResult(appContext, jPushMessage)
+            }
+        }
+    }
+
+    private fun handleAliasOperatorResult(
+        context: Context,
+        jPushMessage: JPushMessage,
+    ) {
         val sequence = jPushMessage.sequence
 
         when {

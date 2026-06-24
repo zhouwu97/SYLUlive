@@ -305,18 +305,30 @@ class MainActivity : FlutterActivity() {
                 }
                 "syncAlias" -> {
                     val userId = call.argument<String>("userId")
-                    KeepAliveForegroundService.syncAlias(this, userId)
-                    result.success(true)
+                    if (userId.isNullOrBlank()) {
+                        result.error("INVALID_ALIAS", "userId 不能为空", null)
+                    } else {
+                        KeepAliveForegroundService.syncAlias(this, userId)
+                        result.success(true)
+                    }
                 }
                 "clearAlias" -> {
                     val gen = KeepAliveForegroundService.markAliasPendingDelete(this)
                     try {
                         val sequence = PrivateMessageJPushReceiver.deleteSequence(gen)
                         JPushInterface.deleteAlias(this, sequence)
-                    } catch (_: Exception) {
-                        // JPush 未初始化时无法发起异步删除
-                        // 保持 pending_delete 状态，下次 JPush 初始化时重试
-                        // restoreJPush 会检测 pending_delete 并重试
+                    } catch (e: Exception) {
+                        PrivateMessageJPushReceiver.scheduleDeleteRetry(
+                            applicationContext,
+                            gen,
+                        )
+                        DiagnosticLogStore.warning(
+                            applicationContext,
+                            source = "推送",
+                            type = "Alias 删除异常",
+                            summary = "退出时未能发起 Alias 删除，已安排重试",
+                            detail = "gen=$gen error=${e.message}",
+                        )
                     }
                     result.success(true)
                 }

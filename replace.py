@@ -1,133 +1,12 @@
-import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:provider/provider.dart';
-import 'package:dio/dio.dart';
-import 'dart:async';
-import '../models/lottery.dart';
-import '../providers/auth_provider.dart';
-import '../utils/app_feedback.dart';
-import '../config/api_constants.dart';
-import '../widgets/cached_avatar.dart';
+import os
 
-class LotteryScreen extends StatefulWidget {
-  const LotteryScreen({super.key});
+filepath = r"e:\AI\xynewui\client\lib\screens\lottery_screen.dart"
+with open(filepath, "r", encoding="utf-8") as f:
+    content = f.read()
 
-  @override
-  State<LotteryScreen> createState() => _LotteryScreenState();
-}
-
-class _LotteryScreenState extends State<LotteryScreen> {
-  bool _isLoading = true;
-  String? _errorMessage;
-  LotteryEvent? _event;
-  int _participantCount = 0;
-  bool _joined = false;
-  int _myWeight = 0;
-  bool _isSubmitting = false;
-  bool _postDrawRefreshInFlight = false;
-  DateTime? _lastPostDrawRefreshAt;
-
-  late Dio _dio;
-  Timer? _countdownTimer;
-
-  @override
-  void initState() {
-    super.initState();
-    _dio = context.read<AuthProvider>().dio;
-    _fetchLottery();
-  }
-
-  @override
-  void dispose() {
-    _countdownTimer?.cancel();
-    super.dispose();
-  }
-
-  Future<void> _fetchLottery({bool silent = false}) async {
-    if (mounted && !silent) {
-      setState(() {
-        _isLoading = true;
-        _errorMessage = null;
-      });
-    }
-    try {
-      final response = await _dio.get('/lottery/current');
-      if (mounted) {
-        setState(() {
-          _event = LotteryEvent.fromJson(response.data['event']);
-          _participantCount = response.data['participant_count'] ?? 0;
-          _joined = response.data['joined'] ?? false;
-          _myWeight = response.data['my_weight'] ?? 0;
-          _isLoading = false;
-        });
-        if (_event?.status == 0) {
-          if (_event!.drawTime.isAfter(DateTime.now())) {
-            _lastPostDrawRefreshAt = null;
-          }
-          _startCountdown();
-        } else {
-          _countdownTimer?.cancel();
-        }
-      }
-    } on DioException catch (e) {
-      if (e.response?.statusCode == 404) {
-        if (mounted) {
-          setState(() {
-            _isLoading = false;
-            _errorMessage = "暂无抽奖活动";
-          });
-        }
-      } else {
-        if (mounted) {
-          setState(() {
-            _isLoading = false;
-            _errorMessage = AppFeedback.dioErrorMessage(e, fallback: '加载失败');
-          });
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-          _errorMessage = '发生未知错误';
-        });
-      }
-    }
-  }
-
-  void _startCountdown() {
-    _countdownTimer?.cancel();
-    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      _refreshAfterDrawTimeIfNeeded();
-      if (mounted) {
-        setState(() {});
-      }
-    });
-  }
-
-  void _refreshAfterDrawTimeIfNeeded() {
-    final event = _event;
-    if (event == null ||
-        event.status != 0 ||
-        event.drawTime.isAfter(DateTime.now())) {
-      return;
-    }
-
-    final now = DateTime.now();
-    if (_postDrawRefreshInFlight) return;
-    if (_lastPostDrawRefreshAt != null &&
-        now.difference(_lastPostDrawRefreshAt!) < const Duration(seconds: 15)) {
-      return;
-    }
-
-    _lastPostDrawRefreshAt = now;
-    _postDrawRefreshInFlight = true;
-    _fetchLottery(silent: true).whenComplete(() {
-      _postDrawRefreshInFlight = false;
-    });
-  }
-
-  String _formatCountdown(DateTime target) {
+parts = content.split("  String _formatCountdown(DateTime target) {", 1)
+if len(parts) == 2:
+    new_content = parts[0] + """  String _formatCountdown(DateTime target) {
     final diff = target.difference(DateTime.now());
 
     if (diff <= Duration.zero) {
@@ -140,14 +19,14 @@ class _LotteryScreenState extends State<LotteryScreen> {
     final seconds = diff.inSeconds % 60;
 
     if (days > 0) {
-      return '$days天 $hours时 $minutes分';
+      return '${days}天 ${hours}时 ${minutes}分';
     }
 
     if (hours > 0) {
-      return '$hours时 $minutes分';
+      return '${hours}时 ${minutes}分';
     }
 
-    return '$minutes分 $seconds秒';
+    return '${minutes}分 ${seconds}秒';
   }
 
   Future<void> _joinLottery() async {
@@ -208,74 +87,66 @@ class _LotteryScreenState extends State<LotteryScreen> {
     final user = context.watch<AuthProvider>().user;
     final isSuperAdmin = user?.isSuperAdmin == true;
 
-    return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle(
-        statusBarColor: Colors.transparent,
-        statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
-        statusBarBrightness: isDark ? Brightness.dark : Brightness.light,
+    return Scaffold(
+      backgroundColor: isDark
+          ? const Color(0xFF06080D)
+          : const Color(0xFFF4F6FB),
+      appBar: AppBar(
+        title: const Text('官方抽奖'),
+        elevation: 0,
+        backgroundColor: Colors.transparent,
       ),
-      child: Scaffold(
-        backgroundColor:
-            isDark ? const Color(0xFF06080D) : const Color(0xFFF4F6FB),
-        appBar: AppBar(
-          title: const Text('官方抽奖'),
-          elevation: 0,
-          backgroundColor: Colors.transparent,
-        ),
-        extendBodyBehindAppBar: true,
-        body: Stack(
-          children: [
-            Positioned.fill(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: isDark
-                        ? const [
-                            Color(0xFF06080D),
-                            Color(0xFF10131A),
-                            Color(0xFF06080D),
-                          ]
-                        : const [
-                            Color(0xFFF4F6FB),
-                            Color(0xFFEFF3F8),
-                            Color(0xFFF8FAFC),
-                          ],
-                  ),
+      extendBodyBehindAppBar: true,
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: isDark
+                      ? const [
+                          Color(0xFF06080D),
+                          Color(0xFF10131A),
+                          Color(0xFF06080D),
+                        ]
+                      : const [
+                          Color(0xFFF4F6FB),
+                          Color(0xFFEFF3F8),
+                          Color(0xFFF8FAFC),
+                        ],
                 ),
               ),
             ),
-            SafeArea(
-              child: _isLoading
-                  ? const Center(child: CircularProgressIndicator())
-                  : _errorMessage != null
-                      ? Center(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(
-                                Icons.inbox_rounded,
-                                size: 80,
-                                color: isDark ? Colors.white30 : Colors.black26,
-                              ),
-                              const SizedBox(height: 16),
-                              Text(
-                                _errorMessage!,
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  color:
-                                      isDark ? Colors.white70 : Colors.black54,
-                                ),
-                              ),
-                            ],
+          ),
+          SafeArea(
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : _errorMessage != null
+                ? Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.inbox_rounded,
+                          size: 80,
+                          color: isDark ? Colors.white30 : Colors.black26,
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          _errorMessage!,
+                          style: TextStyle(
+                            fontSize: 16,
+                            color: isDark ? Colors.white70 : Colors.black54,
                           ),
-                        )
-                      : _buildEventContent(
-                          context, primary, isDark, isSuperAdmin),
-            ),
-          ],
-        ),
+                        ),
+                      ],
+                    ),
+                  )
+                : _buildEventContent(context, primary, isDark, isSuperAdmin),
+          ),
+        ],
       ),
     );
   }
@@ -291,11 +162,11 @@ class _LotteryScreenState extends State<LotteryScreen> {
     final titleColor = isDark ? Colors.white : const Color(0xFF111827);
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
       child: Column(
         children: [
           _buildEventHero(ev, primary, isDark),
-          const SizedBox(height: 20),
+          const SizedBox(height: 24),
           Align(
             alignment: Alignment.centerLeft,
             child: Text(
@@ -332,8 +203,7 @@ class _LotteryScreenState extends State<LotteryScreen> {
                       ? const SizedBox(
                           width: 20,
                           height: 20,
-                          child: CircularProgressIndicator(
-                              color: Colors.white, strokeWidth: 2),
+                          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
                         )
                       : const Text(
                           '立即参与',
@@ -344,7 +214,7 @@ class _LotteryScreenState extends State<LotteryScreen> {
                         ),
                 ),
               ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 24),
             Align(
               alignment: Alignment.centerLeft,
               child: Text(
@@ -515,10 +385,10 @@ class _LotteryScreenState extends State<LotteryScreen> {
     );
   }
 
-  Widget _buildPrizeCard(
-      LotteryEvent event, bool isOngoing, Color primary, bool isDark) {
+  Widget _buildPrizeCard(LotteryEvent event, bool isOngoing, Color primary, bool isDark) {
     final cardColor = isDark ? const Color(0xFF151A24) : Colors.white;
     final textColor = isDark ? Colors.white : const Color(0xFF20232A);
+    final secondaryColor = isDark ? Colors.white60 : const Color(0xFF8A8F9C);
 
     return Container(
       width: double.infinity,
@@ -569,6 +439,14 @@ class _LotteryScreenState extends State<LotteryScreen> {
                         color: textColor,
                       ),
                     ),
+                    const SizedBox(height: 3),
+                    Text(
+                      '官方活动奖品',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: secondaryColor,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -612,8 +490,7 @@ class _LotteryScreenState extends State<LotteryScreen> {
     );
   }
 
-  Widget _buildInfoCell(
-      {required String label, required String value, required bool isDark}) {
+  Widget _buildInfoCell({required String label, required String value, required bool isDark}) {
     return Column(
       children: [
         Text(
@@ -629,7 +506,7 @@ class _LotteryScreenState extends State<LotteryScreen> {
           textAlign: TextAlign.center,
           style: TextStyle(
             fontSize: 15,
-            fontWeight: FontWeight.w600,
+            fontWeight: FontWeight.w700,
             color: isDark ? Colors.white : const Color(0xFF20232A),
           ),
         ),
@@ -645,8 +522,9 @@ class _LotteryScreenState extends State<LotteryScreen> {
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color:
-            isDark ? success.withValues(alpha: 0.13) : const Color(0xFFEAF8F0),
+        color: isDark
+            ? success.withValues(alpha: 0.13)
+            : const Color(0xFFEAF8F0),
         borderRadius: BorderRadius.circular(18),
         border: Border.all(
           color: success.withValues(alpha: 0.26),
@@ -757,19 +635,17 @@ class _LotteryScreenState extends State<LotteryScreen> {
     );
   }
 
-  Widget _buildRuleRow(
-      IconData icon, String text, Color primary, Color textColor) {
+  Widget _buildRuleRow(IconData icon, String text, Color primary, Color textColor) {
     return Row(
       children: [
         Icon(icon, size: 16, color: primary),
-        const SizedBox(width: 10),
+        const SizedBox(width: 8),
         Expanded(
           child: Text(
             text,
             style: TextStyle(
               fontSize: 13,
               color: textColor,
-              height: 1.5,
             ),
           ),
         ),
@@ -777,3 +653,9 @@ class _LotteryScreenState extends State<LotteryScreen> {
     );
   }
 }
+"""
+    with open(filepath, "w", encoding="utf-8") as f:
+        f.write(new_content)
+    print("Replace done.")
+else:
+    print("Could not find the target string to split on.")

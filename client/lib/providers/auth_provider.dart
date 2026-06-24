@@ -75,6 +75,8 @@ class AuthProvider extends ChangeNotifier {
             _user = null;
             _dio.options.headers.remove('Authorization');
             _clearStoredAuth();
+            // 清除极光 Alias（无 await，避免阻塞拦截器）
+            _clearPushAlias();
             notifyListeners();
             // 重置 overlay 标记，允许再次弹出
             AuthExpiredManager.resetSessionFlag();
@@ -270,6 +272,13 @@ class AuthProvider extends ChangeNotifier {
     } catch (e) {
       debugPrint('服务端登出异常: $e');
     }
+    await _clearLocalSession(clearPushAlias: true);
+  }
+
+  /// 统一的本地会话清理
+  ///
+  /// [clearPushAlias] 为 true 时同时清除极光 Alias（手动退出 / 401）。
+  Future<void> _clearLocalSession({required bool clearPushAlias}) async {
     _token = null;
     _user = null;
     _applyAuthHeader();
@@ -277,14 +286,20 @@ class AuthProvider extends ChangeNotifier {
       await _cookieJar!.deleteAll();
     }
     await _clearStoredAuth();
-    // 清除极光推送 Alias，防止退出后仍收到前用户私信通知
+    if (clearPushAlias) {
+      await _clearPushAlias();
+    }
+    notifyListeners();
+  }
+
+  /// 清除极光推送 Alias，防止退出后仍收到前用户私信通知
+  Future<void> _clearPushAlias() async {
     try {
       await const MethodChannel('shenliyuan/private_message_notifications')
           .invokeMethod('clearAlias');
     } catch (e) {
       debugPrint('清除 JPush Alias 失败: $e');
     }
-    notifyListeners();
   }
 
   Future<void> _clearStoredAuth() async {

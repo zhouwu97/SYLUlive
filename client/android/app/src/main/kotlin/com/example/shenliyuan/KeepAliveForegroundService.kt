@@ -180,7 +180,7 @@ class KeepAliveForegroundService : Service() {
                         try {
                             JPushInterface.setAlias(
                                 applicationContext,
-                                0,
+                                PrivateMessageJPushReceiver.SEQ_ALIAS_RESTORE,
                                 alias
                             )
                             Log.i(TAG, "JPush alias restore requested: ***${alias.takeLast(4)}")

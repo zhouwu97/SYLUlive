@@ -183,12 +183,12 @@ class KeepAliveForegroundService : Service() {
                                 0,
                                 alias
                             )
-                            Log.i(TAG, "JPush alias restored: ***${alias.takeLast(4)}")
+                            Log.i(TAG, "JPush alias restore requested: ***${alias.takeLast(4)}")
                             DiagnosticLogStore.info(
                                 applicationContext,
                                 source = "推送",
-                                type = "Alias 恢复",
-                                summary = "保活服务恢复时重新绑定 Alias",
+                                type = "Alias 恢复请求",
+                                summary = "保活服务已发起 Alias 恢复请求",
                                 detail = "alias=***${alias.takeLast(4)} rid=$safeRid",
                             )
                         } catch (e: Exception) {

@@ -424,62 +424,84 @@ Future<void> setupJPush(AuthProvider authProvider) async {
   await _tryBindAlias(userIdStr);
 }
 
-/// 带指数退避的 Alias 绑定
+/// 带指数退避的 Alias 绑定（包含 RID 等待）
+///
+/// 首次尝试 + 最多 [_maxAliasRetries] 次重试（共 4 次调用机会），
+/// 每次失败后按 [_aliasRetryDelays] 延迟后重试。
+/// RID 为空和 setAlias 异常统一走重试逻辑。
+/// 全部重试耗尽后抛出异常，使 setupJPush 感知失败，_jpushSetup 保持 false。
 Future<void> _tryBindAlias(String userId) async {
+  String? failureReason;
+  bool isRidEmpty = false;
+
   try {
     final rid = await jpush.getRegistrationID();
     if (rid.isEmpty) {
-      debugPrint('RegistrationID 为空，无法绑定 Alias');
-      DiagnosticLogService.instance.record(
-        level: 'warning',
-        source: '推送',
-        type: 'Alias 绑定失败',
-        summary: 'RegistrationID 为空',
-        detail: 'userId=$userId',
+      failureReason = 'RegistrationID 为空';
+      isRidEmpty = true;
+    } else {
+      await jpush.setAlias(userId);
+
+      // ── 成功 ──
+      _lastBoundUserId = userId;
+      _lastBoundRegistrationId = rid;
+      _aliasRetryCount = 0;
+      debugPrint(
+        '✅ 成功设置 JPush Alias: $userId (rid=***${rid.substring(rid.length - 6)})',
       );
+      DiagnosticLogService.instance.record(
+        level: 'info',
+        source: '推送',
+        type: 'Alias 绑定成功',
+        summary: 'Alias 绑定成功',
+        detail: 'userId=$userId rid=***${rid.substring(rid.length - 6)}',
+      );
+
+      // 同步 alias 到原生层，供保活服务恢复时使用
+      try {
+        await _privateMessageNotificationChannel.invokeMethod(
+          'syncAlias',
+          {'userId': userId},
+        );
+      } catch (_) {}
       return;
     }
-
-    await jpush.setAlias(userId);
-    _lastBoundUserId = userId;
-    _lastBoundRegistrationId = rid;
-    _aliasRetryCount = 0;
-    debugPrint('✅ 成功设置 JPush Alias: $userId (rid=***${rid.substring(rid.length - 6)})');
-    DiagnosticLogService.instance.record(
-      level: 'info',
-      source: '推送',
-      type: 'Alias 绑定成功',
-      summary: 'Alias 绑定成功',
-      detail: 'userId=$userId rid=***${rid.substring(rid.length - 6)}',
-    );
-
-    // 同步 alias 到原生层，供保活服务恢复时使用
-    try {
-      await _privateMessageNotificationChannel.invokeMethod(
-        'syncAlias',
-        {'userId': userId},
-      );
-    } catch (_) {}
   } catch (e) {
-    _aliasRetryCount++;
-    debugPrint('设置 JPush Alias 失败 (第$_aliasRetryCount次): $e');
-
-    if (_aliasRetryCount <= _maxAliasRetries) {
-      final delay = _aliasRetryDelays[_aliasRetryCount - 1];
-      debugPrint('将在 ${delay}s 后重试 Alias 绑定');
-      await Future.delayed(Duration(seconds: delay));
-      await _tryBindAlias(userId);
-    } else {
-      debugPrint('Alias 绑定重试 $_maxAliasRetries 次后仍失败，放弃');
-      DiagnosticLogService.instance.record(
-        level: 'error',
-        source: '推送',
-        type: 'Alias 绑定失败',
-        summary: 'Alias 重试 $_maxAliasRetries 次后仍失败',
-        detail: 'userId=$userId error=$e',
-      );
-    }
+    failureReason = e.toString();
+    isRidEmpty = false;
   }
+
+  // ── 失败：统一进入重试 ──
+  _aliasRetryCount++;
+  debugPrint('Alias 绑定失败 (第$_aliasRetryCount次): $failureReason');
+
+  if (_aliasRetryCount <= _maxAliasRetries) {
+    final delay = _aliasRetryDelays[_aliasRetryCount - 1];
+    final source = isRidEmpty ? 'RegistrationID 等待' : 'Alias 重试';
+    DiagnosticLogService.instance.record(
+      level: 'warning',
+      source: '推送',
+      type: source,
+      summary: failureReason,
+      detail: 'userId=$userId retry=$_aliasRetryCount/$_maxAliasRetries delay=${delay}s',
+    );
+    debugPrint('将在 ${delay}s 后重试');
+    await Future.delayed(Duration(seconds: delay));
+    await _tryBindAlias(userId);
+    return;
+  }
+
+  // ── 重试耗尽：抛出异常，阻止 _jpushSetup = true ──
+  final label = isRidEmpty ? 'RegistrationID' : 'Alias';
+  final msg = '$label 重试 $_maxAliasRetries 次后仍失败: $failureReason';
+  DiagnosticLogService.instance.record(
+    level: 'error',
+    source: '推送',
+    type: 'Alias 绑定失败',
+    summary: msg,
+    detail: 'userId=$userId',
+  );
+  throw StateError(msg);
 }
 
 Future<void> _initializePrivateMessageNotifications() async {

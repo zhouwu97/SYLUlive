@@ -2,6 +2,7 @@ package com.example.shenliyuan
 
 import android.content.Context
 import android.content.Intent
+import cn.jpush.android.api.JPushMessage
 import cn.jpush.android.api.NotificationMessage
 import com.jiguang.jpush.JPushEventReceiver
 import org.json.JSONObject
@@ -102,6 +103,31 @@ class PrivateMessageJPushReceiver : JPushEventReceiver() {
         }
 
         super.onNotifyMessageDismiss(context, notificationMessage)
+    }
+
+    override fun onAliasOperatorResult(
+        context: Context,
+        jPushMessage: JPushMessage,
+    ) {
+        super.onAliasOperatorResult(context, jPushMessage)
+
+        if (jPushMessage.errorCode == 0) {
+            DiagnosticLogStore.info(
+                context,
+                source = "推送",
+                type = "Alias 恢复成功",
+                summary = "保活服务 Alias 绑定成功",
+                detail = "sequence=${jPushMessage.sequence}",
+            )
+        } else {
+            DiagnosticLogStore.warning(
+                context,
+                source = "推送",
+                type = "Alias 恢复失败",
+                summary = "保活服务 Alias 绑定失败",
+                detail = "code=${jPushMessage.errorCode} sequence=${jPushMessage.sequence}",
+            )
+        }
     }
 
     private fun conversationIdFrom(notificationMessage: NotificationMessage): Long? {

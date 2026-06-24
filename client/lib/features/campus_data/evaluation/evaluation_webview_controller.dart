@@ -42,6 +42,8 @@ class EvaluationWebViewController {
 
   bool _disposed = false;
 
+  InAppWebViewController? get webView => _webViewController;
+
   void attach(InAppWebViewController controller) {
     _webViewController = controller;
   }

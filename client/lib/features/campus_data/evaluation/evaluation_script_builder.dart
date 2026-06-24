@@ -540,11 +540,10 @@ String buildFillScript() {
       
       try { inp.dispatchEvent(new Event('input', { bubbles: true })); } catch(e){}
       try { inp.dispatchEvent(new Event('change', { bubbles: true })); } catch(e){}
-      try { inp.dispatchEvent(new Event('blur', { bubbles: true })); } catch(e){}
 
       if (inp.value !== valStr && typeof jQuery !== 'undefined' && jQuery.fn) {
         try {
-          jQuery(inp).val(valStr).trigger('input').trigger('change').trigger('blur');
+          jQuery(inp).val(valStr).trigger('input').trigger('change');
         } catch(e){}
       }
 

@@ -9,6 +9,8 @@ import 'evaluation_constants.dart';
 import 'evaluation_models.dart';
 import 'evaluation_page_detector.dart';
 import 'evaluation_webview_controller.dart';
+import 'evaluation_automation_controller.dart';
+import 'evaluation_automation_bar.dart';
 
 // ══════════════════════════════════════════════════════════════════════════════
 //  Main screen
@@ -23,6 +25,7 @@ class EvaluationScreen extends StatefulWidget {
 
 class _EvaluationScreenState extends State<EvaluationScreen> {
   final EvaluationWebViewController _evalCtrl = EvaluationWebViewController();
+  late final EvaluationAutomationController _automationCtrl;
 
   bool _isPageLoading = true;
   double _loadingProgress = 0;
@@ -32,6 +35,7 @@ class _EvaluationScreenState extends State<EvaluationScreen> {
   @override
   void initState() {
     super.initState();
+    _automationCtrl = EvaluationAutomationController(webViewController: _evalCtrl);
     _evalCtrl.onPageTypeChanged = _onPageTypeChanged;
     _evalCtrl.onFillCompleted = _onFillCompleted;
     _evalCtrl.onError = _onError;
@@ -39,6 +43,7 @@ class _EvaluationScreenState extends State<EvaluationScreen> {
 
   @override
   void dispose() {
+    _automationCtrl.dispose();
     _evalCtrl.dispose();
     super.dispose();
   }
@@ -52,7 +57,7 @@ class _EvaluationScreenState extends State<EvaluationScreen> {
 
   void _onFillCompleted(EvaluationFillResult result) {
     if (!mounted) return;
-    EvaluationResultSheet.show(context, result);
+    // Handled by automation bar, no need to show result sheet.
   }
 
   void _onError(String message) {
@@ -118,7 +123,7 @@ class _EvaluationScreenState extends State<EvaluationScreen> {
     if (confirmed != true) return;
 
     setState(() {});
-    await _evalCtrl.fill();
+    await _automationCtrl.fillAndSaveCurrent();
   }
 
   Future<void> _handleClearCookies() async {
@@ -255,6 +260,7 @@ class _EvaluationScreenState extends State<EvaluationScreen> {
               minHeight: 2,
             ),
           Expanded(child: _buildWebView()),
+          EvaluationAutomationBar(controller: _automationCtrl),
         ],
       ),
     );

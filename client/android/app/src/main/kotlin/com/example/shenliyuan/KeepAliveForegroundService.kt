@@ -427,6 +427,11 @@ class KeepAliveForegroundService : Service() {
             Log.d(TAG, "JPush alias synced: ${alias?.takeLast(4) ?: "null"}")
         }
 
+        fun getStoredAlias(context: Context): String? {
+            return prefs(context.applicationContext)
+                .getString(KEY_JPUSH_ALIAS, null)
+        }
+
         fun status(context: Context): Map<String, Any> {
             val appContext = context.applicationContext
             return mapOf(

@@ -8,6 +8,13 @@ import com.jiguang.jpush.JPushEventReceiver
 import org.json.JSONObject
 
 class PrivateMessageJPushReceiver : JPushEventReceiver() {
+
+    companion object {
+        /** 保活恢复时重绑 Alias */
+        const val SEQ_ALIAS_RESTORE = 1001
+        /** 退出登录时删除 Alias */
+        const val SEQ_ALIAS_DELETE = 1002
+    }
     override fun isNeedShowNotification(
         context: Context,
         notificationMessage: NotificationMessage,
@@ -111,22 +118,69 @@ class PrivateMessageJPushReceiver : JPushEventReceiver() {
     ) {
         super.onAliasOperatorResult(context, jPushMessage)
 
-        if (jPushMessage.errorCode == 0) {
-            DiagnosticLogStore.info(
-                context,
-                source = "推送",
-                type = "Alias 恢复成功",
-                summary = "保活服务 Alias 绑定成功",
-                detail = "sequence=${jPushMessage.sequence}",
-            )
-        } else {
-            DiagnosticLogStore.warning(
-                context,
-                source = "推送",
-                type = "Alias 恢复失败",
-                summary = "保活服务 Alias 绑定失败",
-                detail = "code=${jPushMessage.errorCode} sequence=${jPushMessage.sequence}",
-            )
+        when (jPushMessage.sequence) {
+            SEQ_ALIAS_DELETE -> {
+                if (jPushMessage.errorCode == 0) {
+                    // 远端删除成功，现在清除本地存储
+                    KeepAliveForegroundService.clearStoredAlias(context)
+                    DiagnosticLogStore.info(
+                        context,
+                        source = "推送",
+                        type = "Alias 删除成功",
+                        summary = "极光 Alias 已删除，本地存储已清除",
+                        detail = "sequence=${jPushMessage.sequence}",
+                    )
+                } else {
+                    // 删除失败，保留本地存储供重试
+                    DiagnosticLogStore.warning(
+                        context,
+                        source = "推送",
+                        type = "Alias 删除失败",
+                        summary = "极光 Alias 删除失败，本地存储保留",
+                        detail = "code=${jPushMessage.errorCode} sequence=${jPushMessage.sequence}",
+                    )
+                }
+            }
+
+            SEQ_ALIAS_RESTORE -> {
+                if (jPushMessage.errorCode == 0) {
+                    DiagnosticLogStore.info(
+                        context,
+                        source = "推送",
+                        type = "Alias 恢复成功",
+                        summary = "保活服务 Alias 绑定成功",
+                        detail = "sequence=${jPushMessage.sequence}",
+                    )
+                } else {
+                    DiagnosticLogStore.warning(
+                        context,
+                        source = "推送",
+                        type = "Alias 恢复失败",
+                        summary = "保活服务 Alias 绑定失败",
+                        detail = "code=${jPushMessage.errorCode} sequence=${jPushMessage.sequence}",
+                    )
+                }
+            }
+
+            else -> {
+                if (jPushMessage.errorCode == 0) {
+                    DiagnosticLogStore.info(
+                        context,
+                        source = "推送",
+                        type = "Alias 操作成功",
+                        summary = "Alias 操作完成",
+                        detail = "sequence=${jPushMessage.sequence}",
+                    )
+                } else {
+                    DiagnosticLogStore.warning(
+                        context,
+                        source = "推送",
+                        type = "Alias 操作失败",
+                        summary = "Alias 操作失败",
+                        detail = "code=${jPushMessage.errorCode} sequence=${jPushMessage.sequence}",
+                    )
+                }
+            }
         }
     }
 

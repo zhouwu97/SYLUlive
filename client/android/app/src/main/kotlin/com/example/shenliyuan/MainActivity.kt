@@ -311,15 +311,12 @@ class MainActivity : FlutterActivity() {
                 "clearAlias" -> {
                     val gen = KeepAliveForegroundService.markAliasPendingDelete(this)
                     try {
-                        JPushInterface.deleteAlias(
-                            this,
-                            PrivateMessageJPushReceiver.SEQ_ALIAS_DELETE,
-                        )
-                        // 将 generation 传下去供回调校验
-                        PrivateMessageJPushReceiver.pendingDeleteGeneration = gen
+                        val sequence = PrivateMessageJPushReceiver.deleteSequence(gen)
+                        JPushInterface.deleteAlias(this, sequence)
                     } catch (_: Exception) {
                         // JPush 未初始化时无法发起异步删除
-                        // 保持 pending_delete 状态，下次 JPush 初始化后重试
+                        // 保持 pending_delete 状态，下次 JPush 初始化时重试
+                        // restoreJPush 会检测 pending_delete 并重试
                     }
                     result.success(true)
                 }

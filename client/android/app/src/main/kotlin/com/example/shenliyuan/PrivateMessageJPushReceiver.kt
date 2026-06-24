@@ -33,15 +33,17 @@ class PrivateMessageJPushReceiver : JPushEventReceiver() {
         /** 判断是否为恢复操作的 sequence */
         fun isRestoreSequence(sequence: Int): Boolean = sequence in SEQ_BASE_RESTORE until SEQ_BASE_RESTORE + 1_000_000
 
-        // 删除重试配置
-        private const val MAX_DELETE_RETRIES = 3
-        private val DELETE_RETRY_DELAYS = longArrayOf(2_000L, 5_000L, 15_000L)
+        // 重试配置
+        private const val MAX_RETRIES = 3
+        private val RETRY_DELAYS = longArrayOf(2_000L, 5_000L, 15_000L)
 
-        /** 已安排的重试计数（key: generation, value: retryCount） */
+        /** 已安排的删除重试（key: generation, value: retryCount） */
         private val deleteRetries = mutableMapOf<Int, Int>()
-
-        /** 已有延迟任务的 generation（防重复安排） */
         private val scheduledDeleteGenerations = mutableSetOf<Int>()
+
+        /** 已安排的恢复重试（key: generation, value: retryCount） */
+        private val restoreRetries = mutableMapOf<Int, Int>()
+        private val scheduledRestoreGenerations = mutableSetOf<Int>()
 
         private val retryHandler = Handler(Looper.getMainLooper())
 
@@ -54,12 +56,12 @@ class PrivateMessageJPushReceiver : JPushEventReceiver() {
             if (!scheduledDeleteGenerations.add(generation)) return
 
             val retryCount = deleteRetries.getOrDefault(generation, 0)
-            if (retryCount >= MAX_DELETE_RETRIES) {
+            if (retryCount >= MAX_RETRIES) {
                 DiagnosticLogStore.warning(
                     context,
                     source = "推送",
                     type = "Alias 删除放弃",
-                    summary = "Alias 删除重试 $MAX_DELETE_RETRIES 次后仍失败，等待下次进程启动",
+                    summary = "Alias 删除重试 $MAX_RETRIES 次后仍失败，等待下次进程启动",
                     detail = "gen=$generation",
                 )
                 deleteRetries.remove(generation)
@@ -67,7 +69,7 @@ class PrivateMessageJPushReceiver : JPushEventReceiver() {
                 return
             }
 
-            val delay = DELETE_RETRY_DELAYS[retryCount]
+            val delay = RETRY_DELAYS[retryCount]
             deleteRetries[generation] = retryCount + 1
 
             DiagnosticLogStore.info(
@@ -117,6 +119,86 @@ class PrivateMessageJPushReceiver : JPushEventReceiver() {
                     )
                     scheduledDeleteGenerations.remove(generation)
                     scheduleDeleteRetry(context, generation)
+                }
+            }, delay)
+        }
+
+        /** 安排恢复重试 */
+        fun scheduleRestoreRetry(
+            context: Context,
+            generation: Int,
+        ) {
+            if (!scheduledRestoreGenerations.add(generation)) return
+
+            val retryCount = restoreRetries.getOrDefault(generation, 0)
+            if (retryCount >= MAX_RETRIES) {
+                DiagnosticLogStore.warning(
+                    context,
+                    source = "推送",
+                    type = "Alias 恢复放弃",
+                    summary = "Alias 恢复重试 $MAX_RETRIES 次后仍失败，等待下次协调",
+                    detail = "gen=$generation",
+                )
+                restoreRetries.remove(generation)
+                scheduledRestoreGenerations.remove(generation)
+                return
+            }
+
+            val delay = RETRY_DELAYS[retryCount]
+            restoreRetries[generation] = retryCount + 1
+
+            DiagnosticLogStore.info(
+                context,
+                source = "推送",
+                type = "Alias 恢复重试安排",
+                summary = "将在 ${delay}ms 后第 ${retryCount + 1} 次重试恢复",
+                detail = "gen=$generation",
+            )
+
+            retryHandler.postDelayed({
+                val currentState =
+                    KeepAliveForegroundService.getAliasState(context)
+                val currentGen =
+                    KeepAliveForegroundService.getAliasGeneration(context)
+                val hasToken =
+                    KeepAliveForegroundService.hasAuthToken(context)
+
+                if (currentState != "active"
+                    || currentGen != generation
+                    || !hasToken) {
+                    DiagnosticLogStore.info(
+                        context,
+                        source = "推送",
+                        type = "Alias 恢复取消",
+                        summary = "状态/generation/登录状态已变化，取消恢复重试",
+                        detail = "state=$currentState gen=$currentGen hasToken=$hasToken",
+                    )
+                    restoreRetries.remove(generation)
+                    scheduledRestoreGenerations.remove(generation)
+                    return@postDelayed
+                }
+
+                val sequence = restoreSequence(generation)
+                try {
+                    JPushInterface.setAlias(context, sequence,
+                        KeepAliveForegroundService.getStoredAlias(context))
+                    DiagnosticLogStore.info(
+                        context,
+                        source = "推送",
+                        type = "Alias 恢复重试执行",
+                        summary = "已发起第 ${retryCount + 1} 次恢复重试",
+                        detail = "gen=$generation sequence=$sequence",
+                    )
+                } catch (e: Exception) {
+                    DiagnosticLogStore.warning(
+                        context,
+                        source = "推送",
+                        type = "Alias 恢复重试异常",
+                        summary = "setAlias 调用异常，继续重试",
+                        detail = "gen=$generation error=${e.message}",
+                    )
+                    scheduledRestoreGenerations.remove(generation)
+                    scheduleRestoreRetry(context, generation)
                 }
             }, delay)
         }
@@ -272,21 +354,21 @@ class PrivateMessageJPushReceiver : JPushEventReceiver() {
                         KeepAliveForegroundService.getAliasGeneration(context)
 
                     if (currentState != "active" || currentGen != requestGen) {
-                        // 恢复回调已过期：用户可能已退出或切换账号
+                        restoreRetries.remove(requestGen)
+                        scheduledRestoreGenerations.remove(requestGen)
                         DiagnosticLogStore.warning(
                             context,
                             source = "推送",
                             type = "Alias 恢复过期",
-                            summary = "setAlias 成功回调已过期，重新协调当前状态",
+                            summary = "setAlias 回调已过期，重新协调当前状态",
                             detail = "reqGen=$requestGen curState=$currentState curGen=$currentGen",
                         )
-                        // 重新协调：如果现在需要删除，执行删除
-                        KeepAliveForegroundService.reconcileAliasState(
-                            context,
-                        )
+                        KeepAliveForegroundService.reconcileAliasState(context)
                         return
                     }
 
+                    restoreRetries.remove(requestGen)
+                    scheduledRestoreGenerations.remove(requestGen)
                     DiagnosticLogStore.info(
                         context,
                         source = "推送",
@@ -299,9 +381,10 @@ class PrivateMessageJPushReceiver : JPushEventReceiver() {
                         context,
                         source = "推送",
                         type = "Alias 恢复失败",
-                        summary = "保活服务 Alias 绑定失败",
+                        summary = "保活服务 Alias 绑定失败，安排退避重试",
                         detail = "code=${jPushMessage.errorCode} sequence=$sequence",
                     )
+                    scheduleRestoreRetry(context, requestGen)
                 }
             }
 

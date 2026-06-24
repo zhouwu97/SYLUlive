@@ -25,7 +25,7 @@ class EvaluationAutomationController extends ChangeNotifier {
   
   // Anti-loop limits
   static const int _maxRetriesPerItem = 1;
-  static const int _maxTotalItems = 2;
+  static const int _maxTotalItems = 100; // 已放开上限，支持全部自动完成
   
   int _consecutiveIdenticalFingerprint = 0;
   String _lastSeenFingerprint = '';

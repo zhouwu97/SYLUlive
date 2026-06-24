@@ -506,7 +506,8 @@ Future<void> _tryBindAlias(String userId) async {
       source: '推送',
       type: source,
       summary: failureReason,
-      detail: 'userId=$userId retry=$_aliasRetryCount/$_maxAliasRetries delay=${delay}s',
+      detail:
+          'userId=$userId retry=$_aliasRetryCount/$_maxAliasRetries delay=${delay}s',
     );
     debugPrint('将在 ${delay}s 后重试');
     await Future.delayed(Duration(seconds: delay));

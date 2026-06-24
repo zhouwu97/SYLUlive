@@ -60,7 +60,11 @@ class EvaluationWebViewController {
     try {
       final raw = await ctrl.evaluateJavascript(source: buildProbeScript());
       _lastProbe = _parseProbeResult(raw);
-      _currentPageType = _detector.classify(_lastProbe!);
+      _currentPageType = _detector.classify(_lastProbe!, _lastHttpError);
+
+      if (_currentPageType == EvaluationPageType.evaluationForm) {
+        _lastHttpError = null; // Clear old HTTP error if form is valid
+      }
 
       if (kDebugMode) {
         debugPrint(
@@ -212,17 +216,27 @@ class EvaluationWebViewController {
       buf.writeln(
         '单选项: ${_lastProbe!.radioCount} (${_lastProbe!.radioGroups.length} 组)',
       );
-      buf.writeln('文本框: ${_lastProbe!.textareaCount}');
+      buf.writeln(
+        '评分输入框: ${_lastProbe!.scoreInputs.where((s) => s.isReliableScore).length} (共 ${_lastProbe!.scoreInputs.length})',
+      );
+      buf.writeln('建议文本框: ${_lastProbe!.optionalCommentCount}');
       buf.writeln('表单数: ${_lastProbe!.forms.length}');
       buf.writeln('按钮数: ${_lastProbe!.buttons.length}');
+      if (_lastProbe!.hasAccessDeniedText) {
+        buf.writeln('命中访问受限规则: HTML标题或错误容器包含无权限');
+      }
     }
     if (_lastFillResult != null) {
       buf.writeln('---');
       buf.writeln(
-        '填写结果: ${_lastFillResult!.completedGroups}/${_lastFillResult!.totalGroups}',
+        '填写结果: 单选 ${_lastFillResult!.radioCompletedGroups}/${_lastFillResult!.radioTotalGroups}, '
+        '评分输入框 ${_lastFillResult!.scoreInputCompletedCount}/${_lastFillResult!.scoreInputCount}',
       );
       if (_lastFillResult!.hasUnresolved) {
-        buf.writeln('未识别组: ${_lastFillResult!.unresolvedGroups.length}');
+        buf.writeln(
+          '未识别项: 单选 ${_lastFillResult!.unresolvedRadioGroups.length}, '
+          '评分输入框 ${_lastFillResult!.unresolvedScoreInputs.length}',
+        );
       }
     }
     return buf.toString();

@@ -139,6 +139,22 @@ class KeepAliveForegroundService : Service() {
     private var ridCheckAttempt = 0
     private var serviceDestroyed = false
 
+    private fun scheduleNextRidCheck() {
+        if (ridCheckAttempt >= ridCheckDelays.size) {
+            DiagnosticLogStore.warning(
+                applicationContext,
+                source = "推送",
+                type = "JPush RID 放弃",
+                summary = "RegistrationID ${ridCheckDelays.size} 次检查后仍为空，本次放弃 Alias 同步",
+            )
+            return
+        }
+        val delay = ridCheckDelays[ridCheckAttempt]
+        ridCheckAttempt++
+        handler.removeCallbacks(ridCheckRunnable)
+        handler.postDelayed(ridCheckRunnable, delay)
+    }
+
     private val ridCheckRunnable = Runnable {
         if (serviceDestroyed) return@Runnable
         val rid = JPushInterface.getRegistrationID(applicationContext)
@@ -156,27 +172,15 @@ class KeepAliveForegroundService : Service() {
             return@Runnable
         }
 
-        // RegistrationID 仍为空 → 按数组顺序重试
-        if (ridCheckAttempt < ridCheckDelays.size) {
-            val delay = ridCheckDelays[ridCheckAttempt]
-            Log.w(TAG, "RID empty, attempt=${ridCheckAttempt + 1} delay=${delay}ms")
-            DiagnosticLogStore.warning(
-                applicationContext,
-                source = "推送",
-                type = "JPush RID 等待",
-                summary = "RegistrationID 为空，${delay}ms 后第 ${ridCheckAttempt + 1} 次检查",
-            )
-            ridCheckAttempt++
-            handler.removeCallbacks(ridCheckRunnable)
-            handler.postDelayed(ridCheckRunnable, delay)
-        } else {
-            DiagnosticLogStore.warning(
-                applicationContext,
-                source = "推送",
-                type = "JPush RID 放弃",
-                summary = "RegistrationID ${ridCheckDelays.size} 次检查后仍为空，本次放弃 Alias 同步",
-            )
-        }
+        Log.w(TAG, "RID empty, scheduling next check")
+        DiagnosticLogStore.warning(
+            applicationContext,
+            source = "推送",
+            type = "JPush RID 等待",
+            summary = "RegistrationID 为空，安排下一次检查",
+            detail = "attempt=$ridCheckAttempt/${ridCheckDelays.size}",
+        )
+        scheduleNextRidCheck()
     }
 
     private fun restoreJPush() {
@@ -196,8 +200,7 @@ class KeepAliveForegroundService : Service() {
             JPushInterface.resumePush(applicationContext)
 
             ridCheckAttempt = 0
-            handler.removeCallbacks(ridCheckRunnable)
-            handler.postDelayed(ridCheckRunnable, ridCheckDelays[0])
+            scheduleNextRidCheck()
         } catch (e: Exception) {
             Log.e(TAG, "restore JPush failed", e)
             DiagnosticLogStore.error(
@@ -452,11 +455,15 @@ class KeepAliveForegroundService : Service() {
                         )
                     } catch (e: Exception) {
                         Log.e(TAG, "reconcile restore failed", e)
+                        PrivateMessageJPushReceiver.scheduleRestoreRetry(
+                            appContext,
+                            gen,
+                        )
                         DiagnosticLogStore.warning(
                             appContext,
                             source = "推送",
                             type = "Alias 恢复异常",
-                            summary = "协调恢复 Alias 时异常",
+                            summary = "协调恢复 Alias 时异常，安排重试",
                             detail = Log.getStackTraceString(e),
                         )
                     }
@@ -516,6 +523,17 @@ class KeepAliveForegroundService : Service() {
         fun getAliasGeneration(context: Context): Int {
             return prefs(context.applicationContext)
                 .getInt(KEY_JPUSH_ALIAS_GEN, 0)
+        }
+
+        /** 如果本地仍存有 Alias 值，标记为待删除 */
+        fun ensureAliasPendingDelete(context: Context) {
+            val appContext = context.applicationContext
+            val alias = getStoredAlias(appContext)
+            if (!alias.isNullOrBlank()) {
+                markAliasPendingDelete(appContext)
+                Log.d(TAG,
+                    "ensured pending_delete for stale alias ***${alias.takeLast(4)}")
+            }
         }
 
         /** 标记 Alias 为待删除（退出时调用，不等异步回调） */

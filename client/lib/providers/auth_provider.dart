@@ -71,13 +71,9 @@ class AuthProvider extends ChangeNotifier {
           if (error.response?.statusCode == 401 && _token != null) {
             // 无效令牌，自动登出
             debugPrint('检测到 401，自动登出');
-            _token = null;
-            _user = null;
-            _dio.options.headers.remove('Authorization');
-            _clearStoredAuth();
-            // 清除极光 Alias（无 await，避免阻塞拦截器）
-            _clearPushAlias();
-            notifyListeners();
+            // 统一走 _clearLocalSession，与手动退出相同路径
+            // 不 await — 拦截器内部不能阻塞
+            _clearLocalSession(clearPushAlias: true);
             // 重置 overlay 标记，允许再次弹出
             AuthExpiredManager.resetSessionFlag();
             // 延迟一帧弹出重新登录提示

@@ -14,6 +14,10 @@ class PrivateMessageJPushReceiver : JPushEventReceiver() {
         const val SEQ_ALIAS_RESTORE = 1001
         /** 退出登录时删除 Alias */
         const val SEQ_ALIAS_DELETE = 1002
+
+        /** MainActivity 设置的最新一次 pending_delete 的 generation */
+        @Volatile
+        var pendingDeleteGeneration: Int = 0
     }
     override fun isNeedShowNotification(
         context: Context,
@@ -120,24 +124,35 @@ class PrivateMessageJPushReceiver : JPushEventReceiver() {
 
         when (jPushMessage.sequence) {
             SEQ_ALIAS_DELETE -> {
+                val expectedGen = pendingDeleteGeneration
                 if (jPushMessage.errorCode == 0) {
-                    // 远端删除成功，现在清除本地存储
-                    KeepAliveForegroundService.clearStoredAlias(context)
-                    DiagnosticLogStore.info(
-                        context,
-                        source = "推送",
-                        type = "Alias 删除成功",
-                        summary = "极光 Alias 已删除，本地存储已清除",
-                        detail = "sequence=${jPushMessage.sequence}",
-                    )
+                    val cleared = KeepAliveForegroundService
+                        .clearStoredAliasIfGeneration(context, expectedGen)
+                    if (cleared) {
+                        DiagnosticLogStore.info(
+                            context,
+                            source = "推送",
+                            type = "Alias 删除成功",
+                            summary = "极光 Alias 已删除，本地存储已清除",
+                            detail = "gen=$expectedGen",
+                        )
+                    } else {
+                        DiagnosticLogStore.info(
+                            context,
+                            source = "推送",
+                            type = "Alias 删除过期",
+                            summary = "删除回调到达但 generation 已过期，新账号 Alias 已覆盖",
+                            detail = "expectedGen=$expectedGen",
+                        )
+                    }
                 } else {
-                    // 删除失败，保留本地存储供重试
+                    // 删除失败，保持 pending_delete 供重试
                     DiagnosticLogStore.warning(
                         context,
                         source = "推送",
                         type = "Alias 删除失败",
-                        summary = "极光 Alias 删除失败，本地存储保留",
-                        detail = "code=${jPushMessage.errorCode} sequence=${jPushMessage.sequence}",
+                        summary = "极光 Alias 删除失败，保持 pending_delete 待重试",
+                        detail = "code=${jPushMessage.errorCode} gen=$expectedGen",
                     )
                 }
             }

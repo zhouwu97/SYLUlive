@@ -173,9 +173,39 @@ class KeepAliveForegroundService : Service() {
                         detail = "registrationId=$safeRid",
                     )
 
-                    // 重新绑定 Alias，确保私信推送能到达
-                    val alias = prefs(applicationContext)
-                        .getString(KEY_JPUSH_ALIAS, null)
+                    // 检查 Alias 状态，决定恢复还是重试删除
+                    val aliasState = getAliasState(applicationContext)
+                    when (aliasState) {
+                        "pending_delete" -> {
+                            // 之前的删除未完成，重试
+                            val alias = getStoredAlias(applicationContext)
+                            if (!alias.isNullOrBlank()) {
+                                val gen = getAliasGeneration(applicationContext)
+                                PrivateMessageJPushReceiver.pendingDeleteGeneration = gen
+                                JPushInterface.deleteAlias(
+                                    applicationContext,
+                                    PrivateMessageJPushReceiver.SEQ_ALIAS_DELETE,
+                                )
+                                Log.i(TAG, "retry pending alias delete: ***${alias.takeLast(4)} gen=$gen")
+                                DiagnosticLogStore.info(
+                                    applicationContext,
+                                    source = "推送",
+                                    type = "Alias 删除重试",
+                                    summary = "保活恢复时重试待删除 Alias",
+                                    detail = "alias=***${alias.takeLast(4)} gen=$gen",
+                                )
+                            }
+                            return@postDelayed
+                        }
+                        "active" -> {
+                            // 正常恢复
+                        }
+                        else -> {
+                            Log.d(TAG, "skip alias restore: state=$aliasState")
+                            return@postDelayed
+                        }
+                    }
+                    val alias = getStoredAlias(applicationContext)
                     if (!alias.isNullOrBlank()) {
                         try {
                             JPushInterface.setAlias(
@@ -359,6 +389,8 @@ class KeepAliveForegroundService : Service() {
         private const val KEY_HIDE_RECENTS = "flutter.hide_recents_enabled"
         private const val KEY_AUTH_TOKEN = "flutter.keep_alive_auth_token"
         private const val KEY_JPUSH_ALIAS = "flutter.jpush_alias"
+        private const val KEY_JPUSH_ALIAS_STATE = "flutter.jpush_alias_state"
+        private const val KEY_JPUSH_ALIAS_GEN = "flutter.jpush_alias_generation"
         private const val ACTION_START =
             "com.example.shenliyuan.action.START_KEEP_ALIVE"
         private const val ACTION_STOP =
@@ -417,14 +449,20 @@ class KeepAliveForegroundService : Service() {
         }
 
         fun syncAlias(context: Context, alias: String?) {
-            val editor = prefs(context.applicationContext).edit()
+            val p = prefs(context.applicationContext)
+            val editor = p.edit()
             if (alias.isNullOrBlank()) {
                 editor.remove(KEY_JPUSH_ALIAS)
+                editor.remove(KEY_JPUSH_ALIAS_STATE)
+                editor.remove(KEY_JPUSH_ALIAS_GEN)
             } else {
+                val gen = p.getInt(KEY_JPUSH_ALIAS_GEN, 0) + 1
                 editor.putString(KEY_JPUSH_ALIAS, alias)
+                editor.putString(KEY_JPUSH_ALIAS_STATE, "active")
+                editor.putInt(KEY_JPUSH_ALIAS_GEN, gen)
+                Log.d(TAG, "JPush alias synced: ***${alias.takeLast(4)} state=active gen=$gen")
             }
             editor.apply()
-            Log.d(TAG, "JPush alias synced: ${alias?.takeLast(4) ?: "null"}")
         }
 
         fun getStoredAlias(context: Context): String? {
@@ -432,12 +470,58 @@ class KeepAliveForegroundService : Service() {
                 .getString(KEY_JPUSH_ALIAS, null)
         }
 
+        fun getAliasState(context: Context): String? {
+            return prefs(context.applicationContext)
+                .getString(KEY_JPUSH_ALIAS_STATE, null)
+        }
+
+        fun getAliasGeneration(context: Context): Int {
+            return prefs(context.applicationContext)
+                .getInt(KEY_JPUSH_ALIAS_GEN, 0)
+        }
+
+        /** 标记 Alias 为待删除（退出时调用，不等异步回调） */
+        fun markAliasPendingDelete(context: Context): Int {
+            val p = prefs(context.applicationContext)
+            val gen = p.getInt(KEY_JPUSH_ALIAS_GEN, 0) + 1
+            p.edit()
+                .putString(KEY_JPUSH_ALIAS_STATE, "pending_delete")
+                .putInt(KEY_JPUSH_ALIAS_GEN, gen)
+                .apply()
+            Log.d(TAG, "JPush alias marked pending_delete gen=$gen")
+            return gen
+        }
+
+        /** 删除回调确认成功后清除（需校验 generation） */
+        fun clearStoredAliasIfGeneration(
+            context: Context,
+            expectedGeneration: Int,
+        ): Boolean {
+            val p = prefs(context.applicationContext)
+            val currentGen = p.getInt(KEY_JPUSH_ALIAS_GEN, 0)
+            if (currentGen != expectedGeneration) {
+                Log.w(TAG,
+                    "skip alias clear: gen mismatch expected=$expectedGeneration actual=$currentGen")
+                return false
+            }
+            p.edit()
+                .remove(KEY_JPUSH_ALIAS)
+                .remove(KEY_JPUSH_ALIAS_STATE)
+                .remove(KEY_JPUSH_ALIAS_GEN)
+                .apply()
+            Log.d(TAG, "JPush alias cleared gen=$expectedGeneration")
+            return true
+        }
+
+        /** 无条件清除（仅用于 SDK 未初始化等极端降级） */
         fun clearStoredAlias(context: Context) {
             prefs(context.applicationContext)
                 .edit()
                 .remove(KEY_JPUSH_ALIAS)
+                .remove(KEY_JPUSH_ALIAS_STATE)
+                .remove(KEY_JPUSH_ALIAS_GEN)
                 .apply()
-            Log.d(TAG, "JPush alias cleared from storage")
+            Log.d(TAG, "JPush alias cleared (forced)")
         }
 
         fun status(context: Context): Map<String, Any> {

@@ -103,57 +103,57 @@ class _EduScreenState extends State<EduScreen> {
                           style: TextStyle(color: Colors.grey[600]),
                         ),
                       const SizedBox(height: 16),
-                      Row(
-                        children: [
-                          if (eduProvider.isBound)
-                            ElevatedButton.icon(
-                              onPressed: () =>
-                                  _showUnbindDialog(context, eduProvider),
-                              icon: const Icon(Icons.link_off),
-                              label: const Text('解绑'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.red,
-                                foregroundColor: Colors.white,
-                              ),
-                            )
-                          else
-                            ElevatedButton.icon(
-                              onPressed: () =>
-                                  _showBindDialog(context, eduProvider),
-                              icon: const Icon(Icons.link),
-                              label: const Text('绑定教务'),
-                            ),
-                          const SizedBox(width: 8),
-                          if (eduProvider.isBound)
+                      if (eduProvider.isBound) ...[
+                        // Main actions — Wrap to avoid overflow
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
                             OutlinedButton.icon(
                               onPressed: () =>
                                   _showCourseDialog(context, eduProvider),
                               icon: const Icon(Icons.schedule),
                               label: const Text('课表'),
                             ),
-                          const SizedBox(width: 8),
-                          if (eduProvider.isBound)
                             OutlinedButton.icon(
                               onPressed: () =>
                                   _showGradesDialog(context, eduProvider),
                               icon: const Icon(Icons.grade),
                               label: const Text('成绩'),
                             ),
-                          const SizedBox(width: 8),
-                          OutlinedButton.icon(
-                            onPressed: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => const EvaluationScreen(),
-                                ),
-                              );
-                            },
-                            icon: const Icon(Icons.rate_review_outlined),
-                            label: const Text('教学评价'),
+                            OutlinedButton.icon(
+                              onPressed: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => const EvaluationScreen(),
+                                  ),
+                                );
+                              },
+                              icon: const Icon(Icons.rate_review_outlined),
+                              label: const Text('教学评价'),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        // Unbind as a low-profile text action
+                        TextButton.icon(
+                          onPressed: () =>
+                              _showUnbindDialog(context, eduProvider),
+                          icon: const Icon(Icons.link_off, size: 16),
+                          label: const Text('解绑教务账号',
+                              style: TextStyle(fontSize: 12)),
+                          style: TextButton.styleFrom(
+                            foregroundColor: Colors.red.withValues(alpha: 0.7),
                           ),
-                        ],
-                      ),
+                        ),
+                      ] else
+                        ElevatedButton.icon(
+                          onPressed: () =>
+                              _showBindDialog(context, eduProvider),
+                          icon: const Icon(Icons.link),
+                          label: const Text('绑定教务'),
+                        ),
                     ],
                   ),
                 ),

@@ -624,7 +624,39 @@ Future<bool> _handlePrivateMessageNotification(
   // 正在查看同一会话 → 不弹通知，只刷新消息
   final context = appNavigatorKey.currentContext;
   final provider = context?.read<MessageProvider>();
-  if (provider?.currentConversationId == target.conversationId) {
+
+  final lifecycleState = WidgetsBinding.instance.lifecycleState;
+  final isAppForeground = lifecycleState == AppLifecycleState.resumed;
+  final currentConversationId = provider?.currentConversationId;
+
+  // 后台收到通知时，完全交给 Android/极光处理。
+  // 不清通知、不刷新当前会话、不标记已读。
+  if (!isAppForeground) {
+    debugPrint(
+      '私信后台到达：保留系统通知 '
+      'lifecycle=$lifecycleState '
+      'current=$currentConversationId '
+      'target=${target.conversationId}',
+    );
+    return true;
+  }
+
+  final isViewingTargetConversation =
+      currentConversationId == target.conversationId;
+
+  DiagnosticLogService.instance.record(
+    level: 'info',
+    source: 'JPush',
+    type: '私信处理',
+    summary: '判断是否拦截系统通知',
+    detail: 'lifecycle=${lifecycleState?.name ?? "unknown"}\n'
+        'currentConversation=$currentConversationId\n'
+        'targetConversation=${target.conversationId}\n'
+        'decision=${isViewingTargetConversation ? "clear_and_read" : "keep_notification_background"}',
+  );
+
+  if (isViewingTargetConversation) {
+    // 只有应用真正处于前台，并且用户正在看这个会话时才清理。
     await _clearPrivateMessageNotifications(target.conversationId);
     await provider?.refreshMessages();
     await provider?.markRead(target.conversationId);

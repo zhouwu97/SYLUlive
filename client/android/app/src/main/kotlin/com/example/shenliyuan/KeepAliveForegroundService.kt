@@ -415,13 +415,13 @@ class KeepAliveForegroundService : Service() {
                             PrivateMessageJPushReceiver.deleteSequence(gen)
                         JPushInterface.deleteAlias(appContext, sequence)
                         Log.i(TAG,
-                            "reconcile: retry pending delete ***${alias.takeLast(4)} gen=$gen")
+                            "reconcile: retry pending delete gen=$gen")
                         DiagnosticLogStore.info(
                             appContext,
                             source = "推送",
                             type = "Alias 删除重试",
-                            summary = "重新协调删除待处理 Alias",
-                            detail = "alias=***${alias.takeLast(4)} gen=$gen",
+                            summary = "重新协调删除待处理 Alias（deleteAlias 不依赖别名值）",
+                            detail = "gen=$gen",
                         )
                     } catch (e: Exception) {
                         Log.e(TAG, "reconcile delete failed", e)

@@ -81,7 +81,9 @@ class PrivateMessageJPushReceiver : JPushEventReceiver() {
             )
 
             retryHandler.postDelayed({
-                // 重试前校验：状态是否仍为 pending_delete 且 generation 未变
+                // 释放“已调度”标记，允许后续异步失败继续安排重试
+                scheduledDeleteGenerations.remove(generation)
+
                 val currentState = KeepAliveForegroundService.getAliasState(context)
                 val currentGen = KeepAliveForegroundService.getAliasGeneration(context)
 
@@ -94,7 +96,6 @@ class PrivateMessageJPushReceiver : JPushEventReceiver() {
                         detail = "state=$currentState gen=$currentGen expectedGen=$generation",
                     )
                     deleteRetries.remove(generation)
-                    scheduledDeleteGenerations.remove(generation)
                     return@postDelayed
                 }
 
@@ -156,6 +157,9 @@ class PrivateMessageJPushReceiver : JPushEventReceiver() {
             )
 
             retryHandler.postDelayed({
+                // 释放“已调度”标记，允许后续异步失败继续安排重试
+                scheduledRestoreGenerations.remove(generation)
+
                 val currentState =
                     KeepAliveForegroundService.getAliasState(context)
                 val currentGen =
@@ -174,7 +178,6 @@ class PrivateMessageJPushReceiver : JPushEventReceiver() {
                         detail = "state=$currentState gen=$currentGen hasToken=$hasToken",
                     )
                     restoreRetries.remove(generation)
-                    scheduledRestoreGenerations.remove(generation)
                     return@postDelayed
                 }
 
@@ -197,7 +200,6 @@ class PrivateMessageJPushReceiver : JPushEventReceiver() {
                         summary = "setAlias 调用异常，继续重试",
                         detail = "gen=$generation error=${e.message}",
                     )
-                    scheduledRestoreGenerations.remove(generation)
                     scheduleRestoreRetry(context, generation)
                 }
             }, delay)
@@ -313,9 +315,11 @@ class PrivateMessageJPushReceiver : JPushEventReceiver() {
                     // 远端删除成功：generation 匹配且 state=pending_delete 才清除本地
                     val cleared = KeepAliveForegroundService
                         .clearStoredAliasIfPendingDelete(context, gen)
+                    // 无论是否真正清除，旧 generation 的重试记录都清理
+                    deleteRetries.remove(gen)
+                    scheduledDeleteGenerations.remove(gen)
+
                     if (cleared) {
-                        deleteRetries.remove(gen)
-                        scheduledDeleteGenerations.remove(gen)
                         DiagnosticLogStore.info(
                             context,
                             source = "推送",
@@ -356,13 +360,21 @@ class PrivateMessageJPushReceiver : JPushEventReceiver() {
                     if (currentState != "active" || currentGen != requestGen) {
                         restoreRetries.remove(requestGen)
                         scheduledRestoreGenerations.remove(requestGen)
+                        val hasToken =
+                            KeepAliveForegroundService.hasAuthToken(context)
                         DiagnosticLogStore.warning(
                             context,
                             source = "推送",
                             type = "Alias 恢复过期",
-                            summary = "setAlias 回调已过期，重新协调当前状态",
-                            detail = "reqGen=$requestGen curState=$currentState curGen=$currentGen",
+                            summary = "setAlias 回调已过期" +
+                                if (!hasToken) "（无登录状态，极光可能已绑定旧账号）" else "",
+                            detail = "reqGen=$requestGen curState=$currentState curGen=$currentGen hasToken=$hasToken",
                         )
+                        // 无登录状态 + 过期回调 = 旧账号可能已被远端重新绑定 → 触发清理
+                        if (!hasToken) {
+                            KeepAliveForegroundService
+                                .ensureAliasPendingDelete(context)
+                        }
                         KeepAliveForegroundService.reconcileAliasState(context)
                         return
                     }

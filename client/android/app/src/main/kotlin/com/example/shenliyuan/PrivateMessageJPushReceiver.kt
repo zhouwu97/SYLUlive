@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Handler
 import android.os.Looper
+import cn.jpush.android.api.JPushInterface
 import cn.jpush.android.api.JPushMessage
 import cn.jpush.android.api.NotificationMessage
 import com.jiguang.jpush.JPushEventReceiver

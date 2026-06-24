@@ -38,6 +38,7 @@ class ScoreInput {
   final ScoreRangeSource? rangeSource;
   final bool rangeIsAmbiguous;
   final bool isOptionalComment;
+  final String? skipReason;
 
   const ScoreInput({
     this.id,
@@ -54,6 +55,7 @@ class ScoreInput {
     this.rangeSource,
     this.rangeIsAmbiguous = false,
     this.isOptionalComment = false,
+    this.skipReason,
   });
 
   factory ScoreInput.fromJson(Map<String, dynamic> json) {
@@ -81,6 +83,7 @@ class ScoreInput {
       rangeSource: src,
       rangeIsAmbiguous: json['rangeIsAmbiguous'] == true,
       isOptionalComment: json['isOptionalComment'] == true,
+      skipReason: json['skipReason'] as String?,
     );
   }
 

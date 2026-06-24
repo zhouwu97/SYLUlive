@@ -376,7 +376,10 @@ class _AnnouncementCardState extends State<_AnnouncementCard> {
           children: [
             Row(
               children: [
+                // Priority badge
+                _buildPriorityBadge(),
                 if (widget.announcement.isPinned) ...[
+                  const SizedBox(width: 6),
                   Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 8,
@@ -398,8 +401,17 @@ class _AnnouncementCardState extends State<_AnnouncementCard> {
                       ],
                     ),
                   ),
-                  const SizedBox(width: 8),
                 ],
+                // Status indicators
+                if (_isExpired()) ...[
+                  const SizedBox(width: 6),
+                  _buildStatusBadge('已过期', Colors.grey),
+                ],
+                if (_isScheduled()) ...[
+                  const SizedBox(width: 6),
+                  _buildStatusBadge('即将发布', Colors.blue),
+                ],
+                const SizedBox(width: 8),
                 Expanded(
                   child: Text(
                     widget.announcement.title,
@@ -437,12 +449,76 @@ class _AnnouncementCardState extends State<_AnnouncementCard> {
                       color: widget.isDark ? Colors.white30 : Colors.grey[500],
                     ),
                   ),
+                  if (widget.announcement.creator != null) ...[
+                    const SizedBox(width: 12),
+                    Icon(
+                      Icons.person_outline,
+                      size: 14,
+                      color: widget.isDark ? Colors.white30 : Colors.grey[500],
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      widget.announcement.creator!['nickname']?.toString() ??
+                          '',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: widget.isDark ? Colors.white30 : Colors.grey[500],
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ],
           ],
         ),
       ),
+    );
+  }
+
+  bool _isExpired() {
+    final e = widget.announcement.expiresAt;
+    return e != null && e.isBefore(DateTime.now());
+  }
+
+  bool _isScheduled() {
+    final p = widget.announcement.publishAt;
+    return p != null && p.isAfter(DateTime.now());
+  }
+
+  Widget _buildPriorityBadge() {
+    final p = widget.announcement.priority;
+    if (p == 'normal') return const SizedBox.shrink();
+    final isUrgent = p == 'urgent';
+    final color = isUrgent ? Colors.red : Colors.orange;
+    final label = isUrgent ? '紧急' : '重要';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(isUrgent ? Icons.warning_rounded : Icons.info_rounded,
+              color: color, size: 12),
+          const SizedBox(width: 4),
+          Text(label,
+              style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w600)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatusBadge(String label, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(label,
+          style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w600)),
     );
   }
 

@@ -373,12 +373,12 @@ class EvaluationAutomationController extends ChangeNotifier {
       }
 
       // Wait a moment for page load
-      await Future.delayed(const Duration(milliseconds: 1000));
+      _updateProgress(state: EvaluationAutomationState.switchingNext, message: '正在加载下一页...');
+      await Future.delayed(const Duration(milliseconds: 2000));
       pagesSearched++;
     }
 
     return null;
-  }
 
   Future<bool> _waitForForm(int token, String expectedFingerprint) async {
     const pollInterval = Duration(milliseconds: 250);

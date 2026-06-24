@@ -4,6 +4,7 @@ import '../providers/auth_provider.dart';
 import '../providers/edu_provider.dart';
 import '../providers/course_schedule_provider.dart';
 import '../utils/app_navigator.dart' show appNavigatorKey;
+import '../features/campus_data/evaluation/evaluation_screen.dart';
 
 class EduScreen extends StatefulWidget {
   const EduScreen({super.key});
@@ -138,6 +139,19 @@ class _EduScreenState extends State<EduScreen> {
                               icon: const Icon(Icons.grade),
                               label: const Text('成绩'),
                             ),
+                          const SizedBox(width: 8),
+                          OutlinedButton.icon(
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => const EvaluationScreen(),
+                                ),
+                              );
+                            },
+                            icon: const Icon(Icons.rate_review_outlined),
+                            label: const Text('教学评价'),
+                          ),
                         ],
                       ),
                     ],
@@ -147,7 +161,7 @@ class _EduScreenState extends State<EduScreen> {
               const ListTile(
                 leading: Icon(Icons.info_outline),
                 title: Text('功能说明'),
-                subtitle: Text('绑定教务账号后，可以查看课表和成绩'),
+                subtitle: Text('绑定教务账号后，可以查看课表、成绩和教学评价'),
               ),
             ],
           );

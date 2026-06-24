@@ -172,6 +172,38 @@ class KeepAliveForegroundService : Service() {
                         summary = "极光推送连接已恢复",
                         detail = "registrationId=$safeRid",
                     )
+
+                    // 重新绑定 Alias，确保私信推送能到达
+                    val alias = prefs(applicationContext)
+                        .getString(KEY_JPUSH_ALIAS, null)
+                    if (!alias.isNullOrBlank()) {
+                        try {
+                            JPushInterface.setAlias(
+                                applicationContext,
+                                0,
+                                alias
+                            )
+                            Log.i(TAG, "JPush alias restored: ***${alias.takeLast(4)}")
+                            DiagnosticLogStore.info(
+                                applicationContext,
+                                source = "推送",
+                                type = "Alias 恢复",
+                                summary = "保活服务恢复时重新绑定 Alias",
+                                detail = "alias=***${alias.takeLast(4)} rid=$safeRid",
+                            )
+                        } catch (e: Exception) {
+                            Log.e(TAG, "restore alias failed", e)
+                            DiagnosticLogStore.warning(
+                                applicationContext,
+                                source = "推送",
+                                type = "Alias 恢复异常",
+                                summary = "保活服务恢复 Alias 失败",
+                                detail = Log.getStackTraceString(e),
+                            )
+                        }
+                    } else {
+                        Log.d(TAG, "no alias stored, skip alias restore")
+                    }
                 }
             }, 3000L)
         } catch (e: Exception) {
@@ -326,6 +358,7 @@ class KeepAliveForegroundService : Service() {
         private const val KEY_ENABLED = "flutter.keep_alive_enabled"
         private const val KEY_HIDE_RECENTS = "flutter.hide_recents_enabled"
         private const val KEY_AUTH_TOKEN = "flutter.keep_alive_auth_token"
+        private const val KEY_JPUSH_ALIAS = "flutter.jpush_alias"
         private const val ACTION_START =
             "com.example.shenliyuan.action.START_KEEP_ALIVE"
         private const val ACTION_STOP =
@@ -381,6 +414,17 @@ class KeepAliveForegroundService : Service() {
                 editor.putString(KEY_AUTH_TOKEN, token)
             }
             editor.apply()
+        }
+
+        fun syncAlias(context: Context, alias: String?) {
+            val editor = prefs(context.applicationContext).edit()
+            if (alias.isNullOrBlank()) {
+                editor.remove(KEY_JPUSH_ALIAS)
+            } else {
+                editor.putString(KEY_JPUSH_ALIAS, alias)
+            }
+            editor.apply()
+            Log.d(TAG, "JPush alias synced: ${alias?.takeLast(4) ?: "null"}")
         }
 
         fun status(context: Context): Map<String, Any> {

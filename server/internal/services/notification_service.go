@@ -1,6 +1,7 @@
 package services
 
 import (
+	"fmt"
 	"log"
 	"strconv"
 
@@ -21,8 +22,9 @@ func NewNotificationService(jpushAppKey, jpushMasterSecret string) *Notification
 
 func (s *NotificationService) Notify(userID uint, title, content string, extras map[string]interface{}) error {
 	if s == nil || s.jpushAppKey == "" || s.jpushMasterSecret == "" {
-		log.Printf("[JPUSH_WARN] JPush is not configured; skip notification user=%d type=%v", userID, extras["type"])
-		return nil
+		err := fmt.Errorf("JPush is not configured: appKey=%q masterSecret=%q", s.jpushAppKey, s.jpushMasterSecret)
+		log.Printf("[JPUSH_ERROR] %v", err)
+		return err
 	}
 	alias := strconv.FormatUint(uint64(userID), 10)
 	return utils.NewJPushClient(s.jpushAppKey, s.jpushMasterSecret).

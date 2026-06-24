@@ -302,6 +302,11 @@ class MainActivity : FlutterActivity() {
                     )
                     result.success(true)
                 }
+                "syncAlias" -> {
+                    val userId = call.argument<String>("userId")
+                    KeepAliveForegroundService.syncAlias(this, userId)
+                    result.success(true)
+                }
                 else -> result.notImplemented()
             }
         }

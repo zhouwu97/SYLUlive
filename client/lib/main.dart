@@ -209,6 +209,13 @@ const MethodChannel _privateMessageNotificationChannel = MethodChannel(
   'shenliyuan/private_message_notifications',
 );
 
+// ── Alias 绑定状态追踪 ──
+String? _lastBoundUserId;
+String? _lastBoundRegistrationId;
+int _aliasRetryCount = 0;
+const int _maxAliasRetries = 3;
+const List<int> _aliasRetryDelays = [0, 2, 5]; // 秒，指数退避
+
 /// 冷启动时通知数据临时存放（navigator 未就绪前）
 final PendingPrivateMessageOpen _pendingPrivateMessageOpen =
     PendingPrivateMessageOpen();
@@ -226,10 +233,20 @@ void _ensureJPushHandlersRegistered() {
 
   jpush.addEventHandler(
     onReceiveNotification: (Map<String, dynamic> message) async {
-      await _handlePrivateMessageNotification(message, opened: false);
+      // 极光 SDK 已展示通知，不弹本地兜底，避免双通知
+      await _handlePrivateMessageNotification(
+        message,
+        opened: false,
+        showLocalFallback: false,
+      );
     },
     onNotifyMessageUnShow: (Map<String, dynamic> message) async {
-      await _handlePrivateMessageNotification(message, opened: false);
+      // 极光 SDK 未展示通知，需要 Flutter 本地兜底
+      await _handlePrivateMessageNotification(
+        message,
+        opened: false,
+        showLocalFallback: true,
+      );
     },
     onOpenNotification: (Map<String, dynamic> message) async {
       debugPrint('点击通知原始数据: $message');
@@ -378,13 +395,89 @@ Future<void> setupJPush(AuthProvider authProvider) async {
   if (rid.isNotEmpty) {
     await authProvider.updateDeviceToken(rid);
   }
+
   final userId = authProvider.user?.id;
-  if (userId != null) {
+  if (userId == null) return;
+
+  final userIdStr = userId.toString();
+
+  // RegistrationID 未变且 Alias 已成功绑定 → 跳过
+  if (rid.isNotEmpty &&
+      _lastBoundUserId == userIdStr &&
+      _lastBoundRegistrationId == rid) {
+    debugPrint('Alias 已绑定，跳过: userId=$userIdStr rid=***${rid.substring(rid.length - 6)}');
+    return;
+  }
+
+  // RegistrationID 变化 → 需要重新绑定
+  if (rid.isNotEmpty &&
+      _lastBoundRegistrationId != null &&
+      _lastBoundRegistrationId != rid) {
+    debugPrint(
+      'RegistrationID 已变化，重新绑定 Alias: '
+      'old=***${_lastBoundRegistrationId!.substring(_lastBoundRegistrationId!.length - 6)} '
+      'new=***${rid.substring(rid.length - 6)}',
+    );
+  }
+
+  _aliasRetryCount = 0;
+  await _tryBindAlias(userIdStr);
+}
+
+/// 带指数退避的 Alias 绑定
+Future<void> _tryBindAlias(String userId) async {
+  try {
+    final rid = await jpush.getRegistrationID();
+    if (rid.isEmpty) {
+      debugPrint('RegistrationID 为空，无法绑定 Alias');
+      DiagnosticLogService.instance.record(
+        level: 'warning',
+        source: '推送',
+        type: 'Alias 绑定失败',
+        summary: 'RegistrationID 为空',
+        detail: 'userId=$userId',
+      );
+      return;
+    }
+
+    await jpush.setAlias(userId);
+    _lastBoundUserId = userId;
+    _lastBoundRegistrationId = rid;
+    _aliasRetryCount = 0;
+    debugPrint('✅ 成功设置 JPush Alias: $userId (rid=***${rid.substring(rid.length - 6)})');
+    DiagnosticLogService.instance.record(
+      level: 'info',
+      source: '推送',
+      type: 'Alias 绑定成功',
+      summary: 'Alias 绑定成功',
+      detail: 'userId=$userId rid=***${rid.substring(rid.length - 6)}',
+    );
+
+    // 同步 alias 到原生层，供保活服务恢复时使用
     try {
-      await jpush.setAlias(userId.toString());
-      debugPrint('✅ 成功设置 JPush Alias: $userId');
-    } catch (e) {
-      debugPrint('设置 JPush Alias 失败: $e');
+      await _privateMessageNotificationChannel.invokeMethod(
+        'syncAlias',
+        {'userId': userId},
+      );
+    } catch (_) {}
+  } catch (e) {
+    _aliasRetryCount++;
+    debugPrint('设置 JPush Alias 失败 (第$_aliasRetryCount次): $e');
+
+    if (_aliasRetryCount <= _maxAliasRetries) {
+      final delay = _aliasRetryDelays[_aliasRetryCount - 1];
+      debugPrint('将在 ${delay}s 后重试 Alias 绑定');
+      await Future.delayed(Duration(seconds: delay));
+      await _tryBindAlias(userId);
+    } else {
+      debugPrint('Alias 绑定重试 $_maxAliasRetries 次后仍失败，放弃');
+      DiagnosticLogService.instance.record(
+        level: 'error',
+        source: '推送',
+        type: 'Alias 绑定失败',
+        summary: 'Alias 重试 $_maxAliasRetries 次后仍失败',
+        detail: 'userId=$userId error=$e',
+      );
     }
   }
 }
@@ -458,9 +551,13 @@ Future<void> _requestNotificationPermissionIfNeeded() async {
   }
 }
 
+/// 已通过本地通知展示过的极光 msg_id，用于去重
+final Set<String> _shownLocalMessageIds = {};
+
 Future<bool> _handlePrivateMessageNotification(
   Map<String, dynamic> message, {
   required bool opened,
+  bool showLocalFallback = false,
 }) async {
   final extras = extractJPushExtras(message);
   if (extras['type']?.toString() != 'private_message') {
@@ -479,17 +576,78 @@ Future<bool> _handlePrivateMessageNotification(
     return true;
   }
 
-  // 前台不做本地弹窗，全部交给极光 SDK 显示，避免双通知
+  // 正在查看同一会话 → 不弹通知，只刷新消息
   final context = appNavigatorKey.currentContext;
   final provider = context?.read<MessageProvider>();
   if (provider?.currentConversationId == target.conversationId) {
     await _clearPrivateMessageNotifications(target.conversationId);
     await provider?.refreshMessages();
     await provider?.markRead(target.conversationId);
-  } else {
-    await provider?.loadConversations(silent: true);
+    return true;
   }
+
+  // 极光未显示通知 → Flutter 本地兜底弹窗
+  if (showLocalFallback) {
+    await _showPrivateMessageLocalNotification(target, message);
+  }
+
+  // 刷新会话列表
+  await provider?.loadConversations(silent: true);
   return true;
+}
+
+/// 当极光 SDK 未展示通知时（onNotifyMessageUnShow），由 Flutter 弹本地通知兜底
+Future<void> _showPrivateMessageLocalNotification(
+  PrivateMessageTarget target,
+  Map<String, dynamic> message,
+) async {
+  if (!_privateMessageNotificationsReady) return;
+
+  final msgId = extractJPushExtras(message)['msg_id']?.toString() ?? '';
+  if (msgId.isNotEmpty && _shownLocalMessageIds.contains(msgId)) {
+    debugPrint('跳过重复本地私信通知: msg_id=$msgId');
+    return;
+  }
+  if (msgId.isNotEmpty) {
+    _shownLocalMessageIds.add(msgId);
+    // 防止 Set 无限增长
+    if (_shownLocalMessageIds.length > 200) {
+      _shownLocalMessageIds.clear();
+    }
+  }
+
+  final title = target.displayName;
+  final body = notificationContent(message);
+  if (body.isEmpty) return;
+
+  final payload = jsonEncode({
+    'conversation_id': target.conversationId,
+    'sender_id': target.senderId,
+    'sender_name': target.displayName,
+    'sender_avatar': target.senderAvatar,
+    'message_id': target.messageId,
+  });
+
+  try {
+    await _privateMessageNotifications.show(
+      target.conversationId, // 同会话的通知会互相替换
+      title,
+      body,
+      const NotificationDetails(
+        android: AndroidNotificationDetails(
+          'private_messages',
+          '私信通知',
+          channelDescription: '收到新私信时悬浮提醒',
+          importance: Importance.high,
+          priority: Priority.high,
+        ),
+      ),
+      payload: payload,
+    );
+    debugPrint('✅ 本地私信通知已弹出: ${target.displayName}');
+  } catch (e) {
+    debugPrint('本地私信通知弹出失败: $e');
+  }
 }
 
 Future<void> _clearPrivateMessageNotifications(int conversationId) async {

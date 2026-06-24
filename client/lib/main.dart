@@ -409,12 +409,27 @@ Future<void> setupJPush(AuthProvider authProvider) async {
     _aliasRetryCount = 0;
   }
 
-  // RegistrationID 未变且 Alias 已成功绑定 → 跳过
+  // 三端校验后才跳过：内存状态 + 原生存储 + RegistrationID
   if (rid.isNotEmpty &&
       _lastBoundUserId == userIdStr &&
       _lastBoundRegistrationId == rid) {
-    debugPrint('Alias 已绑定，跳过: userId=$userIdStr rid=***${rid.substring(rid.length - 6)}');
-    return;
+    // 额外确认原生 SharedPreferences 中 Alias 未被清除（覆盖退出后同账号重登场景）
+    String? storedAlias;
+    try {
+      final native = await _privateMessageNotificationChannel
+          .invokeMapMethod<String, dynamic>('getPushDiagnostics');
+      storedAlias = native?['storedAlias']?.toString();
+    } catch (_) {
+      // 原生查询失败 → 保守处理，不跳过
+    }
+    if (storedAlias == userIdStr) {
+      debugPrint(
+        'Alias 已绑定（三端一致），跳过: userId=$userIdStr '
+        'rid=***${rid.substring(rid.length - 6)}',
+      );
+      return;
+    }
+    debugPrint('原生 Alias 缺失（stored=$storedAlias），重新绑定');
   }
 
   // RegistrationID 变化 → 需要重新绑定

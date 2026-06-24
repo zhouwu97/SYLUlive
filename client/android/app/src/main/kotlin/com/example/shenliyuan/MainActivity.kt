@@ -310,11 +310,14 @@ class MainActivity : FlutterActivity() {
                 }
                 "clearAlias" -> {
                     try {
-                        JPushInterface.deleteAlias(this, 0)
+                        JPushInterface.deleteAlias(
+                            this,
+                            PrivateMessageJPushReceiver.SEQ_ALIAS_DELETE,
+                        )
                     } catch (_: Exception) {
-                        // JPush may not be initialized; ignore
+                        // JPush may not be initialized; fallback to direct clear
+                        KeepAliveForegroundService.clearStoredAlias(this)
                     }
-                    KeepAliveForegroundService.clearStoredAlias(this)
                     result.success(true)
                 }
                 "getPushDiagnostics" -> {

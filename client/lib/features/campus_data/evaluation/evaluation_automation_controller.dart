@@ -346,7 +346,7 @@ class EvaluationAutomationController extends ChangeNotifier {
 
       for (final item in items) {
         final isTarget = _submitMode 
-            ? (item.status == EvaluationItemStatus.pending || item.status == EvaluationItemStatus.saved)
+            ? item.status == EvaluationItemStatus.saved
             : item.status == EvaluationItemStatus.pending;
 
         if (isTarget && !_processedFingerprints.contains(item.fingerprint)) {

@@ -1,112 +1,112 @@
-/// Pure-Dart page-type classifier.
-///
-/// Uses the probe result JSON to determine which type of教务 page the WebView
-/// is currently showing.  No DOM access — only structured probe data.
+/// Pure-Dart page-type classifier using probe result + boolean text flags.
 library;
 
 import 'evaluation_models.dart';
-import 'evaluation_constants.dart';
 
-/// Classifies a教务 evaluation page based on probe data.
+/// Classifies a教务 evaluation page based on structured probe data.
 class EvaluationPageDetector {
   const EvaluationPageDetector();
 
-  /// Determine the page type from a probe result.
-  ///
-  /// Order matters: more specific checks run first.
   EvaluationPageType classify(EvaluationProbeResult probe) {
     if (probe.error != null && probe.error!.isNotEmpty) {
       return EvaluationPageType.unknown;
     }
 
-    final body = probe.pageTextSample.toLowerCase();
-    final title = probe.title.toLowerCase();
+    // Use boolean flags from JS (full-body scan) — these are more reliable
+    // than the truncated pageTextSample.
 
-    // 1. Submitted / success
-    if (_matchesAny(body, EvaluationPageTextPatterns.submitted)) {
-      return EvaluationPageType.submitted;
-    }
-
-    // 2. Session expired
-    if (_matchesAny(body, EvaluationPageTextPatterns.sessionExpired)) {
+    // 1. Session expired
+    if (probe.hasSessionExpiredText) {
       return EvaluationPageType.sessionExpired;
     }
 
-    // 3. Access denied
-    if (_matchesAny(body, EvaluationPageTextPatterns.accessDenied) ||
-        probe.url.contains('403') ||
-        probe.url.contains('denied')) {
+    // 2. Access denied or maintenance
+    if (probe.hasAccessDeniedText || probe.hasMaintenanceText) {
       return EvaluationPageType.accessDenied;
     }
 
-    // 4. Maintenance
-    if (_matchesAny(body, EvaluationPageTextPatterns.maintenance)) {
-      return EvaluationPageType.accessDenied;
+    // 3. Submitted
+    if (probe.hasSubmittedText) {
+      return EvaluationPageType.submitted;
     }
 
-    // 5. Login page
+    // 4. Login page
     if (probe.hasLoginForm) {
       return EvaluationPageType.login;
     }
-    // Also check for login-related text that may not have a password field
-    if (body.contains('统一身份认证') ||
-        body.contains('cas') && body.contains('登录') ||
-        title.contains('登录') && title.contains('认证')) {
+    // CAS login text detection
+    final title = probe.title.toLowerCase();
+    if (title.contains('登录') && title.contains('认证')) {
       return EvaluationPageType.login;
     }
 
-    // 6. Evaluation form
-    if (probe.hasEvaluationForm) {
+    // 5. Evaluation form — must satisfy ALL conditions:
+    //    a) URL path contains /xspjgl/
+    //    b) Multiple radio groups with ≥2 options each
+    //    c) Not a course list page
+    if (_isEvaluationFormPage(probe)) {
       return EvaluationPageType.evaluationForm;
     }
 
-    // 7. Course list
+    // 6. Course list
     if (_isCourseList(probe)) {
       return EvaluationPageType.courseList;
     }
 
-    // 8. Evaluation form (weaker signal — many radios)
-    if (probe.radioGroups.length >= 3) {
-      return EvaluationPageType.evaluationForm;
+    // 7. Already evaluated — check both boolean flag and text sample
+    if (probe.hasAlreadyEvaluatedText) {
+      return EvaluationPageType.submitted;
+    }
+    final body = probe.pageTextSample.toLowerCase();
+    if (body.contains('已评价') || body.contains('已完成')) {
+      return EvaluationPageType.submitted;
     }
 
-    // 9. Possible submitted page (thank-you text)
-    if (body.contains('评教') && (body.contains('完成') || body.contains('结束'))) {
-      return EvaluationPageType.submitted;
+    // 8. Fallback: login-related text
+    if (body.contains('统一身份认证')) {
+      return EvaluationPageType.login;
     }
 
     return EvaluationPageType.unknown;
   }
 
-  bool _matchesAny(String text, List<String> patterns) {
-    return patterns.any((p) => text.contains(p.toLowerCase()));
+  /// Strict evaluation form detection.
+  /// Requires: /xspjgl/ in URL path AND multiple radio groups (≥2 options each).
+  bool _isEvaluationFormPage(EvaluationProbeResult probe) {
+    // Must have /xspjgl/ in URL path
+    if (!probe.url.contains('/xspjgl/')) return false;
+
+    // Must have multiple radio groups where each group has ≥ 2 options
+    final groups = probe.radioGroups;
+    if (groups.length < 3) return false;
+    final multiOptionGroups = groups.where((g) => g.options.length >= 2).length;
+    if (multiOptionGroups < 3) return false;
+
+    // Must not be a course list page
+    if (_isCourseList(probe)) return false;
+
+    // Must have evaluation form OR enough context
+    if (probe.hasEvaluationForm) return true;
+
+    // At least have evaluation-related buttons or forms
+    return groups.length >= 5;
   }
 
   bool _isCourseList(EvaluationProbeResult probe) {
-    final body = probe.pageTextSample.toLowerCase();
-
-    // Multiple course rows
+    // Multiple course rows with few radios → list page
     if (probe.possibleCourseRows.length >= 2 && probe.radioCount < 5) {
       return true;
     }
 
-    // Course list keywords without evaluation form
-    final listKeywords = ['待评价', '未评价', '评价列表', '课程列表', '本学期'];
-    final hits = listKeywords.where((k) => body.contains(k)).length;
-
-    if (hits >= 2 && !probe.hasEvaluationForm) {
-      return true;
-    }
-
-    // URL-based hint
+    // URL contains index/list pattern
     if (probe.url.contains('xspjIndex') || probe.url.contains('xspj_cx')) {
-      return true;
+      // Unless we have many radio groups (actual evaluation form)
+      if (probe.radioGroups.length < 3) return true;
     }
 
     return false;
   }
 
-  /// Returns a human-readable label for the page type.
   static String label(EvaluationPageType type) {
     switch (type) {
       case EvaluationPageType.loading:
@@ -128,7 +128,6 @@ class EvaluationPageDetector {
     }
   }
 
-  /// Actionable hint for the user based on page type.
   static String? hint(EvaluationPageType type) {
     switch (type) {
       case EvaluationPageType.login:

@@ -1,33 +1,15 @@
 /// Data models for the teaching evaluation assistant.
-///
-/// These models represent the parsed results from the probe and fill scripts
-/// injected into the教务 evaluation WebView.
 library;
 
 /// Page type classification from probe results.
 enum EvaluationPageType {
-  /// Still loading / no data yet
   loading,
-
-  /// Login page detected
   login,
-
-  /// Course list — multiple courses to evaluate
   courseList,
-
-  /// Single course evaluation form
   evaluationForm,
-
-  /// Submission success / thank-you page
   submitted,
-
-  /// Session expired, needs re-login
   sessionExpired,
-
-  /// Access denied / no permission
   accessDenied,
-
-  /// Cannot determine page type
   unknown,
 }
 
@@ -68,18 +50,6 @@ class RadioOption {
       disabled: json['disabled'] == true,
     );
   }
-
-  Map<String, dynamic> toJson() => {
-        'name': name,
-        'id': id,
-        'value': value,
-        'className': className,
-        'data_dyf': dataDyf,
-        'data_score': dataScore,
-        'data_fz': dataFz,
-        'checked': checked,
-        'disabled': disabled,
-      };
 }
 
 /// A group of radio inputs sharing the same name.
@@ -115,34 +85,21 @@ class RadioGroup {
     return best;
   }
 
-  /// Whether this group is already fully completed (has a checked option).
   bool get isAlreadyCompleted => options.any((o) => o.checked && !o.disabled);
 
-  /// Whether any option has a recognizable score attribute.
+  /// Whether any option has a recognizable score attribute (data-dyf/data-score/data-fz only).
   bool get hasScoreAttribute => options.any(
-        (o) =>
-            o.dataDyf != null ||
-            o.dataScore != null ||
-            o.dataFz != null ||
-            _valueIsNumericScore(o.value) != null,
-      );
+    (o) => o.dataDyf != null || o.dataScore != null || o.dataFz != null,
+  );
 
-  /// Extract numeric score from a RadioOption using the priority chain.
+  /// Extract numeric score using ONLY explicit score attributes.
+  /// Never uses radio.value as a score.
   static double? _extractScore(RadioOption o) {
     final candidates = [o.dataDyf, o.dataScore, o.dataFz];
     for (final c in candidates) {
       final v = double.tryParse(c ?? '');
-      if (v != null) return v;
+      if (v != null && v >= 0) return v;
     }
-    // Fallback: value as numeric score (only if clearly numeric)
-    return _valueIsNumericScore(o.value);
-  }
-
-  static double? _valueIsNumericScore(String? value) {
-    if (value == null || value.isEmpty) return null;
-    // Only accept values that are purely numeric and look like scores (1-100)
-    final v = double.tryParse(value);
-    if (v != null && v >= 0 && v <= 100) return v;
     return null;
   }
 
@@ -172,6 +129,14 @@ class EvaluationProbeResult {
   final List<Map<String, dynamic>> possibleCourseRows;
   final bool hasLoginForm;
   final bool hasEvaluationForm;
+
+  // Boolean text flags — set by JS after scanning full body text.
+  final bool hasSubmittedText;
+  final bool hasSessionExpiredText;
+  final bool hasAccessDeniedText;
+  final bool hasMaintenanceText;
+  final bool hasAlreadyEvaluatedText;
+
   final String? error;
 
   const EvaluationProbeResult({
@@ -186,6 +151,11 @@ class EvaluationProbeResult {
     required this.possibleCourseRows,
     required this.hasLoginForm,
     required this.hasEvaluationForm,
+    this.hasSubmittedText = false,
+    this.hasSessionExpiredText = false,
+    this.hasAccessDeniedText = false,
+    this.hasMaintenanceText = false,
+    this.hasAlreadyEvaluatedText = false,
     this.error,
   });
 
@@ -196,7 +166,8 @@ class EvaluationProbeResult {
       title: (json['title'] as String?) ?? '',
       pageTextSample: (json['pageTextSample'] as String?) ?? '',
       radioCount: (json['radioCount'] as int?) ?? 0,
-      radioOptions: radioRaw
+      radioOptions:
+          radioRaw
               ?.map((e) => RadioOption.fromJson(e as Map<String, dynamic>))
               .toList() ??
           [],
@@ -206,6 +177,11 @@ class EvaluationProbeResult {
       possibleCourseRows: _listOfMaps(json['possibleCourseRows']),
       hasLoginForm: json['hasLoginForm'] == true,
       hasEvaluationForm: json['hasEvaluationForm'] == true,
+      hasSubmittedText: json['hasSubmittedText'] == true,
+      hasSessionExpiredText: json['hasSessionExpiredText'] == true,
+      hasAccessDeniedText: json['hasAccessDeniedText'] == true,
+      hasMaintenanceText: json['hasMaintenanceText'] == true,
+      hasAlreadyEvaluatedText: json['hasAlreadyEvaluatedText'] == true,
       error: json['error'] as String?,
     );
   }
@@ -215,16 +191,15 @@ class EvaluationProbeResult {
     return src.map((e) => Map<String, dynamic>.from(e as Map)).toList();
   }
 
-  /// Build radio groups from collected options.
   List<RadioGroup> get radioGroups => RadioGroup.fromOptionsList(radioOptions);
 
-  /// Sanitized debug summary — no PII, no full page content.
-  String get debugSummary => 'EvaluationProbeResult('
+  String get debugSummary =>
+      'EvaluationProbeResult('
       'url=$url, title=$title, radioCount=$radioCount, '
       'textareaCount=$textareaCount, groups=${radioGroups.length}, '
       'hasLogin=$hasLoginForm, hasEval=$hasEvaluationForm, '
-      'forms=${forms.length}, buttons=${buttons.length}, '
-      'courseRows=${possibleCourseRows.length}'
+      'submitted=$hasSubmittedText, expired=$hasSessionExpiredText, '
+      'denied=$hasAccessDeniedText, maint=$hasMaintenanceText'
       '${error != null ? ", error=$error" : ""})';
 }
 

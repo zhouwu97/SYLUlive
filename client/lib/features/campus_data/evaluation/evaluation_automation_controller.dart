@@ -291,8 +291,12 @@ class EvaluationAutomationController extends ChangeNotifier {
     }
 
     if (kDebugMode) {
-      debugPrint('[EvaluationFlow] save success');
+      debugPrint('[EvaluationFlow] save/submit success');
     }
+
+    // Wait for the grid to reload and modals to disappear before finding the next item.
+    _updateProgress(state: EvaluationAutomationState.switchingNext, message: '等待页面刷新...');
+    await Future.delayed(const Duration(milliseconds: 2000));
   }
 
   Future<bool> _pollForSaveSuccess(int token, InAppWebViewController ctrl, EvaluationSaveSnapshot preSave) async {

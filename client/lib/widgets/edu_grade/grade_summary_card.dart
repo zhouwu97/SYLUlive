@@ -152,13 +152,13 @@ class GradeSummaryCard extends StatelessWidget {
             ),
             const SizedBox(height: 14),
 
-            // Bottom capsules: passed / degree / GPA
-            Row(
+            // Bottom capsules: passed / degree / GPA (Wrap prevents overflow)
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
               children: [
                 _capsule(context, '本学期及格', '$passedCount'),
-                const SizedBox(width: 10),
                 _capsule(context, '学位课', '$degreeCount'),
-                const SizedBox(width: 10),
                 _capsule(context, 'GPA', gpaText),
               ],
             ),

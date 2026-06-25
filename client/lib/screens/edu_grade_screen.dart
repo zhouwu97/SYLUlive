@@ -168,9 +168,9 @@ class _EduGradeScreenState extends State<EduGradeScreen> {
     }
   }
 
-  Future<void> _refreshGrades() async {
-    if (_isInitialLoading || _isRefreshing) return;
-    if (_eduProvider == null) return;
+  Future<bool> _refreshGrades() async {
+    if (_isInitialLoading || _isRefreshing) return false;
+    if (_eduProvider == null) return false;
 
     setState(() => _isRefreshing = true);
 
@@ -178,7 +178,10 @@ class _EduGradeScreenState extends State<EduGradeScreen> {
     final result =
         await _eduProvider!.fetchGrades(_selectedYear, _selectedSemester);
 
-    if (!mounted || _requestGeneration != gen) return;
+    if (!mounted || _requestGeneration != gen) {
+      // 页面已切换或用户变化 → 视为失败
+      return false;
+    }
 
     if (result.success && result.data != null) {
       final entry =
@@ -192,10 +195,12 @@ class _EduGradeScreenState extends State<EduGradeScreen> {
         _isRefreshing = false;
       });
       if (mounted) _showSnackBar('成绩已更新');
-    } else {
-      setState(() => _isRefreshing = false);
-      if (mounted) _showSnackBar('刷新失败，请稍后重试');
+      return true;
     }
+
+    setState(() => _isRefreshing = false);
+    if (mounted) _showSnackBar('刷新失败，请稍后重试');
+    return false;
   }
 
   void _onSemesterChanged(({String year, int semester}) selection) {
@@ -254,7 +259,6 @@ class _EduGradeScreenState extends State<EduGradeScreen> {
       selectedSemester: _selectedSemester,
       lastUpdatedAt: _lastUpdatedAt,
       enrollmentYear: _eduProvider?.enrollmentYear ?? 2000,
-      isRefreshing: _isRefreshing,
       onSemesterChanged: (year, semester) {
         _onSemesterChanged((year: year, semester: semester));
       },

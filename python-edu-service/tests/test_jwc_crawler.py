@@ -39,8 +39,15 @@ class TestResolve:
         assert _resolve("5946.htm", "https://jwc.sylu.edu.cn/info/1116/") == \
             "https://jwc.sylu.edu.cn/info/1116/5946.htm"
 
-    def test_absolute_preserved(self):
-        assert _resolve("https://example.com") == "https://example.com"
+    def test_absolute_external_rejected(self):
+        # 外部绝对 URL 现在被 _validate_jwc_url 拒绝
+        import pytest as pt
+        with pt.raises(ValueError):
+            _resolve("https://example.com")
+
+    def test_absolute_jwc_preserved(self):
+        assert _resolve("https://jwc.sylu.edu.cn/info/1116/5946.htm") == \
+            "https://jwc.sylu.edu.cn/info/1116/5946.htm"
 
 
 class TestExtractArticleId:

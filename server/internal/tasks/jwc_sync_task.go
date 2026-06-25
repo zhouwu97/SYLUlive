@@ -53,27 +53,20 @@ func runSync(ctx context.Context, mu *sync.Mutex, svc *services.JWCSyncService, 
 		log.Println("[JWC_TASK] previous sync still running, skipping")
 		return
 	}
+	// Mutex held until sync fully completes or times out — prevents overlap
 	defer mu.Unlock()
 
 	// 单次同步超时 90s
 	syncCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
 	defer cancel()
 
-	done := make(chan *services.SyncResult, 1)
-	go func() {
-		result := svc.Sync(reconcile, 3) // max_pages=3
-		done <- result
-	}()
+	// 直接调用，超时通过 Context 传播到 HTTP 层真正取消请求
+	result := svc.Sync(syncCtx, reconcile, 3) // max_pages=3
 
-	select {
-	case result := <-done:
-		if result.Error != nil {
-			log.Printf("[JWC_TASK] sync failed: %v", result.Error)
-		} else {
-			log.Printf("[JWC_TASK] sync ok (added=%d updated=%d skipped=%d bootstrap=%v)",
-				result.Added, result.Updated, result.Skipped, result.IsBootstrap)
-		}
-	case <-syncCtx.Done():
-		log.Println("[JWC_TASK] sync timed out (90s)")
+	if result.Error != nil {
+		log.Printf("[JWC_TASK] sync failed: %v", result.Error)
+	} else {
+		log.Printf("[JWC_TASK] sync ok (added=%d updated=%d skipped=%d bootstrap=%v)",
+			result.Added, result.Updated, result.Skipped, result.IsBootstrap)
 	}
 }

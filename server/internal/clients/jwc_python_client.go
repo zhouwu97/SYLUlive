@@ -181,7 +181,6 @@ func (c *JWCPythonClient) Crawl(ctx context.Context, req *CrawlRequest) (*CrawlR
 
 	var lastErr error
 	for attempt := 0; attempt < 4; attempt++ {
-		// Check context before each attempt
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
@@ -189,10 +188,7 @@ func (c *JWCPythonClient) Crawl(ctx context.Context, req *CrawlRequest) (*CrawlR
 		}
 
 		if attempt > 0 {
-			wait := time.Duration(1<<uint(attempt-1)) * time.Second
-			if wait > 8*time.Second {
-				wait = 8 * time.Second
-			}
+			wait := c.backoffWait(attempt)
 			log.Printf("[JWC_CLIENT] retry %d after %v", attempt, wait)
 			select {
 			case <-ctx.Done():
@@ -204,38 +200,74 @@ func (c *JWCPythonClient) Crawl(ctx context.Context, req *CrawlRequest) (*CrawlR
 		resp, err := c.doRequest(ctx, apiURL, body)
 		if err != nil {
 			lastErr = err
-			continue // network/timeout: retry
+			continue
 		}
 
-		switch resp.StatusCode {
-		case http.StatusOK:
+		// Handle response — must close Body on every non-200 path
+		switch {
+		case resp.StatusCode == http.StatusOK:
 			return c.parseResponse(resp)
-		case http.StatusConflict: // 409
+
+		case resp.StatusCode == http.StatusConflict: // 409
+			drainAndClose(resp)
 			if attempt == 0 {
 				log.Println("[JWC_CLIENT] crawl lock busy (409), retrying once after 3s")
-				time.Sleep(3 * time.Second)
+				select {
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				case <-time.After(3 * time.Second):
+				}
+				// prevent next round's backoff from stacking on top
 				continue
 			}
 			return nil, errors.New("jwc crawl busy (409), giving up")
-		case http.StatusBadRequest, http.StatusUnauthorized,
-			http.StatusForbidden, http.StatusUnprocessableEntity:
-			body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-			return nil, fmt.Errorf("jwc crawl client error HTTP %d: %s", resp.StatusCode, string(body))
-		case http.StatusBadGateway, http.StatusServiceUnavailable,
-			http.StatusGatewayTimeout:
+
+		case resp.StatusCode == http.StatusBadRequest,
+			resp.StatusCode == http.StatusUnauthorized,
+			resp.StatusCode == http.StatusForbidden,
+			resp.StatusCode == http.StatusUnprocessableEntity:
+			respBody := drainAndClose(resp)
+			return nil, fmt.Errorf("jwc crawl client error HTTP %d: %s", resp.StatusCode, respBody)
+
+		case resp.StatusCode == http.StatusBadGateway,
+			resp.StatusCode == http.StatusServiceUnavailable,
+			resp.StatusCode == http.StatusGatewayTimeout:
+			drainAndClose(resp)
 			lastErr = fmt.Errorf("jwc crawl upstream error HTTP %d", resp.StatusCode)
-			continue // retryable
+			continue
+
 		default:
 			if resp.StatusCode >= 400 && resp.StatusCode < 500 {
-				body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-				return nil, fmt.Errorf("jwc crawl HTTP %d: %s", resp.StatusCode, string(body))
+				respBody := drainAndClose(resp)
+				return nil, fmt.Errorf("jwc crawl HTTP %d: %s", resp.StatusCode, respBody)
 			}
+			drainAndClose(resp)
 			lastErr = fmt.Errorf("jwc crawl HTTP %d", resp.StatusCode)
 			continue
 		}
 	}
 
 	return nil, fmt.Errorf("jwc crawl failed after retries: %w", lastErr)
+}
+
+// backoffWait returns the sleep duration for a given retry attempt.
+func (c *JWCPythonClient) backoffWait(attempt int) time.Duration {
+	w := time.Duration(1<<uint(attempt-1)) * time.Second
+	if w > 8*time.Second {
+		w = 8 * time.Second
+	}
+	return w
+}
+
+// drainAndClose reads and discards any remaining response body, then closes it.
+// Must be called on every non-200 response to prevent connection leaks.
+func drainAndClose(resp *http.Response) string {
+	if resp == nil || resp.Body == nil {
+		return ""
+	}
+	defer resp.Body.Close()
+	data, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	return string(data)
 }
 
 func (c *JWCPythonClient) doRequest(ctx context.Context, apiURL string, body []byte) (*http.Response, error) {

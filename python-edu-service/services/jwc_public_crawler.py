@@ -701,8 +701,8 @@ class JWCPublicCrawler:
             urls = known_source_urls.get(cat, [])
             known_sets[cat] = set(urls)
 
-        # 每个重定向步骤都校验目标 URL
-        def _validate_redirect(request: httpx.Request) -> None:
+        # 每个重定向步骤都校验目标 URL（异步钩子）
+        async def _validate_redirect(request: httpx.Request) -> None:
             _validate_jwc_url(str(request.url))
 
         async with httpx.AsyncClient(

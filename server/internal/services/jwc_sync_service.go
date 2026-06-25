@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"gorm.io/datatypes"
@@ -34,11 +35,19 @@ type SyncResult struct {
 	Invalid     int
 	IsBootstrap bool
 	Error       error
+	LastErrors  []string // first few structured error summaries
 }
 
 // Sync performs a full sync cycle: query known URLs, call Python, upsert.
 func (s *JWCSyncService) Sync(ctx context.Context, reconcile bool, maxPages int) *SyncResult {
 	result := &SyncResult{}
+
+	// Always update state on exit — registered before any DB/network call
+	var partialFailure bool
+	var itemCount int
+	defer func() {
+		s.updateSyncState(result, reconcile, partialFailure, itemCount)
+	}()
 
 	// ── 1. Determine bootstrap status ──────────────────
 	var count int64
@@ -48,13 +57,6 @@ func (s *JWCSyncService) Sync(ctx context.Context, reconcile bool, maxPages int)
 		return result
 	}
 	result.IsBootstrap = count == 0
-
-	// Always update state on exit
-	var partialFailure bool
-	var itemCount int
-	defer func() {
-		s.updateSyncState(result, reconcile, partialFailure, itemCount)
-	}()
 
 	// ── 2. Query known source URLs ─────────────────────
 	knownURLs := s.queryKnownURLs()
@@ -74,6 +76,16 @@ func (s *JWCSyncService) Sync(ctx context.Context, reconcile bool, maxPages int)
 	}
 
 	partialFailure = resp.Stats.PartialFailure
+
+	// Capture structured error summaries for state persistence
+	const maxErrSummary = 3
+	for i, e := range resp.Errors {
+		if i >= maxErrSummary {
+			break
+		}
+		result.LastErrors = append(result.LastErrors,
+			fmt.Sprintf("%s/%s/%s", e.Category, e.Stage, e.Code))
+	}
 
 	// ── 4. Parse generated_at ──────────────────────────
 	crawledAt := time.Now()
@@ -242,11 +254,11 @@ func (s *JWCSyncService) updateSyncState(
 	state.LastAttemptAt = &now
 	if result.Error == nil {
 		if partialFailure {
-			// 部分失败：仍然算成功，但保留错误信息
+			// 部分失败：仍然算成功，记录错误摘要
 			state.LastSuccessAt = &now
 			state.LastItemCount = itemCount
 			state.ConsecutiveFailures = 0
-			state.LastError = fmt.Sprintf("partial failure: %d items saved", itemCount)
+			state.LastError = formatPartialError(result, itemCount)
 			if reconcile {
 				state.LastReconcileAt = &now
 			}
@@ -269,6 +281,18 @@ func (s *JWCSyncService) updateSyncState(
 	}
 
 	_ = s.db.Save(&state).Error
+}
+
+// formatPartialError builds a structured error summary for partial failures.
+func formatPartialError(result *SyncResult, itemCount int) string {
+	base := fmt.Sprintf("partial failure: %d items saved", itemCount)
+	if len(result.LastErrors) > 0 {
+		base += "; " + strings.Join(result.LastErrors, ", ")
+	}
+	if len(base) > 500 {
+		base = base[:500]
+	}
+	return base
 }
 
 // ShouldReconcile returns true if reconcile is due.

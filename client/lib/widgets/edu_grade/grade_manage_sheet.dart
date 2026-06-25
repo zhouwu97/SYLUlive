@@ -11,9 +11,8 @@ class GradeManageSheet extends StatefulWidget {
   final int selectedSemester;
   final DateTime? lastUpdatedAt;
   final int enrollmentYear;
-  final bool isRefreshing;
   final void Function(String year, int semester) onSemesterChanged;
-  final Future<void> Function() onRefresh;
+  final Future<bool> Function() onRefresh; // returns true on success
 
   const GradeManageSheet({
     super.key,
@@ -21,7 +20,6 @@ class GradeManageSheet extends StatefulWidget {
     required this.selectedSemester,
     required this.lastUpdatedAt,
     required this.enrollmentYear,
-    required this.isRefreshing,
     required this.onSemesterChanged,
     required this.onRefresh,
   });
@@ -32,9 +30,8 @@ class GradeManageSheet extends StatefulWidget {
     required int selectedSemester,
     required DateTime? lastUpdatedAt,
     required int enrollmentYear,
-    required bool isRefreshing,
     required void Function(String year, int semester) onSemesterChanged,
-    required Future<void> Function() onRefresh,
+    required Future<bool> Function() onRefresh,
   }) {
     showModalBottomSheet(
       context: context,
@@ -49,7 +46,6 @@ class GradeManageSheet extends StatefulWidget {
           selectedSemester: selectedSemester,
           lastUpdatedAt: lastUpdatedAt,
           enrollmentYear: enrollmentYear,
-          isRefreshing: isRefreshing,
           onSemesterChanged: onSemesterChanged,
           onRefresh: onRefresh,
         ),
@@ -63,6 +59,7 @@ class GradeManageSheet extends StatefulWidget {
 
 class _GradeManageSheetState extends State<GradeManageSheet> {
   _SheetPage _page = _SheetPage.menu;
+  bool _isRefreshing = false;
 
   String _formatTime(DateTime? dt) {
     if (dt == null) return '暂未更新';
@@ -76,9 +73,19 @@ class _GradeManageSheetState extends State<GradeManageSheet> {
   }
 
   Future<void> _handleRefresh() async {
-    await widget.onRefresh();
+    if (_isRefreshing) return;
+
+    setState(() => _isRefreshing = true);
+
+    final success = await widget.onRefresh();
+
     if (!mounted) return;
-    // Auto-close on success after brief delay
+
+    setState(() => _isRefreshing = false);
+
+    if (!success) return; // 失败保留菜单
+
+    // 成功后短暂延迟再关闭
     await Future.delayed(const Duration(milliseconds: 300));
     if (mounted) Navigator.pop(context);
   }
@@ -131,18 +138,18 @@ class _GradeManageSheetState extends State<GradeManageSheet> {
           const SizedBox(height: 8),
           _menuRow(
             icon: Icons.refresh_rounded,
-            title: widget.isRefreshing ? '正在刷新成绩...' : '刷新当前成绩',
-            subtitle: widget.isRefreshing
+            title: _isRefreshing ? '正在刷新成绩...' : '刷新当前成绩',
+            subtitle: _isRefreshing
                 ? '当前仍显示上次获取的数据'
                 : '上次更新：${_formatTime(widget.lastUpdatedAt)}',
-            trailing: widget.isRefreshing
+            trailing: _isRefreshing
                 ? const SizedBox(
                     width: 20,
                     height: 20,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : null,
-            onTap: widget.isRefreshing ? null : _handleRefresh,
+            onTap: _isRefreshing ? null : _handleRefresh,
           ),
         ],
       ),

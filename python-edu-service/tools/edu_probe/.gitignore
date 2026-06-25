@@ -1,0 +1,7 @@
+# Ignore all output except .gitkeep
+output/*
+!output/.gitkeep
+
+# Python cache
+__pycache__/
+.pytest_cache/

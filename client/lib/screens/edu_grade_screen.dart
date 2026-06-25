@@ -9,6 +9,7 @@ import '../widgets/edu_grade/semester_selector.dart';
 import '../widgets/edu_grade/grade_summary_card.dart';
 import '../widgets/edu_grade/grade_course_item.dart';
 import '../widgets/edu_grade/grade_empty_state.dart';
+import '../widgets/edu_grade/grade_detail_sheet.dart';
 
 class EduGradeScreen extends StatefulWidget {
   const EduGradeScreen({super.key});
@@ -313,32 +314,54 @@ class _EduGradeScreenState extends State<EduGradeScreen> {
             ),
           ),
 
-        // Has grades — show summary + filters + list
+        // Has grades — show summary + course section
         if (_grades.isNotEmpty) ...[
-          // Summary card — always on full list
+          // Compact overview bar
           SliverToBoxAdapter(
             child: GradeSummaryCard(grades: _grades),
           ),
 
-          // Filter chips
+          // "课程成绩 N" section header + filter chips
           SliverToBoxAdapter(
-            child: _buildFilterChips(),
+            child: _buildCourseSectionHeader(),
           ),
 
           // Course list or filter-empty state
           if (_filteredGrades.isNotEmpty)
-            SliverList(
-              delegate: SliverChildBuilderDelegate(
-                (context, index) {
-                  return Column(
-                    children: [
-                      if (index > 0)
-                        const Divider(height: 1, indent: 16, endIndent: 16),
-                      GradeCourseItem(grade: _filteredGrades[index]),
-                    ],
-                  );
-                },
-                childCount: _filteredGrades.length,
+            SliverToBoxAdapter(
+              child: Container(
+                margin: const EdgeInsets.symmetric(horizontal: 16),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).brightness == Brightness.dark
+                      ? Colors.grey[850]
+                      : Colors.white,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color:
+                        Theme.of(context).dividerColor.withValues(alpha: 0.3),
+                  ),
+                ),
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: _filteredGrades.length,
+                  separatorBuilder: (_, __) => Divider(
+                    height: 1,
+                    indent: 16,
+                    endIndent: 16,
+                    color:
+                        Theme.of(context).dividerColor.withValues(alpha: 0.3),
+                  ),
+                  itemBuilder: (context, index) {
+                    return GradeCourseItem(
+                      grade: _filteredGrades[index],
+                      onTap: () => GradeDetailSheet.show(
+                        context,
+                        _filteredGrades[index],
+                      ),
+                    );
+                  },
+                ),
               ),
             )
           else
@@ -356,23 +379,49 @@ class _EduGradeScreenState extends State<EduGradeScreen> {
     );
   }
 
-  Widget _buildFilterChips() {
-    const filters = ['全部', '学位课', '未通过'];
+  Widget _buildCourseSectionHeader() {
+    final degreeCount = _grades.where((g) => g.isDegree).length;
+    final failedCount = _grades.where((g) => g.isPassed == false).length;
+
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Wrap(
-        spacing: 8,
-        children: filters.map((f) {
-          final selected = _activeFilter == f;
-          return ChoiceChip(
-            label: Text(f),
-            selected: selected,
-            onSelected: (_) {
-              setState(() => _activeFilter = f);
-            },
-          );
-        }).toList(),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // "课程成绩 N" title
+          Text(
+            '课程成绩  ${_grades.length}',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: Colors.grey[600],
+            ),
+          ),
+          const SizedBox(height: 8),
+          // Filter chips with counts
+          Wrap(
+            spacing: 8,
+            children: [
+              _filterChip('全部 ${_grades.length}', '全部'),
+              _filterChip('学位课 $degreeCount', '学位课'),
+              _filterChip('未通过 $failedCount', '未通过'),
+            ],
+          ),
+        ],
       ),
+    );
+  }
+
+  Widget _filterChip(String label, String filterKey) {
+    final selected = _activeFilter == filterKey;
+    return ChoiceChip(
+      label: Text(label, style: const TextStyle(fontSize: 13)),
+      selected: selected,
+      visualDensity: VisualDensity.compact,
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      onSelected: (_) {
+        setState(() => _activeFilter = filterKey);
+      },
     );
   }
 }

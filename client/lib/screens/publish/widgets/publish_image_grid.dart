@@ -159,21 +159,23 @@ class PublishImageGrid extends StatelessWidget {
 
         const SizedBox(height: 10),
 
-        // ---- add image button (always visible) ----
-        OutlinedButton.icon(
-          onPressed: onAddImage,
-          icon: const Icon(Icons.add_photo_alternate, size: 20),
-          label: Text(addButtonLabel, style: const TextStyle(fontSize: 14)),
-          style: OutlinedButton.styleFrom(
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            side: BorderSide(
-              color: Colors.grey.withValues(alpha: 0.35),
-            ),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
+        // ---- add image button (only when no images yet; the grid "+" cell
+        //      handles adding when images already exist) ----
+        if (_totalImages == 0 && canAddMore)
+          OutlinedButton.icon(
+            onPressed: onAddImage,
+            icon: const Icon(Icons.add_photo_alternate, size: 20),
+            label: Text(addButtonLabel, style: const TextStyle(fontSize: 14)),
+            style: OutlinedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              side: BorderSide(
+                color: Colors.grey.withValues(alpha: 0.35),
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
           ),
-        ),
       ],
     );
   }

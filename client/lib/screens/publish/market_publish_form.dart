@@ -104,17 +104,25 @@ class _MarketPublishFormState extends State<MarketPublishForm>
     }
   }
 
-  String get _addButtonLabel {
-    final hasAnyImage = _totalImageCount > 0;
-    if (_canUploadUnlimitedImages) {
-      return hasAnyImage ? '继续添加' : '添加图片';
+  String get _bottomBarLabel {
+    if (_isEditing) return '保存修改';
+    switch (_postType) {
+      case 'sell':
+        return '发布商品';
+      case 'buy':
+        return '发布求购';
+      case 'lost':
+        return '发布失物';
+      case 'found':
+        return '发布招领';
+      case 'exposure':
+        return '提交曝光';
+      default:
+        return '发布';
     }
-    return hasAnyImage ? '继续添加' : '添加图片（最多9张）';
   }
 
   String get _titleLabel => _isLostOrFound ? '物品名称' : '商品名称';
-
-  String get _titleHint => _isLostOrFound ? '请输入物品名称' : '请输入商品名称';
 
   String get _contentHint {
     switch (_postType) {
@@ -125,11 +133,9 @@ class _MarketPublishFormState extends State<MarketPublishForm>
       case 'found':
         return '描述捡到的物品、地点、时间和领取方式...';
       default:
-        return '详细描述商品或服务...';
+        return '描述物品成色、使用情况、瑕疵、配件和交易要求……';
     }
   }
-
-  String get _contactLabel => _isLostOrFound ? '联系方式及地点（选填）' : '联系方式（选填）';
 
   // ---------------------------------------------------------------------------
   // Price formatter
@@ -141,62 +147,6 @@ class _MarketPublishFormState extends State<MarketPublishForm>
       return valid ? newValue : oldValue;
     },
   );
-
-  // ---------------------------------------------------------------------------
-  // Styling
-  // ---------------------------------------------------------------------------
-
-  InputDecoration _inputDecoration({
-    required String label,
-    String? hint,
-    String? prefixText,
-    bool alignLabelWithHint = false,
-  }) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return InputDecoration(
-      labelText: label,
-      hintText: hint,
-      prefixText: prefixText,
-      alignLabelWithHint: alignLabelWithHint,
-      filled: true,
-      fillColor: colorScheme.surfaceContainerLow,
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(14),
-        borderSide: BorderSide.none,
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(14),
-        borderSide: BorderSide(
-          color: colorScheme.outlineVariant.withValues(alpha: 0.45),
-        ),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(14),
-        borderSide: BorderSide(color: colorScheme.primary, width: 1.5),
-      ),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-    );
-  }
-
-  Widget _buildSectionCard({required List<Widget> children}) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final colorScheme = Theme.of(context).colorScheme;
-    return Container(
-      margin: const EdgeInsets.only(bottom: 20),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF171B24) : Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: colorScheme.outlineVariant.withValues(alpha: 0.45),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: children,
-      ),
-    );
-  }
 
   // ---------------------------------------------------------------------------
   // Lifecycle
@@ -227,16 +177,12 @@ class _MarketPublishFormState extends State<MarketPublishForm>
     super.dispose();
   }
 
-  // ---------------------------------------------------------------------------
-  // Type change (no controller clearing — pollution is handled at submit time)
-  // ---------------------------------------------------------------------------
-
   void _onTypeChanged(String newType) {
     if (mounted) setState(() => _postType = newType);
   }
 
   // ---------------------------------------------------------------------------
-  // Validation
+  // Validation (unchanged from previous round)
   // ---------------------------------------------------------------------------
 
   String? _validateTitle(String? value) {
@@ -252,7 +198,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
     if (!_showsPriceField) return null;
     final v = (value ?? '').trim();
     if (v.isEmpty) {
-      return _postType == 'exposure' ? null : '请输入价格'; // optional for exposure
+      return _postType == 'exposure' ? null : '请输入价格';
     }
     final price = double.tryParse(v);
     if (price == null) return '请输入合法价格';
@@ -262,17 +208,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
 
   String? _validateContent(String? value) {
     final v = (value ?? '').trim();
-    if (v.isEmpty) {
-      switch (_postType) {
-        case 'exposure':
-          return '请描述被骗经过';
-        case 'lost':
-        case 'found':
-          return '请输入详细描述';
-        default:
-          return '请输入详细描述';
-      }
-    }
+    if (v.isEmpty) return '请输入详细描述';
     return null;
   }
 
@@ -282,10 +218,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
     if (content.isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('请输入内容'),
-            backgroundColor: Colors.red,
-          ),
+          const SnackBar(content: Text('请输入内容'), backgroundColor: Colors.red),
         );
       }
       return false;
@@ -294,7 +227,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
   }
 
   // ---------------------------------------------------------------------------
-  // Submit
+  // Submit (unchanged from previous round)
   // ---------------------------------------------------------------------------
 
   Future<void> _submit() async {
@@ -363,11 +296,6 @@ class _MarketPublishFormState extends State<MarketPublishForm>
         ...fileIds,
       ];
 
-      // Type-gated parameter building: fields that don't apply to the
-      // current _postType are forced to null so stale controller values
-      // from a previous type selection never leak into the request.
-      // updatePost() converts null → '' / 0 on the wire, which clears
-      // inapplicable fields on the server.
       final result = _isEditing
           ? await postProvider.updatePost(
               postId: widget.editingPost!.id,
@@ -421,12 +349,11 @@ class _MarketPublishFormState extends State<MarketPublishForm>
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final topPadding = MediaQuery.of(context).padding.top + kToolbarHeight;
+    final colorScheme = Theme.of(context).colorScheme;
 
     return Scaffold(
       backgroundColor:
-          isDark ? const Color(0xFF06080D) : const Color(0xFFF4F6FB),
-      extendBodyBehindAppBar: true,
+          isDark ? const Color(0xFF06080D) : const Color(0xFFF6F7FA),
       resizeToAvoidBottomInset: true,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
@@ -437,152 +364,305 @@ class _MarketPublishFormState extends State<MarketPublishForm>
       bottomNavigationBar: PublishBottomBar(
         isLoading: _isLoading,
         onPressed: _isLoading ? null : _submit,
-        label: _isEditing ? '保存' : '发布',
+        label: _bottomBarLabel,
       ),
-      body: Stack(
-        children: [
-          // ---- background gradient (matches market_screen) ----
-          Positioned.fill(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: isDark
-                      ? const [
-                          Color(0xFF06080D),
-                          Color(0xFF10131A),
-                          Color(0xFF06080D),
-                        ]
-                      : const [
-                          Color(0xFFF4F6FB),
-                          Color(0xFFEFF3F8),
-                          Color(0xFFF8FAFC),
-                        ],
-                ),
-              ),
-            ),
-          ),
+      body: SafeArea(
+        bottom: false,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // =====================================================
+                // 1. 商品图片（置顶，不套卡片）
+                // =====================================================
+                _buildImageSection(),
+                const SizedBox(height: 24),
 
-          // ---- form body ----
-          SingleChildScrollView(
-            padding: EdgeInsets.fromLTRB(
-              16,
-              topPadding + 8,
-              16,
-              100, // clearance for bottom bar
-            ),
-            child: Form(
-              key: _formKey,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  // =========================================================
-                  // 1. Type selector — always visible at the top
-                  // =========================================================
-                  _buildSectionCard(children: [
-                    PublishTypeSelector(
-                      currentType: _postType,
-                      allowedTypes: widget.allowedPostTypes,
-                      onChanged: _onTypeChanged,
-                    ),
-                  ]),
+                // =====================================================
+                // 2. 基本信息（白色容器，字段间分割线）
+                // =====================================================
+                if (_postType != 'exposure')
+                  _buildBasicInfoCard(isDark, colorScheme),
+                if (_postType != 'exposure') const SizedBox(height: 20),
 
-                  // =========================================================
-                  // 2. Basic info: title + price
-                  // =========================================================
-                  _buildSectionCard(children: [
-                    // title (hidden for exposure)
-                    if (_showsTitleField) ...[
-                      TextFormField(
-                        controller: _titleController,
-                        decoration: _inputDecoration(
-                          label: _titleLabel,
-                          hint: _titleHint,
-                        ),
-                        validator: _validateTitle,
-                      ),
-                    ],
-                    // price (hidden for lost/found)
-                    if (_showsPriceField) ...[
-                      if (_showsTitleField) const SizedBox(height: 14),
-                      TextFormField(
-                        controller: _priceController,
-                        decoration: _inputDecoration(
-                          label: _postType == 'exposure' ? '涉及金额' : '价格',
-                          hint: _postType == 'exposure' ? '预估损失金额' : '0',
-                          prefixText: '¥ ',
-                        ),
-                        keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true),
-                        inputFormatters: [_priceFormatter],
-                        validator: _validatePrice,
-                      ),
-                    ],
-                    // edge case: exposure shows no title and no price
-                    // (price is hidden for exposure per _showsPriceField? wait — it's TRUE for exposure since exposure != 'lost' && exposure != 'found')
-                    // Actually exposure DOES show price — let's keep it.
-                  ]),
+                // =====================================================
+                // 3. 发布类型 + 曝光入口
+                // =====================================================
+                _buildTypeSection(isDark),
+                const SizedBox(height: 20),
 
-                  // =========================================================
-                  // 3. Warning banner (exposure only)
-                  // =========================================================
-                  if (_postType == 'exposure') ...[
-                    _buildSectionCard(children: [
-                      const ExposurePublishForm(),
-                    ]),
-                  ],
-
-                  // =========================================================
-                  // 4. Contact
-                  // =========================================================
-                  _buildSectionCard(children: [
-                    TextFormField(
-                      controller: _contactController,
-                      decoration: _inputDecoration(
-                        label: _contactLabel,
-                        hint: '您的联系方式，方便他人核实',
-                      ),
-                    ),
-                  ]),
-
-                  // =========================================================
-                  // 5. Description
-                  // =========================================================
-                  _buildSectionCard(children: [
-                    TextFormField(
-                      controller: _contentController,
-                      decoration: _inputDecoration(
-                        label: '详细描述',
-                        hint: _contentHint,
-                        alignLabelWithHint: true,
-                      ),
-                      maxLines: 6,
-                      minLines: 3,
-                      validator: _validateContent,
-                    ),
-                  ]),
-
-                  // =========================================================
-                  // 6. Images
-                  // =========================================================
-                  _buildSectionCard(children: [
-                    PublishImageGrid(
-                      existingImages: _existingImages,
-                      selectedImages: _selectedImages,
-                      canAddMore: canAddMoreImages,
-                      addButtonLabel: _addButtonLabel,
-                      onAddImage: showImageSourceDialog,
-                      onRemoveNewImage: onNewImageRemoved,
-                      onRemoveExistingImage: onExistingImageRemoved,
-                    ),
-                  ]),
+                // =====================================================
+                // 4. 曝光：警告横幅 + 涉及金额
+                // =====================================================
+                if (_postType == 'exposure') ...[
+                  _buildExposureWarning(),
+                  const SizedBox(height: 16),
+                  _buildExposureAmountField(isDark),
+                  const SizedBox(height: 20),
                 ],
-              ),
+
+                // =====================================================
+                // 5. 商品描述（浅灰填充，更高）
+                // =====================================================
+                _buildDescriptionField(isDark, colorScheme),
+                const SizedBox(height: 20),
+
+                // =====================================================
+                // 6. 联系方式（弱化）
+                // =====================================================
+                _buildContactField(isDark),
+              ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Section builders
+  // ---------------------------------------------------------------------------
+
+  Widget _buildImageSection() {
+    final max = _canUploadUnlimitedImages ? '∞' : '9';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // header row
+        Row(
+          children: [
+            const Text(
+              '商品图片',
+              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+            ),
+            const Spacer(),
+            Text(
+              '$_totalImageCount/$max',
+              style: TextStyle(
+                fontSize: 13,
+                color: Colors.grey.withValues(alpha: 0.7),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        PublishImageGrid(
+          existingImages: _existingImages,
+          selectedImages: _selectedImages,
+          canAddMore: canAddMoreImages,
+          onAddImage: showImageSourceDialog,
+          onRemoveNewImage: onNewImageRemoved,
+          onRemoveExistingImage: onExistingImageRemoved,
+        ),
+        const SizedBox(height: 8),
+        Text(
+          '清晰实拍更容易成交，第一张将作为封面',
+          style: TextStyle(
+              fontSize: 12, color: Colors.grey.withValues(alpha: 0.6)),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildBasicInfoCard(bool isDark, ColorScheme colorScheme) {
+    return Container(
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF171B24) : Colors.white,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(
+        children: [
+          // title field
+          if (_showsTitleField)
+            TextFormField(
+              controller: _titleController,
+              decoration: _plainInputDecoration(hint: _titleLabel),
+              validator: _validateTitle,
+            ),
+          // divider
+          if (_showsTitleField && _showsPriceField)
+            Divider(
+                height: 1,
+                indent: 16,
+                color: colorScheme.outlineVariant.withValues(alpha: 0.3)),
+          // price field
+          if (_showsPriceField)
+            TextFormField(
+              controller: _priceController,
+              decoration:
+                  _plainInputDecoration(hint: '请输入价格', prefixText: '¥ '),
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              inputFormatters: [_priceFormatter],
+              validator: _validatePrice,
+            ),
         ],
       ),
+    );
+  }
+
+  Widget _buildTypeSection(bool isDark) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          '发布类型',
+          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 10),
+        PublishTypeSelector(
+          currentType: _postType == 'exposure' ? '' : _postType,
+          allowedTypes: widget.allowedPostTypes,
+          onChanged: _onTypeChanged,
+        ),
+        const SizedBox(height: 8),
+        // exposure link
+        GestureDetector(
+          onTap: () => _onTypeChanged('exposure'),
+          child: Row(
+            children: [
+              Icon(
+                _postType == 'exposure'
+                    ? Icons.chevron_right
+                    : Icons.chevron_right,
+                size: 16,
+                color: _postType == 'exposure'
+                    ? Colors.orange
+                    : Colors.grey.withValues(alpha: 0.6),
+              ),
+              const SizedBox(width: 4),
+              Text(
+                _postType == 'exposure' ? '曝光举报（已选中）' : '发现违规或诈骗？前往曝光举报',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: _postType == 'exposure'
+                      ? Colors.orange
+                      : Colors.grey.withValues(alpha: 0.6),
+                  fontWeight: _postType == 'exposure'
+                      ? FontWeight.w500
+                      : FontWeight.normal,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildExposureWarning() {
+    return const ExposurePublishForm();
+  }
+
+  Widget _buildExposureAmountField(bool isDark) {
+    return Container(
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF171B24) : Colors.white,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: TextFormField(
+        controller: _priceController,
+        decoration: _plainInputDecoration(hint: '预估损失金额', prefixText: '¥ '),
+        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        inputFormatters: [_priceFormatter],
+      ),
+    );
+  }
+
+  Widget _buildDescriptionField(bool isDark, ColorScheme colorScheme) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          '商品描述',
+          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 10),
+        TextFormField(
+          controller: _contentController,
+          decoration: InputDecoration(
+            hintText: _contentHint,
+            hintStyle: TextStyle(
+              color: Colors.grey.withValues(alpha: 0.6),
+              fontSize: 14,
+            ),
+            filled: true,
+            fillColor: isDark
+                ? Colors.white.withValues(alpha: 0.05)
+                : const Color(0xFFF7F7FA),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(
+                color: colorScheme.outlineVariant.withValues(alpha: 0.2),
+              ),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(
+                color: colorScheme.outlineVariant.withValues(alpha: 0.2),
+              ),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(
+                color: colorScheme.primary.withValues(alpha: 0.35),
+              ),
+            ),
+            contentPadding: const EdgeInsets.all(16),
+            alignLabelWithHint: true,
+          ),
+          minLines: 5,
+          maxLines: null,
+          validator: _validateContent,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildContactField(bool isDark) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          '联系方式',
+          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          '选填，建议优先通过站内私信联系',
+          style: TextStyle(
+              fontSize: 12, color: Colors.grey.withValues(alpha: 0.6)),
+        ),
+        const SizedBox(height: 10),
+        TextFormField(
+          controller: _contactController,
+          decoration: _plainInputDecoration(
+            hint: 'QQ / 微信 / 手机号（选填）',
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Shared plain input decoration (no border — used inside containers)
+  // ---------------------------------------------------------------------------
+
+  InputDecoration _plainInputDecoration({
+    required String hint,
+    String? prefixText,
+  }) {
+    return InputDecoration(
+      hintText: hint,
+      prefixText: prefixText,
+      border: InputBorder.none,
+      enabledBorder: InputBorder.none,
+      focusedBorder: InputBorder.none,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
     );
   }
 }

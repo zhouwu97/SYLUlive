@@ -1,24 +1,21 @@
 import 'package:flutter/material.dart';
 import '../../utils/edu_semester_utils.dart';
 
-/// Which "page" is visible inside the sheet.
 enum _SheetPage { menu, semesterList }
 
 /// Half-screen bottom sheet for grade management.
-/// Contains embedded semester switcher and refresh button.
+/// Height adapts to content (max 65% screen), semester tap shows inline spinner.
 class GradeManageSheet extends StatefulWidget {
   final String selectedYear;
   final int selectedSemester;
-  final DateTime? lastUpdatedAt;
   final int enrollmentYear;
-  final void Function(String year, int semester) onSemesterChanged;
-  final Future<bool> Function() onRefresh; // returns true on success
+  final Future<bool> Function(String year, int semester) onSemesterChanged;
+  final Future<bool> Function() onRefresh;
 
   const GradeManageSheet({
     super.key,
     required this.selectedYear,
     required this.selectedSemester,
-    required this.lastUpdatedAt,
     required this.enrollmentYear,
     required this.onSemesterChanged,
     required this.onRefresh,
@@ -28,9 +25,8 @@ class GradeManageSheet extends StatefulWidget {
     BuildContext context, {
     required String selectedYear,
     required int selectedSemester,
-    required DateTime? lastUpdatedAt,
     required int enrollmentYear,
-    required void Function(String year, int semester) onSemesterChanged,
+    required Future<bool> Function(String year, int semester) onSemesterChanged,
     required Future<bool> Function() onRefresh,
   }) {
     showModalBottomSheet(
@@ -39,16 +35,12 @@ class GradeManageSheet extends StatefulWidget {
       useSafeArea: true,
       showDragHandle: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => FractionallySizedBox(
-        heightFactor: 0.6,
-        child: GradeManageSheet(
-          selectedYear: selectedYear,
-          selectedSemester: selectedSemester,
-          lastUpdatedAt: lastUpdatedAt,
-          enrollmentYear: enrollmentYear,
-          onSemesterChanged: onSemesterChanged,
-          onRefresh: onRefresh,
-        ),
+      builder: (_) => GradeManageSheet(
+        selectedYear: selectedYear,
+        selectedSemester: selectedSemester,
+        enrollmentYear: enrollmentYear,
+        onSemesterChanged: onSemesterChanged,
+        onRefresh: onRefresh,
       ),
     );
   }
@@ -60,48 +52,61 @@ class GradeManageSheet extends StatefulWidget {
 class _GradeManageSheetState extends State<GradeManageSheet> {
   _SheetPage _page = _SheetPage.menu;
   bool _isRefreshing = false;
-
-  String _formatTime(DateTime? dt) {
-    if (dt == null) return '暂未更新';
-    final now = DateTime.now();
-    final isToday =
-        dt.year == now.year && dt.month == now.month && dt.day == now.day;
-    if (isToday) {
-      return '今天 ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
-    }
-    return '${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
-  }
+  String? _loadingSemesterKey;
 
   Future<void> _handleRefresh() async {
     if (_isRefreshing) return;
-
     setState(() => _isRefreshing = true);
 
     final success = await widget.onRefresh();
 
     if (!mounted) return;
-
     setState(() => _isRefreshing = false);
 
-    if (!success) return; // 失败保留菜单
+    if (success) {
+      await Future.delayed(const Duration(milliseconds: 300));
+      if (mounted) Navigator.pop(context);
+    }
+  }
 
-    // 成功后短暂延迟再关闭
-    await Future.delayed(const Duration(milliseconds: 300));
-    if (mounted) Navigator.pop(context);
+  Future<void> _handleSemesterTap(String year, int semester) async {
+    if (_loadingSemesterKey != null) return;
+
+    final key = '${year}_$semester';
+    setState(() => _loadingSemesterKey = key);
+
+    final success = await widget.onSemesterChanged(year, semester);
+
+    if (!mounted) return;
+
+    if (success) {
+      Navigator.pop(context);
+    } else {
+      setState(() => _loadingSemesterKey = null);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+    return ConstrainedBox(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.sizeOf(context).height * 0.65,
       ),
-      child: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 250),
-        child: _page == _SheetPage.menu
-            ? _buildMenu(context)
-            : _buildSemesterList(context),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: AnimatedSize(
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOutCubic,
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 200),
+            child: _page == _SheetPage.menu
+                ? _buildMenu(context)
+                : _buildSemesterList(context),
+          ),
+        ),
       ),
     );
   }
@@ -111,6 +116,7 @@ class _GradeManageSheetState extends State<GradeManageSheet> {
       key: const ValueKey('menu'),
       padding: const EdgeInsets.fromLTRB(24, 4, 24, 32),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
@@ -118,8 +124,6 @@ class _GradeManageSheetState extends State<GradeManageSheet> {
             style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 20),
-
-          // Current semester row
           _sectionLabel('当前学期'),
           const SizedBox(height: 8),
           _menuRow(
@@ -132,16 +136,12 @@ class _GradeManageSheetState extends State<GradeManageSheet> {
             onTap: () => setState(() => _page = _SheetPage.semesterList),
           ),
           const SizedBox(height: 20),
-
-          // Refresh row
           _sectionLabel('成绩操作'),
           const SizedBox(height: 8),
           _menuRow(
             icon: Icons.refresh_rounded,
-            title: _isRefreshing ? '正在刷新成绩...' : '刷新当前成绩',
-            subtitle: _isRefreshing
-                ? '当前仍显示上次获取的数据'
-                : '上次更新：${_formatTime(widget.lastUpdatedAt)}',
+            title: _isRefreshing ? '正在刷新成绩' : '刷新当前成绩',
+            subtitle: _isRefreshing ? '当前页面内容不会被清空' : '重新从教务系统获取',
             trailing: _isRefreshing
                 ? const SizedBox(
                     width: 20,
@@ -163,9 +163,9 @@ class _GradeManageSheetState extends State<GradeManageSheet> {
       key: const ValueKey('semesterList'),
       padding: const EdgeInsets.fromLTRB(24, 4, 24, 32),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Back button
           InkWell(
             onTap: () => setState(() => _page = _SheetPage.menu),
             child: Row(
@@ -184,8 +184,10 @@ class _GradeManageSheetState extends State<GradeManageSheet> {
             ),
           ),
           const SizedBox(height: 16),
-          Expanded(
+          Flexible(
             child: ListView(
+              shrinkWrap: true,
+              padding: EdgeInsets.zero,
               children: () {
                 String? lastYear;
                 final widgets = <Widget>[];
@@ -211,16 +213,31 @@ class _GradeManageSheetState extends State<GradeManageSheet> {
 
                   final isSelected = s.year == widget.selectedYear &&
                       s.semester == widget.selectedSemester;
+                  final key = '${s.year}_${s.semester}';
+                  final isLoading = _loadingSemesterKey == key;
+                  final disabled = _loadingSemesterKey != null;
 
                   widgets.add(
                     ListTile(
                       dense: true,
                       contentPadding: EdgeInsets.zero,
+                      enabled: !disabled,
                       title: Text(EduSemester.displayLabel(s.semester)),
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          if (s.isCurrent)
+                          if (isLoading)
+                            const Padding(
+                              padding: EdgeInsets.only(right: 8),
+                              child: SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              ),
+                            ),
+                          if (s.isCurrent && !isLoading)
                             Container(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 8,
@@ -242,7 +259,7 @@ class _GradeManageSheetState extends State<GradeManageSheet> {
                                 ),
                               ),
                             ),
-                          if (isSelected)
+                          if (isSelected && !isLoading)
                             Icon(
                               Icons.check_rounded,
                               size: 20,
@@ -250,11 +267,7 @@ class _GradeManageSheetState extends State<GradeManageSheet> {
                             ),
                         ],
                       ),
-                      onTap: () {
-                        widget.onSemesterChanged(s.year, s.semester);
-                        // Close the entire sheet
-                        Navigator.pop(context);
-                      },
+                      onTap: () => _handleSemesterTap(s.year, s.semester),
                     ),
                   );
                 }
@@ -315,10 +328,7 @@ class _GradeManageSheetState extends State<GradeManageSheet> {
                       const SizedBox(height: 2),
                       Text(
                         subtitle,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey[500],
-                        ),
+                        style: TextStyle(fontSize: 12, color: Colors.grey[500]),
                       ),
                     ],
                   ],

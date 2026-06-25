@@ -23,6 +23,8 @@ class _EduGradeScreenState extends State<EduGradeScreen> {
   int _selectedSemester = EduSemester.first;
   List<EduGrade> _grades = [];
   GradePageState _pageState = GradePageState.loading;
+  // Cache timestamp — currently not rendered in UI, retained for future use
+  // ignore: unused_field
   DateTime? _lastUpdatedAt;
   bool _isInitialLoading = false;
   bool _isRefreshing = false;
@@ -203,36 +205,87 @@ class _EduGradeScreenState extends State<EduGradeScreen> {
     return false;
   }
 
-  void _onSemesterChanged(({String year, int semester}) selection) {
-    if (selection.year == _selectedYear &&
-        selection.semester == _selectedSemester) {
-      return;
+  /// Atomically switch semester — old grades stay visible during load.
+  /// Returns true on success, false if failed or stale.
+  Future<bool> _switchSemester(String year, int semester) async {
+    if (year == _selectedYear && semester == _selectedSemester) {
+      return true;
     }
 
-    // Reset filter and invalidate stale requests
-    _requestGeneration++;
+    final provider = _eduProvider;
+    if (provider == null) return false;
+
+    final generation = ++_requestGeneration;
+    final cache = provider.getCachedGrades(year, semester);
+
+    if (cache != null) {
+      if (!mounted || generation != _requestGeneration) return false;
+
+      setState(() {
+        _selectedYear = year;
+        _selectedSemester = semester;
+        _grades = cache.grades;
+        _lastUpdatedAt = cache.updatedAt;
+        _activeFilter = '全部';
+        _pageState = cache.grades.isEmpty
+            ? GradePageState.empty
+            : GradePageState.content;
+      });
+
+      _saveSelectedSemester(year, semester);
+
+      // Background refresh
+      _refreshSelectedSemesterInBackground(year, semester, generation);
+      return true;
+    }
+
+    // No cache — fetch from network. Old grades stay visible while loading.
+    final result = await provider.fetchGrades(year, semester);
+
+    if (!mounted || generation != _requestGeneration) return false;
+    if (!result.success || result.data == null) return false;
+
+    final entry = provider.getCachedGrades(year, semester);
     setState(() {
-      _selectedYear = selection.year;
-      _selectedSemester = selection.semester;
+      _selectedYear = year;
+      _selectedSemester = semester;
+      _grades = result.data!;
+      _lastUpdatedAt = entry?.updatedAt;
       _activeFilter = '全部';
-      _isInitialLoading = false;
-      _isRefreshing = false;
+      _pageState =
+          _grades.isEmpty ? GradePageState.empty : GradePageState.content;
     });
 
-    // 捕获局部变量，防止异步闭包读取后被其他操作修改
-    final capturedUserId = _lastUserId;
-    final capturedYear = _selectedYear;
-    final capturedSemester = _selectedSemester;
-    if (capturedUserId != null) {
-      SharedPreferences.getInstance().then((prefs) {
-        prefs.setString(
-          'edu_last_semester_$capturedUserId',
-          '${capturedYear}_$capturedSemester',
-        );
+    _saveSelectedSemester(year, semester);
+    return true;
+  }
+
+  void _saveSelectedSemester(String year, int semester) {
+    final userId = _lastUserId;
+    if (userId == null) return;
+    SharedPreferences.getInstance().then((prefs) {
+      prefs.setString('edu_last_semester_$userId', '${year}_$semester');
+    });
+  }
+
+  Future<void> _refreshSelectedSemesterInBackground(
+    String year,
+    int semester,
+    int generation,
+  ) async {
+    final provider = _eduProvider;
+    if (provider == null) return;
+    final result = await provider.fetchGrades(year, semester);
+    if (!mounted || generation != _requestGeneration) return;
+    if (result.success && result.data != null) {
+      final entry = provider.getCachedGrades(year, semester);
+      setState(() {
+        _grades = result.data!;
+        _lastUpdatedAt = entry?.updatedAt;
+        _pageState =
+            _grades.isEmpty ? GradePageState.empty : GradePageState.content;
       });
     }
-
-    _loadGrades();
   }
 
   void _showSnackBar(String message) {
@@ -257,11 +310,8 @@ class _EduGradeScreenState extends State<EduGradeScreen> {
       context,
       selectedYear: _selectedYear,
       selectedSemester: _selectedSemester,
-      lastUpdatedAt: _lastUpdatedAt,
       enrollmentYear: _eduProvider?.enrollmentYear ?? 2000,
-      onSemesterChanged: (year, semester) {
-        _onSemesterChanged((year: year, semester: semester));
-      },
+      onSemesterChanged: _switchSemester,
       onRefresh: _refreshGrades,
     );
   }
@@ -294,7 +344,6 @@ class _EduGradeScreenState extends State<EduGradeScreen> {
           child: GradeSummaryCard(
             selectedYear: _selectedYear,
             selectedSemester: _selectedSemester,
-            lastUpdatedAt: _lastUpdatedAt,
             grades: _grades,
           ),
         ),

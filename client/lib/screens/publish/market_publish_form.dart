@@ -32,6 +32,8 @@ class MarketPublishForm extends StatefulWidget {
 
 class _MarketPublishFormState extends State<MarketPublishForm>
     with PublishImagePickerMixin {
+  static const _maxImages = 9;
+
   final _formKey = GlobalKey<FormState>();
   final _titleController = TextEditingController();
   final _contentController = TextEditingController();
@@ -78,7 +80,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
 
   @override
   bool get canAddMoreImages =>
-      _canUploadUnlimitedImages || _totalImageCount < 9;
+      _canUploadUnlimitedImages || _totalImageCount < _maxImages;
 
   bool get _showsPriceField => _postType != 'lost' && _postType != 'found';
 
@@ -108,7 +110,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
     if (_isEditing) return '保存修改';
     switch (_postType) {
       case 'sell':
-        return '发布商品';
+        return '发布出售';
       case 'buy':
         return '发布求购';
       case 'lost':
@@ -379,7 +381,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
                 // =====================================================
                 // 1. 商品图片（置顶，不套卡片）
                 // =====================================================
-                _buildImageSection(),
+                _buildImageSection(colorScheme),
                 const SizedBox(height: 24),
 
                 // =====================================================
@@ -427,8 +429,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
   // Section builders
   // ---------------------------------------------------------------------------
 
-  Widget _buildImageSection() {
-    final max = _canUploadUnlimitedImages ? '∞' : '9';
+  Widget _buildImageSection(ColorScheme colorScheme) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -441,10 +442,10 @@ class _MarketPublishFormState extends State<MarketPublishForm>
             ),
             const Spacer(),
             Text(
-              '$_totalImageCount/$max',
+              '$_totalImageCount/$_maxImages',
               style: TextStyle(
                 fontSize: 13,
-                color: Colors.grey.withValues(alpha: 0.7),
+                color: colorScheme.onSurfaceVariant,
               ),
             ),
           ],
@@ -462,7 +463,9 @@ class _MarketPublishFormState extends State<MarketPublishForm>
         Text(
           '清晰实拍更容易成交，第一张将作为封面',
           style: TextStyle(
-              fontSize: 12, color: Colors.grey.withValues(alpha: 0.6)),
+            fontSize: 12,
+            color: colorScheme.onSurfaceVariant,
+          ),
         ),
       ],
     );
@@ -532,7 +535,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
                 size: 16,
                 color: _postType == 'exposure'
                     ? Colors.orange
-                    : Colors.grey.withValues(alpha: 0.6),
+                    : Theme.of(context).colorScheme.onSurfaceVariant,
               ),
               const SizedBox(width: 4),
               Text(
@@ -541,7 +544,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
                   fontSize: 13,
                   color: _postType == 'exposure'
                       ? Colors.orange
-                      : Colors.grey.withValues(alpha: 0.6),
+                      : Theme.of(context).colorScheme.onSurfaceVariant,
                   fontWeight: _postType == 'exposure'
                       ? FontWeight.w500
                       : FontWeight.normal,
@@ -635,13 +638,23 @@ class _MarketPublishFormState extends State<MarketPublishForm>
         Text(
           '选填，建议优先通过站内私信联系',
           style: TextStyle(
-              fontSize: 12, color: Colors.grey.withValues(alpha: 0.6)),
+            fontSize: 12,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
         ),
         const SizedBox(height: 10),
-        TextFormField(
-          controller: _contactController,
-          decoration: _plainInputDecoration(
-            hint: 'QQ / 微信 / 手机号（选填）',
+        Container(
+          decoration: BoxDecoration(
+            color: isDark
+                ? Colors.white.withValues(alpha: 0.05)
+                : const Color(0xFFF7F7FA),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: TextFormField(
+            controller: _contactController,
+            decoration: _plainInputDecoration(
+              hint: 'QQ / 微信 / 手机号（选填）',
+            ),
           ),
         ),
       ],

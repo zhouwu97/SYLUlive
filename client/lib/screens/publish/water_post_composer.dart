@@ -11,6 +11,9 @@ import 'widgets/publish_image_grid.dart';
 import 'widgets/publish_image_picker.dart';
 
 /// Full-screen water-post composer (boardId == 1).
+///
+/// Uses a full-screen editor layout: title at top, content filling remaining
+/// space, images below content.
 class WaterPostComposer extends StatefulWidget {
   final Post? editingPost;
 
@@ -22,6 +25,8 @@ class WaterPostComposer extends StatefulWidget {
 
 class _WaterPostComposerState extends State<WaterPostComposer>
     with PublishImagePickerMixin {
+  static const _maxImages = 9;
+
   final _formKey = GlobalKey<FormState>();
   final _titleController = TextEditingController();
   final _contentController = TextEditingController();
@@ -65,14 +70,11 @@ class _WaterPostComposerState extends State<WaterPostComposer>
 
   @override
   bool get canAddMoreImages =>
-      _canUploadUnlimitedImages || _totalImageCount < 9;
+      _canUploadUnlimitedImages || _totalImageCount < _maxImages;
 
   int get _charCount => _contentController.text.length;
 
-  String get _imageLimitLabel {
-    final max = _canUploadUnlimitedImages ? '∞' : '9';
-    return '$_totalImageCount/$max';
-  }
+  bool get _hasImages => _totalImageCount > 0 || canAddMoreImages;
 
   String get _pageTitle => _isEditing ? '编辑帖子' : '发布水帖';
 
@@ -100,12 +102,7 @@ class _WaterPostComposerState extends State<WaterPostComposer>
     super.dispose();
   }
 
-  void _onContentChanged() {
-    // Rebuild only when the character-count label needs to change.
-    // Using setState is fine here — the listener fires on each keystroke,
-    // but the rebuild is scoped to a lightweight status row.
-    setState(() {});
-  }
+  void _onContentChanged() => setState(() {});
 
   // ---------------------------------------------------------------------------
   // Validation
@@ -223,7 +220,6 @@ class _WaterPostComposerState extends State<WaterPostComposer>
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final colorScheme = Theme.of(context).colorScheme;
 
     return Scaffold(
       backgroundColor:
@@ -235,19 +231,18 @@ class _WaterPostComposerState extends State<WaterPostComposer>
         title: Text(_pageTitle),
         leading: const BackButton(),
       ),
-      bottomNavigationBar: _buildBottomArea(isDark, colorScheme),
+      bottomNavigationBar: _buildBottomArea(isDark),
       body: SafeArea(
         bottom: false,
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // ---- title: lightweight, no border ----
-                TextFormField(
+        child: Form(
+          key: _formKey,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // ---- title: lightweight, no border ----
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                child: TextFormField(
                   controller: _titleController,
                   decoration: const InputDecoration(
                     hintText: '添加标题（选填）',
@@ -267,51 +262,47 @@ class _WaterPostComposerState extends State<WaterPostComposer>
                   ),
                   maxLines: 1,
                 ),
+              ),
+              const Divider(height: 1),
 
-                // ---- divider ----
-                Divider(
-                  color: Colors.grey.withValues(alpha: 0.15),
-                  height: 1,
-                ),
-                const SizedBox(height: 12),
-
-                // ---- content: grows naturally ----
-                TextFormField(
-                  controller: _contentController,
-                  decoration: const InputDecoration(
-                    hintText: '分享校园生活、提问或记录此刻…',
-                    hintStyle: TextStyle(color: Colors.grey, fontSize: 15),
-                    border: InputBorder.none,
-                    enabledBorder: InputBorder.none,
-                    focusedBorder: InputBorder.none,
-                    contentPadding: EdgeInsets.zero,
+              // ---- content: fills all remaining space ----
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: TextFormField(
+                    controller: _contentController,
+                    decoration: const InputDecoration(
+                      hintText: '分享校园生活、提问或记录此刻…',
+                      hintStyle: TextStyle(color: Colors.grey, fontSize: 15),
+                      border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: InputBorder.none,
+                      contentPadding: EdgeInsets.only(top: 12),
+                    ),
+                    style: const TextStyle(fontSize: 15, height: 1.6),
+                    expands: true,
+                    maxLines: null,
+                    textAlignVertical: TextAlignVertical.top,
+                    validator: (v) => (v ?? '').trim().isEmpty ? '请输入内容' : null,
                   ),
-                  style: const TextStyle(fontSize: 15, height: 1.6),
-                  minLines: 6,
-                  maxLines: null,
-                  validator: (v) => (v ?? '').trim().isEmpty ? '请输入内容' : null,
                 ),
-                const SizedBox(height: 16),
+              ),
 
-                // ---- divider ----
-                Divider(
-                  color: Colors.grey.withValues(alpha: 0.15),
-                  height: 1,
+              // ---- images (below content, only when present) ----
+              if (_hasImages)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                  child: PublishImageGrid(
+                    existingImages: _existingImages,
+                    selectedImages: _selectedImages,
+                    canAddMore: canAddMoreImages,
+                    onAddImage: showImageSourceDialog,
+                    onRemoveNewImage: onNewImageRemoved,
+                    onRemoveExistingImage: onExistingImageRemoved,
+                    compact: true,
+                  ),
                 ),
-                const SizedBox(height: 12),
-
-                // ---- image grid (no section card wrapping) ----
-                PublishImageGrid(
-                  existingImages: _existingImages,
-                  selectedImages: _selectedImages,
-                  canAddMore: canAddMoreImages,
-                  onAddImage: showImageSourceDialog,
-                  onRemoveNewImage: onNewImageRemoved,
-                  onRemoveExistingImage: onExistingImageRemoved,
-                  compact: true,
-                ),
-              ],
-            ),
+            ],
           ),
         ),
       ),
@@ -319,34 +310,34 @@ class _WaterPostComposerState extends State<WaterPostComposer>
   }
 
   // ---------------------------------------------------------------------------
-  // Bottom area: status row + publish bar
+  // Bottom area: status row + full-width publish button
   // ---------------------------------------------------------------------------
 
-  Widget _buildBottomArea(bool isDark, ColorScheme colorScheme) {
+  Widget _buildBottomArea(bool isDark) {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         // status row
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           decoration: BoxDecoration(
             color: isDark ? const Color(0xFF0D1117) : const Color(0xFFFEFEFE),
             border: Border(
               top: BorderSide(
-                color: colorScheme.outlineVariant.withValues(alpha: 0.12),
+                color: Colors.black.withValues(alpha: 0.05),
               ),
             ),
           ),
           child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                '图片 $_imageLimitLabel',
+                '图片 $_totalImageCount/$_maxImages',
                 style: TextStyle(
                   fontSize: 12,
                   color: Colors.grey.withValues(alpha: 0.7),
                 ),
               ),
-              const Spacer(),
               Text(
                 '$_charCount 字',
                 style: TextStyle(
@@ -357,7 +348,7 @@ class _WaterPostComposerState extends State<WaterPostComposer>
             ],
           ),
         ),
-        // publish button
+        // full-width publish button
         PublishBottomBar(
           isLoading: _isLoading,
           onPressed: _isLoading ? null : _submit,

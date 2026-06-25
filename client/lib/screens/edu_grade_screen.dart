@@ -43,17 +43,31 @@ class _EduGradeScreenState extends State<EduGradeScreen> {
       _eduProvider = eduProvider;
       _lastUserId = currentUserId;
 
+      // 立即废弃旧用户的所有进行中请求并清空页面
+      _requestGeneration++;
+      setState(() {
+        _grades = [];
+        _lastUpdatedAt = null;
+        _activeFilter = '全部';
+        _errorMessage = null;
+        _pageState = GradePageState.loading;
+        _isInitialLoading = true;
+        _isRefreshing = false;
+      });
+
       if (currentUserId != null) {
+        // 捕获局部变量防止异步期间 _lastUserId 变化
+        final capturedUserId = currentUserId;
         eduProvider.setUserId(currentUserId);
-        _initSemesterAndLoad();
+        _initSemesterAndLoad(capturedUserId);
       }
     }
   }
 
-  Future<void> _initSemesterAndLoad() async {
+  Future<void> _initSemesterAndLoad(String userId) async {
     // Load persisted semester
     final prefs = await SharedPreferences.getInstance();
-    final savedKey = 'edu_last_semester_${_lastUserId}';
+    final savedKey = 'edu_last_semester_$userId';
     final saved = prefs.getString(savedKey);
 
     bool loaded = false;
@@ -199,12 +213,15 @@ class _EduGradeScreenState extends State<EduGradeScreen> {
       _isRefreshing = false;
     });
 
-    // Persist choice (fire-and-forget — don't block load)
-    if (_lastUserId != null) {
+    // 捕获局部变量，防止异步闭包读取后被其他操作修改
+    final capturedUserId = _lastUserId;
+    final capturedYear = _selectedYear;
+    final capturedSemester = _selectedSemester;
+    if (capturedUserId != null) {
       SharedPreferences.getInstance().then((prefs) {
         prefs.setString(
-          'edu_last_semester_${_lastUserId}',
-          '${_selectedYear}_$_selectedSemester',
+          'edu_last_semester_$capturedUserId',
+          '${capturedYear}_$capturedSemester',
         );
       });
     }

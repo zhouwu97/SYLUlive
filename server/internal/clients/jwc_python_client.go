@@ -217,7 +217,7 @@ func (c *JWCPythonClient) Crawl(ctx context.Context, req *CrawlRequest) (*CrawlR
 					return nil, ctx.Err()
 				case <-time.After(3 * time.Second):
 				}
-				// prevent next round's backoff from stacking on top
+				attempt = 1 // skip: no backoff wait on next iteration
 				continue
 			}
 			return nil, errors.New("jwc crawl busy (409), giving up")

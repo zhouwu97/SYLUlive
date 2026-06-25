@@ -5,6 +5,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'dart:convert';
 import '../config/api_constants.dart';
 import '../utils/app_feedback.dart';
+import '../models/edu_grade.dart';
 
 /// 操作结果，包含成功状态和错误信息
 class OperationResult<T> {
@@ -21,6 +22,14 @@ class OperationResult<T> {
       OperationResult(success: false, errorMessage: message);
 }
 
+/// 成绩缓存条目
+class GradeCacheEntry {
+  final List<EduGrade> grades;
+  final DateTime updatedAt;
+
+  const GradeCacheEntry({required this.grades, required this.updatedAt});
+}
+
 class EduProvider extends ChangeNotifier {
   late final Dio _eduDio; // Python 教务服务专用
   late final Dio _authDio; // Go 服务器（获取当前用户信息）
@@ -35,6 +44,7 @@ class EduProvider extends ChangeNotifier {
   bool _isLoading = false;
   bool _statusLoaded = false;
   String? _errorMessage;
+  final Map<String, GradeCacheEntry> _gradeCache = {};
 
   bool get isBound => _isBound;
   String get studentId => _studentId;
@@ -56,6 +66,33 @@ class EduProvider extends ChangeNotifier {
     return startYear;
   }
 
+  /// 内存缓存 key：edu_grades_${userId}_${year}_${semester}
+  String _cacheKey(String year, int semester) {
+    return 'edu_grades_${_userId}_${year}_$semester';
+  }
+
+  /// 读取内存缓存
+  GradeCacheEntry? getCachedGrades(String year, int semester) {
+    return _gradeCache[_cacheKey(year, semester)];
+  }
+
+  /// 清除指定用户的所有成绩缓存
+  void clearGradeCacheForUser(String userId) {
+    final prefix = 'edu_grades_${userId}_';
+    _gradeCache.removeWhere((key, _) => key.startsWith(prefix));
+  }
+
+  /// 删除教务密码（解绑后）
+  Future<void> _deleteEduPassword(String studentId) async {
+    if (kIsWeb) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('edu_pwd_$studentId');
+    } else {
+      const storage = FlutterSecureStorage();
+      await storage.delete(key: 'edu_pwd_$studentId');
+    }
+  }
+
   EduProvider(Dio authDio) {
     _authDio = authDio;
     _eduDio = Dio(
@@ -69,8 +106,21 @@ class EduProvider extends ChangeNotifier {
 
   void setUserId(String userId) {
     if (_userId == userId) return;
+    // 立即清除旧用户的所有可见状态，避免短暂显示上一位用户信息
+    if (_userId != null) {
+      clearGradeCacheForUser(_userId!);
+    }
     _userId = userId;
+    _isBound = false;
+    _studentId = '';
+    _name = '';
+    _grade = '';
+    _college = '';
+    _major = '';
+    _errorMessage = null;
     _statusLoaded = false;
+    notifyListeners();
+    // 再异步加载新用户状态
     loadStatus();
   }
 
@@ -234,6 +284,9 @@ class EduProvider extends ChangeNotifier {
       return OperationResult.fail('用户未登录');
     }
 
+    final currentUserId = _userId!;
+    final currentStudentId = _studentId; // 先保存，字段之后会被清空
+
     try {
       final response = await _eduDio.delete(
         '/api/edu/bind',
@@ -241,13 +294,33 @@ class EduProvider extends ChangeNotifier {
       );
 
       if (response.statusCode == 200) {
+        // 清除本地状态
         _isBound = false;
         _studentId = '';
         _name = '';
         _grade = '';
         _college = '';
         _major = '';
+        _errorMessage = null;
         _statusLoaded = true;
+
+        // 清除 SharedPreferences 中该用户的教务信息
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setBool('edu_bound_$currentUserId', false);
+        await prefs.remove('edu_student_id_$currentUserId');
+        await prefs.remove('edu_grade_$currentUserId');
+        await prefs.remove('edu_college_$currentUserId');
+        await prefs.remove('edu_major_$currentUserId');
+        await prefs.remove('edu_last_semester_$currentUserId');
+
+        // 删除安全存储中的密码
+        if (currentStudentId.isNotEmpty) {
+          await _deleteEduPassword(currentStudentId);
+        }
+
+        // 清除该用户的所有成绩缓存
+        clearGradeCacheForUser(currentUserId);
+
         notifyListeners();
         return OperationResult.ok(null);
       }
@@ -338,8 +411,26 @@ class EduProvider extends ChangeNotifier {
     }
   }
 
-  // 获取成绩
-  Future<OperationResult<List<Map<String, dynamic>>>?> getGrades(
+  /// 获取成绩 — 始终请求网络，返回已解析的 [EduGrade] 列表。
+  /// 成功时自动写入内存缓存并记录更新时间。
+  Future<OperationResult<List<EduGrade>>> fetchGrades(
+    String year,
+    int semester,
+  ) async {
+    final raw = await _fetchGradesRaw(year, semester);
+    if (raw != null && raw.success && raw.data != null) {
+      final grades = raw.data!.map((m) => EduGrade.fromJson(m)).toList();
+      _gradeCache[_cacheKey(year, semester)] = GradeCacheEntry(
+        grades: grades,
+        updatedAt: DateTime.now(),
+      );
+      return OperationResult.ok(grades);
+    }
+    return OperationResult.fail(raw?.errorMessage ?? '获取成绩失败');
+  }
+
+  // 获取成绩（原始数据，内部使用）
+  Future<OperationResult<List<Map<String, dynamic>>>?> _fetchGradesRaw(
     String year,
     int semester,
   ) async {

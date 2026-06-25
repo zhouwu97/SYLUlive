@@ -5,6 +5,7 @@ import '../providers/edu_provider.dart';
 import '../providers/course_schedule_provider.dart';
 import '../utils/app_navigator.dart' show appNavigatorKey;
 import '../features/campus_data/evaluation/evaluation_screen.dart';
+import 'edu_grade_screen.dart';
 
 class EduScreen extends StatefulWidget {
   const EduScreen({super.key});
@@ -116,8 +117,14 @@ class _EduScreenState extends State<EduScreen> {
                               label: const Text('课表'),
                             ),
                             OutlinedButton.icon(
-                              onPressed: () =>
-                                  _showGradesDialog(context, eduProvider),
+                              onPressed: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => const EduGradeScreen(),
+                                  ),
+                                );
+                              },
                               icon: const Icon(Icons.grade),
                               label: const Text('成绩'),
                             ),
@@ -519,180 +526,6 @@ class _EduScreenState extends State<EduScreen> {
                   ),
                 ),
               ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showGradesDialog(BuildContext context, EduProvider eduProvider) {
-    final now = DateTime.now();
-    int currentYear = now.year;
-    String selectedYear;
-    int selectedSemester;
-    bool isFetching = false;
-
-    if (now.month >= 2 && now.month <= 7) {
-      selectedYear = (currentYear - 1).toString();
-      selectedSemester = 12; // 春季（第二学期）
-    } else if (now.month == 1) {
-      selectedYear = (currentYear - 1).toString();
-      selectedSemester = 3; // 秋季（第一学期）
-    } else {
-      selectedYear = currentYear.toString();
-      selectedSemester = 3; // 秋季（第一学期）
-    }
-
-    showDialog(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('选择学期'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              DropdownButtonFormField<String>(
-                value: selectedYear,
-                decoration: const InputDecoration(labelText: '学年'),
-                items: () {
-                  int startYear = eduProvider.enrollmentYear;
-                  int currentYear = DateTime.now().year;
-                  int count = (currentYear - startYear) + 2;
-                  if (count < 1) count = 1;
-
-                  return List.generate(count, (i) {
-                    int year = startYear + i;
-                    return DropdownMenuItem(
-                      value: year.toString(),
-                      child: Text('$year-${year + 1}'),
-                    );
-                  }).reversed.toList();
-                }(),
-                onChanged: (value) {
-                  selectedYear = value ?? selectedYear;
-                },
-              ),
-              const SizedBox(height: 16),
-              DropdownButtonFormField<int>(
-                value: selectedSemester,
-                decoration: const InputDecoration(labelText: '学期'),
-                items: const [
-                  DropdownMenuItem(value: 3, child: Text('第一学期')),
-                  DropdownMenuItem(value: 12, child: Text('第二学期')),
-                ],
-                onChanged: (value) {
-                  selectedSemester = value ?? selectedSemester;
-                },
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: isFetching ? null : () => Navigator.pop(context),
-              child: const Text('取消'),
-            ),
-            ElevatedButton(
-              onPressed: isFetching
-                  ? null
-                  : () async {
-                      setDialogState(() => isFetching = true);
-                      final scaffoldMessenger = ScaffoldMessenger.of(context);
-                      final result = await eduProvider.getGrades(
-                        selectedYear,
-                        selectedSemester,
-                      );
-                      if (context.mounted) {
-                        Navigator.pop(context); // 请求结束后关闭对话框
-                        if (result != null &&
-                            result.success &&
-                            result.data != null) {
-                          _showGradesResult(
-                            context,
-                            result.data!,
-                            selectedYear,
-                            selectedSemester,
-                          );
-                        } else {
-                          scaffoldMessenger.showSnackBar(
-                            SnackBar(
-                              content: Text(result?.errorMessage ?? '获取成绩失败'),
-                              backgroundColor: Colors.red,
-                            ),
-                          );
-                        }
-                      }
-                    },
-              child: isFetching
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    )
-                  : const Text('查询'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showGradesResult(
-    BuildContext context,
-    List<Map<String, dynamic>> grades,
-    String year,
-    int semester,
-  ) {
-    showModalBottomSheet(
-      context: appNavigatorKey.currentContext!,
-      isScrollControlled: true,
-      builder: (context) => DraggableScrollableSheet(
-        initialChildSize: 0.7,
-        minChildSize: 0.5,
-        maxChildSize: 0.95,
-        expand: false,
-        builder: (context, scrollController) => Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Text(
-                '${year}-${(int.parse(year) + 1).toString()} ${semester == 3 ? "第一学期" : "第二学期"} 成绩',
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-            Expanded(
-              child: grades.isEmpty
-                  ? const Center(child: Text('暂无成绩'))
-                  : ListView.builder(
-                      controller: scrollController,
-                      itemCount: grades.length,
-                      itemBuilder: (context, index) {
-                        final grade = grades[index];
-                        return Card(
-                          margin: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 4,
-                          ),
-                          child: ListTile(
-                            title: Text(grade['name'] ?? ''),
-                            subtitle: Text(
-                              '成绩: ${grade['grade'] ?? '-'} | '
-                              '学分: ${grade['credits'] ?? 0} | '
-                              '绩点: ${grade['gpa'] ?? 0}',
-                            ),
-                            trailing: grade['is_degree'] == true
-                                ? const Chip(label: Text('学位课'))
-                                : null,
-                          ),
-                        );
-                      },
-                    ),
             ),
           ],
         ),

@@ -5,11 +5,11 @@ import '../providers/edu_provider.dart';
 import '../providers/auth_provider.dart';
 import '../models/edu_grade.dart';
 import '../utils/edu_semester_utils.dart';
-import '../widgets/edu_grade/semester_selector.dart';
 import '../widgets/edu_grade/grade_summary_card.dart';
 import '../widgets/edu_grade/grade_course_item.dart';
 import '../widgets/edu_grade/grade_empty_state.dart';
 import '../widgets/edu_grade/grade_detail_sheet.dart';
+import '../widgets/edu_grade/grade_manage_sheet.dart';
 
 class EduGradeScreen extends StatefulWidget {
   const EduGradeScreen({super.key});
@@ -247,10 +247,23 @@ class _EduGradeScreenState extends State<EduGradeScreen> {
     }
   }
 
+  void _showGradeMenu() {
+    GradeManageSheet.show(
+      context,
+      selectedYear: _selectedYear,
+      selectedSemester: _selectedSemester,
+      lastUpdatedAt: _lastUpdatedAt,
+      enrollmentYear: _eduProvider?.enrollmentYear ?? 2000,
+      isRefreshing: _isRefreshing,
+      onSemesterChanged: (year, semester) {
+        _onSemesterChanged((year: year, semester: semester));
+      },
+      onRefresh: _refreshGrades,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final loading = _isInitialLoading || _isRefreshing;
-
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
@@ -259,15 +272,9 @@ class _EduGradeScreenState extends State<EduGradeScreen> {
         elevation: 0,
         actions: [
           IconButton(
-            tooltip: '刷新成绩',
-            onPressed: loading ? null : _refreshGrades,
-            icon: loading
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.refresh_rounded),
+            tooltip: '成绩管理',
+            icon: const Icon(Icons.menu_rounded),
+            onPressed: _showGradeMenu,
           ),
         ],
       ),
@@ -278,14 +285,13 @@ class _EduGradeScreenState extends State<EduGradeScreen> {
   Widget _buildBody() {
     return CustomScrollView(
       slivers: [
-        // Semester selector — always visible
+        // Unified overview card — always visible (shows semester + stats)
         SliverToBoxAdapter(
-          child: SemesterSelector(
+          child: GradeSummaryCard(
             selectedYear: _selectedYear,
             selectedSemester: _selectedSemester,
             lastUpdatedAt: _lastUpdatedAt,
-            enrollmentYear: _eduProvider?.enrollmentYear ?? 2000,
-            onSemesterChanged: _onSemesterChanged,
+            grades: _grades,
           ),
         ),
 
@@ -314,14 +320,9 @@ class _EduGradeScreenState extends State<EduGradeScreen> {
             ),
           ),
 
-        // Has grades — show summary + course section
+        // Has grades — show course section
         if (_grades.isNotEmpty) ...[
-          // Compact overview bar
-          SliverToBoxAdapter(
-            child: GradeSummaryCard(grades: _grades),
-          ),
-
-          // "课程成绩 N" section header + filter chips
+          // "课程成绩  共 N 门" section header + filter chips
           SliverToBoxAdapter(
             child: _buildCourseSectionHeader(),
           ),
@@ -388,14 +389,23 @@ class _EduGradeScreenState extends State<EduGradeScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // "课程成绩 N" title
-          Text(
-            '课程成绩  ${_grades.length}',
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: Colors.grey[600],
-            ),
+          // "课程成绩  共 N 门" title
+          Row(
+            children: [
+              Text(
+                '课程成绩',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey[600],
+                ),
+              ),
+              const Spacer(),
+              Text(
+                '共 ${_grades.length} 门',
+                style: TextStyle(fontSize: 13, color: Colors.grey[500]),
+              ),
+            ],
           ),
           const SizedBox(height: 8),
           // Filter chips with counts
@@ -404,7 +414,7 @@ class _EduGradeScreenState extends State<EduGradeScreen> {
             children: [
               _filterChip('全部 ${_grades.length}', '全部'),
               _filterChip('学位课 $degreeCount', '学位课'),
-              _filterChip('未通过 $failedCount', '未通过'),
+              _filterChip('不及格记录 $failedCount', '未通过'),
             ],
           ),
         ],

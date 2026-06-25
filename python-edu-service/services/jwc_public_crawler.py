@@ -22,13 +22,14 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import os
 import random
 import re
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
 from typing import Any
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 import httpx
 from bs4 import BeautifulSoup, Tag
@@ -38,9 +39,13 @@ from services.html_sanitizer import sanitize_html
 # ── 常量 ─────────────────────────────────────────────────────────
 
 JWC_BASE_URL = "https://jwc.sylu.edu.cn"
+JWC_ALLOWED_HOST = "jwc.sylu.edu.cn"
+
+# UA template; JWC_CRAWLER_CONTACT injected at runtime if set
+_CONTACT = os.environ.get("JWC_CRAWLER_CONTACT", "contact via repo")
 UA = (
     "SYULive-JWC-Crawler/1.0 "
-    "(+public site; contact via repo)"
+    f"(+{_CONTACT})"
 )
 
 REQUEST_GAP_SEC_MIN = 0.5
@@ -112,6 +117,7 @@ class CategoryResult:
     pages_fetched: int
     list_items_seen: int
     stop_reason: str  # full_page_known | trailing_known_boundary | max_pages_reached | reconcile_first_page
+    list_fetch_succeeded: bool = False  # 列表页至少有一页成功获取
 
 
 # ── 实用函数 ─────────────────────────────────────────────────────
@@ -122,12 +128,32 @@ def _now_cst_rfc3339() -> str:
     return datetime.now(CST).isoformat()
 
 
-def _resolve(url: str, base: str = JWC_BASE_URL) -> str:
-    """将 URL 解析为绝对 URL。
+def _validate_jwc_url(raw_url: str) -> None:
+    """校验 URL 仅允许 https://jwc.sylu.edu.cn 且无凭据。
 
-    根相对 URL 用站点根补全；页相对 URL 以 base 为基准。
+    Raises ValueError on invalid URL.
     """
-    if url.startswith(("http://", "https://", "mailto:", "tel:")):
+    if not raw_url:
+        raise ValueError("empty URL")
+    u = urlparse(raw_url)
+    if u.scheme != "https":
+        raise ValueError(f"scheme must be https, got {u.scheme!r}")
+    if u.hostname != JWC_ALLOWED_HOST:
+        raise ValueError(f"host must be {JWC_ALLOWED_HOST}, got {u.hostname!r}")
+    if u.username or u.password:
+        raise ValueError("credentials not allowed in URL")
+
+
+def _resolve(url: str, base: str = JWC_BASE_URL) -> str:
+    """将相对 URL 解析为绝对 URL。
+
+    根相对用站点根；页相对以 base 为基准。
+    外部绝对 URL 必须通过 _validate_jwc_url 检查。
+    """
+    if url.startswith(("http://", "https://")):
+        _validate_jwc_url(url)
+        return url
+    if url.startswith(("mailto:", "tel:")):
         return url
     return urljoin(base, url)
 
@@ -183,14 +209,27 @@ async def _fetch(
     *,
     max_retries: int = MAX_RETRIES,
 ) -> tuple[int, str]:
-    """GET 请求，带指数退避重试。"""
+    """GET 请求，带指数退避重试。
+
+    请求前强制校验 URL 域名、scheme 和凭据。
+    重定向后最终 URL 也做校验。
+    """
+    _validate_jwc_url(url)
+
     last_exc: Exception | None = None
     for attempt in range(max_retries):
         try:
             resp = await client.get(url)
+            # 重定向后校验最终 URL
+            final_url = str(resp.url) if resp.url else url
+            if final_url != url:
+                _validate_jwc_url(final_url)
             return resp.status_code, resp.text
-        except httpx.TimeoutException as e:
+        except (httpx.TimeoutException, ValueError) as e:
             last_exc = e
+            if isinstance(e, ValueError):
+                # 域名/协议校验错误不重试
+                return -1, f"<FETCH_REJECTED: {e}>"
             if attempt < max_retries - 1:
                 wait = 0.5 * (2 ** attempt)
                 await asyncio.sleep(wait)
@@ -437,8 +476,10 @@ async def crawl_category(
                 pages_fetched=total_pages_fetched,
                 list_items_seen=total_list_items_seen,
                 stop_reason=stop_reason,
+                list_fetch_succeeded=False,
             )
 
+        list_fetch_succeeded = True  # 第一页成功
         total_pages = parse_total_pages(html)
         if total_pages <= 0:
             total_pages = 1
@@ -468,6 +509,7 @@ async def crawl_category(
                 pages_fetched=total_pages_fetched,
                 list_items_seen=total_list_items_seen,
                 stop_reason=stop_reason,
+                list_fetch_succeeded=list_fetch_succeeded,
             )
 
         # 增量模式停止判断
@@ -481,6 +523,7 @@ async def crawl_category(
                 pages_fetched=total_pages_fetched,
                 list_items_seen=total_list_items_seen,
                 stop_reason=stop_reason,
+                list_fetch_succeeded=list_fetch_succeeded,
             )
 
         # 计算尾部连续已知数量（倒序遍历）
@@ -500,6 +543,7 @@ async def crawl_category(
                 pages_fetched=total_pages_fetched,
                 list_items_seen=total_list_items_seen,
                 stop_reason=stop_reason,
+                list_fetch_succeeded=list_fetch_succeeded,
             )
 
         # ── 3. 后续页面 ──────────────────────────────────
@@ -565,6 +609,7 @@ async def crawl_category(
         pages_fetched=total_pages_fetched,
         list_items_seen=total_list_items_seen,
         stop_reason=stop_reason,
+        list_fetch_succeeded=list_fetch_succeeded,
     )
 
 
@@ -656,11 +701,16 @@ class JWCPublicCrawler:
             urls = known_source_urls.get(cat, [])
             known_sets[cat] = set(urls)
 
+        # 每个重定向步骤都校验目标 URL
+        def _validate_redirect(request: httpx.Request) -> None:
+            _validate_jwc_url(str(request.url))
+
         async with httpx.AsyncClient(
             timeout=httpx.Timeout(self.timeout),
             follow_redirects=True,
-            verify=False,
+            verify=True,             # 生产必须验证 TLS 证书
             headers={"User-Agent": self.user_agent},
+            event_hooks={"request": [_validate_redirect]},
         ) as client:
             # 并行抓取两个栏目（顺序执行，但有独立错误处理）
             results: list[CategoryResult] = []
@@ -689,9 +739,11 @@ class JWCPublicCrawler:
 
         partial_failure = any(len(r.errors) > 0 for r in results)
 
-        # 将所有栏目均无法访问视为 503
-        all_failed = all(len(r.items) == 0 for r in results) and len(
-            [e for e in all_errors if e.retryable is False]) > 0
+        # 所有栏目列表页均无法访问 → all_failed
+        all_failed = (
+            len(results) > 0
+            and not any(r.list_fetch_succeeded for r in results)
+        )
 
         # 构建响应
         response_items = []
@@ -752,14 +804,22 @@ class JWCPublicCrawler:
 
 
 def _get_category_name(source_url: str) -> str:
+    try:
+        path = urlparse(source_url).path
+    except Exception:
+        return ""
     for slug, cfg in CATEGORY_CONFIG.items():
-        if f"/{cfg['category_id']}/" in source_url:
+        if f"/{cfg['category_id']}/" in path:
             return cfg["name"]
     return ""
 
 
 def _get_category_slug(source_url: str) -> str:
+    try:
+        path = urlparse(source_url).path
+    except Exception:
+        return ""
     for slug, cfg in CATEGORY_CONFIG.items():
-        if f"/{cfg['category_id']}/" in source_url:
+        if f"/{cfg['category_id']}/" in path:
             return slug
     return ""

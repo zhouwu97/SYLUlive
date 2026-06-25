@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Annotated, Any
+from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -70,18 +71,29 @@ class CrawlRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_known_urls_count(self) -> "CrawlRequest":
+        # 字典键只能是 jwtz、jwgg
+        for key in self.known_source_urls:
+            if key not in CATEGORY_SLUGS:
+                raise ValueError(
+                    f"known_source_urls key must be jwtz or jwgg, got {key!r}"
+                )
+
         total = sum(len(urls) for urls in self.known_source_urls.values())
         if total > MAX_KNOWN_URLS:
             raise ValueError(
                 f"known_source_urls total entries ({total}) exceeds max ({MAX_KNOWN_URLS})"
             )
-        # 验证 URL 域名白名单
+        # 每个 URL 必须通过 urlparse 严格校验
         for cat, urls in self.known_source_urls.items():
             for url in urls:
-                if "://jwc.sylu.edu.cn/" not in url:
-                    raise ValueError(
-                        f"known_source_urls contains non-jwc URL: {url!r}"
-                    )
+                try:
+                    u = urlparse(url)
+                except Exception:
+                    raise ValueError(f"known_source_urls contains invalid URL: {url!r}")
+                if u.scheme != "https":
+                    raise ValueError(f"known URL must be https: {url!r}")
+                if u.hostname != "jwc.sylu.edu.cn":
+                    raise ValueError(f"known URL host must be jwc.sylu.edu.cn: {url!r}")
         return self
 
 

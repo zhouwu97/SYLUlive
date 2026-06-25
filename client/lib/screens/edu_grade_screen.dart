@@ -9,7 +9,7 @@ import '../widgets/edu_grade/grade_summary_card.dart';
 import '../widgets/edu_grade/grade_course_item.dart';
 import '../widgets/edu_grade/grade_empty_state.dart';
 import '../widgets/edu_grade/grade_detail_sheet.dart';
-import '../widgets/edu_grade/grade_manage_sheet.dart';
+import '../widgets/edu_grade/grade_manage_drawer.dart';
 
 class EduGradeScreen extends StatefulWidget {
   const EduGradeScreen({super.key});
@@ -32,6 +32,8 @@ class _EduGradeScreenState extends State<EduGradeScreen> {
   String? _errorMessage;
   String? _lastUserId;
   String _activeFilter = '全部'; // '全部' | '学位课' | '未通过'
+
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
   EduProvider? _eduProvider;
 
@@ -305,30 +307,33 @@ class _EduGradeScreenState extends State<EduGradeScreen> {
     }
   }
 
-  void _showGradeMenu() {
-    GradeManageSheet.show(
-      context,
-      selectedYear: _selectedYear,
-      selectedSemester: _selectedSemester,
-      enrollmentYear: _eduProvider?.enrollmentYear ?? 2000,
-      onSemesterChanged: _switchSemester,
-      onRefresh: _refreshGrades,
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      key: _scaffoldKey,
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      drawerEnableOpenDragGesture: false,
+      drawerScrimColor: Colors.black.withValues(alpha: 0.42),
+      drawer: GradeManageDrawer(
+        selectedYear: _selectedYear,
+        selectedSemester: _selectedSemester,
+        enrollmentYear: _eduProvider?.enrollmentYear ?? 2000,
+        onSemesterChanged: _switchSemester,
+        onRefresh: _refreshGrades,
+      ),
       appBar: AppBar(
+        leading: const BackButton(),
         title: const Text('我的成绩'),
+        centerTitle: true,
         backgroundColor: Colors.transparent,
         elevation: 0,
         actions: [
           IconButton(
             tooltip: '成绩管理',
             icon: const Icon(Icons.menu_rounded),
-            onPressed: _showGradeMenu,
+            onPressed: () {
+              _scaffoldKey.currentState?.openDrawer();
+            },
           ),
         ],
       ),

@@ -3,27 +3,31 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 )
 
 // Config 应用配置
 type Config struct {
-	JWTSecret        string // JWT密钥
-	DSN              string // 数据库连接字符串
-	UploadDir        string // 文件上传目录
-	MaxFileSize      int64  // 最大文件大小(字节)
-	EduServiceURL    string // Python教务服务地址
-	SMTPHost         string // SMTP 地址
-	SMTPPort         string // SMTP 端口
-	SMTPUser         string // SMTP 用户名
-	SMTPPass         string // SMTP 密码/授权码
-	SMTPFrom         string // 发件人邮箱
-	JPushAppKey      string // 极光推送 AppKey
-	JPushMasterSecret string // 极光推送 MasterSecret
-	SuperAdminID     string // 超级管理员账号
-	SuperAdminPass   string // 超级管理员密码
-	DeepSeekAPIKey   string // DeepSeek API 密钥
-	DeepSeekBaseURL  string // DeepSeek API 基础路径
+	JWTSecret              string // JWT密钥
+	DSN                    string // 数据库连接字符串
+	UploadDir              string // 文件上传目录
+	MaxFileSize            int64  // 最大文件大小(字节)
+	EduServiceURL          string // Python教务服务地址
+	SMTPHost               string // SMTP 地址
+	SMTPPort               string // SMTP 端口
+	SMTPUser               string // SMTP 用户名
+	SMTPPass               string // SMTP 密码/授权码
+	SMTPFrom               string // 发件人邮箱
+	JPushAppKey            string // 极光推送 AppKey
+	JPushMasterSecret      string // 极光推送 MasterSecret
+	SuperAdminID           string // 超级管理员账号
+	SuperAdminPass         string // 超级管理员密码
+	DeepSeekAPIKey         string // DeepSeek API 密钥
+	DeepSeekBaseURL        string // DeepSeek API 基础路径
+	EduServiceToken        string // Python 教务服务共享密钥
+	JWCSyncEnabled         bool   // 校园资讯同步开关
+	JWCSyncIntervalMinutes int    // 校园资讯同步间隔(分钟)
 }
 
 // Load 从环境变量加载配置
@@ -102,28 +106,59 @@ func Load() *Config {
 		panic(fmt.Errorf("必须设置 SUPER_ADMIN_PASSWORD 环境变量"))
 	}
 
+	eduServiceToken := os.Getenv("EDU_SERVICE_TOKEN")
+
+	// 校园资讯同步开关
+	jwcSyncEnabled := false
+	if v := os.Getenv("JWC_SYNC_ENABLED"); strings.ToLower(v) == "true" {
+		jwcSyncEnabled = true
+	}
+
+	// 校园资讯同步间隔
+	jwcSyncIntervalMinutes := 20
+	if v := os.Getenv("JWC_SYNC_INTERVAL_MINUTES"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			if n < 5 {
+				n = 5
+			} else if n > 1440 {
+				n = 1440
+			}
+			jwcSyncIntervalMinutes = n
+		}
+	}
+
 	deepSeekAPIKey := os.Getenv("DEEPSEEK_API_KEY")
 	deepSeekBaseURL := os.Getenv("DEEPSEEK_BASE_URL")
 	if deepSeekBaseURL == "" {
 		deepSeekBaseURL = "https://api.deepseek.com/v1"
 	}
 
+	// 生产环境 + 启用校园资讯同步时，必须配置服务间 Token
+	if os.Getenv("GIN_MODE") == "release" && jwcSyncEnabled {
+		if eduServiceToken == "" {
+			panic(fmt.Errorf("生产环境启用 JWC_SYNC 必须设置 EDU_SERVICE_TOKEN 环境变量"))
+		}
+	}
+
 	return &Config{
-		JWTSecret:         jwtSecret,
-		DSN:               dsn,
-		UploadDir:         uploadDir,
-		MaxFileSize:       10 * 1024 * 1024, // 10MB
-		EduServiceURL:     eduServiceURL,
-		SMTPHost:          smtpHost,
-		SMTPPort:          smtpPort,
-		SMTPUser:          smtpUser,
-		SMTPPass:          smtpPass,
-		SMTPFrom:          smtpFrom,
-		JPushAppKey:       jpushAppKey,
-		JPushMasterSecret: jpushMasterSecret,
-		SuperAdminID:      superAdminID,
-		SuperAdminPass:    superAdminPass,
-		DeepSeekAPIKey:    deepSeekAPIKey,
-		DeepSeekBaseURL:   deepSeekBaseURL,
+		JWTSecret:              jwtSecret,
+		DSN:                    dsn,
+		UploadDir:              uploadDir,
+		MaxFileSize:            10 * 1024 * 1024, // 10MB
+		EduServiceURL:          eduServiceURL,
+		SMTPHost:               smtpHost,
+		SMTPPort:               smtpPort,
+		SMTPUser:               smtpUser,
+		SMTPPass:               smtpPass,
+		SMTPFrom:               smtpFrom,
+		JPushAppKey:            jpushAppKey,
+		JPushMasterSecret:      jpushMasterSecret,
+		SuperAdminID:           superAdminID,
+		SuperAdminPass:         superAdminPass,
+		DeepSeekAPIKey:         deepSeekAPIKey,
+		DeepSeekBaseURL:        deepSeekBaseURL,
+		EduServiceToken:        eduServiceToken,
+		JWCSyncEnabled:         jwcSyncEnabled,
+		JWCSyncIntervalMinutes: jwcSyncIntervalMinutes,
 	}
 }

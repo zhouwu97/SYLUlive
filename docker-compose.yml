@@ -22,6 +22,9 @@ services:
     build:
       context: ./python-edu-service
       dockerfile: Dockerfile
+    environment:
+      - INTERNAL_SERVICE_TOKEN=${INTERNAL_SERVICE_TOKEN:-}
+      - JWC_CRAWLER_CONTACT=${JWC_CRAWLER_CONTACT:-}
     ports:
       - "8000:8000"
     restart: unless-stopped
@@ -40,7 +43,10 @@ services:
       - UPLOAD_DIR=${UPLOAD_DIR:-/app/uploads}
       - SUPER_ADMIN_ID=${SUPER_ADMIN_ID:-1234567890}
       - SUPER_ADMIN_PASSWORD=${SUPER_ADMIN_PASSWORD:-super_admin_password_change_this}
-      - EDU_SERVICE_URL=http://python-edu-service:8000
+      - EDU_SERVICE_URL=${EDU_SERVICE_URL:-http://python-edu-service:8000}
+      - EDU_SERVICE_TOKEN=${EDU_SERVICE_TOKEN:-}
+      - JWC_SYNC_ENABLED=${JWC_SYNC_ENABLED:-false}
+      - JWC_SYNC_INTERVAL_MINUTES=${JWC_SYNC_INTERVAL_MINUTES:-20}
       - GIN_MODE=release
     depends_on:
       postgres:

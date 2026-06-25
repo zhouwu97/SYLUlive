@@ -5,10 +5,10 @@ import 'package:image_picker/image_picker.dart';
 import '../../../config/api_constants.dart';
 import '../../../models/post.dart';
 
-/// Pure rendering widget for the publish image section.
+/// Image grid for publish forms.
 ///
-/// Displays existing (network) and newly selected (local file) images in a
-/// horizontal scrollable row.  Includes the "add image" button underneath.
+/// Displays existing (network) and newly selected (local) images in a 3-column
+/// square grid.  The first image is tagged with a "封面" (cover) badge.
 class PublishImageGrid extends StatelessWidget {
   final List<PostImage> existingImages;
   final List<XFile> selectedImages;
@@ -33,138 +33,146 @@ class PublishImageGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // ---- image preview row ----
-        if (_totalImages > 0) ...[
-          SizedBox(
-            height: 100,
-            child: ListView.builder(
-              scrollDirection: Axis.horizontal,
-              itemCount: _totalImages + (canAddMore ? 1 : 0),
-              itemBuilder: (context, index) {
-                // "add more" cell at the end of the row
-                if (index == _totalImages) {
-                  return GestureDetector(
-                    onTap: onAddImage,
-                    child: Container(
-                      width: 100,
-                      height: 100,
-                      margin: const EdgeInsets.only(right: 8),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.grey[400]!),
-                        color: Colors.grey[100],
+        // ---- 3-column image grid ----
+        if (_totalImages > 0)
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 3,
+              crossAxisSpacing: 10,
+              mainAxisSpacing: 10,
+            ),
+            itemCount: _totalImages + (canAddMore ? 1 : 0),
+            itemBuilder: (context, index) {
+              // "add more" cell
+              if (index == _totalImages) {
+                return GestureDetector(
+                  onTap: onAddImage,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: Colors.grey.withValues(alpha: 0.35),
+                        width: 1.5,
+                        strokeAlign: BorderSide.strokeAlignInside,
                       ),
-                      child: Icon(Icons.add, color: Colors.grey[600], size: 32),
+                      color: isDark
+                          ? Colors.white.withValues(alpha: 0.05)
+                          : Colors.grey.withValues(alpha: 0.06),
                     ),
-                  );
-                }
+                    child: Icon(
+                      Icons.add,
+                      color: Colors.grey.withValues(alpha: 0.6),
+                      size: 28,
+                    ),
+                  ),
+                );
+              }
 
-                // existing (network) image
-                if (index < existingImages.length) {
-                  final image = existingImages[index];
-                  return Stack(
-                    children: [
-                      Container(
-                        width: 100,
-                        height: 100,
-                        margin: const EdgeInsets.only(right: 8),
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(12),
-                          child: CachedNetworkImage(
-                            imageUrl: ApiConstants.fullUrl(image.url),
+              // determine image source
+              final isExisting = index < existingImages.length;
+              final isFirst = index == 0;
+
+              return Stack(
+                fit: StackFit.expand,
+                children: [
+                  // ---- thumbnail ----
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: isExisting
+                        ? CachedNetworkImage(
+                            imageUrl:
+                                ApiConstants.fullUrl(existingImages[index].url),
                             fit: BoxFit.cover,
                             errorWidget: (_, __, ___) => Container(
                               color: Colors.grey[300],
                               child: const Icon(Icons.broken_image),
                             ),
-                          ),
-                        ),
-                      ),
-                      Positioned(
-                        top: 4,
-                        right: 12,
-                        child: GestureDetector(
-                          onTap: () => onRemoveExistingImage(index),
-                          child: Container(
-                            padding: const EdgeInsets.all(4),
-                            decoration: const BoxDecoration(
-                              color: Colors.black54,
-                              shape: BoxShape.circle,
-                            ),
-                            child: const Icon(
-                              Icons.close,
-                              color: Colors.white,
-                              size: 14,
+                          )
+                        : Image.file(
+                            File(selectedImages[index - existingImages.length]
+                                .path),
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => Container(
+                              color: Colors.grey[300],
+                              child: const Icon(Icons.broken_image),
                             ),
                           ),
-                        ),
-                      ),
-                    ],
-                  );
-                }
+                  ),
 
-                // newly selected (local file) image
-                final image = selectedImages[index - existingImages.length];
-                return Stack(
-                  children: [
-                    Container(
-                      width: 100,
-                      height: 100,
-                      margin: const EdgeInsets.only(right: 8),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-                        child: Image.file(
-                          File(image.path),
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => Container(
-                            color: Colors.grey[300],
-                            child: const Icon(Icons.broken_image),
-                          ),
-                        ),
-                      ),
-                    ),
+                  // ---- cover badge (first image only) ----
+                  if (isFirst)
                     Positioned(
-                      top: 4,
-                      right: 12,
-                      child: GestureDetector(
-                        onTap: () =>
-                            onRemoveNewImage(index - existingImages.length),
-                        child: Container(
-                          padding: const EdgeInsets.all(4),
-                          decoration: const BoxDecoration(
-                            color: Colors.black54,
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(
-                            Icons.close,
-                            color: Colors.white,
-                            size: 14,
-                          ),
+                      top: 6,
+                      left: 6,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .primary
+                              .withValues(alpha: 0.85),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: const Text(
+                          '封面',
+                          style: TextStyle(color: Colors.white, fontSize: 11),
                         ),
                       ),
                     ),
-                  ],
-                );
-              },
-            ),
+
+                  // ---- delete button ----
+                  Positioned(
+                    top: 4,
+                    right: 4,
+                    child: GestureDetector(
+                      onTap: () => isExisting
+                          ? onRemoveExistingImage(index)
+                          : onRemoveNewImage(index - existingImages.length),
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: const BoxDecoration(
+                          color: Colors.black54,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.close,
+                          color: Colors.white,
+                          size: 14,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
           ),
-          const SizedBox(height: 8),
-        ],
+
+        const SizedBox(height: 10),
 
         // ---- add image button (always visible) ----
         OutlinedButton.icon(
           onPressed: onAddImage,
-          icon: const Icon(Icons.add_photo_alternate),
-          label: Text(addButtonLabel),
+          icon: const Icon(Icons.add_photo_alternate, size: 20),
+          label: Text(addButtonLabel, style: const TextStyle(fontSize: 14)),
+          style: OutlinedButton.styleFrom(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            side: BorderSide(
+              color: Colors.grey.withValues(alpha: 0.35),
+            ),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
         ),
       ],
     );

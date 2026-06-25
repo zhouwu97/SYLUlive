@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 
-/// Type selector for marketplace posts.
+/// Horizontal capsule-chip type selector for marketplace posts.
 ///
-/// Commit 1: renders the original DropdownButtonFormField.
-/// Commit 2: will be replaced with horizontal capsule chips.
+/// Replaces the old DropdownButtonFormField so all types are visible at a
+/// glance.  Filters chips by [allowedTypes] when provided.
 class PublishTypeSelector extends StatelessWidget {
   final String currentType;
   final List<String>? allowedTypes;
@@ -16,29 +16,57 @@ class PublishTypeSelector extends StatelessWidget {
     required this.onChanged,
   });
 
-  bool _typeAllowed(String type) =>
-      allowedTypes == null || allowedTypes!.contains(type);
+  static const _allTypes = ['sell', 'buy', 'lost', 'found', 'exposure'];
+
+  static const _labels = <String, String>{
+    'sell': '出售',
+    'buy': '求购',
+    'lost': '失物',
+    'found': '招领',
+    'exposure': '曝光',
+  };
+
+  List<String> get _types => allowedTypes == null
+      ? _allTypes
+      : _allTypes.where((t) => allowedTypes!.contains(t)).toList();
 
   @override
   Widget build(BuildContext context) {
-    return DropdownButtonFormField<String>(
-      decoration: const InputDecoration(labelText: '类型'),
-      initialValue: currentType.isEmpty ? null : currentType,
-      items: [
-        if (_typeAllowed('sell'))
-          const DropdownMenuItem(value: 'sell', child: Text('出售')),
-        if (_typeAllowed('buy'))
-          const DropdownMenuItem(value: 'buy', child: Text('求购')),
-        if (_typeAllowed('proxy'))
-          const DropdownMenuItem(value: 'proxy', child: Text('代课')),
-        if (_typeAllowed('lost'))
-          const DropdownMenuItem(value: 'lost', child: Text('求问失物')),
-        if (_typeAllowed('found'))
-          const DropdownMenuItem(value: 'found', child: Text('寻找失主')),
-        if (_typeAllowed('exposure'))
-          const DropdownMenuItem(value: 'exposure', child: Text('曝光')),
-      ],
-      onChanged: (value) => onChanged(value ?? ''),
+    final colorScheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: _types.map((type) {
+          final selected = type == currentType;
+          return Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: ChoiceChip(
+              label: Text(_labels[type] ?? type),
+              selected: selected,
+              onSelected: (_) => onChanged(type),
+              selectedColor: colorScheme.primary.withValues(alpha: 0.15),
+              backgroundColor: isDark
+                  ? Colors.white.withValues(alpha: 0.08)
+                  : Colors.grey.withValues(alpha: 0.08),
+              side: BorderSide(
+                color: selected
+                    ? colorScheme.primary.withValues(alpha: 0.55)
+                    : (isDark
+                        ? Colors.white.withValues(alpha: 0.12)
+                        : Colors.grey.withValues(alpha: 0.25)),
+              ),
+              labelStyle: TextStyle(
+                color: selected ? colorScheme.primary : null,
+                fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+                fontSize: 13,
+              ),
+              visualDensity: VisualDensity.compact,
+            ),
+          );
+        }).toList(),
+      ),
     );
   }
 }

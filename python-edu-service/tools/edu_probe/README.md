@@ -2,6 +2,21 @@
 
 Isolated probe tool for investigating the academic affairs grade API structure.
 
+## crawler_probe.py Provenance
+
+The minimal `ProbeCrawler` in `crawler_probe.py` was hand-written based on
+the production `EduCrawler` API contract from:
+
+- **Commit**: `8aaf6a13aa2bf356b6cf452e26eecbffed6bbd1d`
+- **Date**: 2026-06-23 13:45:40 +0800
+- **Subject**: fix(edu): restore edu and erke system to v1.5.10, removing client crawler
+
+The production `services/crawler.py` (all Git revisions) has 49 corrupted
+CJK continuation bytes that prevent UTF-8 decoding.  The probe crawler was
+rewritten as a minimal, clean implementation covering only the methods
+needed for grade structure inspection — it does NOT replace the production
+crawler.
+
 ## Purpose
 
 The current production scraper (`services/crawler.py`) returns raw `items` from the grade list endpoint, and `routers/grades.py` only maps 9 fields to `GradeInfo`. Many potential fields (exam type, retake status, usual score, final score, weights) are not extracted.

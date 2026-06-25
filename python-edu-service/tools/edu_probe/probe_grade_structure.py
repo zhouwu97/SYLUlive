@@ -32,7 +32,7 @@ PROBE_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = PROBE_DIR.parent.parent
 sys.path.insert(0, str(PROJECT_DIR))
 
-from crawler_probe import EduCrawler
+from crawler_probe import ProbeCrawler
 from sanitize import (
     sanitize_grade_item,
     sanitize_cookie,
@@ -108,7 +108,7 @@ def prompt_semesters() -> list[tuple[str, int, str]]:
 
 
 async def probe_semester(
-    crawler: EduCrawler,
+    crawler: ProbeCrawler,
     cookie: str,
     year: str,
     semester: int,
@@ -197,7 +197,7 @@ def build_comparison_matrix(
 
 
 async def discover_detail_endpoints(
-    crawler: EduCrawler,
+    crawler: ProbeCrawler,
     cookie: str,
 ) -> Dict[str, Any]:
     """
@@ -286,7 +286,7 @@ def generate_report(
     lines.append("## 1. 当前生产成绩调用链\n")
     lines.append("```")
     lines.append("Flutter → Go backend (:8080) → Python FastAPI (:8081)")
-    lines.append("                               → EduCrawler")
+    lines.append("                               → ProbeCrawler")
     lines.append("                               → jxw.sylu.edu.cn/cjcx")
     lines.append("```\n")
     lines.append("**成绩列表接口**:")
@@ -368,7 +368,7 @@ async def main():
 
     # Login
     print("\n[1/4] 登录教务系统...")
-    crawler = EduCrawler()
+    crawler = ProbeCrawler()
     try:
         cookie = await crawler.login(student_id, password)
         print(f"  登录成功 (Cookie: {sanitize_cookie(cookie)})")

@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 
 /// Fixed bottom bar with the publish / save button.
 ///
-/// Wraps the button in [SafeArea] so it clears the system navigation bar and
-/// responds to keyboard insets via Flutter's built-in scaffold handling.
+/// Wraps the button in [SafeArea] and shows a subtle top border so it reads as
+/// a unified bottom action area together with any status row above it.
 class PublishBottomBar extends StatelessWidget {
   final bool isLoading;
   final VoidCallback? onPressed;
@@ -26,15 +26,15 @@ class PublishBottomBar extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
         decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF0D1117) : const Color(0xFFF4F6FB),
+          color: isDark ? const Color(0xFF0D1117) : Colors.white,
           border: Border(
             top: BorderSide(
-              color: colorScheme.outlineVariant.withValues(alpha: 0.3),
+              color: colorScheme.outlineVariant.withValues(alpha: 0.22),
             ),
           ),
         ),
         child: SizedBox(
-          height: 48,
+          height: 50,
           child: FilledButton(
             onPressed: isLoading ? null : onPressed,
             style: FilledButton.styleFrom(

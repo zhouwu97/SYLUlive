@@ -67,66 +67,14 @@ class _WaterPostComposerState extends State<WaterPostComposer>
   bool get canAddMoreImages =>
       _canUploadUnlimitedImages || _totalImageCount < 9;
 
+  int get _charCount => _contentController.text.length;
+
+  String get _imageLimitLabel {
+    final max = _canUploadUnlimitedImages ? '∞' : '9';
+    return '$_totalImageCount/$max';
+  }
+
   String get _pageTitle => _isEditing ? '编辑帖子' : '发布水帖';
-
-  String get _addButtonLabel {
-    final hasAnyImage = _totalImageCount > 0;
-    if (_canUploadUnlimitedImages) {
-      return hasAnyImage ? '继续添加' : '添加图片';
-    }
-    return hasAnyImage ? '继续添加' : '添加图片（最多9张）';
-  }
-
-  // ---------------------------------------------------------------------------
-  // Styling
-  // ---------------------------------------------------------------------------
-
-  InputDecoration _inputDecoration({
-    required String label,
-    String? hint,
-    bool alignLabelWithHint = false,
-  }) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return InputDecoration(
-      labelText: label,
-      hintText: hint,
-      alignLabelWithHint: alignLabelWithHint,
-      filled: true,
-      fillColor: colorScheme.surfaceContainerLow,
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(14),
-        borderSide: BorderSide.none,
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(14),
-        borderSide: BorderSide(
-          color: colorScheme.outlineVariant.withValues(alpha: 0.45),
-        ),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(14),
-        borderSide: BorderSide(color: colorScheme.primary, width: 1.5),
-      ),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-    );
-  }
-
-  Widget _buildSectionCard({required Widget child}) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final colorScheme = Theme.of(context).colorScheme;
-    return Container(
-      margin: const EdgeInsets.only(bottom: 20),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF171B24) : Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: colorScheme.outlineVariant.withValues(alpha: 0.45),
-        ),
-      ),
-      child: child,
-    );
-  }
 
   // ---------------------------------------------------------------------------
   // Lifecycle
@@ -141,13 +89,22 @@ class _WaterPostComposerState extends State<WaterPostComposer>
       _contentController.text = post.content;
       _existingImages.addAll(post.images);
     }
+    _contentController.addListener(_onContentChanged);
   }
 
   @override
   void dispose() {
+    _contentController.removeListener(_onContentChanged);
     _titleController.dispose();
     _contentController.dispose();
     super.dispose();
+  }
+
+  void _onContentChanged() {
+    // Rebuild only when the character-count label needs to change.
+    // Using setState is fine here — the listener fires on each keystroke,
+    // but the rebuild is scoped to a lightweight status row.
+    setState(() {});
   }
 
   // ---------------------------------------------------------------------------
@@ -251,10 +208,7 @@ class _WaterPostComposerState extends State<WaterPostComposer>
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('发布失败：$e'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text('发布失败：$e'), backgroundColor: Colors.red),
         );
       }
     } finally {
@@ -269,12 +223,11 @@ class _WaterPostComposerState extends State<WaterPostComposer>
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final topPadding = MediaQuery.of(context).padding.top + kToolbarHeight;
+    final colorScheme = Theme.of(context).colorScheme;
 
     return Scaffold(
       backgroundColor:
-          isDark ? const Color(0xFF06080D) : const Color(0xFFF4F6FB),
-      extendBodyBehindAppBar: true,
+          isDark ? const Color(0xFF0D1117) : const Color(0xFFFEFEFE),
       resizeToAvoidBottomInset: true,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
@@ -282,115 +235,135 @@ class _WaterPostComposerState extends State<WaterPostComposer>
         title: Text(_pageTitle),
         leading: const BackButton(),
       ),
-      bottomNavigationBar: PublishBottomBar(
-        isLoading: _isLoading,
-        onPressed: _isLoading ? null : _submit,
-        label: _isEditing ? '保存' : '发布',
+      bottomNavigationBar: _buildBottomArea(isDark, colorScheme),
+      body: SafeArea(
+        bottom: false,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // ---- title: lightweight, no border ----
+                TextFormField(
+                  controller: _titleController,
+                  decoration: const InputDecoration(
+                    hintText: '添加标题（选填）',
+                    hintStyle: TextStyle(
+                      color: Colors.grey,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w400,
+                    ),
+                    border: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    focusedBorder: InputBorder.none,
+                    contentPadding: EdgeInsets.symmetric(vertical: 8),
+                  ),
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  maxLines: 1,
+                ),
+
+                // ---- divider ----
+                Divider(
+                  color: Colors.grey.withValues(alpha: 0.15),
+                  height: 1,
+                ),
+                const SizedBox(height: 12),
+
+                // ---- content: grows naturally ----
+                TextFormField(
+                  controller: _contentController,
+                  decoration: const InputDecoration(
+                    hintText: '分享校园生活、提问或记录此刻…',
+                    hintStyle: TextStyle(color: Colors.grey, fontSize: 15),
+                    border: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    focusedBorder: InputBorder.none,
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                  style: const TextStyle(fontSize: 15, height: 1.6),
+                  minLines: 6,
+                  maxLines: null,
+                  validator: (v) => (v ?? '').trim().isEmpty ? '请输入内容' : null,
+                ),
+                const SizedBox(height: 16),
+
+                // ---- divider ----
+                Divider(
+                  color: Colors.grey.withValues(alpha: 0.15),
+                  height: 1,
+                ),
+                const SizedBox(height: 12),
+
+                // ---- image grid (no section card wrapping) ----
+                PublishImageGrid(
+                  existingImages: _existingImages,
+                  selectedImages: _selectedImages,
+                  canAddMore: canAddMoreImages,
+                  onAddImage: showImageSourceDialog,
+                  onRemoveNewImage: onNewImageRemoved,
+                  onRemoveExistingImage: onExistingImageRemoved,
+                  compact: true,
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
-      body: Stack(
-        children: [
-          // ---- background gradient (matches market_screen) ----
-          Positioned.fill(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: isDark
-                      ? const [
-                          Color(0xFF06080D),
-                          Color(0xFF10131A),
-                          Color(0xFF06080D),
-                        ]
-                      : const [
-                          Color(0xFFF4F6FB),
-                          Color(0xFFEFF3F8),
-                          Color(0xFFF8FAFC),
-                        ],
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Bottom area: status row + publish bar
+  // ---------------------------------------------------------------------------
+
+  Widget _buildBottomArea(bool isDark, ColorScheme colorScheme) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // status row
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF0D1117) : const Color(0xFFFEFEFE),
+            border: Border(
+              top: BorderSide(
+                color: colorScheme.outlineVariant.withValues(alpha: 0.12),
+              ),
+            ),
+          ),
+          child: Row(
+            children: [
+              Text(
+                '图片 $_imageLimitLabel',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey.withValues(alpha: 0.7),
                 ),
               ),
-            ),
-          ),
-
-          // ---- form body ----
-          SingleChildScrollView(
-            padding: EdgeInsets.fromLTRB(
-              16,
-              topPadding + 8,
-              16,
-              100, // clearance for bottom bar
-            ),
-            child: Form(
-              key: _formKey,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  // ---- title: lightweight, no heavy border ----
-                  TextFormField(
-                    controller: _titleController,
-                    decoration: const InputDecoration(
-                      hintText: '添加标题（选填）',
-                      hintStyle: TextStyle(
-                        color: Colors.grey,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w400,
-                      ),
-                      border: InputBorder.none,
-                      enabledBorder: InputBorder.none,
-                      focusedBorder: InputBorder.none,
-                      contentPadding: EdgeInsets.symmetric(vertical: 8),
-                    ),
-                    style: const TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w500,
-                    ),
-                    maxLines: 1,
-                  ),
-                  const SizedBox(height: 4),
-
-                  // ---- divider ----
-                  Divider(
-                    color: Colors.grey.withValues(alpha: 0.2),
-                    height: 1,
-                  ),
-                  const SizedBox(height: 16),
-
-                  // ---- content: lightweight editor ----
-                  TextFormField(
-                    controller: _contentController,
-                    decoration: const InputDecoration(
-                      hintText: '分享校园生活、提问或记录此刻…',
-                      hintStyle: TextStyle(color: Colors.grey, fontSize: 15),
-                      border: InputBorder.none,
-                      enabledBorder: InputBorder.none,
-                      focusedBorder: InputBorder.none,
-                      contentPadding: EdgeInsets.zero,
-                    ),
-                    style: const TextStyle(fontSize: 15, height: 1.6),
-                    maxLines: 8,
-                    minLines: 4,
-                    validator: (v) => (v ?? '').trim().isEmpty ? '请输入内容' : null,
-                  ),
-                  const SizedBox(height: 24),
-
-                  // ---- image section ----
-                  _buildSectionCard(
-                    child: PublishImageGrid(
-                      existingImages: _existingImages,
-                      selectedImages: _selectedImages,
-                      canAddMore: canAddMoreImages,
-                      addButtonLabel: _addButtonLabel,
-                      onAddImage: showImageSourceDialog,
-                      onRemoveNewImage: onNewImageRemoved,
-                      onRemoveExistingImage: onExistingImageRemoved,
-                    ),
-                  ),
-                ],
+              const Spacer(),
+              Text(
+                '$_charCount 字',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey.withValues(alpha: 0.7),
+                ),
               ),
-            ),
+            ],
           ),
-        ],
-      ),
+        ),
+        // publish button
+        PublishBottomBar(
+          isLoading: _isLoading,
+          onPressed: _isLoading ? null : _submit,
+          label: _isEditing ? '保存修改' : '发布',
+        ),
+      ],
     );
   }
 }

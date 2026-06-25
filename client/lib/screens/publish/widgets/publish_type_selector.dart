@@ -44,7 +44,7 @@ class PublishTypeSelector extends StatelessWidget {
           label: Text(_labels[type] ?? type),
           selected: selected,
           onSelected: (_) => onChanged(type),
-          selectedColor: colorScheme.primary.withValues(alpha: 0.15),
+          selectedColor: colorScheme.primary.withValues(alpha: 0.18),
           backgroundColor: isDark
               ? Colors.white.withValues(alpha: 0.08)
               : Colors.grey.withValues(alpha: 0.08),
@@ -58,9 +58,10 @@ class PublishTypeSelector extends StatelessWidget {
           labelStyle: TextStyle(
             color: selected ? colorScheme.primary : null,
             fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
-            fontSize: 13,
+            fontSize: 14,
           ),
-          visualDensity: VisualDensity.compact,
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          visualDensity: VisualDensity.standard,
         );
       }).toList(),
     );

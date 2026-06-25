@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import '../../models/edu_grade.dart';
 
-/// Summary card showing computed GPA and stats for a list of grades.
+/// Compact overview bar showing semester stats.
+/// Height ~72–88, no giant GPA number, no GPA color coding.
 /// Always operates on the FULL grade list (never filtered).
 class GradeSummaryCard extends StatelessWidget {
   final List<EduGrade> grades;
@@ -14,116 +15,85 @@ class GradeSummaryCard extends StatelessWidget {
     final gpa = EduGrade.computeWeightedGpa(grades);
 
     final courseCount = grades.length;
-    final totalCredits = grades.fold<double>(
-      0,
-      (sum, g) => sum + g.credits,
-    );
-    final degreeCount = grades.where((g) => g.isDegree).length;
+    final totalCredits = grades.fold<double>(0, (sum, g) => sum + g.credits);
     final passedCount = grades.where((g) => g.isPassed == true).length;
-
-    // Count courses that contribute to GPA
-    final gpaCourseCount =
-        grades.where((g) => g.gpa != null && g.credits > 0).length;
+    final gpaText = gpa != null ? gpa.toStringAsFixed(2) : '--';
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: isDark ? Colors.grey[850] : Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: Theme.of(context).dividerColor.withValues(alpha: 0.3),
-          ),
-        ),
-        child: Column(
-          children: [
-            // GPA
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  '本学期平均绩点',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey[600],
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                if (gpaCourseCount < grades.length || gpaCourseCount == 0)
-                  Tooltip(
-                    message: '部分课程（如合格/优秀制）不参与绩点计算',
-                    child: Padding(
-                      padding: const EdgeInsets.only(left: 4),
-                      child: Icon(
-                        Icons.help_outline,
-                        size: 14,
-                        color: Colors.grey[400],
-                      ),
-                    ),
-                  ),
-              ],
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Section header
+          Text(
+            '本学期概览',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: Colors.grey[600],
             ),
-            const SizedBox(height: 4),
-            Text(
-              gpa != null ? gpa.toStringAsFixed(2) : '--',
-              style: TextStyle(
-                fontSize: 40,
-                fontWeight: FontWeight.w700,
-                color: _gpaColor(gpa, isDark),
+          ),
+          const SizedBox(height: 8),
+          // Compact stat row
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            decoration: BoxDecoration(
+              color: isDark ? Colors.grey[850] : Colors.white,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: Theme.of(context).dividerColor.withValues(alpha: 0.3),
               ),
             ),
-            Text(
-              '按课程学分加权计算',
-              style: TextStyle(fontSize: 11, color: Colors.grey[400]),
-            ),
-            const SizedBox(height: 16),
-            // Stats grid
-            Row(
+            child: Row(
               children: [
-                _StatItem(label: '课程', value: '$courseCount'),
-                _StatItem(label: '学分', value: totalCredits.toStringAsFixed(1)),
-                _StatItem(label: '学位课', value: '$degreeCount'),
-                _StatItem(label: '已通过', value: '$passedCount'),
+                _Stat(label: '课程', value: '$courseCount'),
+                _divider(context),
+                _Stat(label: '学分', value: totalCredits.toStringAsFixed(1)),
+                _divider(context),
+                _Stat(label: '已通过', value: '$passedCount'),
+                _divider(context),
+                _Stat(label: 'GPA', value: gpaText),
               ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 
-  Color _gpaColor(double? gpa, bool isDark) {
-    if (gpa == null) return Colors.grey;
-    if (gpa >= 3.5) return Colors.green;
-    if (gpa >= 2.5) return Colors.blue;
-    if (gpa >= 2.0) return isDark ? Colors.white : Colors.black87;
-    return Colors.orange;
+  Widget _divider(BuildContext context) {
+    return Container(
+      width: 1,
+      height: 32,
+      color: Theme.of(context).dividerColor.withValues(alpha: 0.3),
+    );
   }
 }
 
-class _StatItem extends StatelessWidget {
+class _Stat extends StatelessWidget {
   final String label;
   final String value;
 
-  const _StatItem({required this.label, required this.value});
+  const _Stat({required this.label, required this.value});
 
   @override
   Widget build(BuildContext context) {
     return Expanded(
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
           Text(
             value,
             style: const TextStyle(
               fontSize: 18,
-              fontWeight: FontWeight.w600,
+              fontWeight: FontWeight.w700,
             ),
           ),
           const SizedBox(height: 2),
           Text(
             label,
-            style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+            style: TextStyle(fontSize: 11, color: Colors.grey[500]),
           ),
         ],
       ),

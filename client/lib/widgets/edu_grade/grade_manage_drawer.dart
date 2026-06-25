@@ -3,8 +3,7 @@ import '../../utils/edu_semester_utils.dart';
 
 enum _DrawerPage { menu, semesterList }
 
-/// Full-height left-side drawer for grade management.
-/// Matches the home screen drawer style.
+/// Right-side drawer for grade management — matches home screen menu style.
 class GradeManageDrawer extends StatefulWidget {
   final String selectedYear;
   final int selectedSemester;
@@ -64,14 +63,12 @@ class _GradeManageDrawerState extends State<GradeManageDrawer> {
 
   @override
   Widget build(BuildContext context) {
-    final screenWidth = MediaQuery.sizeOf(context).width;
-
     return Drawer(
-      width: (screenWidth * 0.84).clamp(300.0, 380.0),
+      width: (MediaQuery.sizeOf(context).width * 0.80).clamp(300.0, 340.0),
       elevation: 0,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.horizontal(
-          right: Radius.circular(26),
+          left: Radius.circular(24),
         ),
       ),
       child: SafeArea(
@@ -87,90 +84,102 @@ class _GradeManageDrawerState extends State<GradeManageDrawer> {
     );
   }
 
+  // ─── Menu page ────────────────────────────────────────────────
+
   Widget _buildMenu(BuildContext context) {
-    return SingleChildScrollView(
+    final cs = Theme.of(context).colorScheme;
+
+    return ListView(
       key: const ValueKey('menu'),
-      padding: const EdgeInsets.fromLTRB(20, 22, 20, 32),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Header
-          Text(
-            '成绩管理',
-            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.w800,
-                ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            '切换学期与成绩操作',
-            style: TextStyle(
-              fontSize: 13,
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
+      children: [
+        // Header with close button
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                '成绩管理',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+              ),
             ),
-          ),
-          const SizedBox(height: 24),
-
-          _sectionLabel('当前学期'),
-          const SizedBox(height: 8),
-          _drawerRow(
-            icon: Icons.calendar_today_rounded,
-            iconColor: Colors.blue,
-            title: EduSemester.fullLabel(
-              widget.selectedYear,
-              widget.selectedSemester,
+            IconButton(
+              tooltip: '关闭',
+              onPressed: () => Navigator.pop(context),
+              icon: const Icon(Icons.close_rounded),
             ),
-            trailing: const Icon(Icons.chevron_right_rounded, size: 20),
-            onTap: () => setState(() => _page = _DrawerPage.semesterList),
-          ),
-          const SizedBox(height: 20),
+          ],
+        ),
+        const SizedBox(height: 2),
+        Text(
+          '切换学期与成绩操作',
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: cs.onSurfaceVariant,
+              ),
+        ),
+        const SizedBox(height: 28),
 
-          _sectionLabel('成绩操作'),
-          const SizedBox(height: 8),
-          _drawerRow(
-            icon: Icons.refresh_rounded,
-            iconColor: Colors.teal,
-            title: _isRefreshing ? '正在刷新成绩' : '刷新当前成绩',
-            subtitle: _isRefreshing ? '当前页面内容不会被清空' : '重新从教务系统获取',
-            trailing: _isRefreshing
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : null,
-            onTap: _isRefreshing ? null : _handleRefresh,
+        _sectionTitle('当前学期'),
+        const SizedBox(height: 8),
+        _menuEntry(
+          icon: Icons.calendar_month_outlined,
+          iconBg: cs.primaryContainer,
+          iconFg: cs.primary,
+          title: EduSemester.fullLabel(
+            widget.selectedYear,
+            widget.selectedSemester,
           ),
-        ],
-      ),
+          trailing: Icon(Icons.chevron_right_rounded,
+              size: 20, color: cs.onSurfaceVariant),
+          onTap: () => setState(() => _page = _DrawerPage.semesterList),
+        ),
+        const SizedBox(height: 24),
+
+        _sectionTitle('成绩操作'),
+        const SizedBox(height: 8),
+        _menuEntry(
+          icon: Icons.refresh_rounded,
+          iconBg: cs.secondaryContainer,
+          iconFg: cs.secondary,
+          title: _isRefreshing ? '正在刷新成绩' : '刷新当前成绩',
+          subtitle: _isRefreshing ? '当前页面内容不会被清空' : '重新从教务系统获取',
+          trailing: _isRefreshing
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : null,
+          onTap: _isRefreshing ? null : _handleRefresh,
+        ),
+      ],
     );
   }
 
+  // ─── Semester list page ───────────────────────────────────────
+
   Widget _buildSemesterList(BuildContext context) {
     final semesters = EduSemester.buildSemesterList(widget.enrollmentYear);
+    final cs = Theme.of(context).colorScheme;
 
     return Column(
       key: const ValueKey('semesterList'),
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(12, 16, 20, 8),
-          child: InkWell(
-            onTap: () => setState(() => _page = _DrawerPage.menu),
-            child: Row(
-              children: [
-                const Icon(Icons.arrow_back_rounded, size: 20),
-                const SizedBox(width: 8),
-                Text(
-                  '选择学期',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: Theme.of(context).colorScheme.onSurface,
-                  ),
-                ),
-              ],
-            ),
+          padding: const EdgeInsets.fromLTRB(8, 16, 20, 8),
+          child: Row(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.arrow_back_rounded),
+                onPressed: () => setState(() => _page = _DrawerPage.menu),
+              ),
+              const Text(
+                '选择学期',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+              ),
+            ],
           ),
         ),
         Expanded(
@@ -186,13 +195,13 @@ class _GradeManageDrawerState extends State<GradeManageDrawer> {
                   final y = int.parse(s.year);
                   widgets.add(
                     Padding(
-                      padding: const EdgeInsets.only(top: 16, bottom: 6),
+                      padding: const EdgeInsets.only(top: 20, bottom: 4),
                       child: Text(
                         '$y-${y + 1}学年',
                         style: TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w600,
-                          color: Colors.grey[500],
+                          color: cs.onSurfaceVariant,
                         ),
                       ),
                     ),
@@ -206,56 +215,60 @@ class _GradeManageDrawerState extends State<GradeManageDrawer> {
                 final disabled = _loadingSemesterKey != null;
 
                 widgets.add(
-                  ListTile(
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                    enabled: !disabled,
-                    title: Text(EduSemester.displayLabel(s.semester)),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (isLoading)
-                          const Padding(
-                            padding: EdgeInsets.only(right: 8),
-                            child: SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
+                  Material(
+                    color: isSelected
+                        ? cs.primaryContainer.withValues(alpha: 0.3)
+                        : Colors.transparent,
+                    borderRadius: BorderRadius.circular(10),
+                    child: ListTile(
+                      dense: true,
+                      contentPadding:
+                          const EdgeInsets.symmetric(horizontal: 12),
+                      enabled: !disabled,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      title: Text(EduSemester.displayLabel(s.semester)),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (isLoading)
+                            const Padding(
+                              padding: EdgeInsets.only(right: 8),
+                              child: SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
                               ),
                             ),
-                          ),
-                        if (s.isCurrent && !isLoading)
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 2,
-                            ),
-                            margin: const EdgeInsets.only(right: 8),
-                            decoration: BoxDecoration(
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .primary
-                                  .withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Text(
-                              '当前',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Theme.of(context).colorScheme.primary,
+                          if (s.isCurrent && !isLoading)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 2,
+                              ),
+                              margin: const EdgeInsets.only(right: 8),
+                              decoration: BoxDecoration(
+                                color: cs.primary.withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                '当前',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: cs.primary,
+                                ),
                               ),
                             ),
-                          ),
-                        if (isSelected && !isLoading)
-                          Icon(
-                            Icons.check_rounded,
-                            size: 20,
-                            color: Theme.of(context).colorScheme.primary,
-                          ),
-                      ],
+                          if (isSelected && !isLoading)
+                            Icon(Icons.check_rounded,
+                                size: 20, color: cs.primary),
+                        ],
+                      ),
+                      onTap: () => _handleSemesterTap(s.year, s.semester),
                     ),
-                    onTap: () => _handleSemesterTap(s.year, s.semester),
                   ),
                 );
               }
@@ -267,44 +280,52 @@ class _GradeManageDrawerState extends State<GradeManageDrawer> {
     );
   }
 
-  Widget _sectionLabel(String text) {
+  // ─── Shared helpers ───────────────────────────────────────────
+
+  Widget _sectionTitle(String text) {
     return Text(
       text,
       style: TextStyle(
         fontSize: 12,
         fontWeight: FontWeight.w600,
-        color: Colors.grey[500],
+        color: Theme.of(context).colorScheme.onSurfaceVariant,
       ),
     );
   }
 
-  Widget _drawerRow({
+  Widget _menuEntry({
     required IconData icon,
-    required Color iconColor,
+    required Color iconBg,
+    required Color iconFg,
     required String title,
     String? subtitle,
     Widget? trailing,
     VoidCallback? onTap,
   }) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Material(
-      color: isDark ? Colors.grey[850] : Colors.grey[100],
-      borderRadius: BorderRadius.circular(14),
+    final cs = Theme.of(context).colorScheme;
+    return Container(
+      decoration: BoxDecoration(
+        color: cs.surfaceContainerLowest,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: cs.outlineVariant.withValues(alpha: 0.5),
+        ),
+      ),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(14),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          padding: const EdgeInsets.all(12),
           child: Row(
             children: [
               Container(
-                width: 36,
-                height: 36,
+                width: 38,
+                height: 38,
                 decoration: BoxDecoration(
-                  color: iconColor.withValues(alpha: 0.12),
+                  color: iconBg,
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: Icon(icon, size: 20, color: iconColor),
+                child: Icon(icon, size: 20, color: iconFg),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -316,7 +337,7 @@ class _GradeManageDrawerState extends State<GradeManageDrawer> {
                       style: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
-                        color: onTap == null ? Colors.grey : null,
+                        color: cs.onSurface,
                       ),
                     ),
                     if (subtitle != null) ...[
@@ -325,7 +346,7 @@ class _GradeManageDrawerState extends State<GradeManageDrawer> {
                         subtitle,
                         style: TextStyle(
                           fontSize: 12,
-                          color: Colors.grey[500],
+                          color: cs.onSurfaceVariant,
                         ),
                       ),
                     ],

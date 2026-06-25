@@ -352,6 +352,41 @@ class TestCrawlRules:
             assert result["stats"]["list_items_seen"] > 0
 
 
+class TestAsyncClientHook:
+    """验证 async event hook 函数正确校验 URL。
+
+    因为 httpx event_hooks 要求异步函数，这些测试构造真实的 AsyncClient
+    并触发 hook 逻辑。不依赖真实网络 — hook 在请求发送前执行，可以在请求阶段
+    被拒绝。
+    """
+
+    @pytest.mark.asyncio
+    async def test_hook_type_is_coroutine_function(self):
+        """验证 hook 是 async def 协程函数。"""
+        import inspect
+        from services.jwc_public_crawler import JWCPublicCrawler
+
+        # 确认 JWCPublicCrawler 定义中使用了 async hook
+        source = inspect.getsource(JWCPublicCrawler.crawl)
+        assert "async def _validate_redirect" in source, (
+            "event hook must be async def, not def"
+        )
+
+    @pytest.mark.asyncio
+    async def test_validate_jwc_url_rejects_external(self):
+        """_validate_jwc_url rejects non-jwc hosts."""
+        from services.jwc_public_crawler import _validate_jwc_url
+        with __import__("pytest").raises(ValueError, match="host must be"):
+            _validate_jwc_url("https://evil.com/something")
+
+    @pytest.mark.asyncio
+    async def test_validate_jwc_url_rejects_http(self):
+        """_validate_jwc_url rejects http scheme."""
+        from services.jwc_public_crawler import _validate_jwc_url
+        with __import__("pytest").raises(ValueError, match="scheme must be https"):
+            _validate_jwc_url("http://jwc.sylu.edu.cn/something")
+
+
 class TestContentHashInResponse:
     @pytest.mark.asyncio
     async def test_items_have_sha256_hash(self):

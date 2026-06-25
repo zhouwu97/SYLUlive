@@ -105,10 +105,11 @@ class _MarketPublishFormState extends State<MarketPublishForm>
   }
 
   String get _addButtonLabel {
+    final hasAnyImage = _totalImageCount > 0;
     if (_canUploadUnlimitedImages) {
-      return _selectedImages.isEmpty ? '添加图片' : '继续添加';
+      return hasAnyImage ? '继续添加' : '添加图片';
     }
-    return _selectedImages.isEmpty ? '添加图片（最多9张）' : '继续添加';
+    return hasAnyImage ? '继续添加' : '添加图片（最多9张）';
   }
 
   String get _titleLabel => _isLostOrFound ? '物品名称' : '商品名称';
@@ -208,7 +209,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
     if (post != null) {
       _titleController.text = post.title;
       _contentController.text = post.content;
-      _priceController.text = post.price > 0 ? post.price.toString() : '';
+      _priceController.text = post.price.toString();
       _contactController.text = post.contact;
       _postType = post.postType;
       _existingImages.addAll(post.images);
@@ -365,16 +366,16 @@ class _MarketPublishFormState extends State<MarketPublishForm>
       // Type-gated parameter building: fields that don't apply to the
       // current _postType are forced to null so stale controller values
       // from a previous type selection never leak into the request.
+      // updatePost() converts null → '' / 0 on the wire, which clears
+      // inapplicable fields on the server.
       final result = _isEditing
           ? await postProvider.updatePost(
               postId: widget.editingPost!.id,
               boardId: 2,
               content: content,
-              title: _showsTitleField ? title : widget.editingPost!.title,
+              title: _showsTitleField ? title : null,
               postType: _postType,
-              price: _showsPriceField
-                  ? double.tryParse(priceText)
-                  : widget.editingPost!.price,
+              price: _showsPriceField ? double.tryParse(priceText) : null,
               contact: contact,
               fileIds: mergedFileIds,
             )

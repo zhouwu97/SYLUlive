@@ -70,10 +70,11 @@ class _WaterPostComposerState extends State<WaterPostComposer>
   String get _pageTitle => _isEditing ? '编辑帖子' : '发布水帖';
 
   String get _addButtonLabel {
+    final hasAnyImage = _totalImageCount > 0;
     if (_canUploadUnlimitedImages) {
-      return _selectedImages.isEmpty ? '添加图片' : '继续添加';
+      return hasAnyImage ? '继续添加' : '添加图片';
     }
-    return _selectedImages.isEmpty ? '添加图片（最多9张）' : '继续添加';
+    return hasAnyImage ? '继续添加' : '添加图片（最多9张）';
   }
 
   // ---------------------------------------------------------------------------

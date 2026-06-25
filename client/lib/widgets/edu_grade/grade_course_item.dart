@@ -5,36 +5,21 @@ import '../../models/edu_grade.dart';
 /// Uses a thin Divider separator — NO Card borders.
 class GradeCourseItem extends StatelessWidget {
   final EduGrade grade;
+  final VoidCallback? onTap;
 
-  const GradeCourseItem({super.key, required this.grade});
+  const GradeCourseItem({super.key, required this.grade, this.onTap});
 
-  /// Color for the displayed grade text based on score.
+  /// Restrained color for the displayed grade text.
+  /// Only fail → red, 优秀 → green, everything else → body color.
   static Color gradeColor(
       String displayGrade, bool? isPassed, BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final t = displayGrade.trim();
 
     if (isPassed == false) return Colors.red;
-
-    // Text grades
-    final t = displayGrade.trim();
     if (t == '优秀') return Colors.green;
-    if (t == '良好') return Colors.blue;
-    if (t == '中等' || t == '合格' || t == '及格') {
-      return isDark ? Colors.white70 : Colors.black87;
-    }
-    if (t == '不及格' || t == '不合格') return Colors.red;
 
-    // Numeric grades
-    final num = double.tryParse(t);
-    if (num != null) {
-      if (num >= 90) return Colors.green;
-      if (num >= 80) return Colors.blue;
-      if (num >= 60) return isDark ? Colors.white70 : Colors.black87;
-      return Colors.red;
-    }
-
-    // Unknown
-    return Colors.grey;
+    return isDark ? Colors.white : Colors.black87;
   }
 
   @override
@@ -44,8 +29,8 @@ class GradeCourseItem extends StatelessWidget {
     final gpaText =
         grade.gpa != null ? ' · 绩点 ${grade.gpa!.toStringAsFixed(2)}' : '';
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+    final row = Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Row(
         children: [
           // Left: course info
@@ -67,13 +52,13 @@ class GradeCourseItem extends StatelessWidget {
                   children: [
                     Text(
                       '${grade.credits.toStringAsFixed(1)} 学分$gpaText',
-                      style: TextStyle(fontSize: 13, color: Colors.grey[500]),
+                      style: TextStyle(fontSize: 12, color: Colors.grey[500]),
                     ),
                     if (grade.isDegree) ...[
-                      const SizedBox(width: 8),
+                      const SizedBox(width: 6),
                       Container(
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
+                          horizontal: 5,
                           vertical: 1,
                         ),
                         decoration: BoxDecoration(
@@ -99,13 +84,27 @@ class GradeCourseItem extends StatelessWidget {
           Text(
             grade.displayGrade,
             style: TextStyle(
-              fontSize: 20,
+              fontSize: 23,
               fontWeight: FontWeight.w700,
               color: color,
             ),
           ),
+          if (onTap != null) ...[
+            const SizedBox(width: 4),
+            Icon(Icons.chevron_right_rounded,
+                size: 20, color: Colors.grey[400]),
+          ],
         ],
       ),
     );
+
+    if (onTap != null) {
+      return InkWell(
+        onTap: onTap,
+        child: row,
+      );
+    }
+
+    return row;
   }
 }

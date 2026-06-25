@@ -1,9 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// Fixed bottom bar with the publish / save button.
-///
-/// Wraps the button in [SafeArea] and shows a subtle top border so it reads as
-/// a unified bottom action area together with any status row above it.
+/// Fixed bottom bar with a full-width publish / save button.
 class PublishBottomBar extends StatelessWidget {
   final bool isLoading;
   final VoidCallback? onPressed;
@@ -18,7 +15,6 @@ class PublishBottomBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return SafeArea(
@@ -29,11 +25,12 @@ class PublishBottomBar extends StatelessWidget {
           color: isDark ? const Color(0xFF0D1117) : Colors.white,
           border: Border(
             top: BorderSide(
-              color: colorScheme.outlineVariant.withValues(alpha: 0.22),
+              color: Colors.black.withValues(alpha: 0.05),
             ),
           ),
         ),
         child: SizedBox(
+          width: double.infinity,
           height: 50,
           child: FilledButton(
             onPressed: isLoading ? null : onPressed,

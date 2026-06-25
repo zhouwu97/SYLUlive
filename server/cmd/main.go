@@ -20,6 +20,8 @@ import (
 
 	"gorm.io/gorm"
 
+	"shenliyuan/internal/clients"
+
 	"shenliyuan/internal/config"
 
 	"shenliyuan/internal/handlers"
@@ -164,6 +166,9 @@ func main() {
 		&models.YunkaoPayOrder{},
 		&models.OneClassPayOrder{},
 		&models.OneClassUpdate{},
+		// 校园资讯
+		&models.CampusArticle{},
+		&models.JWCSyncState{},
 	); err != nil {
 
 		log.Fatal("数据库迁移失败:", err)
@@ -301,6 +306,19 @@ func main() {
 	handlers.VerifyCodeConfig.SMTPFrom = cfg.SMTPFrom
 
 	handlers.SetMajorLogDB(db)
+
+	// JWC 校园资讯同步
+	var jwcSyncService *services.JWCSyncService
+	if cfg.JWCSyncEnabled {
+		jwcClient := clients.NewJWCPythonClient(cfg.EduServiceURL, cfg.EduServiceToken)
+		jwcSyncService = services.NewJWCSyncService(db, jwcClient)
+		go tasks.StartJWCSyncTask(context.Background(), jwcSyncService, cfg)
+		log.Println("JWC 校园资讯同步已启用")
+	} else {
+		log.Println("JWC 校园资讯同步未启用 (JWC_SYNC_ENABLED=false)")
+	}
+
+	campusArticleHandler := handlers.NewCampusArticleHandler(db, jwcSyncService)
 
 	// 启动后台定时任务
 
@@ -1034,6 +1052,14 @@ func main() {
 
 		lotteryAdminGroup.POST("/:id/draw", lotteryHandler.Draw)
 
+	}
+
+	// 校园资讯公开只读路由
+	campus := r.Group("/api/campus")
+	{
+		campus.GET("/articles/latest", campusArticleHandler.GetLatest)
+		campus.GET("/articles", campusArticleHandler.List)
+		campus.GET("/articles/:id", campusArticleHandler.GetDetail)
 	}
 
 	// 版本信息

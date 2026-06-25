@@ -1,6 +1,7 @@
 package clients
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -170,7 +171,7 @@ func ValidateCrawlItem(item *CrawlItem) error {
 //   - 409: single retry after 3s delay
 //   - 502/503/504: up to 3 retries with exponential backoff
 //   - Timeout/connection errors: up to 3 retries
-func (c *JWCPythonClient) Crawl(req *CrawlRequest) (*CrawlResponse, error) {
+func (c *JWCPythonClient) Crawl(ctx context.Context, req *CrawlRequest) (*CrawlResponse, error) {
 	body, err := json.Marshal(req)
 	if err != nil {
 		return nil, fmt.Errorf("marshal request: %w", err)
@@ -180,16 +181,27 @@ func (c *JWCPythonClient) Crawl(req *CrawlRequest) (*CrawlResponse, error) {
 
 	var lastErr error
 	for attempt := 0; attempt < 4; attempt++ {
+		// Check context before each attempt
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		default:
+		}
+
 		if attempt > 0 {
 			wait := time.Duration(1<<uint(attempt-1)) * time.Second
 			if wait > 8*time.Second {
 				wait = 8 * time.Second
 			}
 			log.Printf("[JWC_CLIENT] retry %d after %v", attempt, wait)
-			time.Sleep(wait)
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(wait):
+			}
 		}
 
-		resp, err := c.doRequest(apiURL, body)
+		resp, err := c.doRequest(ctx, apiURL, body)
 		if err != nil {
 			lastErr = err
 			continue // network/timeout: retry
@@ -226,8 +238,8 @@ func (c *JWCPythonClient) Crawl(req *CrawlRequest) (*CrawlResponse, error) {
 	return nil, fmt.Errorf("jwc crawl failed after retries: %w", lastErr)
 }
 
-func (c *JWCPythonClient) doRequest(apiURL string, body []byte) (*http.Response, error) {
-	httpReq, err := http.NewRequest(http.MethodPost, apiURL, strings.NewReader(string(body)))
+func (c *JWCPythonClient) doRequest(ctx context.Context, apiURL string, body []byte) (*http.Response, error) {
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL, strings.NewReader(string(body)))
 	if err != nil {
 		return nil, err
 	}
@@ -243,10 +255,13 @@ func (c *JWCPythonClient) doRequest(apiURL string, body []byte) (*http.Response,
 func (c *JWCPythonClient) parseResponse(resp *http.Response) (*CrawlResponse, error) {
 	defer resp.Body.Close()
 
-	limited := io.LimitReader(resp.Body, maxResponseSize)
-	data, err := io.ReadAll(limited)
+	// Read maxSize+1 to detect oversized responses
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseSize+1))
 	if err != nil {
 		return nil, fmt.Errorf("read response: %w", err)
+	}
+	if len(data) > maxResponseSize {
+		return nil, fmt.Errorf("response body exceeds max size (%d bytes)", maxResponseSize)
 	}
 
 	var result CrawlResponse

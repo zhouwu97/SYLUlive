@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -36,7 +37,7 @@ type SyncResult struct {
 }
 
 // Sync performs a full sync cycle: query known URLs, call Python, upsert.
-func (s *JWCSyncService) Sync(reconcile bool, maxPages int) *SyncResult {
+func (s *JWCSyncService) Sync(ctx context.Context, reconcile bool, maxPages int) *SyncResult {
 	result := &SyncResult{}
 
 	// ── 1. Determine bootstrap status ──────────────────
@@ -47,6 +48,13 @@ func (s *JWCSyncService) Sync(reconcile bool, maxPages int) *SyncResult {
 		return result
 	}
 	result.IsBootstrap = count == 0
+
+	// Always update state on exit
+	var partialFailure bool
+	var itemCount int
+	defer func() {
+		s.updateSyncState(result, reconcile, partialFailure, itemCount)
+	}()
 
 	// ── 2. Query known source URLs ─────────────────────
 	knownURLs := s.queryKnownURLs()
@@ -59,11 +67,13 @@ func (s *JWCSyncService) Sync(reconcile bool, maxPages int) *SyncResult {
 		Reconcile:       reconcile,
 	}
 
-	resp, err := s.client.Crawl(req)
+	resp, err := s.client.Crawl(ctx, req)
 	if err != nil {
 		result.Error = fmt.Errorf("python crawl: %w", err)
 		return result
 	}
+
+	partialFailure = resp.Stats.PartialFailure
 
 	// ── 4. Parse generated_at ──────────────────────────
 	crawledAt := time.Now()
@@ -97,8 +107,7 @@ func (s *JWCSyncService) Sync(reconcile bool, maxPages int) *SyncResult {
 		}
 	}
 
-	// ── 6. Update sync state ───────────────────────────
-	s.updateSyncState(result, reconcile, resp.Stats.PartialFailure, len(resp.Items))
+	itemCount = len(resp.Items)
 
 	log.Printf("[JWC_SYNC] done: added=%d updated=%d skipped=%d invalid=%d bootstrap=%v",
 		result.Added, result.Updated, result.Skipped, result.Invalid,
@@ -231,22 +240,32 @@ func (s *JWCSyncService) updateSyncState(
 	}
 
 	state.LastAttemptAt = &now
-	if result.Error == nil && !partialFailure {
-		state.LastSuccessAt = &now
-		state.LastItemCount = itemCount
-		state.ConsecutiveFailures = 0
-		if reconcile {
-			state.LastReconcileAt = &now
+	if result.Error == nil {
+		if partialFailure {
+			// 部分失败：仍然算成功，但保留错误信息
+			state.LastSuccessAt = &now
+			state.LastItemCount = itemCount
+			state.ConsecutiveFailures = 0
+			state.LastError = fmt.Sprintf("partial failure: %d items saved", itemCount)
+			if reconcile {
+				state.LastReconcileAt = &now
+			}
+		} else {
+			state.LastSuccessAt = &now
+			state.LastItemCount = itemCount
+			state.ConsecutiveFailures = 0
+			state.LastError = "" // 成功后清空旧错误
+			if reconcile {
+				state.LastReconcileAt = &now
+			}
 		}
 	} else {
 		state.ConsecutiveFailures++
-		if result.Error != nil {
-			msg := result.Error.Error()
-			if len(msg) > 500 {
-				msg = msg[:500]
-			}
-			state.LastError = msg
+		msg := result.Error.Error()
+		if len(msg) > 500 {
+			msg = msg[:500]
 		}
+		state.LastError = msg
 	}
 
 	_ = s.db.Save(&state).Error

@@ -312,9 +312,9 @@ class _EduGradeScreenState extends State<EduGradeScreen> {
     return Scaffold(
       key: _scaffoldKey,
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      drawerEnableOpenDragGesture: false,
+      endDrawerEnableOpenDragGesture: false,
       drawerScrimColor: Colors.black.withValues(alpha: 0.42),
-      drawer: GradeManageDrawer(
+      endDrawer: GradeManageDrawer(
         selectedYear: _selectedYear,
         selectedSemester: _selectedSemester,
         enrollmentYear: _eduProvider?.enrollmentYear ?? 2000,
@@ -332,7 +332,7 @@ class _EduGradeScreenState extends State<EduGradeScreen> {
             tooltip: '成绩管理',
             icon: const Icon(Icons.menu_rounded),
             onPressed: () {
-              _scaffoldKey.currentState?.openDrawer();
+              _scaffoldKey.currentState?.openEndDrawer();
             },
           ),
         ],

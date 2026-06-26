@@ -12,6 +12,7 @@ class HomeServiceDrawer extends StatelessWidget {
   final VoidCallback onOpenLostFound;
   final VoidCallback onOpenToolbox;
   final VoidCallback onOpenAnnouncements;
+  final VoidCallback onOpenGrades;
   final VoidCallback onOpenExamSchedule;
   final VoidCallback onOpenFeedback;
 
@@ -25,6 +26,7 @@ class HomeServiceDrawer extends StatelessWidget {
     required this.onOpenLostFound,
     required this.onOpenToolbox,
     required this.onOpenAnnouncements,
+    required this.onOpenGrades,
     required this.onOpenExamSchedule,
     required this.onOpenFeedback,
   });
@@ -45,31 +47,31 @@ class HomeServiceDrawer extends StatelessWidget {
         ),
       ),
       child: SafeArea(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildHeader(context, isDark),
-              const SizedBox(height: 16),
-              Expanded(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _buildQuickEntries(context, isDark),
-                      const SizedBox(height: 20),
-                      _buildAnnouncementSection(context, isDark),
-                      const SizedBox(height: 20),
-                      _buildMoreServices(context, isDark),
-                      const SizedBox(height: 32),
-                    ],
-                  ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildHeader(context, isDark),
+            const SizedBox(height: 16),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildQuickEntries(context, isDark),
+                    const SizedBox(height: 20),
+                    _buildAnnouncementSection(context, isDark),
+                    const SizedBox(height: 20),
+                    _buildMoreServices(context, isDark),
+                    const SizedBox(height: 32),
+                  ],
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
-      );
+      ),
+    );
   }
 
   // ---- 标题区域 ----
@@ -266,6 +268,15 @@ class HomeServiceDrawer extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 10),
+        _ServiceRow(
+          icon: Icons.assessment_outlined,
+          color: const Color(0xFF5D64C4),
+          title: '成绩查询',
+          subtitle: '查看学期成绩与绩点',
+          isDark: isDark,
+          onTap: onOpenGrades,
+        ),
+        const SizedBox(height: 8),
         _ServiceRow(
           icon: Icons.event_note_rounded,
           color: Colors.deepPurpleAccent,

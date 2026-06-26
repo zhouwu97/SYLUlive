@@ -19,16 +19,25 @@ void main() {
 
       for (var i = 0; i < scripts.length; i++) {
         final script = scripts[i];
-        
+
         // 1. Must not explicitly call .submit() on any form
-        expect(script.contains(RegExp(r'\.submit\(\)')), isFalse, reason: 'Script #$i contains .submit()');
-        
+        expect(script.contains(RegExp(r'\.submit\(\)')), isFalse,
+            reason: 'Script #$i contains .submit()');
+
         // 2. Must not explicitly call .requestSubmit()
-        expect(script.contains(RegExp(r'\.requestSubmit\(\)')), isFalse, reason: 'Script #$i contains .requestSubmit()');
-        
+        expect(script.contains(RegExp(r'\.requestSubmit\(\)')), isFalse,
+            reason: 'Script #$i contains .requestSubmit()');
+
         // 3. Must not query and click submit buttons directly by type="submit" without checking value
         // The save script queries them, BUT it filters them. We should verify it doesn't just do `querySelector('input[type="submit"]').click()`
-        expect(script.contains(RegExp(r'querySelector\([^)]*type=["\']submit["\'][^)]*\)\.click\(\)')), isFalse, reason: 'Script #$i directly clicks submit query selector');
+        expect(
+          script.contains(
+            RegExp(
+                r'querySelector\([^)]*type=["\x27]submit["\x27][^)]*\)\.click\(\)'),
+          ),
+          isFalse,
+          reason: 'Script #$i directly clicks submit query selector',
+        );
       }
     });
 
@@ -44,11 +53,13 @@ void main() {
       // Should contain input and change
       expect(fillScript, contains("new Event('input'"));
       expect(fillScript, contains("new Event('change'"));
-      
+
       // Should NOT contain a blanket blur event for all inputs inside the loop
       // (We removed the blur event from the main fill loop)
-      final blurCount = RegExp(r"new Event\('blur'").allMatches(fillScript).length;
-      expect(blurCount, 0, reason: 'Should not fire blur on every input individually');
+      final blurCount =
+          RegExp(r"new Event\('blur'").allMatches(fillScript).length;
+      expect(blurCount, 0,
+          reason: 'Should not fire blur on every input individually');
     });
   });
 }

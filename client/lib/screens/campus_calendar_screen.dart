@@ -11,9 +11,7 @@ class CampusCalendarScreen extends StatefulWidget {
 }
 
 class _CampusCalendarScreenState extends State<CampusCalendarScreen>
-    with SingleTickerProviderStateMixin, AutomaticKeepAliveClientMixin {
-  @override
-  bool get wantKeepAlive => true;
+    with SingleTickerProviderStateMixin {
   bool _showControls = true;
   double _currentScale = 1.0;
   late AnimationController _fadeController;
@@ -79,12 +77,22 @@ class _CampusCalendarScreenState extends State<CampusCalendarScreen>
 
   @override
   Widget build(BuildContext context) {
-    super.build(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final primaryColor = Theme.of(context).primaryColor;
+    final bgColor = isDark ? const Color(0xFF101219) : Colors.white;
 
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: bgColor,
+      appBar: AppBar(
+        leading: const BackButton(),
+        title: const Text('校历'),
+        centerTitle: true,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        backgroundColor: bgColor,
+        surfaceTintColor: Colors.transparent,
+        foregroundColor: isDark ? Colors.white : const Color(0xFF20212B),
+      ),
       body: Stack(
         children: [
           // Calendar image viewer
@@ -151,9 +159,8 @@ class _CampusCalendarScreenState extends State<CampusCalendarScreen>
                   borderRadius: 20,
                   blur: 8,
                   opacity: 0.3,
-                  backgroundColor: isDark
-                      ? const Color(0xFF1A1A2E)
-                      : Colors.white,
+                  backgroundColor:
+                      isDark ? const Color(0xFF1A1A2E) : Colors.white,
                   child: Text(
                     '${(_currentScale * 100).toInt()}%',
                     style: TextStyle(
@@ -172,11 +179,10 @@ class _CampusCalendarScreenState extends State<CampusCalendarScreen>
 
   Widget _buildEventsPanel(bool isDark, Color primaryColor) {
     final now = DateTime.now();
-    final upcomingEvents =
-        _events
-            .where((e) => e.date.isAfter(now.subtract(const Duration(days: 7))))
-            .toList()
-          ..sort((a, b) => a.date.compareTo(b.date));
+    final upcomingEvents = _events
+        .where((e) => e.date.isAfter(now.subtract(const Duration(days: 7))))
+        .toList()
+      ..sort((a, b) => a.date.compareTo(b.date));
 
     return GlassContainer(
       borderRadius: 24.0,

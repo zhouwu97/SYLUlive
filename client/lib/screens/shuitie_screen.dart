@@ -22,6 +22,7 @@ import '../widgets/home_service_drawer.dart';
 import '../widgets/post_card.dart';
 import 'announcement_screen.dart';
 import 'chat_list_screen.dart';
+import 'edu_grade_screen.dart';
 import 'exam_schedule_screen.dart';
 import 'feedback_screen.dart';
 import 'login_screen.dart';
@@ -641,6 +642,22 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                       context,
                       MaterialPageRoute(
                           builder: (_) => const AnnouncementScreen()),
+                    );
+                  });
+                },
+                onOpenGrades: () {
+                  _closePanelThenOpen(dialogContext, () {
+                    final auth = context.read<AuthProvider>();
+                    if (!auth.isLoggedIn || auth.user == null) {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const LoginScreen()),
+                      );
+                      return;
+                    }
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const EduGradeScreen()),
                     );
                   });
                 },

@@ -12,7 +12,10 @@ import 'campus_article_detail_screen.dart';
 ///
 /// 支持分类筛选（全部 / 教务通知 / 教务公告）和分页加载。
 class CampusArticleListScreen extends StatefulWidget {
-  const CampusArticleListScreen({super.key});
+  /// 用于测试注入的可选 Service。生产环境传 null，内部使用 getSharedDio()。
+  final CampusArticleService? service;
+
+  const CampusArticleListScreen({super.key, this.service});
 
   @override
   State<CampusArticleListScreen> createState() =>
@@ -56,7 +59,7 @@ class _CampusArticleListScreenState extends State<CampusArticleListScreen> {
   @override
   void initState() {
     super.initState();
-    _service = CampusArticleService(getSharedDio());
+    _service = widget.service ?? CampusArticleService(getSharedDio());
     _scrollController = ScrollController();
     _scrollController.addListener(_onScroll);
     _loadFirstPage();
@@ -89,6 +92,7 @@ class _CampusArticleListScreenState extends State<CampusArticleListScreen> {
     final token = ++_requestToken;
     setState(() {
       _isLoading = true;
+      _isLoadingMore = false; // 切换分类时清除可能残留的分页加载标记
       _errorMessage = null;
       _articles = [];
       _currentPage = 1;
@@ -146,7 +150,10 @@ class _CampusArticleListScreenState extends State<CampusArticleListScreen> {
         page: nextPage,
         categorySlug: _currentCategorySlug,
       );
-      if (!mounted || token != _requestToken) return;
+      if (!mounted || token != _requestToken) {
+        // 旧请求被分类切换作废，不修改状态
+        return;
+      }
 
       // 按 id 去重
       final existingIds = _articles.map((a) => a.id).toSet();

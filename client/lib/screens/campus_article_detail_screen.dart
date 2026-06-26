@@ -90,7 +90,13 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
       return;
     }
     try {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
+      final opened = await launchUrl(
+        uri,
+        mode: LaunchMode.externalApplication,
+      );
+      if (!opened && mounted) {
+        AppFeedback.showSnackBar(context, '无法打开浏览器', isError: true);
+      }
     } catch (e) {
       if (mounted) {
         AppFeedback.showSnackBar(context, '无法打开浏览器', isError: true);

@@ -198,8 +198,8 @@ class _CampusScreenState extends State<CampusScreen>
   // ── 最新文章卡片 ───────────────────────────────────────────────
 
   Widget _buildLatestCard(bool isDark) {
-    // 加载中
-    if (!_latestLoaded && !_recentLoaded) {
+    // 最新文章加载中
+    if (!_latestLoaded) {
       return _LatestCardSkeleton(isDark: isDark);
     }
 
@@ -214,7 +214,7 @@ class _CampusScreenState extends State<CampusScreen>
       );
     }
 
-    // 最新和列表都失败
+    // 最新失败且列表也失败或为空
     if (_latestError != null &&
         (_recentError != null || _recentArticles.isEmpty)) {
       return _LatestCardError(
@@ -224,8 +224,14 @@ class _CampusScreenState extends State<CampusScreen>
       );
     }
 
-    // 最新失败但列表也空
-    if (latest == null && _recentArticles.isEmpty) {
+    // 最新失败但列表还在加载 → 显示骨架屏
+    if (_latestError != null && !_recentLoaded) {
+      return _LatestCardSkeleton(isDark: isDark);
+    }
+
+    // 最新失败但列表有数据 → _displayLatest 会返回列表第一条
+    // 如果走到这里说明列表也为空
+    if (latest == null) {
       return _LatestCardEmpty(isDark: isDark);
     }
 
@@ -236,8 +242,8 @@ class _CampusScreenState extends State<CampusScreen>
   // ── 最近文章列表 ───────────────────────────────────────────────
 
   Widget _buildRecentList(bool isDark) {
-    // 加载中
-    if (!_recentLoaded && !_latestLoaded) {
+    // 最近列表加载中（独立于最新文章的加载状态）
+    if (!_recentLoaded) {
       return _RecentListSkeleton(isDark: isDark);
     }
 

@@ -6,9 +6,12 @@ import 'package:dio_cookie_manager/dio_cookie_manager.dart';
 import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../features/physical/physical_percentile_models.dart';
+import '../features/physical/physical_percentile_service.dart';
 import '../utils/sign_utils.dart';
 import '../utils/app_feedback.dart';
 import '../widgets/glass_container.dart';
+import 'physical_percentile_report_screen.dart';
 
 class PhysicalTestPage extends StatefulWidget {
   final String username;
@@ -42,6 +45,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
   String? _errorMessage;
   String? _userId;
   String? _token;
+  PhysicalGender _studentGender = PhysicalGender.unknown;
   String _currentYear = '';
   late final List<String> _availableYears;
 
@@ -49,7 +53,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
   final Map<String, _YearData> _yearData = {};
 
   bool _showQr = false;
-  String _testCode = ''; 
+  String _testCode = '';
   int _displayMode = 0; // 0: 成绩, 1: 得分, 2: 评级
 
   @override
@@ -257,9 +261,18 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
       );
       if (resp.statusCode == 200 && resp.data is Map) {
         final data = resp.data['data'];
-        if (data is Map && data['testCode'] != null) {
-          _testCode = data['testCode'].toString();
-          debugPrint('获取到 testCode: $_testCode');
+        if (data is Map) {
+          if (data['testCode'] != null) {
+            _testCode = data['testCode'].toString();
+            debugPrint('获取到 testCode: $_testCode');
+          }
+          for (final key in ['sex', 'gender', 'xb', 'studentSex', 'userSex']) {
+            final parsed = PhysicalPercentileService.parseGender(data[key]);
+            if (parsed != PhysicalGender.unknown) {
+              _studentGender = parsed;
+              break;
+            }
+          }
         }
       }
     } catch (_) {}
@@ -399,6 +412,8 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
                 const SizedBox(height: 16),
                 if (data != null) ...[
                   _buildSummaryCard(data, isDark),
+                  const SizedBox(height: 12),
+                  _buildPercentileReportButton(data.scores, isDark),
                   const SizedBox(height: 16),
                 ],
                 if (scores.isNotEmpty) ...[
@@ -733,6 +748,61 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
             ],
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildPercentileReportButton(List<_GymScoreItem> scores, bool isDark) {
+    return SizedBox(
+      width: double.infinity,
+      height: 48,
+      child: ElevatedButton.icon(
+        onPressed: scores.isEmpty ? null : () => _openPercentileReport(scores),
+        icon: const Icon(Icons.trending_up_rounded, size: 20),
+        label: const Text(
+          '查看超越了多少大学生',
+          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+        ),
+        style: ElevatedButton.styleFrom(
+          elevation: 0,
+          backgroundColor: const Color(0xFF6366F1),
+          disabledBackgroundColor:
+              isDark ? Colors.white10 : const Color(0xFFE1E5EE),
+          foregroundColor: Colors.white,
+          disabledForegroundColor:
+              isDark ? Colors.white38 : const Color(0xFF98A1B2),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _openPercentileReport(List<_GymScoreItem> scores) {
+    final rawScores = scores
+        .map(
+          (score) => PhysicalRawScore(
+            name: score.subName,
+            result: score.result,
+          ),
+        )
+        .toList(growable: false);
+    final normalized =
+        PhysicalPercentileService.normalizeStudentResults(rawScores);
+    final inferredGender = _studentGender == PhysicalGender.unknown
+        ? PhysicalPercentileService.inferGenderFromMetricIds(
+            normalized.map((result) => result.metricId),
+          )
+        : _studentGender;
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PhysicalPercentileReportScreen(
+          scores: rawScores,
+          gender: inferredGender,
+        ),
       ),
     );
   }

@@ -66,6 +66,7 @@ flutter:
     - assets/images/wallpaper_thumbs/
     - assets/images/xiaoli.jpg
     - assets/images/yuanshen.jpg
+    - assets/data/
     - assets/scripts/
     - assets/yongzhiyunkao/
   fonts:

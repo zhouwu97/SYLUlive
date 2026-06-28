@@ -4,9 +4,10 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart'
-    show Clipboard, ClipboardData, rootBundle;
+    show Clipboard, ClipboardData, MethodChannel, rootBundle;
 import 'package:image_cropper/image_cropper.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
 import 'package:package_info_plus/package_info_plus.dart';
@@ -15,6 +16,8 @@ import 'package:url_launcher/url_launcher.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/course_schedule_provider.dart';
+import '../services/diagnostic_log_service.dart';
+import '../models/diagnostic_log_entry.dart';
 import '../services/keep_alive_service.dart';
 import '../services/wallpaper_prefetch_service.dart';
 import '../utils/update_checker.dart';
@@ -409,6 +412,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 MaterialPageRoute(builder: (_) => const DiagnosticLogScreen()),
               );
             },
+          ),
+        ),
+        _buildSettingsRow(
+          child: _buildSettingsTile(
+            icon: Icons.troubleshoot,
+            iconColor: Colors.teal,
+            title: '推送诊断',
+            subtitle: '查看极光推送、权限与渠道状态',
+            isDark: isDark,
+            onTap: () => _showPushDiagnostics(context, isDark),
           ),
         ),
         _buildSettingsRow(
@@ -1666,4 +1679,440 @@ class _SettingsScreenState extends State<SettingsScreen> {
       debugPrint('Could not launch URL: $url');
     }
   }
+
+  // ── 推送诊断 ──
+
+  static final _pushDiagChannel = MethodChannel(
+    'shenliyuan/private_message_notifications',
+  );
+
+  Future<void> _showPushDiagnostics(
+    BuildContext context,
+    bool isDark,
+  ) async {
+    final info = await _gatherPushDiagnostics();
+    if (!mounted) return;
+
+    final primary = Theme.of(context).primaryColor;
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withOpacity(0.4),
+      builder: (sheetCtx) {
+        final isDarkSheet =
+            Theme.of(sheetCtx).brightness == Brightness.dark;
+        return Container(
+          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(sheetCtx).size.height * 0.75,
+          ),
+          decoration: BoxDecoration(
+            color: isDarkSheet
+                ? const Color(0xFF1E1E2E).withOpacity(0.95)
+                : Colors.white.withOpacity(0.95),
+            borderRadius: BorderRadius.circular(28),
+            border: Border.all(
+              color: isDarkSheet
+                  ? Colors.white.withOpacity(0.1)
+                  : Colors.white.withOpacity(0.5),
+              width: 1.5,
+            ),
+          ),
+          child: SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // 拖拽指示条
+                Padding(
+                  padding: const EdgeInsets.only(top: 12, bottom: 16),
+                  child: Container(
+                    width: 48,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: isDarkSheet
+                          ? Colors.white24
+                          : Colors.grey[300],
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                ),
+                // 标题
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: Row(
+                    children: [
+                      Icon(Icons.troubleshoot, color: primary, size: 24),
+                      const SizedBox(width: 10),
+                        Text(
+                          '推送诊断',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w800,
+                            color: isDarkSheet
+                                ? Colors.white
+                                : const Color(0xFF2D3142),
+                          ),
+                        ),
+                      const Spacer(),
+                      IconButton(
+                        icon: const Icon(Icons.copy, size: 20),
+                        tooltip: '复制诊断信息',
+                        onPressed: () => _copyPushDiagnostics(sheetCtx, info),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                // 诊断列表
+                Flexible(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+                    child: Column(
+                      children: [
+                        _diagRow(
+                          'RegistrationID',
+                          info.registrationId != null
+                              ? '***${info.registrationId!.length > 6 ? info.registrationId!.substring(info.registrationId!.length - 6) : info.registrationId}'
+                              : '未获取',
+                          info.registrationId != null
+                              ? Icons.check_circle
+                              : Icons.warning_amber_rounded,
+                          info.registrationId != null
+                              ? Colors.green
+                              : Colors.orange,
+                          isDarkSheet,
+                        ),
+                        _diagRow(
+                          '通知总权限',
+                          info.notificationsEnabled ? '已开启' : '已关闭',
+                          info.notificationsEnabled
+                              ? Icons.check_circle
+                              : Icons.cancel,
+                          info.notificationsEnabled
+                              ? Colors.green
+                              : Colors.red,
+                          isDarkSheet,
+                        ),
+                        _diagRow(
+                          '私信通知渠道',
+                          !info.privateMessageChannelExists
+                              ? '渠道不存在'
+                              : info.privateMessageChannelBlocked
+                                  ? '已关闭'
+                                  : '已开启',
+                          !info.privateMessageChannelExists ||
+                                  info.privateMessageChannelBlocked
+                              ? Icons.cancel
+                              : Icons.check_circle,
+                          !info.privateMessageChannelExists ||
+                                  info.privateMessageChannelBlocked
+                              ? Colors.red
+                              : Colors.green,
+                          isDarkSheet,
+                        ),
+                        if (info.privateMessageChannelExists)
+                          _diagRow(
+                            '渠道重要性',
+                            _importanceLabel(
+                                info.privateMessageChannelImportance),
+                            info.privateMessageChannelImportance >= 4
+                                ? Icons.notifications_active
+                                : Icons.notifications,
+                            info.privateMessageChannelImportance >= 4
+                                ? Colors.green
+                                : Colors.orange,
+                            isDarkSheet,
+                          ),
+                        _diagRow(
+                          '已存储 Alias',
+                          info.storedAlias != null
+                              ? '***${info.storedAlias!.length > 4 ? info.storedAlias!.substring(info.storedAlias!.length - 4) : info.storedAlias}'
+                              : '未存储',
+                          info.storedAlias != null
+                              ? Icons.check_circle
+                              : Icons.warning_amber_rounded,
+                          info.storedAlias != null
+                              ? Colors.green
+                              : Colors.orange,
+                          isDarkSheet,
+                        ),
+                        _diagRow(
+                          'Alias 最近状态',
+                          info.aliasLastStatus ?? '无记录',
+                          info.aliasLastStatus == '成功'
+                              ? Icons.check_circle
+                              : info.aliasLastStatus == '失败'
+                                  ? Icons.error
+                                  : Icons.help_outline,
+                          info.aliasLastStatus == '成功'
+                              ? Colors.green
+                              : info.aliasLastStatus == '失败'
+                                  ? Colors.red
+                                  : Colors.grey,
+                          isDarkSheet,
+                          subtitle: info.aliasLastTime,
+                        ),
+                        if (info.error != null) ...[
+                          const SizedBox(height: 12),
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.orange.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                color: Colors.orange.withValues(alpha: 0.3),
+                              ),
+                            ),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Icon(Icons.warning_amber_rounded,
+                                    size: 16, color: Colors.orange),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    info.error!,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: isDarkSheet
+                                          ? Colors.orange[200]
+                                          : Colors.orange[800],
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 24),
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            onPressed: () {
+                              Navigator.pop(sheetCtx);
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) =>
+                                      const DiagnosticLogScreen(),
+                                ),
+                              );
+                            },
+                            icon: const Icon(Icons.receipt_long_rounded,
+                                size: 18),
+                            label: const Text('查看完整推送日志'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<_PushDiagnosticInfo> _gatherPushDiagnostics() async {
+    Map<String, dynamic> native = {};
+    List<DiagnosticLogEntry> logs = [];
+    final errors = <String>[];
+
+    // 原生诊断（含 RegistrationID、权限、渠道状态）
+    try {
+      final result = await _pushDiagChannel
+          .invokeMapMethod<String, dynamic>('getPushDiagnostics');
+      native = result ?? {};
+    } catch (e) {
+      errors.add('原生诊断读取失败: $e');
+    }
+
+    // Alias 状态（从诊断日志）
+    try {
+      logs = await DiagnosticLogService.instance.getLogs();
+    } catch (e) {
+      errors.add('日志读取失败: $e');
+    }
+
+    // 从日志中提取最近一次 Alias 绑定状态
+    String? aliasLastStatus;
+    String? aliasLastTime;
+    for (final log in logs) {
+      if (log.source != '推送') continue;
+      if (log.type == 'Alias 绑定成功') {
+        aliasLastStatus = '成功';
+        final effectiveTime =
+            log.lastSeenAt > 0 ? log.lastSeenAt : log.timestamp;
+        aliasLastTime = DateFormat(
+          'MM-dd HH:mm:ss',
+        ).format(DateTime.fromMillisecondsSinceEpoch(effectiveTime));
+        break;
+      }
+      if (log.type == 'Alias 绑定失败') {
+        aliasLastStatus = '失败';
+        final effectiveTime =
+            log.lastSeenAt > 0 ? log.lastSeenAt : log.timestamp;
+        aliasLastTime = DateFormat(
+          'MM-dd HH:mm:ss',
+        ).format(DateTime.fromMillisecondsSinceEpoch(effectiveTime));
+        break;
+      }
+    }
+
+    return _PushDiagnosticInfo(
+      // 使用原生返回的 RegistrationID，避免重复 JPush 插件查询
+      registrationId: native['registrationId']?.toString(),
+      notificationsEnabled: native['notificationsEnabled'] == true,
+      privateMessageChannelExists:
+          native['privateMessageChannelExists'] == true,
+      privateMessageChannelImportance:
+          (native['privateMessageChannelImportance'] as num?)?.toInt() ?? -1,
+      privateMessageChannelBlocked:
+          native['privateMessageChannelBlocked'] == true,
+      storedAlias: native['storedAlias']?.toString(),
+      aliasLastStatus: aliasLastStatus,
+      aliasLastTime: aliasLastTime,
+      error: errors.isNotEmpty ? errors.join('\n') : null,
+    );
+  }
+
+  void _copyPushDiagnostics(
+    BuildContext context,
+    _PushDiagnosticInfo info,
+  ) {
+    final sb = StringBuffer();
+    sb.writeln('═══ 推送诊断 ═══');
+    sb.writeln('RegistrationID: ${_maskValue(info.registrationId, 6)}');
+    sb.writeln('通知总权限: ${info.notificationsEnabled ? "已开启" : "已关闭"}');
+    sb.writeln('私信通知渠道存在: ${info.privateMessageChannelExists}');
+    sb.writeln('私信通知渠道已关闭: ${info.privateMessageChannelBlocked}');
+    sb.writeln(
+      '渠道重要性: ${_importanceLabel(info.privateMessageChannelImportance)}',
+    );
+    sb.writeln('已存储 Alias: ${_maskValue(info.storedAlias, 4)}');
+    sb.writeln(
+      'Alias 最近状态: ${info.aliasLastStatus ?? "无记录"}'
+      '${info.aliasLastTime != null ? " (${info.aliasLastTime})" : ""}',
+    );
+    if (info.error != null) {
+      sb.writeln('诊断异常: ${info.error}');
+    }
+    Clipboard.setData(ClipboardData(text: sb.toString()));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('诊断信息已复制到剪贴板（ID 已掩码）'),
+        behavior: SnackBarBehavior.floating,
+        margin: EdgeInsets.all(16),
+        duration: Duration(seconds: 2),
+      ),
+    );
+  }
+
+  /// 掩码敏感值，仅保留末 N 位
+  String _maskValue(String? value, int visibleLength) {
+    if (value == null || value.isEmpty) return '未获取';
+    if (value.length <= visibleLength) return '***';
+    return '***${value.substring(value.length - visibleLength)}';
+  }
+
+  String _importanceLabel(int importance) {
+    switch (importance) {
+      case 0:
+        return '无 (IMPORTANCE_NONE)';
+      case 1:
+        return '最低 (IMPORTANCE_MIN)';
+      case 2:
+        return '低 (IMPORTANCE_LOW)';
+      case 3:
+        return '默认 (IMPORTANCE_DEFAULT)';
+      case 4:
+        return '高 (IMPORTANCE_HIGH)';
+      case 5:
+        return '最高 (IMPORTANCE_MAX)';
+      default:
+        return '未知 ($importance)';
+    }
+  }
+
+  Widget _diagRow(
+    String label,
+    String value,
+    IconData icon,
+    Color iconColor,
+    bool isDark, {
+    String? subtitle,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 20, color: iconColor),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: isDark ? Colors.white54 : Colors.grey[600],
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  value,
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    fontFamily: 'monospace',
+                    color: isDark ? Colors.white : const Color(0xFF2D3142),
+                  ),
+                ),
+                if (subtitle != null)
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: isDark ? Colors.white38 : Colors.grey[500],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 推送诊断信息
+class _PushDiagnosticInfo {
+  final String? registrationId;
+  final bool notificationsEnabled;
+  final bool privateMessageChannelExists;
+  final int privateMessageChannelImportance;
+  final bool privateMessageChannelBlocked;
+  final String? storedAlias;
+  final String? aliasLastStatus;
+  final String? aliasLastTime;
+  final String? error;
+
+  const _PushDiagnosticInfo({
+    required this.registrationId,
+    required this.notificationsEnabled,
+    required this.privateMessageChannelExists,
+    required this.privateMessageChannelImportance,
+    required this.privateMessageChannelBlocked,
+    required this.storedAlias,
+    required this.aliasLastStatus,
+    required this.aliasLastTime,
+    this.error,
+  });
 }

@@ -118,12 +118,26 @@ class PostProvider extends ChangeNotifier {
   }) =>
       _ensureBoard(boardId, sort: sort, type: type).lastSuccessfulRefreshAt;
 
+  /// 清除关注信息流缓存，在登录/退出/切换账号/关注/取消关注后调用
+  void invalidateFollowingFeed() {
+    final key = _stateKey(1, 'following', null);
+    final state = _boards[key];
+
+    // 让尚未结束的旧请求失效
+    if (state != null) {
+      state.requestVersion++;
+    }
+
+    _boards.remove(key);
+    notifyListeners();
+  }
+
   Future<void> _savePostsToCache(
     int boardId,
     String sort,
     List<Post> posts,
   ) async {
-    if (!_enableCache) return;
+    if (!_enableCache || sort == 'following') return;
     try {
       await PostCacheService.savePosts(boardId, posts, sort: sort);
     } catch (e) {
@@ -143,8 +157,8 @@ class PostProvider extends ChangeNotifier {
     board.currentSort = sort;
     final requestVersion = ++board.requestVersion;
 
-    // 第一步：极速上屏 — 读本地缓存
-    if (_enableCache) {
+    // 第一步：极速上屏 — 读本地缓存（关注信息流不使用缓存）
+    if (_enableCache && sort != 'following') {
       try {
         final cached = await PostCacheService.loadPosts(boardId, sort: sort);
         if (requestVersion != board.requestVersion) return;

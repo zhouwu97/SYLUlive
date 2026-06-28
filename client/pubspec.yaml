@@ -1,7 +1,7 @@
 name: shenliyuan
 description: 沈理校园 - 校园互助社交应用
 publish_to: 'none'
-version: 1.5.19+1519
+version: 1.5.21+1521
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -66,6 +66,7 @@ flutter:
     - assets/images/wallpaper_thumbs/
     - assets/images/xiaoli.jpg
     - assets/images/yuanshen.jpg
+    - assets/data/
     - assets/scripts/
     - assets/yongzhiyunkao/
   fonts:

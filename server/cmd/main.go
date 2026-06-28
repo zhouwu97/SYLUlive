@@ -93,6 +93,10 @@ func main() {
 		&models.Post{},
 
 		&models.PostImage{},
+		&models.FeaturedApplication{},
+		&models.CollaborationApplication{},
+		&models.PostRevisionProposal{},
+		&models.ReputationLog{},
 
 		&models.Reply{},
 
@@ -169,6 +173,14 @@ func main() {
 		// 校园资讯
 		&models.CampusArticle{},
 		&models.JWCSyncState{},
+		&models.CompetitionCategory{},
+		&models.CompetitionEvent{},
+		&models.CompetitionEventAttachment{},
+		&models.UserCompetitionCalendar{},
+		&models.UserCompetitionCalendarItem{},
+		&models.CalendarShareSnapshot{},
+		&models.CalendarShareSnapshotItem{},
+		&models.CompetitionImportBatch{},
 	); err != nil {
 
 		log.Fatal("数据库迁移失败:", err)
@@ -177,6 +189,12 @@ func main() {
 
 	if err := models.EnsureConversationIndexes(db); err != nil {
 		log.Fatal("私信索引迁移失败:", err)
+	}
+	if err := models.EnsureCompetitionCategories(db); err != nil {
+		log.Fatal("竞赛分类种子初始化失败:", err)
+	}
+	if err := ensureFeatureCollaborationIndexes(db); err != nil {
+		log.Fatal("精华共同创作索引迁移失败:", err)
 	}
 
 	// 回填旧公告的缺失字段默认值（公告模型新增 Status/DisplayMode/Priority）
@@ -236,6 +254,7 @@ func main() {
 
 	postHandler := handlers.NewPostHandler(db)
 	searchHandler := handlers.NewSearchHandler(db, postHandler)
+	competitionHandler := handlers.NewCompetitionHandler(db)
 
 	replyHandler := handlers.NewReplyHandler(db, cfg.JPushAppKey, cfg.JPushMasterSecret)
 
@@ -554,6 +573,26 @@ func main() {
 
 		user.POST("/notifications/read", notificationHandler.MarkAllRead)
 
+		user.GET("/competition-calendar", competitionHandler.GetCalendar)
+		user.POST("/competition-calendar/init", competitionHandler.InitCalendar)
+		user.PUT("/competition-calendar", competitionHandler.UpdateCalendar)
+		user.DELETE("/competition-calendar", competitionHandler.DeleteCalendar)
+		user.POST("/competition-calendar/items", competitionHandler.CreateCalendarItem)
+		user.POST("/competition-calendar/items/copy-from-official/:event_id", competitionHandler.CopyOfficialToCalendar)
+		user.PUT("/competition-calendar/items/:id", competitionHandler.UpdateCalendarItem)
+		user.DELETE("/competition-calendar/items/:id", competitionHandler.DeleteCalendarItem)
+		user.POST("/competition-calendar/items/:id/pin", competitionHandler.PinCalendarItem)
+		user.POST("/competition-calendar/items/reorder", competitionHandler.ReorderCalendarItems)
+		user.POST("/competition-calendar/share", competitionHandler.ShareCalendar)
+		user.POST("/competition-calendar/share/:share_code/revoke", competitionHandler.RevokeShare)
+		user.POST("/competition-calendar/import-share/preview", competitionHandler.PreviewShareImport)
+		user.POST("/competition-calendar/import-share/commit", competitionHandler.CommitShareImport)
+		user.GET("/featured-applications", postHandler.GetMyFeaturedApplications)
+		user.GET("/collaboration-applications/sent", postHandler.GetMyCollaborationApplicationsSent)
+		user.GET("/collaboration-applications/received", postHandler.GetMyCollaborationApplicationsReceived)
+		user.GET("/revision-proposals/sent", postHandler.GetMyRevisionProposalsSent)
+		user.GET("/revision-proposals/received", postHandler.GetMyRevisionProposalsReceived)
+
 		user.POST("/checkin", checkinHandler.DoCheckIn)
 
 		user.GET("/checkin/status", checkinHandler.GetStatus)
@@ -583,6 +622,8 @@ func main() {
 
 		posts.GET("", postHandler.GetList)
 
+		posts.GET("/featured", postHandler.GetFeaturedList)
+
 		posts.GET("/:id", postHandler.GetOne)
 
 		posts.GET("/:id/replies", replyHandler.GetList)
@@ -590,6 +631,18 @@ func main() {
 	}
 
 	r.GET("/api/search", middleware.OptionalAuthMiddleware(db, cfg.JWTSecret), searchHandler.Search)
+
+	r.POST("/api/collaboration-applications/:id/approve", middleware.AuthMiddleware(db, cfg.JWTSecret), postHandler.ApproveCollaborationApplication)
+	r.POST("/api/collaboration-applications/:id/reject", middleware.AuthMiddleware(db, cfg.JWTSecret), postHandler.RejectCollaborationApplication)
+	r.POST("/api/revision-proposals/:id/approve", middleware.AuthMiddleware(db, cfg.JWTSecret), postHandler.ApproveRevisionProposal)
+	r.POST("/api/revision-proposals/:id/reject", middleware.AuthMiddleware(db, cfg.JWTSecret), postHandler.RejectRevisionProposal)
+
+	competitions := r.Group("/api/competitions")
+	{
+		competitions.GET("/categories", competitionHandler.GetCategories)
+		competitions.GET("/events", competitionHandler.ListEvents)
+		competitions.GET("/events/:id", competitionHandler.GetEvent)
+	}
 
 	postsAuth := r.Group("/api/posts")
 
@@ -602,6 +655,10 @@ func main() {
 		postsAuth.PUT("/:id", postHandler.Update)
 
 		postsAuth.DELETE("/:id", postHandler.Delete)
+
+		postsAuth.POST("/:id/featured-applications", postHandler.CreateFeaturedApplication)
+		postsAuth.POST("/:id/collaboration-applications", postHandler.CreateCollaborationApplication)
+		postsAuth.POST("/:id/revision-proposals", postHandler.CreateRevisionProposal)
 
 		postsAuth.POST("/:id/replies", replyHandler.Create)
 
@@ -804,6 +861,28 @@ func main() {
 		admin.POST("/invitations/:id/vote", invitationHandler.VoteApprove)
 
 		admin.GET("/removals/pending", teacherHandler.GetRemovalRequests)
+
+		admin.GET("/featured-applications", postHandler.AdminGetFeaturedApplications)
+		admin.POST("/featured-applications/:id/approve", postHandler.AdminApproveFeaturedApplication)
+		admin.POST("/featured-applications/:id/reject", postHandler.AdminRejectFeaturedApplication)
+		admin.POST("/posts/:id/unfeature", postHandler.AdminUnfeaturePost)
+		admin.POST("/competitions/categories", competitionHandler.AdminCreateCategory)
+		admin.PUT("/competitions/categories/:id", competitionHandler.AdminUpdateCategory)
+		admin.DELETE("/competitions/categories/:id", competitionHandler.AdminDeleteCategory)
+		admin.GET("/competitions/events", competitionHandler.AdminListEvents)
+		admin.POST("/competitions/events", competitionHandler.AdminCreateEvent)
+		admin.PUT("/competitions/events/:id", competitionHandler.AdminUpdateEvent)
+		admin.DELETE("/competitions/events/:id", competitionHandler.AdminDeleteEvent)
+		admin.POST("/competitions/events/:id/archive", competitionHandler.AdminArchiveEvent)
+		admin.POST("/competitions/events/:id/publish", competitionHandler.AdminPublishEvent)
+		admin.POST("/competitions/events/:id/verify", competitionHandler.AdminVerifyEvent)
+		admin.POST("/competitions/import-json/preview", competitionHandler.AdminImportJSONPreview)
+		admin.POST("/competitions/import-json/commit", competitionHandler.AdminImportJSONCommit)
+		admin.GET("/competitions/import-batches", competitionHandler.AdminListImportBatches)
+		admin.GET("/competitions/import-batches/:batch_id", competitionHandler.AdminGetImportBatch)
+		admin.GET("/competitions/share-snapshots", competitionHandler.AdminListShareSnapshots)
+		admin.POST("/competitions/share-snapshots/:id/disable", competitionHandler.AdminDisableShareSnapshot)
+		admin.POST("/competitions/share-snapshots/:id/restore", competitionHandler.AdminRestoreShareSnapshot)
 
 	}
 
@@ -1187,6 +1266,23 @@ func ensureSystemSuperAdmin(db *gorm.DB, studentID, password string) {
 
 	log.Printf("系统超级管理员已就绪: %s", studentID)
 
+}
+
+func ensureFeatureCollaborationIndexes(db *gorm.DB) error {
+	statements := []string{
+		`CREATE UNIQUE INDEX IF NOT EXISTS uq_featured_application_pending_post
+ON featured_applications(post_id)
+WHERE status = 'pending'`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS uq_collaboration_pending_user_post
+ON collaboration_applications(post_id, applicant_id)
+WHERE status = 'pending'`,
+	}
+	for _, statement := range statements {
+		if err := db.Exec(statement).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // 注意：每次重启服务均会重置该配置，如需永久修改请直接更改此处硬编码

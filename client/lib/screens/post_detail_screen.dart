@@ -372,6 +372,316 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
   }
 
+  Future<String?> _askReason({
+    required String title,
+    required String hint,
+  }) async {
+    final controller = TextEditingController();
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: TextField(
+          controller: controller,
+          minLines: 3,
+          maxLines: 6,
+          decoration: InputDecoration(hintText: hint),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            child: const Text('提交'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (result == null || result.trim().isEmpty) return null;
+    return result.trim();
+  }
+
+  Future<void> _applyFeatured() async {
+    if (!context.read<AuthProvider>().isLoggedIn) {
+      AppFeedback.showSnackBar(context, '请先登录', isError: true);
+      return;
+    }
+    final reason = await _askReason(
+      title: '申请精华',
+      hint: '说明这篇帖子为什么值得成为精华。恶意或低质量申请可能被管理员扣诚信分。',
+    );
+    if (reason == null) return;
+    try {
+      await _dio.post(
+        '/posts/${widget.postId}/featured-applications',
+        data: {'reason': reason},
+      );
+      if (!mounted) return;
+      AppFeedback.showSnackBar(context, '精华申请已提交');
+    } on DioException catch (e) {
+      if (!mounted) return;
+      AppFeedback.showSnackBar(
+        context,
+        AppFeedback.dioErrorMessage(e, fallback: '提交失败'),
+        isError: true,
+      );
+    }
+  }
+
+  Future<void> _applyCollaboration() async {
+    if (!context.read<AuthProvider>().isLoggedIn) {
+      AppFeedback.showSnackBar(context, '请先登录', isError: true);
+      return;
+    }
+    final reason = await _askReason(
+      title: '申请共同创作',
+      hint: '说明你想补充或改进哪些内容。',
+    );
+    if (reason == null) return;
+    try {
+      await _dio.post(
+        '/posts/${widget.postId}/collaboration-applications',
+        data: {'reason': reason},
+      );
+      if (!mounted) return;
+      AppFeedback.showSnackBar(context, '共同创作申请已提交');
+    } on DioException catch (e) {
+      if (!mounted) return;
+      AppFeedback.showSnackBar(
+        context,
+        AppFeedback.dioErrorMessage(e, fallback: '提交失败'),
+        isError: true,
+      );
+    }
+  }
+
+  Future<void> _openCreationManagement() async {
+    final data = await Future.wait([
+      _dio.get('/user/collaboration-applications/received'),
+      _dio.get('/user/revision-proposals/received'),
+    ]);
+    if (!mounted) return;
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) {
+        final applications = (data[0].data as List?) ?? [];
+        final revisions = (data[1].data as List?) ?? [];
+        return SafeArea(
+          child: DraggableScrollableSheet(
+            expand: false,
+            initialChildSize: 0.85,
+            minChildSize: 0.45,
+            maxChildSize: 0.95,
+            builder: (_, controller) => ListView(
+              controller: controller,
+              padding: const EdgeInsets.all(16),
+              children: [
+                const Text(
+                  '创作管理',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 14),
+                const Text('共同创作申请',
+                    style:
+                        TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                const SizedBox(height: 8),
+                if (applications.isEmpty)
+                  const Text('暂无共同创作申请')
+                else
+                  ...applications.map((item) => _buildCollabApplicationTile(
+                        Map<String, dynamic>.from(item as Map),
+                      )),
+                const SizedBox(height: 18),
+                const Text('修改版本审核',
+                    style:
+                        TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                const SizedBox(height: 8),
+                if (revisions.isEmpty)
+                  const Text('暂无修改版本')
+                else
+                  ...revisions.map((item) => _buildRevisionProposalTile(
+                        Map<String, dynamic>.from(item as Map),
+                      )),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    if (mounted) _loadPost();
+  }
+
+  Future<void> _submitRevisionProposal() async {
+    final post = _post;
+    if (post == null) return;
+    final titleController = TextEditingController(text: post.title);
+    final contentController = TextEditingController(text: post.content);
+    final summaryController = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('提交修改版本'),
+        content: SizedBox(
+          width: 520,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: titleController,
+                  decoration: const InputDecoration(labelText: '标题'),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: contentController,
+                  minLines: 8,
+                  maxLines: 14,
+                  decoration: const InputDecoration(labelText: '正文'),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: summaryController,
+                  minLines: 2,
+                  maxLines: 4,
+                  decoration: const InputDecoration(labelText: '修改说明'),
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('提交'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) {
+      titleController.dispose();
+      contentController.dispose();
+      summaryController.dispose();
+      return;
+    }
+    try {
+      await _dio.post('/posts/${post.id}/revision-proposals', data: {
+        'title': titleController.text.trim(),
+        'content': contentController.text.trim(),
+        'change_summary': summaryController.text.trim(),
+      });
+      if (!mounted) return;
+      AppFeedback.showSnackBar(context, '修改版本已提交给原作者');
+    } on DioException catch (e) {
+      if (!mounted) return;
+      AppFeedback.showSnackBar(
+        context,
+        AppFeedback.dioErrorMessage(e, fallback: '提交失败'),
+        isError: true,
+      );
+    } finally {
+      titleController.dispose();
+      contentController.dispose();
+      summaryController.dispose();
+    }
+  }
+
+  Widget _buildCollabApplicationTile(Map<String, dynamic> item) {
+    final applicant = item['applicant'] as Map?;
+    final status = item['status']?.toString() ?? '';
+    return Card(
+      child: ListTile(
+        title: Text(applicant?['nickname']?.toString() ?? '申请人'),
+        subtitle: Text('${item['reason'] ?? ''}\n状态：$status'),
+        isThreeLine: true,
+        trailing: status == 'pending'
+            ? Wrap(
+                spacing: 6,
+                children: [
+                  TextButton(
+                    onPressed: () => _reviewCollab(item['id'], false),
+                    child: const Text('拒绝'),
+                  ),
+                  FilledButton(
+                    onPressed: () => _reviewCollab(item['id'], true),
+                    child: const Text('同意'),
+                  ),
+                ],
+              )
+            : null,
+      ),
+    );
+  }
+
+  Widget _buildRevisionProposalTile(Map<String, dynamic> item) {
+    final proposer = item['proposer'] as Map?;
+    final status = item['status']?.toString() ?? '';
+    return Card(
+      child: ListTile(
+        title: Text(item['proposed_title']?.toString().isNotEmpty == true
+            ? item['proposed_title'].toString()
+            : '修改版本'),
+        subtitle: Text(
+          '${proposer?['nickname'] ?? '提交者'}：${item['change_summary'] ?? ''}\n状态：$status',
+        ),
+        isThreeLine: true,
+        trailing: status == 'pending'
+            ? Wrap(
+                spacing: 6,
+                children: [
+                  TextButton(
+                    onPressed: () => _reviewRevision(item['id'], false),
+                    child: const Text('驳回'),
+                  ),
+                  FilledButton(
+                    onPressed: () => _reviewRevision(item['id'], true),
+                    child: const Text('发布'),
+                  ),
+                ],
+              )
+            : null,
+      ),
+    );
+  }
+
+  Future<void> _reviewCollab(dynamic id, bool approve) async {
+    await _dio.post(
+      '/collaboration-applications/$id/${approve ? 'approve' : 'reject'}',
+      data: {'reply': approve ? '同意共同创作' : '暂不接受'},
+    );
+    if (!mounted) return;
+    AppFeedback.showSnackBar(context, approve ? '已同意' : '已拒绝');
+    Navigator.pop(context);
+    _openCreationManagement();
+  }
+
+  Future<void> _reviewRevision(dynamic id, bool approve) async {
+    try {
+      await _dio.post(
+        '/revision-proposals/$id/${approve ? 'approve' : 'reject'}',
+        data: {'reply': approve ? '发布修改版本' : '暂不发布'},
+      );
+      if (!mounted) return;
+      AppFeedback.showSnackBar(context, approve ? '已发布' : '已驳回');
+      Navigator.pop(context);
+      _openCreationManagement();
+    } on DioException catch (e) {
+      if (!mounted) return;
+      AppFeedback.showSnackBar(
+        context,
+        AppFeedback.dioErrorMessage(e, fallback: '处理失败'),
+        isError: true,
+      );
+    }
+  }
+
   Future<void> _resolveMarketPost() async {
     final post = _post;
     if (post == null) return;
@@ -920,6 +1230,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 if (p.title.isNotEmpty || p.content.isNotEmpty) ...[
                   const SizedBox(height: 14),
                   _buildWaterPostBody(p, isDark),
+                  _buildFeaturedCollaborationActions(p, isDark),
                 ],
                 if (p.images.isNotEmpty) ...[
                   const SizedBox(height: 14),
@@ -1085,6 +1396,77 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             ),
         ],
       ),
+    );
+  }
+
+  Widget _buildFeaturedCollaborationActions(Post p, bool isDark) {
+    final user = context.watch<AuthProvider>().user;
+    if (user == null || widget.isMarket) return const SizedBox.shrink();
+
+    final isOwner = user.id == p.authorId;
+    final actions = <Widget>[];
+    if (!p.isFeatured) {
+      actions.add(
+        OutlinedButton.icon(
+          onPressed: _applyFeatured,
+          icon: const Icon(Icons.workspace_premium_outlined, size: 18),
+          label: const Text('申请精华'),
+        ),
+      );
+    } else if (!isOwner) {
+      actions.add(
+        OutlinedButton.icon(
+          onPressed: _applyCollaboration,
+          icon: const Icon(Icons.edit_note_rounded, size: 18),
+          label: const Text('申请共同创作'),
+        ),
+      );
+      actions.add(
+        FilledButton.icon(
+          onPressed: _submitRevisionProposal,
+          icon: const Icon(Icons.publish_outlined, size: 18),
+          label: const Text('提交修改版本'),
+        ),
+      );
+    } else {
+      actions.add(
+        FilledButton.icon(
+          onPressed: _openCreationManagement,
+          icon: const Icon(Icons.manage_accounts_outlined, size: 18),
+          label: const Text('创作管理'),
+        ),
+      );
+    }
+
+    if (actions.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+      child: Wrap(spacing: 10, runSpacing: 8, children: [
+        if (p.isFeatured)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFB020).withValues(alpha: 0.14),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.workspace_premium_rounded,
+                    size: 16, color: Color(0xFFD97706)),
+                SizedBox(width: 5),
+                Text(
+                  '精华',
+                  style: TextStyle(
+                    color: Color(0xFFD97706),
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ...actions,
+      ]),
     );
   }
 

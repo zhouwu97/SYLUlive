@@ -283,6 +283,11 @@ def parse_competition_list_page(
         if not title:
             continue
 
+        # 清除标题开头的日期前缀（如 "2026-06-16标题..." → "标题..."）
+        title = re.sub(r"^\d{4}-\d{2}-\d{2}\s*", "", title).strip()
+        if not title:
+            continue
+
         if source_url in seen_urls:
             continue
         seen_urls.add(source_url)

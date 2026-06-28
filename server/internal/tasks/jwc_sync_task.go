@@ -10,18 +10,20 @@ import (
 	"shenliyuan/internal/services"
 )
 
-// StartJWCSyncTask 启动校园资讯定时同步任务。
+// StartCampusSyncTask 启动校园资讯定时同步任务（支持多来源）。
 // 单进程 mutex 防止重叠运行。如需多实例部署，需替换为数据库锁。
-func StartJWCSyncTask(ctx context.Context, svc *services.JWCSyncService, cfg *config.Config) {
+func StartCampusSyncTask(ctx context.Context, svcs []*services.CampusSyncService, cfg *config.Config) {
 	var mu sync.Mutex
 
 	interval := time.Duration(cfg.JWCSyncIntervalMinutes) * time.Minute
 
-	log.Printf("[JWC_TASK] starting sync task (interval=%v)", interval)
+	log.Printf("[CAMPUS_TASK] starting sync task (%d sources, interval=%v)", len(svcs), interval)
 
 	// 启动后延迟 30s 执行首次同步
 	time.AfterFunc(30*time.Second, func() {
-		runSync(ctx, &mu, svc, false)
+		for _, svc := range svcs {
+			runSync(ctx, &mu, svc, false)
+		}
 	})
 
 	// 定期同步
@@ -35,22 +37,26 @@ func StartJWCSyncTask(ctx context.Context, svc *services.JWCSyncService, cfg *co
 	for {
 		select {
 		case <-ticker.C:
-			runSync(ctx, &mu, svc, false)
+			for _, svc := range svcs {
+				runSync(ctx, &mu, svc, false)
+			}
 		case <-reconcileTicker.C:
-			if svc.ShouldReconcile() {
-				log.Println("[JWC_TASK] running daily reconcile")
-				runSync(ctx, &mu, svc, true)
+			for _, svc := range svcs {
+				if svc.ShouldReconcile() {
+					log.Printf("[CAMPUS_TASK] running daily reconcile")
+					runSync(ctx, &mu, svc, true)
+				}
 			}
 		case <-ctx.Done():
-			log.Println("[JWC_TASK] stopping sync task")
+			log.Println("[CAMPUS_TASK] stopping sync task")
 			return
 		}
 	}
 }
 
-func runSync(ctx context.Context, mu *sync.Mutex, svc *services.JWCSyncService, reconcile bool) {
+func runSync(ctx context.Context, mu *sync.Mutex, svc *services.CampusSyncService, reconcile bool) {
 	if !mu.TryLock() {
-		log.Println("[JWC_TASK] previous sync still running, skipping")
+		log.Println("[CAMPUS_TASK] previous sync still running, skipping")
 		return
 	}
 	// Mutex held until sync fully completes or times out — prevents overlap
@@ -64,9 +70,9 @@ func runSync(ctx context.Context, mu *sync.Mutex, svc *services.JWCSyncService, 
 	result := svc.Sync(syncCtx, reconcile, 3) // max_pages=3
 
 	if result.Error != nil {
-		log.Printf("[JWC_TASK] sync failed: %v", result.Error)
+		log.Printf("[CAMPUS_TASK] sync failed: %v", result.Error)
 	} else {
-		log.Printf("[JWC_TASK] sync ok (added=%d updated=%d skipped=%d bootstrap=%v)",
+		log.Printf("[CAMPUS_TASK] sync ok (added=%d updated=%d skipped=%d bootstrap=%v)",
 			result.Added, result.Updated, result.Skipped, result.IsBootstrap)
 	}
 }

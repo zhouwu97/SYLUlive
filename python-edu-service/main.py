@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from config import HOST, PORT
 from models.database import init_db
-from routers import auth, courses, grades, erke, spider, internal_jwc
+from routers import auth, courses, grades, erke, spider, internal_jwc, internal_competition
 import os
 
 
@@ -52,6 +52,7 @@ app.include_router(grades.router)
 app.include_router(erke.router)
 app.include_router(spider.router)
 app.include_router(internal_jwc.router)
+app.include_router(internal_competition.router)
 
 
 @app.get("/")

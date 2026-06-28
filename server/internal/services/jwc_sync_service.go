@@ -16,15 +16,32 @@ import (
 	"shenliyuan/internal/models"
 )
 
-// JWCSyncService manages JWC campus article synchronization.
-type JWCSyncService struct {
-	db     *gorm.DB
-	client *clients.JWCPythonClient
+// CrawlSourceSpec defines a campus article source for synchronization.
+type CrawlSourceSpec struct {
+	Source     string
+	Categories []string
+	// CrawlFunc calls the Python crawler endpoint for this source.
+	// knownURLs is keyed by category slug; the function may flatten as needed.
+	CrawlFunc func(ctx context.Context, knownURLs map[string][]string, maxPages int, reconcile bool) (*clients.CrawlResponse, error)
 }
 
-// NewJWCSyncService creates a new JWC sync service.
-func NewJWCSyncService(db *gorm.DB, client *clients.JWCPythonClient) *JWCSyncService {
-	return &JWCSyncService{db: db, client: client}
+// CampusSyncService manages campus article synchronization for a single source.
+type CampusSyncService struct {
+	db   *gorm.DB
+	spec CrawlSourceSpec
+}
+
+// JWCSyncService is a type alias for backward compatibility.
+type JWCSyncService = CampusSyncService
+
+// NewCampusSyncService creates a new sync service for the given source spec.
+func NewCampusSyncService(db *gorm.DB, spec CrawlSourceSpec) *CampusSyncService {
+	return &CampusSyncService{db: db, spec: spec}
+}
+
+// NewJWCSyncService creates a new sync service (backward-compatible wrapper).
+func NewJWCSyncService(db *gorm.DB, spec CrawlSourceSpec) *JWCSyncService {
+	return NewCampusSyncService(db, spec)
 }
 
 // SyncResult holds the outcome of a sync run.
@@ -39,8 +56,9 @@ type SyncResult struct {
 }
 
 // Sync performs a full sync cycle: query known URLs, call Python, upsert.
-func (s *JWCSyncService) Sync(ctx context.Context, reconcile bool, maxPages int) *SyncResult {
+func (s *CampusSyncService) Sync(ctx context.Context, reconcile bool, maxPages int) *SyncResult {
 	result := &SyncResult{}
+	src := s.spec.Source
 
 	// Always update state on exit — registered before any DB/network call
 	var partialFailure bool
@@ -52,7 +70,7 @@ func (s *JWCSyncService) Sync(ctx context.Context, reconcile bool, maxPages int)
 	// ── 1. Determine bootstrap status ──────────────────
 	var count int64
 	if err := s.db.Model(&models.CampusArticle{}).
-		Where("source = ?", "jwc").Count(&count).Error; err != nil {
+		Where("source = ?", src).Count(&count).Error; err != nil {
 		result.Error = fmt.Errorf("count articles: %w", err)
 		return result
 	}
@@ -61,15 +79,8 @@ func (s *JWCSyncService) Sync(ctx context.Context, reconcile bool, maxPages int)
 	// ── 2. Query known source URLs ─────────────────────
 	knownURLs := s.queryKnownURLs()
 
-	// ── 3. Call Python crawler ─────────────────────────
-	req := &clients.CrawlRequest{
-		Categories:      []string{"jwtz", "jwgg"},
-		KnownSourceURLs: knownURLs,
-		MaxPages:        maxPages,
-		Reconcile:       reconcile,
-	}
-
-	resp, err := s.client.Crawl(ctx, req)
+	// ── 3. Call Python crawler via spec's CrawlFunc ────
+	resp, err := s.spec.CrawlFunc(ctx, knownURLs, maxPages, reconcile)
 	if err != nil {
 		result.Error = fmt.Errorf("python crawl: %w", err)
 		return result
@@ -97,14 +108,14 @@ func (s *JWCSyncService) Sync(ctx context.Context, reconcile bool, maxPages int)
 	for i := range resp.Items {
 		item := &resp.Items[i]
 		if err := clients.ValidateCrawlItem(item); err != nil {
-			log.Printf("[JWC_SYNC] invalid item skipped: %v (url=%s)", err, item.SourceURL)
+			log.Printf("[CAMPUS_SYNC:%s] invalid item skipped: %v (url=%s)", src, err, item.SourceURL)
 			result.Invalid++
 			continue
 		}
 
 		action, err := s.upsertArticle(item, crawledAt, result.IsBootstrap)
 		if err != nil {
-			log.Printf("[JWC_SYNC] upsert failed for %s: %v", item.SourceURL, err)
+			log.Printf("[CAMPUS_SYNC:%s] upsert failed for %s: %v", src, item.SourceURL, err)
 			result.Invalid++
 			continue
 		}
@@ -121,29 +132,36 @@ func (s *JWCSyncService) Sync(ctx context.Context, reconcile bool, maxPages int)
 
 	itemCount = len(resp.Items)
 
-	log.Printf("[JWC_SYNC] done: added=%d updated=%d skipped=%d invalid=%d bootstrap=%v",
-		result.Added, result.Updated, result.Skipped, result.Invalid,
+	log.Printf("[CAMPUS_SYNC:%s] done: added=%d updated=%d skipped=%d invalid=%d bootstrap=%v",
+		src, result.Added, result.Updated, result.Skipped, result.Invalid,
 		result.IsBootstrap)
 
 	return result
 }
 
 // queryKnownURLs returns up to 200 known source URLs grouped by category slug.
-func (s *JWCSyncService) queryKnownURLs() map[string][]string {
+func (s *CampusSyncService) queryKnownURLs() map[string][]string {
+	src := s.spec.Source
 	var articles []models.CampusArticle
 	if err := s.db.Model(&models.CampusArticle{}).
-		Where("source = ?", "jwc").
+		Where("source = ?", src).
 		Order("id DESC").
 		Limit(200).
 		Find(&articles).Error; err != nil {
-		log.Printf("[JWC_SYNC] query known URLs: %v", err)
+		log.Printf("[CAMPUS_SYNC:%s] query known URLs: %v", src, err)
 		return nil
+	}
+
+	// Build a set of allowed categories for this source
+	allowedCats := make(map[string]bool)
+	for _, c := range s.spec.Categories {
+		allowedCats[c] = true
 	}
 
 	result := make(map[string][]string)
 	for _, a := range articles {
 		slug := a.CategorySlug
-		if slug != "jwtz" && slug != "jwgg" {
+		if !allowedCats[slug] {
 			continue
 		}
 		result[slug] = append(result[slug], a.SourceURL)
@@ -152,7 +170,7 @@ func (s *JWCSyncService) queryKnownURLs() map[string][]string {
 }
 
 // upsertArticle inserts or updates a single campus article.
-func (s *JWCSyncService) upsertArticle(
+func (s *CampusSyncService) upsertArticle(
 	item *clients.CrawlItem,
 	crawledAt time.Time,
 	isBootstrap bool,
@@ -179,9 +197,9 @@ func (s *JWCSyncService) upsertArticle(
 	}
 
 	if existing.ID == 0 {
-		// New article
+		// New article — use item.Source, not a hardcoded value
 		article := models.CampusArticle{
-			Source:           "jwc",
+			Source:           item.Source,
 			Category:         item.Category,
 			CategorySlug:     item.CategorySlug,
 			CategoryID:       item.CategoryID,
@@ -233,20 +251,21 @@ func (s *JWCSyncService) upsertArticle(
 }
 
 // updateSyncState persists the sync outcome.
-func (s *JWCSyncService) updateSyncState(
+func (s *CampusSyncService) updateSyncState(
 	result *SyncResult,
 	reconcile bool,
 	partialFailure bool,
 	itemCount int,
 ) {
+	src := s.spec.Source
 	now := time.Now()
 
 	var state models.JWCSyncState
-	if err := s.db.Where("source = ?", "jwc").First(&state).Error; err != nil {
+	if err := s.db.Where("source = ?", src).First(&state).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			state = models.JWCSyncState{Source: "jwc"}
+			state = models.JWCSyncState{Source: src}
 		} else {
-			log.Printf("[JWC_SYNC] query sync state: %v", err)
+			log.Printf("[CAMPUS_SYNC:%s] query sync state: %v", src, err)
 			return
 		}
 	}
@@ -254,7 +273,6 @@ func (s *JWCSyncService) updateSyncState(
 	state.LastAttemptAt = &now
 	if result.Error == nil {
 		if partialFailure {
-			// 部分失败：仍然算成功，记录错误摘要
 			state.LastSuccessAt = &now
 			state.LastItemCount = itemCount
 			state.ConsecutiveFailures = 0
@@ -266,7 +284,7 @@ func (s *JWCSyncService) updateSyncState(
 			state.LastSuccessAt = &now
 			state.LastItemCount = itemCount
 			state.ConsecutiveFailures = 0
-			state.LastError = "" // 成功后清空旧错误
+			state.LastError = ""
 			if reconcile {
 				state.LastReconcileAt = &now
 			}
@@ -296,9 +314,10 @@ func formatPartialError(result *SyncResult, itemCount int) string {
 }
 
 // ShouldReconcile returns true if reconcile is due.
-func (s *JWCSyncService) ShouldReconcile() bool {
+func (s *CampusSyncService) ShouldReconcile() bool {
+	src := s.spec.Source
 	var state models.JWCSyncState
-	if err := s.db.Where("source = ?", "jwc").First(&state).Error; err != nil {
+	if err := s.db.Where("source = ?", src).First(&state).Error; err != nil {
 		return true
 	}
 	if state.LastReconcileAt == nil {
@@ -308,9 +327,10 @@ func (s *JWCSyncService) ShouldReconcile() bool {
 }
 
 // LastSyncAt returns the last successful sync time.
-func (s *JWCSyncService) LastSyncAt() *time.Time {
+func (s *CampusSyncService) LastSyncAt() *time.Time {
+	src := s.spec.Source
 	var state models.JWCSyncState
-	if err := s.db.Where("source = ?", "jwc").First(&state).Error; err != nil {
+	if err := s.db.Where("source = ?", src).First(&state).Error; err != nil {
 		return nil
 	}
 	return state.LastSuccessAt

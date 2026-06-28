@@ -46,6 +46,13 @@ type CrawlRequest struct {
 	Reconcile       bool                `json:"reconcile"`
 }
 
+// CompetitionCrawlRequest is sent to Python's /api/internal/campus/competition/crawl endpoint.
+type CompetitionCrawlRequest struct {
+	KnownSourceURLs []string `json:"known_source_urls"`
+	MaxPages        int      `json:"max_pages"`
+	Reconcile       bool     `json:"reconcile"`
+}
+
 // CrawlResponse is returned by Python's /api/internal/jwc/crawl endpoint.
 type CrawlResponse struct {
 	Success     bool             `json:"success"`
@@ -102,8 +109,31 @@ type CrawlErrorItem struct {
 
 // ── validation ────────────────────────────────────────────────────
 
-// validateJWCURL checks that a URL uses https and targets jwc.sylu.edu.cn.
-func validateJWCURL(rawURL string) error {
+// SourcePolicy defines the allowed host and categories for a given source.
+type SourcePolicy struct {
+	AllowedHost       string
+	AllowedCategories map[string]bool
+}
+
+// sourcePolicies maps source identifiers to their validation policy.
+var sourcePolicies = map[string]SourcePolicy{
+	"jwc": {
+		AllowedHost: "jwc.sylu.edu.cn",
+		AllowedCategories: map[string]bool{
+			"jwtz": true,
+			"jwgg": true,
+		},
+	},
+	"cxcy": {
+		AllowedHost: "cxcyxy.sylu.edu.cn",
+		AllowedCategories: map[string]bool{
+			"competition": true,
+		},
+	},
+}
+
+// validateCampusURL checks that a URL uses https and targets the allowed host.
+func validateCampusURL(rawURL string, allowedHost string) error {
 	u, err := url.Parse(rawURL)
 	if err != nil {
 		return fmt.Errorf("invalid URL: %w", err)
@@ -111,24 +141,33 @@ func validateJWCURL(rawURL string) error {
 	if u.Scheme != "https" {
 		return errors.New("URL scheme must be https")
 	}
-	if !strings.EqualFold(u.Hostname(), "jwc.sylu.edu.cn") {
-		return errors.New("URL host must be jwc.sylu.edu.cn")
-	}
 	if u.User != nil {
 		return errors.New("userinfo is not allowed in URL")
+	}
+	if !strings.EqualFold(u.Hostname(), allowedHost) {
+		return fmt.Errorf("URL host must be %s", allowedHost)
+	}
+	if port := u.Port(); port != "" && port != "443" {
+		return errors.New("non-standard port is not allowed")
 	}
 	return nil
 }
 
-// ValidateCrawlItem performs per-article validation (exported for use by services).
+// validateJWCURL is a backward-compatible wrapper for JWC-specific validation.
+func validateJWCURL(rawURL string) error {
+	return validateCampusURL(rawURL, "jwc.sylu.edu.cn")
+}
+
+// ValidateCrawlItem performs per-article validation using source-aware policies.
 func ValidateCrawlItem(item *CrawlItem) error {
-	if item.Source != "jwc" {
-		return fmt.Errorf("source must be 'jwc', got %q", item.Source)
+	policy, ok := sourcePolicies[item.Source]
+	if !ok {
+		return fmt.Errorf("unsupported source %q", item.Source)
 	}
-	if item.CategorySlug != "jwtz" && item.CategorySlug != "jwgg" {
-		return fmt.Errorf("category_slug must be jwtz or jwgg, got %q", item.CategorySlug)
+	if !policy.AllowedCategories[item.CategorySlug] {
+		return fmt.Errorf("category %q not allowed for source %q", item.CategorySlug, item.Source)
 	}
-	if err := validateJWCURL(item.SourceURL); err != nil {
+	if err := validateCampusURL(item.SourceURL, policy.AllowedHost); err != nil {
 		return fmt.Errorf("source_url: %w", err)
 	}
 	if len(item.SourceURL) > 2048 {
@@ -153,7 +192,7 @@ func ValidateCrawlItem(item *CrawlItem) error {
 		if len(att.URL) > 2048 {
 			return errors.New("attachment URL exceeds 2048 chars")
 		}
-		if err := validateJWCURL(att.URL); err != nil {
+		if err := validateCampusURL(att.URL, policy.AllowedHost); err != nil {
 			return fmt.Errorf("attachment URL: %w", err)
 		}
 	}
@@ -165,20 +204,41 @@ func ValidateCrawlItem(item *CrawlItem) error {
 
 // ── HTTP call ─────────────────────────────────────────────────────
 
-// Crawl calls the Python crawl endpoint and returns the validated response.
+// Crawl calls the Python JWC crawl endpoint and returns the validated response.
 // Retry policy:
 //   - 400/401/403/422: no retry
 //   - 409: single retry after 3s delay
 //   - 502/503/504: up to 3 retries with exponential backoff
 //   - Timeout/connection errors: up to 3 retries
 func (c *JWCPythonClient) Crawl(ctx context.Context, req *CrawlRequest) (*CrawlResponse, error) {
+	// Ensure KnownSourceURLs map is never nil — Python Pydantic rejects null
+	if req.KnownSourceURLs == nil {
+		req.KnownSourceURLs = make(map[string][]string)
+	}
 	body, err := json.Marshal(req)
 	if err != nil {
 		return nil, fmt.Errorf("marshal request: %w", err)
 	}
-
 	apiURL := c.BaseURL + "/api/internal/jwc/crawl"
+	return c.doCrawl(ctx, apiURL, body)
+}
 
+// CrawlCompetition calls the Python competition crawl endpoint.
+func (c *JWCPythonClient) CrawlCompetition(ctx context.Context, req *CompetitionCrawlRequest) (*CrawlResponse, error) {
+	// Ensure KnownSourceURLs is never nil — Python Pydantic rejects null, requires []
+	if req.KnownSourceURLs == nil {
+		req.KnownSourceURLs = make([]string, 0)
+	}
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("marshal request: %w", err)
+	}
+	apiURL := c.BaseURL + "/api/internal/campus/competition/crawl"
+	return c.doCrawl(ctx, apiURL, body)
+}
+
+// doCrawl performs the HTTP request with retry logic. Shared by Crawl and CrawlCompetition.
+func (c *JWCPythonClient) doCrawl(ctx context.Context, apiURL string, body []byte) (*CrawlResponse, error) {
 	var lastErr error
 	for attempt := 0; attempt < 4; attempt++ {
 		select {
@@ -189,7 +249,7 @@ func (c *JWCPythonClient) Crawl(ctx context.Context, req *CrawlRequest) (*CrawlR
 
 		if attempt > 0 {
 			wait := c.backoffWait(attempt)
-			log.Printf("[JWC_CLIENT] retry %d after %v", attempt, wait)
+			log.Printf("[CAMPUS_CLIENT] retry %d after %v", attempt, wait)
 			select {
 			case <-ctx.Done():
 				return nil, ctx.Err()
@@ -211,7 +271,7 @@ func (c *JWCPythonClient) Crawl(ctx context.Context, req *CrawlRequest) (*CrawlR
 		case resp.StatusCode == http.StatusConflict: // 409
 			drainAndClose(resp)
 			if attempt == 0 {
-				log.Println("[JWC_CLIENT] crawl lock busy (409), retrying once after 3s")
+				log.Println("[CAMPUS_CLIENT] crawl lock busy (409), retrying once after 3s")
 				select {
 				case <-ctx.Done():
 					return nil, ctx.Err()
@@ -220,34 +280,34 @@ func (c *JWCPythonClient) Crawl(ctx context.Context, req *CrawlRequest) (*CrawlR
 				attempt = 1 // skip: no backoff wait on next iteration
 				continue
 			}
-			return nil, errors.New("jwc crawl busy (409), giving up")
+			return nil, errors.New("crawl busy (409), giving up")
 
 		case resp.StatusCode == http.StatusBadRequest,
 			resp.StatusCode == http.StatusUnauthorized,
 			resp.StatusCode == http.StatusForbidden,
 			resp.StatusCode == http.StatusUnprocessableEntity:
 			respBody := drainAndClose(resp)
-			return nil, fmt.Errorf("jwc crawl client error HTTP %d: %s", resp.StatusCode, respBody)
+			return nil, fmt.Errorf("crawl client error HTTP %d: %s", resp.StatusCode, respBody)
 
 		case resp.StatusCode == http.StatusBadGateway,
 			resp.StatusCode == http.StatusServiceUnavailable,
 			resp.StatusCode == http.StatusGatewayTimeout:
 			drainAndClose(resp)
-			lastErr = fmt.Errorf("jwc crawl upstream error HTTP %d", resp.StatusCode)
+			lastErr = fmt.Errorf("crawl upstream error HTTP %d", resp.StatusCode)
 			continue
 
 		default:
 			if resp.StatusCode >= 400 && resp.StatusCode < 500 {
 				respBody := drainAndClose(resp)
-				return nil, fmt.Errorf("jwc crawl HTTP %d: %s", resp.StatusCode, respBody)
+				return nil, fmt.Errorf("crawl HTTP %d: %s", resp.StatusCode, respBody)
 			}
 			drainAndClose(resp)
-			lastErr = fmt.Errorf("jwc crawl HTTP %d", resp.StatusCode)
+			lastErr = fmt.Errorf("crawl HTTP %d", resp.StatusCode)
 			continue
 		}
 	}
 
-	return nil, fmt.Errorf("jwc crawl failed after retries: %w", lastErr)
+	return nil, fmt.Errorf("crawl failed after retries: %w", lastErr)
 }
 
 // backoffWait returns the sleep duration for a given retry attempt.

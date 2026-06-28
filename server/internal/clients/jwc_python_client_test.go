@@ -35,6 +35,38 @@ func TestValidateJWCURL(t *testing.T) {
 	}
 }
 
+func TestValidateCampusURL(t *testing.T) {
+	tests := []struct {
+		name        string
+		url         string
+		allowedHost string
+		wantErr     bool
+	}{
+		// JWC host
+		{"jwc valid", "https://jwc.sylu.edu.cn/info/1116/5946.htm", "jwc.sylu.edu.cn", false},
+		{"jwc wrong host", "https://cxcyxy.sylu.edu.cn/info/1089/3293.htm", "jwc.sylu.edu.cn", true},
+		// Competition host
+		{"cxcy valid", "https://cxcyxy.sylu.edu.cn/info/1089/3293.htm", "cxcyxy.sylu.edu.cn", false},
+		{"cxcy valid attachment", "https://cxcyxy.sylu.edu.cn/system/_content/download.jsp?wbfileid=1", "cxcyxy.sylu.edu.cn", false},
+		{"cxcy wrong host", "https://jwc.sylu.edu.cn/info/1089/3293.htm", "cxcyxy.sylu.edu.cn", true},
+		// Common rejections
+		{"http rejected", "http://cxcyxy.sylu.edu.cn/info/1089/3293.htm", "cxcyxy.sylu.edu.cn", true},
+		{"userinfo rejected", "https://user:pass@cxcyxy.sylu.edu.cn/info/1089/3293.htm", "cxcyxy.sylu.edu.cn", true},
+		{"non-standard port rejected", "https://cxcyxy.sylu.edu.cn:8080/info/1089/3293.htm", "cxcyxy.sylu.edu.cn", true},
+		{"standard port 443 allowed", "https://cxcyxy.sylu.edu.cn:443/info/1089/3293.htm", "cxcyxy.sylu.edu.cn", false},
+		{"evil subdomain rejected", "https://evil.cxcyxy.sylu.edu.cn/info/1089/3293.htm", "cxcyxy.sylu.edu.cn", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateCampusURL(tt.url, tt.allowedHost)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("validateCampusURL(%q, %q) error=%v wantErr=%v", tt.url, tt.allowedHost, err, tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestValidateCrawlItem(t *testing.T) {
 	valid := &CrawlItem{
 		Source:           "jwc",
@@ -85,6 +117,82 @@ func TestValidateCrawlItem(t *testing.T) {
 	invalid.ContentHash = "ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ"
 	if err := ValidateCrawlItem(&invalid); err == nil {
 		t.Error("should reject non-hex content_hash")
+	}
+}
+
+func TestValidateCrawlItemCompetition(t *testing.T) {
+	valid := &CrawlItem{
+		Source:           "cxcy",
+		Category:         "比赛通知",
+		CategorySlug:     "competition",
+		CategoryID:       "1089",
+		SourceArticleID:  "3293",
+		SourceURL:        "https://cxcyxy.sylu.edu.cn/info/1089/3293.htm",
+		Title:            "Test Competition Title",
+		PublishDate:      "2026-06-28",
+		AuthorDepartment: "创新创业学院",
+		ContentHTML:      "<p>test</p>",
+		ContentText:      "test",
+		Attachments:      []AttachmentItem{},
+		HasAttachment:    false,
+		ContentHash:      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+	}
+
+	// Valid cxcy + competition
+	if err := ValidateCrawlItem(valid); err != nil {
+		t.Errorf("valid competition item should pass: %v", err)
+	}
+
+	// cxcy + jwtz → should be rejected (cross-source category)
+	invalid := *valid
+	invalid.CategorySlug = "jwtz"
+	if err := ValidateCrawlItem(&invalid); err == nil {
+		t.Error("should reject cxcy + jwtz (cross-source category)")
+	}
+
+	// jwc + competition → should be rejected (cross-source category)
+	invalid = *valid
+	invalid.Source = "jwc"
+	invalid.SourceURL = "https://jwc.sylu.edu.cn/info/1116/5946.htm"
+	invalid.CategorySlug = "competition"
+	if err := ValidateCrawlItem(&invalid); err == nil {
+		t.Error("should reject jwc + competition (cross-source category)")
+	}
+
+	// cxcy + jwc host → should be rejected (host mismatch)
+	invalid = *valid
+	invalid.SourceURL = "https://jwc.sylu.edu.cn/info/1089/3293.htm"
+	if err := ValidateCrawlItem(&invalid); err == nil {
+		t.Error("should reject cxcy item with jwc.sylu.edu.cn URL")
+	}
+
+	// jwc + cxcy host → should be rejected (host mismatch)
+	jwcItem := &CrawlItem{
+		Source:       "jwc",
+		CategorySlug: "jwtz",
+		SourceURL:    "https://cxcyxy.sylu.edu.cn/info/1116/5946.htm",
+		Title:        "test",
+		PublishDate:  "2026-06-28",
+		ContentHash:  "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+	}
+	if err := ValidateCrawlItem(jwcItem); err == nil {
+		t.Error("should reject jwc item with cxcyxy.sylu.edu.cn URL")
+	}
+
+	// Unknown source → should be rejected
+	invalid = *valid
+	invalid.Source = "unknown"
+	if err := ValidateCrawlItem(&invalid); err == nil {
+		t.Error("should reject unknown source")
+	}
+
+	// cxcy attachment with wrong host → should be rejected
+	invalid = *valid
+	invalid.Attachments = []AttachmentItem{
+		{Name: "test.pdf", URL: "https://evil.com/download.jsp", Extension: "pdf"},
+	}
+	if err := ValidateCrawlItem(&invalid); err == nil {
+		t.Error("should reject cxcy item with non-cxcyxy attachment URL")
 	}
 }
 

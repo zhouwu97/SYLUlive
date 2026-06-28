@@ -7,76 +7,83 @@ class CampusMapTabPage extends StatefulWidget {
   State<CampusMapTabPage> createState() => _CampusMapTabPageState();
 }
 
-class _CampusMapTabPageState extends State<CampusMapTabPage>
-    with AutomaticKeepAliveClientMixin {
-  @override
-  bool get wantKeepAlive => true;
-
+class _CampusMapTabPageState extends State<CampusMapTabPage> {
   @override
   Widget build(BuildContext context) {
-    super.build(context);
-    return SafeArea(
-      // 💡 修复遮挡：Scaffold 的 body 内部用 SafeArea 包裹，确保绝不和底部导航栏重叠
-      child: Column(
-        children: [
-          // 💡 修复滑动冲突 + 尺寸溢出：用 Expanded 顶住，让地图框自动缩放到最完美的剩余高度
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Colors.black12,
-                      blurRadius: 6,
-                      offset: Offset(0, 2),
-                    ),
-                  ],
-                ),
-                clipBehavior: Clip.antiAlias, // 剪裁圆角
-                child: Image.asset(
-                  'assets/images/map.jpg', // 修正路径
-                  fit: BoxFit.contain, // 确保整张大图能在框里完美完整显示
-                ),
-              ),
-            ),
-          ),
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bgColor = isDark ? const Color(0xFF101219) : Colors.white;
 
-          // 💡 修复底部遮挡：按钮区域被牢牢框在底部，距离底部导航栏有安全的 16 像素留白
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-            child: SizedBox(
-              width: double.infinity,
-              height: 44, // 稍微加高一点，更好点按
-              child: OutlinedButton.icon(
-                style: OutlinedButton.styleFrom(
-                  backgroundColor: Colors.white,
-                  foregroundColor: Colors.black87,
-                  side: BorderSide(color: Colors.grey[300]!), // 极简白色边框
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
+    return Scaffold(
+      backgroundColor: bgColor,
+      appBar: AppBar(
+        leading: const BackButton(),
+        title: const Text('校园地图'),
+        centerTitle: true,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        backgroundColor: bgColor,
+        surfaceTintColor: Colors.transparent,
+        foregroundColor: isDark ? Colors.white : const Color(0xFF20212B),
+      ),
+      body: SafeArea(
+        top: false,
+        child: Column(
+          children: [
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Colors.black12,
+                        blurRadius: 6,
+                        offset: Offset(0, 2),
+                      ),
+                    ],
                   ),
-                  elevation: 1,
+                  clipBehavior: Clip.antiAlias,
+                  child: Image.asset(
+                    'assets/images/map.jpg',
+                    fit: BoxFit.contain,
+                  ),
                 ),
-                icon: const Icon(
-                  Icons.zoom_in,
-                  size: 18,
-                  color: Colors.black87,
-                ),
-                label: const Text(
-                  '进入操控模式 (Only Scale)',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                ),
-                onPressed: () {
-                  // 点击瞬间唤起纯净置顶图层
-                  _openMapControlMode(context);
-                },
               ),
             ),
-          ),
-        ],
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+              child: SizedBox(
+                width: double.infinity,
+                height: 44,
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    backgroundColor: Colors.white,
+                    foregroundColor: Colors.black87,
+                    side: BorderSide(color: Colors.grey[300]!),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    elevation: 1,
+                  ),
+                  icon: const Icon(
+                    Icons.zoom_in,
+                    size: 18,
+                    color: Colors.black87,
+                  ),
+                  label: const Text(
+                    '进入操控模式 (Only Scale)',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                  ),
+                  onPressed: () {
+                    _openMapControlMode(context);
+                  },
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

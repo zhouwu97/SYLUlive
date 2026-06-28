@@ -9,6 +9,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import cn.jpush.android.api.JPushInterface
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.plugin.common.MethodChannel
@@ -302,6 +303,38 @@ class MainActivity : FlutterActivity() {
                     )
                     result.success(true)
                 }
+                "syncAlias" -> {
+                    val userId = call.argument<String>("userId")
+                    if (userId.isNullOrBlank()) {
+                        result.error("INVALID_ALIAS", "userId 不能为空", null)
+                    } else {
+                        KeepAliveForegroundService.syncAlias(this, userId)
+                        result.success(true)
+                    }
+                }
+                "clearAlias" -> {
+                    val gen = KeepAliveForegroundService.markAliasPendingDelete(this)
+                    try {
+                        val sequence = PrivateMessageJPushReceiver.deleteSequence(gen)
+                        JPushInterface.deleteAlias(this, sequence)
+                    } catch (e: Exception) {
+                        PrivateMessageJPushReceiver.scheduleDeleteRetry(
+                            applicationContext,
+                            gen,
+                        )
+                        DiagnosticLogStore.warning(
+                            applicationContext,
+                            source = "推送",
+                            type = "Alias 删除异常",
+                            summary = "退出时未能发起 Alias 删除，已安排重试",
+                            detail = "gen=$gen error=${e.message}",
+                        )
+                    }
+                    result.success(true)
+                }
+                "getPushDiagnostics" -> {
+                    result.success(getPushDiagnostics())
+                }
                 else -> result.notImplemented()
             }
         }
@@ -529,6 +562,39 @@ class MainActivity : FlutterActivity() {
     }
 
 
+
+    /** 收集推送诊断信息供 Flutter 设置页展示 */
+    private fun getPushDiagnostics(): Map<String, Any?> {
+        val info = mutableMapOf<String, Any?>()
+
+        // RegistrationID
+        val rid = JPushInterface.getRegistrationID(this)
+        info["registrationId"] = rid.ifBlank { null }
+
+        // 系统通知总权限
+        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        info["notificationsEnabled"] = nm.areNotificationsEnabled()
+
+        // 私信通知渠道状态
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = nm.getNotificationChannel("private_messages")
+            info["privateMessageChannelExists"] = channel != null
+            if (channel != null) {
+                info["privateMessageChannelImportance"] = channel.importance
+                info["privateMessageChannelBlocked"] =
+                    channel.importance == NotificationManager.IMPORTANCE_NONE
+            }
+        } else {
+            info["privateMessageChannelExists"] = true // pre-Oreo no channels
+            info["privateMessageChannelImportance"] = -1
+            info["privateMessageChannelBlocked"] = false
+        }
+
+        // 保活服务存储的 Alias
+        info["storedAlias"] = KeepAliveForegroundService.getStoredAlias(this)
+
+        return info
+    }
 
     /** 在 JPush SDK 初始化前创建高优先级通知渠道，实现悬浮弹窗 */
     private fun createHighPriorityNotificationChannels() {

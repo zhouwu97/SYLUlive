@@ -20,6 +20,8 @@ import (
 
 	"gorm.io/gorm"
 
+	"shenliyuan/internal/clients"
+
 	"shenliyuan/internal/config"
 
 	"shenliyuan/internal/handlers"
@@ -164,6 +166,9 @@ func main() {
 		&models.YunkaoPayOrder{},
 		&models.OneClassPayOrder{},
 		&models.OneClassUpdate{},
+		// 校园资讯
+		&models.CampusArticle{},
+		&models.JWCSyncState{},
 	); err != nil {
 
 		log.Fatal("数据库迁移失败:", err)
@@ -173,6 +178,11 @@ func main() {
 	if err := models.EnsureConversationIndexes(db); err != nil {
 		log.Fatal("私信索引迁移失败:", err)
 	}
+
+	// 回填旧公告的缺失字段默认值（公告模型新增 Status/DisplayMode/Priority）
+	db.Exec(`UPDATE announcements SET status = 'published' WHERE status = ''`)
+	db.Exec(`UPDATE announcements SET display_mode = 'center' WHERE display_mode = ''`)
+	db.Exec(`UPDATE announcements SET priority = 'normal' WHERE priority = ''`)
 
 	// 启动时自动修复可能不同步的评论数和点赞数
 	log.Println("正在同步数据(评论数、帖子点赞、用户总获赞)...")
@@ -296,6 +306,19 @@ func main() {
 	handlers.VerifyCodeConfig.SMTPFrom = cfg.SMTPFrom
 
 	handlers.SetMajorLogDB(db)
+
+	// JWC 校园资讯同步
+	var jwcSyncService *services.JWCSyncService
+	if cfg.JWCSyncEnabled {
+		jwcClient := clients.NewJWCPythonClient(cfg.EduServiceURL, cfg.EduServiceToken)
+		jwcSyncService = services.NewJWCSyncService(db, jwcClient)
+		go tasks.StartJWCSyncTask(context.Background(), jwcSyncService, cfg)
+		log.Println("JWC 校园资讯同步已启用")
+	} else {
+		log.Println("JWC 校园资讯同步未启用 (JWC_SYNC_ENABLED=false)")
+	}
+
+	campusArticleHandler := handlers.NewCampusArticleHandler(db, jwcSyncService)
 
 	// 启动后台定时任务
 
@@ -621,11 +644,12 @@ func main() {
 	announcementsAuth.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
 
 	{
-
+		// 静态路由必须在 /:id 之前注册
 		announcementsAuth.GET("/unread", announcementHandler.GetUnread)
+		announcementsAuth.GET("/unread-count", announcementHandler.GetUnreadCount)
+		announcementsAuth.POST("/read-all", announcementHandler.MarkAllRead)
 
 		announcementsAuth.GET("/:id", announcementHandler.GetOne)
-
 		announcementsAuth.POST("/:id/read", announcementHandler.MarkRead)
 
 	}
@@ -635,6 +659,7 @@ func main() {
 	announcementsAdmin.Use(middleware.AuthMiddleware(db, cfg.JWTSecret), middleware.AdminMiddleware())
 
 	{
+		announcementsAdmin.GET("/admin/list", announcementHandler.GetAdminList)
 
 		announcementsAdmin.POST("", announcementHandler.Create)
 
@@ -661,11 +686,12 @@ func main() {
 	noticesAuth.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
 
 	{
-
+		// 静态路由必须在 /:id 之前注册
 		noticesAuth.GET("/unread", announcementHandler.GetUnread)
+		noticesAuth.GET("/unread-count", announcementHandler.GetUnreadCount)
+		noticesAuth.POST("/read-all", announcementHandler.MarkAllRead)
 
 		noticesAuth.GET("/:id", announcementHandler.GetOne)
-
 		noticesAuth.POST("/:id/read", announcementHandler.MarkRead)
 
 	}
@@ -675,6 +701,7 @@ func main() {
 	noticesAdmin.Use(middleware.AuthMiddleware(db, cfg.JWTSecret), middleware.AdminMiddleware())
 
 	{
+		noticesAdmin.GET("/admin/list", announcementHandler.GetAdminList)
 
 		noticesAdmin.POST("", announcementHandler.Create)
 
@@ -1025,6 +1052,14 @@ func main() {
 
 		lotteryAdminGroup.POST("/:id/draw", lotteryHandler.Draw)
 
+	}
+
+	// 校园资讯公开只读路由
+	campus := r.Group("/api/campus")
+	{
+		campus.GET("/articles/latest", campusArticleHandler.GetLatest)
+		campus.GET("/articles", campusArticleHandler.List)
+		campus.GET("/articles/:id", campusArticleHandler.GetDetail)
 	}
 
 	// 版本信息

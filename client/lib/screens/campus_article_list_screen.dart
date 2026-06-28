@@ -34,6 +34,7 @@ const _categoryFilters = [
   _CategoryFilter(label: '全部'),
   _CategoryFilter(label: '教务通知', slug: 'jwtz'),
   _CategoryFilter(label: '教务公告', slug: 'jwgg'),
+  _CategoryFilter(label: '比赛通知', slug: 'competition'),
 ];
 
 class _CampusArticleListScreenState extends State<CampusArticleListScreen> {
@@ -234,7 +235,7 @@ class _CampusArticleListScreenState extends State<CampusArticleListScreen> {
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: Text(
-                  '学校教务处公开通知与公告',
+                  '校内通知与竞赛信息',
                   style: TextStyle(
                     fontSize: 12.5,
                     color: isDark ? Colors.white54 : Colors.black54,
@@ -345,6 +346,10 @@ class _CampusArticleListScreenState extends State<CampusArticleListScreen> {
 
   Widget _buildArticleItem(bool isDark, CampusArticleSummary article) {
     final primary = Theme.of(context).colorScheme.primary;
+    // 比赛通知用橙金色，教务通知/公告保持主色
+    final tagColor = article.source == 'cxcy'
+        ? const Color(0xFFE89B30)
+        : primary;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
@@ -374,7 +379,7 @@ class _CampusArticleListScreenState extends State<CampusArticleListScreen> {
                         vertical: 3,
                       ),
                       decoration: BoxDecoration(
-                        color: primary.withValues(alpha: 0.1),
+                        color: tagColor.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(6),
                       ),
                       child: Text(
@@ -382,7 +387,7 @@ class _CampusArticleListScreenState extends State<CampusArticleListScreen> {
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
-                          color: primary,
+                          color: tagColor,
                         ),
                       ),
                     ),

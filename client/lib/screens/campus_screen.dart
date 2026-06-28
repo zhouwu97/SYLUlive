@@ -80,10 +80,36 @@ class _CampusScreenState extends State<CampusScreen>
 
   Future<void> _loadRecent() async {
     try {
-      final page = await _articleService.getArticles(page: 1, pageSize: 6);
+      // 并行请求：通用最新列表 + 比赛通知最新，保证比赛通知有曝光位
+      final results = await Future.wait([
+        _articleService.getArticles(page: 1, pageSize: 6),
+        _articleService.getArticles(
+          page: 1,
+          pageSize: 1,
+          categorySlug: 'competition',
+        ),
+      ]);
+
+      final normalPage = results[0];
+      final competitionPage = results[1];
+
+      // 合并去重：如果比赛通知不在通用列表中，强制插入
+      final normalIds = normalPage.items.map((a) => a.id).toSet();
+      final missingCompetitions = competitionPage.items
+          .where((a) => !normalIds.contains(a.id))
+          .toList();
+
+      final merged = <CampusArticleSummary>[
+        ...normalPage.items,
+        ...missingCompetitions,
+      ];
+
+      // 按发布日期排序
+      merged.sort((a, b) => b.publishDate.compareTo(a.publishDate));
+
       if (mounted) {
         setState(() {
-          _recentArticles = page.items;
+          _recentArticles = merged;
           _recentError = null;
           _recentLoaded = true;
         });
@@ -181,7 +207,7 @@ class _CampusScreenState extends State<CampusScreen>
                     const SizedBox(height: 26),
                     const _SectionTitle(
                       title: '校园资讯',
-                      subtitle: '学校教务处通知与公告',
+                      subtitle: '校内通知与竞赛信息',
                     ),
                     const SizedBox(height: 12),
                     _buildRecentList(isDark),
@@ -878,7 +904,9 @@ class _RecentArticleItem extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
-                      color: primary,
+                      color: article.source == 'cxcy'
+                          ? const Color(0xFFE89B30)
+                          : primary,
                     ),
                   ),
                   const Spacer(),

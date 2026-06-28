@@ -48,6 +48,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final Set<int> _dismissedAnnouncementIds = {};
   final Set<int> _seenAnnouncementIds = {};
   String? _announcementSeenKey;
+
+  // Unread badge state
+  int _unreadBadgeCount = 0;
+  bool _hasUrgentUnread = false;
+
+  // Snooze: keyed by userId:announcementId in SharedPreferences
+  static const _snoozePrefix = 'announcement_snooze_';
+  static const _snoozeDuration = Duration(hours: 4);
+  // Fallback polling interval (keep until JPush trigger is implemented)
+  static const _announcementPollInterval = Duration(minutes: 15);
   Offset? _navigationSwipeStart;
   DateTime? _navigationSwipeStartTime;
   int? _navigationSwipePointer;
@@ -126,7 +136,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     await _checkUnreadAnnouncements();
     if (!mounted) return;
     _announcementTimer = Timer.periodic(
-      const Duration(seconds: 60),
+      _announcementPollInterval,
       (_) => _checkUnreadAnnouncements(),
     );
   }
@@ -219,15 +229,48 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
     _isCheckingAnnouncements = true;
     try {
-      final list = (await _loadUnreadAnnouncements(auth))
-          .where(
-            (item) =>
-                !_dismissedAnnouncementIds.contains(_announcementId(item)) &&
-                !_seenAnnouncementIds.contains(_announcementId(item)),
-          )
-          .toList();
-      if (list.isEmpty || !mounted) return;
-      await _showAnnouncementDialog(list);
+      // 1. Get lightweight unread count first
+      final countResult = await _fetchUnreadCount(auth);
+      final count = (countResult['count'] as num?)?.toInt() ?? 0;
+      final hasUrgent = countResult['has_urgent'] == true;
+      _updateBadge(count, hasUrgent);
+
+      if (count == 0 || !mounted) return;
+
+      // 2. Only auto-popup for the single highest-priority modal/urgent announcement
+      if (hasUrgent) {
+        final unread = await _loadUnreadAnnouncements(auth);
+        if (unread.isEmpty || !mounted) return;
+
+        // Filter for modal/urgent announcements that are not dismissed/seen/snoozed
+        final candidates = unread.where((item) {
+          final id = _announcementId(item);
+          if (_dismissedAnnouncementIds.contains(id)) return false;
+          if (_seenAnnouncementIds.contains(id)) return false;
+          final priority = item['priority']?.toString() ?? '';
+          final displayMode = item['display_mode']?.toString() ?? '';
+          return (priority == 'urgent' || priority == 'important') &&
+              (displayMode == 'modal' || displayMode.isEmpty);
+        }).toList();
+
+        // Sort: urgent before important
+        candidates.sort((a, b) {
+          final pa = a['priority']?.toString() ?? '';
+          final pb = b['priority']?.toString() ?? '';
+          if (pa == 'urgent' && pb != 'urgent') return -1;
+          if (pa != 'urgent' && pb == 'urgent') return 1;
+          return 0;
+        });
+
+        if (candidates.isNotEmpty) {
+          final top = candidates.first;
+          final topId = _announcementId(top);
+          if (!(await _isSnoozed(topId, auth.user?.id ?? 0))) {
+            await _showSingleUrgentModal(top);
+            // Do NOT chain another modal — next check will catch remaining
+          }
+        }
+      }
     } catch (e) {
       debugPrint('检查未读公告失败: $e');
     } finally {
@@ -252,6 +295,36 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final hh = parsed.hour.toString().padLeft(2, '0');
     final min = parsed.minute.toString().padLeft(2, '0');
     return '$mm-$dd $hh:$min';
+  }
+
+  Widget _priorityBadge({required String priority, required bool isDark}) {
+    final isUrgent = priority == 'urgent';
+    final isImportant = priority == 'important';
+    final color = isUrgent
+        ? const Color(0xFFE53935)
+        : isImportant
+            ? const Color(0xFFFF9800)
+            : Theme.of(context).primaryColor;
+    final label = isUrgent
+        ? '紧急'
+        : isImportant
+            ? '重要'
+            : '公告';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+          color: color,
+        ),
+      ),
+    );
   }
 
   Widget _buildAnnouncementImage(MarkdownImageConfig config, bool isDark) {
@@ -300,6 +373,410 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
+  Future<Map<String, dynamic>> _fetchUnreadCount(AuthProvider auth) async {
+    try {
+      var resp;
+      try {
+        resp = await auth.dio.get('${ApiConstants.noticesPath}/unread-count');
+      } on DioException catch (e) {
+        if (e.response?.statusCode == 404) {
+          resp = await auth.dio.get('/announcements/unread-count');
+        } else {
+          rethrow;
+        }
+      }
+      return resp.data is Map ? Map<String, dynamic>.from(resp.data) : {};
+    } catch (e) {
+      debugPrint('获取未读公告数量失败: $e');
+      return {};
+    }
+  }
+
+  void _updateBadge(int count, bool hasUrgent) {
+    if (_unreadBadgeCount == count && _hasUrgentUnread == hasUrgent) return;
+    _unreadBadgeCount = count;
+    _hasUrgentUnread = hasUrgent;
+  }
+
+  // ─── Snooze helpers (SharedPreferences, keyed by userId:announcementId) ───
+
+  Future<bool> _isSnoozed(int announcementId, int userId) async {
+    if (userId <= 0) return false;
+    final prefs = await SharedPreferences.getInstance();
+    final key = '$_snoozePrefix${userId}_$announcementId';
+    final until = prefs.getString(key);
+    if (until == null) return false;
+    final untilTime = DateTime.tryParse(until);
+    if (untilTime == null || untilTime.isBefore(DateTime.now())) {
+      await prefs.remove(key); // clean expired
+      return false;
+    }
+    return true;
+  }
+
+  Future<void> _snoozeAnnouncement(int announcementId, int userId) async {
+    if (userId <= 0) return;
+    final prefs = await SharedPreferences.getInstance();
+    final key = '$_snoozePrefix${userId}_$announcementId';
+    await prefs.setString(
+      key,
+      DateTime.now().add(_snoozeDuration).toIso8601String(),
+    );
+    _dismissedAnnouncementIds.add(announcementId);
+    _cleanExpiredSnoozes(prefs);
+  }
+
+  void _cleanExpiredSnoozes(SharedPreferences prefs) {
+    final keys = prefs.getKeys().where((k) => k.startsWith(_snoozePrefix));
+    final now = DateTime.now();
+    for (final key in keys) {
+      final until = prefs.getString(key);
+      if (until != null && DateTime.tryParse(until)?.isBefore(now) == true) {
+        prefs.remove(key);
+      }
+    }
+  }
+
+  // ─── Single urgent modal (replaces forced sequential multi-page dialog) ───
+
+  Future<void> _showSingleUrgentModal(Map<String, dynamic> a) async {
+    _announcementDialogOpen = true;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final title = (a['title']?.toString().trim().isNotEmpty ?? false)
+        ? a['title'].toString().trim()
+        : '系统公告';
+    final content = a['content']?.toString() ?? '';
+    final priority = a['priority']?.toString() ?? 'normal';
+    final timeText = _announcementTime(a);
+
+    String? result;
+    try {
+      result = await showDialog<String>(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 22,
+            vertical: 24,
+          ),
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 520),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF161B24) : Colors.white,
+              borderRadius: BorderRadius.circular(28),
+              border: Border.all(
+                color: isDark
+                    ? Colors.white.withValues(alpha: 0.06)
+                    : const Color(0xFFE7EBF3),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(
+                    alpha: isDark ? 0.28 : 0.10,
+                  ),
+                  blurRadius: 28,
+                  offset: const Offset(0, 12),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Header
+                Container(
+                  padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: priority == 'urgent'
+                          ? (isDark
+                              ? const [Color(0xFF4A1A1A), Color(0xFF2D1010)]
+                              : const [Color(0xFFFFF5F5), Color(0xFFFFE8E8)])
+                          : (isDark
+                              ? const [Color(0xFF24334E), Color(0xFF192231)]
+                              : const [Color(0xFFF4F7FF), Color(0xFFEAF0FF)]),
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: const BorderRadius.vertical(
+                      top: Radius.circular(28),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            width: 42,
+                            height: 42,
+                            decoration: BoxDecoration(
+                              color: priority == 'urgent'
+                                  ? const Color(0xFFE53935).withValues(alpha: 0.15)
+                                  : Theme.of(context)
+                                      .primaryColor
+                                      .withValues(alpha: isDark ? 0.22 : 0.14),
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: Icon(
+                              priority == 'urgent'
+                                  ? Icons.warning_rounded
+                                  : Icons.campaign_rounded,
+                              color: priority == 'urgent'
+                                  ? const Color(0xFFE53935)
+                                  : Theme.of(context).primaryColor,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    _priorityBadge(
+                                      priority: priority,
+                                      isDark: isDark,
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  '请及时查看',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: isDark
+                                        ? Colors.white54
+                                        : Colors.grey[700],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          IconButton(
+                            onPressed: () => Navigator.pop(ctx, 'snooze'),
+                            icon: Icon(
+                              Icons.close,
+                              color: isDark ? Colors.white60 : Colors.grey[700],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        title,
+                        style: TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w800,
+                          color: isDark
+                              ? Colors.white
+                              : const Color(0xFF111827),
+                        ),
+                      ),
+                      if (timeText.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Icon(Icons.schedule_rounded,
+                                size: 14,
+                                color: isDark
+                                    ? Colors.white38
+                                    : Colors.grey[600]),
+                            const SizedBox(width: 6),
+                            Text(
+                              timeText,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: isDark
+                                    ? Colors.white38
+                                    : Colors.grey[600],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                // Content
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 18, 20, 12),
+                  child: Container(
+                    constraints: const BoxConstraints(maxHeight: 320),
+                    padding: const EdgeInsets.all(18),
+                    decoration: BoxDecoration(
+                      color: isDark
+                          ? const Color(0xFF11161F)
+                          : const Color(0xFFF7F9FC),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: isDark
+                            ? Colors.white.withValues(alpha: 0.05)
+                            : const Color(0xFFE9EDF5),
+                      ),
+                    ),
+                    child: SingleChildScrollView(
+                      child: MarkdownBody(
+                        data: content,
+                        selectable: true,
+                        onTapLink: (text, href, title) async {
+                          final link = href?.trim();
+                          if (link == null || link.isEmpty) return;
+                          final uri = Uri.tryParse(link);
+                          if (uri == null) return;
+                          await launchUrl(uri,
+                              mode: LaunchMode.externalApplication);
+                        },
+                        styleSheet: MarkdownStyleSheet(
+                          p: TextStyle(
+                            fontSize: 15,
+                            height: 1.7,
+                            color: isDark
+                                ? Colors.white70
+                                : const Color(0xFF334155),
+                          ),
+                          h1: TextStyle(
+                              fontSize: 22,
+                              height: 1.4,
+                              fontWeight: FontWeight.w800,
+                              color: isDark
+                                  ? Colors.white
+                                  : const Color(0xFF0F172A)),
+                          h2: TextStyle(
+                              fontSize: 19,
+                              height: 1.45,
+                              fontWeight: FontWeight.w700,
+                              color: isDark
+                                  ? Colors.white
+                                  : const Color(0xFF0F172A)),
+                          h3: TextStyle(
+                              fontSize: 17,
+                              height: 1.45,
+                              fontWeight: FontWeight.w700,
+                              color: isDark
+                                  ? Colors.white
+                                  : const Color(0xFF0F172A)),
+                        ),
+                        sizedImageBuilder: (config) =>
+                            _buildAnnouncementImage(config, isDark),
+                      ),
+                    ),
+                  ),
+                ),
+                // Actions
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  child: Row(
+                    children: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx, 'snooze'),
+                        child: const Text('稍后再看'),
+                      ),
+                      const Spacer(),
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx, 'dismiss'),
+                        child: const Text('我知道了'),
+                      ),
+                      const SizedBox(width: 8),
+                      ElevatedButton.icon(
+                        onPressed: () => Navigator.pop(ctx, 'detail'),
+                        icon: const Icon(Icons.open_in_new_rounded, size: 18),
+                        label: const Text('查看详情'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Theme.of(context).primaryColor,
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    } finally {
+      _announcementDialogOpen = false;
+    }
+
+    final announcementId = _announcementId(a);
+    final userId = context.read<AuthProvider>().user?.id ?? 0;
+
+    switch (result) {
+      case 'snooze':
+        // 稍后再看：4 hours snooze, keeps unread
+        await _snoozeAnnouncement(announcementId, userId);
+        break;
+      case 'dismiss':
+        // 我知道了：mark as read
+        await _markAnnouncementRead(a);
+        break;
+      case 'detail':
+        // 查看详情：mark as read, then navigate to detail
+        await _markAnnouncementRead(a);
+        if (mounted) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => _buildAnnouncementDetailPage(a),
+            ),
+          );
+        }
+        break;
+    }
+  }
+
+  Future<void> _markAnnouncementRead(dynamic a) async {
+    try {
+      await context.read<AuthProvider>().dio.post(
+            '${ApiConstants.noticesPath}/${a['id']}/read',
+          );
+    } catch (_) {}
+    await _markAnnouncementsSeen([a]);
+    // Refresh badge
+    _updateBadge(
+      (_unreadBadgeCount - 1).clamp(0, 999),
+      _hasUrgentUnread,
+    );
+  }
+
+  Widget _buildAnnouncementDetailPage(Map<String, dynamic> a) {
+    // Simple detail view; fallback to announcement screen import if available
+    return Scaffold(
+      appBar: AppBar(title: const Text('公告详情')),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              a['title']?.toString() ?? '',
+              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              _announcementTime(a),
+              style: TextStyle(color: Colors.grey[600], fontSize: 13),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              a['content']?.toString() ?? '',
+              style: const TextStyle(fontSize: 15, height: 1.7),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Replacement for the old multi-page forced-sequential dialog.
+  /// Kept as fallback but no longer used in the new flow.
   Future<void> _showAnnouncementDialog(List unread) async {
     _announcementDialogOpen = true;
     final isDark = Theme.of(context).brightness == Brightness.dark;

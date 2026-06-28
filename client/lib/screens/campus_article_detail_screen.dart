@@ -78,10 +78,9 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
 
   /// 打开外部浏览器访问指定 URL。
   ///
-  /// 仅允许 jwc.sylu.edu.cn 的 HTTPS 链接。
+  /// 仅允许白名单域名的 HTTPS 链接。
   Future<void> _openExternalUrl(String url, {String? errorText}) async {
-    final uri = Uri.tryParse(url);
-    if (uri == null || uri.scheme != 'https' || uri.host != 'jwc.sylu.edu.cn') {
+    if (!isSafeCampusUrl(url)) {
       AppFeedback.showSnackBar(
         context,
         errorText ?? '附件地址无效',
@@ -91,7 +90,7 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
     }
     try {
       final opened = await launchUrl(
-        uri,
+        Uri.parse(url),
         mode: LaunchMode.externalApplication,
       );
       if (!opened && mounted) {
@@ -606,9 +605,7 @@ class _CampusArticleDetailScreenState extends State<CampusArticleDetailScreen> {
 
   Widget _buildSourceLink(bool isDark, String sourceUrl) {
     final primary = Theme.of(context).colorScheme.primary;
-    final uri = Uri.tryParse(sourceUrl);
-    final isUrlSafe =
-        uri != null && uri.scheme == 'https' && uri.host == 'jwc.sylu.edu.cn';
+    final isUrlSafe = isSafeCampusUrl(sourceUrl);
 
     return SizedBox(
       width: double.infinity,

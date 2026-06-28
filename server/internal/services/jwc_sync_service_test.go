@@ -22,6 +22,18 @@ func setupSyncTestDB(t *testing.T) *gorm.DB {
 	return db
 }
 
+// jwcTestSpec is a reusable spec for JWC tests.
+var jwcTestSpec = CrawlSourceSpec{
+	Source:     "jwc",
+	Categories: []string{"jwtz", "jwgg"},
+}
+
+// competitionTestSpec is a reusable spec for competition tests.
+var competitionTestSpec = CrawlSourceSpec{
+	Source:     "cxcy",
+	Categories: []string{"competition"},
+}
+
 func TestSyncResultDefaults(t *testing.T) {
 	r := &SyncResult{}
 	if r.IsBootstrap {
@@ -34,7 +46,7 @@ func TestSyncResultDefaults(t *testing.T) {
 
 func TestBootstrapDetection(t *testing.T) {
 	db := setupSyncTestDB(t)
-	svc := &JWCSyncService{db: db} // no client needed for this test
+	svc := &CampusSyncService{db: db, spec: jwcTestSpec}
 
 	// Empty DB → bootstrap
 	var count int64
@@ -48,7 +60,7 @@ func TestBootstrapDetection(t *testing.T) {
 
 func TestQueryKnownURLs(t *testing.T) {
 	db := setupSyncTestDB(t)
-	svc := &JWCSyncService{db: db}
+	svc := &CampusSyncService{db: db, spec: jwcTestSpec}
 
 	// Empty → returns empty
 	known := svc.queryKnownURLs()
@@ -82,9 +94,42 @@ func TestQueryKnownURLs(t *testing.T) {
 	}
 }
 
+func TestQueryKnownURLsCompetition(t *testing.T) {
+	db := setupSyncTestDB(t)
+	svc := &CampusSyncService{db: db, spec: competitionTestSpec}
+
+	attJSON := datatypes.JSON([]byte("[]"))
+	db.Create(&models.CampusArticle{
+		Source: "cxcy", Category: "比赛通知", CategorySlug: "competition",
+		CategoryID: "1089", SourceArticleID: "3293",
+		SourceURL: "https://cxcyxy.sylu.edu.cn/info/1089/3293.htm",
+		Title:     "Competition Test", ContentHash: "cccc" + "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+		Attachments: attJSON,
+	})
+	// JWC article should not appear in competition known URLs
+	db.Create(&models.CampusArticle{
+		Source: "jwc", Category: "教务通知", CategorySlug: "jwtz",
+		CategoryID: "1116", SourceArticleID: "5946",
+		SourceURL: "https://jwc.sylu.edu.cn/info/1116/5946.htm",
+		Title:     "JWC Test", ContentHash: "dddd" + "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+		Attachments: attJSON,
+	})
+
+	known := svc.queryKnownURLs()
+	if len(known) != 1 {
+		t.Errorf("expected 1 category (competition), got %d", len(known))
+	}
+	if len(known["competition"]) != 1 {
+		t.Errorf("expected 1 competition URL, got %d", len(known["competition"]))
+	}
+	if _, ok := known["jwtz"]; ok {
+		t.Error("JWC URLs should not appear in competition query")
+	}
+}
+
 func TestUpdateSyncStateOnSuccess(t *testing.T) {
 	db := setupSyncTestDB(t)
-	svc := &JWCSyncService{db: db}
+	svc := &CampusSyncService{db: db, spec: jwcTestSpec}
 
 	result := &SyncResult{Added: 5, Skipped: 3}
 	svc.updateSyncState(result, false, false, 5)
@@ -109,7 +154,7 @@ func TestUpdateSyncStateOnSuccess(t *testing.T) {
 
 func TestUpdateSyncStateOnFailure(t *testing.T) {
 	db := setupSyncTestDB(t)
-	svc := &JWCSyncService{db: db}
+	svc := &CampusSyncService{db: db, spec: jwcTestSpec}
 
 	result := &SyncResult{Error: &testError{msg: "connection refused"}}
 	svc.updateSyncState(result, false, false, 0)
@@ -131,7 +176,7 @@ func TestUpdateSyncStateOnFailure(t *testing.T) {
 
 func TestUpdateSyncStateOnReconcile(t *testing.T) {
 	db := setupSyncTestDB(t)
-	svc := &JWCSyncService{db: db}
+	svc := &CampusSyncService{db: db, spec: jwcTestSpec}
 
 	result := &SyncResult{Added: 1, Updated: 2}
 	svc.updateSyncState(result, true, false, 3)
@@ -147,7 +192,7 @@ func TestUpdateSyncStateOnReconcile(t *testing.T) {
 
 func TestUpdateSyncStateOnPartialFailure(t *testing.T) {
 	db := setupSyncTestDB(t)
-	svc := &JWCSyncService{db: db}
+	svc := &CampusSyncService{db: db, spec: jwcTestSpec}
 
 	result := &SyncResult{Added: 3}
 	svc.updateSyncState(result, false, true, 3)
@@ -167,7 +212,7 @@ func TestUpdateSyncStateOnPartialFailure(t *testing.T) {
 
 func TestShouldReconcile(t *testing.T) {
 	db := setupSyncTestDB(t)
-	svc := &JWCSyncService{db: db}
+	svc := &CampusSyncService{db: db, spec: jwcTestSpec}
 
 	// No state yet → should reconcile
 	if !svc.ShouldReconcile() {
@@ -191,6 +236,40 @@ func TestShouldReconcile(t *testing.T) {
 	})
 	if !svc.ShouldReconcile() {
 		t.Error("should reconcile after 25 hours")
+	}
+}
+
+func TestCompetitionSyncStateSeparateFromJWC(t *testing.T) {
+	db := setupSyncTestDB(t)
+	jwcSvc := &CampusSyncService{db: db, spec: jwcTestSpec}
+	compSvc := &CampusSyncService{db: db, spec: competitionTestSpec}
+
+	// JWC sync succeeds
+	jwcSvc.updateSyncState(&SyncResult{Added: 5}, false, false, 5)
+
+	// Competition sync fails
+	compSvc.updateSyncState(&SyncResult{Error: &testError{msg: "timeout"}}, false, false, 0)
+
+	// Verify states are separate
+	var jwcState, compState models.JWCSyncState
+	if err := db.Where("source = ?", "jwc").First(&jwcState).Error; err != nil {
+		t.Fatalf("query jwc state: %v", err)
+	}
+	if err := db.Where("source = ?", "cxcy").First(&compState).Error; err != nil {
+		t.Fatalf("query cxcy state: %v", err)
+	}
+
+	if jwcState.LastSuccessAt == nil {
+		t.Error("JWC should have LastSuccessAt set")
+	}
+	if compState.LastSuccessAt != nil {
+		t.Error("Competition should NOT have LastSuccessAt set (failed)")
+	}
+	if compState.ConsecutiveFailures != 1 {
+		t.Errorf("Competition should have 1 failure, got %d", compState.ConsecutiveFailures)
+	}
+	if jwcState.ConsecutiveFailures != 0 {
+		t.Errorf("JWC should have 0 failures, got %d", jwcState.ConsecutiveFailures)
 	}
 }
 

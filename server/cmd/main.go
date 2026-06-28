@@ -308,17 +308,51 @@ func main() {
 	handlers.SetMajorLogDB(db)
 
 	// JWC 校园资讯同步
-	var jwcSyncService *services.JWCSyncService
+	var campusSyncServices []*services.CampusSyncService
 	if cfg.JWCSyncEnabled {
 		jwcClient := clients.NewJWCPythonClient(cfg.EduServiceURL, cfg.EduServiceToken)
-		jwcSyncService = services.NewJWCSyncService(db, jwcClient)
-		go tasks.StartJWCSyncTask(context.Background(), jwcSyncService, cfg)
-		log.Println("JWC 校园资讯同步已启用")
+
+		// JWC sync (教务通知 + 教务公告)
+		jwcSpec := services.CrawlSourceSpec{
+			Source:     "jwc",
+			Categories: []string{"jwtz", "jwgg"},
+			CrawlFunc: func(ctx context.Context, knownURLs map[string][]string, maxPages int, reconcile bool) (*clients.CrawlResponse, error) {
+				return jwcClient.Crawl(ctx, &clients.CrawlRequest{
+					Categories:      []string{"jwtz", "jwgg"},
+					KnownSourceURLs: knownURLs,
+					MaxPages:        maxPages,
+					Reconcile:       reconcile,
+				})
+			},
+		}
+		campusSyncServices = append(campusSyncServices, services.NewCampusSyncService(db, jwcSpec))
+
+		// Competition sync (创新创业学院比赛通知)
+		competitionSpec := services.CrawlSourceSpec{
+			Source:     "cxcy",
+			Categories: []string{"competition"},
+			CrawlFunc: func(ctx context.Context, knownURLs map[string][]string, maxPages int, reconcile bool) (*clients.CrawlResponse, error) {
+				// 合并所有已知 URL 为扁平列表（Python competition 端接收 list）
+				var allURLs []string
+				for _, urls := range knownURLs {
+					allURLs = append(allURLs, urls...)
+				}
+				return jwcClient.CrawlCompetition(ctx, &clients.CompetitionCrawlRequest{
+					KnownSourceURLs: allURLs,
+					MaxPages:        maxPages,
+					Reconcile:       reconcile,
+				})
+			},
+		}
+		campusSyncServices = append(campusSyncServices, services.NewCampusSyncService(db, competitionSpec))
+
+		go tasks.StartCampusSyncTask(context.Background(), campusSyncServices, cfg)
+		log.Println("校园资讯同步已启用 (JWC + Competition)")
 	} else {
-		log.Println("JWC 校园资讯同步未启用 (JWC_SYNC_ENABLED=false)")
+		log.Println("校园资讯同步未启用 (JWC_SYNC_ENABLED=false)")
 	}
 
-	campusArticleHandler := handlers.NewCampusArticleHandler(db, jwcSyncService)
+	campusArticleHandler := handlers.NewCampusArticleHandler(db, campusSyncServices...)
 
 	// 启动后台定时任务
 

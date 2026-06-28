@@ -30,8 +30,7 @@ func TestListEmpty(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db := setupTestDB(t)
 
-	// null sync service (no actual sync needed for read-only tests)
-	handler := &CampusArticleHandler{db: db, syncService: nil}
+	handler := &CampusArticleHandler{db: db}
 
 	r := gin.New()
 	r.GET("/articles", handler.List)
@@ -82,7 +81,7 @@ func TestListWithData(t *testing.T) {
 		db.Create(&a)
 	}
 
-	handler := &CampusArticleHandler{db: db, syncService: nil}
+	handler := &CampusArticleHandler{db: db}
 	r := gin.New()
 	r.GET("/articles", handler.List)
 
@@ -122,6 +121,75 @@ func TestListWithData(t *testing.T) {
 	}
 }
 
+func TestListInvalidCategoryReturns400(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := setupTestDB(t)
+
+	handler := &CampusArticleHandler{db: db}
+	r := gin.New()
+	r.GET("/articles", handler.List)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/articles?category=invalid", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for invalid category, got %d", w.Code)
+	}
+}
+
+func TestListWithCompetitionData(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := setupTestDB(t)
+
+	attJSON := datatypes.JSON([]byte("[]"))
+	// Seed both JWC and competition articles
+	db.Create(&models.CampusArticle{
+		Source: "jwc", Category: "教务通知", CategorySlug: "jwtz",
+		CategoryID: "1116", SourceArticleID: "5946",
+		SourceURL: "https://jwc.sylu.edu.cn/info/1116/5946.htm",
+		Title:     "JWC Article", ContentHash: "a" + "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		Attachments: attJSON,
+	})
+	db.Create(&models.CampusArticle{
+		Source: "cxcy", Category: "比赛通知", CategorySlug: "competition",
+		CategoryID: "1089", SourceArticleID: "3293",
+		SourceURL: "https://cxcyxy.sylu.edu.cn/info/1089/3293.htm",
+		Title:     "Competition Article", ContentHash: "b" + "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+		Attachments: attJSON,
+	})
+
+	handler := &CampusArticleHandler{db: db}
+	r := gin.New()
+	r.GET("/articles", handler.List)
+
+	// No filter → both JWC and cxcy
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/articles", nil)
+	r.ServeHTTP(w, req)
+
+	var resp ListResponse
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if len(resp.Items) != 2 {
+		t.Errorf("expected 2 items (jwc + cxcy), got %d", len(resp.Items))
+	}
+
+	// Filter by competition
+	w = httptest.NewRecorder()
+	req, _ = http.NewRequest("GET", "/articles?category=competition", nil)
+	r.ServeHTTP(w, req)
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if len(resp.Items) != 1 {
+		t.Errorf("expected 1 competition item, got %d", len(resp.Items))
+	}
+	if resp.Items[0].Source != "cxcy" {
+		t.Errorf("expected source=cxcy, got %q", resp.Items[0].Source)
+	}
+	if resp.Items[0].CategorySlug != "competition" {
+		t.Errorf("expected category_slug=competition, got %q", resp.Items[0].CategorySlug)
+	}
+}
+
 func TestGetDetail(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db := setupTestDB(t)
@@ -137,7 +205,7 @@ func TestGetDetail(t *testing.T) {
 	}
 	db.Create(&article)
 
-	handler := &CampusArticleHandler{db: db, syncService: nil}
+	handler := &CampusArticleHandler{db: db}
 	r := gin.New()
 	r.GET("/articles/:id", handler.GetDetail)
 
@@ -177,11 +245,50 @@ func TestGetDetail(t *testing.T) {
 	}
 }
 
+func TestGetDetailCompetition(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := setupTestDB(t)
+
+	attJSON := datatypes.JSON([]byte("[]"))
+	article := models.CampusArticle{
+		Source: "cxcy", Category: "比赛通知", CategorySlug: "competition",
+		CategoryID: "1089", SourceArticleID: "3293",
+		SourceURL: "https://cxcyxy.sylu.edu.cn/info/1089/3293.htm",
+		Title:     "Competition Detail", ContentHash: "d" + "ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+		ContentHTML: "<p>Competition content</p>", ContentText: "Competition content",
+		Attachments: attJSON,
+	}
+	db.Create(&article)
+
+	handler := &CampusArticleHandler{db: db}
+	r := gin.New()
+	r.GET("/articles/:id", handler.GetDetail)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/articles/1", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200 for cxcy article, got %d", w.Code)
+	}
+
+	var resp struct {
+		Item DetailItem `json:"item"`
+	}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp.Item.Source != "cxcy" {
+		t.Errorf("expected source=cxcy, got %q", resp.Item.Source)
+	}
+	if resp.Item.CategorySlug != "competition" {
+		t.Errorf("expected category_slug=competition, got %q", resp.Item.CategorySlug)
+	}
+}
+
 func TestGetLatest(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db := setupTestDB(t)
 
-	handler := &CampusArticleHandler{db: db, syncService: nil}
+	handler := &CampusArticleHandler{db: db}
 	r := gin.New()
 	r.GET("/articles/latest", handler.GetLatest)
 
@@ -191,5 +298,51 @@ func TestGetLatest(t *testing.T) {
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Errorf("expected 200 for empty, got %d", w.Code)
+	}
+}
+
+func TestGetLatestReturnsCompetition(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := setupTestDB(t)
+
+	attJSON := datatypes.JSON([]byte("[]"))
+	// JWC article (older)
+	db.Create(&models.CampusArticle{
+		Source: "jwc", Category: "教务通知", CategorySlug: "jwtz",
+		CategoryID: "1116", SourceArticleID: "5946",
+		SourceURL: "https://jwc.sylu.edu.cn/info/1116/5946.htm",
+		Title:     "Older JWC Article", ContentHash: "a" + "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		Attachments: attJSON,
+	})
+	// Competition article (newer)
+	db.Create(&models.CampusArticle{
+		Source: "cxcy", Category: "比赛通知", CategorySlug: "competition",
+		CategoryID: "1089", SourceArticleID: "3293",
+		SourceURL: "https://cxcyxy.sylu.edu.cn/info/1089/3293.htm",
+		Title:     "Newer Competition Article", ContentHash: "b" + "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+		Attachments: attJSON,
+	})
+
+	handler := &CampusArticleHandler{db: db}
+	r := gin.New()
+	r.GET("/articles/latest", handler.GetLatest)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/articles/latest", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+
+	var resp struct {
+		Item *DetailItem `json:"item"`
+	}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp.Item == nil {
+		t.Fatal("expected non-nil item")
+	}
+	if resp.Item.Source != "cxcy" {
+		t.Errorf("expected latest to be cxcy (newer), got source=%q", resp.Item.Source)
 	}
 }

@@ -64,9 +64,9 @@ class CourseRawData:
     name: str
     teacher: str
     location: str
-    time: str  # 节次字符丁"1-2芁
-    week_day: str  # 星期凁"1"
-    week_str: str  # 周数字符丁"1-16呁
+    time: str  # 节次字符串，如"1-2节"
+    week_day: str  # 星期，如"1"
+    week_str: str  # 周数字符串，如"1-16周"
 
 
 @dataclass
@@ -196,7 +196,7 @@ class EduCrawler:
             raise LoginFailedError(f"密码加密失败: {e}")
 
     async def login(self, student_id: str, password: str) -> str:
-        """登录教务系统,返回Cookie字符丁"""
+        """登录教务系统，返回Cookie字符串"""
         if not self.client:
             raise NetworkError("Client not initialized")
 
@@ -454,13 +454,13 @@ class EduCrawler:
 # ============== 辅助函数 ==============
 
 def parse_weeks(week_str: str) -> List[int]:
-    """解析周数字符串,妁'1-16呁18呁 -> [1,2,3,...,16,18]"""
+    """解析周数字符串，如'1-16周,18周' -> [1,2,3,...,16,18]"""
     weeks = []
     if not week_str:
         return weeks
 
-    # 移除"呁孁
-    week_str = week_str.replace("呁, """)
+    # 移除"周"
+    week_str = week_str.replace("周", "")
 
     # 按逗号分割
     parts = week_str.split(",")

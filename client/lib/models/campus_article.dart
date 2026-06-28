@@ -2,6 +2,21 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 
+/// 校园资讯允许的官方域名白名单。
+/// 精确枚举，不使用 endsWith 避免伪造子域名。
+const Set<String> allowedCampusArticleHosts = {
+  'jwc.sylu.edu.cn',
+  'cxcyxy.sylu.edu.cn',
+};
+
+/// 校园资讯 URL 是否安全（HTTPS + 白名单域名）。
+bool isSafeCampusUrl(String rawUrl) {
+  final uri = Uri.tryParse(rawUrl);
+  return uri != null &&
+      uri.scheme == 'https' &&
+      allowedCampusArticleHosts.contains(uri.host);
+}
+
 /// 校园资讯文章数据模型。
 ///
 /// 后端接口：
@@ -43,12 +58,8 @@ class CampusAttachment {
     return Icons.attach_file_rounded;
   }
 
-  /// 附件地址是否安全（仅允许 jwc.sylu.edu.cn 的 HTTPS 链接）。
-  bool get isUrlSafe {
-    final uri = Uri.tryParse(url);
-    if (uri == null) return false;
-    return uri.scheme == 'https' && uri.host == 'jwc.sylu.edu.cn';
-  }
+  /// 附件地址是否安全（仅允许白名单域名的 HTTPS 链接）。
+  bool get isUrlSafe => isSafeCampusUrl(url);
 
   /// 用于显示的扩展名标签（大写）。
   String get extensionLabel {

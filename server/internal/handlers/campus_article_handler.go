@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -12,15 +13,26 @@ import (
 	"shenliyuan/internal/services"
 )
 
+// allowedCampusSources is the whitelist of approved article sources.
+var allowedCampusSources = []string{"jwc", "cxcy"}
+
+// allowedCampusCategories is the whitelist of approved category slugs.
+var allowedCampusCategories = map[string]bool{
+	"jwtz":        true,
+	"jwgg":        true,
+	"competition": true,
+}
+
 // CampusArticleHandler handles campus article read-only API requests.
 type CampusArticleHandler struct {
-	db          *gorm.DB
-	syncService *services.JWCSyncService
+	db           *gorm.DB
+	syncServices []*services.CampusSyncService
 }
 
 // NewCampusArticleHandler creates a new campus article handler.
-func NewCampusArticleHandler(db *gorm.DB, syncService *services.JWCSyncService) *CampusArticleHandler {
-	return &CampusArticleHandler{db: db, syncService: syncService}
+// Accepts variadic sync services for LastSyncAt aggregation.
+func NewCampusArticleHandler(db *gorm.DB, syncServices ...*services.CampusSyncService) *CampusArticleHandler {
+	return &CampusArticleHandler{db: db, syncServices: syncServices}
 }
 
 // ── List ──────────────────────────────────────────────────────────
@@ -50,11 +62,11 @@ type ListResponse struct {
 	LastSyncAt *string           `json:"last_sync_at"`
 }
 
-// List returns paginated campus articles.
+// List returns paginated campus articles from all approved sources.
 func (h *CampusArticleHandler) List(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
-	category := c.Query("category") // jwtz | jwgg | empty (all)
+	category := c.Query("category")
 
 	if page < 1 {
 		page = 1
@@ -63,8 +75,14 @@ func (h *CampusArticleHandler) List(c *gin.Context) {
 		pageSize = 20
 	}
 
-	query := h.db.Model(&models.CampusArticle{}).Where("source = ?", "jwc")
-	if category == "jwtz" || category == "jwgg" {
+	query := h.db.Model(&models.CampusArticle{}).
+		Where("source IN ?", allowedCampusSources)
+
+	if category != "" {
+		if !allowedCampusCategories[category] {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的分类"})
+			return
+		}
 		query = query.Where("category_slug = ?", category)
 	}
 
@@ -106,13 +124,7 @@ func (h *CampusArticleHandler) List(c *gin.Context) {
 		}
 	}
 
-	var lastSyncAt *string
-	if h.syncService != nil {
-		if t := h.syncService.LastSyncAt(); t != nil {
-			s := t.Format("2006-01-02T15:04:05+08:00")
-			lastSyncAt = &s
-		}
-	}
+	lastSyncAt := h.aggregateLastSyncAt()
 
 	c.JSON(http.StatusOK, ListResponse{
 		Items:      items,
@@ -125,10 +137,10 @@ func (h *CampusArticleHandler) List(c *gin.Context) {
 
 // ── GetLatest ─────────────────────────────────────────────────────
 
-// GetLatest returns the most recent article.
+// GetLatest returns the most recent article from all approved sources.
 func (h *CampusArticleHandler) GetLatest(c *gin.Context) {
 	var article models.CampusArticle
-	if err := h.db.Where("source = ?", "jwc").
+	if err := h.db.Where("source IN ?", allowedCampusSources).
 		Order("publish_date DESC, id DESC").
 		First(&article).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -165,6 +177,7 @@ type DetailItem struct {
 }
 
 // GetDetail returns a single article with full content.
+// Source whitelist prevents reading articles from unapproved sources.
 func (h *CampusArticleHandler) GetDetail(c *gin.Context) {
 	idStr := c.Param("id")
 	id, err := strconv.ParseUint(idStr, 10, 64)
@@ -174,7 +187,8 @@ func (h *CampusArticleHandler) GetDetail(c *gin.Context) {
 	}
 
 	var article models.CampusArticle
-	if err := h.db.First(&article, id).Error; err != nil {
+	if err := h.db.Where("source IN ?", allowedCampusSources).
+		First(&article, id).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			c.JSON(http.StatusNotFound, gin.H{"error": "文章不存在"})
 			return
@@ -187,6 +201,27 @@ func (h *CampusArticleHandler) GetDetail(c *gin.Context) {
 }
 
 // ── helpers ───────────────────────────────────────────────────────
+
+// aggregateLastSyncAt returns the most recent sync time across all services.
+// Nil-safe: returns nil when no services or no sync has occurred.
+func (h *CampusArticleHandler) aggregateLastSyncAt() *string {
+	var latest *time.Time
+	for _, svc := range h.syncServices {
+		if svc == nil {
+			continue
+		}
+		if t := svc.LastSyncAt(); t != nil {
+			if latest == nil || t.After(*latest) {
+				latest = t
+			}
+		}
+	}
+	if latest == nil {
+		return nil
+	}
+	s := latest.Format("2006-01-02T15:04:05+08:00")
+	return &s
+}
 
 func toDetailItem(a *models.CampusArticle) DetailItem {
 	att := json.RawMessage(a.Attachments)

@@ -211,6 +211,10 @@ func ValidateCrawlItem(item *CrawlItem) error {
 //   - 502/503/504: up to 3 retries with exponential backoff
 //   - Timeout/connection errors: up to 3 retries
 func (c *JWCPythonClient) Crawl(ctx context.Context, req *CrawlRequest) (*CrawlResponse, error) {
+	// Ensure KnownSourceURLs map is never nil — Python Pydantic rejects null
+	if req.KnownSourceURLs == nil {
+		req.KnownSourceURLs = make(map[string][]string)
+	}
 	body, err := json.Marshal(req)
 	if err != nil {
 		return nil, fmt.Errorf("marshal request: %w", err)
@@ -221,6 +225,10 @@ func (c *JWCPythonClient) Crawl(ctx context.Context, req *CrawlRequest) (*CrawlR
 
 // CrawlCompetition calls the Python competition crawl endpoint.
 func (c *JWCPythonClient) CrawlCompetition(ctx context.Context, req *CompetitionCrawlRequest) (*CrawlResponse, error) {
+	// Ensure KnownSourceURLs is never nil — Python Pydantic rejects null, requires []
+	if req.KnownSourceURLs == nil {
+		req.KnownSourceURLs = make([]string, 0)
+	}
 	body, err := json.Marshal(req)
 	if err != nil {
 		return nil, fmt.Errorf("marshal request: %w", err)

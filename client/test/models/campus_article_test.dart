@@ -221,7 +221,8 @@ void main() {
       expect(a.extensionLabel, 'UNKNOWN');
     });
 
-    test('isUrlSafe 仅允许 jwc.sylu.edu.cn 的 HTTPS', () {
+    test('isUrlSafe 仅允许白名单域名的 HTTPS', () {
+      // jwc domain
       expect(
         CampusAttachment(
           name: 'f.xls',
@@ -230,6 +231,16 @@ void main() {
         ).isUrlSafe,
         true,
       );
+      // cxcy domain
+      expect(
+        CampusAttachment(
+          name: 'f.xls',
+          url: 'https://cxcyxy.sylu.edu.cn/f.xls',
+          extension: 'xls',
+        ).isUrlSafe,
+        true,
+      );
+      // http rejected
       expect(
         CampusAttachment(
           name: 'f.xls',
@@ -238,6 +249,15 @@ void main() {
         ).isUrlSafe,
         false,
       );
+      expect(
+        CampusAttachment(
+          name: 'f.xls',
+          url: 'http://cxcyxy.sylu.edu.cn/f.xls',
+          extension: 'xls',
+        ).isUrlSafe,
+        false,
+      );
+      // wrong host
       expect(
         CampusAttachment(
           name: 'f.xls',
@@ -252,6 +272,66 @@ void main() {
       const a = CampusAttachment(
           name: 'file', url: 'https://jwc.sylu.edu.cn/f', extension: '');
       expect(a.extensionLabel, '附件');
+    });
+  });
+
+  group('isSafeCampusUrl', () {
+    test('允许 jwc.sylu.edu.cn 的 HTTPS', () {
+      expect(
+        isSafeCampusUrl('https://jwc.sylu.edu.cn/info/1116/5946.htm'),
+        true,
+      );
+    });
+
+    test('允许 cxcyxy.sylu.edu.cn 的 HTTPS', () {
+      expect(
+        isSafeCampusUrl('https://cxcyxy.sylu.edu.cn/info/1089/3293.htm'),
+        true,
+      );
+    });
+
+    test('拒绝 HTTP 协议', () {
+      expect(isSafeCampusUrl('http://cxcyxy.sylu.edu.cn/info/1089/3293.htm'), false);
+    });
+
+    test('拒绝非白名单域名', () {
+      expect(isSafeCampusUrl('https://evil.com/info/1089/3293.htm'), false);
+    });
+
+    test('拒绝 sylu.edu.cn 的其他子域名（不用 endsWith）', () {
+      expect(
+        isSafeCampusUrl('https://fake.sylu.edu.cn/info/1089/3293.htm'),
+        false,
+      );
+    });
+
+    test('拒绝伪造子域名', () {
+      expect(
+        isSafeCampusUrl('https://cxcyxy.sylu.edu.cn.attacker.com/info/1089/3293.htm'),
+        false,
+      );
+    });
+
+    test('拒绝空字符串', () {
+      expect(isSafeCampusUrl(''), false);
+    });
+
+    test('拒绝 javascript 伪协议', () {
+      expect(isSafeCampusUrl('javascript:alert(1)'), false);
+    });
+  });
+
+  group('allowedCampusArticleHosts', () {
+    test('包含 jwc 域名', () {
+      expect(allowedCampusArticleHosts, contains('jwc.sylu.edu.cn'));
+    });
+
+    test('包含 cxcyxy 域名', () {
+      expect(allowedCampusArticleHosts, contains('cxcyxy.sylu.edu.cn'));
+    });
+
+    test('只有 2 个条目', () {
+      expect(allowedCampusArticleHosts.length, 2);
     });
   });
 

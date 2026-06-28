@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"math/big"
 	"net/http"
 	"net/url"
@@ -343,15 +344,27 @@ func (h *EduHandler) GetGrades(c *gin.Context) {
 			"year":     input.Year,
 			"semester": input.Semester,
 		}).
-		Post(EduServiceConfig.BaseURL + "/api/edu/grades")
+		Post(strings.TrimRight(EduServiceConfig.BaseURL, "/") + "/api/edu/grades/")
 
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "无法连接教务服务，请检查网络"})
 		return
 	}
 
-	// 直接透传给前端
-	c.Data(resp.StatusCode(), "application/json", resp.Body())
+	// 防止Python返回非JSON导致Flutter FormatException
+	if !json.Valid(resp.Body()) {
+		log.Printf(
+			"[EDU] grades returned non-JSON: status=%d content_type=%q",
+			resp.StatusCode(),
+			resp.Header().Get("Content-Type"),
+		)
+		c.JSON(http.StatusBadGateway, gin.H{
+			"error": "教务服务返回异常，请稍后再试",
+		})
+		return
+	}
+
+	c.Data(resp.StatusCode(), "application/json; charset=utf-8", resp.Body())
 }
 
 // 以下是整合的教务系统登录和查询逻辑

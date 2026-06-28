@@ -3,6 +3,7 @@ package handlers
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // UploadHandler 上传处理器
@@ -69,6 +71,30 @@ func (h *UploadHandler) Upload(c *gin.Context) {
 	}
 	hashStr := hex.EncodeToString(hash.Sum(nil))
 
+	// 相同内容直接复用已有文件记录，避免违反 files.hash 唯一索引。
+	var existing models.File
+	err = h.db.Where("hash = ?", hashStr).First(&existing).Error
+	if err == nil {
+		// 确认磁盘文件仍然存在再复用，防止"数据库有记录但物理文件丢失"返回 404。
+		diskPath := filepath.Join(h.uploadDir, strings.TrimPrefix(existing.Path, "/uploads/"))
+		if _, statErr := os.Stat(diskPath); statErr == nil {
+			c.JSON(http.StatusOK, gin.H{
+				"file_id": existing.ID,
+				"url":     existing.Path,
+				"hash":    existing.Hash,
+				"reused":  true,
+			})
+			return
+		}
+		// 磁盘文件丢失 → 不返回旧记录，继续执行下面的保存逻辑用本次上传内容写回。
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "查询文件记录失败",
+		})
+		return
+	}
+
 	// 创建上传目录
 	dir1 := filepath.Join(h.uploadDir, hashStr[:2])
 	if err := os.MkdirAll(dir1, 0755); err != nil {
@@ -100,7 +126,7 @@ func (h *UploadHandler) Upload(c *gin.Context) {
 		RefCount: 1,
 	}
 
-	if err := h.db.Create(&fileRecord).Error; err != nil {
+	if err := h.createOrGetFile(&fileRecord); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建文件记录失败"})
 		return
 	}
@@ -158,6 +184,23 @@ func (h *UploadHandler) UploadMultiple(c *gin.Context) {
 		src.Close()
 		hashStr := hex.EncodeToString(hash.Sum(nil))
 
+		// 相同内容直接复用已有文件记录，跳过磁盘写入
+		var existing models.File
+		if err := h.db.Where("hash = ?", hashStr).First(&existing).Error; err == nil {
+			diskPath := filepath.Join(h.uploadDir, strings.TrimPrefix(existing.Path, "/uploads/"))
+			if _, statErr := os.Stat(diskPath); statErr == nil {
+				results = append(results, gin.H{
+					"file_id": existing.ID,
+					"url":     existing.Path,
+					"hash":    existing.Hash,
+					"reused":  true,
+				})
+				createdFiles = append(createdFiles, existing)
+				continue
+			}
+			// 磁盘文件丢失，继续执行后面的保存逻辑用本次上传内容写回。
+		}
+
 		// 创建上传目录
 		dir1 := filepath.Join(h.uploadDir, hashStr[:2])
 		if err := os.MkdirAll(dir1, 0755); err != nil {
@@ -197,7 +240,7 @@ func (h *UploadHandler) UploadMultiple(c *gin.Context) {
 			MimeType: getMimeType(ext),
 			RefCount: 1,
 		}
-		if err := h.db.Create(&fileRecord).Error; err != nil {
+		if err := h.createOrGetFile(&fileRecord); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
 			return
 		}
@@ -214,6 +257,19 @@ func (h *UploadHandler) UploadMultiple(c *gin.Context) {
 		"results": results,
 		"total":   len(createdFiles),
 	})
+}
+
+// createOrGetFile 创建文件记录；hash 冲突时返回已有记录（并发安全）
+func (h *UploadHandler) createOrGetFile(fileRecord *models.File) error {
+	if err := h.db.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "hash"}},
+		DoNothing: true,
+	}).Create(fileRecord).Error; err != nil {
+		return err
+	}
+
+	// ON CONFLICT DO NOTHING 时重新查询实际记录
+	return h.db.Where("hash = ?", fileRecord.Hash).First(fileRecord).Error
 }
 
 // getMimeType 根据扩展名获取MIME类型

@@ -4,6 +4,8 @@ import '../providers/auth_provider.dart';
 import '../providers/edu_provider.dart';
 import '../providers/course_schedule_provider.dart';
 import '../utils/app_navigator.dart' show appNavigatorKey;
+import '../features/campus_data/evaluation/evaluation_screen.dart';
+import 'edu_grade_screen.dart';
 
 class EduScreen extends StatefulWidget {
   const EduScreen({super.key});
@@ -102,44 +104,63 @@ class _EduScreenState extends State<EduScreen> {
                           style: TextStyle(color: Colors.grey[600]),
                         ),
                       const SizedBox(height: 16),
-                      Row(
-                        children: [
-                          if (eduProvider.isBound)
-                            ElevatedButton.icon(
-                              onPressed: () =>
-                                  _showUnbindDialog(context, eduProvider),
-                              icon: const Icon(Icons.link_off),
-                              label: const Text('解绑'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.red,
-                                foregroundColor: Colors.white,
-                              ),
-                            )
-                          else
-                            ElevatedButton.icon(
-                              onPressed: () =>
-                                  _showBindDialog(context, eduProvider),
-                              icon: const Icon(Icons.link),
-                              label: const Text('绑定教务'),
-                            ),
-                          const SizedBox(width: 8),
-                          if (eduProvider.isBound)
+                      if (eduProvider.isBound) ...[
+                        // Main actions — Wrap to avoid overflow
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
                             OutlinedButton.icon(
                               onPressed: () =>
                                   _showCourseDialog(context, eduProvider),
                               icon: const Icon(Icons.schedule),
                               label: const Text('课表'),
                             ),
-                          const SizedBox(width: 8),
-                          if (eduProvider.isBound)
                             OutlinedButton.icon(
-                              onPressed: () =>
-                                  _showGradesDialog(context, eduProvider),
+                              onPressed: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => const EduGradeScreen(),
+                                  ),
+                                );
+                              },
                               icon: const Icon(Icons.grade),
                               label: const Text('成绩'),
                             ),
-                        ],
-                      ),
+                            OutlinedButton.icon(
+                              onPressed: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => const EvaluationScreen(),
+                                  ),
+                                );
+                              },
+                              icon: const Icon(Icons.rate_review_outlined),
+                              label: const Text('教学评价'),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        // Unbind as a low-profile text action
+                        TextButton.icon(
+                          onPressed: () =>
+                              _showUnbindDialog(context, eduProvider),
+                          icon: const Icon(Icons.link_off, size: 16),
+                          label: const Text('解绑教务账号',
+                              style: TextStyle(fontSize: 12)),
+                          style: TextButton.styleFrom(
+                            foregroundColor: Colors.red.withValues(alpha: 0.7),
+                          ),
+                        ),
+                      ] else
+                        ElevatedButton.icon(
+                          onPressed: () =>
+                              _showBindDialog(context, eduProvider),
+                          icon: const Icon(Icons.link),
+                          label: const Text('绑定教务'),
+                        ),
                     ],
                   ),
                 ),
@@ -147,7 +168,7 @@ class _EduScreenState extends State<EduScreen> {
               const ListTile(
                 leading: Icon(Icons.info_outline),
                 title: Text('功能说明'),
-                subtitle: Text('绑定教务账号后，可以查看课表和成绩'),
+                subtitle: Text('绑定教务账号后，可以查看课表、成绩和教学评价'),
               ),
             ],
           );
@@ -505,180 +526,6 @@ class _EduScreenState extends State<EduScreen> {
                   ),
                 ),
               ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showGradesDialog(BuildContext context, EduProvider eduProvider) {
-    final now = DateTime.now();
-    int currentYear = now.year;
-    String selectedYear;
-    int selectedSemester;
-    bool isFetching = false;
-
-    if (now.month >= 2 && now.month <= 7) {
-      selectedYear = (currentYear - 1).toString();
-      selectedSemester = 12; // 春季（第二学期）
-    } else if (now.month == 1) {
-      selectedYear = (currentYear - 1).toString();
-      selectedSemester = 3; // 秋季（第一学期）
-    } else {
-      selectedYear = currentYear.toString();
-      selectedSemester = 3; // 秋季（第一学期）
-    }
-
-    showDialog(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('选择学期'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              DropdownButtonFormField<String>(
-                value: selectedYear,
-                decoration: const InputDecoration(labelText: '学年'),
-                items: () {
-                  int startYear = eduProvider.enrollmentYear;
-                  int currentYear = DateTime.now().year;
-                  int count = (currentYear - startYear) + 2;
-                  if (count < 1) count = 1;
-
-                  return List.generate(count, (i) {
-                    int year = startYear + i;
-                    return DropdownMenuItem(
-                      value: year.toString(),
-                      child: Text('$year-${year + 1}'),
-                    );
-                  }).reversed.toList();
-                }(),
-                onChanged: (value) {
-                  selectedYear = value ?? selectedYear;
-                },
-              ),
-              const SizedBox(height: 16),
-              DropdownButtonFormField<int>(
-                value: selectedSemester,
-                decoration: const InputDecoration(labelText: '学期'),
-                items: const [
-                  DropdownMenuItem(value: 3, child: Text('第一学期')),
-                  DropdownMenuItem(value: 12, child: Text('第二学期')),
-                ],
-                onChanged: (value) {
-                  selectedSemester = value ?? selectedSemester;
-                },
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: isFetching ? null : () => Navigator.pop(context),
-              child: const Text('取消'),
-            ),
-            ElevatedButton(
-              onPressed: isFetching
-                  ? null
-                  : () async {
-                      setDialogState(() => isFetching = true);
-                      final scaffoldMessenger = ScaffoldMessenger.of(context);
-                      final result = await eduProvider.getGrades(
-                        selectedYear,
-                        selectedSemester,
-                      );
-                      if (context.mounted) {
-                        Navigator.pop(context); // 请求结束后关闭对话框
-                        if (result != null &&
-                            result.success &&
-                            result.data != null) {
-                          _showGradesResult(
-                            context,
-                            result.data!,
-                            selectedYear,
-                            selectedSemester,
-                          );
-                        } else {
-                          scaffoldMessenger.showSnackBar(
-                            SnackBar(
-                              content: Text(result?.errorMessage ?? '获取成绩失败'),
-                              backgroundColor: Colors.red,
-                            ),
-                          );
-                        }
-                      }
-                    },
-              child: isFetching
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    )
-                  : const Text('查询'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showGradesResult(
-    BuildContext context,
-    List<Map<String, dynamic>> grades,
-    String year,
-    int semester,
-  ) {
-    showModalBottomSheet(
-      context: appNavigatorKey.currentContext!,
-      isScrollControlled: true,
-      builder: (context) => DraggableScrollableSheet(
-        initialChildSize: 0.7,
-        minChildSize: 0.5,
-        maxChildSize: 0.95,
-        expand: false,
-        builder: (context, scrollController) => Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Text(
-                '${year}-${(int.parse(year) + 1).toString()} ${semester == 3 ? "第一学期" : "第二学期"} 成绩',
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-            Expanded(
-              child: grades.isEmpty
-                  ? const Center(child: Text('暂无成绩'))
-                  : ListView.builder(
-                      controller: scrollController,
-                      itemCount: grades.length,
-                      itemBuilder: (context, index) {
-                        final grade = grades[index];
-                        return Card(
-                          margin: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 4,
-                          ),
-                          child: ListTile(
-                            title: Text(grade['name'] ?? ''),
-                            subtitle: Text(
-                              '成绩: ${grade['grade'] ?? '-'} | '
-                              '学分: ${grade['credits'] ?? 0} | '
-                              '绩点: ${grade['gpa'] ?? 0}',
-                            ),
-                            trailing: grade['is_degree'] == true
-                                ? const Chip(label: Text('学位课'))
-                                : null,
-                          ),
-                        );
-                      },
-                    ),
             ),
           ],
         ),

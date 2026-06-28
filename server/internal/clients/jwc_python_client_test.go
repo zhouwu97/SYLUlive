@@ -2,6 +2,7 @@ package clients
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -344,5 +345,99 @@ func TestCrawlHTTP409Retry(t *testing.T) {
 	}
 	if count != 2 {
 		t.Errorf("expected 2 attempts (409 + retry), got %d", count)
+	}
+}
+
+// ── nil slice/map serialization tests ──────────────────────────
+
+func TestCrawlCompetitionNilKnownURLsSerializesAsEmptyArray(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Read the body and verify it contains [] not null
+		body, _ := io.ReadAll(r.Body)
+		if strings.Contains(string(body), "null") {
+			t.Errorf("request body should not contain null, got: %s", body)
+		}
+		if !strings.Contains(string(body), `"known_source_urls":[]`) {
+			t.Errorf("request body should contain known_source_urls:[], got: %s", body)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{
+			"success": true,
+			"generated_at": "2026-06-28T20:00:00+08:00",
+			"items": [],
+			"stats": {
+				"pages_fetched": 1,
+				"list_items_seen": 15,
+				"article_details_fetched": 0,
+				"stop_reason": "max_pages_reached",
+				"partial_failure": false
+			},
+			"errors": []
+		}`))
+	}))
+	defer ts.Close()
+
+	client := NewJWCPythonClient(ts.URL, "test-token")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// KnownSourceURLs is nil — should be serialized as [] not null
+	resp, err := client.CrawlCompetition(ctx, &CompetitionCrawlRequest{
+		KnownSourceURLs: nil,
+		MaxPages:        1,
+		Reconcile:       false,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !resp.Success {
+		t.Error("expected success")
+	}
+}
+
+func TestCrawlNilKnownURLsMapSerializesAsEmptyObject(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		if strings.Contains(string(body), "null") {
+			t.Errorf("request body should not contain null, got: %s", body)
+		}
+		if !strings.Contains(string(body), `"known_source_urls":{}`) {
+			t.Errorf("request body should contain known_source_urls:{}, got: %s", body)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{
+			"success": true,
+			"generated_at": "2026-06-28T20:00:00+08:00",
+			"items": [],
+			"stats": {
+				"categories_requested": 1,
+				"pages_fetched": 1,
+				"list_items_seen": 0,
+				"article_details_fetched": 0,
+				"stop_reason": "max_pages_reached",
+				"partial_failure": false
+			},
+			"errors": []
+		}`))
+	}))
+	defer ts.Close()
+
+	client := NewJWCPythonClient(ts.URL, "test-token")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// KnownSourceURLs map is nil — should be serialized as {} not null
+	resp, err := client.Crawl(ctx, &CrawlRequest{
+		Categories:      []string{"jwtz"},
+		KnownSourceURLs: nil,
+		MaxPages:        1,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !resp.Success {
+		t.Error("expected success")
 	}
 }

@@ -55,6 +55,7 @@ class ExamRemoteViewsFactory(private val context: Context) : RemoteViewsService.
             views.setTextColor(R.id.tv_exam_name, parsedTextColor)
             views.setTextColor(R.id.tv_exam_date, parsedTextColor)
             views.setTextColor(R.id.tv_exam_time, parsedTextColor)
+            views.setTextColor(R.id.tv_exam_location, parsedTextColor)
         } catch (e: Exception) {
             // ignore
         }

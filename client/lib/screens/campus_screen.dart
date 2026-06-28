@@ -9,6 +9,7 @@ import 'campus_article_detail_screen.dart';
 import 'campus_article_list_screen.dart';
 import 'campus_calendar_screen.dart';
 import 'campus_map_tab_page.dart';
+import 'competition_center_screen.dart';
 import 'edu_screen.dart';
 import 'teacher_rate_screen.dart';
 
@@ -357,6 +358,12 @@ class _CampusScreenState extends State<CampusScreen>
         onTap: () => _openPage(const EduScreen()),
       ),
       _CampusService(
+        title: '竞赛中心',
+        icon: Icons.emoji_events_rounded,
+        color: const Color(0xFFD97706),
+        onTap: () => _openPage(const CompetitionCenterScreen()),
+      ),
+      _CampusService(
         title: '校园榜单',
         icon: Icons.leaderboard_rounded,
         color: const Color(0xFFF29A3F),
@@ -376,19 +383,20 @@ class _CampusScreenState extends State<CampusScreen>
       ),
     ];
 
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        for (var index = 0; index < services.length; index++) ...[
-          Expanded(
-            child: _CampusServiceCard(
-              service: services[index],
-              isDark: isDark,
-            ),
-          ),
-          if (index != services.length - 1) const SizedBox(width: 10),
-        ],
-      ],
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 4,
+        crossAxisSpacing: 10,
+        mainAxisSpacing: 10,
+        childAspectRatio: 0.94,
+      ),
+      itemCount: services.length,
+      itemBuilder: (context, index) => _CampusServiceCard(
+        service: services[index],
+        isDark: isDark,
+      ),
     );
   }
 }

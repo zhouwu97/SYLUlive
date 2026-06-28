@@ -12,6 +12,7 @@ class HomeServiceDrawer extends StatelessWidget {
   final VoidCallback onOpenLostFound;
   final VoidCallback onOpenToolbox;
   final VoidCallback onOpenAnnouncements;
+  final VoidCallback onOpenCompetitions;
   final VoidCallback onOpenGrades;
   final VoidCallback onOpenExamSchedule;
   final VoidCallback onOpenFeedback;
@@ -26,6 +27,7 @@ class HomeServiceDrawer extends StatelessWidget {
     required this.onOpenLostFound,
     required this.onOpenToolbox,
     required this.onOpenAnnouncements,
+    required this.onOpenCompetitions,
     required this.onOpenGrades,
     required this.onOpenExamSchedule,
     required this.onOpenFeedback,
@@ -268,6 +270,15 @@ class HomeServiceDrawer extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 10),
+        _ServiceRow(
+          icon: Icons.workspace_premium_outlined,
+          color: const Color(0xFFD97706),
+          title: '竞赛中心',
+          subtitle: '比赛日历',
+          isDark: isDark,
+          onTap: onOpenCompetitions,
+        ),
+        const SizedBox(height: 8),
         _ServiceRow(
           icon: Icons.assessment_outlined,
           color: const Color(0xFF5D64C4),

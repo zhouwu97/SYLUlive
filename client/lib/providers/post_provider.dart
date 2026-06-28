@@ -78,6 +78,10 @@ class PostProvider extends ChangeNotifier {
     return '$boardId|$sort|${type ?? ''}';
   }
 
+  String _postsEndpoint(String sort) {
+    return sort == 'featured' ? '/posts/featured' : '/posts';
+  }
+
   _BoardState _ensureBoard(int boardId, {String sort = 'time', String? type}) {
     final key = _stateKey(boardId, sort, type);
     return _boards.putIfAbsent(key, () {
@@ -186,7 +190,10 @@ class PostProvider extends ChangeNotifier {
         'scene': 'refresh',
       };
 
-      final response = await _dio.get('/posts', queryParameters: params);
+      final response = await _dio.get(
+        _postsEndpoint(sort),
+        queryParameters: params,
+      );
       if (requestVersion != board.requestVersion) return;
       if (response.statusCode == 200) {
         succeeded = true;
@@ -307,7 +314,10 @@ class PostProvider extends ChangeNotifier {
         sessionId: board.sessionId,
       );
 
-      final response = await _dio.get('/posts', queryParameters: params);
+      final response = await _dio.get(
+        _postsEndpoint(sort),
+        queryParameters: params,
+      );
       if (requestVersion != board.requestVersion) return;
       if (response.statusCode == 200) {
         final data = response.data;
@@ -403,7 +413,10 @@ class PostProvider extends ChangeNotifier {
         'scene': 'refresh',
       };
 
-      final response = await _dio.get('/posts', queryParameters: params);
+      final response = await _dio.get(
+        _postsEndpoint(sort),
+        queryParameters: params,
+      );
       if (requestVersion != board.requestVersion) return;
       if (response.statusCode == 200) {
         board.sessionId = response.data['session_id']?.toString();

@@ -22,6 +22,7 @@ import '../widgets/home_service_drawer.dart';
 import '../widgets/post_card.dart';
 import 'announcement_screen.dart';
 import 'chat_list_screen.dart';
+import 'competition_center_screen.dart';
 import 'edu_grade_screen.dart';
 import 'exam_schedule_screen.dart';
 import 'feedback_screen.dart';
@@ -52,7 +53,7 @@ class FeedModeConfig {
   });
 }
 
-/// 标签显示顺序：最新、综合、热门、关注
+/// 标签显示顺序：最新、综合、精华、关注
 /// 默认选中：综合 (index 1)
 const List<FeedModeConfig> kFeedModes = [
   FeedModeConfig(
@@ -68,9 +69,9 @@ const List<FeedModeConfig> kFeedModes = [
     supportsRemoteLoading: true,
   ),
   FeedModeConfig(
-    key: 'hot',
-    label: '热门',
-    remoteSort: 'hot',
+    key: 'featured',
+    label: '精华',
+    remoteSort: 'featured',
     supportsRemoteLoading: true,
   ),
   FeedModeConfig(
@@ -642,6 +643,15 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                       context,
                       MaterialPageRoute(
                           builder: (_) => const AnnouncementScreen()),
+                    );
+                  });
+                },
+                onOpenCompetitions: () {
+                  _closePanelThenOpen(dialogContext, () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const CompetitionCenterScreen()),
                     );
                   });
                 },

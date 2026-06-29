@@ -242,69 +242,109 @@ class _EduGradeDetailScreenState extends State<EduGradeDetailScreen> {
               borderRadius: BorderRadius.circular(12),
             )
           : null,
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            flex: 3,
-            child: Text(
-              component.name,
-              style: TextStyle(
-                fontSize: isTotal ? 15 : 14,
-                fontWeight: isTotal ? FontWeight.w700 : FontWeight.w500,
-              ),
-            ),
-          ),
-          Expanded(
-            flex: 2,
-            child: Text(
-              component.weight ?? '',
-              style: TextStyle(
-                fontSize: 14,
-                color: isTotal ? Colors.transparent : Colors.grey[600],
-              ),
-            ),
-          ),
-          Expanded(
-            flex: 2,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  component.score,
-                  textAlign: TextAlign.right,
+          Row(
+            children: [
+              Expanded(
+                flex: 3,
+                child: Text(
+                  component.name,
                   style: TextStyle(
-                    fontSize: isTotal ? 16 : 14,
-                    fontWeight: isTotal ? FontWeight.w800 : FontWeight.w600,
-                    color: isTotal ? Theme.of(context).colorScheme.primary : null,
+                    fontSize: isTotal ? 15 : 14,
+                    fontWeight: isTotal ? FontWeight.w700 : FontWeight.w500,
                   ),
                 ),
-                if (isTotal) ...(() {
-                  final estimatedScore = _estimatedWeightedScore();
-                  if (estimatedScore != null && !_isNumericText(component.score)) {
-                    return [
-                      const SizedBox(height: 2),
-                      Text(
-                        '估算 ${_formatDouble(estimatedScore)}',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey[500],
-                          fontWeight: FontWeight.w500,
+              ),
+              Expanded(
+                flex: 2,
+                child: Text(
+                  component.weight ?? '',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: isTotal ? Colors.transparent : Colors.grey[600],
+                  ),
+                ),
+              ),
+              Expanded(
+                flex: 2,
+                child: (() {
+                  final estimatedScore =
+                      isTotal ? _estimatedWeightedScore() : null;
+                  if (isTotal &&
+                      estimatedScore != null &&
+                      !_isNumericText(component.score)) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text(
+                          '官方 ${component.score}',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
                         ),
+                        const SizedBox(height: 3),
+                        Text(
+                          '估算 ${_formatDouble(estimatedScore)}',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                        ),
+                      ],
+                    );
+                  } else {
+                    return Text(
+                      component.score,
+                      textAlign: TextAlign.right,
+                      style: TextStyle(
+                        fontSize: isTotal ? 16 : 14,
+                        fontWeight: isTotal ? FontWeight.w800 : FontWeight.w600,
+                        color: isTotal
+                            ? Theme.of(context).colorScheme.primary
+                            : null,
                       ),
-                    ];
+                    );
                   }
-                  return [];
-                }()),
-              ],
-            ),
+                })(),
+              ),
+            ],
           ),
+          if (!isTotal) _weightBar(context, component),
         ],
       ),
     );
   }
 
+  Widget _weightBar(BuildContext context, GradeComponent component) {
+    final weight = _parseWeightPercent(component.weight);
+    if (weight == null) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(999),
+        child: LinearProgressIndicator(
+          value: weight / 100,
+          minHeight: 4,
+          backgroundColor:
+              Theme.of(context).colorScheme.primary.withValues(alpha: 0.08),
+          valueColor: AlwaysStoppedAnimation<Color>(
+            Theme.of(context).colorScheme.primary.withValues(alpha: 0.35),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildScoreHero(BuildContext context, bool isDark) {
+    final estimatedScore = _estimatedWeightedScore();
+    final isDisplayGradeNumeric = _isNumericText(grade.displayGrade);
+
     final subtitleItems = <String>[
       if (grade.teacher != null) grade.teacher!,
       if (grade.credits > 0) '${_formatDouble(grade.credits)} 学分',
@@ -361,6 +401,27 @@ class _EduGradeDetailScreenState extends State<EduGradeDetailScreen> {
               ),
             ],
           ),
+          if (estimatedScore != null && !isDisplayGradeNumeric) ...[
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(
+                color: Theme.of(context)
+                    .colorScheme
+                    .primary
+                    .withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                '按构成估算 ${_formatDouble(estimatedScore)}',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+              ),
+            ),
+          ],
           if (subtitleItems.isNotEmpty) ...[
             const SizedBox(height: 10),
             Text(
@@ -389,11 +450,6 @@ class _EduGradeDetailScreenState extends State<EduGradeDetailScreen> {
   }
 
   Widget _buildGradeComponentsCard(BuildContext context, bool isDark) {
-    final estimatedScore = _estimatedWeightedScore();
-    final officialTotal = _detail?.totalGrade.isNotEmpty == true
-        ? _detail!.totalGrade
-        : grade.displayGrade;
-
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
@@ -423,19 +479,6 @@ class _EduGradeDetailScreenState extends State<EduGradeDetailScreen> {
               ),
             ],
           ),
-          if (estimatedScore != null) ...[
-            const SizedBox(height: 4),
-            Text(
-              _isNumericText(officialTotal)
-                  ? '按构成估算 ${_formatDouble(estimatedScore)}'
-                  : '官方 $officialTotal · 估算 ${_formatDouble(estimatedScore)}',
-              style: TextStyle(
-                fontSize: 12,
-                color: Colors.grey[600],
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
           const SizedBox(height: 12),
           _buildComponents(context, isDark),
         ],

@@ -43,6 +43,9 @@ class CanteenRating {
   final String userStudentId;
   final String userAvatar;
   final String createdAt;
+  final int helpfulCount;
+  final int unhelpfulCount;
+  final String? myVote;
 
   CanteenRating({
     required this.id,
@@ -55,6 +58,9 @@ class CanteenRating {
     required this.userStudentId,
     required this.userAvatar,
     required this.createdAt,
+    this.helpfulCount = 0,
+    this.unhelpfulCount = 0,
+    this.myVote,
   });
 
   factory CanteenRating.fromJson(Map<String, dynamic> json) {
@@ -80,6 +86,9 @@ class CanteenRating {
       userStudentId: json['user_student_id'] ?? '',
       userAvatar: json['user_avatar'] ?? '',
       createdAt: json['created_at'] ?? '',
+      helpfulCount: json['helpful_count'] ?? 0,
+      unhelpfulCount: json['unhelpful_count'] ?? 0,
+      myVote: json['my_vote']?.toString(),
     );
   }
 }

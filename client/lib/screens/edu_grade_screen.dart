@@ -355,8 +355,8 @@ class _EduGradeScreenState extends State<EduGradeScreen> {
 
         // Loading without cache
         if (_pageState == GradePageState.loading && _grades.isEmpty)
-          SliverToBoxAdapter(
-            child: const GradeEmptyState(state: GradePageState.loading),
+          const SliverToBoxAdapter(
+            child: GradeEmptyState(state: GradePageState.loading),
           ),
 
         // Error without cache
@@ -371,8 +371,8 @@ class _EduGradeScreenState extends State<EduGradeScreen> {
 
         // Empty (no grades at all)
         if (_pageState == GradePageState.empty && _grades.isEmpty)
-          SliverToBoxAdapter(
-            child: const GradeEmptyState(
+          const SliverToBoxAdapter(
+            child: GradeEmptyState(
               state: GradePageState.empty,
               isFilterEmpty: false,
             ),
@@ -417,6 +417,8 @@ class _EduGradeScreenState extends State<EduGradeScreen> {
                       onTap: () => GradeDetailSheet.show(
                         context,
                         _filteredGrades[index],
+                        year: _selectedYear,
+                        semester: _selectedSemester,
                       ),
                     );
                   },
@@ -424,8 +426,8 @@ class _EduGradeScreenState extends State<EduGradeScreen> {
               ),
             )
           else
-            SliverToBoxAdapter(
-              child: const GradeEmptyState(
+            const SliverToBoxAdapter(
+              child: GradeEmptyState(
                 state: GradePageState.empty,
                 isFilterEmpty: true,
               ),

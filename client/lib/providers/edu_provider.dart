@@ -470,6 +470,78 @@ class EduProvider extends ChangeNotifier {
     return OperationResult.fail(raw?.errorMessage ?? '获取成绩失败');
   }
 
+  Future<OperationResult<EduGradeDetail>> fetchGradeDetail(
+    EduGrade grade,
+    String year,
+    int semester,
+  ) async {
+    final requestUserId = _userId;
+    if (requestUserId == null) {
+      return OperationResult.fail('用户未登录');
+    }
+    if (grade.classId.isEmpty) {
+      return OperationResult.fail('缺少教学班信息，暂不能获取成绩构成');
+    }
+
+    Future<Response<dynamic>> request() {
+      return _authDio.post(
+        '/edu/grades/detail',
+        data: {
+          'year': year,
+          'semester': semester,
+          'class_id': grade.classId,
+          'course_name': grade.name,
+          'course_id': grade.courseId.isNotEmpty ? grade.courseId : null,
+          'student_grade_id':
+              grade.studentGradeId.isNotEmpty ? grade.studentGradeId : null,
+        },
+      );
+    }
+
+    try {
+      final response = await request();
+      if (_userId != requestUserId) {
+        return OperationResult.fail('用户已切换');
+      }
+      if (response.statusCode == 200) {
+        return OperationResult.ok(
+          EduGradeDetail.fromJson(Map<String, dynamic>.from(response.data)),
+        );
+      }
+      return OperationResult.fail('获取成绩构成失败');
+    } on DioException catch (e) {
+      final errorMsg = _parseDioError(e);
+      if (errorMsg.contains('未登录') ||
+          errorMsg.contains('过期') ||
+          errorMsg.contains('重新登录') ||
+          errorMsg.contains('会话') ||
+          errorMsg.contains('cookie') ||
+          errorMsg.contains('失效') ||
+          errorMsg.contains('Cookie')) {
+        final rebindSuccess = await _trySilentRelogin();
+        if (rebindSuccess) {
+          try {
+            final retryResp = await request();
+            if (_userId != requestUserId) {
+              return OperationResult.fail('用户已切换');
+            }
+            if (retryResp.statusCode == 200) {
+              return OperationResult.ok(
+                EduGradeDetail.fromJson(
+                  Map<String, dynamic>.from(retryResp.data),
+                ),
+              );
+            }
+          } catch (_) {}
+        } else {
+          return OperationResult.fail('教务登录状态已失效，请重新绑定');
+        }
+      }
+      debugPrint('获取成绩构成失败: $errorMsg');
+      return OperationResult.fail(errorMsg);
+    }
+  }
+
   // 获取成绩（原始数据，内部使用）
   Future<OperationResult<List<Map<String, dynamic>>>?> _fetchGradesRaw(
     String year,

@@ -129,6 +129,8 @@ class _ShuitieScreenState extends State<ShuitieScreen>
 
   String? get _currentRemoteSort => _currentConfig.remoteSort;
 
+  bool get _showCheckInDot => _checkinStatusLoaded && !_checkedIn;
+
   bool _canLoadFeedMode(String mode) {
     if (mode != 'following') return true;
     return context.read<AuthProvider>().isLoggedIn;
@@ -157,6 +159,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       final postProvider = context.read<PostProvider>();
       postProvider.loadPosts(boardId: 1, sort: 'all');
       _startAutoRefresh();
+      _ensureCheckinStatusLoaded();
 
       // 延迟加载其他非核心数据
       Future.delayed(const Duration(seconds: 3), () {
@@ -223,7 +226,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   Future<void> _loadAnnouncements() async {
     final authProvider = context.read<AuthProvider>();
     try {
-      var response;
+      Response<dynamic> response;
       try {
         response = await authProvider.dio.get(ApiConstants.noticesPath);
       } on DioException catch (e) {
@@ -612,6 +615,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                 checkedIn: _checkedIn,
                 streakDays: _streakDays,
                 checkInLoading: _checkInLoading,
+                showCheckInDot: _showCheckInDot,
                 announcements: _announcements,
                 onCheckIn: () {
                   _closePanelThenOpen(dialogContext, _doCheckIn);
@@ -722,7 +726,6 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final authProvider = context.watch<AuthProvider>();
-    final topPadding = MediaQuery.of(context).padding.top;
 
     // 透明沉浸式状态栏
     SystemChrome.setSystemUIOverlayStyle(
@@ -736,6 +739,10 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     if (authProvider.isLoggedIn != _wasLoggedIn) {
       if (!_wasLoggedIn && authProvider.isLoggedIn) {
         _checkinStatusLoaded = false;
+      } else if (_wasLoggedIn && !authProvider.isLoggedIn) {
+        _checkinStatusLoaded = false;
+        _checkedIn = false;
+        _streakDays = 0;
       }
       _wasLoggedIn = authProvider.isLoggedIn;
       _messagesLoadRequested = false;
@@ -748,6 +755,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
           _refresh();
         }
         _ensureMessagesLoaded();
+        _ensureCheckinStatusLoaded();
       });
     }
 
@@ -945,14 +953,36 @@ class _ShuitieScreenState extends State<ShuitieScreen>
             child: SizedBox(
               width: 44,
               height: 44,
-              child: IconButton(
-                onPressed: _openHomeServicePanel,
-                icon: Icon(
-                  Icons.menu_rounded,
-                  size: 26,
-                  color: isDark ? Colors.white : Colors.black87,
-                ),
-                padding: EdgeInsets.zero,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  IconButton(
+                    onPressed: _openHomeServicePanel,
+                    icon: Icon(
+                      Icons.menu_rounded,
+                      size: 26,
+                      color: isDark ? Colors.white : Colors.black87,
+                    ),
+                    padding: EdgeInsets.zero,
+                  ),
+                  if (_showCheckInDot)
+                    Positioned(
+                      top: 9,
+                      right: 8,
+                      child: Container(
+                        width: 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFEF4444),
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: isDark ? Colors.black87 : Colors.white,
+                            width: 1.5,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ),
           ),

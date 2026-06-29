@@ -1,12 +1,14 @@
 import 'dart:convert';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:image_cropper/image_cropper.dart';
+import 'package:image_picker/image_picker.dart';
 import '../providers/auth_provider.dart';
 import '../providers/canteen_provider.dart';
-import '../widgets/image_upload_widget.dart';
 import '../config/api_constants.dart';
 
 class CanteenDetailScreen extends StatefulWidget {
@@ -23,9 +25,6 @@ class CanteenDetailScreen extends StatefulWidget {
 }
 
 class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
-  final _commentCtrl = TextEditingController();
-  int _star = 0;
-  List<String> _ratingImages = [];
   Map<String, dynamic>? _canteenData;
   bool _isLoading = true;
   bool _isVoting = false;
@@ -54,12 +53,6 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
   }
 
   @override
-  void dispose() {
-    _commentCtrl.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     if (_isLoading) {
       return const Scaffold(
@@ -83,6 +76,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
       ),
       child: Scaffold(
         backgroundColor: const Color(0xFFF6F7FB),
+        bottomNavigationBar: _buildFloatingRatingComposer(),
         body: CustomScrollView(
           slivers: [
             SliverToBoxAdapter(child: _buildHeroSection()),
@@ -94,7 +88,6 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
                     child: _buildInfoCard(),
                   ),
                   const SizedBox(height: 16),
-                  _buildMyRatingCard(),
                   _buildReviewHeader(reviews.length),
                 ],
               ),
@@ -109,7 +102,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
                 ),
               ),
             const SliverToBoxAdapter(
-              child: SizedBox(height: 32),
+              child: SizedBox(height: 104),
             ),
           ],
         ),
@@ -317,51 +310,66 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
     );
   }
 
-  Widget _buildMyRatingCard() {
+  Widget _buildFloatingRatingComposer() {
+    final bottom = MediaQuery.of(context).padding.bottom;
+    final hasRating = _canteenData?['my_rating'] != null;
+
     return Container(
-      margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+      padding: EdgeInsets.fromLTRB(16, 10, 16, bottom + 10),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFEDEFF5)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.08),
+            blurRadius: 16,
+            offset: const Offset(0, -4),
+          ),
+        ],
       ),
       child: Row(
         children: [
-          const Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '我的评价',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
+          Expanded(
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(999),
+                onTap: _showRatingSheet,
+                child: Container(
+                  height: 42,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF6F7FB),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: const Color(0xFFE6E8EF)),
+                  ),
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    hasRating ? '修改我的评价...' : '说说你的真实体验...',
+                    style: const TextStyle(
+                      fontSize: 14,
+                      color: Color(0xFF9AA0AA),
+                    ),
                   ),
                 ),
-                SizedBox(height: 6),
-                Text(
-                  '分享你的真实体验，帮助同学避坑',
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: Color(0xFF9AA0AA),
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
+          const SizedBox(width: 10),
           FilledButton(
-            onPressed: _showRatingDialog,
+            onPressed: _showRatingSheet,
             style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFFFFB300),
+              backgroundColor: const Color(0xFFFFA800),
               foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 18),
-              minimumSize: const Size(74, 36),
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              minimumSize: const Size(74, 42),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(999),
               ),
             ),
-            child: const Text('去评分'),
+            child: const Text(
+              '评分',
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
           ),
         ],
       ),
@@ -877,7 +885,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
         ),
       );
 
-  void _showRatingDialog() {
+  Future<void> _showRatingSheet() async {
     final auth = context.read<AuthProvider>();
     if (!auth.isLoggedIn) {
       ScaffoldMessenger.of(context)
@@ -885,122 +893,369 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
       return;
     }
 
-    final myRating = _canteenData!['my_rating'];
-    if (myRating != null) {
-      _star = myRating['star'] ?? 0;
-      _commentCtrl.text = myRating['comment'] ?? '';
-      _ratingImages = [];
-      try {
-        if (myRating['images'] != null &&
-            myRating['images'].toString().startsWith('[')) {
-          final decoded = myRating['images'].toString();
-          _ratingImages = decoded
-              .substring(1, decoded.length - 1)
-              .split(',')
-              .map((e) => e.replaceAll('"', '').trim())
-              .where((e) => e.isNotEmpty)
-              .toList();
-        }
-      } catch (e) {
-        // ignore parsing error
-      }
-    } else {
-      _star = 0;
-      _commentCtrl.text = '';
-      _ratingImages = [];
+    final myRating = _canteenData?['my_rating'];
+    var selectedStar = (myRating?['star'] as num?)?.toInt() ?? 0;
+    var isSubmitting = false;
+    final controller = TextEditingController(
+      text: myRating?['comment']?.toString() ?? '',
+    );
+
+    try {
+      await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        backgroundColor: Colors.transparent,
+        builder: (sheetContext) {
+          return StatefulBuilder(
+            builder: (context, setSheetState) {
+              Future<void> submitRating() async {
+                if (selectedStar == 0 || isSubmitting) return;
+                setSheetState(() => isSubmitting = true);
+                final result =
+                    await context.read<CanteenProvider>().rateCanteen(
+                          widget.canteenId,
+                          selectedStar,
+                          controller.text.trim(),
+                        );
+                if (!context.mounted) return;
+                setSheetState(() => isSubmitting = false);
+                if (result) {
+                  Navigator.pop(sheetContext);
+                  await _loadData();
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('提交失败，请稍后再试')),
+                  );
+                }
+              }
+
+              return Padding(
+                padding: EdgeInsets.only(
+                  bottom: MediaQuery.of(context).viewInsets.bottom,
+                ),
+                child: Container(
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.vertical(
+                      top: Radius.circular(24),
+                    ),
+                  ),
+                  child: SafeArea(
+                    top: false,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Center(
+                          child: Container(
+                            width: 36,
+                            height: 4,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFE0E3EA),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 18),
+                        Text(
+                          myRating == null ? '写评价' : '修改评价',
+                          style: const TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFF151821),
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        const Text(
+                          '给这个食堂打个分，顺便说说真实体验',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Color(0xFF8A92A3),
+                          ),
+                        ),
+                        const SizedBox(height: 18),
+                        Row(
+                          children: List.generate(5, (index) {
+                            final value = index + 1;
+                            final selected = value <= selectedStar;
+                            return IconButton(
+                              visualDensity: VisualDensity.compact,
+                              padding: EdgeInsets.zero,
+                              onPressed: isSubmitting
+                                  ? null
+                                  : () {
+                                      setSheetState(() {
+                                        selectedStar = value;
+                                      });
+                                    },
+                              icon: Icon(
+                                selected
+                                    ? Icons.star_rounded
+                                    : Icons.star_border_rounded,
+                                color: const Color(0xFFFFA800),
+                                size: 34,
+                              ),
+                            );
+                          }),
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: controller,
+                          maxLines: 5,
+                          minLines: 4,
+                          maxLength: 200,
+                          enabled: !isSubmitting,
+                          decoration: InputDecoration(
+                            hintText: '比如味道、价格、排队情况、推荐窗口...',
+                            filled: true,
+                            fillColor: const Color(0xFFF6F7FB),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(18),
+                              borderSide: BorderSide.none,
+                            ),
+                            contentPadding: const EdgeInsets.all(16),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        SizedBox(
+                          width: double.infinity,
+                          height: 48,
+                          child: FilledButton(
+                            onPressed: selectedStar == 0 || isSubmitting
+                                ? null
+                                : submitRating,
+                            style: FilledButton.styleFrom(
+                              backgroundColor: const Color(0xFFFFA800),
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                            ),
+                            child: isSubmitting
+                                ? const SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : Text(
+                                    myRating == null ? '发布评价' : '保存修改',
+                                    style: const TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          );
+        },
+      );
+    } finally {
+      controller.dispose();
     }
+  }
+
+  void _showEditImageSheet() {
+    final currentImage = _canteenData!['canteen']['image']?.toString() ?? '';
+    CroppedFile? pendingCoverFile;
+    Uint8List? pendingCoverBytes;
+    bool isUploadingCover = false;
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (ctx) {
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
         return StatefulBuilder(
-          builder: (context, setModalState) {
+          builder: (context, setSheetState) {
+            Future<void> pickCover() async {
+              final cropped = await _pickAndCropCanteenCover(context);
+              if (cropped == null) return;
+              final bytes = await cropped.readAsBytes();
+              if (!context.mounted) return;
+              setSheetState(() {
+                pendingCoverFile = cropped;
+                pendingCoverBytes = bytes;
+              });
+            }
+
+            Future<void> saveCover() async {
+              if (isUploadingCover) return;
+              if (pendingCoverFile == null || pendingCoverBytes == null) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('请先选择并裁剪封面图片')),
+                );
+                return;
+              }
+
+              setSheetState(() => isUploadingCover = true);
+              final messenger = ScaffoldMessenger.of(context);
+              final uploadedUrl = await _uploadCroppedCover(pendingCoverBytes!);
+              if (!mounted || !sheetContext.mounted) return;
+
+              if (uploadedUrl == null) {
+                setSheetState(() => isUploadingCover = false);
+                messenger.showSnackBar(
+                  const SnackBar(content: Text('图片上传失败')),
+                );
+                return;
+              }
+
+              final result = await context
+                  .read<CanteenProvider>()
+                  .updateCanteenImage(widget.canteenId, uploadedUrl);
+              if (!mounted || !sheetContext.mounted) return;
+
+              setSheetState(() => isUploadingCover = false);
+              if (result != null) {
+                Navigator.pop(sheetContext);
+                messenger.showSnackBar(
+                  const SnackBar(content: Text('食堂图片已更新')),
+                );
+                setState(() {
+                  _canteenData!['canteen'] = result;
+                });
+              } else {
+                messenger.showSnackBar(
+                  const SnackBar(content: Text('更新失败')),
+                );
+              }
+            }
+
             return Padding(
               padding: EdgeInsets.only(
-                bottom: MediaQuery.of(ctx).viewInsets.bottom,
-                left: 16,
-                right: 16,
-                top: 24,
+                bottom: MediaQuery.of(context).viewInsets.bottom,
               ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const Text(
-                    '我的评价',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                    textAlign: TextAlign.center,
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.vertical(
+                    top: Radius.circular(24),
                   ),
-                  const SizedBox(height: 16),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: List.generate(
-                      5,
-                      (i) => GestureDetector(
-                        onTap: () => setModalState(() => _star = i + 1),
-                        child: Icon(
-                          i < _star ? Icons.star : Icons.star_border,
-                          size: 36,
-                          color: i < _star ? Colors.amber : Colors.grey[400],
+                ),
+                child: SafeArea(
+                  top: false,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Center(
+                        child: Container(
+                          width: 36,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFE0E3EA),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
                         ),
                       ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: _commentCtrl,
-                    maxLength: 500,
-                    decoration: const InputDecoration(
-                      hintText: '说说感受...',
-                      border: OutlineInputBorder(),
-                      contentPadding: EdgeInsets.all(12),
-                    ),
-                    maxLines: 3,
-                  ),
-                  const SizedBox(height: 12),
-                  ImageUploadWidget(
-                    maxImages: 9,
-                    onImagesUploaded: (urls) {
-                      _ratingImages = urls;
-                    },
-                  ),
-                  const SizedBox(height: 24),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(ctx),
-                        child: const Text('取消'),
+                      const SizedBox(height: 18),
+                      const Text(
+                        '编辑食堂封面',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
+                          color: Color(0xFF151821),
+                        ),
                       ),
-                      const SizedBox(width: 16),
-                      ElevatedButton(
-                        onPressed: _star == 0
-                            ? null
-                            : () async {
-                                final result = await context
-                                    .read<CanteenProvider>()
-                                    .rateCanteen(
-                                      widget.canteenId,
-                                      _star,
-                                      _commentCtrl.text,
-                                      _ratingImages,
-                                    );
-                                if (!context.mounted) return;
-                                if (result) {
-                                  Navigator.pop(ctx);
-                                  _loadData();
-                                }
-                              },
-                        child: Text(myRating == null ? '提交' : '更新'),
+                      const SizedBox(height: 6),
+                      const Text(
+                        '建议上传横向图片，可拖动和缩放裁剪区域，主体尽量放中间',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Color(0xFF8A92A3),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      AspectRatio(
+                        aspectRatio: 2,
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(14),
+                          child: _buildCoverPreview(
+                            currentImage: currentImage,
+                            pendingCoverBytes: pendingCoverBytes,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      OutlinedButton.icon(
+                        onPressed: isUploadingCover ? null : pickCover,
+                        icon: const Icon(Icons.crop_rounded),
+                        label: Text(
+                          pendingCoverFile == null ? '选择图片并裁剪' : '重新选择图片',
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFFFFA800),
+                          side: const BorderSide(color: Color(0xFFFFD27A)),
+                          minimumSize: const Size.fromHeight(44),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: isUploadingCover
+                                  ? null
+                                  : () => Navigator.pop(sheetContext),
+                              style: OutlinedButton.styleFrom(
+                                minimumSize: const Size.fromHeight(46),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                              ),
+                              child: const Text('取消'),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: FilledButton(
+                              onPressed: isUploadingCover ? null : saveCover,
+                              style: FilledButton.styleFrom(
+                                backgroundColor: const Color(0xFFFFA800),
+                                foregroundColor: Colors.white,
+                                minimumSize: const Size.fromHeight(46),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                              ),
+                              child: isUploadingCover
+                                  ? const SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.white,
+                                      ),
+                                    )
+                                  : const Text(
+                                      '保存图片',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
-                  const SizedBox(height: 32),
-                ],
+                ),
               ),
             );
           },
@@ -1009,104 +1264,127 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
     );
   }
 
-  void _showEditImageSheet() {
-    List<String> uploadedImages = [];
-    final currentImage = _canteenData!['canteen']['image'];
+  Widget _buildCoverPreview({
+    required String currentImage,
+    required Uint8List? pendingCoverBytes,
+  }) {
+    if (pendingCoverBytes != null) {
+      return Image.memory(
+        pendingCoverBytes,
+        fit: BoxFit.cover,
+      );
+    }
 
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+    if (currentImage.isNotEmpty) {
+      return CachedNetworkImage(
+        imageUrl: ApiConstants.fullUrl(currentImage),
+        fit: BoxFit.cover,
+        errorWidget: (_, __, ___) => _buildCoverPreviewPlaceholder(),
+        placeholder: (_, __) => _buildCoverPreviewPlaceholder(),
+      );
+    }
+
+    return _buildCoverPreviewPlaceholder();
+  }
+
+  Widget _buildCoverPreviewPlaceholder() {
+    return Container(
+      color: const Color(0xFFF0F2F7),
+      child: const Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.restaurant_rounded,
+              size: 32,
+              color: Color(0xFF9FA7B5),
+            ),
+            SizedBox(height: 6),
+            Text(
+              '暂无封面',
+              style: TextStyle(
+                color: Color(0xFF8A94A6),
+                fontSize: 12,
+              ),
+            ),
+          ],
+        ),
       ),
-      builder: (ctx) {
-        return Padding(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(ctx).viewInsets.bottom,
-            left: 16,
-            right: 16,
-            top: 24,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Text(
-                '修改食堂封面图',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 16),
-              const Text('当前图片：', style: TextStyle(color: Colors.grey)),
-              const SizedBox(height: 8),
-              if (currentImage != null && currentImage.toString().isNotEmpty)
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: CachedNetworkImage(
-                    imageUrl: ApiConstants.fullUrl(currentImage),
-                    height: 120,
-                    fit: BoxFit.cover,
-                  ),
-                ),
-              const SizedBox(height: 16),
-              const Text('上传新图片：', style: TextStyle(color: Colors.grey)),
-              const SizedBox(height: 8),
-              ImageUploadWidget(
-                maxImages: 1,
-                onImagesUploaded: (urls) {
-                  uploadedImages = urls;
-                },
-              ),
-              const SizedBox(height: 24),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () => Navigator.pop(ctx),
-                      child: const Text('取消'),
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: () async {
-                        if (uploadedImages.isEmpty) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('请先上传图片')),
-                          );
-                          return;
-                        }
-                        final newUrl = uploadedImages.first;
-                        final messenger = ScaffoldMessenger.of(context);
-                        final result = await context
-                            .read<CanteenProvider>()
-                            .updateCanteenImage(widget.canteenId, newUrl);
-                        if (result != null) {
-                          if (!context.mounted || !ctx.mounted) return;
-                          Navigator.pop(ctx);
-                          messenger.showSnackBar(
-                            const SnackBar(content: Text('食堂图片已更新')),
-                          );
-                          setState(() {
-                            _canteenData!['canteen'] = result;
-                          });
-                        } else {
-                          if (!context.mounted || !ctx.mounted) return;
-                          messenger.showSnackBar(
-                            const SnackBar(content: Text('更新失败')),
-                          );
-                        }
-                      },
-                      child: const Text('保存图片'),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 32),
-            ],
-          ),
-        );
-      },
     );
+  }
+
+  Future<CroppedFile?> _pickAndCropCanteenCover(
+    BuildContext cropContext,
+  ) async {
+    final cropperUiSettings = [
+      AndroidUiSettings(
+        toolbarTitle: '调整食堂封面',
+        toolbarColor: const Color(0xFFFFA800),
+        toolbarWidgetColor: Colors.white,
+        lockAspectRatio: true,
+        hideBottomControls: false,
+      ),
+      IOSUiSettings(
+        title: '调整食堂封面',
+        aspectRatioLockEnabled: true,
+      ),
+      WebUiSettings(
+        context: cropContext,
+        presentStyle: WebPresentStyle.dialog,
+        initialAspectRatio: 2,
+      ),
+    ];
+
+    final picked = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 2400,
+      maxHeight: 2400,
+      imageQuality: 95,
+      requestFullMetadata: false,
+    );
+    if (picked == null) return null;
+
+    return ImageCropper().cropImage(
+      sourcePath: picked.path,
+      aspectRatio: const CropAspectRatio(ratioX: 2, ratioY: 1),
+      compressFormat: ImageCompressFormat.jpg,
+      compressQuality: 88,
+      maxWidth: 1600,
+      maxHeight: 800,
+      uiSettings: cropperUiSettings,
+    );
+  }
+
+  Future<String?> _uploadCroppedCover(Uint8List bytes) async {
+    try {
+      final dio = context.read<AuthProvider>().dio;
+      final formData = FormData.fromMap({
+        'file': MultipartFile.fromBytes(
+          bytes,
+          filename:
+              'canteen_cover_${DateTime.now().millisecondsSinceEpoch}.jpg',
+        ),
+      });
+
+      final response = await dio.post(
+        '/upload',
+        data: formData,
+        options: Options(
+          sendTimeout: const Duration(seconds: 60),
+          receiveTimeout: const Duration(seconds: 60),
+        ),
+      );
+
+      if (response.statusCode == 200 &&
+          response.data != null &&
+          response.data['url'] != null) {
+        return response.data['url'].toString();
+      }
+    } on DioException catch (e) {
+      debugPrint('上传食堂封面失败: ${e.message} ${e.response?.data}');
+    } catch (e) {
+      debugPrint('处理食堂封面失败: $e');
+    }
+    return null;
   }
 }

@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config/api_constants.dart';
+import '../utils/app_motion.dart';
 import '../utils/app_feedback.dart';
 import '../utils/responsive_util.dart';
 import '../utils/screen_swipe.dart';
@@ -95,13 +96,10 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     with TickerProviderStateMixin, WidgetsBindingObserver {
   late final Map<String, ScrollController> _feedScrollControllers;
 
-  ScrollController get _currentFeedScrollController {
-    return _feedScrollControllers[_feedMode]!;
-  }
-
   late AnimationController _feedSwitchController;
-  late Animation<double> _feedSwitchAnimation;
-  double _slideDirection = 0;
+  Animation<double>? _feedSettleAnimation;
+  double _feedDragProgress = 0;
+  int? _feedTargetIndex;
   double _feedSwipeDx = 0;
   bool _feedSwipeAccepted = false;
   final TextEditingController _searchController = TextEditingController();
@@ -120,12 +118,26 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   bool _messagesLoadRequested = false;
 
   static const _autoRefreshInterval = Duration(seconds: 60);
+  static const _feedSlideDistance = 32.0;
+  static const _feedSwitchDuration = Duration(milliseconds: 180);
+  static const _feedSettleDuration = Duration(milliseconds: 220);
+  static const _feedTriggerDistance = 72.0;
+  static const _feedTriggerVelocity = 520.0;
 
   // ---- 配置辅助 ----
   FeedModeConfig get _currentConfig =>
       kFeedModes.firstWhere((m) => m.key == _feedMode);
 
   int get _currentModeIndex => kFeedModes.indexWhere((m) => m.key == _feedMode);
+
+  double get _feedVisualIndex {
+    final currentIndex =
+        _currentModeIndex < 0 ? kDefaultFeedModeIndex : _currentModeIndex;
+    final targetIndex = _feedTargetIndex;
+    if (targetIndex == null) return currentIndex.toDouble();
+    return currentIndex +
+        (targetIndex - currentIndex) * _feedDragProgress.clamp(0.0, 1.0);
+  }
 
   String? get _currentRemoteSort => _currentConfig.remoteSort;
 
@@ -148,13 +160,8 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     WidgetsBinding.instance.addObserver(this);
     _feedSwitchController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 220),
-      value: 1.0,
-    );
-    _feedSwitchAnimation = CurvedAnimation(
-      parent: _feedSwitchController,
-      curve: Curves.easeOutCubic,
-    );
+      duration: _feedSettleDuration,
+    )..addListener(_handleFeedSettleTick);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final postProvider = context.read<PostProvider>();
       postProvider.loadPosts(boardId: 1, sort: 'all');
@@ -210,7 +217,9 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     }
 
     _searchController.dispose();
-    _feedSwitchController.dispose();
+    _feedSwitchController
+      ..removeListener(_handleFeedSettleTick)
+      ..dispose();
     super.dispose();
   }
 
@@ -288,27 +297,30 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     setState(() {});
   }
 
-  Future<void> _changeFeedMode(
-    String mode, {
-    double initialProgress = 0,
-  }) async {
+  void _handleFeedSettleTick() {
+    final targetIndex = _feedTargetIndex;
+    final animation = _feedSettleAnimation;
+    if (targetIndex == null || animation == null || !mounted) return;
+    setState(() {
+      _feedDragProgress = animation.value.clamp(0.0, 1.0);
+    });
+  }
+
+  Future<void> _changeFeedMode(String mode) async {
     if (_feedMode == mode) return;
     final oldIndex = _currentModeIndex;
     final newIndex = kFeedModes.indexWhere((m) => m.key == mode);
     if (oldIndex < 0 || newIndex < 0) return;
 
-    setState(() {
-      _feedMode = mode;
-      _slideDirection = newIndex > oldIndex ? 1 : -1;
-    });
-    _feedSwitchController.forward(
-      from: initialProgress.clamp(0.0, 1.0).toDouble(),
+    _refreshFeedMode(mode);
+    final begin = _feedTargetIndex == newIndex ? _feedDragProgress : 0.0;
+    await _settleFeedMode(
+      targetIndex: newIndex,
+      begin: begin,
+      end: 1.0,
+      duration: _feedSwitchDuration,
+      commit: true,
     );
-
-    final config = kFeedModes[newIndex];
-    if (config.supportsRemoteLoading && config.remoteSort != null) {
-      _refreshFeedMode(mode);
-    }
   }
 
   void _refreshFeedMode(String mode) {
@@ -335,14 +347,14 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     }
   }
 
-  List<Post> _resolveVisiblePosts(List<Post> posts) {
+  List<Post> _resolveVisiblePosts(List<Post> posts, String mode) {
     if (_searchQuery.isNotEmpty) return _searchResults;
 
     List<Post> sortedPosts = List.from(posts);
 
     // 排序逻辑已下沉至服务端，客户端只需原样返回
     // 但对于新帖过滤可以保留部分逻辑（如果服务端未实现new模式的话）
-    if (_feedMode == 'new') {
+    if (mode == 'new') {
       final now = DateTime.now();
       final recent = sortedPosts
           .where((post) => now.difference(post.createdAt).inDays < 3)
@@ -518,25 +530,41 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   }
 
   void _handleFeedSwipeStart(DragStartDetails details) {
+    _feedSwitchController.stop();
     _feedSwipeDx = 0;
     _feedSwipeAccepted = isUpperContentSwipeStart(
       details.globalPosition.dy,
       MediaQuery.sizeOf(context).height,
     );
+    if (_feedSwipeAccepted) {
+      setState(() {
+        _feedTargetIndex = null;
+        _feedDragProgress = 0;
+      });
+    }
   }
 
   void _handleFeedSwipeUpdate(DragUpdateDetails details) {
     if (!_feedSwipeAccepted) return;
     _feedSwipeDx += details.primaryDelta ?? 0;
-    final direction = _feedSwipeDx < 0 ? -1.0 : 1.0;
-    if (_slideDirection != direction && mounted) {
-      setState(() => _slideDirection = direction);
+    final targetIndex = _targetFeedIndexForDx(_feedSwipeDx);
+    if (targetIndex == null) {
+      setState(() {
+        _feedTargetIndex = null;
+        _feedDragProgress = 0;
+      });
+      return;
     }
-    final width = MediaQuery.sizeOf(context).width;
-    _feedSwitchController.value = (1 - (_feedSwipeDx.abs() / width)).clamp(
+
+    _refreshFeedMode(kFeedModes[targetIndex].key);
+    final progress = (_feedSwipeDx.abs() / _feedTriggerDistance).clamp(
       0.0,
       1.0,
     );
+    setState(() {
+      _feedTargetIndex = targetIndex;
+      _feedDragProgress = progress;
+    });
   }
 
   Future<void> _handleFeedSwipe(DragEndDetails details) async {
@@ -547,29 +575,90 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     }
 
     final velocity = details.primaryVelocity ?? 0;
-    final shouldSwitch = velocity.abs() >= 320 || _feedSwipeDx.abs() >= 56;
-    if (!shouldSwitch) {
-      _feedSwipeDx = 0;
-      await _feedSwitchController.forward();
+    final nextIndex = _targetFeedIndexForDx(
+      velocity.abs() >= _feedTriggerVelocity ? velocity : _feedSwipeDx,
+    );
+    final shouldSwitch = nextIndex != null &&
+        (_feedSwipeDx.abs() >= _feedTriggerDistance ||
+            velocity.abs() >= _feedTriggerVelocity);
+    _feedSwipeDx = 0;
+
+    if (shouldSwitch) {
+      await _settleFeedMode(
+        targetIndex: nextIndex,
+        begin: _feedDragProgress,
+        end: 1.0,
+        duration: _feedSettleDuration,
+        commit: true,
+      );
+    } else {
+      await _settleFeedMode(
+        targetIndex: _feedTargetIndex,
+        begin: _feedDragProgress,
+        end: 0.0,
+        duration: _feedSettleDuration,
+        commit: false,
+      );
+    }
+  }
+
+  int? _targetFeedIndexForDx(double dx) {
+    if (dx == 0) return null;
+    final currentIndex = _currentModeIndex;
+    if (currentIndex < 0) return null;
+    final direction = dx < 0 ? 1 : -1;
+    final targetIndex = currentIndex + direction;
+    if (targetIndex < 0 || targetIndex >= kFeedModes.length) return null;
+    return targetIndex;
+  }
+
+  Future<void> _settleFeedMode({
+    int? targetIndex,
+    double begin = 0,
+    double end = 0,
+    Duration duration = _feedSettleDuration,
+    required bool commit,
+  }) async {
+    if (targetIndex == null || targetIndex == _currentModeIndex) {
+      if (mounted) {
+        setState(() {
+          _feedTargetIndex = null;
+          _feedDragProgress = 0;
+        });
+      }
       return;
     }
 
-    final currentIndex = _currentModeIndex;
-    if (currentIndex < 0) return;
-    final swipeDirection = velocity.abs() >= 320 ? velocity : _feedSwipeDx;
-    final transitionProgress = 1 - _feedSwitchController.value;
-    final nextIndex = swipeDirection < 0
-        ? (currentIndex + 1).clamp(0, kFeedModes.length - 1)
-        : (currentIndex - 1).clamp(0, kFeedModes.length - 1);
-    _feedSwipeDx = 0;
-    if (nextIndex != currentIndex) {
-      await _changeFeedMode(
-        kFeedModes[nextIndex].key,
-        initialProgress: transitionProgress,
-      );
-    } else {
-      await _feedSwitchController.forward();
+    if (commit) {
+      _refreshFeedMode(kFeedModes[targetIndex].key);
     }
+
+    _feedSwitchController.stop();
+    _feedSwitchController.duration = duration;
+    _feedSettleAnimation = Tween<double>(
+      begin: begin.clamp(0.0, 1.0).toDouble(),
+      end: end.clamp(0.0, 1.0).toDouble(),
+    ).animate(CurvedAnimation(
+      parent: _feedSwitchController,
+      curve: AppMotion.standard,
+      reverseCurve: AppMotion.outgoing,
+    ));
+
+    setState(() {
+      _feedTargetIndex = targetIndex;
+      _feedDragProgress = begin.clamp(0.0, 1.0).toDouble();
+    });
+
+    await _feedSwitchController.forward(from: 0);
+    if (!mounted) return;
+
+    setState(() {
+      if (commit) {
+        _feedMode = kFeedModes[targetIndex].key;
+      }
+      _feedTargetIndex = null;
+      _feedDragProgress = 0;
+    });
   }
 
   void _openMessages() {
@@ -671,7 +760,35 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                     }
                     Navigator.push(
                       context,
-                      MaterialPageRoute(builder: (_) => const EduGradeScreen()),
+                      PageRouteBuilder(
+                        transitionDuration: const Duration(milliseconds: 260),
+                        reverseTransitionDuration:
+                            const Duration(milliseconds: 200),
+                        pageBuilder: (_, __, ___) => const EduGradeScreen(),
+                        transitionsBuilder: (_, animation, __, child) {
+                          final curved = CurvedAnimation(
+                            parent: animation,
+                            curve: AppMotion.incoming,
+                            reverseCurve: AppMotion.outgoing,
+                          );
+                          return FadeTransition(
+                            opacity: curved,
+                            child: SlideTransition(
+                              position: Tween<Offset>(
+                                begin: const Offset(0, 0.035),
+                                end: Offset.zero,
+                              ).animate(curved),
+                              child: ScaleTransition(
+                                scale: Tween<double>(
+                                  begin: 0.995,
+                                  end: 1.0,
+                                ).animate(curved),
+                                child: child,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
                     );
                   });
                 },
@@ -874,21 +991,18 @@ class _ShuitieScreenState extends State<ShuitieScreen>
 
   Widget _buildFeedTabs(bool isDark) {
     const tabWidth = 48.0;
-    const animationDuration = Duration(milliseconds: 220);
-
-    final activeIndex =
-        _currentModeIndex < 0 ? kDefaultFeedModeIndex : _currentModeIndex;
+    final visualIndex = _feedVisualIndex;
+    final activeColor = isDark ? Colors.white : Colors.black87;
+    final inactiveColor = isDark ? Colors.white54 : Colors.black45;
 
     return SizedBox(
       width: tabWidth * kFeedModes.length,
       height: 44,
       child: Stack(
         children: [
-          // 所有标签共用的一条指示线
-          AnimatedPositioned(
-            duration: animationDuration,
-            curve: Curves.easeOutCubic,
-            left: activeIndex * tabWidth + (tabWidth - 22) / 2,
+          // 指示条跟随手势连续移动，而不是等状态切完再跳转。
+          Positioned(
+            left: visualIndex * tabWidth + (tabWidth - 22) / 2,
             bottom: 3,
             width: 22,
             height: 3,
@@ -903,7 +1017,12 @@ class _ShuitieScreenState extends State<ShuitieScreen>
           Row(
             children: List.generate(kFeedModes.length, (index) {
               final config = kFeedModes[index];
-              final active = index == activeIndex;
+              final activeT = (1 - (visualIndex - index).abs()).clamp(
+                0.0,
+                1.0,
+              );
+              final color = Color.lerp(inactiveColor, activeColor, activeT)!;
+              final scale = 1.0 + 0.03 * activeT;
 
               return SizedBox(
                 width: tabWidth,
@@ -912,22 +1031,16 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                   behavior: HitTestBehavior.opaque,
                   onTap: () => _changeFeedMode(config.key),
                   child: Center(
-                    child: AnimatedScale(
-                      duration: animationDuration,
-                      curve: Curves.easeOutCubic,
-                      scale: active ? 1.04 : 1.0,
-                      child: AnimatedDefaultTextStyle(
-                        duration: animationDuration,
-                        curve: Curves.easeOutCubic,
+                    child: Transform.scale(
+                      scale: scale,
+                      child: Text(
+                        config.label,
                         style: TextStyle(
-                          fontSize: active ? 15.5 : 15,
+                          fontSize: 15 + 0.5 * activeT,
                           fontWeight:
-                              active ? FontWeight.w800 : FontWeight.w500,
-                          color: active
-                              ? (isDark ? Colors.white : Colors.black87)
-                              : (isDark ? Colors.white54 : Colors.black45),
+                              activeT > 0.5 ? FontWeight.w800 : FontWeight.w500,
+                          color: color,
                         ),
-                        child: Text(config.label),
                       ),
                     ),
                   ),
@@ -1155,196 +1268,229 @@ class _ShuitieScreenState extends State<ShuitieScreen>
 
   // ---- 普通信息流内容（含搜索框折叠） ----
   Widget _buildFeedContent(bool isDark) {
-    return RefreshIndicator(
-      onRefresh: () async {
-        await _refresh();
-        await _loadAnnouncements();
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onHorizontalDragStart: _handleFeedSwipeStart,
+      onHorizontalDragUpdate: _handleFeedSwipeUpdate,
+      onHorizontalDragEnd: _handleFeedSwipe,
+      onHorizontalDragCancel: () {
+        _feedSwipeDx = 0;
+        _feedSwipeAccepted = false;
+        unawaited(_settleFeedMode(
+          targetIndex: _feedTargetIndex,
+          begin: _feedDragProgress,
+          end: 0.0,
+          duration: _feedSettleDuration,
+          commit: false,
+        ));
       },
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 680),
-          child: Selector<PostProvider,
-              ({List<Post> posts, bool isLoading, bool hasMore, int revision})>(
-            selector: (context, postProvider) {
-              final sort = _currentRemoteSort ?? 'all';
-              return (
-                posts: postProvider.postsFor(1, sort: sort),
-                isLoading: postProvider.isLoadingFor(1, sort: sort),
-                hasMore: postProvider.hasMoreFor(1, sort: sort),
-                revision: postProvider.revisionFor(1, sort: sort),
-              );
-            },
-            builder: (context, data, child) {
-              final posts = data.posts;
-              final isFeedLoading = data.isLoading;
-              final feedHasMore = data.hasMore;
-
-              final visiblePosts = _resolveVisiblePosts(posts);
-
-              return GestureDetector(
-                behavior: HitTestBehavior.translucent,
-                onHorizontalDragStart: _handleFeedSwipeStart,
-                onHorizontalDragUpdate: _handleFeedSwipeUpdate,
-                onHorizontalDragEnd: _handleFeedSwipe,
-                onHorizontalDragCancel: () {
-                  _feedSwipeDx = 0;
-                  _feedSwipeAccepted = false;
-                  _feedSwitchController.forward();
-                },
-                child: SlideTransition(
-                  position: Tween<Offset>(
-                    begin: Offset(_slideDirection * 0.04, 0),
-                    end: Offset.zero,
-                  ).animate(_feedSwitchAnimation),
-                  child: NotificationListener<ScrollNotification>(
-                    onNotification: (notification) {
-                      final canLoadMore = _feedMode != 'following' ||
-                          context.read<AuthProvider>().isLoggedIn;
-                      if (_currentConfig.supportsRemoteLoading &&
-                          notification.metrics.pixels >=
-                              notification.metrics.maxScrollExtent - 500 &&
-                          feedHasMore &&
-                          !isFeedLoading &&
-                          canLoadMore) {
-                        context.read<PostProvider>().loadPosts(
-                              boardId: 1,
-                              sort: _currentRemoteSort ?? 'all',
-                            );
-                      }
-                      return false;
-                    },
-                    child: CustomScrollView(
-                      key: PageStorageKey<String>(
-                        'home-feed-scroll-$_feedMode',
-                      ),
-                      controller: _currentFeedScrollController,
-                      physics: const AlwaysScrollableScrollPhysics(
-                        parent: BouncingScrollPhysics(),
-                      ),
-                      slivers: [
-                        // 搜索框（可折叠）
-                        SliverPersistentHeader(
-                          pinned: false,
-                          floating: true,
-                          delegate: _SliverSearchBarDelegate(
-                            vsync: this,
-                            child: Padding(
-                              padding: const EdgeInsets.fromLTRB(
-                                12,
-                                2,
-                                12,
-                                4,
-                              ),
-                              child: _buildSearchBar(isDark),
-                            ),
-                          ),
-                        ),
-                        if (_feedMode == 'following' &&
-                            !context.read<AuthProvider>().isLoggedIn)
-                          SliverFillRemaining(
-                            hasScrollBody: false,
-                            child: _buildFollowingPlaceholder(isDark),
-                          )
-                        else if (isFeedLoading && posts.isEmpty)
-                          const SliverFillRemaining(
-                            child: Center(
-                              child: CircularProgressIndicator(),
-                            ),
-                          )
-                        else if (visiblePosts.isEmpty)
-                          SliverFillRemaining(
-                            child: _feedMode == 'following'
-                                ? _buildFollowingEmptyState(isDark)
-                                : _buildEmptyState(
-                                    isDark,
-                                    title: _searchQuery.isNotEmpty
-                                        ? '没有找到匹配帖子'
-                                        : '暂无帖子',
-                                    subtitle: _searchQuery.isNotEmpty
-                                        ? '目前只按标题搜索，换个标题关键词试试'
-                                        : '发布第一条帖子吧',
-                                    onRetry: _refresh,
-                                  ),
-                          )
-                        else
-                          SliverList(
-                            delegate: SliverChildBuilderDelegate((
-                              context,
-                              index,
-                            ) {
-                              final post = visiblePosts[index];
-                              final isSelected = _selectedPost?.id == post.id &&
-                                  _selectedUserId == null &&
-                                  ResponsiveUtil.useDesktopShell(context);
-                              return Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                ),
-                                child: Container(
-                                  decoration: isSelected
-                                      ? BoxDecoration(
-                                          borderRadius:
-                                              BorderRadius.circular(20),
-                                          boxShadow: [
-                                            BoxShadow(
-                                              color: Theme.of(context)
-                                                  .primaryColor
-                                                  .withValues(alpha: 0.15),
-                                              blurRadius: 20,
-                                              spreadRadius: 2,
-                                            ),
-                                          ],
-                                        )
-                                      : null,
-                                  child: PostCard(
-                                    post: post,
-                                    onAuthorTap: _openUserInSplit,
-                                    onTap: () {
-                                      if (ResponsiveUtil.useDesktopShell(
-                                        context,
-                                      )) {
-                                        _openPostInSplit(post);
-                                      } else {
-                                        Navigator.push(
-                                          context,
-                                          MaterialPageRoute(
-                                            builder: (_) => PostDetailScreen(
-                                              postId: post.id,
-                                              isMarket: false,
-                                              initialPost: post,
-                                            ),
-                                          ),
-                                        );
-                                      }
-                                    },
-                                  ),
-                                ),
-                              );
-                            }, childCount: visiblePosts.length),
-                          ),
-                        if (isFeedLoading && posts.isNotEmpty)
-                          const SliverToBoxAdapter(
-                            child: Padding(
-                              padding: EdgeInsets.symmetric(vertical: 18),
-                              child: Center(
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              ),
-                            ),
-                          ),
-                        const SliverToBoxAdapter(
-                          child: SizedBox(height: 80),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              );
-            },
+      child: RefreshIndicator(
+        onRefresh: () async {
+          await _refresh();
+          await _loadAnnouncements();
+        },
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 680),
+            child: _buildFeedModeViewport(isDark),
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildFeedModeViewport(bool isDark) {
+    final targetIndex = _feedTargetIndex;
+    if (targetIndex == null || targetIndex == _currentModeIndex) {
+      return _buildFeedModePage(isDark, _feedMode);
+    }
+
+    final progress = _feedDragProgress.clamp(0.0, 1.0);
+    final direction = targetIndex > _currentModeIndex ? 1.0 : -1.0;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return ClipRect(
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: Transform.translate(
+                  offset: Offset(
+                    -direction * progress * _feedSlideDistance,
+                    0,
+                  ),
+                  child: Opacity(
+                    opacity: 1 - 0.08 * progress,
+                    child: _buildFeedModePage(isDark, _feedMode),
+                  ),
+                ),
+              ),
+              Positioned.fill(
+                child: Transform.translate(
+                  offset: Offset(
+                    direction * (1 - progress) * _feedSlideDistance,
+                    0,
+                  ),
+                  child: Opacity(
+                    opacity: 0.88 + 0.12 * progress,
+                    child: _buildFeedModePage(
+                      isDark,
+                      kFeedModes[targetIndex].key,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildFeedModePage(bool isDark, String mode) {
+    final config = kFeedModes.firstWhere((m) => m.key == mode);
+    final sort = config.remoteSort ?? 'all';
+
+    return Selector<PostProvider,
+        ({List<Post> posts, bool isLoading, bool hasMore, int revision})>(
+      selector: (context, postProvider) {
+        return (
+          posts: postProvider.postsFor(1, sort: sort),
+          isLoading: postProvider.isLoadingFor(1, sort: sort),
+          hasMore: postProvider.hasMoreFor(1, sort: sort),
+          revision: postProvider.revisionFor(1, sort: sort),
+        );
+      },
+      builder: (context, data, child) {
+        final posts = data.posts;
+        final isFeedLoading = data.isLoading;
+        final feedHasMore = data.hasMore;
+        final visiblePosts = _resolveVisiblePosts(posts, mode);
+
+        return NotificationListener<ScrollNotification>(
+          onNotification: (notification) {
+            final canLoadMore =
+                mode != 'following' || context.read<AuthProvider>().isLoggedIn;
+            if (config.supportsRemoteLoading &&
+                notification.metrics.pixels >=
+                    notification.metrics.maxScrollExtent - 500 &&
+                feedHasMore &&
+                !isFeedLoading &&
+                canLoadMore) {
+              context.read<PostProvider>().loadPosts(
+                    boardId: 1,
+                    sort: sort,
+                  );
+            }
+            return false;
+          },
+          child: CustomScrollView(
+            key: PageStorageKey<String>('home-feed-scroll-$mode'),
+            controller: _feedScrollControllers[mode],
+            physics: const AlwaysScrollableScrollPhysics(
+              parent: BouncingScrollPhysics(),
+            ),
+            slivers: [
+              SliverPersistentHeader(
+                pinned: false,
+                floating: true,
+                delegate: _SliverSearchBarDelegate(
+                  vsync: this,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 2, 12, 4),
+                    child: _buildSearchBar(isDark),
+                  ),
+                ),
+              ),
+              if (mode == 'following' &&
+                  !context.read<AuthProvider>().isLoggedIn)
+                SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: _buildFollowingPlaceholder(isDark),
+                )
+              else if (isFeedLoading && posts.isEmpty)
+                const SliverFillRemaining(
+                  child: Center(
+                    child: CircularProgressIndicator(),
+                  ),
+                )
+              else if (visiblePosts.isEmpty)
+                SliverFillRemaining(
+                  child: mode == 'following'
+                      ? _buildFollowingEmptyState(isDark)
+                      : _buildEmptyState(
+                          isDark,
+                          title: _searchQuery.isNotEmpty ? '没有找到匹配帖子' : '暂无帖子',
+                          subtitle: _searchQuery.isNotEmpty
+                              ? '目前只按标题搜索，换个标题关键词试试'
+                              : '发布第一条帖子吧',
+                          onRetry: _refresh,
+                        ),
+                )
+              else
+                SliverList(
+                  delegate: SliverChildBuilderDelegate((context, index) {
+                    final post = visiblePosts[index];
+                    final isSelected = _selectedPost?.id == post.id &&
+                        _selectedUserId == null &&
+                        ResponsiveUtil.useDesktopShell(context);
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: Container(
+                        decoration: isSelected
+                            ? BoxDecoration(
+                                borderRadius: BorderRadius.circular(20),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Theme.of(context)
+                                        .primaryColor
+                                        .withValues(alpha: 0.15),
+                                    blurRadius: 20,
+                                    spreadRadius: 2,
+                                  ),
+                                ],
+                              )
+                            : null,
+                        child: PostCard(
+                          post: post,
+                          onAuthorTap: _openUserInSplit,
+                          onTap: () {
+                            if (ResponsiveUtil.useDesktopShell(context)) {
+                              _openPostInSplit(post);
+                            } else {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => PostDetailScreen(
+                                    postId: post.id,
+                                    isMarket: false,
+                                    initialPost: post,
+                                  ),
+                                ),
+                              );
+                            }
+                          },
+                        ),
+                      ),
+                    );
+                  }, childCount: visiblePosts.length),
+                ),
+              if (isFeedLoading && posts.isNotEmpty)
+                const SliverToBoxAdapter(
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(vertical: 18),
+                    child: Center(
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  ),
+                ),
+              const SliverToBoxAdapter(
+                child: SizedBox(height: 80),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 

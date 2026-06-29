@@ -6,12 +6,14 @@ import '../providers/theme_provider.dart';
 
 class BottomNavWrapper extends StatelessWidget {
   final int currentIndex;
+  final double visualIndex;
   final Function(int) onTap;
   final AuthProvider authProvider;
 
   const BottomNavWrapper({
     super.key,
     required this.currentIndex,
+    required this.visualIndex,
     required this.onTap,
     required this.authProvider,
   });
@@ -66,11 +68,9 @@ class BottomNavWrapper extends StatelessWidget {
                   child: Stack(
                     alignment: Alignment.center,
                     children: [
-                      // 滑动背景指示器
-                      AnimatedPositioned(
-                        duration: const Duration(milliseconds: 300),
-                        curve: Curves.easeOutCubic,
-                        left: itemWidth * currentIndex,
+                      // 指示器位置由 HomeScreen 的连续进度统一驱动。
+                      Positioned(
+                        left: itemWidth * visualIndex,
                         width: itemWidth,
                         top: 0,
                         bottom: 0,
@@ -96,6 +96,7 @@ class BottomNavWrapper extends StatelessWidget {
                             context,
                             primaryColor,
                             itemWidth,
+                            visualIndex,
                           ),
                           _labeledItem(
                             Icons.storefront_rounded,
@@ -104,6 +105,7 @@ class BottomNavWrapper extends StatelessWidget {
                             context,
                             primaryColor,
                             itemWidth,
+                            visualIndex,
                           ),
                           _labeledItem(
                             Icons.calendar_month_rounded,
@@ -112,6 +114,7 @@ class BottomNavWrapper extends StatelessWidget {
                             context,
                             primaryColor,
                             itemWidth,
+                            visualIndex,
                           ),
                           _labeledItem(
                             Icons.apartment_rounded,
@@ -120,6 +123,7 @@ class BottomNavWrapper extends StatelessWidget {
                             context,
                             primaryColor,
                             itemWidth,
+                            visualIndex,
                           ),
                           _labeledItem(
                             Icons.person_rounded,
@@ -128,6 +132,7 @@ class BottomNavWrapper extends StatelessWidget {
                             context,
                             primaryColor,
                             itemWidth,
+                            visualIndex,
                           ),
                         ],
                       ),
@@ -191,11 +196,9 @@ class BottomNavWrapper extends StatelessWidget {
                       return Stack(
                         alignment: Alignment.center,
                         children: [
-                          // 滑动背景指示器
-                          AnimatedPositioned(
-                            duration: const Duration(milliseconds: 350),
-                            curve: Curves.fastLinearToSlowEaseIn,
-                            left: itemWidth * currentIndex,
+                          // 指示器位置由 HomeScreen 的连续进度统一驱动。
+                          Positioned(
+                            left: itemWidth * visualIndex,
                             width: itemWidth,
                             top: 0,
                             bottom: 0,
@@ -220,6 +223,7 @@ class BottomNavWrapper extends StatelessWidget {
                                 context,
                                 primaryColor,
                                 itemWidth,
+                                visualIndex,
                               ),
                               _iconOnly(
                                 Icons.storefront_rounded,
@@ -227,6 +231,7 @@ class BottomNavWrapper extends StatelessWidget {
                                 context,
                                 primaryColor,
                                 itemWidth,
+                                visualIndex,
                               ),
                               _iconOnly(
                                 Icons.calendar_month_rounded,
@@ -234,6 +239,7 @@ class BottomNavWrapper extends StatelessWidget {
                                 context,
                                 primaryColor,
                                 itemWidth,
+                                visualIndex,
                               ),
                               _iconOnly(
                                 Icons.apartment_rounded,
@@ -241,6 +247,7 @@ class BottomNavWrapper extends StatelessWidget {
                                 context,
                                 primaryColor,
                                 itemWidth,
+                                visualIndex,
                               ),
                               _iconOnly(
                                 Icons.person_rounded,
@@ -248,6 +255,7 @@ class BottomNavWrapper extends StatelessWidget {
                                 context,
                                 primaryColor,
                                 itemWidth,
+                                visualIndex,
                               ),
                             ],
                           ),
@@ -272,12 +280,13 @@ class BottomNavWrapper extends StatelessWidget {
     BuildContext context,
     Color primaryColor,
     double width,
+    double visualIndex,
   ) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final isSelected = currentIndex == index;
-    final color = isSelected
-        ? primaryColor
-        : (isDark ? Colors.white54 : Colors.grey);
+    final activeT = (1 - (visualIndex - index).abs()).clamp(0.0, 1.0);
+    final inactiveColor = isDark ? Colors.white54 : Colors.grey;
+    final color = Color.lerp(inactiveColor, primaryColor, activeT)!;
+    final scale = 1.0 + 0.08 * activeT;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () => onTap(index),
@@ -289,11 +298,9 @@ class BottomNavWrapper extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 300),
-                curve: Curves.easeOutBack,
-                transform: Matrix4.identity()..scale(isSelected ? 1.1 : 1.0),
-                transformAlignment: Alignment.center,
+              Transform.scale(
+                scale: scale,
+                alignment: Alignment.center,
                 child: Icon(icon, color: color, size: 22),
               ),
               const SizedBox(height: 2),
@@ -301,7 +308,7 @@ class BottomNavWrapper extends StatelessWidget {
                 label,
                 style: TextStyle(
                   color: color,
-                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                  fontWeight: activeT > 0.5 ? FontWeight.w700 : FontWeight.w500,
                   fontSize: 10,
                 ),
               ),
@@ -319,12 +326,13 @@ class BottomNavWrapper extends StatelessWidget {
     BuildContext context,
     Color primaryColor,
     double width,
+    double visualIndex,
   ) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final isSelected = currentIndex == index;
-    final color = isSelected
-        ? primaryColor
-        : (isDark ? Colors.white54 : Colors.grey);
+    final activeT = (1 - (visualIndex - index).abs()).clamp(0.0, 1.0);
+    final inactiveColor = isDark ? Colors.white54 : Colors.grey;
+    final color = Color.lerp(inactiveColor, primaryColor, activeT)!;
+    final scale = 1.0 + 0.08 * activeT;
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -333,11 +341,9 @@ class BottomNavWrapper extends StatelessWidget {
         width: width,
         height: 44,
         child: Center(
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeOutBack,
-            transform: Matrix4.identity()..scale(isSelected ? 1.15 : 1.0),
-            transformAlignment: Alignment.center,
+          child: Transform.scale(
+            scale: scale,
+            alignment: Alignment.center,
             child: Icon(icon, color: color, size: 24),
           ),
         ),

@@ -4,7 +4,6 @@ import 'package:flutter/services.dart';
 import '../main.dart';
 import '../models/campus_article.dart';
 import '../services/campus_article_service.dart';
-import '../utils/app_feedback.dart';
 import 'campus_article_detail_screen.dart';
 import 'campus_article_list_screen.dart';
 import 'campus_calendar_screen.dart';
@@ -192,7 +191,7 @@ class _CampusScreenState extends State<CampusScreen>
             ),
             slivers: [
               SliverPadding(
-                padding: const EdgeInsets.fromLTRB(16, 18, 16, 120),
+                padding: const EdgeInsets.fromLTRB(16, 18, 16, 156),
                 sliver: SliverList(
                   delegate: SliverChildListDelegate([
                     _CampusHeader(semester: _currentSemesterText()),
@@ -205,7 +204,9 @@ class _CampusScreenState extends State<CampusScreen>
                     ),
                     const SizedBox(height: 12),
                     _buildServiceRow(isDark),
-                    const SizedBox(height: 26),
+                    const SizedBox(height: 20),
+                    _buildCompetitionFeatureCard(isDark),
+                    const SizedBox(height: 24),
                     const _SectionTitle(
                       title: '校园资讯',
                       subtitle: '校内通知与竞赛信息',
@@ -358,12 +359,6 @@ class _CampusScreenState extends State<CampusScreen>
         onTap: () => _openPage(const EduScreen()),
       ),
       _CampusService(
-        title: '竞赛中心',
-        icon: Icons.emoji_events_rounded,
-        color: const Color(0xFFD97706),
-        onTap: () => _openPage(const CompetitionCenterScreen()),
-      ),
-      _CampusService(
         title: '校园榜单',
         icon: Icons.leaderboard_rounded,
         color: const Color(0xFFF29A3F),
@@ -383,19 +378,105 @@ class _CampusScreenState extends State<CampusScreen>
       ),
     ];
 
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 4,
-        crossAxisSpacing: 10,
-        mainAxisSpacing: 10,
-        childAspectRatio: 0.94,
-      ),
-      itemCount: services.length,
-      itemBuilder: (context, index) => _CampusServiceCard(
-        service: services[index],
-        isDark: isDark,
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (var index = 0; index < services.length; index++) ...[
+          Expanded(
+            child: _CampusServiceCard(
+              service: services[index],
+              isDark: isDark,
+            ),
+          ),
+          if (index != services.length - 1) const SizedBox(width: 10),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildCompetitionFeatureCard(bool isDark) {
+    return Material(
+      color: isDark ? const Color(0xFF1B1E28) : Colors.white,
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        onTap: () => _openPage(const CompetitionCenterScreen()),
+        borderRadius: BorderRadius.circular(18),
+        child: Container(
+          padding: const EdgeInsets.all(15),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: isDark ? Colors.white10 : const Color(0xFFEDEBF3),
+            ),
+            boxShadow: [
+              if (!isDark)
+                BoxShadow(
+                  color: const Color(0xFF7367C6).withValues(alpha: 0.07),
+                  blurRadius: 18,
+                  offset: const Offset(0, 8),
+                ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 56,
+                height: 56,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF59E0B).withValues(alpha: 0.13),
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                child: const Icon(
+                  Icons.emoji_events_rounded,
+                  color: Color(0xFFD97706),
+                  size: 29,
+                ),
+              ),
+              const SizedBox(width: 13),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '竞赛中心',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                        color: isDark ? Colors.white : const Color(0xFF242530),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '发现比赛，管理参赛计划',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: isDark ? Colors.white54 : Colors.black54,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      '官方比赛 · 我的日历 · 分享导入',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w700,
+                        color:
+                            isDark ? Colors.white70 : const Color(0xFF7367C6),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.chevron_right_rounded,
+                color: isDark ? Colors.white30 : const Color(0xFFAAA6B5),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -518,8 +599,8 @@ class _CampusServiceCard extends StatelessWidget {
         onTap: service.onTap,
         borderRadius: BorderRadius.circular(17),
         child: Container(
-          height: 96,
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 12),
+          height: 88,
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(17),
             border: Border.all(
@@ -614,7 +695,7 @@ class _LatestArticleCard extends StatelessWidget {
               ),
             ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(18, 17, 18, 18),
+              padding: const EdgeInsets.fromLTRB(18, 15, 18, 16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -654,8 +735,8 @@ class _LatestArticleCard extends StatelessWidget {
                       const Spacer(),
                       Container(
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 9,
-                          vertical: 5,
+                          horizontal: 8,
+                          vertical: 4,
                         ),
                         decoration: BoxDecoration(
                           color: Colors.white.withValues(alpha: 0.13),
@@ -666,7 +747,7 @@ class _LatestArticleCard extends StatelessWidget {
                               ? article.shortDate
                               : '最新',
                           style: TextStyle(
-                            fontSize: 11,
+                            fontSize: 10.5,
                             fontWeight: FontWeight.w600,
                             color: Colors.white.withValues(alpha: 0.82),
                           ),
@@ -674,19 +755,19 @@ class _LatestArticleCard extends StatelessWidget {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 13),
                   Text(
                     article.title,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                      fontSize: 19,
-                      height: 1.35,
+                      fontSize: 18,
+                      height: 1.28,
                       fontWeight: FontWeight.w800,
                       color: Colors.white,
                     ),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 6),
                   Text(
                     [
                       if (article.authorDepartment.isNotEmpty)
@@ -695,10 +776,12 @@ class _LatestArticleCard extends StatelessWidget {
                       if (article.hasAttachment) '含附件',
                     ].join(' · '),
                     style: TextStyle(
-                      fontSize: 13,
-                      height: 1.55,
-                      color: Colors.white.withValues(alpha: 0.78),
+                      fontSize: 12,
+                      height: 1.35,
+                      color: Colors.white.withValues(alpha: 0.72),
                     ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ],
               ),

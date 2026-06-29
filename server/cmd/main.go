@@ -1102,6 +1102,8 @@ func main() {
 	{
 
 		canteenAdmin.DELETE("/:id", canteenHandler.DeleteCanteen)
+		
+		canteenAdmin.PUT("/:id/image", canteenHandler.UpdateImage)
 
 	}
 

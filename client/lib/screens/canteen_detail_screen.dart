@@ -78,25 +78,17 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
         backgroundColor: const Color(0xFFF6F7FB),
         body: CustomScrollView(
           slivers: [
+            SliverToBoxAdapter(child: _buildHeroSection()),
             SliverToBoxAdapter(
-              child: Stack(
-                clipBehavior: Clip.none,
+              child: Column(
                 children: [
-                  _buildHeroSection(),
-                  Container(
-                    margin: const EdgeInsets.only(top: 195 - 28),
-                    child: Column(
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          child: _buildInfoCard(),
-                        ),
-                        const SizedBox(height: 16),
-                        _buildMyRatingCard(),
-                        _buildReviewHeader(reviews.length),
-                      ],
-                    ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                    child: _buildInfoCard(),
                   ),
+                  const SizedBox(height: 16),
+                  _buildMyRatingCard(),
+                  _buildReviewHeader(reviews.length),
                 ],
               ),
             ),
@@ -122,7 +114,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
         authUser?.role == 'admin' || authUser?.role == 'super_admin';
 
     return SizedBox(
-      height: 195,
+      height: 220,
       child: Stack(
         fit: StackFit.expand,
         children: [
@@ -183,26 +175,23 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
         ),
       ),
       child: const Center(
-        child: Padding(
-          padding: EdgeInsets.only(bottom: 28),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.restaurant_rounded,
-                size: 44,
-                color: Color(0xFF9AA3B2),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.restaurant_rounded,
+              size: 44,
+              color: Color(0xFF9AA3B2),
+            ),
+            SizedBox(height: 8),
+            Text(
+              '暂无封面',
+              style: TextStyle(
+                color: Color(0xFF8A94A6),
+                fontSize: 13,
               ),
-              SizedBox(height: 8),
-              Text(
-                '暂无封面',
-                style: TextStyle(
-                  color: Color(0xFF8A94A6),
-                  fontSize: 13,
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

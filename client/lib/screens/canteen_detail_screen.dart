@@ -109,12 +109,15 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
 
   Widget _buildHeroSection() {
     final imageUrl = _canteenData?['canteen']?['image']?.toString() ?? '';
+    final hasImage = imageUrl.isNotEmpty;
+    final heroHeight = hasImage ? 220.0 : 200.0;
+
     final authUser = context.read<AuthProvider>().user;
     final isAdmin =
         authUser?.role == 'admin' || authUser?.role == 'super_admin';
 
     return SizedBox(
-      height: 220,
+      height: heroHeight,
       child: Stack(
         fit: StackFit.expand,
         children: [
@@ -181,14 +184,14 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
             Icon(
               Icons.restaurant_rounded,
               size: 44,
-              color: Color(0xFF9AA3B2),
+              color: Color(0xFF9FA7B5),
             ),
             SizedBox(height: 8),
             Text(
               '暂无封面',
               style: TextStyle(
                 color: Color(0xFF8A94A6),
-                fontSize: 13,
+                fontSize: 12,
               ),
             ),
           ],

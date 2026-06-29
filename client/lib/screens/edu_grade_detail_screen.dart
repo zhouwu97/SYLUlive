@@ -378,50 +378,59 @@ class _EduGradeDetailScreenState extends State<EduGradeDetailScreen> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              Text(
-                grade.displayGrade,
-                style: TextStyle(
-                  fontSize: 52,
-                  height: 1,
-                  fontWeight: FontWeight.w800,
-                  color: _gradeColor(context, grade),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Padding(
-                padding: const EdgeInsets.only(bottom: 6),
+              Flexible(
                 child: Text(
-                  '总评',
+                  grade.displayGrade,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontSize: 13,
-                    color: Colors.grey[500],
-                    fontWeight: FontWeight.w500,
+                    fontSize: _isNumericText(grade.displayGrade) ? 52 : 50,
+                    height: 1,
+                    fontWeight: FontWeight.w800,
+                    color: _gradeColor(context, grade),
                   ),
                 ),
               ),
+              const SizedBox(width: 12),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: estimatedScore != null && !isDisplayGradeNumeric
+                    ? Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            '估算 ${_formatDouble(estimatedScore)}',
+                            style: TextStyle(
+                              fontSize: 20,
+                              height: 1.1,
+                              fontWeight: FontWeight.w800,
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            '官方总评',
+                            style: TextStyle(
+                              fontSize: 12,
+                              height: 1,
+                              color: Colors.grey[500],
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      )
+                    : Text(
+                        '总评',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.grey[500],
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+              ),
             ],
           ),
-          if (estimatedScore != null && !isDisplayGradeNumeric) ...[
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-              decoration: BoxDecoration(
-                color: Theme.of(context)
-                    .colorScheme
-                    .primary
-                    .withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(999),
-              ),
-              child: Text(
-                '按构成估算 ${_formatDouble(estimatedScore)}',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-              ),
-            ),
-          ],
           if (subtitleItems.isNotEmpty) ...[
             const SizedBox(height: 10),
             Text(

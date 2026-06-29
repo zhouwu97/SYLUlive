@@ -57,16 +57,15 @@ class _AnnouncementScreenState extends State<AnnouncementScreen>
       }
 
       if (response.statusCode == 200) {
-        final list =
-            (response.data as List)
-                .map((e) => model.Announcement.fromJson(e))
-                .toList()
-              ..sort((a, b) {
-                if (a.isPinned != b.isPinned) {
-                  return a.isPinned ? -1 : 1;
-                }
-                return b.createdAt.compareTo(a.createdAt);
-              });
+        final list = (response.data as List)
+            .map((e) => model.Announcement.fromJson(e))
+            .toList()
+          ..sort((a, b) {
+            if (a.isPinned != b.isPinned) {
+              return a.isPinned ? -1 : 1;
+            }
+            return b.createdAt.compareTo(a.createdAt);
+          });
         if (mounted)
           setState(() {
             _announcements = list;
@@ -116,16 +115,16 @@ class _AnnouncementScreenState extends State<AnnouncementScreen>
                   errorBuilder: (_, __, ___) => _buildDefaultBg(isDark),
                 )
               : path.startsWith('/')
-              ? Image.file(
-                  File(path),
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => _buildDefaultBg(isDark),
-                )
-              : Image.network(
-                  path,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => _buildDefaultBg(isDark),
-                ),
+                  ? Image.file(
+                      File(path),
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => _buildDefaultBg(isDark),
+                    )
+                  : Image.network(
+                      path,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => _buildDefaultBg(isDark),
+                    ),
           Container(
             color: isDark
                 ? Colors.black.withValues(alpha: 0.34)
@@ -165,54 +164,55 @@ class _AnnouncementScreenState extends State<AnnouncementScreen>
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
                 : _announcements.isEmpty
-                ? _buildEmptyState(isDark)
-                : RefreshIndicator(
-                    onRefresh: _loadAnnouncements,
-                    child: ListView(
-                      physics: const BouncingScrollPhysics(),
-                      padding: EdgeInsets.fromLTRB(12, topInset, 12, 100),
-                      children: [
-                        if (pinned.isNotEmpty) ...[
-                          _buildSectionHeader(
-                            isDark,
-                            icon: Icons.push_pin_rounded,
-                            title: '置顶公告',
-                            subtitle: '${pinned.length} 条需要优先查看',
-                            accent: Colors.red,
-                          ),
-                          const SizedBox(height: 10),
-                          ...List.generate(
-                            pinned.length,
-                            (index) => _AnnouncementCard(
-                              announcement: pinned[index],
-                              isDark: isDark,
-                              index: index,
-                              emphasized: true,
-                              timeText: _formatTime(pinned[index].createdAt),
+                    ? _buildEmptyState(isDark)
+                    : RefreshIndicator(
+                        onRefresh: _loadAnnouncements,
+                        child: ListView(
+                          physics: const BouncingScrollPhysics(),
+                          padding: EdgeInsets.fromLTRB(12, topInset, 12, 100),
+                          children: [
+                            if (pinned.isNotEmpty) ...[
+                              _buildSectionHeader(
+                                isDark,
+                                icon: Icons.push_pin_rounded,
+                                title: '置顶公告',
+                                subtitle: '${pinned.length} 条需要优先查看',
+                                accent: Colors.red,
+                              ),
+                              const SizedBox(height: 10),
+                              ...List.generate(
+                                pinned.length,
+                                (index) => _AnnouncementCard(
+                                  announcement: pinned[index],
+                                  isDark: isDark,
+                                  index: index,
+                                  emphasized: true,
+                                  timeText:
+                                      _formatTime(pinned[index].createdAt),
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                            ],
+                            _buildSectionHeader(
+                              isDark,
+                              icon: Icons.history_rounded,
+                              title: pinned.isEmpty ? '全部公告' : '最新公告',
+                              subtitle: '${regular.length} 条按时间排序',
+                              accent: Theme.of(context).primaryColor,
                             ),
-                          ),
-                          const SizedBox(height: 6),
-                        ],
-                        _buildSectionHeader(
-                          isDark,
-                          icon: Icons.history_rounded,
-                          title: pinned.isEmpty ? '全部公告' : '最新公告',
-                          subtitle: '${regular.length} 条按时间排序',
-                          accent: Theme.of(context).primaryColor,
+                            const SizedBox(height: 10),
+                            ...List.generate(
+                              regular.length,
+                              (index) => _AnnouncementCard(
+                                announcement: regular[index],
+                                isDark: isDark,
+                                index: index + pinned.length,
+                                timeText: _formatTime(regular[index].createdAt),
+                              ),
+                            ),
+                          ],
                         ),
-                        const SizedBox(height: 10),
-                        ...List.generate(
-                          regular.length,
-                          (index) => _AnnouncementCard(
-                            announcement: regular[index],
-                            isDark: isDark,
-                            index: index + pinned.length,
-                            timeText: _formatTime(regular[index].createdAt),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+                      ),
           ),
         ],
       ),
@@ -354,15 +354,19 @@ class _AnnouncementCardState extends State<_AnnouncementCard> {
         padding: const EdgeInsets.all(16),
         borderRadius: 16,
         blur: 10,
-        opacity: widget.isDark ? 0.15 : 0.3,
+        opacity: widget.emphasized ? (widget.isDark ? 0.15 : 0.3) : 0.96,
         backgroundColor: widget.emphasized
             ? (widget.isDark
-                  ? const Color(0x99A32020)
-                  : const Color(0xFFFDF0F0))
-            : null,
+                ? const Color(0x99A32020)
+                : const Color(0xFFFDF0F0))
+            : (widget.isDark
+                ? const Color(0xE61F2430)
+                : const Color(0xFFFDFBFF)),
         borderColor: widget.emphasized
             ? Colors.red.withValues(alpha: widget.isDark ? 0.35 : 0.22)
-            : null,
+            : (widget.isDark
+                ? Colors.white.withValues(alpha: 0.10)
+                : const Color(0xFFE8E3F1)),
         onTap: widget.emphasized
             ? () {
                 if (mounted)
@@ -417,9 +421,10 @@ class _AnnouncementCardState extends State<_AnnouncementCard> {
                     widget.announcement.title,
                     maxLines: _expanded ? null : 1,
                     overflow: _expanded ? null : TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
+                      color: widget.isDark ? Colors.white : Colors.black87,
                     ),
                   ),
                 ),
@@ -439,14 +444,14 @@ class _AnnouncementCardState extends State<_AnnouncementCard> {
                   Icon(
                     Icons.access_time,
                     size: 14,
-                    color: widget.isDark ? Colors.white30 : Colors.grey[500],
+                    color: widget.isDark ? Colors.white54 : Colors.grey[600],
                   ),
                   const SizedBox(width: 4),
                   Text(
                     widget.timeText,
                     style: TextStyle(
                       fontSize: 12,
-                      color: widget.isDark ? Colors.white30 : Colors.grey[500],
+                      color: widget.isDark ? Colors.white54 : Colors.grey[600],
                     ),
                   ),
                   if (widget.announcement.creator != null) ...[
@@ -454,7 +459,7 @@ class _AnnouncementCardState extends State<_AnnouncementCard> {
                     Icon(
                       Icons.person_outline,
                       size: 14,
-                      color: widget.isDark ? Colors.white30 : Colors.grey[500],
+                      color: widget.isDark ? Colors.white54 : Colors.grey[600],
                     ),
                     const SizedBox(width: 4),
                     Text(
@@ -462,7 +467,8 @@ class _AnnouncementCardState extends State<_AnnouncementCard> {
                           '',
                       style: TextStyle(
                         fontSize: 12,
-                        color: widget.isDark ? Colors.white30 : Colors.grey[500],
+                        color:
+                            widget.isDark ? Colors.white54 : Colors.grey[600],
                       ),
                     ),
                   ],
@@ -504,7 +510,8 @@ class _AnnouncementCardState extends State<_AnnouncementCard> {
               color: color, size: 12),
           const SizedBox(width: 4),
           Text(label,
-              style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w600)),
+              style: TextStyle(
+                  color: color, fontSize: 12, fontWeight: FontWeight.w600)),
         ],
       ),
     );
@@ -518,7 +525,8 @@ class _AnnouncementCardState extends State<_AnnouncementCard> {
         borderRadius: BorderRadius.circular(8),
       ),
       child: Text(label,
-          style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w600)),
+          style: TextStyle(
+              color: color, fontSize: 12, fontWeight: FontWeight.w600)),
     );
   }
 

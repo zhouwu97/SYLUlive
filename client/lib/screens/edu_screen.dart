@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
@@ -484,27 +485,31 @@ class _EduScreenState extends State<EduScreen> {
                     final messenger = ScaffoldMessenger.of(navContext);
                     Navigator.pop(ctx); // 关闭底部弹窗
                     try {
-                      final success = await eduProvider.syncCourses(
-                        year,
-                        semester,
-                        courses,
+                      final sc = Provider.of<CourseScheduleProvider>(
+                        navContext,
+                        listen: false,
                       );
-                      if (success) {
-                        final navContext = appNavigatorKey.currentContext;
-                        if (navContext != null) {
-                          final sc = Provider.of<CourseScheduleProvider>(
-                            navContext,
-                            listen: false,
-                          );
-                          sc.setSemester(year, semester);
-                          sc.applyFetchedCourses(courses);
-                        }
-                      }
+                      sc.setSemester(year, semester);
+                      await sc.applyFetchedCourses(courses);
+                      unawaited(
+                        eduProvider.syncCourses(year, semester, courses).then((
+                          success,
+                        ) {
+                          if (!success) {
+                            debugPrint('课表已本地导入，后台同步到服务器失败，等待下次刷新重试');
+                          }
+                        }).catchError((Object error, StackTrace stackTrace) {
+                          debugPrint('课表后台同步异常: $error\n$stackTrace');
+                          return null;
+                        }),
+                      );
                       messenger.showSnackBar(
-                        SnackBar(
-                          content: Text(success ? '导入课表成功喵~' : '导入失败，请重试'),
-                          backgroundColor: success ? Colors.green : Colors.red,
-                          duration: const Duration(seconds: 2),
+                        const SnackBar(
+                          content: Text(
+                            '导入课表成功。首次导入请到课表页点击“设置周数”，选择开学第一天。',
+                          ),
+                          backgroundColor: Colors.green,
+                          duration: Duration(seconds: 4),
                         ),
                       );
                     } catch (e) {

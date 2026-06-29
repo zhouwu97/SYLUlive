@@ -174,8 +174,12 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
       child: FloatingActionButton.extended(
         heroTag: 'teacher_rate_fab',
         onPressed: _showAddDialog,
-        backgroundColor: Theme.of(context).colorScheme.primary,
-        elevation: 4,
+        backgroundColor: const Color(0xFF7367C6),
+        foregroundColor: Colors.white,
+        elevation: 8,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(18),
+        ),
         icon: const Icon(Icons.add_rounded, color: Colors.white, size: 22),
         label: Text(
           _fabLabel,
@@ -716,7 +720,7 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
           onRefresh: () => context.read<CanteenProvider>().loadCanteens(),
           child: ResponsiveUtil.isDesktop(context)
               ? MasonryGridView.count(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 104),
                   crossAxisCount:
                       MediaQuery.of(context).size.width > 900 ? 3 : 2,
                   mainAxisSpacing: 16,
@@ -725,7 +729,7 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
                   itemBuilder: (_, index) => buildCard(index),
                 )
               : ListView.builder(
-                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 80),
+                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 104),
                   itemCount: canteens.length,
                   itemBuilder: (_, index) => buildCard(index),
                 ),
@@ -734,12 +738,252 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
     );
   }
 
+  Future<void> _showAddCanteenSheet() async {
+    final nameCtrl = TextEditingController();
+    List<String> uploadedImageUrls = [];
+    var submitting = false;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (sheetContext, setModalState) {
+            final bottomInset = MediaQuery.of(sheetContext).viewInsets.bottom;
+            return Padding(
+              padding: EdgeInsets.only(bottom: bottomInset),
+              child: Container(
+                decoration: const BoxDecoration(
+                  color: Color(0xFFFAF8FF),
+                  borderRadius: BorderRadius.vertical(
+                    top: Radius.circular(28),
+                  ),
+                ),
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+                child: SafeArea(
+                  top: false,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Center(
+                        child: Container(
+                          width: 42,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFD8D4E8),
+                            borderRadius: BorderRadius.circular(99),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      Row(
+                        children: [
+                          Container(
+                            width: 44,
+                            height: 44,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFFE8C2),
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: const Icon(
+                              Icons.storefront_rounded,
+                              color: Color(0xFFF59E0B),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          const Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '添加食堂',
+                                  style: TextStyle(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.w800,
+                                    color: Color(0xFF222233),
+                                  ),
+                                ),
+                                SizedBox(height: 4),
+                                Text(
+                                  '填写名称并上传一张店铺图片',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: Color(0xFF8B8794),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 22),
+                      TextField(
+                        controller: nameCtrl,
+                        textInputAction: TextInputAction.done,
+                        decoration: InputDecoration(
+                          hintText: '请输入食堂 / 店铺名',
+                          prefixIcon: const Icon(Icons.restaurant_rounded),
+                          filled: true,
+                          fillColor: Colors.white,
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 14,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            borderSide: const BorderSide(
+                              color: Color(0xFFE8E4F0),
+                            ),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            borderSide: const BorderSide(
+                              color: Color(0xFFE8E4F0),
+                            ),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            borderSide: const BorderSide(
+                              color: Color(0xFF7367C6),
+                              width: 1.4,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      ImageUploadWidget(
+                        maxImages: 1,
+                        largeCard: true,
+                        emptyTitle: '添加图片',
+                        emptySubtitle: '建议上传店铺门面或招牌图',
+                        onImagesUploaded: (urls) {
+                          uploadedImageUrls = urls;
+                          setModalState(() {});
+                        },
+                      ),
+                      const SizedBox(height: 22),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: submitting
+                                  ? null
+                                  : () => Navigator.pop(sheetContext),
+                              style: OutlinedButton.styleFrom(
+                                minimumSize: const Size.fromHeight(48),
+                                side: const BorderSide(
+                                  color: Color(0xFFE0DCEF),
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                              ),
+                              child: const Text('取消'),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: FilledButton(
+                              onPressed: submitting
+                                  ? null
+                                  : () async {
+                                      final name = nameCtrl.text.trim();
+                                      if (name.isEmpty) {
+                                        ScaffoldMessenger.of(sheetContext)
+                                            .showSnackBar(
+                                          const SnackBar(
+                                            content: Text('请输入食堂 / 店铺名'),
+                                          ),
+                                        );
+                                        return;
+                                      }
+                                      if (uploadedImageUrls.isEmpty) {
+                                        ScaffoldMessenger.of(sheetContext)
+                                            .showSnackBar(
+                                          const SnackBar(
+                                            content: Text('请上传一张食堂封面图片'),
+                                          ),
+                                        );
+                                        return;
+                                      }
+
+                                      setModalState(() => submitting = true);
+                                      final success = await context
+                                          .read<CanteenProvider>()
+                                          .addCanteen(
+                                            name,
+                                            uploadedImageUrls.first,
+                                          );
+                                      if (!mounted || !sheetContext.mounted) {
+                                        return;
+                                      }
+                                      setModalState(() => submitting = false);
+                                      if (success) {
+                                        Navigator.pop(sheetContext);
+                                        ScaffoldMessenger.of(context)
+                                            .showSnackBar(
+                                          const SnackBar(
+                                            content: Text('添加成功，经验+10'),
+                                          ),
+                                        );
+                                        await context
+                                            .read<CanteenProvider>()
+                                            .loadCanteens();
+                                      } else {
+                                        ScaffoldMessenger.of(sheetContext)
+                                            .showSnackBar(
+                                          const SnackBar(
+                                            content: Text('添加失败，请稍后重试'),
+                                          ),
+                                        );
+                                      }
+                                    },
+                              style: FilledButton.styleFrom(
+                                backgroundColor: const Color(0xFF7367C6),
+                                foregroundColor: Colors.white,
+                                minimumSize: const Size.fromHeight(48),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                              ),
+                              child: submitting
+                                  ? const SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.white,
+                                      ),
+                                    )
+                                  : const Text('提交'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    nameCtrl.dispose();
+  }
+
   Future<void> _showAddDialog() async {
+    if (_tabCtrl.index == 0) {
+      await _showAddCanteenSheet();
+      return;
+    }
+
     final nameCtrl = TextEditingController();
     final courseCtrl = TextEditingController();
     final levelCtrl = TextEditingController(text: '本科');
-    List<String> uploadedImageUrls = [];
-    final isCanteen = _tabCtrl.index == 0;
     final isTeacher = _tabCtrl.index == 1;
     final isMajor = _tabCtrl.index == 2;
 
@@ -773,13 +1017,6 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
                   DropdownMenuItem(value: '研究生', child: Text('研究生')),
                 ],
                 onChanged: (v) => levelCtrl.text = v!,
-              )
-            else if (isCanteen)
-              ImageUploadWidget(
-                maxImages: 1,
-                onImagesUploaded: (urls) {
-                  uploadedImageUrls = urls;
-                },
               ),
           ],
         ),
@@ -800,12 +1037,6 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
                 ).showSnackBar(const SnackBar(content: Text('请填写完整课程名称')));
                 return;
               }
-              if (isCanteen && uploadedImageUrls.isEmpty) {
-                ScaffoldMessenger.of(
-                  context,
-                ).showSnackBar(const SnackBar(content: Text('请上传一张食堂封面图片')));
-                return;
-              }
 
               Navigator.pop(ctx);
 
@@ -822,17 +1053,6 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
                     );
                 if (!mounted) return;
                 await context.read<MajorProvider>().loadMajors();
-              } else if (isCanteen) {
-                final success = await context
-                    .read<CanteenProvider>()
-                    .addCanteen(name, uploadedImageUrls.first);
-                if (success) {
-                  ScaffoldMessenger.of(
-                    context,
-                  ).showSnackBar(const SnackBar(content: Text('添加成功，经验+10')));
-                }
-                if (!mounted) return;
-                await context.read<CanteenProvider>().loadCanteens();
               }
             },
             child: const Text('提交'),

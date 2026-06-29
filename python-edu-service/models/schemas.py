@@ -193,7 +193,10 @@ class LocalCoursesResponse(BaseModel):
 class GradeInfo(BaseModel):
     """成绩信息"""
     name: str  # 课程名称
+    course_id: str = ""  # 课程ID
+    course_code: str = ""  # 课程编号
     class_id: str  # 教学班ID
+    student_grade_id: str = ""  # 学生成绩详情所需的教务系统ID
     teacher: Optional[str] = None
     is_degree: bool = False  # 是否学位课
     credits: float  # 学分
@@ -201,6 +204,9 @@ class GradeInfo(BaseModel):
     grade_points: float  # 学分绩点
     fraction: float  # 百分成绩
     grade: str  # 等级成绩
+    exam_type: Optional[str] = None  # 正常考试 / 补考 / 重修
+    course_category: Optional[str] = None  # 主修课程 / 重修课程等
+    assessment_method: Optional[str] = None  # 考试 / 考查
 
 
 class GradesInput(BaseModel):
@@ -216,6 +222,33 @@ class GradesResponse(BaseModel):
     year: str
     semester: int
     grades: List[GradeInfo]
+    message: Optional[str] = None
+
+
+class GradeComponent(BaseModel):
+    """成绩构成分项"""
+    name: str
+    weight: Optional[str] = None
+    score: str
+
+
+class GradeDetailInput(BaseModel):
+    """成绩明细查询输入"""
+    user_id: str
+    year: str
+    semester: int
+    class_id: str
+    course_name: str
+    course_id: Optional[str] = None
+    student_grade_id: Optional[str] = None
+
+
+class GradeDetailResponse(BaseModel):
+    """成绩明细响应"""
+    success: bool
+    course_name: str
+    total_grade: str
+    components: List[GradeComponent]
     message: Optional[str] = None
 
 

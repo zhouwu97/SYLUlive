@@ -73,9 +73,14 @@ class Post {
   final int replyCount;
   final int likeCount;
   final bool isLiked;
+  final bool isFeatured;
+  final DateTime? featuredAt;
+  final int featuredBy;
+  final String featuredReason;
   final List<PostImage> images;
   final User? author;
   final DateTime createdAt;
+  final DateTime updatedAt;
 
   Post({
     required this.id,
@@ -91,10 +96,15 @@ class Post {
     this.replyCount = 0,
     this.likeCount = 0,
     this.isLiked = false,
+    this.isFeatured = false,
+    this.featuredAt,
+    this.featuredBy = 0,
+    this.featuredReason = '',
     this.images = const [],
     this.author,
     required this.createdAt,
-  });
+    DateTime? updatedAt,
+  }) : updatedAt = updatedAt ?? createdAt;
 
   factory Post.fromJson(Map<String, dynamic> json) {
     return Post(
@@ -111,13 +121,17 @@ class Post {
       replyCount: json['reply_count'] ?? 0,
       likeCount: json['like_count'] ?? 0,
       isLiked: json['is_liked'] == true,
-      images:
-          (json['images'] as List<dynamic>?)
+      isFeatured: json['is_featured'] == true,
+      featuredAt: DateTime.tryParse(json['featured_at'] ?? ''),
+      featuredBy: json['featured_by'] ?? 0,
+      featuredReason: json['featured_reason'] ?? '',
+      images: (json['images'] as List<dynamic>?)
               ?.map((e) => PostImage.fromJson(e))
               .toList() ??
           [],
       author: json['author'] != null ? User.fromJson(json['author']) : null,
       createdAt: DateTime.tryParse(json['created_at'] ?? '') ?? DateTime.now(),
+      updatedAt: DateTime.tryParse(json['updated_at'] ?? ''),
     );
   }
 
@@ -137,9 +151,14 @@ class Post {
     int? replyCount,
     int? likeCount,
     bool? isLiked,
+    bool? isFeatured,
+    DateTime? featuredAt,
+    int? featuredBy,
+    String? featuredReason,
     List<PostImage>? images,
     User? author,
     DateTime? createdAt,
+    DateTime? updatedAt,
   }) {
     return Post(
       id: id ?? this.id,
@@ -155,9 +174,14 @@ class Post {
       replyCount: replyCount ?? this.replyCount,
       likeCount: likeCount ?? this.likeCount,
       isLiked: isLiked ?? this.isLiked,
+      isFeatured: isFeatured ?? this.isFeatured,
+      featuredAt: featuredAt ?? this.featuredAt,
+      featuredBy: featuredBy ?? this.featuredBy,
+      featuredReason: featuredReason ?? this.featuredReason,
       images: images ?? this.images,
       author: author ?? this.author,
       createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
     );
   }
 }

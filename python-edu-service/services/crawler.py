@@ -10,6 +10,7 @@ from typing import Optional, List, Tuple
 from dataclasses import dataclass
 
 import httpx
+from bs4 import BeautifulSoup
 from cryptography.hazmat.primitives import serialization, hashes
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.backends import default_backend
@@ -419,36 +420,252 @@ class EduCrawler:
 
         headers = {"Cookie": cookie}
         query_data = {"doType": "query", "gnmkdm": "N305005"}
-        form_data = {
-            "xnm": year,
-            "xqm": str(semester),
-            "queryModel.showCount": "50",
-        }
+        page_size = 500
+        page = 1
+        all_items: List[dict] = []
 
-        resp = await self.client.post(
-            f"{GRADE_URL}/cjcx_cxXsgrcj.html",
-            params=query_data,
-            data=form_data,
-            headers=headers
-        )
+        while True:
+            form_data = {
+                "xnm": year,
+                "xqm": str(semester),
+                "queryModel.showCount": str(page_size),
+                "queryModel.currentPage": str(page),
+            }
 
-        if resp.status_code != 200:
-            raise CookieLapseError("获取成绩失败,Cookie可能已失敁")
+            resp = await self.client.post(
+                f"{GRADE_URL}/cjcx_cxXsgrcj.html",
+                params=query_data,
+                data=form_data,
+                headers=headers
+            )
 
-        content_type = resp.headers.get("Content-Type", "")
-        if "text/html" in content_type:
-            raise CookieLapseError("Cookie已失敁")
+            if resp.status_code != 200:
+                raise CookieLapseError("获取成绩失败,Cookie可能已失敁")
 
-        try:
-            data = json.loads(resp.text)
-        except json.JSONDecodeError:
-            raise GradesNotOpenError("成绩数据解析失败")
+            content_type = resp.headers.get("Content-Type", "")
+            if "text/html" in content_type:
+                raise CookieLapseError("Cookie已失敁")
 
-        items = data.get("items", [])
-        if not items:
+            try:
+                data = json.loads(resp.text)
+            except json.JSONDecodeError:
+                raise GradesNotOpenError("成绩数据解析失败")
+
+            items = data.get("items", [])
+            all_items.extend(items)
+            if len(items) < page_size:
+                break
+            page += 1
+
+        if not all_items:
             raise GradesNotOpenError("当前学期暂无成绩")
 
-        return items
+        return all_items
+
+    async def fetch_grade_detail(
+        self,
+        cookie: str,
+        year: str,
+        semester: int,
+        class_id: str,
+        course_name: str,
+        course_id: Optional[str] = None,
+        student_grade_id: Optional[str] = None,
+    ) -> dict:
+        """按课程查询成绩构成明细。"""
+        if not self.client:
+            raise NetworkError("Client not initialized")
+
+        headers = {
+            "Cookie": cookie,
+            "X-Requested-With": "XMLHttpRequest",
+            "Accept": "application/json, text/javascript, */*; q=0.01",
+            "Referer": f"{GRADE_URL}/cjcx_cxDgXscj.html?gnmkdm=N305005&layout=default",
+        }
+        base_form = {
+            "xnm": year,
+            "xqm": str(semester),
+            "jxb_id": class_id,
+            "jxbid": class_id,
+            "kcmc": course_name,
+        }
+        if student_grade_id:
+            base_form["xh_id"] = student_grade_id
+        if course_id:
+            base_form["kch_id"] = course_id
+            base_form["kch"] = course_id
+
+        candidates = [
+            ("cjcx_cxCjxqGjh.html", base_form),
+            ("cjcx_getXsjcxx.html", base_form),
+            ("cjcx_cxCjmx.html", base_form),
+            ("cjcx_cxXsKscjList.html", {
+                **base_form,
+                "doType": "query",
+                "queryModel.showCount": "20",
+            }),
+        ]
+
+        last_message = "暂未获取到成绩构成"
+        for endpoint, form_data in candidates:
+            resp = await self.client.post(
+                f"{GRADE_URL}/{endpoint}",
+                params={"gnmkdm": "N305005"},
+                data=form_data,
+                headers=headers,
+            )
+
+            if resp.status_code in (302, 901):
+                raise CookieLapseError("Cookie已失敁")
+            if resp.status_code != 200:
+                last_message = f"详情接口返回状态码 {resp.status_code}"
+                continue
+            if "text/html" in resp.headers.get("Content-Type", "") and "login_slogin" in resp.text:
+                raise CookieLapseError("Cookie已失敁")
+
+            parsed = parse_grade_detail_response(resp.text, course_name)
+            if parsed["components"]:
+                return parsed
+            if parsed.get("message"):
+                last_message = parsed["message"]
+
+        return {
+            "success": False,
+            "course_name": course_name,
+            "total_grade": "",
+            "components": [],
+            "message": last_message,
+        }
+
+
+def parse_grade_detail_response(body: str, course_name: str) -> dict:
+    """解析成绩构成响应，兼容 JSON 和 HTML 表格。"""
+    text = body.strip()
+    if not text:
+        return _empty_grade_detail(course_name, "详情响应为空")
+
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        payload = None
+
+    if payload is not None:
+        components = _parse_grade_detail_json(payload)
+        total_grade = _find_total_grade(components)
+        return {
+            "success": bool(components),
+            "course_name": course_name,
+            "total_grade": total_grade,
+            "components": components,
+            "message": None if components else "详情 JSON 中没有成绩构成",
+        }
+
+    components = _parse_grade_detail_html(text)
+    total_grade = _find_total_grade(components)
+    return {
+        "success": bool(components),
+        "course_name": course_name,
+        "total_grade": total_grade,
+        "components": components,
+        "message": None if components else "详情 HTML 中没有成绩构成",
+    }
+
+
+def _empty_grade_detail(course_name: str, message: str) -> dict:
+    return {
+        "success": False,
+        "course_name": course_name,
+        "total_grade": "",
+        "components": [],
+        "message": message,
+    }
+
+
+def _parse_grade_detail_json(payload) -> List[dict]:
+    rows = []
+    if isinstance(payload, dict):
+        if isinstance(payload.get("items"), list):
+            rows = payload["items"]
+        elif isinstance(payload.get("rows"), list):
+            rows = payload["rows"]
+        elif isinstance(payload.get("data"), list):
+            rows = payload["data"]
+        elif isinstance(payload.get("data"), dict):
+            return _parse_grade_detail_json(payload["data"])
+        else:
+            for value in payload.values():
+                if isinstance(value, list):
+                    rows = value
+                    break
+    elif isinstance(payload, list):
+        rows = payload
+
+    components: List[dict] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        name = _first_non_empty(row, ["cjxmmc", "xmmc", "xm", "name", "mc", "cjfmc"])
+        score = _first_non_empty(row, ["cj", "xmcj", "score", "df", "cjz", "kscj", "bfzcj"])
+        weight = _first_non_empty(row, ["bl", "xmbfb", "cjxmbl", "weight", "qz", "zb"])
+        if not name or not score:
+            continue
+        components.append({"name": _normalize_component_name(name), "weight": weight or None, "score": score})
+    return components
+
+
+def _parse_grade_detail_html(html: str) -> List[dict]:
+    soup = BeautifulSoup(html, "html.parser")
+    components: List[dict] = []
+
+    for table in soup.select("table"):
+        header_cells = [
+            _normalize_text(cell.get_text(" ", strip=True))
+            for cell in table.select("tr th, tr td")
+        ][:8]
+        header_text = " ".join(header_cells)
+        if not any(token in header_text for token in ("成绩分项", "分项比例", "成绩")):
+            continue
+
+        for tr in table.select("tr"):
+            cells = [_normalize_text(td.get_text(" ", strip=True)) for td in tr.select("td")]
+            cells = [cell for cell in cells if cell]
+            if len(cells) < 2:
+                continue
+            if any(token in cells[0] for token in ("成绩分项", "分项名称")):
+                continue
+
+            if len(cells) >= 3:
+                name, weight, score = cells[0], cells[1], cells[2]
+            else:
+                name, weight, score = cells[0], None, cells[1]
+            if name and score:
+                components.append({"name": _normalize_component_name(name), "weight": weight or None, "score": score})
+
+    return components
+
+
+def _first_non_empty(row: dict, keys: List[str]) -> str:
+    for key in keys:
+        value = row.get(key)
+        if value is not None and str(value).strip():
+            return str(value).strip()
+    return ""
+
+
+def _find_total_grade(components: List[dict]) -> str:
+    for component in components:
+        if "总" in component.get("name", ""):
+            return component.get("score", "")
+    return components[-1]["score"] if components else ""
+
+
+def _normalize_text(value: str) -> str:
+    return re.sub(r"\s+", " ", value).strip()
+
+
+def _normalize_component_name(value: str) -> str:
+    text = _normalize_text(value)
+    return text.strip("【】[] ").strip()
 
 
 # ============== 辅助函数 ==============

@@ -8,7 +8,7 @@ import '../utils/edu_semester_utils.dart';
 import '../widgets/edu_grade/grade_summary_card.dart';
 import '../widgets/edu_grade/grade_course_item.dart';
 import '../widgets/edu_grade/grade_empty_state.dart';
-import '../widgets/edu_grade/grade_detail_sheet.dart';
+import 'edu_grade_detail_screen.dart';
 import '../widgets/edu_grade/grade_manage_drawer.dart';
 
 class EduGradeScreen extends StatefulWidget {
@@ -414,12 +414,17 @@ class _EduGradeScreenState extends State<EduGradeScreen> {
                   itemBuilder: (context, index) {
                     return GradeCourseItem(
                       grade: _filteredGrades[index],
-                      onTap: () => GradeDetailSheet.show(
-                        context,
-                        _filteredGrades[index],
-                        year: _selectedYear,
-                        semester: _selectedSemester,
-                      ),
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => EduGradeDetailScreen(
+                              grade: _filteredGrades[index],
+                              year: _selectedYear,
+                              semester: _selectedSemester,
+                            ),
+                          ),
+                        );
+                      },
                     );
                   },
                 ),

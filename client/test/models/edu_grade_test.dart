@@ -7,16 +7,36 @@ void main() {
     test('parses numeric fields correctly', () {
       final json = {
         'name': '数据结构',
+        'class_id': 'JXB001',
+        'student_grade_id': 'OPAQUE_XH_ID',
+        'course_id': '210300001',
+        'course_code': '210300001',
         'grade': '85.5',
         'credits': 3.0,
         'gpa': 3.5,
+        'teacher': '王老师',
+        'grade_points': 10.5,
+        'fraction': '85.5',
+        'exam_type': '正常考试',
+        'course_category': '主修课程',
+        'assessment_method': '考试',
         'is_degree': true,
       };
       final g = EduGrade.fromJson(json);
       expect(g.name, '数据结构');
+      expect(g.classId, 'JXB001');
+      expect(g.studentGradeId, 'OPAQUE_XH_ID');
+      expect(g.courseId, '210300001');
+      expect(g.courseCode, '210300001');
       expect(g.displayGrade, '85.5');
       expect(g.credits, 3.0);
       expect(g.gpa, 3.5);
+      expect(g.teacher, '王老师');
+      expect(g.gradePoints, 10.5);
+      expect(g.fraction, 85.5);
+      expect(g.examType, '正常考试');
+      expect(g.courseCategory, '主修课程');
+      expect(g.assessmentMethod, '考试');
       expect(g.isDegree, true);
     });
 
@@ -63,9 +83,15 @@ void main() {
       final json = <String, dynamic>{};
       final g = EduGrade.fromJson(json);
       expect(g.name, '');
+      expect(g.classId, '');
+      expect(g.studentGradeId, '');
+      expect(g.courseId, '');
       expect(g.displayGrade, '--');
       expect(g.credits, 0);
       expect(g.gpa, isNull);
+      expect(g.teacher, isNull);
+      expect(g.gradePoints, isNull);
+      expect(g.fraction, isNull);
       expect(g.isDegree, false);
     });
 
@@ -91,6 +117,41 @@ void main() {
       };
       final g = EduGrade.fromJson(json);
       expect(g.isDegree, false);
+    });
+
+    test('handles is_degree as string 是', () {
+      final json = {
+        'name': '测试',
+        'grade': '60',
+        'credits': 2,
+        'gpa': 1.0,
+        'is_degree': '是',
+      };
+      final g = EduGrade.fromJson(json);
+      expect(g.isDegree, true);
+    });
+  });
+
+  group('EduGradeDetail.fromJson', () {
+    test('parses grade components', () {
+      final detail = EduGradeDetail.fromJson({
+        'success': true,
+        'course_name': '电磁场与电磁波',
+        'total_grade': '60.1',
+        'components': [
+          {'name': '平时', 'weight': '15%', 'score': '98'},
+          {'name': '期末', 'weight': '60%', 'score': '40'},
+          {'name': '总评', 'weight': '', 'score': '60.1'},
+        ],
+      });
+
+      expect(detail.success, true);
+      expect(detail.courseName, '电磁场与电磁波');
+      expect(detail.totalGrade, '60.1');
+      expect(detail.components.length, 3);
+      expect(detail.components.first.weight, '15%');
+      expect(detail.components.last.weight, isNull);
+      expect(detail.components.last.score, '60.1');
     });
   });
 

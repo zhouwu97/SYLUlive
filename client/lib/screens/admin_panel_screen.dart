@@ -32,6 +32,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
   List<dynamic> _pendingTeachers = [];
   List<dynamic> _pendingInvitations = [];
   List<dynamic> _pendingRemovals = [];
+  List<dynamic> _featuredApplications = [];
   List<dynamic> _logs = [];
   List<dynamic> _pendingMajors = [];
   bool _reportsForbidden = false;
@@ -42,7 +43,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 5, vsync: this);
+    _tabController = TabController(length: 6, vsync: this);
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadData());
   }
 
@@ -86,6 +87,11 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
         '/admin/removals/pending',
         '管理员罢免代办',
       );
+      final featuredApplications = await _loadOptionalList(
+        dio,
+        '/admin/featured-applications',
+        '精华申请',
+      );
       final logs = await _loadOptionalList(dio, '/teachers/logs', '管理员日志');
       if (!mounted) return;
       setState(() {
@@ -96,6 +102,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
         _pendingMajors = pendingMajors;
         _pendingInvitations = pendingInvitations;
         _pendingRemovals = pendingRemovals;
+        _featuredApplications = featuredApplications;
         _logs = logs;
         _isLoading = false;
       });
@@ -409,8 +416,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final themeProvider = context.watch<ThemeProvider>();
     final pendingCount = _reports.where((r) => r['status'] == 'pending').length;
-    final todoCount =
-        _pendingTeachers.length +
+    final todoCount = _pendingTeachers.length +
         _pendingMajors.length +
         _pendingInvitations.where((i) => i['my_vote'] != true).length +
         _pendingRemovals.where((r) => r['can_vote'] == true).length;
@@ -458,6 +464,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
                       ),
                       Tab(text: '候选人 (${_candidates.length})'),
                       Tab(text: '代办${todoCount > 0 ? ' ($todoCount)' : ''}'),
+                      Tab(text: '精华 (${_featuredApplications.length})'),
                       const Tab(text: '操作日志'),
                       const Tab(text: '公告'),
                     ],
@@ -468,17 +475,18 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
                   child: _isLoading
                       ? const Center(child: CircularProgressIndicator())
                       : _errorMessage != null
-                      ? _buildErrorView(isDark)
-                      : TabBarView(
-                          controller: _tabController,
-                          children: [
-                            _buildReportsTab(isDark),
-                            _buildCandidatesTab(isDark),
-                            _buildTeachersTab(isDark),
-                            _buildLogsTab(isDark),
-                            _buildAnnouncementTab(),
-                          ],
-                        ),
+                          ? _buildErrorView(isDark)
+                          : TabBarView(
+                              controller: _tabController,
+                              children: [
+                                _buildReportsTab(isDark),
+                                _buildCandidatesTab(isDark),
+                                _buildTeachersTab(isDark),
+                                _buildFeaturedApplicationsTab(isDark),
+                                _buildLogsTab(isDark),
+                                _buildAnnouncementTab(),
+                              ],
+                            ),
                 ),
               ],
             ),
@@ -504,16 +512,16 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
                   errorBuilder: (_, __, ___) => _buildDefaultBg(isDark),
                 )
               : bgPath.startsWith('/')
-              ? Image.file(
-                  File(bgPath),
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => _buildDefaultBg(isDark),
-                )
-              : Image.network(
-                  bgPath,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => _buildDefaultBg(isDark),
-                ),
+                  ? Image.file(
+                      File(bgPath),
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => _buildDefaultBg(isDark),
+                    )
+                  : Image.network(
+                      bgPath,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => _buildDefaultBg(isDark),
+                    ),
           Container(
             color: isDark
                 ? Colors.black.withValues(alpha: 0.4)
@@ -990,9 +998,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
                           children: [
                             CircleAvatar(
                               radius: 20,
-                              backgroundColor: isDark
-                                  ? Colors.white12
-                                  : Colors.grey[200],
+                              backgroundColor:
+                                  isDark ? Colors.white12 : Colors.grey[200],
                               child: Text(
                                 (c['nickname'] ?? '?')
                                     .substring(0, 1)
@@ -1207,9 +1214,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
                   trailing: myVote
                       ? const Chip(label: Text('已投票'))
                       : FilledButton(
-                          onPressed: canVote
-                              ? () => _voteRemoval(removal)
-                              : null,
+                          onPressed:
+                              canVote ? () => _voteRemoval(removal) : null,
                           style: FilledButton.styleFrom(
                             backgroundColor: Colors.red,
                           ),
@@ -1434,6 +1440,124 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
     }
   }
 
+  Widget _buildFeaturedApplicationsTab(bool isDark) {
+    if (_featuredApplications.isEmpty) {
+      return const Center(child: Text('暂无精华申请'));
+    }
+    return RefreshIndicator(
+      onRefresh: _loadData,
+      child: ListView.builder(
+        padding: const EdgeInsets.all(16),
+        itemCount: _featuredApplications.length,
+        itemBuilder: (context, index) {
+          final item = Map<String, dynamic>.from(
+            _featuredApplications[index] as Map,
+          );
+          final post = item['post'] as Map?;
+          final applicant = item['applicant'] as Map?;
+          return Card(
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    post?['title']?.toString().isNotEmpty == true
+                        ? post!['title'].toString()
+                        : '帖子 #${item['post_id']}',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text('申请人：${applicant?['nickname'] ?? item['applicant_id']}'),
+                  Text('理由：${item['reason'] ?? ''}'),
+                  Text('状态：${item['status'] ?? ''}'),
+                  if (item['status'] == 'pending') ...[
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 8,
+                      children: [
+                        OutlinedButton(
+                          onPressed: () => _rejectFeatured(item['id'], false),
+                          child: const Text('普通驳回'),
+                        ),
+                        OutlinedButton(
+                          onPressed: () => _rejectFeatured(item['id'], true),
+                          child: const Text('恶意驳回扣分'),
+                        ),
+                        FilledButton(
+                          onPressed: () => _approveFeatured(item['id']),
+                          child: const Text('通过'),
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _approveFeatured(dynamic id) async {
+    final reason = await _askAdminReason('通过精华申请', '审核理由');
+    if (reason == null) return;
+    await context.read<AuthProvider>().dio.post(
+      '/admin/featured-applications/$id/approve',
+      data: {'reason': reason},
+    );
+    await _loadData();
+  }
+
+  Future<void> _rejectFeatured(dynamic id, bool malicious) async {
+    final reason = await _askAdminReason(
+      malicious ? '恶意驳回并扣分' : '驳回精华申请',
+      malicious ? '说明恶意/低质量原因' : '审核理由',
+    );
+    if (reason == null) return;
+    await context.read<AuthProvider>().dio.post(
+      '/admin/featured-applications/$id/reject',
+      data: {
+        'reason': reason,
+        'is_malicious': malicious,
+        'penalty_points': malicious ? 5 : 0,
+      },
+    );
+    await _loadData();
+  }
+
+  Future<String?> _askAdminReason(String title, String hint) async {
+    final controller = TextEditingController();
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: TextField(
+          controller: controller,
+          minLines: 2,
+          maxLines: 5,
+          decoration: InputDecoration(hintText: hint),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            child: const Text('确认'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    return result?.trim().isEmpty == true ? null : result;
+  }
+
   // ---- 操作日志 Tab ----
   Widget _buildLogsTab(bool isDark) {
     if (_logs.isEmpty) {
@@ -1502,8 +1626,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
             Expanded(
               child: FutureBuilder(
                 future: context.read<AuthProvider>().dio.get(
-                  '${ApiConstants.noticesPath}/admin/list',
-                ),
+                      '${ApiConstants.noticesPath}/admin/list',
+                    ),
                 builder: (_, snap) {
                   if (!snap.hasData)
                     return const Center(child: CircularProgressIndicator());
@@ -1651,7 +1775,9 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
         color: c.withValues(alpha: 0.15),
         borderRadius: BorderRadius.circular(4),
       ),
-      child: Text(label, style: TextStyle(fontSize: 10, color: c, fontWeight: FontWeight.w600)),
+      child: Text(label,
+          style:
+              TextStyle(fontSize: 10, color: c, fontWeight: FontWeight.w600)),
     );
   }
 
@@ -1678,7 +1804,9 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
         color: c.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(4),
       ),
-      child: Text(label, style: TextStyle(fontSize: 10, color: c, fontWeight: FontWeight.w600)),
+      child: Text(label,
+          style:
+              TextStyle(fontSize: 10, color: c, fontWeight: FontWeight.w600)),
     );
   }
 
@@ -1802,12 +1930,9 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
                         EdgeInsets.symmetric(horizontal: 12, vertical: 14),
                   ),
                   items: const [
-                    DropdownMenuItem(
-                        value: 'draft', child: Text('草稿')),
-                    DropdownMenuItem(
-                        value: 'published', child: Text('已发布')),
-                    DropdownMenuItem(
-                        value: 'archived', child: Text('已归档')),
+                    DropdownMenuItem(value: 'draft', child: Text('草稿')),
+                    DropdownMenuItem(value: 'published', child: Text('已发布')),
+                    DropdownMenuItem(value: 'archived', child: Text('已归档')),
                   ],
                   onChanged: (v) {
                     if (v != null) {
@@ -1827,12 +1952,9 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
                         EdgeInsets.symmetric(horizontal: 12, vertical: 14),
                   ),
                   items: const [
-                    DropdownMenuItem(
-                        value: 'center', child: Text('公告中心')),
-                    DropdownMenuItem(
-                        value: 'banner', child: Text('首页横幅')),
-                    DropdownMenuItem(
-                        value: 'modal', child: Text('弹窗提醒')),
+                    DropdownMenuItem(value: 'center', child: Text('公告中心')),
+                    DropdownMenuItem(value: 'banner', child: Text('首页横幅')),
+                    DropdownMenuItem(value: 'modal', child: Text('弹窗提醒')),
                   ],
                   onChanged: (v) {
                     if (v != null) {
@@ -1852,12 +1974,9 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
                         EdgeInsets.symmetric(horizontal: 12, vertical: 14),
                   ),
                   items: const [
-                    DropdownMenuItem(
-                        value: 'normal', child: Text('普通')),
-                    DropdownMenuItem(
-                        value: 'important', child: Text('重要')),
-                    DropdownMenuItem(
-                        value: 'urgent', child: Text('紧急')),
+                    DropdownMenuItem(value: 'normal', child: Text('普通')),
+                    DropdownMenuItem(value: 'important', child: Text('重要')),
+                    DropdownMenuItem(value: 'urgent', child: Text('紧急')),
                   ],
                   onChanged: (v) {
                     if (v != null) {
@@ -1886,8 +2005,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
                       context: ctx,
                       initialDate: publishAt ?? DateTime.now(),
                       firstDate: DateTime.now(),
-                      lastDate: DateTime.now()
-                          .add(const Duration(days: 365)),
+                      lastDate: DateTime.now().add(const Duration(days: 365)),
                     );
                     if (date == null || !ctx.mounted) return;
                     final time = await showTimePicker(
@@ -1929,8 +2047,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
                       context: ctx,
                       initialDate: expiresAt ?? DateTime.now(),
                       firstDate: DateTime.now(),
-                      lastDate: DateTime.now()
-                          .add(const Duration(days: 365 * 5)),
+                      lastDate:
+                          DateTime.now().add(const Duration(days: 365 * 5)),
                     );
                     if (date == null || !ctx.mounted) return;
                     final time = await showTimePicker(
@@ -2060,9 +2178,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
               subtitle,
               style: TextStyle(
                 fontSize: 14,
-                color: isDark
-                    ? Colors.white.withOpacity(0.4)
-                    : Colors.grey[400],
+                color:
+                    isDark ? Colors.white.withOpacity(0.4) : Colors.grey[400],
               ),
             ),
           ],

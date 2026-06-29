@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../providers/edu_provider.dart';
 import '../providers/auth_provider.dart';
 import '../models/edu_grade.dart';
+import '../utils/app_motion.dart';
 import '../utils/edu_semester_utils.dart';
 import '../widgets/edu_grade/grade_summary_card.dart';
 import '../widgets/edu_grade/grade_course_item.dart';
@@ -412,16 +413,38 @@ class _EduGradeScreenState extends State<EduGradeScreen> {
                         Theme.of(context).dividerColor.withValues(alpha: 0.3),
                   ),
                   itemBuilder: (context, index) {
+                    final grade = _filteredGrades[index];
                     return GradeCourseItem(
-                      grade: _filteredGrades[index],
+                      grade: grade,
                       onTap: () {
                         Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => EduGradeDetailScreen(
-                              grade: _filteredGrades[index],
+                          PageRouteBuilder(
+                            transitionDuration:
+                                const Duration(milliseconds: 260),
+                            reverseTransitionDuration:
+                                const Duration(milliseconds: 200),
+                            pageBuilder: (_, __, ___) => EduGradeDetailScreen(
+                              grade: grade,
                               year: _selectedYear,
                               semester: _selectedSemester,
                             ),
+                            transitionsBuilder: (_, animation, __, child) {
+                              final curved = CurvedAnimation(
+                                parent: animation,
+                                curve: AppMotion.incoming,
+                                reverseCurve: AppMotion.outgoing,
+                              );
+                              return FadeTransition(
+                                opacity: curved,
+                                child: SlideTransition(
+                                  position: Tween<Offset>(
+                                    begin: const Offset(0.08, 0),
+                                    end: Offset.zero,
+                                  ).animate(curved),
+                                  child: child,
+                                ),
+                              );
+                            },
                           ),
                         );
                       },

@@ -12,6 +12,7 @@ import '../main.dart';
 import '../providers/auth_provider.dart';
 import '../providers/post_provider.dart';
 import '../providers/theme_provider.dart';
+import '../utils/app_motion.dart';
 import '../utils/app_navigator.dart';
 import '../utils/post_image_cache.dart';
 import '../utils/screen_swipe.dart';
@@ -36,11 +37,18 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
+class _HomeScreenState extends State<HomeScreen>
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   int _currentIndex = 0;
   final GlobalKey _contentKey = GlobalKey(debugLabel: 'homeContentStack');
   late final Set<int> _visitedTabs;
   final Map<int, Widget> _tabPages = {};
+  late final AnimationController _mainTabController;
+  Animation<double>? _mainTabAnimation;
+  double _mainDragProgress = 0;
+  double _mainVisualIndex = 0;
+  int? _mainTargetIndex;
+  double _mainSwipeDx = 0;
   Timer? _announcementTimer;
   String? _announcementAuthKey;
   bool _isCheckingAnnouncements = false;
@@ -58,6 +66,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   static const _snoozeDuration = Duration(hours: 4);
   // Fallback polling interval (keep until JPush trigger is implemented)
   static const _announcementPollInterval = Duration(minutes: 15);
+  static const _mainSwitchDistanceThreshold = 0.24;
+  static const _mainSwitchVelocityThreshold = 450.0;
   Offset? _navigationSwipeStart;
   DateTime? _navigationSwipeStartTime;
   int? _navigationSwipePointer;
@@ -66,7 +76,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     _currentIndex = consumeWidgetTabSwitch() ? 2 : widget.initialTab;
+    _mainVisualIndex = _currentIndex.toDouble();
     _visitedTabs = {_currentIndex};
+    _mainTabController = AnimationController(
+      vsync: this,
+      duration: AppMotion.page,
+    )..addListener(_handleMainTabAnimationTick);
     widgetTabSwitch.addListener(_onWidgetTabSwitch);
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -91,6 +106,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   @override
   void dispose() {
     widgetTabSwitch.removeListener(_onWidgetTabSwitch);
+    _mainTabController
+      ..removeListener(_handleMainTabAnimationTick)
+      ..dispose();
     _announcementTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
@@ -101,6 +119,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     super.didUpdateWidget(oldWidget);
     if (widget.initialTab != oldWidget.initialTab) {
       _currentIndex = widget.initialTab;
+      _mainTargetIndex = null;
+      _mainDragProgress = 0;
+      _mainVisualIndex = _currentIndex.toDouble();
       _visitedTabs.add(_currentIndex);
       _getOrCreateTabPage(_currentIndex);
     }
@@ -1186,20 +1207,64 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
-  void _switchTab(int index) {
-    if (_currentIndex == index) return;
-    if (mounted) {
-      setState(() {
-        _currentIndex = index;
-        _visitedTabs.add(index);
-      });
-    }
+  void _handleMainTabAnimationTick() {
+    final targetIndex = _mainTargetIndex;
+    final animation = _mainTabAnimation;
+    if (targetIndex == null || animation == null || !mounted) return;
+
+    final progress = animation.value.clamp(0.0, 1.0);
+    setState(() {
+      _mainDragProgress = progress;
+      _mainVisualIndex =
+          _currentIndex + (targetIndex - _currentIndex) * progress;
+    });
+  }
+
+  void _updateBackgroundForTab(int index) {
     final screenNames = ['shuitie', 'market', 'schedule', 'campus', 'profile'];
     backgroundWrapperKey.currentState?.updateScreen(screenNames[index]);
   }
 
+  void _switchTab(int index) {
+    if (_currentIndex == index) return;
+    _mainTabController.stop();
+    if (mounted) {
+      setState(() {
+        _currentIndex = index;
+        _mainTargetIndex = null;
+        _mainDragProgress = 0;
+        _mainVisualIndex = index.toDouble();
+        _visitedTabs.add(index);
+      });
+    }
+    _updateBackgroundForTab(index);
+  }
+
   void _onTabTapped(int index) {
-    _switchTab(index);
+    final useSideRail = ResponsiveUtil.useDesktopShell(context) &&
+        !context.read<ThemeProvider>().floatingNavBar;
+    if (useSideRail) {
+      _switchTab(index);
+      return;
+    }
+    unawaited(_animateMainTabTo(index));
+  }
+
+  Future<void> _animateMainTabTo(int index) async {
+    final targetIndex = index.clamp(0, 4);
+    if (targetIndex == _currentIndex) {
+      await _settleMainTab(commit: false);
+      return;
+    }
+
+    final begin = _mainTargetIndex == targetIndex ? _mainDragProgress : 0.0;
+    await _settleMainTab(
+      targetIndex: targetIndex,
+      begin: begin,
+      end: 1.0,
+      duration: const Duration(milliseconds: 180),
+      commit: true,
+    );
   }
 
   Widget _getOrCreateTabPage(int index) {
@@ -1235,9 +1300,45 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         !isBottomNavigationSwipeStart(event.position.dy, screenHeight)) {
       return;
     }
+    _mainTabController.stop();
     _navigationSwipePointer = event.pointer;
     _navigationSwipeStart = event.position;
     _navigationSwipeStartTime = DateTime.now();
+    _mainSwipeDx = 0;
+    setState(() {
+      _mainTargetIndex = null;
+      _mainDragProgress = 0;
+      _mainVisualIndex = _currentIndex.toDouble();
+    });
+  }
+
+  void _updateNavigationSwipe(PointerMoveEvent event) {
+    if (event.pointer != _navigationSwipePointer ||
+        _navigationSwipeStart == null) {
+      return;
+    }
+
+    _mainSwipeDx = event.position.dx - _navigationSwipeStart!.dx;
+    final targetIndex = _targetMainIndexForDx(_mainSwipeDx);
+    if (targetIndex == null) {
+      setState(() {
+        _mainTargetIndex = null;
+        _mainDragProgress = 0;
+        _mainVisualIndex = _currentIndex.toDouble();
+      });
+      return;
+    }
+
+    final width = MediaQuery.sizeOf(context).width;
+    final progress = (_mainSwipeDx.abs() / width).clamp(0.0, 1.0);
+    setState(() {
+      _visitedTabs.add(targetIndex);
+      _getOrCreateTabPage(targetIndex);
+      _mainTargetIndex = targetIndex;
+      _mainDragProgress = progress;
+      _mainVisualIndex =
+          _currentIndex + (targetIndex - _currentIndex) * progress;
+    });
   }
 
   void _finishNavigationSwipe(PointerUpEvent event) {
@@ -1247,23 +1348,49 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       return;
     }
 
-    final direction = horizontalSwipeDirection(
-      start: _navigationSwipeStart!,
-      end: event.position,
-      elapsed: DateTime.now().difference(_navigationSwipeStartTime!),
+    _mainSwipeDx = event.position.dx - _navigationSwipeStart!.dx;
+    final elapsed = DateTime.now().difference(_navigationSwipeStartTime!);
+    final seconds = elapsed.inMicroseconds / Duration.microsecondsPerSecond;
+    final velocity = seconds <= 0 ? 0.0 : _mainSwipeDx / seconds;
+    final targetIndex = _targetMainIndexForDx(
+      velocity.abs() >= _mainSwitchVelocityThreshold ? velocity : _mainSwipeDx,
     );
+    final width = MediaQuery.sizeOf(context).width;
+    final progress = (_mainSwipeDx.abs() / width).clamp(0.0, 1.0);
+    final shouldSwitch = targetIndex != null &&
+        (progress >= _mainSwitchDistanceThreshold ||
+            velocity.abs() >= _mainSwitchVelocityThreshold);
     _resetNavigationSwipe();
-    if (direction == 0) return;
 
-    final nextIndex = (_currentIndex + direction).clamp(0, 4);
-    if (nextIndex != _currentIndex) {
-      _onTabTapped(nextIndex);
+    if (shouldSwitch) {
+      unawaited(_settleMainTab(
+        targetIndex: targetIndex,
+        begin: _mainDragProgress,
+        end: 1.0,
+        duration: const Duration(milliseconds: 180),
+        commit: true,
+      ));
+    } else {
+      unawaited(_settleMainTab(
+        targetIndex: _mainTargetIndex,
+        begin: _mainDragProgress,
+        end: 0.0,
+        duration: AppMotion.normal,
+        commit: false,
+      ));
     }
   }
 
   void _cancelNavigationSwipe(PointerCancelEvent event) {
     if (event.pointer == _navigationSwipePointer) {
       _resetNavigationSwipe();
+      unawaited(_settleMainTab(
+        targetIndex: _mainTargetIndex,
+        begin: _mainDragProgress,
+        end: 0.0,
+        duration: AppMotion.normal,
+        commit: false,
+      ));
     }
   }
 
@@ -1271,6 +1398,70 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _navigationSwipePointer = null;
     _navigationSwipeStart = null;
     _navigationSwipeStartTime = null;
+    _mainSwipeDx = 0;
+  }
+
+  int? _targetMainIndexForDx(double dx) {
+    if (dx == 0) return null;
+    final direction = dx < 0 ? 1 : -1;
+    final targetIndex = _currentIndex + direction;
+    if (targetIndex < 0 || targetIndex > 4) return null;
+    return targetIndex;
+  }
+
+  Future<void> _settleMainTab({
+    int? targetIndex,
+    double begin = 0,
+    double end = 0,
+    Duration duration = AppMotion.normal,
+    required bool commit,
+  }) async {
+    if (targetIndex == null || targetIndex == _currentIndex) {
+      if (mounted) {
+        setState(() {
+          _mainTargetIndex = null;
+          _mainDragProgress = 0;
+          _mainVisualIndex = _currentIndex.toDouble();
+        });
+      }
+      return;
+    }
+
+    _mainTabController.stop();
+    _mainTabController.duration = duration;
+    _mainTabAnimation = Tween<double>(
+      begin: begin.clamp(0.0, 1.0).toDouble(),
+      end: end.clamp(0.0, 1.0).toDouble(),
+    ).animate(CurvedAnimation(
+      parent: _mainTabController,
+      curve: AppMotion.standard,
+      reverseCurve: AppMotion.outgoing,
+    ));
+
+    setState(() {
+      _visitedTabs.add(targetIndex);
+      _getOrCreateTabPage(targetIndex);
+      _mainTargetIndex = targetIndex;
+      _mainDragProgress = begin.clamp(0.0, 1.0).toDouble();
+      _mainVisualIndex =
+          _currentIndex + (targetIndex - _currentIndex) * _mainDragProgress;
+    });
+
+    await _mainTabController.forward(from: 0);
+    if (!mounted) return;
+
+    setState(() {
+      if (commit) {
+        _currentIndex = targetIndex;
+      }
+      _mainTargetIndex = null;
+      _mainDragProgress = 0;
+      _mainVisualIndex = _currentIndex.toDouble();
+    });
+
+    if (commit) {
+      _updateBackgroundForTab(targetIndex);
+    }
   }
 
   void _openCreatePost(BuildContext context) {
@@ -1326,6 +1517,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       onPointerDown: useBottomNav
           ? (event) => _startNavigationSwipe(event, screenHeight)
           : null,
+      onPointerMove: useBottomNav ? _updateNavigationSwipe : null,
       onPointerUp: useBottomNav ? _finishNavigationSwipe : null,
       onPointerCancel: useBottomNav ? _cancelNavigationSwipe : null,
       child: Scaffold(
@@ -1344,6 +1536,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             ? null
             : BottomNavWrapper(
                 currentIndex: _currentIndex,
+                visualIndex: _mainVisualIndex,
                 onTap: _onTabTapped,
                 authProvider: authProvider,
               ),
@@ -1462,10 +1655,27 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Widget _buildNarrowLayout(double bottomSafe, AuthProvider authProvider) {
-    return IndexedStack(
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 180),
+      switchInCurve: AppMotion.incoming,
+      switchOutCurve: AppMotion.outgoing,
+      transitionBuilder: (child, animation) {
+        return FadeTransition(
+          opacity: animation,
+          child: ScaleTransition(
+            scale: Tween<double>(
+              begin: 0.995,
+              end: 1.0,
+            ).animate(animation),
+            child: child,
+          ),
+        );
+      },
       key: _contentKey,
-      index: _currentIndex,
-      children: _buildLazyTabChildren(),
+      child: KeyedSubtree(
+        key: ValueKey<int>(_currentIndex),
+        child: _getOrCreateTabPage(_currentIndex),
+      ),
     );
   }
 }

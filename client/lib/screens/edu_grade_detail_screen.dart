@@ -266,14 +266,37 @@ class _EduGradeDetailScreenState extends State<EduGradeDetailScreen> {
           ),
           Expanded(
             flex: 2,
-            child: Text(
-              component.score,
-              textAlign: TextAlign.right,
-              style: TextStyle(
-                fontSize: isTotal ? 16 : 14,
-                fontWeight: isTotal ? FontWeight.w800 : FontWeight.w600,
-                color: isTotal ? Theme.of(context).colorScheme.primary : null,
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  component.score,
+                  textAlign: TextAlign.right,
+                  style: TextStyle(
+                    fontSize: isTotal ? 16 : 14,
+                    fontWeight: isTotal ? FontWeight.w800 : FontWeight.w600,
+                    color: isTotal ? Theme.of(context).colorScheme.primary : null,
+                  ),
+                ),
+                if (isTotal) ...(() {
+                  final estimatedScore = _estimatedWeightedScore();
+                  if (estimatedScore != null && !_isNumericText(component.score)) {
+                    return [
+                      const SizedBox(height: 2),
+                      Text(
+                        '估算 ${_formatDouble(estimatedScore)}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey[500],
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ];
+                  }
+                  return [];
+                }()),
+              ],
             ),
           ),
         ],
@@ -366,6 +389,11 @@ class _EduGradeDetailScreenState extends State<EduGradeDetailScreen> {
   }
 
   Widget _buildGradeComponentsCard(BuildContext context, bool isDark) {
+    final estimatedScore = _estimatedWeightedScore();
+    final officialTotal = _detail?.totalGrade.isNotEmpty == true
+        ? _detail!.totalGrade
+        : grade.displayGrade;
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
@@ -393,18 +421,21 @@ class _EduGradeDetailScreenState extends State<EduGradeDetailScreen> {
                 constraints: const BoxConstraints(),
                 onPressed: () => _loadDetail(forceRefresh: true),
               ),
-              const SizedBox(width: 8),
-              if (_detail?.totalGrade.isNotEmpty == true)
-                Text(
-                  '总评 ${_detail!.totalGrade}',
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: Colors.grey[600],
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
             ],
           ),
+          if (estimatedScore != null) ...[
+            const SizedBox(height: 4),
+            Text(
+              _isNumericText(officialTotal)
+                  ? '按构成估算 ${_formatDouble(estimatedScore)}'
+                  : '官方 $officialTotal · 估算 ${_formatDouble(estimatedScore)}',
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey[600],
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
           const SizedBox(height: 12),
           _buildComponents(context, isDark),
         ],
@@ -480,5 +511,47 @@ class _EduGradeDetailScreenState extends State<EduGradeDetailScreen> {
   String _formatDouble(double value) {
     final fixed = value.toStringAsFixed(2);
     return fixed.replaceFirst(RegExp(r'\.?0+$'), '');
+  }
+
+  double? _estimatedWeightedScore() {
+    final components = _detail?.components ?? const <GradeComponent>[];
+    if (components.isEmpty) return null;
+
+    double total = 0;
+    double weightSum = 0;
+
+    for (final component in components) {
+      if (component.name.contains('总')) continue;
+
+      final weight = _parseWeightPercent(component.weight);
+      final score = double.tryParse(component.score.trim());
+
+      if (weight == null || score == null) continue;
+
+      total += score * weight / 100;
+      weightSum += weight;
+    }
+
+    if (weightSum < 99.5 || weightSum > 100.5) {
+      return null;
+    }
+
+    return total;
+  }
+
+  double? _parseWeightPercent(String? value) {
+    if (value == null) return null;
+
+    final text = value.trim().replaceAll('%', '');
+    if (text.isEmpty) return null;
+
+    final parsed = double.tryParse(text);
+    if (parsed == null || parsed <= 0 || parsed > 100) return null;
+
+    return parsed;
+  }
+
+  bool _isNumericText(String value) {
+    return double.tryParse(value.trim()) != null;
   }
 }

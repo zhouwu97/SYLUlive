@@ -45,6 +45,7 @@ class EduProvider extends ChangeNotifier {
   bool _statusLoaded = false;
   String? _errorMessage;
   final Map<String, GradeCacheEntry> _gradeCache = {};
+  final Map<String, EduGradeDetail> _gradeDetailCache = {};
   int _statusGeneration = 0;
 
   bool get isBound => _isBound;
@@ -82,6 +83,22 @@ class EduProvider extends ChangeNotifier {
   void clearGradeCacheForUser(String userId) {
     final prefix = 'edu_grades_${userId}_';
     _gradeCache.removeWhere((key, _) => key.startsWith(prefix));
+    _gradeDetailCache.removeWhere((key, _) => key.startsWith('$userId|'));
+  }
+
+  String _gradeDetailCacheKey(EduGrade grade, String year, int semester) {
+    final stableId = grade.studentGradeId.isNotEmpty
+        ? grade.studentGradeId
+        : grade.classId.isNotEmpty
+            ? grade.classId
+            : grade.name;
+
+    return '${_userId ?? ''}|$year|$semester|$stableId';
+  }
+
+  EduGradeDetail? getCachedGradeDetail(
+      EduGrade grade, String year, int semester) {
+    return _gradeDetailCache[_gradeDetailCacheKey(grade, year, semester)];
   }
 
   /// 删除教务密码（解绑后）
@@ -473,12 +490,23 @@ class EduProvider extends ChangeNotifier {
   Future<OperationResult<EduGradeDetail>> fetchGradeDetail(
     EduGrade grade,
     String year,
-    int semester,
-  ) async {
+    int semester, {
+    bool forceRefresh = false,
+  }) async {
     final requestUserId = _userId;
     if (requestUserId == null) {
       return OperationResult.fail('用户未登录');
     }
+
+    final cacheKey = _gradeDetailCacheKey(grade, year, semester);
+
+    if (!forceRefresh) {
+      final cached = _gradeDetailCache[cacheKey];
+      if (cached != null) {
+        return OperationResult.ok(cached);
+      }
+    }
+
     if (grade.classId.isEmpty) {
       return OperationResult.fail('缺少教学班信息，暂不能获取成绩构成');
     }
@@ -504,9 +532,13 @@ class EduProvider extends ChangeNotifier {
         return OperationResult.fail('用户已切换');
       }
       if (response.statusCode == 200) {
-        return OperationResult.ok(
-          EduGradeDetail.fromJson(Map<String, dynamic>.from(response.data)),
+        final detail = EduGradeDetail.fromJson(
+          Map<String, dynamic>.from(response.data),
         );
+        if (detail.success && detail.components.isNotEmpty) {
+          _gradeDetailCache[cacheKey] = detail;
+        }
+        return OperationResult.ok(detail);
       }
       return OperationResult.fail('获取成绩构成失败');
     } on DioException catch (e) {
@@ -526,11 +558,13 @@ class EduProvider extends ChangeNotifier {
               return OperationResult.fail('用户已切换');
             }
             if (retryResp.statusCode == 200) {
-              return OperationResult.ok(
-                EduGradeDetail.fromJson(
-                  Map<String, dynamic>.from(retryResp.data),
-                ),
+              final detail = EduGradeDetail.fromJson(
+                Map<String, dynamic>.from(retryResp.data),
               );
+              if (detail.success && detail.components.isNotEmpty) {
+                _gradeDetailCache[cacheKey] = detail;
+              }
+              return OperationResult.ok(detail);
             }
           } catch (_) {}
         } else {

@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../utils/responsive_util.dart';
 
 class ThemeProvider extends ChangeNotifier {
   static const String _nightModeKey = 'night_mode';
@@ -133,9 +132,8 @@ class ThemeProvider extends ChangeNotifier {
     bool fillScreen = false,
   }) async {
     _backgroundImage = imageUrl;
-    _backgroundFillScreen = imageUrl != null && imageUrl.isNotEmpty
-        ? fillScreen
-        : false;
+    _backgroundFillScreen =
+        imageUrl != null && imageUrl.isNotEmpty ? fillScreen : false;
     final prefs = await SharedPreferences.getInstance();
     if (imageUrl != null && imageUrl.isNotEmpty) {
       await prefs.setString(_backgroundImageKey, imageUrl);
@@ -152,9 +150,8 @@ class ThemeProvider extends ChangeNotifier {
     bool fillScreen = false,
   }) async {
     _landscapeBackgroundImage = imageUrl;
-    _landscapeBackgroundFillScreen = imageUrl != null && imageUrl.isNotEmpty
-        ? fillScreen
-        : false;
+    _landscapeBackgroundFillScreen =
+        imageUrl != null && imageUrl.isNotEmpty ? fillScreen : false;
     final prefs = await SharedPreferences.getInstance();
     if (imageUrl != null && imageUrl.isNotEmpty) {
       await prefs.setString(_landscapeBackgroundImageKey, imageUrl);

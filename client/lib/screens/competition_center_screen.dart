@@ -144,43 +144,44 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
             ),
         ],
       ),
-      body: RefreshIndicator(
-        onRefresh: _load,
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 6, 16, 32),
-          children: [
-            _buildHeroCard(),
-            const SizedBox(height: 16),
-            _buildSearchField(),
-            const SizedBox(height: 12),
-            _buildSectionTabs(),
-            const SizedBox(height: 12),
-            _buildFilterBar(),
-            const SizedBox(height: 10),
-            _buildListHeader(),
-            const SizedBox(height: 10),
-            if (_loading)
-              const Padding(
-                padding: EdgeInsets.only(top: 80),
-                child: Center(
-                  child: CircularProgressIndicator(
-                    color: _competitionPrimary,
-                  ),
-                ),
-              )
-            else if (_events.isEmpty)
-              _CompetitionEmptyState(
-                title: '暂无官方比赛',
-                message: '管理员还没有维护官方比赛库。你可以先通过分享码或 AI JSON 导入自己的比赛日历。',
-                primaryText: '去导入',
-                onPrimary: _openShareImport,
-                secondaryText: '刷新',
-                onSecondary: _load,
-              )
-            else
-              ..._events.map(_buildEventCard),
-          ],
-        ),
+      body: Column(
+        children: [
+          _buildHeroCard(),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: _buildSearchField(),
+          ),
+          const SizedBox(height: 12),
+          _buildFilterBar(),
+          const SizedBox(height: 12),
+          Expanded(
+            child: _loading
+                ? const Center(
+                    child: CircularProgressIndicator(
+                      color: _competitionPrimary,
+                    ),
+                  )
+                : _events.isEmpty
+                    ? SingleChildScrollView(
+                        child: _CompetitionEmptyState(
+                          title: '暂无官方比赛',
+                          message:
+                              '管理员还没有维护官方比赛库。你可以先通过分享码或 AI JSON 导入自己的比赛日历。',
+                          primaryText: '去导入',
+                          onPrimary: _openShareImport,
+                          secondaryText: '刷新',
+                          onSecondary: _load,
+                        ),
+                      )
+                    : RefreshIndicator(
+                        onRefresh: _load,
+                        child: ListView(
+                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
+                          children: _events.map(_buildEventCard).toList(),
+                        ),
+                      ),
+          ),
+        ],
       ),
     );
   }
@@ -192,7 +193,8 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
       return deadline != null && !deadline.isBefore(DateTime.now());
     }).length;
     return Container(
-      padding: const EdgeInsets.fromLTRB(16, 15, 16, 16),
+      margin: const EdgeInsets.fromLTRB(20, 10, 20, 14),
+      padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
           colors: [Color(0xFF7C72D8), Color(0xFF6F66B8)],
@@ -202,9 +204,9 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
         borderRadius: BorderRadius.circular(22),
         boxShadow: [
           BoxShadow(
-            color: _competitionPrimary.withValues(alpha: 0.22),
-            blurRadius: 24,
-            offset: const Offset(0, 12),
+            color: _competitionPrimary.withValues(alpha: 0.20),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
           ),
         ],
       ),
@@ -212,69 +214,59 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.18),
-                  borderRadius: BorderRadius.circular(13),
-                ),
-                child: const Icon(
-                  Icons.emoji_events_rounded,
-                  color: Colors.white,
-                  size: 22,
-                ),
-              ),
-              const Spacer(),
-              Material(
-                color: Colors.white.withValues(alpha: 0.18),
-                borderRadius: BorderRadius.circular(999),
-                child: InkWell(
-                  onTap: _openShareImport,
-                  borderRadius: BorderRadius.circular(999),
-                  child: const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                    child: Text(
-                      '导入',
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '比赛日历',
                       style: TextStyle(
                         color: Colors.white,
-                        fontSize: 12,
+                        fontSize: 22,
                         fontWeight: FontWeight.w800,
+                        height: 1.15,
                       ),
                     ),
-                  ),
+                    SizedBox(height: 6),
+                    Text(
+                      '官方比赛、我的计划、分享导入统一管理',
+                      style: TextStyle(
+                        color: Color(0xFFE8E3FF),
+                        fontSize: 13,
+                        height: 1.2,
+                      ),
+                    ),
+                  ],
                 ),
               ),
+              _buildImportButton(),
             ],
           ),
-          const SizedBox(height: 12),
-          const Text(
-            '比赛日历',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 20,
-              fontWeight: FontWeight.w900,
-              height: 1.1,
-            ),
-          ),
-          const SizedBox(height: 5),
-          Text(
-            '官方比赛、我的计划、分享导入统一管理',
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.82),
-              fontSize: 12.5,
-              height: 1.35,
-            ),
-          ),
-          const SizedBox(height: 15),
+          const SizedBox(height: 22),
           Row(
             children: [
-              _heroStat('官方比赛', '$_total'),
-              const SizedBox(width: 20),
-              _heroStat('我的日历', '$myCount'),
-              const SizedBox(width: 20),
-              _heroStat('待截止', '$pendingCount'),
+              Expanded(
+                child: _buildStatItem(
+                  value: _total,
+                  label: '官方比赛',
+                ),
+              ),
+              Expanded(
+                child: _buildStatItem(
+                  value: myCount,
+                  label: '我的日历',
+                  onTap: _openCalendar,
+                  showChevron: true,
+                ),
+              ),
+              Expanded(
+                child: _buildStatItem(
+                  value: pendingCount,
+                  label: '待截止',
+                ),
+              ),
             ],
           ),
         ],
@@ -282,33 +274,79 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
     );
   }
 
-  Widget _heroStat(String label, String value) {
-    return Expanded(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            value,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 18,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+  Widget _buildImportButton() {
+    return Material(
+      color: Colors.white.withValues(alpha: 0.92),
+      borderRadius: BorderRadius.circular(999),
+      child: InkWell(
+        onTap: _openShareImport,
+        borderRadius: BorderRadius.circular(999),
+        child: const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+          child: Text(
+            '导入',
             style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.72),
-              fontSize: 11,
+              color: _competitionPrimary,
+              fontSize: 13,
               fontWeight: FontWeight.w600,
             ),
           ),
-        ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatItem({
+    required int value,
+    required String label,
+    VoidCallback? onTap,
+    bool showChevron = false,
+  }) {
+    final child = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              '$value',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 22,
+                fontWeight: FontWeight.w800,
+                height: 1,
+              ),
+            ),
+            if (showChevron) ...[
+              const SizedBox(width: 3),
+              Icon(
+                Icons.chevron_right_rounded,
+                size: 18,
+                color: Colors.white.withValues(alpha: 0.75),
+              ),
+            ],
+          ],
+        ),
+        const SizedBox(height: 8),
+        Text(
+          label,
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.78),
+            fontSize: 12,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
+    );
+
+    if (onTap == null) return child;
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: child,
       ),
     );
   }
@@ -340,7 +378,7 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
               onChanged: (_) => setState(() {}),
               onSubmitted: (_) => _load(),
               decoration: const InputDecoration(
-                hintText: '搜索比赛、主办方、标签',
+                hintText: '搜索比赛名称 / 主办方 / 标签',
                 hintStyle: TextStyle(color: _competitionMuted, fontSize: 14),
                 border: InputBorder.none,
                 isCollapsed: true,
@@ -363,100 +401,40 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
     );
   }
 
-  Widget _buildSectionTabs() {
-    return Container(
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: _competitionLight,
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child: Row(
-        children: [
-          _CompetitionSegment(
-            label: '官方比赛',
-            icon: Icons.workspace_premium_outlined,
-            selected: true,
-            onTap: _load,
-          ),
-          _CompetitionSegment(
-            label: '我的日历',
-            icon: Icons.event_available_outlined,
-            selected: false,
-            onTap: _openCalendar,
-          ),
-          _CompetitionSegment(
-            label: '导入分享',
-            icon: Icons.ios_share_outlined,
-            selected: false,
-            onTap: _openShareImport,
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildFilterBar() {
-    return Container(
-      height: 40,
-      padding: const EdgeInsets.symmetric(horizontal: 6),
-      child: Row(
-        children: [
-          _SoftActionButton(
-            icon: Icons.tune_rounded,
-            label: '筛选分类',
-            onTap: _openFilters,
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              _filterSummary,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: _competitionPrimaryDark,
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: SizedBox(
+        height: 40,
+        child: Row(
+          children: [
+            _SoftActionButton(
+              icon: Icons.tune_rounded,
+              label: '筛选分类',
+              onTap: _openFilters,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                _filterSummary,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: _competitionPrimaryDark,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
             ),
-          ),
-          _SoftActionButton(
-            icon: Icons.sort_rounded,
-            label: '即将截止',
-            onTap: () => AppFeedback.showSnackBar(context, '当前按报名截止时间排序'),
-          ),
-        ],
+            _SoftActionButton(
+              icon: Icons.sort_rounded,
+              label: '即将截止',
+              onTap: () =>
+                  AppFeedback.showSnackBar(context, '当前按报名截止时间排序'),
+            ),
+          ],
+        ),
       ),
-    );
-  }
-
-  Widget _buildListHeader() {
-    return Row(
-      children: [
-        const Text(
-          '官方比赛',
-          style: TextStyle(
-            fontWeight: FontWeight.w900,
-            color: Color(0xFF252433),
-          ),
-        ),
-        Text(
-          ' · 共 $_total 个',
-          style: const TextStyle(
-            color: _competitionMuted,
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        const Spacer(),
-        const Text(
-          '即将截止',
-          style: TextStyle(
-            color: _competitionMuted,
-            fontSize: 12,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-      ],
     );
   }
 
@@ -737,64 +715,6 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
   }
 }
 
-class _CompetitionSegment extends StatelessWidget {
-  final String label;
-  final IconData icon;
-  final bool selected;
-  final VoidCallback onTap;
-
-  const _CompetitionSegment({
-    required this.label,
-    required this.icon,
-    required this.selected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: Material(
-        color: selected ? Colors.white : Colors.transparent,
-        borderRadius: BorderRadius.circular(14),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(14),
-          child: Container(
-            height: 44,
-            alignment: Alignment.center,
-            padding: const EdgeInsets.symmetric(horizontal: 6),
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    icon,
-                    size: 17,
-                    color:
-                        selected ? _competitionPrimaryDark : _competitionMuted,
-                  ),
-                  const SizedBox(width: 5),
-                  Text(
-                    label,
-                    style: TextStyle(
-                      color: selected
-                          ? _competitionPrimaryDark
-                          : _competitionMuted,
-                      fontSize: 13,
-                      fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _SoftActionButton extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -862,12 +782,19 @@ class _CompetitionEmptyState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.only(top: 24),
-      padding: const EdgeInsets.fromLTRB(18, 22, 18, 18),
+      margin: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+      padding: const EdgeInsets.fromLTRB(20, 24, 20, 22),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: _competitionBorder),
+        border: Border.all(color: const Color(0xFFE7E1FA)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.025),
+            blurRadius: 14,
+            offset: const Offset(0, 6),
+          ),
+        ],
       ),
       child: Column(
         children: [
@@ -875,36 +802,36 @@ class _CompetitionEmptyState extends StatelessWidget {
             width: 58,
             height: 58,
             decoration: BoxDecoration(
-              color: _competitionLight,
+              color: const Color(0xFFEDE7FF),
               borderRadius: BorderRadius.circular(20),
             ),
             child: const Icon(
               Icons.emoji_events_outlined,
-              color: _competitionPrimary,
+              color: Color(0xFF7563D8),
               size: 30,
             ),
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 18),
           Text(
             title,
             textAlign: TextAlign.center,
             style: const TextStyle(
               fontSize: 17,
-              fontWeight: FontWeight.w900,
-              color: Color(0xFF242330),
+              fontWeight: FontWeight.w800,
+              color: Color(0xFF1F1D2B),
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 10),
           Text(
             message,
             textAlign: TextAlign.center,
             style: const TextStyle(
-              color: _competitionMuted,
+              color: Color(0xFF8D879B),
               fontSize: 13,
               height: 1.45,
             ),
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 22),
           Row(
             children: [
               Expanded(
@@ -920,7 +847,7 @@ class _CompetitionEmptyState extends StatelessWidget {
                   child: Text(primaryText),
                 ),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 12),
               Expanded(
                 child: OutlinedButton(
                   onPressed: onSecondary,

@@ -22,7 +22,7 @@ class PhysicalPercentileReportScreen extends StatefulWidget {
 
 class _PhysicalPercentileReportScreenState
     extends State<PhysicalPercentileReportScreen> {
-  PhysicalCompareGroup _group = PhysicalCompareGroup.sameGender;
+  PhysicalCompareGroup _group = PhysicalCompareGroup.all;
   late final Future<PhysicalPercentileService> _serviceFuture;
 
   @override
@@ -160,7 +160,6 @@ class _PhysicalPercentileReportScreenState
 
   Widget _buildGroupSelector(bool isDark) {
     const groups = [
-      PhysicalCompareGroup.sameGender,
       PhysicalCompareGroup.all,
       PhysicalCompareGroup.male,
       PhysicalCompareGroup.female,

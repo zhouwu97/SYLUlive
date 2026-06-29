@@ -204,12 +204,11 @@ class _CampusScreenState extends State<CampusScreen>
                     ),
                     const SizedBox(height: 12),
                     _buildServiceRow(isDark),
-                    const SizedBox(height: 20),
-                    _buildCompetitionFeatureCard(isDark),
-                    const SizedBox(height: 24),
-                    const _SectionTitle(
+                    const SizedBox(height: 26),
+                    _CampusInfoSectionTitle(
                       title: '校园资讯',
-                      subtitle: '校内通知与竞赛信息',
+                      subtitle: '校内通知与赛事信息',
+                      onCompetitionTap: () => _openPage(const CompetitionCenterScreen()),
                     ),
                     const SizedBox(height: 12),
                     _buildRecentList(isDark),
@@ -393,93 +392,6 @@ class _CampusScreenState extends State<CampusScreen>
       ],
     );
   }
-
-  Widget _buildCompetitionFeatureCard(bool isDark) {
-    return Material(
-      color: isDark ? const Color(0xFF1B1E28) : Colors.white,
-      borderRadius: BorderRadius.circular(18),
-      child: InkWell(
-        onTap: () => _openPage(const CompetitionCenterScreen()),
-        borderRadius: BorderRadius.circular(18),
-        child: Container(
-          padding: const EdgeInsets.all(15),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(
-              color: isDark ? Colors.white10 : const Color(0xFFEDEBF3),
-            ),
-            boxShadow: [
-              if (!isDark)
-                BoxShadow(
-                  color: const Color(0xFF7367C6).withValues(alpha: 0.07),
-                  blurRadius: 18,
-                  offset: const Offset(0, 8),
-                ),
-            ],
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 56,
-                height: 56,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF59E0B).withValues(alpha: 0.13),
-                  borderRadius: BorderRadius.circular(18),
-                ),
-                child: const Icon(
-                  Icons.emoji_events_rounded,
-                  color: Color(0xFFD97706),
-                  size: 29,
-                ),
-              ),
-              const SizedBox(width: 13),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '竞赛中心',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
-                        color: isDark ? Colors.white : const Color(0xFF242530),
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '发现比赛，管理参赛计划',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: isDark ? Colors.white54 : Colors.black54,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      '官方比赛 · 我的日历 · 分享导入',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w700,
-                        color:
-                            isDark ? Colors.white70 : const Color(0xFF7367C6),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Icon(
-                Icons.chevron_right_rounded,
-                color: isDark ? Colors.white30 : const Color(0xFFAAA6B5),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -567,6 +479,93 @@ class _SectionTitle extends StatelessWidget {
   }
 }
 
+class _CampusInfoSectionTitle extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final VoidCallback onCompetitionTap;
+
+  const _CampusInfoSectionTitle({
+    required this.title,
+    required this.subtitle,
+    required this.onCompetitionTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final primary = Theme.of(context).colorScheme.primary;
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                  color: isDark ? Colors.white : const Color(0xFF242530),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                subtitle,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: isDark ? Colors.white54 : Colors.black45,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 12),
+        Material(
+          color: isDark
+              ? primary.withValues(alpha: 0.18)
+              : primary.withValues(alpha: 0.10),
+          borderRadius: BorderRadius.circular(999),
+          child: InkWell(
+            onTap: onCompetitionTap,
+            borderRadius: BorderRadius.circular(999),
+            child: Container(
+              height: 34,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(
+                  color: primary.withValues(alpha: isDark ? 0.22 : 0.14),
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.emoji_events_rounded,
+                    size: 16,
+                    color: primary,
+                  ),
+                  const SizedBox(width: 5),
+                  Text(
+                    '竞赛中心',
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                      color: primary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _CampusService {
   final String title;
   final IconData icon;
@@ -599,8 +598,8 @@ class _CampusServiceCard extends StatelessWidget {
         onTap: service.onTap,
         borderRadius: BorderRadius.circular(17),
         child: Container(
-          height: 88,
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
+          height: 92,
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 9),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(17),
             border: Border.all(
@@ -611,8 +610,8 @@ class _CampusServiceCard extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Container(
-                width: 42,
-                height: 42,
+                width: 40,
+                height: 40,
                 decoration: BoxDecoration(
                   color: service.color.withValues(alpha: 0.13),
                   borderRadius: BorderRadius.circular(14),
@@ -620,16 +619,16 @@ class _CampusServiceCard extends StatelessWidget {
                 child: Icon(
                   service.icon,
                   color: service.color,
-                  size: 22,
+                  size: 21,
                 ),
               ),
-              const SizedBox(height: 9),
+              const SizedBox(height: 6),
               Text(
                 service.title,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  fontSize: 12.5,
+                  fontSize: 12.2,
                   fontWeight: FontWeight.w700,
                   color: isDark ? Colors.white : const Color(0xFF292A35),
                 ),

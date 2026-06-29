@@ -62,6 +62,22 @@ class CanteenProvider with ChangeNotifier {
     return {};
   }
 
+  Future<Map<String, dynamic>?> updateCanteenImage(int id, String imageUrl) async {
+    try {
+      final response = await _dio.put(
+        '/canteens/$id/image',
+        data: {'image': imageUrl},
+      );
+      if (response.statusCode == 200) {
+        return response.data['canteen'] as Map<String, dynamic>?;
+      }
+    } on DioException catch (e) {
+      _errorMessage = _parseError(e);
+      debugPrint('Error updating canteen image: $e');
+    }
+    return null;
+  }
+
   Future<bool> deleteCanteen(int id) async {
     try {
       final response = await _dio.delete('/canteens/$id');

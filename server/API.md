@@ -97,6 +97,7 @@
 | `POST` | `/api/teachers/:id/rate` | 评价教师 |
 | `GET` | `/api/majors` | 获取专业评价列表 |
 | `GET` | `/api/canteens` | 获取食堂评分列表 |
+| `PUT` | `/api/canteens/:id/image` | (管理员) 修改食堂封面图片 |
 
 ## 6. 消息与通知 (Messages)
 

@@ -33,10 +33,26 @@ class _EduGradeDetailScreenState extends State<EduGradeDetailScreen> {
   @override
   void initState() {
     super.initState();
-    _loadDetail();
+
+    final provider = context.read<EduProvider>();
+    final cached = provider.getCachedGradeDetail(
+      grade,
+      widget.year,
+      widget.semester,
+    );
+
+    if (cached != null) {
+      _detail = cached;
+      _detailError = cached.success && cached.components.isNotEmpty
+          ? null
+          : cached.message;
+      _isLoadingDetail = false;
+    } else {
+      _loadDetail();
+    }
   }
 
-  Future<void> _loadDetail() async {
+  Future<void> _loadDetail({bool forceRefresh = false}) async {
     if (grade.classId.isEmpty) {
       setState(() => _detailError = '缺少教学班信息，暂未获取到成绩构成');
       return;
@@ -52,6 +68,7 @@ class _EduGradeDetailScreenState extends State<EduGradeDetailScreen> {
       grade,
       widget.year,
       widget.semester,
+      forceRefresh: forceRefresh,
     );
 
     if (!mounted) return;
@@ -370,6 +387,13 @@ class _EduGradeDetailScreenState extends State<EduGradeDetailScreen> {
                   style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
                 ),
               ),
+              IconButton(
+                icon: const Icon(Icons.refresh, size: 18),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                onPressed: () => _loadDetail(forceRefresh: true),
+              ),
+              const SizedBox(width: 8),
               if (_detail?.totalGrade.isNotEmpty == true)
                 Text(
                   '总评 ${_detail!.totalGrade}',

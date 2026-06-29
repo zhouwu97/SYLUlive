@@ -87,77 +87,13 @@ class _EduGradeDetailScreenState extends State<EduGradeDetailScreen> {
         elevation: 0,
       ),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(24, 8, 24, 32),
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
         children: [
-          // Course name
-          Text(
-            grade.name,
-            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-          ),
-          const SizedBox(height: 12),
-
-          // Total grade
-          Center(
-            child: Text(
-              grade.displayGrade,
-              style: TextStyle(
-                fontSize: 48,
-                fontWeight: FontWeight.w700,
-                color: _gradeColor(context, grade),
-              ),
-            ),
-          ),
-          const SizedBox(height: 4),
-
-          // Tags: degree / exam type / assessment
-          Center(
-            child: Wrap(
-              spacing: 8,
-              runSpacing: 6,
-              alignment: WrapAlignment.center,
-              children: [
-                _tag(context, grade.isDegree ? '学位课' : '非学位课', isDark),
-                if (grade.examType != null)
-                  _tag(context, grade.examType!, isDark),
-                if (grade.assessmentMethod != null)
-                  _tag(context, grade.assessmentMethod!, isDark),
-              ],
-            ),
-          ),
-          const SizedBox(height: 20),
-          const Divider(),
-          const SizedBox(height: 12),
-
-          // Course info
-          _sectionHeader('课程信息'),
-          const SizedBox(height: 8),
-          _infoRow(context, '总成绩', grade.displayGrade),
-          if (grade.fraction != null)
-            _infoRow(context, '百分成绩', _formatDouble(grade.fraction!)),
-          if (grade.gpa != null)
-            _infoRow(context, '绩点', grade.gpa!.toStringAsFixed(2)),
-          _infoRow(context, '学分', grade.credits.toStringAsFixed(1)),
-          if (grade.gradePoints != null)
-            _infoRow(context, '学分绩点', grade.gradePoints!.toStringAsFixed(2)),
-          if (grade.teacher != null)
-            _infoRow(context, '任课教师', grade.teacher!),
-          _infoRow(context, '课程类型', grade.isDegree ? '学位课' : '非学位课'),
-          if (grade.courseCategory != null)
-            _infoRow(context, '开课类别', grade.courseCategory!),
-          if (grade.examType != null)
-            _infoRow(context, '考试性质', grade.examType!),
-          if (grade.assessmentMethod != null)
-            _infoRow(context, '考核方式', grade.assessmentMethod!),
-          const SizedBox(height: 20),
-          const Divider(),
-          const SizedBox(height: 12),
-
-          // Grade components
-          _sectionHeader('成绩构成'),
-          const SizedBox(height: 8),
-          _buildComponents(context, isDark),
+          _buildScoreHero(context, isDark),
+          const SizedBox(height: 14),
+          _buildGradeComponentsCard(context, isDark),
+          const SizedBox(height: 14),
+          _buildCourseInfoPanel(context, isDark),
         ],
       ),
     );
@@ -257,8 +193,8 @@ class _EduGradeDetailScreenState extends State<EduGradeDetailScreen> {
           ),
           Expanded(
             flex: 2,
-            child: Text('比例',
-                style: TextStyle(fontSize: 12, color: Colors.grey)),
+            child:
+                Text('比例', style: TextStyle(fontSize: 12, color: Colors.grey)),
           ),
           Expanded(
             flex: 2,
@@ -275,8 +211,20 @@ class _EduGradeDetailScreenState extends State<EduGradeDetailScreen> {
 
   Widget _componentRow(BuildContext context, GradeComponent component) {
     final isTotal = component.name.contains('总');
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 7),
+
+    return Container(
+      padding: EdgeInsets.symmetric(
+        vertical: isTotal ? 10 : 8,
+        horizontal: isTotal ? 10 : 0,
+      ),
+      margin: EdgeInsets.only(top: isTotal ? 6 : 0),
+      decoration: isTotal
+          ? BoxDecoration(
+              color:
+                  Theme.of(context).colorScheme.primary.withValues(alpha: 0.06),
+              borderRadius: BorderRadius.circular(12),
+            )
+          : null,
       child: Row(
         children: [
           Expanded(
@@ -284,8 +232,8 @@ class _EduGradeDetailScreenState extends State<EduGradeDetailScreen> {
             child: Text(
               component.name,
               style: TextStyle(
-                fontSize: 14,
-                fontWeight: isTotal ? FontWeight.w600 : FontWeight.w400,
+                fontSize: isTotal ? 15 : 14,
+                fontWeight: isTotal ? FontWeight.w700 : FontWeight.w500,
               ),
             ),
           ),
@@ -293,7 +241,10 @@ class _EduGradeDetailScreenState extends State<EduGradeDetailScreen> {
             flex: 2,
             child: Text(
               component.weight ?? '',
-              style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+              style: TextStyle(
+                fontSize: 14,
+                color: isTotal ? Colors.transparent : Colors.grey[600],
+              ),
             ),
           ),
           Expanded(
@@ -302,8 +253,9 @@ class _EduGradeDetailScreenState extends State<EduGradeDetailScreen> {
               component.score,
               textAlign: TextAlign.right,
               style: TextStyle(
-                fontSize: 14,
-                fontWeight: isTotal ? FontWeight.w600 : FontWeight.w400,
+                fontSize: isTotal ? 16 : 14,
+                fontWeight: isTotal ? FontWeight.w800 : FontWeight.w600,
+                color: isTotal ? Theme.of(context).colorScheme.primary : null,
               ),
             ),
           ),
@@ -312,10 +264,179 @@ class _EduGradeDetailScreenState extends State<EduGradeDetailScreen> {
     );
   }
 
-  Widget _sectionHeader(String title) {
-    return Text(
-      title,
-      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+  Widget _buildScoreHero(BuildContext context, bool isDark) {
+    final subtitleItems = <String>[
+      if (grade.teacher != null) grade.teacher!,
+      if (grade.credits > 0) '${_formatDouble(grade.credits)} 学分',
+      if (grade.gpa != null) '绩点 ${grade.gpa!.toStringAsFixed(2)}',
+    ];
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
+      decoration: BoxDecoration(
+        color: isDark ? Colors.grey[900] : Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: isDark ? Colors.grey.shade800 : Colors.grey.shade200,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            grade.name,
+            style: const TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w700,
+              height: 1.25,
+            ),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 12),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                grade.displayGrade,
+                style: TextStyle(
+                  fontSize: 52,
+                  height: 1,
+                  fontWeight: FontWeight.w800,
+                  color: _gradeColor(context, grade),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Text(
+                  '总评',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Colors.grey[500],
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (subtitleItems.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text(
+              subtitleItems.join(' · '),
+              style: TextStyle(
+                fontSize: 13,
+                color: Colors.grey[600],
+              ),
+            ),
+          ],
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _tag(context, grade.isDegree ? '学位课' : '非学位课', isDark),
+              if (grade.examType != null)
+                _tag(context, grade.examType!, isDark),
+              if (grade.assessmentMethod != null)
+                _tag(context, grade.assessmentMethod!, isDark),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildGradeComponentsCard(BuildContext context, bool isDark) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
+      decoration: BoxDecoration(
+        color: isDark ? Colors.grey[900] : Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: isDark ? Colors.grey.shade800 : Colors.grey.shade200,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  '成绩构成',
+                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+                ),
+              ),
+              if (_detail?.totalGrade.isNotEmpty == true)
+                Text(
+                  '总评 ${_detail!.totalGrade}',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Colors.grey[600],
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          _buildComponents(context, isDark),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCourseInfoPanel(BuildContext context, bool isDark) {
+    final rows = <Widget>[
+      if (grade.teacher != null) _infoRow(context, '任课教师', grade.teacher!),
+      _infoRow(context, '总成绩', grade.displayGrade),
+      if (grade.fraction != null)
+        _infoRow(context, '百分成绩', _formatDouble(grade.fraction!)),
+      if (grade.gpa != null)
+        _infoRow(context, '绩点', grade.gpa!.toStringAsFixed(2)),
+      _infoRow(context, '学分', _formatDouble(grade.credits)),
+      if (grade.gradePoints != null)
+        _infoRow(context, '学分绩点', grade.gradePoints!.toStringAsFixed(2)),
+      _infoRow(context, '课程类型', grade.isDegree ? '学位课' : '非学位课'),
+      if (grade.courseCategory != null)
+        _infoRow(context, '开课类别', grade.courseCategory!),
+      if (grade.examType != null) _infoRow(context, '考试性质', grade.examType!),
+      if (grade.assessmentMethod != null)
+        _infoRow(context, '考核方式', grade.assessmentMethod!),
+    ];
+
+    return Container(
+      decoration: BoxDecoration(
+        color: isDark ? Colors.grey[900] : Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: isDark ? Colors.grey.shade800 : Colors.grey.shade200,
+        ),
+      ),
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          tilePadding: const EdgeInsets.symmetric(horizontal: 16),
+          childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+          title: const Text(
+            '课程信息',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+          ),
+          subtitle: Text(
+            [
+              if (grade.teacher != null) grade.teacher!,
+              if (grade.gpa != null) '绩点 ${grade.gpa!.toStringAsFixed(2)}',
+              '${_formatDouble(grade.credits)} 学分',
+            ].join(' · '),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+          ),
+          children: rows,
+        ),
+      ),
     );
   }
 

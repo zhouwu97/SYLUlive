@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"shenliyuan/internal/models"
 
@@ -234,4 +235,87 @@ func (h *CanteenHandler) DeleteCanteen(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "已删除并驳回经验"})
+}
+
+// UpdateImage 管理员修改食堂图片
+func (h *CanteenHandler) UpdateImage(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效ID"})
+		return
+	}
+
+	var input struct {
+		Image string `json:"image" binding:"required,url|filepath"` // 可以用 custom validation，这里简单要求 required
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "图片地址不能为空"})
+		return
+	}
+
+	image := strings.TrimSpace(input.Image)
+	if image == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "图片地址不能为空"})
+		return
+	}
+
+	if !strings.HasPrefix(image, "/uploads/") {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "图片地址必须来自站内上传"})
+		return
+	}
+	
+	input.Image = image
+
+	// 开启事务
+	err = h.db.Transaction(func(tx *gorm.DB) error {
+		var canteen models.Canteen
+		if err := tx.First(&canteen, id).Error; err != nil {
+			return fmt.Errorf("食堂不存在")
+		}
+
+		oldImage := canteen.Image
+		canteen.Image = input.Image
+
+		if err := tx.Save(&canteen).Error; err != nil {
+			return fmt.Errorf("更新食堂图片失败")
+		}
+
+		// 记录管理员操作
+		adminID, _ := c.Get("user_id")
+		var admin models.User
+		if err := tx.Select("nickname").First(&admin, adminID).Error; err != nil {
+			return fmt.Errorf("获取管理员信息失败")
+		}
+
+		detail := fmt.Sprintf("管理员修改食堂图片： %s（ID: %d），旧图片：%s，新图片：%s", canteen.Name, canteen.ID, oldImage, input.Image)
+		
+		if err := tx.Create(&models.AdminLog{
+			AdminID:   adminID.(uint),
+			AdminName: admin.Nickname,
+			Action:    "修改食堂图片",
+			Target:    canteen.Name,
+			Detail:    detail,
+		}).Error; err != nil {
+			return fmt.Errorf("记录管理员操作失败")
+		}
+
+		// 返回给外部使用
+		c.Set("updated_canteen", canteen)
+		return nil
+	})
+
+	if err != nil {
+		if err.Error() == "食堂不存在" {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		}
+		return
+	}
+
+	updatedCanteen, _ := c.Get("updated_canteen")
+	c.JSON(http.StatusOK, gin.H{
+		"message": "食堂图片已更新",
+		"canteen": updatedCanteen,
+	})
 }

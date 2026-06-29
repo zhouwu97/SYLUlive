@@ -312,6 +312,16 @@ type GradesInput struct {
 	Semester int    `json:"semester" binding:"required,oneof=3 12"`
 }
 
+// GradeDetailInput 单门课程成绩明细输入
+type GradeDetailInput struct {
+	Year           string `json:"year" binding:"required"`
+	Semester       int    `json:"semester" binding:"required,oneof=3 12"`
+	ClassID        string `json:"class_id" binding:"required"`
+	CourseName     string `json:"course_name" binding:"required"`
+	CourseID       string `json:"course_id"`
+	StudentGradeID string `json:"student_grade_id"`
+}
+
 // GetGrades 获取成绩（通过Python服务访问教务系统）
 func (h *EduHandler) GetGrades(c *gin.Context) {
 	userID, _ := c.Get("user_id")
@@ -355,6 +365,63 @@ func (h *EduHandler) GetGrades(c *gin.Context) {
 	if !json.Valid(resp.Body()) {
 		log.Printf(
 			"[EDU] grades returned non-JSON: status=%d content_type=%q",
+			resp.StatusCode(),
+			resp.Header().Get("Content-Type"),
+		)
+		c.JSON(http.StatusBadGateway, gin.H{
+			"error": "教务服务返回异常，请稍后再试",
+		})
+		return
+	}
+
+	c.Data(resp.StatusCode(), "application/json; charset=utf-8", resp.Body())
+}
+
+// GetGradeDetail 获取单门课程成绩构成（通过Python服务访问教务系统）
+func (h *EduHandler) GetGradeDetail(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+
+	var user models.User
+	if err := h.db.First(&user, userID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
+		return
+	}
+
+	if !user.EduBound {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请先绑定教务账号"})
+		return
+	}
+
+	var input GradeDetailInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	client := resty.New()
+	client.SetTimeout(30 * time.Second)
+
+	resp, err := client.R().
+		SetHeader("Content-Type", "application/json").
+		SetBody(map[string]interface{}{
+			"user_id":          fmt.Sprintf("%d", userID),
+			"year":             input.Year,
+			"semester":         input.Semester,
+			"class_id":         input.ClassID,
+			"course_name":      input.CourseName,
+			"course_id":        input.CourseID,
+			"student_grade_id": input.StudentGradeID,
+		}).
+		Post(strings.TrimRight(EduServiceConfig.BaseURL, "/") + "/api/edu/grades/detail")
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "无法连接教务服务，请检查网络"})
+		return
+	}
+
+	if !json.Valid(resp.Body()) {
+		log.Printf(
+			"[EDU] grade detail returned non-JSON: status=%d content_type=%q",
 			resp.StatusCode(),
 			resp.Header().Get("Content-Type"),
 		)

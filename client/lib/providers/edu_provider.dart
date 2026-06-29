@@ -45,6 +45,7 @@ class EduProvider extends ChangeNotifier {
   bool _statusLoaded = false;
   String? _errorMessage;
   final Map<String, GradeCacheEntry> _gradeCache = {};
+  final Map<String, EduGradeDetail> _gradeDetailCache = {};
   int _statusGeneration = 0;
 
   bool get isBound => _isBound;
@@ -82,6 +83,22 @@ class EduProvider extends ChangeNotifier {
   void clearGradeCacheForUser(String userId) {
     final prefix = 'edu_grades_${userId}_';
     _gradeCache.removeWhere((key, _) => key.startsWith(prefix));
+    _gradeDetailCache.removeWhere((key, _) => key.startsWith('$userId|'));
+  }
+
+  String _gradeDetailCacheKey(EduGrade grade, String year, int semester) {
+    final stableId = grade.studentGradeId.isNotEmpty
+        ? grade.studentGradeId
+        : grade.classId.isNotEmpty
+            ? grade.classId
+            : grade.name;
+
+    return '${_userId ?? ''}|$year|$semester|$stableId';
+  }
+
+  EduGradeDetail? getCachedGradeDetail(
+      EduGrade grade, String year, int semester) {
+    return _gradeDetailCache[_gradeDetailCacheKey(grade, year, semester)];
   }
 
   /// 删除教务密码（解绑后）
@@ -468,6 +485,95 @@ class EduProvider extends ChangeNotifier {
       return OperationResult.ok(grades);
     }
     return OperationResult.fail(raw?.errorMessage ?? '获取成绩失败');
+  }
+
+  Future<OperationResult<EduGradeDetail>> fetchGradeDetail(
+    EduGrade grade,
+    String year,
+    int semester, {
+    bool forceRefresh = false,
+  }) async {
+    final requestUserId = _userId;
+    if (requestUserId == null) {
+      return OperationResult.fail('用户未登录');
+    }
+
+    final cacheKey = _gradeDetailCacheKey(grade, year, semester);
+
+    if (!forceRefresh) {
+      final cached = _gradeDetailCache[cacheKey];
+      if (cached != null) {
+        return OperationResult.ok(cached);
+      }
+    }
+
+    if (grade.classId.isEmpty) {
+      return OperationResult.fail('缺少教学班信息，暂不能获取成绩构成');
+    }
+
+    Future<Response<dynamic>> request() {
+      return _authDio.post(
+        '/edu/grades/detail',
+        data: {
+          'year': year,
+          'semester': semester,
+          'class_id': grade.classId,
+          'course_name': grade.name,
+          'course_id': grade.courseId.isNotEmpty ? grade.courseId : null,
+          'student_grade_id':
+              grade.studentGradeId.isNotEmpty ? grade.studentGradeId : null,
+        },
+      );
+    }
+
+    try {
+      final response = await request();
+      if (_userId != requestUserId) {
+        return OperationResult.fail('用户已切换');
+      }
+      if (response.statusCode == 200) {
+        final detail = EduGradeDetail.fromJson(
+          Map<String, dynamic>.from(response.data),
+        );
+        if (detail.success && detail.components.isNotEmpty) {
+          _gradeDetailCache[cacheKey] = detail;
+        }
+        return OperationResult.ok(detail);
+      }
+      return OperationResult.fail('获取成绩构成失败');
+    } on DioException catch (e) {
+      final errorMsg = _parseDioError(e);
+      if (errorMsg.contains('未登录') ||
+          errorMsg.contains('过期') ||
+          errorMsg.contains('重新登录') ||
+          errorMsg.contains('会话') ||
+          errorMsg.contains('cookie') ||
+          errorMsg.contains('失效') ||
+          errorMsg.contains('Cookie')) {
+        final rebindSuccess = await _trySilentRelogin();
+        if (rebindSuccess) {
+          try {
+            final retryResp = await request();
+            if (_userId != requestUserId) {
+              return OperationResult.fail('用户已切换');
+            }
+            if (retryResp.statusCode == 200) {
+              final detail = EduGradeDetail.fromJson(
+                Map<String, dynamic>.from(retryResp.data),
+              );
+              if (detail.success && detail.components.isNotEmpty) {
+                _gradeDetailCache[cacheKey] = detail;
+              }
+              return OperationResult.ok(detail);
+            }
+          } catch (_) {}
+        } else {
+          return OperationResult.fail('教务登录状态已失效，请重新绑定');
+        }
+      }
+      debugPrint('获取成绩构成失败: $errorMsg');
+      return OperationResult.fail(errorMsg);
+    }
   }
 
   // 获取成绩（原始数据，内部使用）

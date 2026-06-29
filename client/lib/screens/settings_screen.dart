@@ -657,6 +657,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     bool isLandscape,
   ) {
     final backgrounds = [
+      isLandscape ? 'tablet_default_landscape.png' : 'morenbeijing.jpeg',
       if (isLandscape) ...[
         'tablet_landscape_01.png',
         'tablet_landscape_02.png',
@@ -741,17 +742,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           itemCount: backgrounds.length,
                           itemBuilder: (context, index) {
                             final value = backgrounds[index];
-                            final imagePath = _wallpaperThumbnailAsset(value);
+                            final imagePath = _backgroundPreviewAsset(value);
                             return GestureDetector(
                               onTap: () async {
-                                final navigator = Navigator.of(context);
                                 await _useBundledBackground(
                                   context,
                                   themeProvider,
                                   value,
                                   isLandscape,
                                 );
-                                if (navigator.mounted) navigator.pop();
+                                if (context.mounted) {
+                                  Navigator.pop(context);
+                                }
                               },
                               child: Stack(
                                 fit: StackFit.expand,
@@ -799,34 +801,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _pickerActionButton(
-                            label: '直接使用',
-                            icon: Icons.photo_library,
-                            onTap: () => _pickGalleryBackground(
-                              context,
-                              themeProvider,
-                              isLandscape,
-                              edit: false,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: _pickerActionButton(
-                            label: '编辑图片',
-                            icon: Icons.crop,
-                            onTap: () => _pickGalleryBackground(
-                              context,
-                              themeProvider,
-                              isLandscape,
-                              edit: true,
-                            ),
-                          ),
-                        ),
-                      ],
+                    _pickerActionButton(
+                      label: '自定义背景',
+                      icon: Icons.photo_library,
+                      onTap: () => _pickGalleryBackground(
+                        context,
+                        themeProvider,
+                        isLandscape,
+                      ),
                     ),
                   ],
                 ),
@@ -866,6 +848,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return 'assets/images/wallpaper_thumbs/${path.basenameWithoutExtension(assetName)}.jpg';
   }
 
+  String _backgroundPreviewAsset(String assetName) {
+    if (_remoteWallpaperUrl(assetName) == null) {
+      return ThemeProvider.resolveBundledAssetPath(assetName);
+    }
+    return _wallpaperThumbnailAsset(assetName);
+  }
+
   Future<void> _useBundledBackground(
     BuildContext context,
     ThemeProvider themeProvider,
@@ -874,7 +863,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   ) async {
     final remoteUrl = _remoteWallpaperUrl(assetName);
     if (remoteUrl == null) {
-      _setBackground(themeProvider, isLandscape, assetName, fillScreen: true);
+      _setBackground(themeProvider, isLandscape, assetName, fillScreen: false);
       return;
     }
 
@@ -958,7 +947,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       }
 
       sourcePath ??= await _copyAssetToTempFile(
-        'wallpaper_thumbs/${path.basenameWithoutExtension(assetName)}.jpg',
+        _backgroundPreviewAsset(assetName),
       );
 
       String? savedPath;
@@ -976,7 +965,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             await File(sourcePath).delete();
           } catch (_) {}
           final fallbackSource = await _copyAssetToTempFile(
-            'wallpaper_thumbs/${path.basenameWithoutExtension(assetName)}.jpg',
+            _backgroundPreviewAsset(assetName),
           );
           savedPath = await _cropAndSaveBackground(
             fallbackSource,
@@ -1016,19 +1005,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _pickGalleryBackground(
     BuildContext context,
     ThemeProvider themeProvider,
-    bool isLandscape, {
-    required bool edit,
-  }) async {
+    bool isLandscape,
+  ) async {
     final picker = ImagePicker();
     final image = await picker.pickImage(source: ImageSource.gallery);
     if (image == null) return;
 
     try {
-      final savedPath = edit
-          ? await _cropAndSaveBackground(image.path, isLandscape: isLandscape)
-          : await _saveBackgroundFile(image.path, isLandscape: isLandscape);
+      final savedPath = await _cropAndSaveBackground(
+        image.path,
+        isLandscape: isLandscape,
+      );
       if (savedPath == null) return;
-      _setBackground(themeProvider, isLandscape, savedPath, fillScreen: edit);
+      _setBackground(themeProvider, isLandscape, savedPath, fillScreen: true);
       if (context.mounted) Navigator.pop(context);
     } catch (e) {
       debugPrint('Pick gallery background failed: $e');
@@ -1701,8 +1690,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       backgroundColor: Colors.transparent,
       barrierColor: Colors.black.withOpacity(0.4),
       builder: (sheetCtx) {
-        final isDarkSheet =
-            Theme.of(sheetCtx).brightness == Brightness.dark;
+        final isDarkSheet = Theme.of(sheetCtx).brightness == Brightness.dark;
         return Container(
           margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
           constraints: BoxConstraints(
@@ -1732,9 +1720,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     width: 48,
                     height: 5,
                     decoration: BoxDecoration(
-                      color: isDarkSheet
-                          ? Colors.white24
-                          : Colors.grey[300],
+                      color: isDarkSheet ? Colors.white24 : Colors.grey[300],
                       borderRadius: BorderRadius.circular(10),
                     ),
                   ),
@@ -1746,16 +1732,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     children: [
                       Icon(Icons.troubleshoot, color: primary, size: 24),
                       const SizedBox(width: 10),
-                        Text(
-                          '推送诊断',
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.w800,
-                            color: isDarkSheet
-                                ? Colors.white
-                                : const Color(0xFF2D3142),
-                          ),
+                      Text(
+                        '推送诊断',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
+                          color: isDarkSheet
+                              ? Colors.white
+                              : const Color(0xFF2D3142),
                         ),
+                      ),
                       const Spacer(),
                       IconButton(
                         icon: const Icon(Icons.copy, size: 20),
@@ -1791,9 +1777,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           info.notificationsEnabled
                               ? Icons.check_circle
                               : Icons.cancel,
-                          info.notificationsEnabled
-                              ? Colors.green
-                              : Colors.red,
+                          info.notificationsEnabled ? Colors.green : Colors.red,
                           isDarkSheet,
                         ),
                         _diagRow(
@@ -1896,8 +1880,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               Navigator.pop(sheetCtx);
                               Navigator.of(context).push(
                                 MaterialPageRoute(
-                                  builder: (_) =>
-                                      const DiagnosticLogScreen(),
+                                  builder: (_) => const DiagnosticLogScreen(),
                                 ),
                               );
                             },

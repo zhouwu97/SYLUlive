@@ -512,7 +512,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                             height: 42,
                             decoration: BoxDecoration(
                               color: priority == 'urgent'
-                                  ? const Color(0xFFE53935).withValues(alpha: 0.15)
+                                  ? const Color(0xFFE53935)
+                                      .withValues(alpha: 0.15)
                                   : Theme.of(context)
                                       .primaryColor
                                       .withValues(alpha: isDark ? 0.22 : 0.14),
@@ -568,9 +569,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         style: TextStyle(
                           fontSize: 22,
                           fontWeight: FontWeight.w800,
-                          color: isDark
-                              ? Colors.white
-                              : const Color(0xFF111827),
+                          color:
+                              isDark ? Colors.white : const Color(0xFF111827),
                         ),
                       ),
                       if (timeText.isNotEmpty) ...[
@@ -579,17 +579,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           children: [
                             Icon(Icons.schedule_rounded,
                                 size: 14,
-                                color: isDark
-                                    ? Colors.white38
-                                    : Colors.grey[600]),
+                                color:
+                                    isDark ? Colors.white38 : Colors.grey[600]),
                             const SizedBox(width: 6),
                             Text(
                               timeText,
                               style: TextStyle(
                                 fontSize: 12,
-                                color: isDark
-                                    ? Colors.white38
-                                    : Colors.grey[600],
+                                color:
+                                    isDark ? Colors.white38 : Colors.grey[600],
                               ),
                             ),
                           ],
@@ -1297,7 +1295,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           Future.wait([
             postProvider.refresh(boardId: 1, sort: 'time'),
             postProvider.refresh(boardId: 1, sort: 'all'),
-            postProvider.refresh(boardId: 1, sort: 'hot'),
+            postProvider.refresh(boardId: 1, sort: 'featured'),
           ]),
         );
       }

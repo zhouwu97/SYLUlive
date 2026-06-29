@@ -49,17 +49,14 @@ class _PostCardState extends State<PostCard>
     // 优先使用当前登录用户的最新资料
     final authUser = context.watch<AuthProvider>().user;
     final isMyPost = authUser != null && widget.post.author?.id == authUser.id;
-    final displayAvatar = isMyPost
-        ? authUser.avatar
-        : (widget.post.author?.avatar ?? '');
-    final displayNickname = isMyPost
-        ? authUser.nickname
-        : (widget.post.author?.nickname ?? '匿名');
+    final displayAvatar =
+        isMyPost ? authUser.avatar : (widget.post.author?.avatar ?? '');
+    final displayNickname =
+        isMyPost ? authUser.nickname : (widget.post.author?.nickname ?? '匿名');
 
     // 只统计真正具有有效地址的图片
-    final validImageCount = widget.post.images
-        .where((image) => image.url.trim().isNotEmpty)
-        .length;
+    final validImageCount =
+        widget.post.images.where((image) => image.url.trim().isNotEmpty).length;
 
     // 有图片时标题统一只显示一行
     final titleMaxLines = validImageCount > 0 ? 1 : 2;
@@ -76,9 +73,8 @@ class _PostCardState extends State<PostCard>
       borderRadius: isDesktop ? 16 : 12,
       blur: 12,
       opacity: 0.85,
-      backgroundColor: isDark
-          ? const Color(0xE6171B24)
-          : const Color(0xF2FFFFFF),
+      backgroundColor:
+          isDark ? const Color(0xE6171B24) : const Color(0xF2FFFFFF),
       borderColor: isDark
           ? Colors.white.withValues(alpha: 0.10)
           : Colors.white.withValues(alpha: 0.85),
@@ -197,15 +193,25 @@ class _PostCardState extends State<PostCard>
             ),
             if (widget.post.title.isNotEmpty) ...[
               SizedBox(height: isDesktop ? 12 : 6),
-              Text(
-                widget.post.title,
-                style: TextStyle(
-                  fontSize: isDesktop ? 17 : 15,
-                  fontWeight: FontWeight.bold,
-                  height: 1.25,
-                ),
-                maxLines: titleMaxLines,
-                overflow: TextOverflow.ellipsis,
+              Row(
+                children: [
+                  if (widget.post.isFeatured) ...[
+                    _buildFeaturedBadge(isDesktop),
+                    const SizedBox(width: 6),
+                  ],
+                  Expanded(
+                    child: Text(
+                      widget.post.title,
+                      style: TextStyle(
+                        fontSize: isDesktop ? 17 : 15,
+                        fontWeight: FontWeight.bold,
+                        height: 1.25,
+                      ),
+                      maxLines: titleMaxLines,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
               ),
             ],
             if (widget.post.title.isNotEmpty)
@@ -362,15 +368,48 @@ class _PostCardState extends State<PostCard>
     );
   }
 
+  Widget _buildFeaturedBadge(bool isDesktop) {
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: isDesktop ? 7 : 6,
+        vertical: isDesktop ? 3 : 2,
+      ),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFB020).withValues(alpha: 0.16),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(
+          color: const Color(0xFFFFB020).withValues(alpha: 0.35),
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.workspace_premium_rounded,
+            size: isDesktop ? 13 : 11,
+            color: const Color(0xFFD97706),
+          ),
+          const SizedBox(width: 3),
+          Text(
+            '精华',
+            style: TextStyle(
+              fontSize: isDesktop ? 11 : 10,
+              fontWeight: FontWeight.w700,
+              color: const Color(0xFFD97706),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildImageGrid(BuildContext context, List<PostImage> images) {
-    final validImages = images
-        .where((image) => image.url.trim().isNotEmpty)
-        .toList();
+    final validImages =
+        images.where((image) => image.url.trim().isNotEmpty).toList();
     final count = validImages.length;
     if (count == 0) return const SizedBox.shrink();
-    final imageUrls = validImages
-        .map((image) => ApiConstants.fullUrl(image.url))
-        .toList();
+    final imageUrls =
+        validImages.map((image) => ApiConstants.fullUrl(image.url)).toList();
 
     if (count == 1) {
       return ClipRRect(

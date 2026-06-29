@@ -4,11 +4,11 @@ import 'package:flutter/services.dart';
 import '../main.dart';
 import '../models/campus_article.dart';
 import '../services/campus_article_service.dart';
-import '../utils/app_feedback.dart';
 import 'campus_article_detail_screen.dart';
 import 'campus_article_list_screen.dart';
 import 'campus_calendar_screen.dart';
 import 'campus_map_tab_page.dart';
+import 'competition_center_screen.dart';
 import 'edu_screen.dart';
 import 'teacher_rate_screen.dart';
 
@@ -191,7 +191,7 @@ class _CampusScreenState extends State<CampusScreen>
             ),
             slivers: [
               SliverPadding(
-                padding: const EdgeInsets.fromLTRB(16, 18, 16, 120),
+                padding: const EdgeInsets.fromLTRB(16, 18, 16, 156),
                 sliver: SliverList(
                   delegate: SliverChildListDelegate([
                     _CampusHeader(semester: _currentSemesterText()),
@@ -205,9 +205,10 @@ class _CampusScreenState extends State<CampusScreen>
                     const SizedBox(height: 12),
                     _buildServiceRow(isDark),
                     const SizedBox(height: 26),
-                    const _SectionTitle(
+                    _CampusInfoSectionTitle(
                       title: '校园资讯',
-                      subtitle: '校内通知与竞赛信息',
+                      subtitle: '校内通知与赛事信息',
+                      onCompetitionTap: () => _openPage(const CompetitionCenterScreen()),
                     ),
                     const SizedBox(height: 12),
                     _buildRecentList(isDark),
@@ -478,6 +479,93 @@ class _SectionTitle extends StatelessWidget {
   }
 }
 
+class _CampusInfoSectionTitle extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final VoidCallback onCompetitionTap;
+
+  const _CampusInfoSectionTitle({
+    required this.title,
+    required this.subtitle,
+    required this.onCompetitionTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final primary = Theme.of(context).colorScheme.primary;
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                  color: isDark ? Colors.white : const Color(0xFF242530),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                subtitle,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: isDark ? Colors.white54 : Colors.black45,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 12),
+        Material(
+          color: isDark
+              ? primary.withValues(alpha: 0.18)
+              : primary.withValues(alpha: 0.10),
+          borderRadius: BorderRadius.circular(999),
+          child: InkWell(
+            onTap: onCompetitionTap,
+            borderRadius: BorderRadius.circular(999),
+            child: Container(
+              height: 34,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(
+                  color: primary.withValues(alpha: isDark ? 0.22 : 0.14),
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.emoji_events_rounded,
+                    size: 16,
+                    color: primary,
+                  ),
+                  const SizedBox(width: 5),
+                  Text(
+                    '竞赛中心',
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                      color: primary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _CampusService {
   final String title;
   final IconData icon;
@@ -510,8 +598,8 @@ class _CampusServiceCard extends StatelessWidget {
         onTap: service.onTap,
         borderRadius: BorderRadius.circular(17),
         child: Container(
-          height: 96,
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 12),
+          height: 92,
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 9),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(17),
             border: Border.all(
@@ -522,8 +610,8 @@ class _CampusServiceCard extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Container(
-                width: 42,
-                height: 42,
+                width: 40,
+                height: 40,
                 decoration: BoxDecoration(
                   color: service.color.withValues(alpha: 0.13),
                   borderRadius: BorderRadius.circular(14),
@@ -531,16 +619,16 @@ class _CampusServiceCard extends StatelessWidget {
                 child: Icon(
                   service.icon,
                   color: service.color,
-                  size: 22,
+                  size: 21,
                 ),
               ),
-              const SizedBox(height: 9),
+              const SizedBox(height: 6),
               Text(
                 service.title,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  fontSize: 12.5,
+                  fontSize: 12.2,
                   fontWeight: FontWeight.w700,
                   color: isDark ? Colors.white : const Color(0xFF292A35),
                 ),
@@ -606,7 +694,7 @@ class _LatestArticleCard extends StatelessWidget {
               ),
             ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(18, 17, 18, 18),
+              padding: const EdgeInsets.fromLTRB(18, 15, 18, 16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -646,8 +734,8 @@ class _LatestArticleCard extends StatelessWidget {
                       const Spacer(),
                       Container(
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 9,
-                          vertical: 5,
+                          horizontal: 8,
+                          vertical: 4,
                         ),
                         decoration: BoxDecoration(
                           color: Colors.white.withValues(alpha: 0.13),
@@ -658,7 +746,7 @@ class _LatestArticleCard extends StatelessWidget {
                               ? article.shortDate
                               : '最新',
                           style: TextStyle(
-                            fontSize: 11,
+                            fontSize: 10.5,
                             fontWeight: FontWeight.w600,
                             color: Colors.white.withValues(alpha: 0.82),
                           ),
@@ -666,19 +754,19 @@ class _LatestArticleCard extends StatelessWidget {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 13),
                   Text(
                     article.title,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                      fontSize: 19,
-                      height: 1.35,
+                      fontSize: 18,
+                      height: 1.28,
                       fontWeight: FontWeight.w800,
                       color: Colors.white,
                     ),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 6),
                   Text(
                     [
                       if (article.authorDepartment.isNotEmpty)
@@ -687,10 +775,12 @@ class _LatestArticleCard extends StatelessWidget {
                       if (article.hasAttachment) '含附件',
                     ].join(' · '),
                     style: TextStyle(
-                      fontSize: 13,
-                      height: 1.55,
-                      color: Colors.white.withValues(alpha: 0.78),
+                      fontSize: 12,
+                      height: 1.35,
+                      color: Colors.white.withValues(alpha: 0.72),
                     ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ],
               ),

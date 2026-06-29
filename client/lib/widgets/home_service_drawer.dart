@@ -7,11 +7,13 @@ class HomeServiceDrawer extends StatelessWidget {
   final bool checkedIn;
   final int streakDays;
   final bool checkInLoading;
+  final bool showCheckInDot;
   final List<model.Announcement> announcements;
   final VoidCallback onCheckIn;
   final VoidCallback onOpenLostFound;
   final VoidCallback onOpenToolbox;
   final VoidCallback onOpenAnnouncements;
+  final VoidCallback onOpenCompetitions;
   final VoidCallback onOpenGrades;
   final VoidCallback onOpenExamSchedule;
   final VoidCallback onOpenFeedback;
@@ -21,11 +23,13 @@ class HomeServiceDrawer extends StatelessWidget {
     required this.checkedIn,
     required this.streakDays,
     required this.checkInLoading,
+    required this.showCheckInDot,
     required this.announcements,
     required this.onCheckIn,
     required this.onOpenLostFound,
     required this.onOpenToolbox,
     required this.onOpenAnnouncements,
+    required this.onOpenCompetitions,
     required this.onOpenGrades,
     required this.onOpenExamSchedule,
     required this.onOpenFeedback,
@@ -58,9 +62,9 @@ class HomeServiceDrawer extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _buildQuickEntries(context, isDark),
-                    const SizedBox(height: 20),
                     _buildAnnouncementSection(context, isDark),
+                    const SizedBox(height: 20),
+                    _buildQuickEntries(context, isDark),
                     const SizedBox(height: 20),
                     _buildMoreServices(context, isDark),
                     const SizedBox(height: 32),
@@ -120,6 +124,7 @@ class HomeServiceDrawer extends StatelessWidget {
             subtitle: checkedIn ? '连续$streakDays天' : '每日一次',
             isDark: isDark,
             isLoading: checkInLoading,
+            showDot: showCheckInDot,
             onTap: onCheckIn,
           ),
         ),
@@ -269,6 +274,15 @@ class HomeServiceDrawer extends StatelessWidget {
         ),
         const SizedBox(height: 10),
         _ServiceRow(
+          icon: Icons.workspace_premium_outlined,
+          color: const Color(0xFFD97706),
+          title: '竞赛中心',
+          subtitle: '比赛日历',
+          isDark: isDark,
+          onTap: onOpenCompetitions,
+        ),
+        const SizedBox(height: 8),
+        _ServiceRow(
           icon: Icons.assessment_outlined,
           color: const Color(0xFF5D64C4),
           title: '成绩查询',
@@ -307,6 +321,7 @@ class _QuickEntryCard extends StatelessWidget {
   final String subtitle;
   final bool isDark;
   final bool isLoading;
+  final bool showDot;
   final VoidCallback onTap;
 
   const _QuickEntryCard({
@@ -316,6 +331,7 @@ class _QuickEntryCard extends StatelessWidget {
     required this.subtitle,
     required this.isDark,
     this.isLoading = false,
+    this.showDot = false,
     required this.onTap,
   });
 
@@ -326,63 +342,84 @@ class _QuickEntryCard extends StatelessWidget {
       child: InkWell(
         onTap: isLoading ? null : onTap,
         borderRadius: BorderRadius.circular(14),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 6),
-          decoration: BoxDecoration(
-            color: isDark
-                ? Colors.white.withValues(alpha: 0.06)
-                : const Color(0xFFF7F9FC),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color: isDark
-                  ? Colors.white.withValues(alpha: 0.08)
-                  : const Color(0xFFE9EDF5),
-            ),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              isLoading
-                  ? SizedBox(
-                      width: 24,
-                      height: 24,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: iconColor,
-                      ),
-                    )
-                  : Container(
-                      width: 34,
-                      height: 34,
-                      decoration: BoxDecoration(
-                        color: iconColor.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Icon(icon, color: iconColor, size: 18),
+        child: Stack(
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 6),
+              decoration: BoxDecoration(
+                color: isDark
+                    ? Colors.white.withValues(alpha: 0.06)
+                    : const Color(0xFFF7F9FC),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: isDark
+                      ? Colors.white.withValues(alpha: 0.08)
+                      : const Color(0xFFE9EDF5),
+                ),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  isLoading
+                      ? SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: iconColor,
+                          ),
+                        )
+                      : Container(
+                          width: 34,
+                          height: 34,
+                          decoration: BoxDecoration(
+                            color: iconColor.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Icon(icon, color: iconColor, size: 18),
+                        ),
+                  const SizedBox(height: 8),
+                  Text(
+                    title,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: isDark ? Colors.white : Colors.black87,
                     ),
-              const SizedBox(height: 8),
-              Text(
-                title,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  color: isDark ? Colors.white : Colors.black87,
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    textAlign: TextAlign.center,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: isDark ? Colors.white54 : Colors.black54,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (showDot)
+              Positioned(
+                top: 8,
+                right: 8,
+                child: Container(
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEF4444),
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: isDark ? const Color(0xFF181D28) : Colors.white,
+                      width: 1.5,
+                    ),
+                  ),
                 ),
               ),
-              const SizedBox(height: 2),
-              Text(
-                subtitle,
-                textAlign: TextAlign.center,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 10,
-                  color: isDark ? Colors.white54 : Colors.black54,
-                ),
-              ),
-            ],
-          ),
+          ],
         ),
       ),
     );

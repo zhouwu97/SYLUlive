@@ -37,25 +37,24 @@ class CourseBlock {
   int get span => endSection - startSection + 1;
 
   Map<String, dynamic> toJson() => {
-    'id': id,
-    'course_code': courseCode,
-    'name': name,
-    'teacher': teacher,
-    'location': location,
-    'color': color,
-    'weekday': weekday,
-    'start_section': startSection,
-    'end_section': endSection,
-    'weeks': weeks,
-    'note': note,
-  };
+        'id': id,
+        'course_code': courseCode,
+        'name': name,
+        'teacher': teacher,
+        'location': location,
+        'color': color,
+        'weekday': weekday,
+        'start_section': startSection,
+        'end_section': endSection,
+        'weeks': weeks,
+        'note': note,
+      };
 
   factory CourseBlock.fromJson(Map<String, dynamic> json) {
     return CourseBlock(
       id: (json['id'] as num?)?.toInt() ?? 0,
       courseCode: json['course_code']?.toString() ?? '',
-      name:
-          (json['custom_name']?.toString() ??
+      name: (json['custom_name']?.toString() ??
           json['original_name']?.toString() ??
           json['name']?.toString() ??
           ''),
@@ -65,8 +64,7 @@ class CourseBlock {
       weekday: (json['weekday'] as num?)?.toInt() ?? 1,
       startSection: (json['start_section'] as num?)?.toInt() ?? 1,
       endSection: (json['end_section'] as num?)?.toInt() ?? 1,
-      weeks:
-          (json['weeks'] as List<dynamic>?)
+      weeks: (json['weeks'] as List<dynamic>?)
               ?.map((e) => (e as num).toInt())
               .toList() ??
           [],
@@ -90,11 +88,11 @@ class CourseArchive {
   });
 
   Map<String, dynamic> toJson() => {
-    'id': id,
-    'name': name,
-    'created_at': createdAt.toIso8601String(),
-    'course_count': courseCount,
-  };
+        'id': id,
+        'name': name,
+        'created_at': createdAt.toIso8601String(),
+        'course_count': courseCount,
+      };
 
   factory CourseArchive.fromJson(Map<String, dynamic> json) {
     return CourseArchive(
@@ -264,7 +262,15 @@ class CourseScheduleProvider extends ChangeNotifier {
   ) async {
     if (_userId == null) return;
 
-    _courses = rawCourses.map(_courseFromFetchedMap).toList();
+    final parsedCourses = <CourseBlock>[];
+    for (final rawCourse in rawCourses) {
+      try {
+        parsedCourses.add(_courseFromFetchedMap(rawCourse));
+      } catch (e, stackTrace) {
+        debugPrint('解析课程失败: $e\n$stackTrace\n$rawCourse');
+      }
+    }
+    _courses = parsedCourses;
     _buildGrid();
     _isLoading = false;
     _errorMessage = null;
@@ -278,12 +284,19 @@ class CourseScheduleProvider extends ChangeNotifier {
   }
 
   CourseBlock _courseFromFetchedMap(Map<String, dynamic> map) {
-    final name = map['name'] as String? ?? '';
-    final time = map['time'] as int? ?? 1;
-    final endTime = map['end_time'] as int? ?? (time + 1);
-    final weekday = map['week_day'] as int? ?? 1;
-    final teacher = map['teacher'] as String? ?? '';
-    final loc = map['location'] as String? ?? '';
+    final name = _asString(map['name']);
+    final time = _asInt(map['time'], fallback: 1);
+    final endTime = _asInt(map['end_time'], fallback: time + 1);
+    final weekday = _asInt(map['week_day'], fallback: 1);
+    final teacher = _asString(map['teacher']);
+    final loc = _asString(map['location']);
+    final rawWeeks = map['weeks'];
+    final weeks = rawWeeks is List
+        ? rawWeeks
+            .map((value) => _asInt(value, fallback: 0))
+            .where((value) => value > 0)
+            .toList()
+        : <int>[];
 
     // 生成稳定的正数 ID
     final idStr = '$name-$weekday-$time-$endTime-$teacher-$loc';
@@ -294,15 +307,25 @@ class CourseScheduleProvider extends ChangeNotifier {
       id: id,
       courseCode: '',
       name: name,
-      teacher: map['teacher'] as String?,
-      location: map['location'] as String?,
+      teacher: teacher,
+      location: loc,
       color: _colorPool[name.hashCode.abs() % _colorPool.length],
       weekday: weekday,
       startSection: time,
       endSection: endTime,
-      weeks:
-          (map['weeks'] as List<dynamic>?)?.map((e) => e as int).toList() ?? [],
+      weeks: weeks,
     );
+  }
+
+  int _asInt(Object? value, {required int fallback}) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    if (value is String) return int.tryParse(value.trim()) ?? fallback;
+    return fallback;
+  }
+
+  String _asString(Object? value) {
+    return value?.toString() ?? '';
   }
 
   Future<void> _loadHiddenCourses() async {
@@ -662,9 +685,8 @@ class CourseScheduleProvider extends ChangeNotifier {
   }) async {
     final weeks = List.generate(endWeek - startWeek + 1, (i) => startWeek + i);
     final colorIdx = name.hashCode.abs() % _colorPool.length;
-    final newId =
-        -(DateTime.now().millisecondsSinceEpoch * 100 +
-            _courses.length); // 负数ID区分自定义课程
+    final newId = -(DateTime.now().millisecondsSinceEpoch * 100 +
+        _courses.length); // 负数ID区分自定义课程
 
     final course = CourseBlock(
       id: newId,

@@ -158,6 +158,7 @@ func main() {
 		&models.SystemConfig{},
 		&models.Canteen{},
 		&models.CanteenRating{},
+		&models.CanteenRatingVote{},
 		&models.UserFollow{},
 		// 融智云考助手独立业务表
 		&models.YunkaoAiProvider{},
@@ -1102,7 +1103,7 @@ func main() {
 	{
 
 		canteenAdmin.DELETE("/:id", canteenHandler.DeleteCanteen)
-		
+
 		canteenAdmin.PUT("/:id/image", canteenHandler.UpdateImage)
 
 	}
@@ -1118,6 +1119,8 @@ func main() {
 		canteenAuth.POST("", canteenHandler.Create)
 
 		canteenAuth.POST("/:id/rate", canteenHandler.Rate)
+
+		canteenAuth.PUT("/ratings/:ratingId/vote", canteenHandler.VoteRating)
 
 	}
 

@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:file_picker/file_picker.dart';
 import '../providers/auth_provider.dart';
 import '../providers/edu_provider.dart';
+import '../providers/theme_provider.dart';
 import '../providers/course_schedule_provider.dart';
 import '../services/course_reminder_service.dart';
 import '../widgets/glass_container.dart';
@@ -312,91 +313,109 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (!_settingsLoaded) {
-      return const Scaffold(backgroundColor: Colors.transparent);
-    }
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final themeProvider = context.watch<ThemeProvider>();
+    final cleanLightMode = themeProvider.isCleanBackgroundMode && !isDark;
+    final overlayStyle = (cleanLightMode
+            ? SystemUiOverlayStyle.dark
+            : SystemUiOverlayStyle.light)
+        .copyWith(
+      statusBarColor: Colors.transparent,
+      systemNavigationBarColor: Colors.transparent,
+    );
 
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: SafeArea(
-        bottom: false,
-        child: Consumer<AuthProvider>(
-          builder: (context, auth, _) {
-            if (!auth.isLoggedIn) {
-              return _buildLoginPrompt(context, isDark);
-            }
-            return Consumer2<EduProvider, CourseScheduleProvider>(
-              builder: (context, edu, sc, _) {
-                _autoLoad(edu, sc);
+    if (!_settingsLoaded) {
+      return AnnotatedRegion<SystemUiOverlayStyle>(
+        value: overlayStyle,
+        child: const Scaffold(backgroundColor: Colors.transparent),
+      );
+    }
 
-                // 正在初始化 + 没有数据 → 显示课表框架 + 加载动画
-                if ((_initializing || !edu.isStatusLoaded || sc.isLoading) &&
-                    sc.courses.isEmpty) {
-                  return _buildLoadingOverlay(sc);
-                }
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: overlayStyle,
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        body: SafeArea(
+          bottom: false,
+          child: Consumer<AuthProvider>(
+            builder: (context, auth, _) {
+              if (!auth.isLoggedIn) {
+                return _buildLoginPrompt(context, isDark);
+              }
+              return Consumer2<EduProvider, CourseScheduleProvider>(
+                builder: (context, edu, sc, _) {
+                  _autoLoad(edu, sc);
 
-                if (!edu.isBound)
-                  return _buildBindView(context, edu, sc, isDark);
+                  // 正在初始化 + 没有数据 → 显示课表框架 + 加载动画
+                  if ((_initializing || !edu.isStatusLoaded || sc.isLoading) &&
+                      sc.courses.isEmpty) {
+                    return _buildLoadingOverlay(sc);
+                  }
 
-                // 无缓存时显示引导
-                if (!_hasCache && sc.courses.isEmpty)
-                  return _buildNoCacheView(context, isDark);
+                  if (!edu.isBound) {
+                    return _buildBindView(context, edu, sc, isDark);
+                  }
 
-                final mainContent = Column(
-                  children: [
-                    _buildDateHeader(sc),
-                    Expanded(
-                      child: sc.courses.isEmpty
-                          ? _buildEmptyView(context, isDark)
-                          : Listener(
-                              onPointerDown: _handleWeekPointerDown,
-                              onPointerUp: _handleWeekPointerUp,
-                              onPointerCancel: _handleWeekPointerCancel,
-                              child: PageView.builder(
-                                controller: _weekPageController,
-                                physics: const NeverScrollableScrollPhysics(),
-                                onPageChanged: _onWeekPageChanged,
-                                itemBuilder: (_, index) {
-                                  final currentMonday = _mondayOf(
-                                    DateTime.now(),
-                                  );
-                                  final targetMonday = currentMonday.add(
-                                    Duration(days: (index - 500) * 7),
-                                  );
-                                  return SingleChildScrollView(
-                                    padding: EdgeInsets.only(
-                                      bottom: MediaQuery.of(
-                                            context,
-                                          ).padding.bottom +
-                                          100,
-                                    ),
-                                    child: _buildCourseGridForWeek(
-                                      sc,
-                                      targetMonday,
-                                    ),
-                                  );
-                                },
-                              ),
-                            ),
-                    ),
-                  ],
-                );
+                  // 无缓存时显示引导
+                  if (!_hasCache && sc.courses.isEmpty) {
+                    return _buildNoCacheView(context, isDark);
+                  }
 
-                if (ResponsiveUtil.isDesktop(context)) {
-                  return Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  final mainContent = Column(
                     children: [
-                      _buildTodayOverview(sc, isDark),
-                      Expanded(child: mainContent),
+                      _buildDateHeader(sc),
+                      Expanded(
+                        child: sc.courses.isEmpty
+                            ? _buildEmptyView(context, isDark)
+                            : Listener(
+                                onPointerDown: _handleWeekPointerDown,
+                                onPointerUp: _handleWeekPointerUp,
+                                onPointerCancel: _handleWeekPointerCancel,
+                                child: PageView.builder(
+                                  controller: _weekPageController,
+                                  physics: const NeverScrollableScrollPhysics(),
+                                  onPageChanged: _onWeekPageChanged,
+                                  itemBuilder: (_, index) {
+                                    final currentMonday = _mondayOf(
+                                      DateTime.now(),
+                                    );
+                                    final targetMonday = currentMonday.add(
+                                      Duration(days: (index - 500) * 7),
+                                    );
+                                    return SingleChildScrollView(
+                                      padding: EdgeInsets.only(
+                                        bottom: MediaQuery.of(
+                                              context,
+                                            ).padding.bottom +
+                                            100,
+                                      ),
+                                      child: _buildCourseGridForWeek(
+                                        sc,
+                                        targetMonday,
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ),
+                      ),
                     ],
                   );
-                }
 
-                return mainContent;
-              },
-            );
-          },
+                  if (ResponsiveUtil.isDesktop(context)) {
+                    return Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildTodayOverview(sc, isDark),
+                        Expanded(child: mainContent),
+                      ],
+                    );
+                  }
+
+                  return mainContent;
+                },
+              );
+            },
+          ),
         ),
       ),
     );
@@ -636,6 +655,15 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     final today = DateTime.now();
     final todayDate = DateTime(today.year, today.month, today.day);
     final academicWeek = sc.getAcademicWeek(_weekStart);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final cleanLightMode =
+        context.watch<ThemeProvider>().isCleanBackgroundMode && !isDark;
+    final primaryColor = Theme.of(context).primaryColor;
+    final titleColor = cleanLightMode ? const Color(0xFF1F2937) : Colors.white;
+    final secondaryColor =
+        cleanLightMode ? const Color(0xFF8A8F99) : Colors.white70;
+    final disabledIconColor =
+        cleanLightMode ? const Color(0xFF9CA3AF) : Colors.white54;
 
     return Container(
       color: Colors.transparent,
@@ -655,8 +683,8 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                         onTap: () => _pickSemesterStart(context),
                         child: Text(
                           academicWeek != null ? '第 $academicWeek 周' : '设置周数',
-                          style: const TextStyle(
-                            color: Colors.white,
+                          style: TextStyle(
+                            color: titleColor,
                             fontSize: 26,
                             fontWeight: FontWeight.w900,
                             height: 1.1,
@@ -666,8 +694,8 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                       const SizedBox(height: 1),
                       Text(
                         '${_weekStart.year}/${_weekStart.month}/${_weekStart.day} 周${_wd[_weekStart.weekday - 1]}',
-                        style: const TextStyle(
-                          color: Colors.white70,
+                        style: TextStyle(
+                          color: secondaryColor,
                           fontSize: 15,
                         ),
                       ),
@@ -678,20 +706,20 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                   children: [
                     IconButton(
                       icon: _isFetchingCourses
-                          ? const SizedBox(
+                          ? SizedBox(
                               width: 20,
                               height: 20,
                               child: CircularProgressIndicator(
                                 strokeWidth: 2,
-                                color: Colors.white,
+                                color: titleColor,
                               ),
                             )
                           : const Icon(
                               Icons.collections_bookmark_outlined,
                               size: 22,
                             ),
-                      color: Colors.white,
-                      disabledColor: Colors.white54,
+                      color: titleColor,
+                      disabledColor: disabledIconColor,
                       onPressed: _isFetchingCourses
                           ? null
                           : () => _showArchiveSheet(context, sc),
@@ -699,13 +727,13 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                     ),
                     IconButton(
                       icon: const Icon(Icons.share_outlined, size: 22),
-                      color: Colors.white,
+                      color: titleColor,
                       onPressed: () => _shareSchedule(sc),
                       tooltip: '分享',
                     ),
                     IconButton(
                       icon: const Icon(Icons.settings_outlined, size: 22),
-                      color: Colors.white,
+                      color: titleColor,
                       onPressed: () => _showOpacitySheet(context, sc),
                       tooltip: '设置',
                     ),
@@ -727,8 +755,10 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                     children: [
                       Text(
                         _wd[i],
-                        style: const TextStyle(
-                          color: Colors.white,
+                        style: TextStyle(
+                          color: isToday && cleanLightMode
+                              ? primaryColor
+                              : titleColor,
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
                         ),
@@ -737,7 +767,9 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                       Text(
                         _md(d),
                         style: TextStyle(
-                          color: Colors.white70,
+                          color: isToday && cleanLightMode
+                              ? primaryColor
+                              : secondaryColor,
                           fontSize: 12,
                           fontWeight:
                               isToday ? FontWeight.w600 : FontWeight.w400,
@@ -3627,6 +3659,17 @@ $classFilterRule
       builder: (context, constraints) {
         final wn = sc.getAcademicWeek(weekStart);
         final totalH = 12 * _slotHeight;
+        final isDark = Theme.of(context).brightness == Brightness.dark;
+        final cleanLightMode =
+            context.watch<ThemeProvider>().isCleanBackgroundMode && !isDark;
+        final timeTextColor =
+            cleanLightMode ? const Color(0xFF6B7280) : const Color(0xFF888888);
+        final verticalLineColor = cleanLightMode
+            ? Colors.black.withValues(alpha: 0.06)
+            : Colors.white.withValues(alpha: 0.16);
+        final horizontalLineColor = cleanLightMode
+            ? Colors.black.withValues(alpha: 0.05)
+            : Colors.white.withValues(alpha: 0.2);
         // 在平板模式下，主课表区域不是全屏宽度，必须使用 LayoutBuilder 获取实际可用宽度
         final screenW = constraints.maxWidth;
         final exactW = (screenW - timeColumnWidth) / 7;
@@ -3683,9 +3726,9 @@ $classFilterRule
                         child: Text(
                           '${i + 1}\n${_starts[i]}\n${_ends[i]}',
                           textAlign: TextAlign.center,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 11,
-                            color: Color(0xFF888888),
+                            color: timeTextColor,
                             height: 1.3,
                           ),
                         ),
@@ -3708,11 +3751,11 @@ $classFilterRule
                           decoration: BoxDecoration(
                             border: Border(
                               left: BorderSide(
-                                color: Colors.black.withOpacity(0.08),
+                                color: verticalLineColor,
                                 width: 0.5,
                               ),
                               bottom: BorderSide(
-                                color: Colors.white.withValues(alpha: 0.2),
+                                color: horizontalLineColor,
                                 width: 0.5,
                               ),
                             ),

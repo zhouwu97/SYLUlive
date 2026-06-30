@@ -7,15 +7,15 @@ import '../widgets/cached_avatar.dart';
 import '../config/api_constants.dart';
 import 'post_detail_screen.dart';
 
-class UserRepliesScreen extends StatefulWidget {
-  const UserRepliesScreen({super.key});
+class NotificationsScreen extends StatefulWidget {
+  const NotificationsScreen({super.key});
 
   @override
-  State<UserRepliesScreen> createState() => _UserRepliesScreenState();
+  State<NotificationsScreen> createState() => _NotificationsScreenState();
 }
 
-class _UserRepliesScreenState extends State<UserRepliesScreen> {
-  List<Reply> _replies = [];
+class _NotificationsScreenState extends State<NotificationsScreen> {
+  List<Map<String, dynamic>> _notifications = [];
   bool _isLoading = true;
   String? _errorMessage;
 
@@ -34,15 +34,12 @@ class _UserRepliesScreenState extends State<UserRepliesScreen> {
 
     try {
       final auth = context.read<AuthProvider>();
-      final response = await auth.dio.get('/user/replies/received');
+      final response = await auth.dio.get('/user/notifications');
       if (response.statusCode == 200) {
-        final list = (response.data as List)
-            .map((e) => Reply.fromJson(e))
-            .toList();
-        list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+        final list = List<Map<String, dynamic>>.from(response.data as List);
         if (mounted)
           setState(() {
-            _replies = list;
+            _notifications = list;
             _isLoading = false;
           });
       } else {
@@ -76,12 +73,12 @@ class _UserRepliesScreenState extends State<UserRepliesScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('收到的回复'), elevation: 0),
+      appBar: AppBar(title: const Text('通知'), elevation: 0),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _errorMessage != null
           ? _buildErrorView(isDark)
-          : _replies.isEmpty
+          : _notifications.isEmpty
           ? _buildEmptyView(isDark)
           : RefreshIndicator(
               onRefresh: _loadReplies,
@@ -90,27 +87,49 @@ class _UserRepliesScreenState extends State<UserRepliesScreen> {
                   parent: BouncingScrollPhysics(),
                 ),
                 padding: const EdgeInsets.all(16),
-                itemCount: _replies.length,
+                itemCount: _notifications.length,
                 separatorBuilder: (_, __) => const SizedBox(height: 8),
                 itemBuilder: (context, index) {
-                  final reply = _replies[index];
-                  return _buildReplyCard(reply, isDark);
+                  final notification = _notifications[index];
+                  return _buildNotificationCard(notification, isDark);
                 },
               ),
             ),
     );
   }
 
-  Widget _buildReplyCard(Reply reply, bool isDark) {
+  Widget _buildNotificationCard(Map<String, dynamic> notification, bool isDark) {
+    final type = notification['type'] as String?;
+    final postId = notification['post_id'] as int?;
+    final relatedId = notification['related_id'] as int?;
+    final content = notification['content']?.toString() ?? '';
+    final createdAt = DateTime.tryParse(notification['created_at'] ?? '') ?? DateTime.now();
+    final fromUser = notification['from_user'] as Map<String, dynamic>?;
+
+    String actionText = '';
+    String titleText = '系统通知';
+    if (type == 'reply') {
+      actionText = '回复了您的帖子';
+      titleText = fromUser?['nickname'] ?? '匿名用户';
+    } else if (type == 'featured_application') {
+      actionText = '精华申请通知';
+    } else if (type == 'market_post') {
+      actionText = '集市上新';
+    }
+
     return InkWell(
       onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) =>
-                PostDetailScreen(postId: reply.postId, targetReplyId: reply.id),
-          ),
-        );
+        if (postId != null) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => PostDetailScreen(
+                postId: postId,
+                targetReplyId: type == 'reply' ? relatedId : null,
+              ),
+            ),
+          );
+        }
       },
       borderRadius: BorderRadius.circular(12),
       child: GlassContainer(
@@ -121,13 +140,20 @@ class _UserRepliesScreenState extends State<UserRepliesScreen> {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            CachedAvatar(
-              radius: 20,
-              imageUrl: reply.author?.avatar.isNotEmpty == true
-                  ? ApiConstants.fullUrl(reply.author!.avatar)
-                  : null,
-              fallbackText: reply.author?.nickname,
-            ),
+            if (fromUser != null)
+              CachedAvatar(
+                radius: 20,
+                imageUrl: fromUser['avatar']?.toString().isNotEmpty == true
+                    ? ApiConstants.fullUrl(fromUser['avatar'].toString())
+                    : null,
+                fallbackText: fromUser['nickname']?.toString(),
+              )
+            else
+              CircleAvatar(
+                radius: 20,
+                backgroundColor: Theme.of(context).primaryColor.withValues(alpha: 0.1),
+                child: Icon(Icons.notifications, color: Theme.of(context).primaryColor, size: 20),
+              ),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -137,7 +163,7 @@ class _UserRepliesScreenState extends State<UserRepliesScreen> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
-                        reply.author?.nickname ?? '匿名用户',
+                        titleText,
                         style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w600,
@@ -145,7 +171,7 @@ class _UserRepliesScreenState extends State<UserRepliesScreen> {
                         ),
                       ),
                       Text(
-                        _formatTime(reply.createdAt),
+                        _formatTime(createdAt),
                         style: TextStyle(
                           fontSize: 12,
                           color: isDark ? Colors.white30 : Colors.black54,
@@ -155,7 +181,7 @@ class _UserRepliesScreenState extends State<UserRepliesScreen> {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    '回复了您的帖子',
+                    actionText,
                     style: TextStyle(
                       fontSize: 12,
                       color: Theme.of(context).primaryColor,
@@ -164,7 +190,7 @@ class _UserRepliesScreenState extends State<UserRepliesScreen> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    reply.content,
+                    content,
                     style: TextStyle(
                       fontSize: 14,
                       color: isDark ? Colors.white70 : Colors.black87,
@@ -194,7 +220,7 @@ class _UserRepliesScreenState extends State<UserRepliesScreen> {
           ),
           const SizedBox(height: 16),
           Text(
-            '暂无收到的回复',
+            '暂无通知',
             style: TextStyle(
               color: isDark ? Colors.white60 : Colors.grey[600],
               fontSize: 16,

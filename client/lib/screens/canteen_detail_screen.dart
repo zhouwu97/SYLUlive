@@ -407,8 +407,6 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
               children: [
                 _buildFilterChip('all', '全部'),
                 const SizedBox(width: 8),
-                _buildFilterChip('with_image', '有图'),
-                const SizedBox(width: 8),
                 _buildFilterChip('high', '高分'),
                 const SizedBox(width: 8),
                 _buildFilterChip('low', '低分'),
@@ -766,8 +764,6 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
 
   String _emptyReviewTitle() {
     switch (_reviewFilter) {
-      case 'with_image':
-        return '暂无有图评价';
       case 'high':
         return '暂无高分评价';
       case 'low':
@@ -779,8 +775,6 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
 
   String _emptyReviewSubtitle() {
     switch (_reviewFilter) {
-      case 'with_image':
-        return '等同学上传真实图片后就能看到啦';
       case 'high':
         return '也许还没有同学给出 4 分以上评价';
       case 'low':

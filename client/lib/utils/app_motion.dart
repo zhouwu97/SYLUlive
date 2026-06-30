@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 class AppMotion {
   static const fast = Duration(milliseconds: 160);
   static const normal = Duration(milliseconds: 240);
+  static const nav = Duration(milliseconds: 220);
+  static const reveal = Duration(milliseconds: 360);
   static const page = Duration(milliseconds: 320);
   static const detail = Duration(milliseconds: 360);
 

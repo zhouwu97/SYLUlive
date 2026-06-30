@@ -1,8 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+enum AppBackgroundMode {
+  clean,
+  custom,
+}
+
 class ThemeProvider extends ChangeNotifier {
   static const String _nightModeKey = 'night_mode';
+  static const String _backgroundModeKey = 'background_mode';
   static const String _backgroundImageKey = 'background_image';
   static const String _landscapeBackgroundImageKey =
       'landscape_background_image';
@@ -30,6 +36,7 @@ class ThemeProvider extends ChangeNotifier {
   bool _predictiveBack = true;
   bool _startOnTimetable = false;
   bool _marketIsListView = false;
+  AppBackgroundMode _backgroundMode = AppBackgroundMode.clean;
 
   bool get isDarkMode => _isDarkMode;
   String? get backgroundImage => _backgroundImage;
@@ -43,14 +50,21 @@ class ThemeProvider extends ChangeNotifier {
   bool get predictiveBack => _predictiveBack;
   bool get startOnTimetable => _startOnTimetable;
   bool get marketIsListView => _marketIsListView;
+  AppBackgroundMode get backgroundMode => _backgroundMode;
+  bool get isCleanBackgroundMode => _backgroundMode == AppBackgroundMode.clean;
   bool get hasBackground =>
       _backgroundImage != null && _backgroundImage!.isNotEmpty;
   bool get hasLandscapeBackground =>
       _landscapeBackgroundImage != null &&
       _landscapeBackgroundImage!.isNotEmpty;
+  bool get hasAnyBackground => hasBackground || hasLandscapeBackground;
 
-  /// 是否有自定义背景（全局生效）
-  bool get isBackgroundVisible => hasBackground || hasLandscapeBackground;
+  /// 是否显示用户选择的背景。简洁模式下即使保留了背景图也不显示。
+  bool get shouldShowCustomBackground =>
+      _backgroundMode == AppBackgroundMode.custom && hasAnyBackground;
+
+  /// 兼容旧调用，语义已收敛为“当前是否应该显示自定义背景”。
+  bool get isBackgroundVisible => shouldShowCustomBackground;
 
   static bool isNetworkBackground(String imagePath) {
     return imagePath.startsWith('http://') || imagePath.startsWith('https://');
@@ -72,6 +86,25 @@ class ThemeProvider extends ChangeNotifier {
         : 'assets/images/$imagePath';
   }
 
+  static AppBackgroundMode _backgroundModeFromString(String? value) {
+    switch (value) {
+      case 'custom':
+        return AppBackgroundMode.custom;
+      case 'clean':
+      default:
+        return AppBackgroundMode.clean;
+    }
+  }
+
+  static String _backgroundModeToString(AppBackgroundMode mode) {
+    switch (mode) {
+      case AppBackgroundMode.custom:
+        return 'custom';
+      case AppBackgroundMode.clean:
+        return 'clean';
+    }
+  }
+
   /// 获取当前环境适用的背景图片
   String? getBackgroundImageFor(BuildContext context) {
     final isWide =
@@ -91,8 +124,39 @@ class ThemeProvider extends ChangeNotifier {
     return _backgroundFillScreen;
   }
 
-  ThemeProvider() {
-    WidgetsBinding.instance.addPostFrameCallback((_) => _loadTheme());
+  /// 获取自定义模式下当前环境适用的背景图；当前方向缺失时使用另一方向兜底。
+  String? getCustomBackgroundImageFor(BuildContext context) {
+    final isWide =
+        MediaQuery.of(context).size.width > MediaQuery.of(context).size.height;
+    if (isWide) {
+      return hasLandscapeBackground
+          ? _landscapeBackgroundImage
+          : _backgroundImage;
+    }
+    return hasBackground ? _backgroundImage : _landscapeBackgroundImage;
+  }
+
+  bool getCustomBackgroundFillScreenFor(BuildContext context) {
+    final isWide =
+        MediaQuery.of(context).size.width > MediaQuery.of(context).size.height;
+    if (isWide) {
+      return hasLandscapeBackground
+          ? _landscapeBackgroundFillScreen
+          : _backgroundFillScreen;
+    }
+    return hasBackground
+        ? _backgroundFillScreen
+        : _landscapeBackgroundFillScreen;
+  }
+
+  ThemeProvider({bool loadOnStart = true}) {
+    if (loadOnStart) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _loadTheme());
+    }
+  }
+
+  Future<void> loadThemeForTesting() {
+    return _loadTheme();
   }
 
   Future<void> _loadTheme() async {
@@ -110,7 +174,26 @@ class ThemeProvider extends ChangeNotifier {
     _predictiveBack = prefs.getBool(_predictiveBackKey) ?? true;
     _startOnTimetable = prefs.getBool(_startOnTimetableKey) ?? false;
     _marketIsListView = prefs.getBool(_marketIsListViewKey) ?? false;
+    _backgroundMode =
+        _backgroundModeFromString(prefs.getString(_backgroundModeKey));
     notifyListeners();
+  }
+
+  Future<void> _setBackgroundMode(AppBackgroundMode mode) async {
+    _backgroundMode = mode;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_backgroundModeKey, _backgroundModeToString(mode));
+    notifyListeners();
+  }
+
+  Future<void> setCleanBackgroundMode() async {
+    await _setBackgroundMode(AppBackgroundMode.clean);
+  }
+
+  Future<bool> trySetCustomBackgroundMode() async {
+    if (!hasAnyBackground) return false;
+    await _setBackgroundMode(AppBackgroundMode.custom);
+    return true;
   }
 
   Future<void> toggleTheme() async {
@@ -138,6 +221,11 @@ class ThemeProvider extends ChangeNotifier {
     if (imageUrl != null && imageUrl.isNotEmpty) {
       await prefs.setString(_backgroundImageKey, imageUrl);
       await prefs.setBool(_backgroundFillScreenKey, _backgroundFillScreen);
+      _backgroundMode = AppBackgroundMode.custom;
+      await prefs.setString(
+        _backgroundModeKey,
+        _backgroundModeToString(_backgroundMode),
+      );
     } else {
       await prefs.remove(_backgroundImageKey);
       await prefs.remove(_backgroundFillScreenKey);
@@ -158,6 +246,11 @@ class ThemeProvider extends ChangeNotifier {
       await prefs.setBool(
         _landscapeBackgroundFillScreenKey,
         _landscapeBackgroundFillScreen,
+      );
+      _backgroundMode = AppBackgroundMode.custom;
+      await prefs.setString(
+        _backgroundModeKey,
+        _backgroundModeToString(_backgroundMode),
       );
     } else {
       await prefs.remove(_landscapeBackgroundImageKey);
@@ -206,11 +299,16 @@ class ThemeProvider extends ChangeNotifier {
     _landscapeBackgroundImage = null;
     _backgroundFillScreen = false;
     _landscapeBackgroundFillScreen = false;
+    _backgroundMode = AppBackgroundMode.clean;
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_backgroundImageKey);
     await prefs.remove(_landscapeBackgroundImageKey);
     await prefs.remove(_backgroundFillScreenKey);
     await prefs.remove(_landscapeBackgroundFillScreenKey);
+    await prefs.setString(
+      _backgroundModeKey,
+      _backgroundModeToString(_backgroundMode),
+    );
     notifyListeners();
   }
 

@@ -1116,25 +1116,24 @@ class BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
   }
 
   Widget _buildBackgroundLayer(ThemeProvider themeProvider, bool isDark) {
-    final bool showBackground = themeProvider.isBackgroundVisible;
-
-    if (showBackground) {
+    if (themeProvider.shouldShowCustomBackground) {
       return _buildBackgroundImageLayer(themeProvider, isDark);
-    } else {
-      return _buildDefaultBackground(isDark);
     }
+    return _buildCleanBackground(isDark);
   }
 
   Widget _buildBackgroundImageLayer(ThemeProvider themeProvider, bool isDark) {
-    String? bgPath = themeProvider.getBackgroundImageFor(context);
-    if (bgPath == null) return _buildDefaultBackground(isDark);
+    String? bgPath = themeProvider.getCustomBackgroundImageFor(context);
+    if (bgPath == null || bgPath.isEmpty) return _buildCleanBackground(isDark);
     final isAsset = ThemeProvider.isBundledAssetBackground(bgPath);
     final isLocalFile = ThemeProvider.isLocalFileBackground(bgPath);
     final resolvedPath =
         isAsset ? ThemeProvider.resolveBundledAssetPath(bgPath) : bgPath;
 
     const alignment = Alignment.center;
-    final fillScreen = themeProvider.getBackgroundFillScreenFor(context);
+    final fillScreen =
+        themeProvider.getCustomBackgroundFillScreenFor(context) ||
+            _isUsingFallbackDirection(themeProvider);
 
     final imageProvider = isAsset
         ? AssetImage(resolvedPath) as ImageProvider
@@ -1159,6 +1158,13 @@ class BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
         ),
       ],
     );
+  }
+
+  bool _isUsingFallbackDirection(ThemeProvider themeProvider) {
+    final isWide =
+        MediaQuery.of(context).size.width > MediaQuery.of(context).size.height;
+    return (isWide && !themeProvider.hasLandscapeBackground) ||
+        (!isWide && !themeProvider.hasBackground);
   }
 
   Widget _buildBackgroundImage({
@@ -1210,28 +1216,11 @@ class BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
     );
   }
 
-  Widget _buildDefaultBackground(bool isDark) {
-    final isWide =
-        MediaQuery.of(context).size.width > MediaQuery.of(context).size.height;
-    final defaultImage = isWide
-        ? 'assets/images/tablet_default_landscape.png'
-        : 'assets/images/morenbeijing.jpeg';
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        _buildBackgroundImage(
-          imageProvider: AssetImage(defaultImage),
-          alignment: Alignment.center,
-          isDark: isDark,
-          fillScreen: false,
-          blur: context.read<ThemeProvider>().backgroundBlur,
-        ),
-        Container(
-          color: isDark
-              ? Colors.black.withValues(alpha: 0.35)
-              : Colors.white.withValues(alpha: 0.25),
-        ),
-      ],
+  Widget _buildCleanBackground(bool isDark) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF101219) : const Color(0xFFF8FAFC),
+      ),
     );
   }
 }

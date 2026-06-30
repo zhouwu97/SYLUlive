@@ -221,7 +221,7 @@ func (h *PostHandler) AdminApproveFeaturedApplication(c *gin.Context) {
 	h.db.First(&app, appID)
 	var post models.Post
 	h.db.First(&post, app.PostID)
-	CreateFeaturedApplicationResultNotification("", "", h.db, app.ApplicantID, post.ID, app.ID, "approved", post.Title)
+	CreateFeaturedApplicationResultNotification(h.jpushAppKey, h.jpushMasterSecret, h.db, app.ApplicantID, post.ID, app.ID, "approved", post.Title, "", 0)
 
 	c.JSON(http.StatusOK, gin.H{"message": "已通过精华申请"})
 }
@@ -280,7 +280,7 @@ func (h *PostHandler) AdminRejectFeaturedApplication(c *gin.Context) {
 	h.db.First(&app, appID)
 	var post models.Post
 	h.db.First(&post, app.PostID)
-	CreateFeaturedApplicationResultNotification("", "", h.db, app.ApplicantID, post.ID, app.ID, "rejected", post.Title)
+	CreateFeaturedApplicationResultNotification(h.jpushAppKey, h.jpushMasterSecret, h.db, app.ApplicantID, post.ID, app.ID, "rejected", post.Title, input.Reason, input.PenaltyPoints)
 
 	c.JSON(http.StatusOK, gin.H{"message": "已驳回精华申请"})
 }

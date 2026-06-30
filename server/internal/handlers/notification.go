@@ -184,10 +184,14 @@ func CreateMarketPostNotification(db *gorm.DB, postID uint, title string, price 
 }
 
 // CreateFeaturedApplicationResultNotification 创建精华申请结果通知
-func CreateFeaturedApplicationResultNotification(jpushAppKey, jpushMasterSecret string, db *gorm.DB, toUserID uint, postID, appID uint, status, title string) {
+func CreateFeaturedApplicationResultNotification(jpushAppKey, jpushMasterSecret string, db *gorm.DB, toUserID uint, postID, appID uint, status, title, reason string, points int) {
 	content := fmt.Sprintf("你的精华申请已通过：《%s》", title)
 	if status == "rejected" {
-		content = "你的精华申请未通过"
+		if points > 0 {
+			content = fmt.Sprintf("你的精华申请未通过：%s，因恶意申请扣除 %d 点诚信分", reason, points)
+		} else {
+			content = fmt.Sprintf("你的精华申请未通过：%s", reason)
+		}
 	}
 	notification := models.Notification{
 		UserID:    toUserID,

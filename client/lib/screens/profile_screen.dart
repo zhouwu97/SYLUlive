@@ -905,8 +905,8 @@ class _ProfileScreenState extends State<ProfileScreen>
         child: _buildSettingsTile(
           icon: Icons.notifications_active_outlined,
           iconColor: Colors.orange,
-          title: '收到的回复',
-          subtitle: _unreadReplyCount > 0 ? '$_unreadReplyCount条新回复' : null,
+          title: '通知',
+          subtitle: _unreadReplyCount > 0 ? '$_unreadReplyCount条新通知' : null,
           trailing: _unreadReplyCount > 0
               ? Container(
                   width: 8,
@@ -922,7 +922,7 @@ class _ProfileScreenState extends State<ProfileScreen>
           onTap: () {
             Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => const UserRepliesScreen()),
+              MaterialPageRoute(builder: (_) => const NotificationsScreen()),
             ).then((_) {
               _loadUnreadCount();
             });

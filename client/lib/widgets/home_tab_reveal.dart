@@ -27,7 +27,7 @@ class HomeTabRevealItem extends StatelessWidget {
     required this.index,
     required this.child,
     this.enabled = true,
-    this.maxDelayItems = 6,
+    this.maxDelayItems = 4,
   });
 
   final int index;
@@ -40,9 +40,9 @@ class HomeTabRevealItem extends StatelessWidget {
     final scope = HomeTabRevealScope.maybeOf(context);
     if (!enabled || scope == null) return child;
 
-    final delay = index.clamp(0, maxDelayItems) * 0.075;
-    final end = (delay + 0.72).clamp(0.0, 1.0);
-    final curve = Interval(delay, end, curve: Curves.easeOutCubic);
+    final delay = index.clamp(0, maxDelayItems) * 0.032;
+    final end = (delay + 0.84).clamp(0.0, 1.0);
+    final curve = Interval(delay, end, curve: Curves.easeOutQuad);
 
     return AnimatedBuilder(
       animation: scope.animation,
@@ -50,11 +50,11 @@ class HomeTabRevealItem extends StatelessWidget {
       builder: (context, child) {
         final t = curve.transform(scope.animation.value.clamp(0.0, 1.0));
         return Opacity(
-          opacity: 0.52 + 0.48 * t,
+          opacity: 0.82 + 0.18 * t,
           child: Transform.translate(
-            offset: Offset(0, 72 * (1 - t)),
+            offset: Offset(0, 36 * (1 - t)),
             child: Transform.scale(
-              scale: 0.965 + 0.035 * t,
+              scale: 0.985 + 0.015 * t,
               alignment: Alignment.topCenter,
               child: child,
             ),

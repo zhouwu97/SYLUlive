@@ -5,7 +5,7 @@ import 'package:shenliyuan/features/physical/physical_percentile_service.dart';
 import 'package:shenliyuan/screens/physical_percentile_report_screen.dart';
 
 void main() {
-  testWidgets('报告页展示同性别总结并支持切换到缺失样本状态', (tester) async {
+  testWidgets('报告页默认展示全体总结并支持切换到缺失样本状态', (tester) async {
     final service = PhysicalPercentileService(
       PhysicalPercentileDataset.fromJson({
         'version': 1,
@@ -57,7 +57,8 @@ void main() {
 
     expect(find.text('超越了多少大学生'), findsOneWidget);
     expect(find.text('体格对比'), findsNothing);
-    expect(find.textContaining('你的运动表现超过了同性别'), findsOneWidget);
+    expect(find.textContaining('你的运动表现超过了全体'), findsOneWidget);
+    expect(find.textContaining('同性别'), findsNothing);
     expect(find.textContaining('超过 50%'), findsWidgets);
 
     await tester.tap(find.text('女生'));

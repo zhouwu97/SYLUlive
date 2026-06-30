@@ -17,12 +17,12 @@ class MajorItem {
   });
 
   factory MajorItem.fromJson(Map<String, dynamic> j) => MajorItem(
-    id: j['id'] ?? 0,
-    name: j['name'] ?? '',
-    level: j['level'] ?? '',
-    ratingCount: j['rating_count'] ?? 0,
-    averageStar: (j['average_star'] ?? 0).toDouble(),
-  );
+        id: j['id'] ?? 0,
+        name: j['name'] ?? '',
+        level: j['level'] ?? '',
+        ratingCount: j['rating_count'] ?? 0,
+        averageStar: (j['average_star'] ?? 0).toDouble(),
+      );
 }
 
 class MajorRating {
@@ -37,13 +37,13 @@ class MajorRating {
     this.userName = '',
   });
   factory MajorRating.fromJson(Map<String, dynamic> j) => MajorRating(
-    id: j['id'] ?? 0,
-    majorId: j['major_id'] ?? 0,
-    userId: j['user_id'] ?? 0,
-    star: j['star'] ?? 0,
-    comment: j['comment'] ?? '',
-    userName: j['user_name'] ?? '',
-  );
+        id: j['id'] ?? 0,
+        majorId: j['major_id'] ?? 0,
+        userId: j['user_id'] ?? 0,
+        star: j['star'] ?? 0,
+        comment: j['comment'] ?? '',
+        userName: j['user_name'] ?? '',
+      );
 }
 
 class MajorProvider extends ChangeNotifier {
@@ -123,6 +123,16 @@ class MajorProvider extends ChangeNotifier {
         data: {'star': star, 'comment': comment},
       );
       await loadDetail(id);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<bool> deleteRating(int ratingId, int majorId) async {
+    try {
+      await _dio.delete('/majors/rating/$ratingId');
+      await loadDetail(majorId);
       return true;
     } catch (_) {
       return false;

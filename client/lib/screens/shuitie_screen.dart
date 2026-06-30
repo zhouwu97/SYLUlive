@@ -20,6 +20,7 @@ import '../providers/message_provider.dart';
 import '../providers/post_provider.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/home_service_drawer.dart';
+import '../widgets/home_tab_reveal.dart';
 import '../widgets/post_card.dart';
 import 'announcement_screen.dart';
 import 'chat_list_screen.dart';
@@ -102,6 +103,8 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   int? _feedTargetIndex;
   double _feedSwipeDx = 0;
   bool _feedSwipeAccepted = false;
+  int _feedRevealSerial = 0;
+  bool _feedRevealActive = false;
   final TextEditingController _searchController = TextEditingController();
   Timer? _autoRefreshTimer;
   List<model.Announcement> _announcements = [];
@@ -118,9 +121,8 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   bool _messagesLoadRequested = false;
 
   static const _autoRefreshInterval = Duration(seconds: 60);
-  static const _feedSlideDistance = 32.0;
-  static const _feedSwitchDuration = Duration(milliseconds: 180);
-  static const _feedSettleDuration = Duration(milliseconds: 220);
+  static const _feedSwitchDuration = AppMotion.reveal;
+  static const _feedSettleDuration = AppMotion.reveal;
   static const _feedTriggerDistance = 72.0;
   static const _feedTriggerVelocity = 520.0;
 
@@ -308,19 +310,24 @@ class _ShuitieScreenState extends State<ShuitieScreen>
 
   Future<void> _changeFeedMode(String mode) async {
     if (_feedMode == mode) return;
-    final oldIndex = _currentModeIndex;
     final newIndex = kFeedModes.indexWhere((m) => m.key == mode);
-    if (oldIndex < 0 || newIndex < 0) return;
+    if (newIndex < 0) return;
 
     _refreshFeedMode(mode);
-    final begin = _feedTargetIndex == newIndex ? _feedDragProgress : 0.0;
-    await _settleFeedMode(
-      targetIndex: newIndex,
-      begin: begin,
-      end: 1.0,
-      duration: _feedSwitchDuration,
-      commit: true,
-    );
+    _feedSwitchController.stop();
+    _feedSwitchController.duration = _feedSwitchDuration;
+    setState(() {
+      _feedMode = mode;
+      _feedTargetIndex = null;
+      _feedDragProgress = 0;
+      _feedRevealSerial++;
+      _feedRevealActive = true;
+    });
+    await _feedSwitchController.forward(from: 0);
+    if (!mounted) return;
+    setState(() {
+      _feedRevealActive = false;
+    });
   }
 
   void _refreshFeedMode(String mode) {
@@ -557,13 +564,9 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     }
 
     _refreshFeedMode(kFeedModes[targetIndex].key);
-    final progress = (_feedSwipeDx.abs() / _feedTriggerDistance).clamp(
-      0.0,
-      1.0,
-    );
     setState(() {
       _feedTargetIndex = targetIndex;
-      _feedDragProgress = progress;
+      _feedDragProgress = 0;
     });
   }
 
@@ -584,13 +587,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     _feedSwipeDx = 0;
 
     if (shouldSwitch) {
-      await _settleFeedMode(
-        targetIndex: nextIndex,
-        begin: _feedDragProgress,
-        end: 1.0,
-        duration: _feedSettleDuration,
-        commit: true,
-      );
+      await _changeFeedMode(kFeedModes[nextIndex].key);
     } else {
       await _settleFeedMode(
         targetIndex: _feedTargetIndex,
@@ -655,6 +652,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     setState(() {
       if (commit) {
         _feedMode = kFeedModes[targetIndex].key;
+        _feedRevealSerial++;
       }
       _feedTargetIndex = null;
       _feedDragProgress = 0;
@@ -1292,58 +1290,10 @@ class _ShuitieScreenState extends State<ShuitieScreen>
         child: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 680),
-            child: _buildFeedModeViewport(isDark),
+            child: _buildFeedModePage(isDark, _feedMode),
           ),
         ),
       ),
-    );
-  }
-
-  Widget _buildFeedModeViewport(bool isDark) {
-    final targetIndex = _feedTargetIndex;
-    if (targetIndex == null || targetIndex == _currentModeIndex) {
-      return _buildFeedModePage(isDark, _feedMode);
-    }
-
-    final progress = _feedDragProgress.clamp(0.0, 1.0);
-    final direction = targetIndex > _currentModeIndex ? 1.0 : -1.0;
-
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        return ClipRect(
-          child: Stack(
-            children: [
-              Positioned.fill(
-                child: Transform.translate(
-                  offset: Offset(
-                    -direction * progress * _feedSlideDistance,
-                    0,
-                  ),
-                  child: Opacity(
-                    opacity: 1 - 0.08 * progress,
-                    child: _buildFeedModePage(isDark, _feedMode),
-                  ),
-                ),
-              ),
-              Positioned.fill(
-                child: Transform.translate(
-                  offset: Offset(
-                    direction * (1 - progress) * _feedSlideDistance,
-                    0,
-                  ),
-                  child: Opacity(
-                    opacity: 0.88 + 0.12 * progress,
-                    child: _buildFeedModePage(
-                      isDark,
-                      kFeedModes[targetIndex].key,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
     );
   }
 
@@ -1351,7 +1301,16 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     final config = kFeedModes.firstWhere((m) => m.key == mode);
     final sort = config.remoteSort ?? 'all';
 
-    return Selector<PostProvider,
+    return _buildFeedModeList(isDark, mode, config, sort);
+  }
+
+  Widget _buildFeedModeList(
+    bool isDark,
+    String mode,
+    FeedModeConfig config,
+    String sort,
+  ) {
+    final feedList = Selector<PostProvider,
         ({List<Post> posts, bool isLoading, bool hasMore, int revision})>(
       selector: (context, postProvider) {
         return (
@@ -1451,25 +1410,28 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                                 ],
                               )
                             : null,
-                        child: PostCard(
-                          post: post,
-                          onAuthorTap: _openUserInSplit,
-                          onTap: () {
-                            if (ResponsiveUtil.useDesktopShell(context)) {
-                              _openPostInSplit(post);
-                            } else {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => PostDetailScreen(
-                                    postId: post.id,
-                                    isMarket: false,
-                                    initialPost: post,
+                        child: HomeTabRevealItem(
+                          index: index,
+                          child: PostCard(
+                            post: post,
+                            onAuthorTap: _openUserInSplit,
+                            onTap: () {
+                              if (ResponsiveUtil.useDesktopShell(context)) {
+                                _openPostInSplit(post);
+                              } else {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => PostDetailScreen(
+                                      postId: post.id,
+                                      isMarket: false,
+                                      initialPost: post,
+                                    ),
                                   ),
-                                ),
-                              );
-                            }
-                          },
+                                );
+                              }
+                            },
+                          ),
                         ),
                       ),
                     );
@@ -1491,6 +1453,17 @@ class _ShuitieScreenState extends State<ShuitieScreen>
           ),
         );
       },
+    );
+
+    if (!_feedRevealActive) return feedList;
+
+    return HomeTabRevealScope(
+      animation: CurvedAnimation(
+        parent: _feedSwitchController,
+        curve: AppMotion.incoming,
+      ),
+      serial: _feedRevealSerial,
+      child: feedList,
     );
   }
 

@@ -95,7 +95,11 @@
 | `GET` | `/api/teachers` | 获取教师榜单列表 |
 | `GET` | `/api/teachers/:id` | 获取教师详情及评价 |
 | `POST` | `/api/teachers/:id/rate` | 评价教师 |
+| `DELETE` | `/api/teachers/rating/:id` | 删除自己的教师评价 |
 | `GET` | `/api/majors` | 获取专业评价列表 |
+| `GET` | `/api/majors/:id` | 获取专业详情及评价 |
+| `POST` | `/api/majors/:id/rate` | 评价专业 |
+| `DELETE` | `/api/majors/rating/:id` | 删除自己的专业评价 |
 | `GET` | `/api/canteens` | 获取食堂评分列表 |
 | `GET` | `/api/canteens/:id?review_sort=best\|latest&review_filter=all\|with_image\|high\|low` | 获取食堂详情及评价，支持综合/最新排序和评价筛选 |
 | `POST` | `/api/canteens/:id/rate` | 评价食堂 |

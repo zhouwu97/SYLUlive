@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../main.dart';
 import '../models/campus_article.dart';
 import '../services/campus_article_service.dart';
+import '../widgets/home_tab_reveal.dart';
 import 'campus_article_detail_screen.dart';
 import 'campus_article_list_screen.dart';
 import 'campus_calendar_screen.dart';
@@ -194,24 +195,43 @@ class _CampusScreenState extends State<CampusScreen>
                 padding: const EdgeInsets.fromLTRB(16, 18, 16, 156),
                 sliver: SliverList(
                   delegate: SliverChildListDelegate([
-                    _CampusHeader(semester: _currentSemesterText()),
+                    HomeTabRevealItem(
+                      index: 0,
+                      child: _CampusHeader(semester: _currentSemesterText()),
+                    ),
                     const SizedBox(height: 18),
-                    _buildLatestCard(isDark),
+                    HomeTabRevealItem(
+                      index: 1,
+                      child: _buildLatestCard(isDark),
+                    ),
                     const SizedBox(height: 24),
-                    const _SectionTitle(
-                      title: '校园服务',
-                      subtitle: '常用校园功能',
+                    const HomeTabRevealItem(
+                      index: 2,
+                      child: _SectionTitle(
+                        title: '校园服务',
+                        subtitle: '常用校园功能',
+                      ),
                     ),
                     const SizedBox(height: 12),
-                    _buildServiceRow(isDark),
+                    HomeTabRevealItem(
+                      index: 3,
+                      child: _buildServiceRow(isDark),
+                    ),
                     const SizedBox(height: 26),
-                    _CampusInfoSectionTitle(
-                      title: '校园资讯',
-                      subtitle: '校内通知与赛事信息',
-                      onCompetitionTap: () => _openPage(const CompetitionCenterScreen()),
+                    HomeTabRevealItem(
+                      index: 4,
+                      child: _CampusInfoSectionTitle(
+                        title: '校园资讯',
+                        subtitle: '校内通知与赛事信息',
+                        onCompetitionTap: () =>
+                            _openPage(const CompetitionCenterScreen()),
+                      ),
                     ),
                     const SizedBox(height: 12),
-                    _buildRecentList(isDark),
+                    HomeTabRevealItem(
+                      index: 5,
+                      child: _buildRecentList(isDark),
+                    ),
                   ]),
                 ),
               ),

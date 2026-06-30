@@ -4,6 +4,20 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
 
+class _NavItemVisualState {
+  const _NavItemVisualState({
+    required this.color,
+    required this.scale,
+    required this.opacity,
+    required this.fontWeight,
+  });
+
+  final Color color;
+  final double scale;
+  final double opacity;
+  final FontWeight fontWeight;
+}
+
 class BottomNavWrapper extends StatelessWidget {
   final int currentIndex;
   final double visualIndex;
@@ -282,11 +296,12 @@ class BottomNavWrapper extends StatelessWidget {
     double width,
     double visualIndex,
   ) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final activeT = (1 - (visualIndex - index).abs()).clamp(0.0, 1.0);
-    final inactiveColor = isDark ? Colors.white54 : Colors.grey;
-    final color = Color.lerp(inactiveColor, primaryColor, activeT)!;
-    final scale = 1.0 + 0.08 * activeT;
+    final visualState = _visualStateFor(
+      context: context,
+      index: index,
+      primaryColor: primaryColor,
+      visualIndex: visualIndex,
+    );
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () => onTap(index),
@@ -299,17 +314,23 @@ class BottomNavWrapper extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Transform.scale(
-                scale: scale,
+                scale: visualState.scale,
                 alignment: Alignment.center,
-                child: Icon(icon, color: color, size: 22),
+                child: Opacity(
+                  opacity: visualState.opacity,
+                  child: Icon(icon, color: visualState.color, size: 22),
+                ),
               ),
               const SizedBox(height: 2),
-              Text(
-                label,
-                style: TextStyle(
-                  color: color,
-                  fontWeight: activeT > 0.5 ? FontWeight.w700 : FontWeight.w500,
-                  fontSize: 10,
+              Opacity(
+                opacity: visualState.opacity,
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    color: visualState.color,
+                    fontWeight: visualState.fontWeight,
+                    fontSize: 10,
+                  ),
                 ),
               ),
             ],
@@ -328,11 +349,12 @@ class BottomNavWrapper extends StatelessWidget {
     double width,
     double visualIndex,
   ) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final activeT = (1 - (visualIndex - index).abs()).clamp(0.0, 1.0);
-    final inactiveColor = isDark ? Colors.white54 : Colors.grey;
-    final color = Color.lerp(inactiveColor, primaryColor, activeT)!;
-    final scale = 1.0 + 0.08 * activeT;
+    final visualState = _visualStateFor(
+      context: context,
+      index: index,
+      primaryColor: primaryColor,
+      visualIndex: visualIndex,
+    );
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -342,12 +364,34 @@ class BottomNavWrapper extends StatelessWidget {
         height: 44,
         child: Center(
           child: Transform.scale(
-            scale: scale,
+            scale: visualState.scale,
             alignment: Alignment.center,
-            child: Icon(icon, color: color, size: 24),
+            child: Opacity(
+              opacity: visualState.opacity,
+              child: Icon(icon, color: visualState.color, size: 24),
+            ),
           ),
         ),
       ),
+    );
+  }
+
+  _NavItemVisualState _visualStateFor({
+    required BuildContext context,
+    required int index,
+    required Color primaryColor,
+    required double visualIndex,
+  }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final activeT = (1 - (visualIndex - index).abs()).clamp(0.0, 1.0);
+    final softenedT = Curves.easeOutCubic.transform(activeT);
+    final inactiveColor = isDark ? Colors.white54 : Colors.grey;
+
+    return _NavItemVisualState(
+      color: Color.lerp(inactiveColor, primaryColor, softenedT)!,
+      scale: 1.0 + 0.08 * softenedT,
+      opacity: 0.72 + 0.28 * softenedT,
+      fontWeight: softenedT > 0.55 ? FontWeight.w700 : FontWeight.w500,
     );
   }
 }

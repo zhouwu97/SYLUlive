@@ -1084,6 +1084,8 @@ func main() {
 
 		majorAuth.POST("/:id/rate", majorHandler.Rate)
 
+		majorAuth.DELETE("/rating/:id", majorHandler.DeleteRating)
+
 	}
 
 	// 食堂榜路由

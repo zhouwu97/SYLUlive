@@ -122,8 +122,8 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   bool _messagesLoadRequested = false;
 
   static const _autoRefreshInterval = Duration(seconds: 60);
-  static const _feedSwitchDuration = AppMotion.reveal;
-  static const _feedSettleDuration = AppMotion.reveal;
+  static const _feedSwitchDuration = Duration(milliseconds: 380);
+  static const _feedSettleDuration = Duration(milliseconds: 220);
   static const _feedTriggerDistance = 72.0;
   static const _feedTriggerVelocity = 520.0;
 
@@ -313,21 +313,34 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     if (_feedMode == mode) return;
     final newIndex = kFeedModes.indexWhere((m) => m.key == mode);
     if (newIndex < 0) return;
+    final oldIndex = _currentModeIndex < 0 ? kDefaultFeedModeIndex : _currentModeIndex;
 
     _refreshFeedMode(mode);
     _feedSwitchController.stop();
     _feedSwitchController.duration = _feedSwitchDuration;
+    
+    _feedSettleAnimation = Tween<double>(begin: 1.0, end: 0.0).animate(
+      CurvedAnimation(
+        parent: _feedSwitchController,
+        curve: const Interval(0.0, 0.58, curve: Curves.easeOutQuad),
+      ),
+    );
+
     setState(() {
       _feedMode = mode;
-      _feedTargetIndex = null;
-      _feedDragProgress = 0;
+      _feedTargetIndex = oldIndex;
+      _feedDragProgress = 1.0;
       _feedRevealSerial++;
       _feedRevealActive = true;
     });
+    
     await _feedSwitchController.forward(from: 0);
+    
     if (!mounted) return;
     setState(() {
       _feedRevealActive = false;
+      _feedTargetIndex = null;
+      _feedDragProgress = 0;
     });
   }
 
@@ -638,8 +651,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       end: end.clamp(0.0, 1.0).toDouble(),
     ).animate(CurvedAnimation(
       parent: _feedSwitchController,
-      curve: AppMotion.standard,
-      reverseCurve: AppMotion.outgoing,
+      curve: Curves.easeOutQuad,
     ));
 
     setState(() {
@@ -1462,10 +1474,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     if (!_feedRevealActive) return feedList;
 
     return HomeTabRevealScope(
-      animation: CurvedAnimation(
-        parent: _feedSwitchController,
-        curve: AppMotion.incoming,
-      ),
+      animation: _feedSwitchController,
       serial: _feedRevealSerial,
       child: feedList,
     );

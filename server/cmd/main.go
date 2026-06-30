@@ -570,6 +570,8 @@ func main() {
 
 		user.GET("/replies/received", replyHandler.GetReceivedList)
 
+		user.GET("/notifications", notificationHandler.GetNotifications)
+
 		user.GET("/notifications/unread_count", notificationHandler.GetUnreadCount)
 
 		user.POST("/notifications/read", notificationHandler.MarkAllRead)
@@ -658,6 +660,7 @@ func main() {
 		postsAuth.DELETE("/:id", postHandler.Delete)
 
 		postsAuth.POST("/:id/featured-applications", postHandler.CreateFeaturedApplication)
+		postsAuth.GET("/:id/featured-application-status", postHandler.GetFeaturedApplicationStatus)
 		postsAuth.POST("/:id/collaboration-applications", postHandler.CreateCollaborationApplication)
 		postsAuth.POST("/:id/revision-proposals", postHandler.CreateRevisionProposal)
 

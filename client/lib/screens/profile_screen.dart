@@ -30,7 +30,7 @@ import 'admin_panel_screen.dart';
 import 'super_admin_screen.dart';
 import 'admin_members_screen.dart';
 import 'oneclass_orders_screen.dart';
-import 'user_replies_screen.dart';
+import 'notifications_screen.dart';
 import 'settings_screen.dart';
 import 'feedback_screen.dart';
 import 'user_home_screen.dart';

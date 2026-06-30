@@ -61,6 +61,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   int? _replyToUserId;
   bool _isSending = false;
   final Set<int> _expandedThreads = {};
+  bool _hasPendingFeaturedApp = false;
 
   final Map<int, GlobalKey> _replyKeys = {};
   bool _hasScrolledToTarget = false;
@@ -95,6 +96,18 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     try {
       final response = await _dio.get('/posts/${widget.postId}');
       final repliesResponse = await _dio.get('/posts/${widget.postId}/replies');
+      
+      try {
+        final statusResponse = await _dio.get('/posts/${widget.postId}/featured-application-status');
+        if (mounted) {
+          setState(() {
+            _hasPendingFeaturedApp = statusResponse.data['has_pending'] == true;
+          });
+        }
+      } catch (e) {
+        // ignore status check failure
+      }
+
       final fetchedPost = Post.fromJson(response.data);
       final fallbackPost = widget.initialPost;
       final mergedPost = fallbackPost != null &&
@@ -372,6 +385,28 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
   }
 
+  Future<void> _unfeaturePost() async {
+    final post = _post;
+    if (post == null) return;
+    final confirmed = await AppFeedback.confirmDanger(
+      context,
+      title: '取消精华',
+      message: '确定取消该帖精华吗？取消后将从精华列表移除。',
+    );
+    if (!confirmed) return;
+    try {
+      await _dio.post('/admin/posts/${post.id}/unfeature');
+      if (mounted) {
+        AppFeedback.showSnackBar(context, '已取消精华');
+        _loadPost(); // 刷新状态
+      }
+    } catch (e) {
+      if (mounted) {
+        AppFeedback.showSnackBar(context, '操作失败', isError: true);
+      }
+    }
+  }
+
   Future<String?> _askReason({
     required String title,
     required String hint,
@@ -420,6 +455,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         data: {'reason': reason},
       );
       if (!mounted) return;
+      setState(() {
+        _hasPendingFeaturedApp = true;
+      });
       AppFeedback.showSnackBar(context, '精华申请已提交');
     } on DioException catch (e) {
       if (!mounted) return;
@@ -808,6 +846,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     targetType: 'post',
                   );
                   break;
+                case 'unfeature':
+                  _unfeaturePost();
+                  break;
               }
             },
             itemBuilder: (context) {
@@ -832,6 +873,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                   value: 'report',
                   child: Text('举报帖子'),
                 ));
+                if (_post?.isFeatured == true) {
+                  items.add(const PopupMenuItem(
+                    value: 'unfeature',
+                    child: Text('取消精华'),
+                  ));
+                }
               } else {
                 // 普通用户看他人帖子：仅举报
                 items.add(const PopupMenuItem(
@@ -1416,13 +1463,29 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final isOwner = user.id == p.authorId;
     final actions = <Widget>[];
     if (!p.isFeatured) {
-      actions.add(
-        OutlinedButton.icon(
-          onPressed: _applyFeatured,
-          icon: const Icon(Icons.workspace_premium_outlined, size: 18),
-          label: const Text('申请精华'),
-        ),
-      );
+      if (_hasPendingFeaturedApp) {
+        actions.add(
+          const OutlinedButton(
+            onPressed: null,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.hourglass_empty, size: 18),
+                SizedBox(width: 8),
+                Text('精华申请待审核'),
+              ],
+            ),
+          ),
+        );
+      } else {
+        actions.add(
+          OutlinedButton.icon(
+            onPressed: _applyFeatured,
+            icon: const Icon(Icons.workspace_premium_outlined, size: 18),
+            label: const Text('申请精华'),
+          ),
+        );
+      }
     } else if (!isOwner) {
       actions.add(
         OutlinedButton.icon(

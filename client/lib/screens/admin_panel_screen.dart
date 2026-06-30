@@ -8,6 +8,7 @@ import '../providers/theme_provider.dart';
 import '../utils/app_feedback.dart';
 import '../widgets/glass_container.dart';
 import 'dart:io' show File;
+import 'post_detail_screen.dart';
 
 class _OptionalListResult {
   final List<dynamic> items;
@@ -1470,30 +1471,51 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
                       fontWeight: FontWeight.w800,
                     ),
                   ),
+                  if (post?['content']?.toString().isNotEmpty == true) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      post!['content'].toString(),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 14, color: Colors.grey),
+                    ),
+                  ],
                   const SizedBox(height: 6),
-                  Text('申请人：${applicant?['nickname'] ?? item['applicant_id']}'),
+                  Text('作者：${post?['author']?['nickname'] ?? '未知'}'),
+                  Text('申请人：${applicant?['nickname'] ?? item['applicant_id']} (诚信分: ${applicant?['credit_score'] ?? '-'})'),
                   Text('理由：${item['reason'] ?? ''}'),
                   Text('状态：${item['status'] ?? ''}'),
-                  if (item['status'] == 'pending') ...[
-                    const SizedBox(height: 10),
-                    Wrap(
-                      spacing: 8,
-                      children: [
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      OutlinedButton(
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => PostDetailScreen(postId: item['post_id']),
+                            ),
+                          );
+                        },
+                        child: const Text('查看原帖'),
+                      ),
+                      if (item['status'] == 'pending') ...[
                         OutlinedButton(
                           onPressed: () => _rejectFeatured(item['id'], false),
                           child: const Text('普通驳回'),
                         ),
                         OutlinedButton(
                           onPressed: () => _rejectFeatured(item['id'], true),
-                          child: const Text('恶意驳回扣分'),
+                          child: const Text('恶意驳回'),
                         ),
                         FilledButton(
                           onPressed: () => _approveFeatured(item['id']),
                           child: const Text('通过'),
                         ),
                       ],
-                    ),
-                  ],
+                    ],
+                  ),
                 ],
               ),
             ),
@@ -1514,17 +1536,68 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
   }
 
   Future<void> _rejectFeatured(dynamic id, bool malicious) async {
-    final reason = await _askAdminReason(
-      malicious ? '恶意驳回并扣分' : '驳回精华申请',
-      malicious ? '说明恶意/低质量原因' : '审核理由',
-    );
-    if (reason == null) return;
+    int penaltyPoints = 0;
+    String? reason;
+    if (malicious) {
+      final result = await showDialog<Map<String, dynamic>>(
+        context: context,
+        builder: (ctx) {
+          final controller = TextEditingController();
+          int points = 5;
+          return StatefulBuilder(builder: (context, setState) {
+            return AlertDialog(
+              title: const Text('恶意驳回并扣分'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: controller,
+                    minLines: 2,
+                    maxLines: 5,
+                    decoration: const InputDecoration(hintText: '说明恶意/低质量原因'),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text('选择扣除诚信分：'),
+                  DropdownButton<int>(
+                    value: points,
+                    isExpanded: true,
+                    items: [0, 2, 5, 10].map((e) => DropdownMenuItem(value: e, child: Text('$e分'))).toList(),
+                    onChanged: (val) {
+                      if (val != null) setState(() => points = val);
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  const Text('恶意申请会扣除用户诚信分，确认继续？', style: TextStyle(color: Colors.red, fontSize: 13)),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('取消'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(ctx, {'reason': controller.text, 'points': points}),
+                  child: const Text('确认驳回'),
+                ),
+              ],
+            );
+          });
+        },
+      );
+      if (result == null) return;
+      reason = result['reason'];
+      penaltyPoints = result['points'];
+    } else {
+      reason = await _askAdminReason('驳回精华申请', '审核理由');
+      if (reason == null) return;
+    }
+
     await context.read<AuthProvider>().dio.post(
       '/admin/featured-applications/$id/reject',
       data: {
         'reason': reason,
         'is_malicious': malicious,
-        'penalty_points': malicious ? 5 : 0,
+        'penalty_points': penaltyPoints,
       },
     );
     await _loadData();

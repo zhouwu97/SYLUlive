@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../models/reply.dart';
 import '../providers/auth_provider.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/cached_avatar.dart';
@@ -42,6 +41,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             _notifications = list;
             _isLoading = false;
           });
+        // 不阻塞 UI，后台标记为已读
+        try {
+          await auth.dio.post('/user/notifications/read');
+        } catch (_) {}
       } else {
         if (mounted)
           setState(() {

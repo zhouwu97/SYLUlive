@@ -253,7 +253,7 @@ func main() {
 
 	userHandler := handlers.NewUserHandler(db)
 
-	postHandler := handlers.NewPostHandler(db)
+	postHandler := handlers.NewPostHandler(db, cfg.JPushAppKey, cfg.JPushMasterSecret)
 	searchHandler := handlers.NewSearchHandler(db, postHandler)
 	competitionHandler := handlers.NewCompetitionHandler(db)
 

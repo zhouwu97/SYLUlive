@@ -18,12 +18,14 @@ import (
 
 // PostHandler 帖子处理器
 type PostHandler struct {
-	db *gorm.DB
+	db                *gorm.DB
+	jpushAppKey       string
+	jpushMasterSecret string
 }
 
 // NewPostHandler 创建帖子处理器
-func NewPostHandler(db *gorm.DB) *PostHandler {
-	return &PostHandler{db: db}
+func NewPostHandler(db *gorm.DB, jpushAppKey, jpushMasterSecret string) *PostHandler {
+	return &PostHandler{db: db, jpushAppKey: jpushAppKey, jpushMasterSecret: jpushMasterSecret}
 }
 
 // Snapshot 帖子快照

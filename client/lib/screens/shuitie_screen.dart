@@ -18,6 +18,7 @@ import '../models/post.dart';
 import '../providers/auth_provider.dart';
 import '../providers/message_provider.dart';
 import '../providers/post_provider.dart';
+import '../providers/theme_provider.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/home_service_drawer.dart';
 import '../widgets/home_tab_reveal.dart';
@@ -841,12 +842,14 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final authProvider = context.watch<AuthProvider>();
+    final themeProvider = context.watch<ThemeProvider>();
+    final cleanLightMode = themeProvider.isCleanBackgroundMode && !isDark;
 
-    // 透明沉浸式状态栏
+    // 阅读型首页在简洁模式下使用深色状态栏；自定义背景保留浅色图标。
     SystemChrome.setSystemUIOverlayStyle(
-      SystemUiOverlayStyle(
+      (cleanLightMode ? SystemUiOverlayStyle.dark : SystemUiOverlayStyle.light)
+          .copyWith(
         statusBarColor: Colors.transparent,
-        statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
         systemNavigationBarColor: Colors.transparent,
       ),
     );
@@ -877,7 +880,8 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     final useDesktopShell = ResponsiveUtil.useDesktopShell(context);
 
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor:
+          isDark ? const Color(0xFF101219) : const Color(0xFFF7F8FC),
       extendBodyBehindAppBar: true,
       body: Stack(
         children: [
@@ -1471,13 +1475,12 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     return GlassContainer(
       padding: const EdgeInsets.symmetric(horizontal: 12),
       borderRadius: 50,
-      blur: 16,
-      opacity: 0.85,
-      backgroundColor:
-          isDark ? const Color(0xE6171B24) : const Color(0xF2FFFFFF),
+      blur: 8,
+      opacity: 1,
+      backgroundColor: isDark ? const Color(0xE6171B24) : Colors.white,
       borderColor: isDark
           ? Colors.white.withValues(alpha: 0.12)
-          : Colors.white.withValues(alpha: 0.85),
+          : const Color(0xFFEEF0F5),
       child: TextField(
         controller: _searchController,
         onChanged: _onSearchChanged,

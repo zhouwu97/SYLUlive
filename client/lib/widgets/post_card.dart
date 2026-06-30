@@ -69,15 +69,14 @@ class _PostCardState extends State<PostCard>
             : 4;
 
     return GlassContainer(
-      margin: EdgeInsets.only(bottom: isDesktop ? 16 : 8),
+      margin: EdgeInsets.only(bottom: isDesktop ? 16 : 12),
       borderRadius: isDesktop ? 16 : 12,
-      blur: 12,
-      opacity: 0.85,
-      backgroundColor:
-          isDark ? const Color(0xE6171B24) : const Color(0xF2FFFFFF),
+      blur: 8,
+      opacity: 1,
+      backgroundColor: isDark ? const Color(0xE6171B24) : Colors.white,
       borderColor: isDark
           ? Colors.white.withValues(alpha: 0.10)
-          : Colors.white.withValues(alpha: 0.85),
+          : const Color(0xFFEEF0F5),
       onTap: widget.onTap,
       child: Padding(
         padding: EdgeInsets.all(isDesktop ? 16 : 12),

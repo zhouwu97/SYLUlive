@@ -717,46 +717,56 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final canEdit = _isCurrentUserPostOwner();
     final isOwn = _isCurrentUserPostOwner();
     final isAdmin = currentUser?.isAdmin ?? false;
+    final overlayStyle = (!isDark && !widget.isMarket
+            ? SystemUiOverlayStyle.dark
+            : SystemUiOverlayStyle.light)
+        .copyWith(
+      statusBarColor: Colors.transparent,
+      systemNavigationBarColor: Colors.transparent,
+    );
 
     // 桌面分栏模式：保持透明背景
     final bool transparentMode =
         widget.isDesktopSplitMode && widget.hideBackButton;
 
-    return Scaffold(
-      backgroundColor: transparentMode
-          ? Colors.transparent
-          : (isDark ? const Color(0xFF131720) : const Color(0xFFF6F7F9)),
-      appBar: transparentMode
-          ? AppBar(
-              backgroundColor: Colors.transparent,
-              elevation: 0,
-              automaticallyImplyLeading: false,
-            )
-          : _buildWaterAppBar(isDark,
-              canEdit: canEdit,
-              canDelete: canDelete,
-              isOwn: isOwn,
-              isAdmin: isAdmin),
-      body: Stack(
-        children: [
-          if (_isLoading)
-            const SafeArea(
-              child: Center(child: CircularProgressIndicator()),
-            )
-          else if (_errorMessage != null)
-            SafeArea(child: _buildErrorView(isDark))
-          else if (_post == null)
-            SafeArea(child: _buildEmptyView(isDark))
-          else if (widget.isMarket)
-            _buildMarketDetail(isDark)
-          else
-            Column(
-              children: [
-                Expanded(child: _buildWaterDetail(isDark)),
-                _buildWaterReplyBar(isDark),
-              ],
-            ),
-        ],
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: overlayStyle,
+      child: Scaffold(
+        backgroundColor: transparentMode
+            ? Colors.transparent
+            : (isDark ? const Color(0xFF131720) : const Color(0xFFF6F7F9)),
+        appBar: transparentMode
+            ? AppBar(
+                backgroundColor: Colors.transparent,
+                elevation: 0,
+                automaticallyImplyLeading: false,
+              )
+            : _buildWaterAppBar(isDark,
+                canEdit: canEdit,
+                canDelete: canDelete,
+                isOwn: isOwn,
+                isAdmin: isAdmin),
+        body: Stack(
+          children: [
+            if (_isLoading)
+              const SafeArea(
+                child: Center(child: CircularProgressIndicator()),
+              )
+            else if (_errorMessage != null)
+              SafeArea(child: _buildErrorView(isDark))
+            else if (_post == null)
+              SafeArea(child: _buildEmptyView(isDark))
+            else if (widget.isMarket)
+              _buildMarketDetail(isDark)
+            else
+              Column(
+                children: [
+                  Expanded(child: _buildWaterDetail(isDark)),
+                  _buildWaterReplyBar(isDark),
+                ],
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -1960,10 +1970,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         child: SafeArea(
           child: Container(
             decoration: BoxDecoration(
-              color: isDark
-                  ? const Color(0xFF1E1E32).withValues(alpha: 0.92)
-                  : Colors.white.withValues(alpha: 0.92),
+              color: isDark ? const Color(0xFF1E1E32) : Colors.white,
               borderRadius: BorderRadius.circular(18),
+              border: Border.all(
+                color: isDark
+                    ? Colors.white.withValues(alpha: 0.08)
+                    : const Color(0xFFE5E7EB),
+              ),
             ),
             child: Padding(
               padding: const EdgeInsets.fromLTRB(14, 8, 8, 8),

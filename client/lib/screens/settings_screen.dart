@@ -93,10 +93,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
         extendBodyBehindAppBar: true,
         appBar: AppBar(
           backgroundColor: Colors.transparent,
+          surfaceTintColor: Colors.transparent,
           elevation: 0,
+          foregroundColor: isDark ? Colors.white : const Color(0xFF111827),
           title: const Text('设置'),
         ),
         body: Stack(
+          fit: StackFit.expand,
           children: [
             _buildBackground(themeProvider, isDark),
             SafeArea(
@@ -163,8 +166,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Widget _buildCleanBackground(bool isDark) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
+    return SizedBox.expand(
+      child: ColoredBox(
         color: isDark ? const Color(0xFF101219) : const Color(0xFFF8FAFC),
       ),
     );
@@ -234,7 +237,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             icon: Icons.light_mode,
             iconColor: Colors.blue,
             title: '简洁模式',
-            subtitle: '使用干净背景，适合日常使用',
+            subtitle: '使用干净背景，不删除已保存图片',
             trailing: themeProvider.isCleanBackgroundMode
                 ? Icon(Icons.check_circle,
                     color: Theme.of(context).primaryColor)
@@ -300,16 +303,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             isDark: isDark,
           ),
         ),
-        _buildSettingsRow(
-          child: _buildSettingsTile(
-            icon: Icons.restore,
-            iconColor: Colors.orange,
-            title: '恢复简洁模式',
-            subtitle: '保留已保存背景，仅暂时不显示',
-            isDark: isDark,
-            onTap: () => _showRestoreDefaultDialog(context, themeProvider),
-          ),
-        ),
+
         _buildSettingsRow(
           child: _buildSettingsTile(
             icon: Icons.delete_outline,

@@ -29,7 +29,7 @@ import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/course_schedule_screen.dart';
 import 'screens/exam_schedule_screen.dart';
-import 'screens/user_replies_screen.dart';
+import 'screens/notifications_screen.dart';
 import 'services/course_reminder_service.dart';
 import 'theme/AppTheme.dart';
 import 'config/api_constants.dart';

@@ -109,7 +109,7 @@ class _HomeScreenState extends State<HomeScreen>
     )..addListener(_handleMainTabAnimationTick);
     _contentTabController = AnimationController(
       vsync: this,
-      duration: AppMotion.reveal,
+      duration: const Duration(milliseconds: 380),
       value: 1,
     );
     widgetTabSwitch.addListener(_onWidgetTabSwitch);
@@ -1457,7 +1457,7 @@ class _HomeScreenState extends State<HomeScreen>
     _mainTabController.stop();
     _mainTabController.duration = duration;
     _contentTabController.stop();
-    _contentTabController.duration = AppMotion.reveal;
+    _contentTabController.duration = const Duration(milliseconds: 380);
     final serial = ++_tabTransitionSerial;
     final fromIndex = _currentIndex;
     final visualStart = _mainVisualIndex;
@@ -1706,10 +1706,7 @@ class _HomeScreenState extends State<HomeScreen>
   Widget _buildNarrowLayout(double bottomSafe, AuthProvider authProvider) {
     return HomeTabRevealScope(
       key: _contentKey,
-      animation: CurvedAnimation(
-        parent: _contentTabController,
-        curve: AppMotion.incoming,
-      ),
+      animation: _contentTabController,
       serial: _tabTransitionSerial,
       child: HomeTabKeepAliveStage(
         index: _currentIndex,

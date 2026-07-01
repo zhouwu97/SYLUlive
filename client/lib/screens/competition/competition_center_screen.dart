@@ -2429,11 +2429,18 @@ class _CompetitionShareImportScreenState
         'JSON 格式不正确，请检查逗号、引号和括号',
         isError: true,
       );
-    } catch (e) {
+    } on DioException catch (e) {
       if (!mounted) return;
       AppFeedback.showSnackBar(
         context,
         AppFeedback.dioErrorMessage(e, fallback: '读取 JSON 文件或预览失败'),
+        isError: true,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      AppFeedback.showSnackBar(
+        context,
+        '读取 JSON 文件或预览失败：$e',
         isError: true,
       );
     } finally {
@@ -2456,11 +2463,18 @@ class _CompetitionShareImportScreenState
       if (!mounted) return;
       AppFeedback.showSnackBar(context, '导入完成');
       Navigator.pop(context);
-    } catch (e) {
+    } on DioException catch (e) {
       if (!mounted) return;
       AppFeedback.showSnackBar(
         context,
         AppFeedback.dioErrorMessage(e, fallback: '导入失败'),
+        isError: true,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      AppFeedback.showSnackBar(
+        context,
+        '导入失败：$e',
         isError: true,
       );
     }

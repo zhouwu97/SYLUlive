@@ -194,6 +194,10 @@ class _PostCardState extends State<PostCard>
               SizedBox(height: isDesktop ? 12 : 6),
               Row(
                 children: [
+                  if (widget.post.isActivePinned) ...[
+                    _buildPinnedBadge(isDesktop),
+                    const SizedBox(width: 6),
+                  ],
                   if (widget.post.isFeatured) ...[
                     _buildFeaturedBadge(isDesktop),
                     const SizedBox(width: 6),
@@ -395,6 +399,41 @@ class _PostCardState extends State<PostCard>
               fontSize: isDesktop ? 11 : 10,
               fontWeight: FontWeight.w700,
               color: const Color(0xFFD97706),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPinnedBadge(bool isDesktop) {
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: isDesktop ? 7 : 6,
+        vertical: isDesktop ? 3 : 2,
+      ),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFF4D4F).withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(
+          color: const Color(0xFFFF4D4F).withValues(alpha: 0.32),
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.push_pin_rounded,
+            size: isDesktop ? 13 : 11,
+            color: const Color(0xFFD92D20),
+          ),
+          const SizedBox(width: 3),
+          Text(
+            '置顶',
+            style: TextStyle(
+              fontSize: isDesktop ? 11 : 10,
+              fontWeight: FontWeight.w700,
+              color: const Color(0xFFD92D20),
             ),
           ),
         ],

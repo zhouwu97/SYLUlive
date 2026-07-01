@@ -998,6 +998,7 @@ class CompetitionDetailScreen extends StatefulWidget {
 
 class _CompetitionDetailScreenState extends State<CompetitionDetailScreen> {
   CompetitionEvent? _event;
+  Map<String, dynamic> _eventRaw = {};
   bool _loading = true;
 
   @override
@@ -1011,16 +1012,40 @@ class _CompetitionDetailScreenState extends State<CompetitionDetailScreen> {
     final resp = await dio.get('/competitions/events/${widget.eventId}');
     if (!mounted) return;
     setState(() {
-      _event = CompetitionEvent.fromJson(resp.data);
+      _eventRaw = Map<String, dynamic>.from(resp.data as Map);
+      _event = CompetitionEvent.fromJson(_eventRaw);
       _loading = false;
     });
   }
+
+  Future<void> _addToPlan(CompetitionEvent event) async {
+    try {
+      await context.read<AuthProvider>().dio.post(
+          '/user/competition-calendar/items/copy-from-official/${event.id}');
+      if (!mounted) return;
+      AppFeedback.showSnackBar(context, '已加入我的计划');
+    } on DioException catch (e) {
+      if (!mounted) return;
+      AppFeedback.showSnackBar(
+        context,
+        AppFeedback.dioErrorMessage(e, fallback: '加入失败，请先登录'),
+        isError: true,
+      );
+    }
+  }
+
+  String _rawValue(String key) => '${_eventRaw[key] ?? ''}'.trim();
 
   @override
   Widget build(BuildContext context) {
     final event = _event;
     return Scaffold(
-      appBar: AppBar(title: const Text('比赛详情')),
+      backgroundColor: _competitionBg,
+      appBar: AppBar(
+        backgroundColor: _competitionBg,
+        surfaceTintColor: Colors.transparent,
+        title: const Text('比赛详情'),
+      ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : event == null
@@ -1028,40 +1053,92 @@ class _CompetitionDetailScreenState extends State<CompetitionDetailScreen> {
               : ListView(
                   padding: const EdgeInsets.all(16),
                   children: [
-                    Text(event.title,
-                        style: const TextStyle(
-                            fontSize: 22, fontWeight: FontWeight.w800)),
-                    const SizedBox(height: 10),
-                    Wrap(spacing: 8, runSpacing: 8, children: [
-                      Chip(label: Text('${event.recommendationLevel}推荐')),
-                      Chip(label: Text(event.primaryCategory?.name ?? '未分类')),
-                      Chip(label: Text(_competitionTimeState(event).label)),
-                      Chip(label: Text(_sourceLabel(event.sourceChannel))),
-                    ]),
-                    const SizedBox(height: 12),
-                    _info('学校认定',
-                        _recognitionLabel(event.schoolRecognitionStatus)),
-                    _info('学校等级', event.schoolRecognitionGrade),
-                    _info(_competitionTimeLine(event)?.label ?? '报名安排',
-                        _competitionTimeLine(event)?.value ?? ''),
-                    _info('比赛时间', event.eventTimeText),
-                    _info('时间状态', _competitionTimeState(event).label),
-                    _info('时间精度', event.timePrecisionLabel),
-                    _info('时间说明', event.timeNote),
-                    _info('比赛级别', event.competitionLevel),
-                    _info('地点', event.isOnline ? '线上' : event.location),
-                    if (event.recommendationReason.isNotEmpty)
-                      _section('推荐说明', event.recommendationReason),
-                    _section(
-                        '比赛说明',
-                        event.description.isNotEmpty
-                            ? event.description
-                            : event.summary),
-                    _info('主办方', event.organizer),
+                    _detailCard(
+                      children: [
+                        Text(
+                          event.title,
+                          style: const TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w900,
+                            color: Color(0xFF242330),
+                            height: 1.25,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            _detailChip('${event.recommendationLevel}推荐'),
+                            _detailChip(event.primaryCategory?.name ?? '未分类'),
+                            _detailChip(_competitionTimeState(event).label),
+                          ],
+                        ),
+                        if (event.recommendationReason.isNotEmpty) ...[
+                          const SizedBox(height: 12),
+                          Text(
+                            event.recommendationReason,
+                            style: const TextStyle(
+                              color: _competitionMuted,
+                              height: 1.5,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                    _detailCard(
+                      title: '时间安排',
+                      children: [
+                        _detailInfo(
+                          _competitionTimeLine(event)?.label ?? '报名安排',
+                          _competitionTimeLine(event)?.value ?? '时间待通知',
+                        ),
+                        _detailInfo('比赛时间', event.eventTimeText),
+                        _detailInfo('时间状态', _competitionTimeState(event).label),
+                        _detailInfo('时间精度', event.timePrecisionLabel),
+                        _detailInfo('时间说明', event.timeNote),
+                      ],
+                    ),
+                    _detailCard(
+                      title: '参赛价值',
+                      children: [
+                        _detailInfo(
+                          '学校认定',
+                          _recognitionLabel(event.schoolRecognitionStatus),
+                        ),
+                        _detailInfo('学校等级', event.schoolRecognitionGrade),
+                        _detailInfo('推荐等级', event.recommendationLevel),
+                        _detailInfo('推荐理由', event.recommendationReason),
+                        _detailInfo('适合对象', _rawValue('target_audience')),
+                        _detailInfo('参赛形式', _rawValue('participation_type')),
+                      ],
+                    ),
+                    _detailCard(
+                      title: '基本信息',
+                      children: [
+                        _detailInfo('主办方', event.organizer),
+                        _detailInfo('比赛级别', event.competitionLevel),
+                        _detailInfo(
+                            '地点', event.isOnline ? '线上' : event.location),
+                        _detailInfo('来源', _sourceLabel(event.sourceChannel)),
+                      ],
+                    ),
+                    _detailCard(
+                      title: '比赛说明',
+                      children: [
+                        Text(
+                          (event.description.isNotEmpty
+                                  ? event.description
+                                  : event.summary)
+                              .trim(),
+                          style: const TextStyle(height: 1.6),
+                        ),
+                      ],
+                    ),
                     const SizedBox(height: 12),
                     FilledButton.icon(
-                      onPressed: () => context.read<AuthProvider>().dio.post(
-                          '/user/competition-calendar/items/copy-from-official/${event.id}'),
+                      onPressed: () => _addToPlan(event),
                       icon: const Icon(Icons.add),
                       label: const Text('加入我的计划'),
                     ),
@@ -1072,31 +1149,94 @@ class _CompetitionDetailScreenState extends State<CompetitionDetailScreen> {
                         icon: const Icon(Icons.open_in_new),
                         label: const Text('打开官网'),
                       ),
+                    if (event.noticeUrl.isNotEmpty)
+                      OutlinedButton.icon(
+                        onPressed: () => launchUrl(Uri.parse(event.noticeUrl)),
+                        icon: const Icon(Icons.article_outlined),
+                        label: const Text('查看通知'),
+                      ),
                   ],
                 ),
     );
   }
 }
 
-Widget _info(String label, String value) {
-  if (value.trim().isEmpty) return const SizedBox.shrink();
-  return Padding(
-    padding: const EdgeInsets.symmetric(vertical: 4),
-    child: Text('$label：$value'),
-  );
-}
-
-Widget _section(String title, String value) {
-  if (value.trim().isEmpty) return const SizedBox.shrink();
-  return Padding(
-    padding: const EdgeInsets.only(top: 16),
+Widget _detailCard({String? title, required List<Widget> children}) {
+  return Container(
+    margin: const EdgeInsets.only(bottom: 12),
+    padding: const EdgeInsets.all(16),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(18),
+      border: Border.all(color: _competitionBorder),
+    ),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(title,
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
-        const SizedBox(height: 8),
-        Text(value, style: const TextStyle(height: 1.6)),
+        if (title != null) ...[
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w900,
+              color: Color(0xFF242330),
+            ),
+          ),
+          const SizedBox(height: 10),
+        ],
+        ...children,
+      ],
+    ),
+  );
+}
+
+Widget _detailChip(String label) {
+  return Container(
+    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+    decoration: BoxDecoration(
+      color: _competitionLight,
+      borderRadius: BorderRadius.circular(999),
+    ),
+    child: Text(
+      label,
+      style: const TextStyle(
+        color: _competitionPrimaryDark,
+        fontSize: 12,
+        fontWeight: FontWeight.w800,
+      ),
+    ),
+  );
+}
+
+Widget _detailInfo(String label, String value) {
+  if (value.trim().isEmpty) return const SizedBox.shrink();
+  return Padding(
+    padding: const EdgeInsets.only(bottom: 8),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 74,
+          child: Text(
+            label,
+            style: const TextStyle(
+              color: _competitionMuted,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+        Expanded(
+          child: Text(
+            value,
+            style: const TextStyle(
+              color: Color(0xFF242330),
+              fontSize: 13,
+              height: 1.4,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
       ],
     ),
   );

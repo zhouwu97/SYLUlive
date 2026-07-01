@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -2327,6 +2328,8 @@ class _CompetitionCalendarItemEditorScreenState
   }
 }
 
+enum _ImportMode { shareCode, jsonFile }
+
 class CompetitionShareImportScreen extends StatefulWidget {
   const CompetitionShareImportScreen({super.key});
 
@@ -2337,8 +2340,13 @@ class CompetitionShareImportScreen extends StatefulWidget {
 
 class _CompetitionShareImportScreenState
     extends State<CompetitionShareImportScreen> {
+  _ImportMode _mode = _ImportMode.shareCode;
+
   final _controller = TextEditingController();
   Map<String, dynamic>? _preview;
+  bool _readingJsonFile = false;
+  String? _jsonFileName;
+  Map<String, dynamic>? _jsonPayload;
 
   @override
   void dispose() {
@@ -2355,7 +2363,7 @@ class _CompetitionShareImportScreenState
     setState(() => _preview = Map<String, dynamic>.from(resp.data));
   }
 
-  Future<void> _commit(String strategy) async {
+  Future<void> _commitShare(String strategy) async {
     await context.read<AuthProvider>().dio.post(
       '/user/competition-calendar/import-share/commit',
       data: {'share_code': _controller.text.trim(), 'strategy': strategy},
@@ -2363,6 +2371,99 @@ class _CompetitionShareImportScreenState
     if (!mounted) return;
     AppFeedback.showSnackBar(context, '导入完成');
     Navigator.pop(context);
+  }
+
+  Future<void> _pickJsonFile() async {
+    try {
+      setState(() => _readingJsonFile = true);
+
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['json'],
+        withData: true,
+      );
+
+      if (result == null || result.files.isEmpty) return;
+
+      final file = result.files.single;
+      final bytes = file.bytes;
+
+      if (bytes == null) {
+        AppFeedback.showSnackBar(
+          context,
+          '读取文件失败，请重新选择 JSON 文件',
+          isError: true,
+        );
+        return;
+      }
+
+      final text = utf8.decode(bytes).trim();
+      final decoded = jsonDecode(text);
+
+      if (decoded is! Map<String, dynamic> || decoded['events'] is! List) {
+        AppFeedback.showSnackBar(
+          context,
+          'JSON 顶层必须是 {"events": [...]}',
+          isError: true,
+        );
+        return;
+      }
+
+      final resp = await context.read<AuthProvider>().dio.post(
+            '/user/competition-calendar/import-json/preview',
+            data: decoded,
+          );
+
+      if (!mounted) return;
+
+      setState(() {
+        _jsonFileName = file.name;
+        _jsonPayload = decoded;
+        _preview = Map<String, dynamic>.from(resp.data['preview']);
+      });
+
+      AppFeedback.showSnackBar(context, '已读取 ${file.name}');
+    } on FormatException {
+      AppFeedback.showSnackBar(
+        context,
+        'JSON 格式不正确，请检查逗号、引号和括号',
+        isError: true,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      AppFeedback.showSnackBar(
+        context,
+        AppFeedback.dioErrorMessage(e, fallback: '读取 JSON 文件或预览失败'),
+        isError: true,
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _readingJsonFile = false);
+      }
+    }
+  }
+
+  Future<void> _commitJson(String strategy) async {
+    if (_jsonPayload == null) return;
+    try {
+      await context.read<AuthProvider>().dio.post(
+        '/user/competition-calendar/import-json/commit',
+        data: {
+          'strategy': strategy,
+          'events': _jsonPayload!['events'],
+        },
+      );
+      if (!mounted) return;
+      AppFeedback.showSnackBar(context, '导入完成');
+      Navigator.pop(context);
+    } catch (e) {
+      if (!mounted) return;
+      AppFeedback.showSnackBar(
+        context,
+        AppFeedback.dioErrorMessage(e, fallback: '导入失败'),
+        isError: true,
+      );
+    }
   }
 
   @override
@@ -2373,12 +2474,58 @@ class _CompetitionShareImportScreenState
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          TextField(
-            controller: _controller,
-            decoration: const InputDecoration(labelText: '分享码'),
+          SegmentedButton<_ImportMode>(
+            segments: const [
+              ButtonSegment(
+                value: _ImportMode.shareCode,
+                label: Text('分享码导入'),
+              ),
+              ButtonSegment(
+                value: _ImportMode.jsonFile,
+                label: Text('JSON 文件导入'),
+              ),
+            ],
+            selected: {_mode},
+            onSelectionChanged: (Set<_ImportMode> newSelection) {
+              setState(() {
+                _mode = newSelection.first;
+                _preview = null;
+              });
+            },
           ),
-          const SizedBox(height: 12),
-          FilledButton(onPressed: _previewShare, child: const Text('预览')),
+          const SizedBox(height: 24),
+          if (_mode == _ImportMode.shareCode) ...[
+            TextField(
+              controller: _controller,
+              decoration: const InputDecoration(labelText: '分享码'),
+            ),
+            const SizedBox(height: 12),
+            FilledButton(onPressed: _previewShare, child: const Text('预览')),
+          ] else ...[
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFE8E4F0)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _jsonFileName == null ? '未选择文件' : '已选择: $_jsonFileName',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 12),
+                  OutlinedButton.icon(
+                    onPressed: _readingJsonFile ? null : _pickJsonFile,
+                    icon: const Icon(Icons.upload_file_rounded, size: 18),
+                    label: Text(_readingJsonFile ? '读取中...' : '选择 JSON 文件'),
+                  ),
+                ],
+              ),
+            ),
+          ],
           if (_preview != null) ...[
             const SizedBox(height: 16),
             Text('预览 ${items.length} 个比赛',
@@ -2386,14 +2533,22 @@ class _CompetitionShareImportScreenState
             ...items.map((e) => ListTile(title: Text(e['title'] ?? ''))),
             Row(children: [
               Expanded(
-                  child: OutlinedButton(
-                      onPressed: () => _commit('merge'),
-                      child: const Text('合并'))),
+                child: OutlinedButton(
+                  onPressed: () => _mode == _ImportMode.shareCode
+                      ? _commitShare('merge')
+                      : _commitJson('merge'),
+                  child: const Text('合并'),
+                ),
+              ),
               const SizedBox(width: 10),
               Expanded(
-                  child: FilledButton(
-                      onPressed: () => _commit('replace'),
-                      child: const Text('覆盖'))),
+                child: FilledButton(
+                  onPressed: () => _mode == _ImportMode.shareCode
+                      ? _commitShare('replace')
+                      : _commitJson('replace'),
+                  child: const Text('覆盖'),
+                ),
+              ),
             ]),
           ],
         ],
@@ -2416,6 +2571,8 @@ class _CompetitionAdminImportScreenState
   String? _batchId;
   Map<String, dynamic>? _preview;
   String? _previewedJsonText;
+  String? _jsonFileName;
+  bool _readingJsonFile = false;
 
   @override
   void initState() {
@@ -2442,6 +2599,72 @@ class _CompetitionAdminImportScreenState
       _batchId = null;
       _previewedJsonText = null;
     });
+  }
+
+  Future<void> _pickJsonFile() async {
+    try {
+      setState(() => _readingJsonFile = true);
+
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['json'],
+        withData: true,
+      );
+
+      if (result == null || result.files.isEmpty) return;
+
+      final file = result.files.single;
+      final bytes = file.bytes;
+
+      if (bytes == null) {
+        AppFeedback.showSnackBar(
+          context,
+          '读取文件失败，请重新选择 JSON 文件',
+          isError: true,
+        );
+        return;
+      }
+
+      final text = utf8.decode(bytes).trim();
+      final decoded = jsonDecode(text);
+
+      if (decoded is! Map<String, dynamic> || decoded['events'] is! List) {
+        AppFeedback.showSnackBar(
+          context,
+          'JSON 顶层必须是 {"events": [...]}',
+          isError: true,
+        );
+        return;
+      }
+
+      const encoder = JsonEncoder.withIndent('  ');
+
+      setState(() {
+        _jsonFileName = file.name;
+        _jsonController.text = encoder.convert(decoded);
+        _preview = null;
+        _batchId = null;
+        _previewedJsonText = null;
+      });
+
+      AppFeedback.showSnackBar(context, '已读取 ${file.name}');
+    } on FormatException {
+      AppFeedback.showSnackBar(
+        context,
+        'JSON 格式不正确，请检查逗号、引号和括号',
+        isError: true,
+      );
+    } catch (e) {
+      AppFeedback.showSnackBar(
+        context,
+        '读取 JSON 文件失败：$e',
+        isError: true,
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _readingJsonFile = false);
+      }
+    }
   }
 
   List<Map<String, dynamic>> get _draftEvents {
@@ -2569,13 +2792,15 @@ class _CompetitionAdminImportScreenState
         children: [
           _buildPromptCard(),
           const SizedBox(height: 12),
+          _buildJsonFileImportCard(),
+          const SizedBox(height: 12),
           TextField(
             controller: _jsonController,
-            minLines: 10,
-            maxLines: 22,
+            minLines: 8,
+            maxLines: 16,
             decoration: InputDecoration(
-              labelText: '粘贴 AI 生成的 JSON',
-              hintText: '必须是 {"events": [...]}',
+              labelText: 'AI 生成的 JSON',
+              hintText: '可以粘贴，也可以从上方选择 .json 文件',
               filled: true,
               fillColor: Colors.white,
               border: OutlineInputBorder(
@@ -2617,6 +2842,47 @@ class _CompetitionAdminImportScreenState
             const SizedBox(height: 16),
             _buildPreviewCard(),
           ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildJsonFileImportCard() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: _competitionBorder),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            '也可以直接导入 JSON 文件',
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w900,
+              color: Color(0xFF242330),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            _jsonFileName == null
+                ? '适合 100 条以上的大 JSON，不用再复制粘贴。'
+                : '当前文件：$_jsonFileName',
+            style: const TextStyle(
+              color: _competitionMuted,
+              fontSize: 12,
+              height: 1.4,
+            ),
+          ),
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: _readingJsonFile ? null : _pickJsonFile,
+            icon: const Icon(Icons.upload_file_rounded, size: 18),
+            label: Text(_readingJsonFile ? '读取中...' : '选择 JSON 文件'),
+          ),
         ],
       ),
     );

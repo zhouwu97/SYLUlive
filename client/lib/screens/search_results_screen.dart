@@ -1,6 +1,7 @@
 import 'dart:io' show File;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../config/api_constants.dart';
@@ -162,23 +163,34 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final themeProvider = context.watch<ThemeProvider>();
+    final useCustomBackground = themeProvider.shouldShowCustomBackground;
+    final cleanLightMode = !useCustomBackground && !isDark;
 
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: Stack(
-        children: [
-          Positioned.fill(child: _buildBackground(themeProvider, isDark)),
-          SafeArea(
-            child: Column(
-              children: [
-                _buildTopBar(isDark),
-                _buildTypeTabs(isDark),
-                _buildSortBar(isDark),
-                Expanded(child: _buildResults(isDark)),
-              ],
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: (cleanLightMode
+              ? SystemUiOverlayStyle.dark
+              : SystemUiOverlayStyle.light)
+          .copyWith(
+        statusBarColor: Colors.transparent,
+        systemNavigationBarColor: Colors.transparent,
+      ),
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        body: Stack(
+          children: [
+            Positioned.fill(child: _buildBackground(themeProvider, isDark)),
+            SafeArea(
+              child: Column(
+                children: [
+                  _buildTopBar(isDark),
+                  _buildTypeTabs(isDark),
+                  _buildSortBar(isDark),
+                  Expanded(child: _buildResults(isDark)),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -391,9 +403,8 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
       child: Row(
         children: [
           CachedAvatar(
-            imageUrl: user.avatar.isEmpty
-                ? null
-                : ApiConstants.fullUrl(user.avatar),
+            imageUrl:
+                user.avatar.isEmpty ? null : ApiConstants.fullUrl(user.avatar),
             radius: 25,
             fallbackText: user.nickname,
           ),
@@ -437,49 +448,38 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
   }
 
   Widget _buildDefaultBackground(bool isDark) {
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        Image.asset(
-          'assets/images/morenbeijing.jpeg',
-          fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => Container(
-            color: isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
-          ),
-        ),
-        Container(
-          color: isDark
-              ? Colors.black.withValues(alpha: 0.32)
-              : Colors.white.withValues(alpha: 0.22),
-        ),
-      ],
+    return ColoredBox(
+      color: isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
     );
   }
 
   Widget _buildBackground(ThemeProvider themeProvider, bool isDark) {
-    final path = themeProvider.getBackgroundImageFor(context);
-    if (themeProvider.isBackgroundVisible && path != null && path.isNotEmpty) {
-      final isAsset = !path.startsWith('http') && !path.startsWith('/');
+    final path = themeProvider.getCustomBackgroundImageFor(context);
+    if (themeProvider.shouldShowCustomBackground &&
+        path != null &&
+        path.isNotEmpty) {
       return Stack(
         fit: StackFit.expand,
         children: [
-          isAsset
+          ThemeProvider.isBundledAssetBackground(path)
               ? Image.asset(
-                  'assets/images/$path',
+                  ThemeProvider.resolveBundledAssetPath(path),
                   fit: BoxFit.cover,
                   errorBuilder: (_, __, ___) => _buildDefaultBackground(isDark),
                 )
-              : path.startsWith('/')
-              ? Image.file(
-                  File(path),
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => _buildDefaultBackground(isDark),
-                )
-              : Image.network(
-                  path,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => _buildDefaultBackground(isDark),
-                ),
+              : ThemeProvider.isLocalFileBackground(path)
+                  ? Image.file(
+                      File(path),
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) =>
+                          _buildDefaultBackground(isDark),
+                    )
+                  : Image.network(
+                      path,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) =>
+                          _buildDefaultBackground(isDark),
+                    ),
           Container(
             color: isDark
                 ? Colors.black.withValues(alpha: 0.32)

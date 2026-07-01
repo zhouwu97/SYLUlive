@@ -58,6 +58,10 @@ type CompetitionEvent struct {
 
 	RegistrationTimeText string     `gorm:"size:255" json:"registration_time_text"`
 	EventTimeText        string     `gorm:"size:255" json:"event_time_text"`
+	TimePrecision        string     `gorm:"size:24;default:'unknown';index" json:"time_precision"`
+	TimeStatus           string     `gorm:"size:24;default:'pending';index" json:"time_status"`
+	TimeNote             string     `gorm:"size:500" json:"time_note"`
+	SortMonth            int        `gorm:"default:0;index" json:"sort_month"`
 	SortDate             *time.Time `gorm:"index" json:"sort_date"`
 
 	Location       string         `gorm:"size:255" json:"location"`
@@ -140,7 +144,13 @@ type UserCompetitionCalendarItem struct {
 	EventEndText            string         `gorm:"size:255" json:"event_end_text"`
 	RegistrationTimeText    string         `gorm:"size:255" json:"registration_time_text"`
 	EventTimeText           string         `gorm:"size:255" json:"event_time_text"`
+	TimePrecision           string         `gorm:"size:24;default:'unknown';index" json:"time_precision"`
+	TimeStatus              string         `gorm:"size:24;default:'pending';index" json:"time_status"`
+	TimeNote                string         `gorm:"size:500" json:"time_note"`
+	SortMonth               int            `gorm:"default:0;index" json:"sort_month"`
 	SortDate                *time.Time     `gorm:"index" json:"sort_date"`
+	PlanStatus              string         `gorm:"size:24;default:'watching';index" json:"plan_status"`
+	UserDeadline            *time.Time     `gorm:"index" json:"user_deadline"`
 	SourceType              string         `gorm:"size:20;index" json:"source_type"`
 	SourceEventID           *uint          `gorm:"index" json:"source_event_id"`
 	SourceShareCode         string         `gorm:"size:32;index" json:"source_share_code"`

@@ -12,6 +12,7 @@ import 'package:asn1lib/asn1lib.dart';
 import 'package:html/parser.dart' show parse;
 import 'package:html/dom.dart' show Document;
 import 'package:fast_gbk/fast_gbk.dart';
+import 'package:flutter/foundation.dart' show kDebugMode;
 
 /// 纯客户端的前端爬虫工具类
 /// 用于在用户的手机本地直接穿透深信服 WebVPN，并模拟登录内网的 ASP.NET WebForms 二课系统。
@@ -30,8 +31,7 @@ class SyluClientCrawler {
   static const String _targetDomain = 'xg.sylu.edu.cn';
 
   SyluClientCrawler({CookieJar? cookieJar, Dio? dio}) {
-    _dio =
-        dio ??
+    _dio = dio ??
         Dio(
           BaseOptions(
             connectTimeout: const Duration(seconds: 30),
@@ -71,6 +71,21 @@ class SyluClientCrawler {
   /// 获取 Dio 实例用于测试脚本
   Dio getDio() => _dio;
 
+  void _debugLog(String message) {
+    if (kDebugMode) {
+      print(message);
+    }
+  }
+
+  String _redactUrl(String url) {
+    try {
+      final uri = Uri.parse(url);
+      return '${uri.scheme}://${uri.host}${uri.path}';
+    } catch (_) {
+      return '<invalid-url>';
+    }
+  }
+
   /// 健壮的响应字节流解码器
   String decodeResponseBytes(List<int> bytes, Headers headers) {
     return _decodeResponseBytes(bytes, headers);
@@ -105,7 +120,7 @@ class SyluClientCrawler {
 
     // 2. 生成加密后的 WebVPN 目标 URL
     final encryptedUrl = _buildVpnUrl();
-    print('[Crawler] 初始 VPN URL: $encryptedUrl');
+    _debugLog('[Crawler] 初始 VPN URL: ${_redactUrl(encryptedUrl)}');
 
     // 3. 手动处理 GET 重定向链，以维持 WebVPN 的会话
     String currentUrl = encryptedUrl;
@@ -118,7 +133,9 @@ class SyluClientCrawler {
         options: Options(responseType: ResponseType.bytes),
       );
 
-      print('[Crawler] GET 响应状态: ${getResp.statusCode}, URL: $currentUrl');
+      _debugLog(
+        '[Crawler] GET 响应状态: ${getResp.statusCode}, URL: ${_redactUrl(currentUrl)}',
+      );
 
       if (getResp.statusCode == 301 || getResp.statusCode == 302) {
         final location = getResp.headers.value('location');
@@ -129,7 +146,7 @@ class SyluClientCrawler {
             final uri = Uri.parse(currentUrl);
             currentUrl = '${uri.scheme}://${uri.host}$location';
           }
-          print('[Crawler] 重定向到: $currentUrl');
+          _debugLog('[Crawler] 重定向到: ${_redactUrl(currentUrl)}');
           redirectCount++;
           if (redirectCount > 10) throw Exception('重定向次数过多');
           continue;
@@ -156,17 +173,17 @@ class SyluClientCrawler {
     if (pubKeyBase64.isEmpty) {
       throw Exception('未能从页面提取到 RSA 公钥 (pubKey字段不存在)');
     }
-    print('[Crawler] 找到 RSA 公钥');
+    _debugLog('[Crawler] 找到 RSA 公钥');
 
     // 使用 RSA 公钥加密密码
     final encryptedPwd = _encryptRsa(password, pubKeyBase64);
-    print('[Crawler] 加密后的 pwd: $encryptedPwd');
+    _debugLog('[Crawler] 加密后的 pwd: <redacted>, length=${encryptedPwd.length}');
 
     // 提取伪验证码
     final codeBoxElement = doc.querySelector('#code-box');
     String captcha = codeBoxElement?.text.trim() ?? '';
     if (captcha.isEmpty) captcha = 'K777'; // 兜底的伪造验证码
-    print('[Crawler] 提取的伪验证码: $captcha');
+    _debugLog('[Crawler] 提取的伪验证码: <redacted>, length=${captcha.length}');
 
     // 构造表单数据 (使用 UTF-8 URL编码)
     final Map<String, dynamic> formData = {
@@ -183,7 +200,7 @@ class SyluClientCrawler {
       'queryBtn': '登          录',
     };
 
-    print('[Crawler] 发送 POST 登录请求到: $currentUrl');
+    _debugLog('[Crawler] 发送 POST 登录请求到: ${_redactUrl(currentUrl)}');
     // 注意：我们将 followRedirects 设置回 true，以便自动跟随登录后的可能的 302（如果有）
     final postResp = await _dio.post(
       currentUrl,
@@ -206,16 +223,16 @@ class SyluClientCrawler {
     final postDoc = parse(postHtml);
     for (final script in postDoc.querySelectorAll('script')) {
       if (script.text.contains('alert')) {
-        print('[Crawler] 发现服务器弹窗提示: ${script.text.trim()}');
+        _debugLog('[Crawler] 发现服务器弹窗提示，length=${script.text.trim().length}');
         throw Exception('登录失败: ${script.text.trim()}');
       }
       if (script.text.contains("window.location.href='SystemForm/main.htm'") ||
           script.text.contains('window.location.href="SystemForm/main.htm"')) {
-        print('[Crawler] ✅ 登录成功！直接跳转到成绩查询页');
+        _debugLog('[Crawler] 登录成功，直接跳转到成绩查询页');
         final baseUri = Uri.parse(currentUrl);
         final mainUrl =
             '${baseUri.scheme}://${baseUri.host}${baseUri.path.replaceAll('UserLogin.aspx', 'SystemForm/StuAction/StuActionSearch.aspx')}';
-        print('[Crawler] 成绩页URL: $mainUrl');
+        _debugLog('[Crawler] 成绩页URL: ${_redactUrl(mainUrl)}');
         final mainResp = await _dio.get(
           mainUrl,
           options: Options(
@@ -227,7 +244,7 @@ class SyluClientCrawler {
           mainResp.data as List<int>,
           mainResp.headers,
         );
-        print('[Crawler] 成绩页获取成功，长度: ${mainHtml.length}');
+        _debugLog('[Crawler] 成绩页获取成功，长度: ${mainHtml.length}');
         return mainHtml;
       }
     }
@@ -235,7 +252,9 @@ class SyluClientCrawler {
     for (final element in postDoc.querySelectorAll('*')) {
       final id = element.id;
       if (id.contains('msg') || id.contains('error')) {
-        print('[Crawler] 发现提示元素 ID: $id, 内容: ${element.text.trim()}');
+        _debugLog(
+          '[Crawler] 发现提示元素 ID: $id, 内容长度: ${element.text.trim().length}',
+        );
         throw Exception('登录失败: ${element.text.trim()}');
       }
     }
@@ -335,7 +354,7 @@ class SyluClientCrawler {
 
       return base64Encode(cipherBytes);
     } catch (e) {
-      print('[Crawler] RSA加密失败: $e');
+      _debugLog('[Crawler] RSA加密失败: $e');
       return plainText;
     }
   }
@@ -401,8 +420,8 @@ class SyluClientCrawler {
           final itemName = columns[0].text.trim();
           final score = columns[7].text.trim(); // 活动分值
           final date = columns[2].text.trim(); // 活动时间
-          var category = columns[3].text
-              .trim(); // 活动类型（思想成长/志愿公益/...)  columns[1]是申请单位
+          var category =
+              columns[3].text.trim(); // 活动类型（思想成长/志愿公益/...)  columns[1]是申请单位
 
           if (itemName.isNotEmpty &&
               !itemName.contains('活动名称') &&
@@ -459,10 +478,10 @@ class SyluClientCrawler {
           });
         }
 
-        print('[Crawler] 从明细计算汇总: ${summary.length} 个类别');
+        _debugLog('[Crawler] 从明细计算汇总: ${summary.length} 个类别');
       }
     } catch (e) {
-      print('解析二课数据失败: $e');
+      _debugLog('解析二课数据失败: $e');
     }
 
     return {'summary': summary, 'scores': scores};

@@ -3,6 +3,7 @@ import 'package:cookie_jar/cookie_jar.dart';
 import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 import 'package:dio_cookie_manager/dio_cookie_manager.dart';
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -78,6 +79,12 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
 
   String _md5(String input) => md5.convert(utf8.encode(input)).toString();
 
+  void _debugLog(String message) {
+    if (kDebugMode) {
+      debugPrint(message);
+    }
+  }
+
   Future<void> _init() async {
     final ok = await _login();
     if (!ok) {
@@ -125,8 +132,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
           _yearData[year] = _YearData(
             totalGrade: map['total_grade'] ?? '',
             totalScore: (map['total_score'] ?? 0).toDouble(),
-            scores:
-                (map['scores'] as List?)
+            scores: (map['scores'] as List?)
                     ?.map(
                       (e) => _GymScoreItem.fromJson(e as Map<String, dynamic>),
                     )
@@ -166,18 +172,19 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
     };
     requestData['sign'] = SignUtils.generateSign(requestData);
 
-    debugPrint('--- [体测登录] 请求开始 ---');
-    debugPrint('URL: $_baseUrl/service/login/mobile/check');
-    debugPrint('Payload: $requestData');
+    _debugLog('--- [体测登录] 请求开始 ---');
+    _debugLog('URL: $_baseUrl/service/login/mobile/check');
+    _debugLog('Payload keys: ${requestData.keys.toList()}');
 
     try {
       final resp = await _dio.post(
         '/service/login/mobile/check',
         data: requestData,
       );
-      debugPrint('Status Code: ${resp.statusCode}');
-      debugPrint('Response Headers: ${resp.headers}');
-      debugPrint('Response Body: ${resp.data}');
+      final bodyText = resp.data?.toString() ?? '';
+      _debugLog('Status Code: ${resp.statusCode}');
+      _debugLog('Response header names: ${resp.headers.map.keys.toList()}');
+      _debugLog('Response bodyLength: ${bodyText.length}');
 
       if (resp.statusCode == 200) {
         var data = resp.data;
@@ -218,20 +225,20 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
               'sylu_physical_test_pwd_${widget.username}',
               widget.password,
             );
-            debugPrint(
-              '登录成功！UserId: $_userId, Token: $_token, Year: $_currentYear',
+            _debugLog(
+              '登录成功！UserId: $_userId, Token: <redacted>, Year: $_currentYear',
             );
             return true;
           } else {
-            debugPrint('登录返回了数据，但未能解析到 userId');
+            _debugLog('登录返回了数据，但未能解析到 userId');
           }
         } else {
-          debugPrint('登录返回的数据不是 Map 类型');
+          _debugLog('登录返回的数据不是 Map 类型');
         }
       }
     } catch (e, st) {
-      debugPrint('登录发生异常: $e');
-      debugPrint('$st');
+      _debugLog('登录发生异常: $e');
+      _debugLog('$st');
     }
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -264,7 +271,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
         if (data is Map) {
           if (data['testCode'] != null) {
             _testCode = data['testCode'].toString();
-            debugPrint('获取到 testCode: $_testCode');
+            _debugLog('获取到 testCode: <redacted>, length=${_testCode.length}');
           }
           for (final key in ['sex', 'gender', 'xb', 'studentSex', 'userSex']) {
             final parsed = PhysicalPercentileService.parseGender(data[key]);
@@ -280,7 +287,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
 
   Future<void> _fetchYear(String year) async {
     if (_userId == null) {
-      debugPrint('获取成绩失败: _userId 为空！');
+      _debugLog('获取成绩失败: _userId 为空！');
       return;
     }
     if (mounted) setState(() => _loadingYear = true);
@@ -290,10 +297,10 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
     final bodyData = <String, dynamic>{'user_id': _userId, 'school_year': year};
     bodyData['sign'] = SignUtils.generateSign(bodyData);
 
-    debugPrint('--- [体测成绩查询] 请求开始 ---');
-    debugPrint('URL: $_baseUrl/service/mobile/gymResult/selectUserPlanScore');
-    debugPrint('Headers Authorization: $authValue');
-    debugPrint('Payload: $bodyData');
+    _debugLog('--- [体测成绩查询] 请求开始 ---');
+    _debugLog('URL: $_baseUrl/service/mobile/gymResult/selectUserPlanScore');
+    _debugLog('Headers Authorization: <redacted>, length=${authValue.length}');
+    _debugLog('Payload keys: ${bodyData.keys.toList()}, schoolYear=$year');
 
     try {
       final resp = await _dio.post(
@@ -303,8 +310,9 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
           headers: {'Authorization': authValue, 'Cookie': 'userid=$_userId'},
         ),
       );
-      debugPrint('Status Code: ${resp.statusCode}');
-      debugPrint('Response Body: ${resp.data}');
+      final bodyText = resp.data?.toString() ?? '';
+      _debugLog('Status Code: ${resp.statusCode}');
+      _debugLog('Response bodyLength: ${bodyText.length}');
 
       if (resp.statusCode == 200) {
         var data = resp.data;
@@ -320,13 +328,13 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
           final list = inner['data_arr'];
           final scores = (list is List)
               ? list
-                    .map(
-                      (e) => _GymScoreItem.fromJson(e as Map<String, dynamic>),
-                    )
-                    .toList()
+                  .map(
+                    (e) => _GymScoreItem.fromJson(e as Map<String, dynamic>),
+                  )
+                  .toList()
               : <_GymScoreItem>[];
 
-          debugPrint('成功解析到成绩数据，长度: ${scores.length}');
+          _debugLog('成功解析到成绩数据，长度: ${scores.length}');
 
           final yearData = _YearData(
             totalGrade: totalGrade,
@@ -339,12 +347,12 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
             AppFeedback.showSnackBar(context, '成绩已更新');
           }
         } else {
-          debugPrint('成绩查询返回的不是预期的 Map 或 data 字段不是 Map');
+          _debugLog('成绩查询返回的不是预期的 Map 或 data 字段不是 Map');
         }
       }
     } catch (e, st) {
-      debugPrint('获取成绩失败，发生异常: $e');
-      debugPrint('$st');
+      _debugLog('获取成绩失败，发生异常: $e');
+      _debugLog('$st');
     }
     if (mounted) setState(() => _loadingYear = false);
   }
@@ -354,14 +362,12 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor: isDark
-          ? const Color(0xFF131720)
-          : const Color(0xFFF4F6FB),
+      backgroundColor:
+          isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
       appBar: AppBar(
         title: const Text('体测成绩查询'),
-        backgroundColor: isDark
-            ? const Color(0xFF131720)
-            : const Color(0xFFF4F6FB),
+        backgroundColor:
+            isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
         elevation: 0,
         actions: [
           IconButton(
@@ -467,7 +473,8 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
       padding: const EdgeInsets.fromLTRB(20, 6, 20, 10),
       child: Row(
         children: [
-          const Text('学年', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
+          const Text('学年',
+              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
           const Spacer(),
           GestureDetector(
             onTap: () {
@@ -484,19 +491,25 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
                       children: [
                         const Padding(
                           padding: EdgeInsets.all(16.0),
-                          child: Text('选择学年', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                          child: Text('选择学年',
+                              style: TextStyle(
+                                  fontSize: 16, fontWeight: FontWeight.bold)),
                         ),
                         ..._availableYears.map((y) => ListTile(
-                          title: Text('$y—${int.parse(y) + 1}', textAlign: TextAlign.center),
-                          trailing: _currentYear == y ? const Icon(Icons.check, color: Color(0xFF6366F1)) : const SizedBox(width: 24),
-                          onTap: () {
-                            Navigator.pop(context);
-                            if (mounted) setState(() => _currentYear = y);
-                            if (_yearData[y] == null) {
-                              _fetchYear(y);
-                            }
-                          },
-                        )),
+                              title: Text('$y—${int.parse(y) + 1}',
+                                  textAlign: TextAlign.center),
+                              trailing: _currentYear == y
+                                  ? const Icon(Icons.check,
+                                      color: Color(0xFF6366F1))
+                                  : const SizedBox(width: 24),
+                              onTap: () {
+                                Navigator.pop(context);
+                                if (mounted) setState(() => _currentYear = y);
+                                if (_yearData[y] == null) {
+                                  _fetchYear(y);
+                                }
+                              },
+                            )),
                       ],
                     ),
                   );
@@ -573,13 +586,14 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
                       child: IconButton(
                         padding: EdgeInsets.zero,
                         onPressed: () => Navigator.of(dialogContext).pop(),
-                        icon: Icon(Icons.close_rounded, size: 21, color: isDark ? Colors.white70 : Colors.black54),
+                        icon: Icon(Icons.close_rounded,
+                            size: 21,
+                            color: isDark ? Colors.white70 : Colors.black54),
                       ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 18),
-
                 Container(
                   width: qrSize,
                   height: qrSize,
@@ -610,7 +624,6 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
                     ),
                   ),
                 ),
-
                 const SizedBox(height: 18),
                 Text(
                   '扫码进行体测身份核验',
@@ -673,7 +686,9 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
   Widget _buildSummaryCard(_YearData data, bool isDark) {
     Color gradeColor;
     Color gradeBg;
-    if (data.totalGrade == '优秀' || data.totalGrade == '良好' || data.totalGrade == '正常') {
+    if (data.totalGrade == '优秀' ||
+        data.totalGrade == '良好' ||
+        data.totalGrade == '正常') {
       gradeColor = const Color(0xFF32A866);
       gradeBg = const Color(0xFFE8F7EF);
     } else if (data.totalGrade == '及格') {
@@ -702,7 +717,8 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
               const Spacer(),
               if (data.totalGrade.isNotEmpty)
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
                   decoration: BoxDecoration(
                     color: gradeBg,
                     borderRadius: BorderRadius.circular(10),
@@ -839,7 +855,8 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
     );
   }
 
-  Widget _buildScoreListCard(List<_GymScoreItem> scores, bool isDark, int displayMode) {
+  Widget _buildScoreListCard(
+      List<_GymScoreItem> scores, bool isDark, int displayMode) {
     return Container(
       decoration: BoxDecoration(
         color: isDark ? Colors.grey[850] : Colors.white,
@@ -849,7 +866,7 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
         children: scores.asMap().entries.map((entry) {
           final index = entry.key;
           final item = entry.value;
-          
+
           Color gradeColor;
           Color gradeBg;
           if (item.grade == '优秀' || item.grade == '良好' || item.grade == '正常') {
@@ -906,7 +923,8 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
           return Column(
             children: [
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
                 child: Row(
                   children: [
                     Expanded(
@@ -917,7 +935,9 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
                             style: TextStyle(
                               fontSize: 14,
                               fontWeight: FontWeight.w500,
-                              color: isDark ? Colors.white : const Color(0xFF20232A),
+                              color: isDark
+                                  ? Colors.white
+                                  : const Color(0xFF20232A),
                             ),
                           ),
                           if (w.isNotEmpty) ...[
@@ -926,7 +946,9 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
                               '· $w%',
                               style: TextStyle(
                                 fontSize: 11,
-                                color: isDark ? Colors.white54 : const Color(0xFF8E94A3),
+                                color: isDark
+                                    ? Colors.white54
+                                    : const Color(0xFF8E94A3),
                               ),
                             ),
                           ],
@@ -1056,11 +1078,14 @@ class _GymScoreItem {
     String rawResult = '${json['result'] ?? ''} ${json['unit'] ?? ''}'.trim();
     rawResult = rawResult.replaceAll('ml', 'mL');
     rawResult = rawResult.replaceAll('times', '次');
-    rawResult = rawResult.replaceAll(' min', ' 分钟'); 
-    
+    rawResult = rawResult.replaceAll(' min', ' 分钟');
+
     rawResult = rawResult.replaceAll(RegExp(r"m's['" + '"' + r"]*"), "");
     if (rawResult.contains("'") || rawResult.contains('"')) {
-      rawResult = rawResult.replaceAll("''", "″").replaceAll("'", "′").replaceAll("\"", "″");
+      rawResult = rawResult
+          .replaceAll("''", "″")
+          .replaceAll("'", "′")
+          .replaceAll("\"", "″");
     }
     rawResult = rawResult.trim();
 

@@ -1691,11 +1691,15 @@ class _HomeScreenState extends State<HomeScreen>
           ),
         ),
         Expanded(
-          child: ClipRRect(
-            child: IndexedStack(
-              key: _contentKey,
-              index: _currentIndex,
-              children: _buildLazyTabChildren(),
+          child: HomeTabRevealScope(
+            key: _contentKey,
+            animation: _contentTabController,
+            serial: _tabTransitionSerial,
+            child: ClipRRect(
+              child: IndexedStack(
+                index: _currentIndex,
+                children: _buildLazyTabChildren(),
+              ),
             ),
           ),
         ),

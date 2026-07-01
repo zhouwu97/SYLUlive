@@ -27,12 +27,24 @@ class HomeTabRevealItem extends StatelessWidget {
     required this.index,
     required this.child,
     this.enabled = true,
-    this.maxDelayItems = 4,
+    this.revealOrder,
+    this.delayStep = 0.055,
+    this.initialOffset = 56,
+    this.initialOpacity = 0.80,
+    this.initialScale = 0.984,
+    this.curve = Curves.easeOutCubic,
+    this.maxDelayItems = 7,
   });
 
   final int index;
   final Widget child;
   final bool enabled;
+  final int? revealOrder;
+  final double delayStep;
+  final double initialOffset;
+  final double initialOpacity;
+  final double initialScale;
+  final Curve curve;
   final int maxDelayItems;
 
   @override
@@ -40,21 +52,22 @@ class HomeTabRevealItem extends StatelessWidget {
     final scope = HomeTabRevealScope.maybeOf(context);
     if (!enabled || scope == null) return child;
 
-    final delay = index.clamp(0, maxDelayItems) * 0.032;
+    final order = (revealOrder ?? index).clamp(0, maxDelayItems);
+    final delay = order * delayStep;
     final end = (delay + 0.84).clamp(0.0, 1.0);
-    final curve = Interval(delay, end, curve: Curves.easeOutQuad);
+    final revealCurve = Interval(delay, end, curve: curve);
 
     return AnimatedBuilder(
       animation: scope.animation,
       child: child,
       builder: (context, child) {
-        final t = curve.transform(scope.animation.value.clamp(0.0, 1.0));
+        final t = revealCurve.transform(scope.animation.value.clamp(0.0, 1.0));
         return Opacity(
-          opacity: 0.82 + 0.18 * t,
+          opacity: initialOpacity + (1 - initialOpacity) * t,
           child: Transform.translate(
-            offset: Offset(0, 36 * (1 - t)),
+            offset: Offset(0, initialOffset * (1 - t)),
             child: Transform.scale(
-              scale: 0.985 + 0.015 * t,
+              scale: initialScale + (1 - initialScale) * t,
               alignment: Alignment.topCenter,
               child: child,
             ),

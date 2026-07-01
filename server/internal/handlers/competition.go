@@ -336,8 +336,9 @@ func (h *CompetitionHandler) AdminListEvents(c *gin.Context) {
 	}
 	query := h.db.Model(&models.CompetitionEvent{}).Preload("PrimaryCategory")
 	if status := strings.TrimSpace(c.Query("status")); status != "" && status != "all" {
-		query.Where("status = ?", status)
+		query = query.Where("status = ?", status)
 	}
+	query = h.applyMaintenanceFilters(c, query)
 	query = h.applyEventFilters(c, query)
 	var total int64
 	query.Count(&total)
@@ -347,6 +348,30 @@ func (h *CompetitionHandler) AdminListEvents(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"items": events, "total": total})
+}
+
+func (h *CompetitionHandler) applyMaintenanceFilters(c *gin.Context, query *gorm.DB) *gorm.DB {
+	now := time.Now()
+	switch strings.TrimSpace(c.Query("maintenance_status")) {
+	case "time_pending":
+		query = query.Where("registration_end IS NULL").
+			Where("time_status IN ?", []string{"pending", "historical", "estimated"})
+	case "stale":
+		currentMonth := int(now.Month())
+		nextMonth := int(now.AddDate(0, 1, 0).Month())
+		query = query.Where(
+			"updated_at < ? OR (registration_end IS NULL AND sort_month IN ?)",
+			now.AddDate(0, 0, -180),
+			[]int{currentMonth, nextMonth},
+		)
+	case "ai_draft":
+		query = query.Where("source_channel = ? AND status = ?", "ai_import", "draft")
+	case "ending_soon":
+		query = query.Where("registration_end IS NOT NULL AND registration_end BETWEEN ? AND ?", now, now.AddDate(0, 0, 14))
+	case "expired":
+		query = query.Where("COALESCE(event_end, registration_end, event_start) < ?", now)
+	}
+	return query
 }
 
 func (h *CompetitionHandler) AdminCreateEvent(c *gin.Context) {

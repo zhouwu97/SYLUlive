@@ -291,8 +291,9 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
                           onPrimary: user?.isAdmin == true
                               ? _openAdminImport
                               : _openShareImport,
-                          secondaryText: '刷新',
-                          onSecondary: _load,
+                          secondaryText: user?.isAdmin == true ? '新建比赛' : '刷新',
+                          onSecondary:
+                              user?.isAdmin == true ? _openAdminImport : _load,
                         ),
                       )
                     : RefreshIndicator(
@@ -2667,6 +2668,16 @@ class _CompetitionAdminImportScreenState
               color: _competitionMuted,
               fontSize: 13,
               height: 1.45,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            '维护建议：先维护长期稳定比赛和待更新条目，学校集中通知时再补充今年的链接和截止日期。',
+            style: TextStyle(
+              color: _competitionPrimaryDark,
+              fontSize: 12,
+              height: 1.4,
+              fontWeight: FontWeight.w700,
             ),
           ),
           const SizedBox(height: 8),

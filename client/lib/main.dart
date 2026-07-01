@@ -316,7 +316,7 @@ void _navigateToNotificationTarget(NotificationOpenTarget target) {
       if (postId == null) {
         navigator.push(
           MaterialPageRoute(
-            builder: (_) => const UserRepliesScreen(),
+            builder: (_) => const NotificationsScreen(),
           ),
         );
         return;

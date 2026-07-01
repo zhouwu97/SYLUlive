@@ -73,6 +73,12 @@ class Post {
   final int replyCount;
   final int likeCount;
   final bool isLiked;
+  final bool isPinned;
+  final DateTime? pinnedAt;
+  final DateTime? pinnedUntil;
+  final int pinnedBy;
+  final int pinnedWeight;
+  final String pinnedReason;
   final bool isFeatured;
   final DateTime? featuredAt;
   final int featuredBy;
@@ -96,6 +102,12 @@ class Post {
     this.replyCount = 0,
     this.likeCount = 0,
     this.isLiked = false,
+    this.isPinned = false,
+    this.pinnedAt,
+    this.pinnedUntil,
+    this.pinnedBy = 0,
+    this.pinnedWeight = 0,
+    this.pinnedReason = '',
     this.isFeatured = false,
     this.featuredAt,
     this.featuredBy = 0,
@@ -121,6 +133,12 @@ class Post {
       replyCount: json['reply_count'] ?? 0,
       likeCount: json['like_count'] ?? 0,
       isLiked: json['is_liked'] == true,
+      isPinned: json['is_pinned'] == true,
+      pinnedAt: DateTime.tryParse(json['pinned_at'] ?? ''),
+      pinnedUntil: DateTime.tryParse(json['pinned_until'] ?? ''),
+      pinnedBy: json['pinned_by'] ?? 0,
+      pinnedWeight: json['pinned_weight'] ?? 0,
+      pinnedReason: json['pinned_reason'] ?? '',
       isFeatured: json['is_featured'] == true,
       featuredAt: DateTime.tryParse(json['featured_at'] ?? ''),
       featuredBy: json['featured_by'] ?? 0,
@@ -137,6 +155,12 @@ class Post {
 
   String get firstImageUrl => images.isNotEmpty ? images.first.url : '';
 
+  bool get isActivePinned {
+    if (!isPinned) return false;
+    if (pinnedUntil == null) return true;
+    return pinnedUntil!.isAfter(DateTime.now());
+  }
+
   Post copyWith({
     int? id,
     String? title,
@@ -151,6 +175,14 @@ class Post {
     int? replyCount,
     int? likeCount,
     bool? isLiked,
+    bool? isPinned,
+    DateTime? pinnedAt,
+    DateTime? pinnedUntil,
+    int? pinnedBy,
+    int? pinnedWeight,
+    String? pinnedReason,
+    bool clearPinnedAt = false,
+    bool clearPinnedUntil = false,
     bool? isFeatured,
     DateTime? featuredAt,
     int? featuredBy,
@@ -174,6 +206,12 @@ class Post {
       replyCount: replyCount ?? this.replyCount,
       likeCount: likeCount ?? this.likeCount,
       isLiked: isLiked ?? this.isLiked,
+      isPinned: isPinned ?? this.isPinned,
+      pinnedAt: clearPinnedAt ? null : (pinnedAt ?? this.pinnedAt),
+      pinnedUntil: clearPinnedUntil ? null : (pinnedUntil ?? this.pinnedUntil),
+      pinnedBy: pinnedBy ?? this.pinnedBy,
+      pinnedWeight: pinnedWeight ?? this.pinnedWeight,
+      pinnedReason: pinnedReason ?? this.pinnedReason,
       isFeatured: isFeatured ?? this.isFeatured,
       featuredAt: featuredAt ?? this.featuredAt,
       featuredBy: featuredBy ?? this.featuredBy,

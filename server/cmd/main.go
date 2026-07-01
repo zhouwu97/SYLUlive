@@ -49,7 +49,9 @@ func main() {
 
 	var err error
 
-	if strings.Contains(cfg.DSN, "host=") || strings.Contains(cfg.DSN, "port=") {
+	isPostgres := strings.Contains(cfg.DSN, "host=") || strings.Contains(cfg.DSN, "port=")
+
+	if isPostgres {
 
 		db, err = gorm.Open(postgres.Open(cfg.DSN), &gorm.Config{})
 
@@ -196,6 +198,11 @@ func main() {
 	}
 	if err := ensureFeatureCollaborationIndexes(db); err != nil {
 		log.Fatal("精华共同创作索引迁移失败:", err)
+	}
+	if isPostgres {
+		if err := ensurePostPinColumns(db); err != nil {
+			log.Fatal("帖子置顶字段迁移失败:", err)
+		}
 	}
 
 	// 回填旧公告的缺失字段默认值（公告模型新增 Status/DisplayMode/Priority）
@@ -869,6 +876,9 @@ func main() {
 		admin.GET("/featured-applications", postHandler.AdminGetFeaturedApplications)
 		admin.POST("/featured-applications/:id/approve", postHandler.AdminApproveFeaturedApplication)
 		admin.POST("/featured-applications/:id/reject", postHandler.AdminRejectFeaturedApplication)
+		admin.GET("/posts/pinned", postHandler.AdminGetPinnedPosts)
+		admin.POST("/posts/:id/pin", postHandler.AdminPinPost)
+		admin.POST("/posts/:id/unpin", postHandler.AdminUnpinPost)
 		admin.POST("/posts/:id/unfeature", postHandler.AdminUnfeaturePost)
 		admin.POST("/competitions/categories", competitionHandler.AdminCreateCategory)
 		admin.PUT("/competitions/categories/:id", competitionHandler.AdminUpdateCategory)
@@ -1288,6 +1298,24 @@ WHERE status = 'pending'`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS uq_collaboration_pending_user_post
 ON collaboration_applications(post_id, applicant_id)
 WHERE status = 'pending'`,
+	}
+	for _, statement := range statements {
+		if err := db.Exec(statement).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func ensurePostPinColumns(db *gorm.DB) error {
+	statements := []string{
+		`ALTER TABLE posts ADD COLUMN IF NOT EXISTS is_pinned BOOLEAN NOT NULL DEFAULT FALSE`,
+		`ALTER TABLE posts ADD COLUMN IF NOT EXISTS pinned_at TIMESTAMPTZ`,
+		`ALTER TABLE posts ADD COLUMN IF NOT EXISTS pinned_until TIMESTAMPTZ`,
+		`ALTER TABLE posts ADD COLUMN IF NOT EXISTS pinned_by BIGINT NOT NULL DEFAULT 0`,
+		`ALTER TABLE posts ADD COLUMN IF NOT EXISTS pinned_weight INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE posts ADD COLUMN IF NOT EXISTS pinned_reason VARCHAR(500) NOT NULL DEFAULT ''`,
+		`CREATE INDEX IF NOT EXISTS idx_posts_active_pin ON posts (board_id, is_pinned, pinned_until, pinned_weight, pinned_at)`,
 	}
 	for _, statement := range statements {
 		if err := db.Exec(statement).Error; err != nil {

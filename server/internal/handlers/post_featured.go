@@ -77,7 +77,10 @@ func (h *PostHandler) GetFeaturedList(c *gin.Context) {
 	query.Count(&total)
 
 	var posts []models.Post
-	if err := query.Order("featured_at DESC NULLS LAST").Order("created_at DESC").
+	now := time.Now()
+	if err := applyPinnedOrder(query, now).
+		Order("featured_at DESC NULLS LAST").
+		Order("created_at DESC").
 		Offset(offset).Limit(limit).Find(&posts).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取精华列表失败"})
 		return

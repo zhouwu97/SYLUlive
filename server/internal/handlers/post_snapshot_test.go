@@ -66,7 +66,7 @@ func TestPostSnapshotLoadMorePreservesOrderAndIncludesOlderPosts(t *testing.T) {
 		nil,
 	)
 
-	NewPostHandler(db).GetList(context)
+	NewPostHandler(db, "", "").GetList(context)
 
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())

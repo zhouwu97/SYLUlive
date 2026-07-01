@@ -381,4 +381,56 @@ void main() {
     provider.clearDraft(3);
     expect(provider.draftFor(3), '');
   });
+
+  test('tracks loaded conversations and sums unread private messages',
+      () async {
+    final dio = Dio();
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          if (options.method == 'GET' &&
+              options.path == '/messages/conversations') {
+            handler.resolve(
+              Response(
+                requestOptions: options,
+                statusCode: 200,
+                data: [
+                  {
+                    'id': 1,
+                    'user1_id': 3,
+                    'user2_id': 8,
+                    'last_message_at': '2026-06-14T08:14:00Z',
+                    'unread_count': 2,
+                  },
+                  {
+                    'id': 2,
+                    'user1_id': 4,
+                    'user2_id': 8,
+                    'last_message_at': '2026-06-14T08:15:00Z',
+                    'unread_count': 3,
+                  },
+                ],
+              ),
+            );
+            return;
+          }
+          handler.reject(
+            DioException(
+              requestOptions: options,
+              message: 'Unexpected request: ${options.method} ${options.path}',
+            ),
+          );
+        },
+      ),
+    );
+
+    final provider = MessageProvider(dio);
+
+    expect(provider.hasLoadedConversations, isFalse);
+
+    await provider.loadConversations(silent: true);
+
+    expect(provider.hasLoadedConversations, isTrue);
+    expect(provider.unreadMessageCount, 5);
+  });
 }

@@ -4,16 +4,16 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="horizontal"
-    android:paddingTop="8dp"
-    android:paddingBottom="8dp"
+    android:paddingTop="4dp"
+    android:paddingBottom="4dp"
     android:gravity="center_vertical">
 
     <ImageView
         android:id="@+id/iv_exam_color"
-        android:layout_width="4dp"
-        android:layout_height="32dp"
-        android:src="@drawable/widget_item_bar"
-        android:layout_marginEnd="12dp" />
+        android:layout_width="3dp"
+        android:layout_height="30dp"
+        android:layout_marginEnd="6dp"
+        android:src="@drawable/widget_item_bar" />
 
     <LinearLayout
         android:layout_width="0dp"
@@ -22,70 +22,75 @@
         android:orientation="vertical">
 
         <LinearLayout
-            android:layout_width="wrap_content"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical">
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
 
             <TextView
                 android:id="@+id/tv_exam_name"
-                android:layout_width="wrap_content"
+                android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:textColor="#333333"
-                android:textSize="14sp"
-                android:textStyle="bold"
+                android:layout_weight="1"
+                android:ellipsize="end"
                 android:maxLines="1"
-                android:ellipsize="end" />
+                android:textColor="#333333"
+                android:textSize="12sp"
+                android:textStyle="bold" />
 
             <TextView
                 android:id="@+id/tv_exam_countdown"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="6dp"
-                android:textColor="#EF4444"
-                android:textSize="10sp"
-                android:textStyle="bold"
+                android:layout_marginStart="4dp"
                 android:background="@drawable/widget_bg_rounded"
                 android:backgroundTint="#FEE2E2"
+                android:ellipsize="end"
+                android:maxLines="1"
                 android:paddingHorizontal="4dp"
                 android:paddingVertical="1dp"
+                android:textColor="#EF4444"
+                android:textSize="9sp"
+                android:textStyle="bold"
                 android:visibility="gone" />
         </LinearLayout>
 
-        <TextView
-            android:id="@+id/tv_exam_location"
-            android:layout_width="wrap_content"
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:textColor="#666666"
-            android:textSize="12sp"
-            android:layout_marginTop="2dp"
-            android:maxLines="1"
-            android:ellipsize="end" />
+            android:layout_marginTop="1dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/tv_exam_date"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFeatureSettings="tnum"
+                android:maxLines="1"
+                android:textColor="#666666"
+                android:textSize="10sp" />
+
+            <TextView
+                android:id="@+id/tv_exam_time"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                android:fontFeatureSettings="tnum"
+                android:maxLines="1"
+                android:textColor="#666666"
+                android:textSize="10sp" />
+
+            <TextView
+                android:id="@+id/tv_exam_location"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                android:layout_weight="1"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:textColor="#666666"
+                android:textSize="10sp" />
+        </LinearLayout>
     </LinearLayout>
-
-    <LinearLayout
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:gravity="end"
-        android:layout_marginStart="8dp">
-
-        <TextView
-            android:id="@+id/tv_exam_date"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:textColor="#333333"
-            android:textSize="12sp"
-            android:fontFeatureSettings="tnum" />
-
-        <TextView
-            android:id="@+id/tv_exam_time"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:textColor="#666666"
-            android:textSize="12sp"
-            android:layout_marginTop="2dp"
-            android:fontFeatureSettings="tnum" />
-    </LinearLayout>
-
 </LinearLayout>

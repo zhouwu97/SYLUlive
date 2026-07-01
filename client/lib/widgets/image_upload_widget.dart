@@ -10,10 +10,16 @@ import '../screens/image_viewer_screen.dart';
 class ImageUploadWidget extends StatefulWidget {
   final int maxImages;
   final ValueChanged<List<String>> onImagesUploaded;
+  final bool largeCard;
+  final String emptyTitle;
+  final String emptySubtitle;
 
   const ImageUploadWidget({
     super.key,
     this.maxImages = 9,
+    this.largeCard = false,
+    this.emptyTitle = '添加图片',
+    this.emptySubtitle = '建议上传清晰图片',
     required this.onImagesUploaded,
   });
 
@@ -34,8 +40,12 @@ class _ImageUploadWidgetState extends State<ImageUploadWidget> {
   bool get _canAddMoreImages =>
       _canUploadUnlimitedImages || _uploadedUrls.length < widget.maxImages;
 
+  bool get _canPickImage =>
+      _canAddMoreImages ||
+      (widget.largeCard && widget.maxImages == 1 && _uploadedUrls.isNotEmpty);
+
   Future<void> _pickAndUploadImage(ImageSource source) async {
-    if (!_canAddMoreImages) {
+    if (!_canPickImage) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('最多只能上传${widget.maxImages}张图片')));
@@ -95,6 +105,9 @@ class _ImageUploadWidgetState extends State<ImageUploadWidget> {
             response.data['url'] != null) {
           if (mounted) {
             setState(() {
+              if (widget.largeCard && widget.maxImages == 1) {
+                _uploadedUrls.clear();
+              }
               _uploadedUrls.add(response.data['url']);
             });
           }
@@ -171,6 +184,10 @@ class _ImageUploadWidgetState extends State<ImageUploadWidget> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.largeCard) {
+      return _buildLargeCard(context);
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -264,6 +281,149 @@ class _ImageUploadWidgetState extends State<ImageUploadWidget> {
             label: Text(_uploadedUrls.isEmpty ? '添加图片' : '继续添加'),
           ),
       ],
+    );
+  }
+
+  Widget _buildLargeCard(BuildContext context) {
+    const borderColor = Color(0xFFE8E4F0);
+    const primary = Color(0xFF7367C6);
+
+    if (_uploadedUrls.isNotEmpty) {
+      final url = _uploadedUrls.first;
+      return Stack(
+        children: [
+          GestureDetector(
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => ImageViewerScreen(
+                    imageUrls: [ApiConstants.fullUrl(url)],
+                    initialIndex: 0,
+                  ),
+                ),
+              );
+            },
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(18),
+              child: Image.network(
+                ApiConstants.fullUrl(url),
+                height: 132,
+                width: double.infinity,
+                fit: BoxFit.cover,
+              ),
+            ),
+          ),
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: borderColor),
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.transparent,
+                    Colors.black.withValues(alpha: 0.28),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            right: 10,
+            top: 10,
+            child: GestureDetector(
+              onTap: () {
+                setState(_uploadedUrls.clear);
+                widget.onImagesUploaded(_uploadedUrls);
+              },
+              child: Container(
+                width: 28,
+                height: 28,
+                decoration: const BoxDecoration(
+                  color: Colors.black54,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.close, color: Colors.white, size: 17),
+              ),
+            ),
+          ),
+          Positioned(
+            left: 12,
+            bottom: 12,
+            child: FilledButton.icon(
+              onPressed: _isUploading ? null : _showImageSourceDialog,
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.white,
+                foregroundColor: primary,
+                visualDensity: VisualDensity.compact,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              ),
+              icon: _isUploading
+                  ? const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.add_photo_alternate_rounded, size: 16),
+              label: const Text('更换图片'),
+            ),
+          ),
+        ],
+      );
+    }
+
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        onTap: _isUploading ? null : _showImageSourceDialog,
+        borderRadius: BorderRadius.circular(18),
+        child: Container(
+          width: double.infinity,
+          height: 112,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: borderColor),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              if (_isUploading)
+                const SizedBox(
+                  width: 26,
+                  height: 26,
+                  child: CircularProgressIndicator(strokeWidth: 2.4),
+                )
+              else
+                const Icon(
+                  Icons.add_photo_alternate_rounded,
+                  color: Color(0xFF7367C6),
+                  size: 30,
+                ),
+              const SizedBox(height: 8),
+              Text(
+                _isUploading ? '图片上传中...' : widget.emptyTitle,
+                style: const TextStyle(
+                  color: Color(0xFF7367C6),
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                widget.emptySubtitle,
+                style: const TextStyle(
+                  color: Color(0xFF9A96A8),
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

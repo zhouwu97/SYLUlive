@@ -17,14 +17,14 @@
     android:background="@drawable/widget_background"
     android:orientation="vertical"
     android:gravity="center"
-    android:padding="16dp">
+    android:padding="10dp">
 
     <!-- 标题：纯静态文本，不依赖任何数据源 -->
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="沈理校园"
-        android:textSize="16sp"
+        android:textSize="14sp"
         android:textColor="#1A1A2E"
         android:textStyle="bold" />
 
@@ -32,9 +32,9 @@
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:text="课表加载中…"
-        android:textSize="12sp"
+        android:layout_marginTop="6dp"
+        android:text="小组件加载中…"
+        android:textSize="11sp"
         android:textColor="#9CA3AF" />
 
 </LinearLayout>

@@ -5,6 +5,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
+	"log"
 	"net/http"
 	"time"
 )
@@ -114,9 +116,12 @@ func (c *JPushClient) send(payload PushPayload) error {
 	}
 	defer resp.Body.Close()
 
+	body, _ := io.ReadAll(resp.Body)
+
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("jpush error: http %d", resp.StatusCode)
+		return fmt.Errorf("jpush error: http=%d body=%s", resp.StatusCode, string(body))
 	}
 
+	log.Printf("[JPUSH_OK] response=%s", string(body))
 	return nil
 }

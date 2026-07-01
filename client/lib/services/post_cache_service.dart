@@ -64,9 +64,8 @@ class PostCacheService {
     if (newPosts.isEmpty) return;
     final existing = await loadPosts(boardId, sort: sort);
     final existingIds = existing.map((p) => p.id).toSet();
-    final uniqueNew = newPosts
-        .where((p) => !existingIds.contains(p.id))
-        .toList();
+    final uniqueNew =
+        newPosts.where((p) => !existingIds.contains(p.id)).toList();
     final merged = [...uniqueNew, ...existing];
     // 限制缓存数量，防止无限增长
     if (merged.length > 200) {
@@ -95,6 +94,19 @@ class PostCacheService {
       'contact': post.contact,
       'status': post.status,
       'view_count': post.viewCount,
+      'reply_count': post.replyCount,
+      'like_count': post.likeCount,
+      'is_liked': post.isLiked,
+      'is_pinned': post.isPinned,
+      'pinned_at': post.pinnedAt?.toUtc().toIso8601String(),
+      'pinned_until': post.pinnedUntil?.toUtc().toIso8601String(),
+      'pinned_by': post.pinnedBy,
+      'pinned_weight': post.pinnedWeight,
+      'pinned_reason': post.pinnedReason,
+      'is_featured': post.isFeatured,
+      'featured_at': post.featuredAt?.toUtc().toIso8601String(),
+      'featured_by': post.featuredBy,
+      'featured_reason': post.featuredReason,
       'images': post.images
           .map(
             (img) => {
@@ -130,6 +142,7 @@ class PostCacheService {
             }
           : null,
       'created_at': post.createdAt.toUtc().toIso8601String(),
+      'updated_at': post.updatedAt.toUtc().toIso8601String(),
     };
   }
 }

@@ -44,6 +44,114 @@ class PostDetailScreen extends StatefulWidget {
   State<PostDetailScreen> createState() => _PostDetailScreenState();
 }
 
+class _PinPostDialogResult {
+  final DateTime until;
+  final int weight;
+  final String reason;
+
+  const _PinPostDialogResult({
+    required this.until,
+    required this.weight,
+    required this.reason,
+  });
+}
+
+class _PinPostDialog extends StatefulWidget {
+  final bool isSuperAdmin;
+
+  const _PinPostDialog({required this.isSuperAdmin});
+
+  @override
+  State<_PinPostDialog> createState() => _PinPostDialogState();
+}
+
+class _PinPostDialogState extends State<_PinPostDialog> {
+  final _reasonController = TextEditingController();
+  int _days = 3;
+  double _weight = 50;
+
+  @override
+  void dispose() {
+    _reasonController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final dayOptions = <int>[1, 3, 7];
+    if (widget.isSuperAdmin) {
+      dayOptions.add(30);
+    }
+
+    return AlertDialog(
+      title: const Text('置顶到首页'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            DropdownButtonFormField<int>(
+              initialValue: _days,
+              decoration: const InputDecoration(labelText: '置顶时长'),
+              items: dayOptions
+                  .map(
+                    (days) => DropdownMenuItem(
+                      value: days,
+                      child: Text('$days 天'),
+                    ),
+                  )
+                  .toList(),
+              onChanged: (value) {
+                if (value == null) return;
+                setState(() => _days = value);
+              },
+            ),
+            const SizedBox(height: 18),
+            Text('权重：${_weight.round()}'),
+            Slider(
+              value: _weight,
+              min: 0,
+              max: 100,
+              divisions: 20,
+              label: _weight.round().toString(),
+              onChanged: (value) => setState(() => _weight = value),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _reasonController,
+              minLines: 2,
+              maxLines: 4,
+              decoration: const InputDecoration(
+                labelText: '置顶理由',
+                hintText: '可选，默认显示为管理员置顶',
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: () {
+            Navigator.pop(
+              context,
+              _PinPostDialogResult(
+                until: DateTime.now().add(Duration(days: _days)),
+                weight: _weight.round(),
+                reason: _reasonController.text.trim(),
+              ),
+            );
+          },
+          child: const Text('置顶'),
+        ),
+      ],
+    );
+  }
+}
+
 class _PostDetailScreenState extends State<PostDetailScreen> {
   late Dio _dio;
   Post? _post;
@@ -96,9 +204,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     try {
       final response = await _dio.get('/posts/${widget.postId}');
       final repliesResponse = await _dio.get('/posts/${widget.postId}/replies');
-      
+
       try {
-        final statusResponse = await _dio.get('/posts/${widget.postId}/featured-application-status');
+        final statusResponse = await _dio
+            .get('/posts/${widget.postId}/featured-application-status');
         if (mounted) {
           setState(() {
             _hasPendingFeaturedApp = statusResponse.data['has_pending'] == true;
@@ -112,20 +221,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       final fallbackPost = widget.initialPost;
       final mergedPost = fallbackPost != null &&
               fallbackPost.images.length > fetchedPost.images.length
-          ? Post(
-              id: fetchedPost.id,
-              title: fetchedPost.title,
-              content: fetchedPost.content,
-              boardId: fetchedPost.boardId,
-              authorId: fetchedPost.authorId,
-              postType: fetchedPost.postType,
-              price: fetchedPost.price,
-              contact: fetchedPost.contact,
-              status: fetchedPost.status,
-              images: fallbackPost.images,
-              author: fetchedPost.author,
-              createdAt: fetchedPost.createdAt,
-            )
+          ? fetchedPost.copyWith(images: fallbackPost.images)
           : fetchedPost;
       if (mounted)
         setState(() {
@@ -404,6 +500,87 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       if (mounted) {
         AppFeedback.showSnackBar(context, '操作失败', isError: true);
       }
+    }
+  }
+
+  Future<void> _pinPost() async {
+    final post = _post;
+    if (post == null) return;
+
+    final isSuperAdmin =
+        context.read<AuthProvider>().user?.isSuperAdmin ?? false;
+    final dialogResult = await showDialog<_PinPostDialogResult>(
+      context: context,
+      builder: (_) => _PinPostDialog(isSuperAdmin: isSuperAdmin),
+    );
+    if (dialogResult == null) return;
+
+    final postProvider = context.read<PostProvider>();
+    final result = await postProvider.pinPost(
+      postId: post.id,
+      pinnedUntil: dialogResult.until,
+      pinnedWeight: dialogResult.weight,
+      reason: dialogResult.reason,
+    );
+    if (!mounted) return;
+
+    if (result.success) {
+      final updated = result.post;
+      if (updated != null) {
+        setState(() => _post = updated);
+      }
+      await postProvider.refreshHomePinnedFeeds(
+        refreshFeatured: updated?.isFeatured == true,
+      );
+      if (!mounted) return;
+      AppFeedback.showSnackBar(context, '已置顶到首页');
+    } else {
+      AppFeedback.showSnackBar(
+        context,
+        result.errorMessage ?? '置顶失败',
+        isError: true,
+      );
+    }
+  }
+
+  Future<void> _unpinPost() async {
+    final post = _post;
+    if (post == null) return;
+
+    final confirmed = await AppFeedback.confirmDanger(
+      context,
+      title: '取消置顶',
+      message: '确定取消这条帖子的首页置顶吗？',
+      confirmText: '取消置顶',
+    );
+    if (!confirmed) return;
+
+    final postProvider = context.read<PostProvider>();
+    final result = await postProvider.unpinPost(post.id);
+    if (!mounted) return;
+
+    if (result.success) {
+      final updated = result.post ??
+          post.copyWith(
+            isPinned: false,
+            pinnedBy: 0,
+            pinnedWeight: 0,
+            pinnedReason: '',
+            clearPinnedAt: true,
+            clearPinnedUntil: true,
+          );
+      setState(() => _post = updated);
+      await postProvider.refreshHomePinnedFeeds(
+        refreshFeatured: updated.isFeatured,
+      );
+      if (!mounted) return;
+      AppFeedback.showSnackBar(context, '已取消置顶');
+    } else {
+      AppFeedback.showSnackBar(
+        context,
+        result.errorMessage ?? '取消置顶失败',
+        isError: true,
+      );
     }
   }
 
@@ -839,6 +1016,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 case 'delete':
                   _deletePost();
                   break;
+                case 'pin':
+                  _pinPost();
+                  break;
+                case 'unpin':
+                  _unpinPost();
+                  break;
                 case 'report':
                   showReportSheet(
                     context,
@@ -853,6 +1036,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             },
             itemBuilder: (context) {
               final items = <PopupMenuEntry<String>>[];
+              if (isAdmin && _post?.boardId == 1) {
+                items.add(PopupMenuItem(
+                  value: _post!.isActivePinned ? 'unpin' : 'pin',
+                  child: Text(_post!.isActivePinned ? '取消置顶' : '置顶到首页'),
+                ));
+              }
               // 自己的帖子：编辑 + 删除（不举报自己）
               if (isOwn) {
                 items.add(const PopupMenuItem(

@@ -34,6 +34,18 @@ class DeletePostResult {
   const DeletePostResult({required this.success, this.errorMessage});
 }
 
+class PinPostResult {
+  final bool success;
+  final String? errorMessage;
+  final Post? post;
+
+  const PinPostResult({
+    required this.success,
+    this.errorMessage,
+    this.post,
+  });
+}
+
 @visibleForTesting
 Map<String, dynamic> buildPostListParams({
   required int boardId,
@@ -370,7 +382,6 @@ class PostProvider extends ChangeNotifier {
     String? type,
     String sort = 'time',
   }) {
-    final board = _ensureBoard(boardId, sort: sort, type: type);
     final key = 'refresh_${boardId}_${sort}_${type}';
 
     if (_inflightRequests.containsKey(key)) return _inflightRequests[key]!;
@@ -649,6 +660,77 @@ class PostProvider extends ChangeNotifier {
   Future<bool> deleteReply(int replyId) async {
     final result = await deleteReplyDetailed(replyId);
     return result.success;
+  }
+
+  Future<PinPostResult> pinPost({
+    required int postId,
+    required DateTime pinnedUntil,
+    int pinnedWeight = 50,
+    String reason = '',
+  }) async {
+    try {
+      final response = await _dio.post(
+        '/admin/posts/$postId/pin',
+        data: {
+          'pinned_until': pinnedUntil.toUtc().toIso8601String(),
+          'pinned_weight': pinnedWeight,
+          'reason': reason,
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final updated = Post.fromJson(response.data as Map<String, dynamic>);
+        _replacePostInBoards(updated);
+        notifyListeners();
+        return PinPostResult(success: true, post: updated);
+      }
+      return PinPostResult(
+        success: false,
+        errorMessage: '置顶失败 (${response.statusCode})',
+      );
+    } on DioException catch (e) {
+      return PinPostResult(
+        success: false,
+        errorMessage: AppFeedback.dioErrorMessage(e, fallback: '置顶失败'),
+      );
+    } catch (e) {
+      return PinPostResult(success: false, errorMessage: '置顶失败: $e');
+    }
+  }
+
+  Future<PinPostResult> unpinPost(int postId) async {
+    try {
+      final response = await _dio.post('/admin/posts/$postId/unpin');
+
+      if (response.statusCode == 200) {
+        final updated = Post.fromJson(response.data as Map<String, dynamic>);
+        _replacePostInBoards(updated);
+        notifyListeners();
+        return PinPostResult(success: true, post: updated);
+      }
+      return PinPostResult(
+        success: false,
+        errorMessage: '取消置顶失败 (${response.statusCode})',
+      );
+    } on DioException catch (e) {
+      return PinPostResult(
+        success: false,
+        errorMessage: AppFeedback.dioErrorMessage(e, fallback: '取消置顶失败'),
+      );
+    } catch (e) {
+      return PinPostResult(success: false, errorMessage: '取消置顶失败: $e');
+    }
+  }
+
+  Future<void> refreshHomePinnedFeeds({bool refreshFeatured = false}) async {
+    final futures = <Future<void>>[
+      refresh(boardId: 1, sort: 'all'),
+      refresh(boardId: 1, sort: 'time'),
+    ];
+    if (refreshFeatured) {
+      futures.add(refresh(boardId: 1, sort: 'featured'));
+    }
+    await Future.wait(futures);
   }
 
   Future<bool> likePost(int postId) async {

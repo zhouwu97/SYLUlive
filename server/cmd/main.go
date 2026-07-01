@@ -577,12 +577,6 @@ func main() {
 
 		user.GET("/replies/received", replyHandler.GetReceivedList)
 
-		user.GET("/notifications", notificationHandler.GetNotifications)
-
-		user.GET("/notifications/unread_count", notificationHandler.GetUnreadCount)
-
-		user.POST("/notifications/read", notificationHandler.MarkAllRead)
-
 		user.GET("/competition-calendar", competitionHandler.GetCalendar)
 		user.POST("/competition-calendar/init", competitionHandler.InitCalendar)
 		user.PUT("/competition-calendar", competitionHandler.UpdateCalendar)
@@ -597,6 +591,8 @@ func main() {
 		user.POST("/competition-calendar/share/:share_code/revoke", competitionHandler.RevokeShare)
 		user.POST("/competition-calendar/import-share/preview", competitionHandler.PreviewShareImport)
 		user.POST("/competition-calendar/import-share/commit", competitionHandler.CommitShareImport)
+		user.POST("/competition-calendar/import-json/preview", competitionHandler.PreviewCalendarJSONImport)
+		user.POST("/competition-calendar/import-json/commit", competitionHandler.CommitCalendarJSONImport)
 		user.GET("/featured-applications", postHandler.GetMyFeaturedApplications)
 		user.GET("/collaboration-applications/sent", postHandler.GetMyCollaborationApplicationsSent)
 		user.GET("/collaboration-applications/received", postHandler.GetMyCollaborationApplicationsReceived)
@@ -621,6 +617,11 @@ func main() {
 		userOptional.GET("/:id/posts/count", userHandler.GetUserPostCount)
 		userOptional.GET("/:id/posts", userHandler.GetUserPosts)
 	}
+
+	r.GET("/api/notifications", middleware.AuthMiddleware(db, cfg.JWTSecret), notificationHandler.GetNotifications)
+	r.GET("/api/notifications/unread-count", middleware.AuthMiddleware(db, cfg.JWTSecret), notificationHandler.GetUnreadCount)
+	r.GET("/api/notifications/unread_count", middleware.AuthMiddleware(db, cfg.JWTSecret), notificationHandler.GetUnreadCount) // keep for backwards compatibility just in case
+	r.POST("/api/notifications/read", middleware.AuthMiddleware(db, cfg.JWTSecret), notificationHandler.MarkAllRead)
 
 	// 帖子路由
 

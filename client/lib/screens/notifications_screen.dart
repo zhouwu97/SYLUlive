@@ -33,7 +33,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
     try {
       final auth = context.read<AuthProvider>();
-      final response = await auth.dio.get('/user/notifications');
+      final response = await auth.dio.get('/notifications');
       if (response.statusCode == 200) {
         final list = List<Map<String, dynamic>>.from(response.data as List);
         if (mounted)
@@ -43,7 +43,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           });
         // 不阻塞 UI，后台标记为已读
         try {
-          await auth.dio.post('/user/notifications/read');
+          await auth.dio.post('/notifications/read');
         } catch (_) {}
       } else {
         if (mounted)

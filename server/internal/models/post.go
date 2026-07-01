@@ -37,6 +37,12 @@ type Post struct {
 	ReplyCount     int         `gorm:"default:0" json:"reply_count"`       // 回复数量
 	LikeCount      int         `gorm:"default:0" json:"like_count"`        // 点赞数量
 	IsLiked        bool        `gorm:"-" json:"is_liked"`                  // 当前用户是否已赞
+	IsPinned       bool        `gorm:"default:false;index" json:"is_pinned"`
+	PinnedAt       *time.Time  `gorm:"index" json:"pinned_at"`
+	PinnedUntil    *time.Time  `gorm:"index" json:"pinned_until"`
+	PinnedBy       uint        `gorm:"index" json:"pinned_by"`
+	PinnedWeight   int         `gorm:"default:0;index" json:"pinned_weight"`
+	PinnedReason   string      `gorm:"size:500" json:"pinned_reason"`
 	IsFeatured     bool        `gorm:"default:false;index" json:"is_featured"`
 	FeaturedAt     *time.Time  `json:"featured_at"`
 	FeaturedBy     uint        `gorm:"index" json:"featured_by"`

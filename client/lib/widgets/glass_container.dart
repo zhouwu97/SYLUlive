@@ -45,13 +45,20 @@ class GlassContainer extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final useLiquidGlass = themeProvider.liquidGlass && blur > 0;
     final compOpacity = themeProvider.componentOpacity;
+    final useCleanDefaultSurface = themeProvider.isCleanBackgroundMode &&
+        backgroundColor == null &&
+        gradientColors == null;
 
     final defaultBorderColor = isDark
         ? Colors.white.withValues(alpha: 0.15)
         : Colors.white.withValues(alpha: 0.6);
-    final defaultBgColor = isDark
-        ? Colors.white.withValues(alpha: compOpacity * 0.12)
-        : Colors.white.withValues(alpha: compOpacity * 0.55);
+    final defaultBgColor = useCleanDefaultSurface
+        ? (isDark
+            ? const Color(0xFF1B1E28).withValues(alpha: 0.96)
+            : Colors.white.withValues(alpha: 0.98))
+        : (isDark
+            ? Colors.white.withValues(alpha: compOpacity * 0.12)
+            : Colors.white.withValues(alpha: compOpacity * 0.55));
 
     Widget content = Container(
       width: width,
@@ -176,8 +183,7 @@ class PremiumCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final colors =
-        gradientColors ??
+    final colors = gradientColors ??
         (isDark
             ? [Colors.grey[800]!, Colors.grey[900]!]
             : [Colors.white, Colors.grey[50]!]);
@@ -234,8 +240,7 @@ class PremiumIconButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final bgColor =
-        backgroundColor ??
+    final bgColor = backgroundColor ??
         (isDark
             ? Colors.grey[800]!
             : Theme.of(context).primaryColor.withValues(alpha: 0.1));
@@ -281,8 +286,7 @@ class GradientButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors =
-        gradientColors ??
+    final colors = gradientColors ??
         [
           Theme.of(context).primaryColor,
           Theme.of(context).primaryColor.withValues(alpha: 0.7),

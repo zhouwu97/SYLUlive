@@ -1,12 +1,10 @@
-import 'dart:io' show File, Platform;
-import 'dart:convert';
+import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:dio/dio.dart';
-import 'package:cookie_jar/cookie_jar.dart';
 import '../main.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
@@ -14,7 +12,6 @@ import '../widgets/glass_container.dart';
 import 'erke_score_screen.dart';
 import 'physical_test_screen.dart';
 import 'lottery_screen.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'dart:ui';
 import 'yuketang_class_screen.dart';
 import 'exam_schedule_screen.dart';
@@ -27,8 +24,6 @@ class ToolboxScreen extends StatefulWidget {
 }
 
 class _ToolboxScreenState extends State<ToolboxScreen> {
-  final _storage = const FlutterSecureStorage();
-
   @override
   void initState() {
     super.initState();
@@ -37,6 +32,13 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final themeProvider = context.watch<ThemeProvider>();
+    final useCustomBackground = themeProvider.shouldShowCustomBackground;
+    final cleanLightMode = !useCustomBackground && !isDark;
+    final foregroundColor =
+        cleanLightMode ? const Color(0xFF1F2937) : Colors.white;
+    final secondaryColor =
+        cleanLightMode ? const Color(0xFF6B7280) : Colors.white;
 
     return GlobalBackgroundWrapper(
       child: Scaffold(
@@ -44,10 +46,17 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
         extendBodyBehindAppBar: true,
         appBar: AppBar(
           centerTitle: false,
-          foregroundColor: Colors.white,
+          foregroundColor: foregroundColor,
+          systemOverlayStyle: (cleanLightMode
+                  ? SystemUiOverlayStyle.dark
+                  : SystemUiOverlayStyle.light)
+              .copyWith(
+            statusBarColor: Colors.transparent,
+            systemNavigationBarColor: Colors.transparent,
+          ),
           backgroundColor: Colors.transparent,
           elevation: 0,
-          title: const Column(
+          title: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
@@ -55,12 +64,13 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                 style: TextStyle(
                   fontSize: 24,
                   fontWeight: FontWeight.w700,
-                  color: Colors.white,
+                  color: foregroundColor,
                   shadows: [
-                    Shadow(
-                      color: Colors.black45,
-                      blurRadius: 8,
-                    ),
+                    if (useCustomBackground)
+                      const Shadow(
+                        color: Colors.black45,
+                        blurRadius: 8,
+                      ),
                   ],
                 ),
               ),
@@ -69,184 +79,218 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                 style: TextStyle(
                   fontSize: 12.5,
                   fontWeight: FontWeight.w400,
-                  color: Colors.white,
+                  color: secondaryColor,
                 ),
               ),
             ],
           ),
-          actions: [],
         ),
         body: Stack(
           children: [
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              height: 150,
-              child: Container(
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.black54,
-                      Colors.transparent,
-                    ],
+            if (useCustomBackground)
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                height: 150,
+                child: Container(
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.black54,
+                        Colors.transparent,
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            SafeArea(
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 1000),
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      int crossAxisCount = 1;
+                      if (constraints.maxWidth >= 900) {
+                        crossAxisCount = 4;
+                      } else if (constraints.maxWidth >= 600) {
+                        crossAxisCount = 3;
+                      } else if (constraints.maxWidth >= 380) {
+                        crossAxisCount = 2;
+                      } else {
+                        crossAxisCount = 1;
+                      }
+
+                      return ListView(
+                        padding: const EdgeInsets.all(20),
+                        children: [
+                          _buildSectionTitle(
+                            '常用工具',
+                            isDark,
+                            useCustomBackground,
+                          ),
+                          const SizedBox(height: 12),
+                          GridView(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            padding: EdgeInsets.zero,
+                            gridDelegate:
+                                SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: crossAxisCount,
+                              mainAxisExtent: 88,
+                              mainAxisSpacing: 12,
+                              crossAxisSpacing: 12,
+                            ),
+                            children: [
+                              _buildToolCard(
+                                context,
+                                icon: Icons.school_outlined,
+                                color: const Color(0xFF55B97A),
+                                title: '二课分查询',
+                                subtitle: '支持 WebVPN 穿透',
+                                onTap: () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => const ErkeScoreScreen(),
+                                  ),
+                                ),
+                                useCustomBackground: useCustomBackground,
+                              ),
+                              _buildToolCard(
+                                context,
+                                icon: Icons.school,
+                                color: const Color(0xFF5B8DEF),
+                                title: '雨课堂',
+                                subtitle: '测验与课件',
+                                onTap: () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => const YuketangClassScreen(),
+                                  ),
+                                ),
+                                useCustomBackground: useCustomBackground,
+                              ),
+                              _buildToolCard(
+                                context,
+                                icon: Icons.fitness_center,
+                                color: const Color(0xFFE9A23B),
+                                title: '体测成绩',
+                                subtitle: '扫码核验 / 查询',
+                                onTap: () => _openPhysicalTest(context),
+                                useCustomBackground: useCustomBackground,
+                              ),
+                              _buildToolCard(
+                                context,
+                                icon: Icons.event_note,
+                                color: const Color(0xFF826FE8),
+                                title: '考试日程',
+                                subtitle: 'AI一键提取',
+                                onTap: () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => const ExamScheduleScreen(),
+                                  ),
+                                ),
+                                useCustomBackground: useCustomBackground,
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 24),
+                          _buildSectionTitle(
+                            '校园与娱乐',
+                            isDark,
+                            useCustomBackground,
+                          ),
+                          const SizedBox(height: 12),
+                          GridView(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            padding: EdgeInsets.zero,
+                            gridDelegate:
+                                SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: crossAxisCount,
+                              mainAxisExtent: 88,
+                              mainAxisSpacing: 12,
+                              crossAxisSpacing: 12,
+                            ),
+                            children: [
+                              _buildToolCard(
+                                context,
+                                icon: Icons.sports_esports,
+                                color: const Color(0xFF35B7C4),
+                                title: '云原神',
+                                subtitle: '点击即玩',
+                                onTap: () => _launchCloudGenshin(context),
+                                useCustomBackground: useCustomBackground,
+                              ),
+                              _buildToolCard(
+                                context,
+                                icon: Icons.card_giftcard,
+                                color: const Color(0xFFEE5C8A),
+                                title: '抽奖活动',
+                                subtitle: '公平福利派送',
+                                onTap: () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                      builder: (_) => const LotteryScreen()),
+                                ),
+                                useCustomBackground: useCustomBackground,
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 24),
+                          _buildMoreToolsCard(isDark, useCustomBackground),
+                        ],
+                      );
+                    },
                   ),
                 ),
               ),
             ),
-            SafeArea(
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 1000),
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  int crossAxisCount = 1;
-                  if (constraints.maxWidth >= 900) {
-                    crossAxisCount = 4;
-                  } else if (constraints.maxWidth >= 600) {
-                    crossAxisCount = 3;
-                  } else if (constraints.maxWidth >= 380) {
-                    crossAxisCount = 2;
-                  } else {
-                    crossAxisCount = 1;
-                  }
-
-                  return ListView(
-                    padding: const EdgeInsets.all(20),
-                    children: [
-                      _buildSectionTitle('常用工具', isDark),
-                      const SizedBox(height: 12),
-                      GridView(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        padding: EdgeInsets.zero,
-                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: crossAxisCount,
-                          mainAxisExtent: 88,
-                          mainAxisSpacing: 12,
-                          crossAxisSpacing: 12,
-                        ),
-                        children: [
-                          _buildToolCard(
-                            context,
-                            icon: Icons.school_outlined,
-                            color: const Color(0xFF55B97A),
-                            title: '二课分查询',
-                            subtitle: '支持 WebVPN 穿透',
-                            onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => const ErkeScoreScreen(),
-                              ),
-                            ),
-                          ),
-                          _buildToolCard(
-                            context,
-                            icon: Icons.school,
-                            color: const Color(0xFF5B8DEF),
-                            title: '雨课堂',
-                            subtitle: '测验与课件',
-                            onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => const YuketangClassScreen(),
-                              ),
-                            ),
-                          ),
-                          _buildToolCard(
-                            context,
-                            icon: Icons.fitness_center,
-                            color: const Color(0xFFE9A23B),
-                            title: '体测成绩',
-                            subtitle: '扫码核验 / 查询',
-                            onTap: () => _openPhysicalTest(context),
-                          ),
-                          _buildToolCard(
-                            context,
-                            icon: Icons.event_note,
-                            color: const Color(0xFF826FE8),
-                            title: '考试日程',
-                            subtitle: 'AI一键提取',
-                            onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => const ExamScheduleScreen(),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 24),
-                      _buildSectionTitle('校园与娱乐', isDark),
-                      const SizedBox(height: 12),
-                      GridView(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        padding: EdgeInsets.zero,
-                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: crossAxisCount,
-                          mainAxisExtent: 88,
-                          mainAxisSpacing: 12,
-                          crossAxisSpacing: 12,
-                        ),
-                        children: [
-                          _buildToolCard(
-                            context,
-                            icon: Icons.sports_esports,
-                            color: const Color(0xFF35B7C4),
-                            title: '云原神',
-                            subtitle: '点击即玩',
-                            onTap: () => _launchCloudGenshin(context),
-                          ),
-                          _buildToolCard(
-                            context,
-                            icon: Icons.card_giftcard,
-                            color: const Color(0xFFEE5C8A),
-                            title: '抽奖活动',
-                            subtitle: '公平福利派送',
-                            onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                  builder: (_) => const LotteryScreen()),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 24),
-                      _buildMoreToolsCard(isDark),
-                    ],
-                  );
-                },
-              ),
-            ),
-          ),
-        ),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildSectionTitle(String title, bool isDark) {
+  Widget _buildSectionTitle(
+    String title,
+    bool isDark,
+    bool useCustomBackground,
+  ) {
     return Text(
       title,
       style: TextStyle(
         fontSize: 16,
         fontWeight: FontWeight.w700,
-        color: Colors.white,
+        color: useCustomBackground || isDark
+            ? Colors.white
+            : const Color(0xFF1F2937),
         shadows: [
-          Shadow(
-            color: Colors.black.withValues(alpha: 0.35),
-            blurRadius: 6,
-          ),
+          if (useCustomBackground)
+            Shadow(
+              color: Colors.black.withValues(alpha: 0.35),
+              blurRadius: 6,
+            ),
         ],
       ),
     );
   }
 
-  Widget _buildMoreToolsCard(bool isDark) {
+  Widget _buildMoreToolsCard(bool isDark, bool useCustomBackground) {
+    final backgroundColor = isDark
+        ? Colors.black.withValues(alpha: 0.65)
+        : useCustomBackground
+            ? Colors.white.withValues(alpha: 0.78)
+            : Colors.white;
+    final borderColor = isDark
+        ? Colors.white.withValues(alpha: 0.1)
+        : useCustomBackground
+            ? Colors.white.withValues(alpha: 0.65)
+            : const Color(0xFFEEF0F5);
+
     return Container(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(18),
@@ -265,15 +309,8 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             decoration: BoxDecoration(
-              color: isDark 
-                  ? Colors.black.withValues(alpha: 0.65)
-                  : Colors.white.withValues(alpha: 0.78),
-              border: Border.all(
-                color: isDark 
-                    ? Colors.white.withValues(alpha: 0.1)
-                    : Colors.white.withValues(alpha: 0.65),
-                width: 1,
-              ),
+              color: backgroundColor,
+              border: Border.all(color: borderColor, width: 1),
             ),
             child: Row(
               children: [
@@ -284,7 +321,8 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                     color: const Color(0xFF5B8DEF).withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: const Icon(Icons.auto_stories_outlined, color: Color(0xFF5B8DEF), size: 22),
+                  child: const Icon(Icons.auto_stories_outlined,
+                      color: Color(0xFF5B8DEF), size: 22),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -296,7 +334,8 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                         style: TextStyle(
                           fontWeight: FontWeight.w600,
                           fontSize: 15,
-                          color: isDark ? Colors.white : const Color(0xFF20232A),
+                          color:
+                              isDark ? Colors.white : const Color(0xFF20232A),
                         ),
                       ),
                       const SizedBox(height: 4),
@@ -305,7 +344,8 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w400,
-                          color: isDark ? Colors.white60 : const Color(0xFF7D8492),
+                          color:
+                              isDark ? Colors.white60 : const Color(0xFF7D8492),
                         ),
                       ),
                     ],
@@ -324,33 +364,6 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
           ),
         ),
       ),
-    );
-  }
-
-  /// 判断是否为 5月20日
-  bool _isMay20() {
-    final now = DateTime.now();
-    return now.month == 5 && now.day == 20;
-  }
-
-  /// 5月20日专属背景
-  Widget _build520Background(bool isDark) {
-    final image = kIsWeb ? 'assets/images/pcys.png' : 'assets/images/sjys.png';
-    debugPrint('520背景: $image (isWeb=$kIsWeb)');
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        Image.asset(
-          image,
-          fit: BoxFit.cover,
-          alignment: Alignment.center,
-          errorBuilder: (_, e, st) {
-            debugPrint('520背景加载失败: $e');
-            return _buildDefaultBg(isDark);
-          },
-        ),
-        _buildBackgroundOverlay(isDark),
-      ],
     );
   }
 
@@ -400,76 +413,6 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
     }
   }
 
-  Widget _buildBackground(ThemeProvider themeProvider, bool isDark) {
-    if (themeProvider.isBackgroundVisible &&
-        themeProvider.getBackgroundImageFor(context) != null) {
-      final bgPath = themeProvider.getBackgroundImageFor(context)!;
-      final isAsset = !bgPath.startsWith('http') && !bgPath.startsWith('/');
-      return Stack(
-        fit: StackFit.expand,
-        children: [
-          isAsset
-              ? Image.asset(
-                  'assets/images/$bgPath',
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => _buildDefaultBg(isDark),
-                )
-              : bgPath.startsWith('/')
-                  ? Image.file(
-                      File(bgPath),
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => _buildDefaultBg(isDark),
-                    )
-                  : Image.network(
-                      bgPath,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => _buildDefaultBg(isDark),
-                    ),
-          _buildBackgroundOverlay(isDark),
-        ],
-      );
-    }
-    return _buildDefaultBg(isDark);
-  }
-
-  Widget _buildDefaultBg(bool isDark) {
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        Image.asset(
-          'assets/images/morenbeijing.jpeg',
-          fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => Container(
-            color: isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
-          ),
-        ),
-        _buildBackgroundOverlay(isDark),
-      ],
-    );
-  }
-
-  Widget _buildBackgroundOverlay(bool isDark) {
-    if (isDark) {
-      return Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Colors.black.withValues(alpha: 0.26),
-              Colors.black.withValues(alpha: 0.12),
-              Colors.black.withValues(alpha: 0.22),
-            ],
-          ),
-        ),
-      );
-    } else {
-      return Container(
-        color: const Color(0x33291B27),
-      );
-    }
-  }
-
   Widget _buildToolCard(
     BuildContext context, {
     required IconData icon,
@@ -477,9 +420,19 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
     required String title,
     required String subtitle,
     required VoidCallback onTap,
+    required bool useCustomBackground,
   }) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final is520 = _isMay20();
+    final backgroundColor = isDark
+        ? Colors.black.withValues(alpha: 0.65)
+        : useCustomBackground
+            ? Colors.white.withValues(alpha: 0.78)
+            : Colors.white;
+    final borderColor = isDark
+        ? Colors.white.withValues(alpha: 0.1)
+        : useCustomBackground
+            ? Colors.white.withValues(alpha: 0.65)
+            : const Color(0xFFEEF0F5);
 
     return GestureDetector(
       onTap: onTap,
@@ -501,15 +454,8 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               decoration: BoxDecoration(
-                color: isDark 
-                    ? Colors.black.withValues(alpha: 0.65)
-                    : Colors.white.withValues(alpha: 0.78),
-                border: Border.all(
-                  color: isDark 
-                      ? Colors.white.withValues(alpha: 0.1)
-                      : Colors.white.withValues(alpha: 0.65),
-                  width: 1,
-                ),
+                color: backgroundColor,
+                border: Border.all(color: borderColor, width: 1),
               ),
               child: Row(
                 children: [
@@ -535,7 +481,8 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                           style: TextStyle(
                             fontWeight: FontWeight.w600,
                             fontSize: 15,
-                            color: isDark ? Colors.white : const Color(0xFF20232A),
+                            color:
+                                isDark ? Colors.white : const Color(0xFF20232A),
                           ),
                         ),
                         const SizedBox(height: 4),
@@ -546,7 +493,9 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                           style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.w400,
-                            color: isDark ? Colors.white60 : const Color(0xFF7D8492),
+                            color: isDark
+                                ? Colors.white60
+                                : const Color(0xFF7D8492),
                           ),
                         ),
                       ],

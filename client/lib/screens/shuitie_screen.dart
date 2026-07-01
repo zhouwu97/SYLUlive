@@ -122,7 +122,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   bool _messagesLoadRequested = false;
 
   static const _autoRefreshInterval = Duration(seconds: 60);
-  static const _feedSwitchDuration = Duration(milliseconds: 380);
+  static const _feedSwitchDuration = Duration(milliseconds: 480);
   static const _feedSettleDuration = Duration(milliseconds: 220);
   static const _feedTriggerDistance = 72.0;
   static const _feedTriggerVelocity = 520.0;
@@ -313,12 +313,13 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     if (_feedMode == mode) return;
     final newIndex = kFeedModes.indexWhere((m) => m.key == mode);
     if (newIndex < 0) return;
-    final oldIndex = _currentModeIndex < 0 ? kDefaultFeedModeIndex : _currentModeIndex;
+    final oldIndex =
+        _currentModeIndex < 0 ? kDefaultFeedModeIndex : _currentModeIndex;
 
     _refreshFeedMode(mode);
     _feedSwitchController.stop();
     _feedSwitchController.duration = _feedSwitchDuration;
-    
+
     _feedSettleAnimation = Tween<double>(begin: 1.0, end: 0.0).animate(
       CurvedAnimation(
         parent: _feedSwitchController,
@@ -333,9 +334,9 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       _feedRevealSerial++;
       _feedRevealActive = true;
     });
-    
+
     await _feedSwitchController.forward(from: 0);
-    
+
     if (!mounted) return;
     setState(() {
       _feedRevealActive = false;
@@ -856,6 +857,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     final authProvider = context.watch<AuthProvider>();
     final themeProvider = context.watch<ThemeProvider>();
     final cleanLightMode = themeProvider.isCleanBackgroundMode && !isDark;
+    final showCustomBackground = themeProvider.shouldShowCustomBackground;
 
     // 阅读型首页在简洁模式下使用深色状态栏；自定义背景保留浅色图标。
     SystemChrome.setSystemUIOverlayStyle(
@@ -892,8 +894,9 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     final useDesktopShell = ResponsiveUtil.useDesktopShell(context);
 
     return Scaffold(
-      backgroundColor:
-          isDark ? const Color(0xFF101219) : const Color(0xFFF7F8FC),
+      backgroundColor: showCustomBackground
+          ? Colors.transparent
+          : (isDark ? const Color(0xFF101219) : const Color(0xFFF7F8FC)),
       extendBodyBehindAppBar: true,
       body: Stack(
         children: [
@@ -1428,6 +1431,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                             : null,
                         child: HomeTabRevealItem(
                           index: index,
+                          revealOrder: index,
                           child: PostCard(
                             post: post,
                             onAuthorTap: _openUserInSplit,

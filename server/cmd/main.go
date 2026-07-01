@@ -577,6 +577,11 @@ func main() {
 
 		user.GET("/replies/received", replyHandler.GetReceivedList)
 
+		// 旧路径兼容一段时间
+		user.GET("/notifications", notificationHandler.GetNotifications)
+		user.GET("/notifications/unread_count", notificationHandler.GetUnreadCount)
+		user.POST("/notifications/read", notificationHandler.MarkAllRead)
+
 		user.GET("/competition-calendar", competitionHandler.GetCalendar)
 		user.POST("/competition-calendar/init", competitionHandler.InitCalendar)
 		user.PUT("/competition-calendar", competitionHandler.UpdateCalendar)

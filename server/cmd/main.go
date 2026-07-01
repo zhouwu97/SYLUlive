@@ -49,7 +49,9 @@ func main() {
 
 	var err error
 
-	if strings.Contains(cfg.DSN, "host=") || strings.Contains(cfg.DSN, "port=") {
+	isPostgres := strings.Contains(cfg.DSN, "host=") || strings.Contains(cfg.DSN, "port=")
+
+	if isPostgres {
 
 		db, err = gorm.Open(postgres.Open(cfg.DSN), &gorm.Config{})
 
@@ -158,6 +160,7 @@ func main() {
 		&models.SystemConfig{},
 		&models.Canteen{},
 		&models.CanteenRating{},
+		&models.CanteenRatingVote{},
 		&models.UserFollow{},
 		// 融智云考助手独立业务表
 		&models.YunkaoAiProvider{},
@@ -195,6 +198,11 @@ func main() {
 	}
 	if err := ensureFeatureCollaborationIndexes(db); err != nil {
 		log.Fatal("精华共同创作索引迁移失败:", err)
+	}
+	if isPostgres {
+		if err := ensurePostPinColumns(db); err != nil {
+			log.Fatal("帖子置顶字段迁移失败:", err)
+		}
 	}
 
 	// 回填旧公告的缺失字段默认值（公告模型新增 Status/DisplayMode/Priority）
@@ -252,7 +260,7 @@ func main() {
 
 	userHandler := handlers.NewUserHandler(db)
 
-	postHandler := handlers.NewPostHandler(db)
+	postHandler := handlers.NewPostHandler(db, cfg.JPushAppKey, cfg.JPushMasterSecret)
 	searchHandler := handlers.NewSearchHandler(db, postHandler)
 	competitionHandler := handlers.NewCompetitionHandler(db)
 
@@ -569,6 +577,8 @@ func main() {
 
 		user.GET("/replies/received", replyHandler.GetReceivedList)
 
+		user.GET("/notifications", notificationHandler.GetNotifications)
+
 		user.GET("/notifications/unread_count", notificationHandler.GetUnreadCount)
 
 		user.POST("/notifications/read", notificationHandler.MarkAllRead)
@@ -657,6 +667,7 @@ func main() {
 		postsAuth.DELETE("/:id", postHandler.Delete)
 
 		postsAuth.POST("/:id/featured-applications", postHandler.CreateFeaturedApplication)
+		postsAuth.GET("/:id/featured-application-status", postHandler.GetFeaturedApplicationStatus)
 		postsAuth.POST("/:id/collaboration-applications", postHandler.CreateCollaborationApplication)
 		postsAuth.POST("/:id/revision-proposals", postHandler.CreateRevisionProposal)
 
@@ -865,6 +876,9 @@ func main() {
 		admin.GET("/featured-applications", postHandler.AdminGetFeaturedApplications)
 		admin.POST("/featured-applications/:id/approve", postHandler.AdminApproveFeaturedApplication)
 		admin.POST("/featured-applications/:id/reject", postHandler.AdminRejectFeaturedApplication)
+		admin.GET("/posts/pinned", postHandler.AdminGetPinnedPosts)
+		admin.POST("/posts/:id/pin", postHandler.AdminPinPost)
+		admin.POST("/posts/:id/unpin", postHandler.AdminUnpinPost)
 		admin.POST("/posts/:id/unfeature", postHandler.AdminUnfeaturePost)
 		admin.POST("/competitions/categories", competitionHandler.AdminCreateCategory)
 		admin.PUT("/competitions/categories/:id", competitionHandler.AdminUpdateCategory)
@@ -1083,6 +1097,8 @@ func main() {
 
 		majorAuth.POST("/:id/rate", majorHandler.Rate)
 
+		majorAuth.DELETE("/rating/:id", majorHandler.DeleteRating)
+
 	}
 
 	// 食堂榜路由
@@ -1102,7 +1118,7 @@ func main() {
 	{
 
 		canteenAdmin.DELETE("/:id", canteenHandler.DeleteCanteen)
-		
+
 		canteenAdmin.PUT("/:id/image", canteenHandler.UpdateImage)
 
 	}
@@ -1118,6 +1134,8 @@ func main() {
 		canteenAuth.POST("", canteenHandler.Create)
 
 		canteenAuth.POST("/:id/rate", canteenHandler.Rate)
+
+		canteenAuth.PUT("/ratings/:ratingId/vote", canteenHandler.VoteRating)
 
 	}
 
@@ -1280,6 +1298,24 @@ WHERE status = 'pending'`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS uq_collaboration_pending_user_post
 ON collaboration_applications(post_id, applicant_id)
 WHERE status = 'pending'`,
+	}
+	for _, statement := range statements {
+		if err := db.Exec(statement).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func ensurePostPinColumns(db *gorm.DB) error {
+	statements := []string{
+		`ALTER TABLE posts ADD COLUMN IF NOT EXISTS is_pinned BOOLEAN NOT NULL DEFAULT FALSE`,
+		`ALTER TABLE posts ADD COLUMN IF NOT EXISTS pinned_at TIMESTAMPTZ`,
+		`ALTER TABLE posts ADD COLUMN IF NOT EXISTS pinned_until TIMESTAMPTZ`,
+		`ALTER TABLE posts ADD COLUMN IF NOT EXISTS pinned_by BIGINT NOT NULL DEFAULT 0`,
+		`ALTER TABLE posts ADD COLUMN IF NOT EXISTS pinned_weight INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE posts ADD COLUMN IF NOT EXISTS pinned_reason VARCHAR(500) NOT NULL DEFAULT ''`,
+		`CREATE INDEX IF NOT EXISTS idx_posts_active_pin ON posts (board_id, is_pinned, pinned_until, pinned_weight, pinned_at)`,
 	}
 	for _, statement := range statements {
 		if err := db.Exec(statement).Error; err != nil {

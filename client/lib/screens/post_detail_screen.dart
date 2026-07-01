@@ -44,6 +44,114 @@ class PostDetailScreen extends StatefulWidget {
   State<PostDetailScreen> createState() => _PostDetailScreenState();
 }
 
+class _PinPostDialogResult {
+  final DateTime until;
+  final int weight;
+  final String reason;
+
+  const _PinPostDialogResult({
+    required this.until,
+    required this.weight,
+    required this.reason,
+  });
+}
+
+class _PinPostDialog extends StatefulWidget {
+  final bool isSuperAdmin;
+
+  const _PinPostDialog({required this.isSuperAdmin});
+
+  @override
+  State<_PinPostDialog> createState() => _PinPostDialogState();
+}
+
+class _PinPostDialogState extends State<_PinPostDialog> {
+  final _reasonController = TextEditingController();
+  int _days = 3;
+  double _weight = 50;
+
+  @override
+  void dispose() {
+    _reasonController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final dayOptions = <int>[1, 3, 7];
+    if (widget.isSuperAdmin) {
+      dayOptions.add(30);
+    }
+
+    return AlertDialog(
+      title: const Text('置顶到首页'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            DropdownButtonFormField<int>(
+              initialValue: _days,
+              decoration: const InputDecoration(labelText: '置顶时长'),
+              items: dayOptions
+                  .map(
+                    (days) => DropdownMenuItem(
+                      value: days,
+                      child: Text('$days 天'),
+                    ),
+                  )
+                  .toList(),
+              onChanged: (value) {
+                if (value == null) return;
+                setState(() => _days = value);
+              },
+            ),
+            const SizedBox(height: 18),
+            Text('权重：${_weight.round()}'),
+            Slider(
+              value: _weight,
+              min: 0,
+              max: 100,
+              divisions: 20,
+              label: _weight.round().toString(),
+              onChanged: (value) => setState(() => _weight = value),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _reasonController,
+              minLines: 2,
+              maxLines: 4,
+              decoration: const InputDecoration(
+                labelText: '置顶理由',
+                hintText: '可选，默认显示为管理员置顶',
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: () {
+            Navigator.pop(
+              context,
+              _PinPostDialogResult(
+                until: DateTime.now().add(Duration(days: _days)),
+                weight: _weight.round(),
+                reason: _reasonController.text.trim(),
+              ),
+            );
+          },
+          child: const Text('置顶'),
+        ),
+      ],
+    );
+  }
+}
+
 class _PostDetailScreenState extends State<PostDetailScreen> {
   late Dio _dio;
   Post? _post;
@@ -61,6 +169,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   int? _replyToUserId;
   bool _isSending = false;
   final Set<int> _expandedThreads = {};
+  bool _hasPendingFeaturedApp = false;
 
   final Map<int, GlobalKey> _replyKeys = {};
   bool _hasScrolledToTarget = false;
@@ -95,24 +204,24 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     try {
       final response = await _dio.get('/posts/${widget.postId}');
       final repliesResponse = await _dio.get('/posts/${widget.postId}/replies');
+
+      try {
+        final statusResponse = await _dio
+            .get('/posts/${widget.postId}/featured-application-status');
+        if (mounted) {
+          setState(() {
+            _hasPendingFeaturedApp = statusResponse.data['has_pending'] == true;
+          });
+        }
+      } catch (e) {
+        // ignore status check failure
+      }
+
       final fetchedPost = Post.fromJson(response.data);
       final fallbackPost = widget.initialPost;
       final mergedPost = fallbackPost != null &&
               fallbackPost.images.length > fetchedPost.images.length
-          ? Post(
-              id: fetchedPost.id,
-              title: fetchedPost.title,
-              content: fetchedPost.content,
-              boardId: fetchedPost.boardId,
-              authorId: fetchedPost.authorId,
-              postType: fetchedPost.postType,
-              price: fetchedPost.price,
-              contact: fetchedPost.contact,
-              status: fetchedPost.status,
-              images: fallbackPost.images,
-              author: fetchedPost.author,
-              createdAt: fetchedPost.createdAt,
-            )
+          ? fetchedPost.copyWith(images: fallbackPost.images)
           : fetchedPost;
       if (mounted)
         setState(() {
@@ -372,6 +481,109 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
   }
 
+  Future<void> _unfeaturePost() async {
+    final post = _post;
+    if (post == null) return;
+    final confirmed = await AppFeedback.confirmDanger(
+      context,
+      title: '取消精华',
+      message: '确定取消该帖精华吗？取消后将从精华列表移除。',
+    );
+    if (!confirmed) return;
+    try {
+      await _dio.post('/admin/posts/${post.id}/unfeature');
+      if (mounted) {
+        AppFeedback.showSnackBar(context, '已取消精华');
+        _loadPost(); // 刷新状态
+      }
+    } catch (e) {
+      if (mounted) {
+        AppFeedback.showSnackBar(context, '操作失败', isError: true);
+      }
+    }
+  }
+
+  Future<void> _pinPost() async {
+    final post = _post;
+    if (post == null) return;
+
+    final isSuperAdmin =
+        context.read<AuthProvider>().user?.isSuperAdmin ?? false;
+    final dialogResult = await showDialog<_PinPostDialogResult>(
+      context: context,
+      builder: (_) => _PinPostDialog(isSuperAdmin: isSuperAdmin),
+    );
+    if (dialogResult == null) return;
+
+    final postProvider = context.read<PostProvider>();
+    final result = await postProvider.pinPost(
+      postId: post.id,
+      pinnedUntil: dialogResult.until,
+      pinnedWeight: dialogResult.weight,
+      reason: dialogResult.reason,
+    );
+    if (!mounted) return;
+
+    if (result.success) {
+      final updated = result.post;
+      if (updated != null) {
+        setState(() => _post = updated);
+      }
+      await postProvider.refreshHomePinnedFeeds(
+        refreshFeatured: updated?.isFeatured == true,
+      );
+      if (!mounted) return;
+      AppFeedback.showSnackBar(context, '已置顶到首页');
+    } else {
+      AppFeedback.showSnackBar(
+        context,
+        result.errorMessage ?? '置顶失败',
+        isError: true,
+      );
+    }
+  }
+
+  Future<void> _unpinPost() async {
+    final post = _post;
+    if (post == null) return;
+
+    final confirmed = await AppFeedback.confirmDanger(
+      context,
+      title: '取消置顶',
+      message: '确定取消这条帖子的首页置顶吗？',
+      confirmText: '取消置顶',
+    );
+    if (!confirmed) return;
+
+    final postProvider = context.read<PostProvider>();
+    final result = await postProvider.unpinPost(post.id);
+    if (!mounted) return;
+
+    if (result.success) {
+      final updated = result.post ??
+          post.copyWith(
+            isPinned: false,
+            pinnedBy: 0,
+            pinnedWeight: 0,
+            pinnedReason: '',
+            clearPinnedAt: true,
+            clearPinnedUntil: true,
+          );
+      setState(() => _post = updated);
+      await postProvider.refreshHomePinnedFeeds(
+        refreshFeatured: updated.isFeatured,
+      );
+      if (!mounted) return;
+      AppFeedback.showSnackBar(context, '已取消置顶');
+    } else {
+      AppFeedback.showSnackBar(
+        context,
+        result.errorMessage ?? '取消置顶失败',
+        isError: true,
+      );
+    }
+  }
+
   Future<String?> _askReason({
     required String title,
     required String hint,
@@ -420,6 +632,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         data: {'reason': reason},
       );
       if (!mounted) return;
+      setState(() {
+        _hasPendingFeaturedApp = true;
+      });
       AppFeedback.showSnackBar(context, '精华申请已提交');
     } on DioException catch (e) {
       if (!mounted) return;
@@ -717,46 +932,56 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final canEdit = _isCurrentUserPostOwner();
     final isOwn = _isCurrentUserPostOwner();
     final isAdmin = currentUser?.isAdmin ?? false;
+    final overlayStyle = (!isDark && !widget.isMarket
+            ? SystemUiOverlayStyle.dark
+            : SystemUiOverlayStyle.light)
+        .copyWith(
+      statusBarColor: Colors.transparent,
+      systemNavigationBarColor: Colors.transparent,
+    );
 
     // 桌面分栏模式：保持透明背景
     final bool transparentMode =
         widget.isDesktopSplitMode && widget.hideBackButton;
 
-    return Scaffold(
-      backgroundColor: transparentMode
-          ? Colors.transparent
-          : (isDark ? const Color(0xFF131720) : const Color(0xFFF6F7F9)),
-      appBar: transparentMode
-          ? AppBar(
-              backgroundColor: Colors.transparent,
-              elevation: 0,
-              automaticallyImplyLeading: false,
-            )
-          : _buildWaterAppBar(isDark,
-              canEdit: canEdit,
-              canDelete: canDelete,
-              isOwn: isOwn,
-              isAdmin: isAdmin),
-      body: Stack(
-        children: [
-          if (_isLoading)
-            const SafeArea(
-              child: Center(child: CircularProgressIndicator()),
-            )
-          else if (_errorMessage != null)
-            SafeArea(child: _buildErrorView(isDark))
-          else if (_post == null)
-            SafeArea(child: _buildEmptyView(isDark))
-          else if (widget.isMarket)
-            _buildMarketDetail(isDark)
-          else
-            Column(
-              children: [
-                Expanded(child: _buildWaterDetail(isDark)),
-                _buildWaterReplyBar(isDark),
-              ],
-            ),
-        ],
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: overlayStyle,
+      child: Scaffold(
+        backgroundColor: transparentMode
+            ? Colors.transparent
+            : (isDark ? const Color(0xFF131720) : const Color(0xFFF6F7F9)),
+        appBar: transparentMode
+            ? AppBar(
+                backgroundColor: Colors.transparent,
+                elevation: 0,
+                automaticallyImplyLeading: false,
+              )
+            : _buildWaterAppBar(isDark,
+                canEdit: canEdit,
+                canDelete: canDelete,
+                isOwn: isOwn,
+                isAdmin: isAdmin),
+        body: Stack(
+          children: [
+            if (_isLoading)
+              const SafeArea(
+                child: Center(child: CircularProgressIndicator()),
+              )
+            else if (_errorMessage != null)
+              SafeArea(child: _buildErrorView(isDark))
+            else if (_post == null)
+              SafeArea(child: _buildEmptyView(isDark))
+            else if (widget.isMarket)
+              _buildMarketDetail(isDark)
+            else
+              Column(
+                children: [
+                  Expanded(child: _buildWaterDetail(isDark)),
+                  _buildWaterReplyBar(isDark),
+                ],
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -791,6 +1016,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 case 'delete':
                   _deletePost();
                   break;
+                case 'pin':
+                  _pinPost();
+                  break;
+                case 'unpin':
+                  _unpinPost();
+                  break;
                 case 'report':
                   showReportSheet(
                     context,
@@ -798,10 +1029,19 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     targetType: 'post',
                   );
                   break;
+                case 'unfeature':
+                  _unfeaturePost();
+                  break;
               }
             },
             itemBuilder: (context) {
               final items = <PopupMenuEntry<String>>[];
+              if (isAdmin && _post?.boardId == 1) {
+                items.add(PopupMenuItem(
+                  value: _post!.isActivePinned ? 'unpin' : 'pin',
+                  child: Text(_post!.isActivePinned ? '取消置顶' : '置顶到首页'),
+                ));
+              }
               // 自己的帖子：编辑 + 删除（不举报自己）
               if (isOwn) {
                 items.add(const PopupMenuItem(
@@ -822,6 +1062,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                   value: 'report',
                   child: Text('举报帖子'),
                 ));
+                if (_post?.isFeatured == true) {
+                  items.add(const PopupMenuItem(
+                    value: 'unfeature',
+                    child: Text('取消精华'),
+                  ));
+                }
               } else {
                 // 普通用户看他人帖子：仅举报
                 items.add(const PopupMenuItem(
@@ -1406,13 +1652,29 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final isOwner = user.id == p.authorId;
     final actions = <Widget>[];
     if (!p.isFeatured) {
-      actions.add(
-        OutlinedButton.icon(
-          onPressed: _applyFeatured,
-          icon: const Icon(Icons.workspace_premium_outlined, size: 18),
-          label: const Text('申请精华'),
-        ),
-      );
+      if (_hasPendingFeaturedApp) {
+        actions.add(
+          const OutlinedButton(
+            onPressed: null,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.hourglass_empty, size: 18),
+                SizedBox(width: 8),
+                Text('精华申请待审核'),
+              ],
+            ),
+          ),
+        );
+      } else {
+        actions.add(
+          OutlinedButton.icon(
+            onPressed: _applyFeatured,
+            icon: const Icon(Icons.workspace_premium_outlined, size: 18),
+            label: const Text('申请精华'),
+          ),
+        );
+      }
     } else if (!isOwner) {
       actions.add(
         OutlinedButton.icon(
@@ -1960,10 +2222,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         child: SafeArea(
           child: Container(
             decoration: BoxDecoration(
-              color: isDark
-                  ? const Color(0xFF1E1E32).withValues(alpha: 0.92)
-                  : Colors.white.withValues(alpha: 0.92),
+              color: isDark ? const Color(0xFF1E1E32) : Colors.white,
               borderRadius: BorderRadius.circular(18),
+              border: Border.all(
+                color: isDark
+                    ? Colors.white.withValues(alpha: 0.08)
+                    : const Color(0xFFE5E7EB),
+              ),
             ),
             child: Padding(
               padding: const EdgeInsets.fromLTRB(14, 8, 8, 8),

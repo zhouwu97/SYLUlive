@@ -49,9 +49,19 @@ class CanteenProvider with ChangeNotifier {
     }
   }
 
-  Future<Map<String, dynamic>> loadCanteenDetail(int id) async {
+  Future<Map<String, dynamic>> loadCanteenDetail(
+    int id, {
+    String reviewSort = 'best',
+    String reviewFilter = 'all',
+  }) async {
     try {
-      final response = await _dio.get('/canteens/$id');
+      final response = await _dio.get(
+        '/canteens/$id',
+        queryParameters: {
+          'review_sort': reviewSort,
+          'review_filter': reviewFilter,
+        },
+      );
       if (response.statusCode == 200) {
         return response.data as Map<String, dynamic>;
       }
@@ -62,7 +72,27 @@ class CanteenProvider with ChangeNotifier {
     return {};
   }
 
-  Future<Map<String, dynamic>?> updateCanteenImage(int id, String imageUrl) async {
+  Future<Map<String, dynamic>?> voteRating({
+    required int ratingId,
+    required String vote,
+  }) async {
+    try {
+      final response = await _dio.put(
+        '/canteens/ratings/$ratingId/vote',
+        data: {'vote': vote},
+      );
+      if (response.statusCode == 200) {
+        return response.data as Map<String, dynamic>;
+      }
+    } on DioException catch (e) {
+      _errorMessage = _parseError(e);
+      debugPrint('Error voting canteen rating: $e');
+    }
+    return null;
+  }
+
+  Future<Map<String, dynamic>?> updateCanteenImage(
+      int id, String imageUrl) async {
     try {
       final response = await _dio.put(
         '/canteens/$id/image',
@@ -93,13 +123,11 @@ class CanteenProvider with ChangeNotifier {
     int id,
     int star,
     String comment,
-    List<String> images,
   ) async {
     try {
-      final imagesJson = json.encode(images);
       final response = await _dio.post(
         '/canteens/$id/rate',
-        data: {'star': star, 'comment': comment, 'images': imagesJson},
+        data: {'star': star, 'comment': comment, 'images': json.encode([])},
       );
       return response.statusCode == 200 || response.statusCode == 201;
     } on DioException catch (e) {

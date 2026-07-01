@@ -247,29 +247,29 @@ class _TeacherRatingScreenState extends State<TeacherRatingScreen>
   }
 
   Widget _buildBg(ThemeProvider p, bool d) {
-    if (p.isBackgroundVisible && p.getBackgroundImageFor(context) != null) {
-      final bg = p.getBackgroundImageFor(context)!;
-      final isAsset = !bg.startsWith('http') && !bg.startsWith('/');
+    if (p.shouldShowCustomBackground &&
+        p.getCustomBackgroundImageFor(context) != null) {
+      final bg = p.getCustomBackgroundImageFor(context)!;
       return Stack(
         fit: StackFit.expand,
         children: [
-          isAsset
+          ThemeProvider.isBundledAssetBackground(bg)
               ? Image.asset(
-                  'assets/images/$bg',
+                  ThemeProvider.resolveBundledAssetPath(bg),
                   fit: BoxFit.cover,
                   errorBuilder: (_, __, ___) => _gradient(d),
                 )
-              : bg.startsWith('/')
-              ? Image.file(
-                  File(bg),
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => _gradient(d),
-                )
-              : Image.network(
-                  bg,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => _gradient(d),
-                ),
+              : ThemeProvider.isLocalFileBackground(bg)
+                  ? Image.file(
+                      File(bg),
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => _gradient(d),
+                    )
+                  : Image.network(
+                      bg,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => _gradient(d),
+                    ),
           Container(
             color: d
                 ? Colors.black.withValues(alpha: 0.4)
@@ -281,25 +281,9 @@ class _TeacherRatingScreenState extends State<TeacherRatingScreen>
     return _gradient(d);
   }
 
-  Widget _gradient(bool d) => Container(
-    decoration: BoxDecoration(
-      gradient: LinearGradient(
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-        colors: d
-            ? [
-                const Color(0xFF1A1A2E),
-                const Color(0xFF16213E),
-                const Color(0xFF0F3460),
-              ]
-            : [
-                const Color(0xFF667EEA),
-                const Color(0xFF764BA2),
-                const Color(0xFFF093FB),
-              ],
-      ),
-    ),
-  );
+  Widget _gradient(bool d) => ColoredBox(
+        color: d ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
+      );
 
   Widget _buildWarningBanner(bool isDark) {
     return Container(
@@ -357,10 +341,10 @@ class _TeacherRatingScreenState extends State<TeacherRatingScreen>
                   decoration: BoxDecoration(
                     color: i < 3
                         ? (i == 0
-                              ? Colors.amber
-                              : i == 1
-                              ? Colors.grey[400]
-                              : Colors.brown[300])
+                            ? Colors.amber
+                            : i == 1
+                                ? Colors.grey[400]
+                                : Colors.brown[300])
                         : Colors.transparent,
                     borderRadius: BorderRadius.circular(10),
                   ),
@@ -481,33 +465,33 @@ class _TeacherRatingScreenState extends State<TeacherRatingScreen>
   }
 
   Widget _empty(String t, String s, IconData ic, bool d) => Center(
-    child: GlassContainer(
-      padding: const EdgeInsets.all(32),
-      borderRadius: 20,
-      blur: 15,
-      opacity: 0.1,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(ic, size: 64, color: d ? Colors.white60 : Colors.grey[400]),
-          const SizedBox(height: 16),
-          Text(
-            t,
-            style: TextStyle(
-              fontSize: 18,
-              color: d ? Colors.white70 : Colors.grey[600],
-            ),
+        child: GlassContainer(
+          padding: const EdgeInsets.all(32),
+          borderRadius: 20,
+          blur: 15,
+          opacity: 0.1,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(ic, size: 64, color: d ? Colors.white60 : Colors.grey[400]),
+              const SizedBox(height: 16),
+              Text(
+                t,
+                style: TextStyle(
+                  fontSize: 18,
+                  color: d ? Colors.white70 : Colors.grey[600],
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                s,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: d ? Colors.white.withOpacity(0.4) : Colors.grey[400],
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 8),
-          Text(
-            s,
-            style: TextStyle(
-              fontSize: 14,
-              color: d ? Colors.white.withOpacity(0.4) : Colors.grey[400],
-            ),
-          ),
-        ],
-      ),
-    ),
-  );
+        ),
+      );
 }

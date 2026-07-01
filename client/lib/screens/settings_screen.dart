@@ -93,10 +93,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
         extendBodyBehindAppBar: true,
         appBar: AppBar(
           backgroundColor: Colors.transparent,
+          surfaceTintColor: Colors.transparent,
           elevation: 0,
+          foregroundColor: isDark ? Colors.white : const Color(0xFF111827),
           title: const Text('设置'),
         ),
         body: Stack(
+          fit: StackFit.expand,
           children: [
             _buildBackground(themeProvider, isDark),
             SafeArea(
@@ -120,7 +123,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Widget _buildBackground(ThemeProvider themeProvider, bool isDark) {
-    String? bgPath = themeProvider.getBackgroundImageFor(context);
+    String? bgPath = themeProvider.shouldShowCustomBackground
+        ? themeProvider.getCustomBackgroundImageFor(context)
+        : null;
 
     if (bgPath != null && bgPath.isNotEmpty) {
       final isAsset = ThemeProvider.isBundledAssetBackground(bgPath);
@@ -137,7 +142,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _buildBackgroundImage(
             imageProvider: imageProvider,
             isDark: isDark,
-            fillScreen: themeProvider.getBackgroundFillScreenFor(context),
+            fillScreen:
+                themeProvider.getCustomBackgroundFillScreenFor(context) ||
+                    _isUsingFallbackBackgroundDirection(themeProvider),
             blur: themeProvider.backgroundBlur,
           ),
           Container(
@@ -148,31 +155,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ],
       );
     }
-    return _buildDefaultBackground(isDark);
+    return _buildCleanBackground(isDark);
   }
 
-  Widget _buildDefaultBackground(bool isDark) {
+  bool _isUsingFallbackBackgroundDirection(ThemeProvider themeProvider) {
     final isWide =
         MediaQuery.of(context).size.width > MediaQuery.of(context).size.height;
-    final defaultImage = isWide
-        ? 'assets/images/tablet_default_landscape.png'
-        : 'assets/images/morenbeijing.jpeg';
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        _buildBackgroundImage(
-          imageProvider: AssetImage(defaultImage),
-          alignment: Alignment.center,
-          isDark: isDark,
-          fillScreen: false,
-          blur: context.read<ThemeProvider>().backgroundBlur,
-        ),
-        Container(
-          color: isDark
-              ? Colors.black.withValues(alpha: 0.35)
-              : Colors.white.withValues(alpha: 0.25),
-        ),
-      ],
+    return (isWide && !themeProvider.hasLandscapeBackground) ||
+        (!isWide && !themeProvider.hasBackground);
+  }
+
+  Widget _buildCleanBackground(bool isDark) {
+    return SizedBox.expand(
+      child: ColoredBox(
+        color: isDark ? const Color(0xFF101219) : const Color(0xFFF8FAFC),
+      ),
     );
   }
 
@@ -234,13 +231,45 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // 背景设置 — 独立卡片
+        // 外观模式
+        _buildSettingsRow(
+          child: _buildSettingsTile(
+            icon: Icons.light_mode,
+            iconColor: Colors.blue,
+            title: '简洁模式',
+            subtitle: '使用干净背景，不删除已保存图片',
+            trailing: themeProvider.isCleanBackgroundMode
+                ? Icon(Icons.check_circle,
+                    color: Theme.of(context).primaryColor)
+                : null,
+            isDark: isDark,
+            onTap: () => themeProvider.setCleanBackgroundMode(),
+          ),
+        ),
         _buildSettingsRow(
           child: _buildSettingsTile(
             icon: Icons.wallpaper,
             iconColor: Colors.purple,
             title: '自定义背景',
-            subtitle: '默认或竖屏时显示的背景',
+            subtitle: '显示你选择的背景图片',
+            trailing: themeProvider.backgroundMode == AppBackgroundMode.custom
+                ? Icon(Icons.check_circle,
+                    color: Theme.of(context).primaryColor)
+                : null,
+            isDark: isDark,
+            onTap: () => _handleCustomBackgroundModeTap(themeProvider),
+          ),
+        ),
+
+        const SizedBox(height: 8),
+
+        // 背景图片
+        _buildSettingsRow(
+          child: _buildSettingsTile(
+            icon: Icons.wallpaper,
+            iconColor: Colors.purple,
+            title: '选择背景图片',
+            subtitle: themeProvider.hasAnyBackground ? '当前：已保存' : '当前：未设置',
             isDark: isDark,
             onTap: () => _showBackgroundPicker(context, themeProvider, false),
           ),
@@ -274,14 +303,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
             isDark: isDark,
           ),
         ),
+
         _buildSettingsRow(
           child: _buildSettingsTile(
-            icon: Icons.restore,
-            iconColor: Colors.orange,
-            title: '默认壁纸',
-            subtitle: '恢复为系统默认背景',
+            icon: Icons.delete_outline,
+            iconColor: Colors.redAccent,
+            title: '移除背景图片',
+            subtitle: '删除已保存的竖屏和横屏背景',
             isDark: isDark,
-            onTap: () => _showRestoreDefaultDialog(context, themeProvider),
+            onTap: themeProvider.hasAnyBackground
+                ? () => _showClearBackgroundDialog(context, themeProvider)
+                : null,
           ),
         ),
 
@@ -820,19 +852,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  void _setBackground(
+  Future<void> _handleCustomBackgroundModeTap(
+      ThemeProvider themeProvider) async {
+    final switched = await themeProvider.trySetCustomBackgroundMode();
+    if (!mounted) return;
+    if (!switched) {
+      _showBackgroundPicker(context, themeProvider, false);
+    }
+  }
+
+  Future<void> _setBackground(
     ThemeProvider themeProvider,
     bool isLandscape,
     String imagePath, {
     bool fillScreen = false,
-  }) {
+  }) async {
     if (isLandscape) {
-      themeProvider.setLandscapeBackgroundImage(
+      await themeProvider.setLandscapeBackgroundImage(
         imagePath,
         fillScreen: fillScreen,
       );
     } else {
-      themeProvider.setBackgroundImage(imagePath, fillScreen: fillScreen);
+      await themeProvider.setBackgroundImage(imagePath, fillScreen: fillScreen);
     }
   }
 
@@ -863,17 +904,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
   ) async {
     final remoteUrl = _remoteWallpaperUrl(assetName);
     if (remoteUrl == null) {
-      _setBackground(themeProvider, isLandscape, assetName, fillScreen: false);
+      await _setBackground(
+        themeProvider,
+        isLandscape,
+        assetName,
+        fillScreen: false,
+      );
       return;
     }
 
     if (kIsWeb) {
-      _setBackground(themeProvider, isLandscape, remoteUrl, fillScreen: true);
+      await _setBackground(
+        themeProvider,
+        isLandscape,
+        remoteUrl,
+        fillScreen: true,
+      );
       return;
     }
 
     if (!context.read<AuthProvider>().isLoggedIn) {
-      _setBackground(
+      await _setBackground(
         themeProvider,
         isLandscape,
         _wallpaperThumbnailAsset(assetName),
@@ -892,10 +943,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     try {
       final savedPath = await _downloadWallpaper(remoteUrl, assetName);
-      _setBackground(themeProvider, isLandscape, savedPath, fillScreen: true);
+      await _setBackground(
+        themeProvider,
+        isLandscape,
+        savedPath,
+        fillScreen: true,
+      );
     } catch (e) {
       debugPrint('Download wallpaper failed: $e');
-      _setBackground(
+      await _setBackground(
         themeProvider,
         isLandscape,
         _wallpaperThumbnailAsset(assetName),
@@ -977,7 +1033,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
       }
 
       if (savedPath == null) return;
-      _setBackground(themeProvider, isLandscape, savedPath, fillScreen: true);
+      await _setBackground(
+        themeProvider,
+        isLandscape,
+        savedPath,
+        fillScreen: true,
+      );
       if (context.mounted) Navigator.pop(context);
     } catch (e) {
       debugPrint('Edit bundled background failed: $e');
@@ -1017,7 +1078,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
         isLandscape: isLandscape,
       );
       if (savedPath == null) return;
-      _setBackground(themeProvider, isLandscape, savedPath, fillScreen: true);
+      await _setBackground(
+        themeProvider,
+        isLandscape,
+        savedPath,
+        fillScreen: true,
+      );
       if (context.mounted) Navigator.pop(context);
     } catch (e) {
       debugPrint('Pick gallery background failed: $e');
@@ -1131,25 +1197,60 @@ class _SettingsScreenState extends State<SettingsScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('恢复默认壁纸'),
-        content: const Text('将清除当前自定义背景，所有页面恢复为系统默认壁纸。'),
+        title: const Text('恢复简洁模式'),
+        content: const Text('将暂时不显示背景图片，但会保留已保存的竖屏和横屏背景。'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
             child: const Text('取消'),
           ),
           TextButton(
-            onPressed: () {
-              themeProvider.clearBackground();
+            onPressed: () async {
+              await themeProvider.setCleanBackgroundMode();
+              if (!context.mounted || !ctx.mounted) return;
               Navigator.pop(ctx);
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
-                  content: Text('已恢复默认壁纸'),
+                  content: Text('已恢复简洁模式，背景图片仍已保留'),
                   backgroundColor: Colors.green,
                 ),
               );
             },
-            child: const Text('确认恢复', style: TextStyle(color: Colors.red)),
+            child: const Text('确认恢复'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showClearBackgroundDialog(
+    BuildContext context,
+    ThemeProvider themeProvider,
+  ) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('移除背景图片'),
+        content: const Text('将删除已保存的竖屏和横屏背景，并切回简洁模式。此操作不会影响其他设置。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () async {
+              await themeProvider.clearBackground();
+              if (!context.mounted || !ctx.mounted) return;
+              Navigator.pop(ctx);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('已移除背景图片'),
+                  backgroundColor: Colors.green,
+                ),
+              );
+            },
+            child: const Text('确认移除', style: TextStyle(color: Colors.red)),
           ),
         ],
       ),

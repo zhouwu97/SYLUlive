@@ -1468,8 +1468,37 @@ class _CompetitionCalendarScreenState extends State<CompetitionCalendarScreen> {
     }
   }
 
+  Future<void> _archiveItem(Map<String, dynamic> item) async {
+    final data = _calendarItemUpdatePayload(item)..['plan_status'] = 'archived';
+    try {
+      await context
+          .read<AuthProvider>()
+          .dio
+          .put('/user/competition-calendar/items/${item['id']}', data: data);
+      if (!mounted) return;
+      AppFeedback.showSnackBar(context, '已归档比赛');
+      await _load();
+    } on DioException catch (e) {
+      if (!mounted) return;
+      AppFeedback.showSnackBar(
+        context,
+        AppFeedback.dioErrorMessage(e, fallback: '归档失败'),
+        isError: true,
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final items = _calendarItems;
+    final grouped = _groupCalendarItems(items);
+    final preparingCount =
+        items.where((item) => _calendarPlanStatus(item) == 'preparing').length;
+    final pendingCount = items
+        .where((item) =>
+            _calendarTimeStatus(item) == 'pending' &&
+            _parseCalendarDate(item['registration_end']) == null)
+        .length;
     return Scaffold(
       backgroundColor: _competitionBg,
       appBar: AppBar(
@@ -1505,104 +1534,359 @@ class _CompetitionCalendarScreenState extends State<CompetitionCalendarScreen> {
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                Text('已关注比赛 ${_items.length} 个',
-                    style: const TextStyle(fontWeight: FontWeight.w800)),
+                _buildPlanSummary(
+                  total: items.length,
+                  preparing: preparingCount,
+                  pending: pendingCount,
+                ),
                 const SizedBox(height: 12),
-                if (_items.isEmpty)
+                if (items.isEmpty)
                   _CompetitionEmptyState(
                     title: '还没有加入竞赛计划',
                     message: '时间不确定也可以先关注比赛，后续看到学校通知后再补充准确时间。',
-                    primaryText: '新增比赛',
-                    onPrimary: () => _openEditor(),
-                    secondaryText: '刷新',
-                    onSecondary: _load,
+                    primaryText: '去发现比赛',
+                    onPrimary: () => Navigator.maybePop(context),
+                    secondaryText: '手动添加',
+                    onSecondary: () => _openEditor(),
                   ),
-                ..._items.map((raw) {
-                  final item = Map<String, dynamic>.from(raw as Map);
-                  final deadline = _calendarItemTimeText(
-                      item, 'registration_end', 'registration_time_text');
-                  final source = _calendarItemSourceLabel(
-                    '${item['source_type'] ?? ''}',
-                  );
-                  return Container(
-                    margin: const EdgeInsets.only(bottom: 10),
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(18),
-                      border: Border.all(color: _competitionBorder),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 4,
-                              ),
-                              decoration: BoxDecoration(
-                                color: _competitionLight,
-                                borderRadius: BorderRadius.circular(999),
-                              ),
-                              child: const Text(
-                                '我的计划',
-                                style: TextStyle(
-                                  color: _competitionPrimaryDark,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                            ),
-                            const Spacer(),
-                            IconButton(
-                              visualDensity: VisualDensity.compact,
-                              tooltip: '编辑',
-                              icon: const Icon(Icons.edit_outlined),
-                              onPressed: () => _openEditor(item: item),
-                            ),
-                            IconButton(
-                              visualDensity: VisualDensity.compact,
-                              tooltip: '删除',
-                              icon: const Icon(Icons.delete_outline),
-                              onPressed: () => _deleteItem(item),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          item['title'] ?? '',
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w900,
-                            color: Color(0xFF242330),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          '报名安排：${deadline.isEmpty ? '时间待通知' : deadline}',
-                          style: const TextStyle(
-                            color: _competitionOrange,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          '来源：$source',
-                          style: const TextStyle(
-                            color: _competitionMuted,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                }),
+                if (items.isNotEmpty) ...[
+                  _buildPlanGroup('现在该做', grouped['now']!),
+                  _buildPlanGroup('近期关注', grouped['soon']!),
+                  _buildPlanGroup('长期关注', grouped['later']!),
+                  _buildPlanGroup('已结束', grouped['done']!),
+                ],
               ],
             ),
     );
+  }
+
+  List<Map<String, dynamic>> get _calendarItems => _items
+      .whereType<Map>()
+      .map((item) => Map<String, dynamic>.from(item))
+      .toList();
+
+  Widget _buildPlanSummary({
+    required int total,
+    required int preparing,
+    required int pending,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: _competitionBorder),
+      ),
+      child: Row(
+        children: [
+          Expanded(child: _summaryValue('已关注', total)),
+          Expanded(child: _summaryValue('准备中', preparing)),
+          Expanded(child: _summaryValue('待通知', pending)),
+        ],
+      ),
+    );
+  }
+
+  Widget _summaryValue(String label, int value) {
+    return Column(
+      children: [
+        Text(
+          '$value',
+          style: const TextStyle(
+            color: _competitionPrimaryDark,
+            fontSize: 18,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(height: 3),
+        Text(
+          label,
+          style: const TextStyle(
+            color: _competitionMuted,
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPlanGroup(String title, List<Map<String, dynamic>> items) {
+    if (items.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(2, 8, 2, 6),
+            child: Text(
+              title,
+              style: const TextStyle(
+                color: Color(0xFF242330),
+                fontSize: 15,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          ...items.map(_buildPlanCard),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPlanCard(Map<String, dynamic> item) {
+    final deadline = _calendarItemTimeText(
+      item,
+      'registration_end',
+      'registration_time_text',
+    );
+    final source = _calendarItemSourceLabel('${item['source_type'] ?? ''}');
+    final planStatus = _calendarPlanStatus(item);
+    final timeStatus = _calendarTimeStatus(item);
+    final userNote = '${item['user_note'] ?? ''}'.trim();
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: _competitionBorder),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              _planChip(_planStatusLabel(planStatus)),
+              _planChip(_timeStatusLabel(timeStatus)),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            '${item['title'] ?? ''}',
+            style: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w900,
+              color: Color(0xFF242330),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '报名安排：${deadline.isEmpty ? '时间待通知' : deadline}',
+            style: const TextStyle(
+              color: _competitionOrange,
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '来源：$source',
+            style: const TextStyle(color: _competitionMuted, fontSize: 12),
+          ),
+          if (userNote.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              '我的备注：$userNote',
+              style: const TextStyle(color: _competitionMuted, fontSize: 12),
+            ),
+          ],
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () => _openEditor(item: item),
+                  icon: const Icon(Icons.edit_outlined, size: 17),
+                  label: const Text('编辑'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () => _deleteItem(item),
+                  icon: const Icon(Icons.delete_outline, size: 17),
+                  label: const Text('删除'),
+                ),
+              ),
+              if (planStatus != 'archived') ...[
+                const SizedBox(width: 8),
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: () => _archiveItem(item),
+                    icon: const Icon(Icons.archive_outlined, size: 17),
+                    label: const Text('归档'),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Map<String, List<Map<String, dynamic>>> _groupCalendarItems(
+    List<Map<String, dynamic>> items,
+  ) {
+    final groups = {
+      'now': <Map<String, dynamic>>[],
+      'soon': <Map<String, dynamic>>[],
+      'later': <Map<String, dynamic>>[],
+      'done': <Map<String, dynamic>>[],
+    };
+    for (final item in items) {
+      final key = _calendarItemGroup(item);
+      groups[key]!.add(item);
+    }
+    return groups;
+  }
+
+  String _calendarItemGroup(Map<String, dynamic> item) {
+    final now = DateTime.now();
+    final planStatus = _calendarPlanStatus(item);
+    final deadline = _parseCalendarDate(item['registration_end']);
+    if (planStatus == 'finished' ||
+        planStatus == 'archived' ||
+        (deadline != null && deadline.isBefore(now))) {
+      return 'done';
+    }
+    final userDeadline = _parseCalendarDate(item['user_deadline']);
+    if (_isWithinDays(deadline, now, 30) ||
+        _isWithinDays(userDeadline, now, 30) ||
+        const {'preparing', 'registered', 'submitted'}.contains(planStatus)) {
+      return 'now';
+    }
+    final sortDate = _parseCalendarDate(item['sort_date']);
+    final sortMonth = _calendarInt(item['sort_month']);
+    if (_isWithinDays(sortDate, now, 90) || _isNearMonth(sortMonth, now)) {
+      return 'soon';
+    }
+    return 'later';
+  }
+
+  Map<String, dynamic> _calendarItemUpdatePayload(Map<String, dynamic> item) {
+    return {
+      'title': '${item['title'] ?? ''}',
+      'summary': '${item['summary'] ?? ''}',
+      'description': '${item['description'] ?? ''}',
+      'primary_category_id': _calendarInt(item['category_id']),
+      'competition_level':
+          '${item['competition_level'] ?? item['level'] ?? ''}',
+      'school_recognition_status':
+          '${item['school_recognition_status'] ?? 'pending'}',
+      'recommendation_level': '${item['recommendation_level'] ?? 'A'}',
+      'organizer': '${item['organizer'] ?? ''}',
+      'registration_end': _calendarDateOnly(item['registration_end']),
+      'registration_time_text': '${item['registration_time_text'] ?? ''}',
+      'event_start': _calendarDateOnly(item['event_start']),
+      'event_time_text': '${item['event_time_text'] ?? ''}',
+      'time_precision': '${item['time_precision'] ?? 'unknown'}',
+      'time_status': _calendarTimeStatus(item),
+      'time_note': '${item['time_note'] ?? ''}',
+      'sort_month': _calendarInt(item['sort_month']),
+      'user_deadline': _calendarDateOnly(item['user_deadline']),
+      'location': '${item['location'] ?? ''}',
+      'is_online': item['is_online'] == true,
+      'official_url': '${item['official_url'] ?? ''}',
+      'notice_url': '${item['notice_url'] ?? ''}',
+      'source_channel': 'user_submitted',
+      'status': 'draft',
+      'tags': <String>[],
+      'attachment_urls': <String>[],
+    };
+  }
+
+  Widget _planChip(String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      decoration: BoxDecoration(
+        color: _competitionLight.withValues(alpha: 0.74),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: _competitionPrimaryDark,
+          fontSize: 11,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    );
+  }
+
+  String _calendarPlanStatus(Map<String, dynamic> item) {
+    final value = '${item['plan_status'] ?? ''}'.trim();
+    return value.isEmpty ? 'watching' : value;
+  }
+
+  String _calendarTimeStatus(Map<String, dynamic> item) {
+    final value = '${item['time_status'] ?? ''}'.trim();
+    if (value.isNotEmpty) return value;
+    if (_parseCalendarDate(item['registration_end']) != null) {
+      return 'confirmed';
+    }
+    final text =
+        '${item['registration_time_text'] ?? ''} ${item['event_time_text'] ?? ''}';
+    if (_containsAny(text, const ['预计', '暂定', '计划', '大概', '约'])) {
+      return 'estimated';
+    }
+    if (_containsAny(text, const ['往年', '历年', '通常', '一般', '参考'])) {
+      return 'historical';
+    }
+    return 'pending';
+  }
+
+  int _calendarInt(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse('$value') ?? 0;
+  }
+
+  DateTime? _parseCalendarDate(dynamic value) {
+    final raw = '${value ?? ''}'.trim();
+    if (raw.isEmpty || raw == 'null') return null;
+    return DateTime.tryParse(raw);
+  }
+
+  String _calendarDateOnly(dynamic value) {
+    final parsed = _parseCalendarDate(value);
+    if (parsed == null) return '';
+    return '${parsed.year}-${parsed.month.toString().padLeft(2, '0')}-${parsed.day.toString().padLeft(2, '0')}';
+  }
+
+  bool _isWithinDays(DateTime? date, DateTime now, int days) {
+    if (date == null || date.isBefore(now)) return false;
+    return date.difference(now).inDays <= days;
+  }
+
+  bool _isNearMonth(int month, DateTime now) {
+    if (month < 1 || month > 12) return false;
+    for (var offset = 0; offset < 3; offset++) {
+      final candidate = DateTime(now.year, now.month + offset, 1);
+      if (candidate.month == month) return true;
+    }
+    return false;
+  }
+
+  String _planStatusLabel(String value) {
+    switch (value) {
+      case 'preparing':
+        return '准备中';
+      case 'registered':
+        return '已报名';
+      case 'submitted':
+        return '已提交';
+      case 'finished':
+        return '已结束';
+      case 'archived':
+        return '已归档';
+      default:
+        return '关注中';
+    }
   }
 }
 

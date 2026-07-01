@@ -26,6 +26,17 @@ const _competitionAiPrompt = '''
 
 只允许输出 JSON，不要输出 Markdown，不要解释，不要使用 ``` 包裹。
 
+重要规则：
+1. 不要编造精确日期。
+2. 能确定到日，才填写 YYYY-MM-DD。
+3. 只能确定月份，就填写 sort_month，并把日期字段留空。
+4. 根据往年经验判断，time_status 填 historical。
+5. 官方通知已经明确日期，time_status 填 confirmed。
+6. 只是预计时间，time_status 填 estimated。
+7. 完全不知道时间，time_status 填 pending。
+8. time_note 必须说明时间来源。
+9. 学校认定不确定时，school_recognition_status 用 pending 或 unknown，禁止编造 recognized。
+
 固定格式如下：
 {
   "events": [
@@ -53,6 +64,10 @@ const _competitionAiPrompt = '''
       "event_end": "YYYY-MM-DD，不确定填空字符串",
       "registration_time_text": "原文报名时间描述",
       "event_time_text": "原文比赛时间描述",
+      "time_precision": "exact/month/month_range/quarter/half_year/season/unknown",
+      "time_status": "confirmed/estimated/historical/pending",
+      "time_note": "说明时间来源，例如官方通知、往年参考、等待学校通知",
+      "sort_month": 0,
       "location": "地点，没有填空字符串",
       "is_online": false,
       "official_url": "官网链接，没有填空字符串",
@@ -72,43 +87,48 @@ const _competitionAiPrompt = '''
 4. school_recognition_status 只能是 recognized/not_recognized/pending/unknown。
 5. source_channel 优先用 college_notice、school_catalog、enterprise、platform。
 6. primary_category_slug 必须使用系统已有分类：$_competitionCategorySlugHint。
-7. 不要编造学校是否认定；不确定用 pending 或 unknown。
+7. time_precision 只能用 exact/month/month_range/quarter/half_year/season/unknown。
+8. time_status 只能用 confirmed/estimated/historical/pending。
 ''';
 
 const _competitionAiExampleJson = '''
 {
   "events": [
     {
-      "title": "中国国际大学生创新大赛",
-      "summary": "面向大学生创新创业项目的综合类赛事。",
-      "description": "比赛面向在校大学生团队，围绕创新创业项目进行申报、路演和评审。",
-      "primary_category_slug": "innovation_startup",
-      "tags": ["创新创业", "路演", "团队赛"],
+      "title": "蓝桥杯全国软件和信息技术专业人才大赛",
+      "summary": "面向程序设计、电子、视觉艺术等方向的综合竞赛。",
+      "description": "适合有编程、电子或设计基础的学生参加。",
+      "primary_category_slug": "computer_ai",
+      "tags": ["算法", "个人赛", "程序设计"],
       "competition_level": "国家级",
       "school_recognition_status": "pending",
       "school_recognition_grade": "",
-      "recommendation_level": "S",
-      "importance_score": 95,
-      "recommendation_reason": "认可度高，适合有项目基础的学生重点关注。",
-      "organizer": "教育部等",
+      "recommendation_level": "A",
+      "importance_score": 85,
+      "recommendation_reason": "个人能力占比较高，高等级奖项仍需要长期训练。",
+      "organizer": "相关主办单位",
       "host_unit": "",
       "target_audience": "在校大学生",
-      "participation_type": "团队",
-      "team_size_min": 3,
-      "team_size_max": 15,
+      "participation_type": "个人",
+      "team_size_min": 1,
+      "team_size_max": 1,
       "registration_start": "",
       "registration_end": "",
       "event_start": "",
       "event_end": "",
-      "registration_time_text": "以学校通知为准",
-      "event_time_text": "以官方赛程为准",
+      "registration_time_text": "往年一般在每年秋季至次年初报名，具体以当年通知为准",
+      "event_time_text": "省赛一般在春季，国赛时间以官方通知为准",
+      "time_precision": "month_range",
+      "time_status": "historical",
+      "time_note": "未找到今年正式通知，时间根据往年公开信息整理",
+      "sort_month": 10,
       "location": "",
       "is_online": false,
       "official_url": "",
       "notice_url": "",
       "attachment_urls": [],
       "source_channel": "ai_import",
-      "source_note": "AI 根据比赛通知整理",
+      "source_note": "AI 根据公开资料整理，需管理员确认",
       "status": "draft"
     }
   ]
@@ -2227,9 +2247,19 @@ class _CompetitionAdminImportScreenState
           ),
           const SizedBox(height: 8),
           const Text(
-            '分类 slug 必须使用系统已有分类；当前可用：$_competitionCategorySlugHint。',
+            'AI 不需要猜具体日期。不确定时间请标记为预计 / 往年参考 / 待通知，管理员确认后才会进入官方库。',
             style: TextStyle(
               color: _competitionOrange,
+              fontSize: 12,
+              height: 1.4,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            '分类 slug 必须使用系统已有分类；当前可用：$_competitionCategorySlugHint。',
+            style: TextStyle(
+              color: _competitionMuted,
               fontSize: 12,
               height: 1.4,
               fontWeight: FontWeight.w700,
@@ -2278,6 +2308,7 @@ class _CompetitionAdminImportScreenState
 
   Widget _buildPreviewCard() {
     final errors = (_preview?['errors'] as List?) ?? [];
+    final warnings = (_preview?['warnings'] as List?) ?? [];
     final draftEvents = _sortedDraftEvents;
     return Container(
       padding: const EdgeInsets.all(16),
@@ -2305,6 +2336,8 @@ class _CompetitionAdminImportScreenState
               _previewPill('有效', '${_preview!['valid_count'] ?? 0}'),
               const SizedBox(width: 8),
               _previewPill('错误', '${errors.length}'),
+              const SizedBox(width: 8),
+              _previewPill('警告', '${warnings.length}'),
             ],
           ),
           if (errors.isNotEmpty) ...[
@@ -2316,6 +2349,23 @@ class _CompetitionAdminImportScreenState
                   _previewErrorText(error),
                   style: const TextStyle(
                     color: _competitionDanger,
+                    fontSize: 12,
+                    height: 1.35,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+          ],
+          if (warnings.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            ...warnings.map(
+              (warning) => Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Text(
+                  _previewErrorText(warning),
+                  style: const TextStyle(
+                    color: _competitionOrange,
                     fontSize: 12,
                     height: 1.35,
                     fontWeight: FontWeight.w600,
@@ -2397,6 +2447,11 @@ class _CompetitionAdminImportScreenState
     );
     final organizer = _draftValue(event, 'organizer');
     final source = _sourceLabel(_draftValue(event, 'source_channel'));
+    final timeStatus = _timeStatusLabel(_draftValue(event, 'time_status'));
+    final timeNote = _draftValue(event, 'time_note');
+    final sortMonth = _draftValue(event, 'sort_month');
+    final hasExactDate = _draftValue(event, 'registration_end').isNotEmpty ||
+        _draftValue(event, 'event_start').isNotEmpty;
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(14),
@@ -2427,6 +2482,19 @@ class _CompetitionAdminImportScreenState
             '比赛时间',
             _draftTimeText(event, 'event_start', 'event_time_text'),
           ),
+          _draftLine(Icons.verified_outlined, '时间状态', timeStatus),
+          _draftLine(
+            Icons.event_note_rounded,
+            '预计月份',
+            sortMonth.isEmpty || sortMonth == '0' ? '未填写' : '$sortMonth 月',
+          ),
+          _draftLine(
+            Icons.rule_rounded,
+            '日期精度',
+            hasExactDate ? '包含精确日期' : '未填写精确日期',
+          ),
+          if (timeNote.isNotEmpty)
+            _draftLine(Icons.notes_rounded, '时间说明', timeNote),
           if (organizer.isNotEmpty)
             _draftLine(Icons.account_balance_outlined, '主办方', organizer),
           const SizedBox(height: 8),
@@ -2703,6 +2771,21 @@ String _recognitionLabel(String value) {
       return '未知';
     default:
       return value.isEmpty ? '未知' : value;
+  }
+}
+
+String _timeStatusLabel(String value) {
+  switch (value) {
+    case 'confirmed':
+      return '已确认';
+    case 'estimated':
+      return '预计时间';
+    case 'historical':
+      return '往年参考';
+    case 'pending':
+      return '待通知';
+    default:
+      return value.isEmpty ? '待通知' : value;
   }
 }
 

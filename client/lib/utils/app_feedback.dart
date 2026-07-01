@@ -46,8 +46,9 @@ class AppFeedback {
       case DioExceptionType.sendTimeout:
         return '请求发送超时，请检查网络后重试';
       case DioExceptionType.receiveTimeout:
-      case DioExceptionType.transformTimeout:
         return '$serviceName响应超时，请稍后再试';
+      case DioExceptionType.transformTimeout:
+        return '$serviceName数据解析超时，请稍后重试';
       case DioExceptionType.connectionError:
         return '无法连接$serviceName，请检查网络或稍后重试';
       case DioExceptionType.badCertificate:

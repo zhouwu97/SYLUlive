@@ -123,30 +123,31 @@ class MarketExposureScreen extends StatelessWidget {
     ThemeProvider themeProvider,
     bool isDark,
   ) {
-    if (themeProvider.isBackgroundVisible &&
-        themeProvider.getBackgroundImageFor(context) != null) {
-      final bgPath = themeProvider.getBackgroundImageFor(context)!;
-      final isAsset = !bgPath.startsWith('http') && !bgPath.startsWith('/');
+    if (themeProvider.shouldShowCustomBackground &&
+        themeProvider.getCustomBackgroundImageFor(context) != null) {
+      final bgPath = themeProvider.getCustomBackgroundImageFor(context)!;
       return Stack(
         fit: StackFit.expand,
         children: [
-          isAsset
+          ThemeProvider.isBundledAssetBackground(bgPath)
               ? Image.asset(
-                  'assets/images/$bgPath',
+                  ThemeProvider.resolveBundledAssetPath(bgPath),
                   fit: BoxFit.cover,
                   errorBuilder: (_, __, ___) => _buildDefaultBackground(isDark),
                 )
-              : bgPath.startsWith('/')
-              ? Image.file(
-                  File(bgPath),
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => _buildDefaultBackground(isDark),
-                )
-              : Image.network(
-                  bgPath,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => _buildDefaultBackground(isDark),
-                ),
+              : ThemeProvider.isLocalFileBackground(bgPath)
+                  ? Image.file(
+                      File(bgPath),
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) =>
+                          _buildDefaultBackground(isDark),
+                    )
+                  : Image.network(
+                      bgPath,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) =>
+                          _buildDefaultBackground(isDark),
+                    ),
           Container(
             color: isDark
                 ? Colors.black.withValues(alpha: 0.35)
@@ -159,25 +160,8 @@ class MarketExposureScreen extends StatelessWidget {
   }
 
   Widget _buildDefaultBackground(bool isDark) {
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        Image(
-          image: ResizeImage(
-            const AssetImage('assets/images/morenbeijing.jpeg'),
-            width: 1080,
-          ),
-          fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => Container(
-            color: isDark ? const Color(0xFF0F131A) : const Color(0xFFF5F7FB),
-          ),
-        ),
-        Container(
-          color: isDark
-              ? Colors.black.withValues(alpha: 0.35)
-              : Colors.white.withValues(alpha: 0.25),
-        ),
-      ],
+    return ColoredBox(
+      color: isDark ? const Color(0xFF0F131A) : const Color(0xFFF5F7FB),
     );
   }
 }

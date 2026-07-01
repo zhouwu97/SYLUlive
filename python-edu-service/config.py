@@ -13,6 +13,10 @@ GRADE_URL = "https://jxw.sylu.edu.cn/cjcx"
 HOST = os.getenv("HOST", "0.0.0.0")
 PORT = int(os.getenv("PORT", "8081"))
 
+# 内部服务认证
+INTERNAL_SERVICE_TOKEN = os.getenv("INTERNAL_SERVICE_TOKEN", "")
+JWC_CRAWLER_CONTACT = os.getenv("JWC_CRAWLER_CONTACT", "")
+
 # 默认课时设置（分钟）
 DEFAULT_CLASS_DURATION = 45
 DEFAULT_BREAK_DURATION = 10

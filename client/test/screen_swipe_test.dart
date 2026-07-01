@@ -14,7 +14,7 @@ void main() {
     expect(
       horizontalSwipeDirection(
         start: const Offset(320, 700),
-        end: const Offset(220, 710),
+        end: const Offset(210, 710),
         elapsed: const Duration(milliseconds: 220),
       ),
       1,
@@ -22,10 +22,21 @@ void main() {
     expect(
       horizontalSwipeDirection(
         start: const Offset(120, 700),
-        end: const Offset(220, 690),
+        end: const Offset(230, 690),
         elapsed: const Duration(milliseconds: 220),
       ),
       -1,
+    );
+  });
+
+  test('ignores short horizontal gestures', () {
+    expect(
+      horizontalSwipeDirection(
+        start: const Offset(200, 700),
+        end: const Offset(280, 704),
+        elapsed: const Duration(milliseconds: 180),
+      ),
+      0,
     );
   });
 
@@ -33,7 +44,7 @@ void main() {
     expect(
       horizontalSwipeDirection(
         start: const Offset(200, 700),
-        end: const Offset(270, 820),
+        end: const Offset(310, 820),
         elapsed: const Duration(milliseconds: 220),
       ),
       0,
@@ -41,8 +52,19 @@ void main() {
     expect(
       horizontalSwipeDirection(
         start: const Offset(300, 700),
-        end: const Offset(200, 700),
-        elapsed: const Duration(milliseconds: 600),
+        end: const Offset(190, 700),
+        elapsed: const Duration(milliseconds: 420),
+      ),
+      0,
+    );
+  });
+
+  test('ignores diagonal gestures with too much vertical drift', () {
+    expect(
+      horizontalSwipeDirection(
+        start: const Offset(300, 700),
+        end: const Offset(190, 750),
+        elapsed: const Duration(milliseconds: 220),
       ),
       0,
     );

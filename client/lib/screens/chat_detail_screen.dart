@@ -130,7 +130,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     super.didUpdateWidget(oldWidget);
     final changedConversation =
         oldWidget.conversationId != widget.conversationId ||
-        oldWidget.targetUser.id != widget.targetUser.id;
+            oldWidget.targetUser.id != widget.targetUser.id;
     if (changedConversation ||
         oldWidget.initialMessageId != widget.initialMessageId) {
       _conversationId = widget.conversationId;
@@ -201,8 +201,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     final currentUserId = context.read<AuthProvider>().user?.id;
     final oldLastId = context.read<MessageProvider>().messages.lastOrNull?.id;
     await context.read<MessageProvider>().refreshMessages(
-      currentUserId: currentUserId,
-    );
+          currentUserId: currentUserId,
+        );
     if (!mounted) return;
     final newLastId = context.read<MessageProvider>().messages.lastOrNull?.id;
     if (wasNearBottom && oldLastId != newLastId) {
@@ -280,9 +280,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   void _saveDraft() {
     if (!mounted) return;
     context.read<MessageProvider>().updateDraft(
-      widget.targetUser.id,
-      _textController.text,
-    );
+          widget.targetUser.id,
+          _textController.text,
+        );
   }
 
   Future<void> _markReadAndClearNotifications(int conversationId) async {
@@ -595,11 +595,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
           }
           final messageIndex = messageCount - 1 - index;
           final message = provider.messages[messageIndex];
-          final previous = messageIndex > 0
-              ? provider.messages[messageIndex - 1]
-              : null;
-          final showTime =
-              previous == null ||
+          final previous =
+              messageIndex > 0 ? provider.messages[messageIndex - 1] : null;
+          final showTime = previous == null ||
               message.createdAt
                       .difference(previous.createdAt)
                       .inMinutes
@@ -670,7 +668,16 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
 
   Widget _buildChatBackground() {
     final themeProvider = context.watch<ThemeProvider>();
-    final bgPath = themeProvider.getBackgroundImageFor(context);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bgPath = themeProvider.getCustomBackgroundImageFor(context);
+    if (!themeProvider.shouldShowCustomBackground ||
+        bgPath == null ||
+        bgPath.isEmpty) {
+      return ColoredBox(
+        color: isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
+      );
+    }
+
     final imageProvider = _chatBackgroundImageProvider(bgPath);
 
     return Stack(
@@ -678,27 +685,14 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
       children: [
         _buildChatBackgroundImage(
           imageProvider: imageProvider,
-          fillScreen:
-              bgPath != null &&
-              themeProvider.getBackgroundFillScreenFor(context),
+          fillScreen: themeProvider.getCustomBackgroundFillScreenFor(context),
         ),
         Container(color: Colors.white.withValues(alpha: 0.22)),
       ],
     );
   }
 
-  ImageProvider _chatBackgroundImageProvider(String? bgPath) {
-    if (bgPath == null || bgPath.isEmpty) {
-      final isWide =
-          MediaQuery.of(context).size.width >
-          MediaQuery.of(context).size.height;
-      return AssetImage(
-        isWide
-            ? 'assets/images/tablet_default_landscape.png'
-            : 'assets/images/morenbeijing.jpeg',
-      );
-    }
-
+  ImageProvider _chatBackgroundImageProvider(String bgPath) {
     if (ThemeProvider.isBundledAssetBackground(bgPath)) {
       return AssetImage(ThemeProvider.resolveBundledAssetPath(bgPath));
     }
@@ -754,8 +748,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   Widget _buildTimeLabel(DateTime time) {
     final local = AppTime.toShanghai(time);
     final now = AppTime.nowShanghai();
-    final sameDay =
-        local.year == now.year &&
+    final sameDay = local.year == now.year &&
         local.month == now.month &&
         local.day == now.day;
     return Padding(
@@ -786,9 +779,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 5),
       child: Row(
-        mainAxisAlignment: isMine
-            ? MainAxisAlignment.end
-            : MainAxisAlignment.start,
+        mainAxisAlignment:
+            isMine ? MainAxisAlignment.end : MainAxisAlignment.start,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (!isMine) ...[

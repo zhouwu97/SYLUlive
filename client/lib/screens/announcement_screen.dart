@@ -2,6 +2,7 @@ import 'dart:io' show File;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:dio/dio.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -45,7 +46,7 @@ class _AnnouncementScreenState extends State<AnnouncementScreen>
   Future<void> _loadAnnouncements() async {
     final authProvider = context.read<AuthProvider>();
     try {
-      var response;
+      Response response;
       try {
         response = await authProvider.dio.get(ApiConstants.noticesPath);
       } on DioException catch (e) {
@@ -57,75 +58,63 @@ class _AnnouncementScreenState extends State<AnnouncementScreen>
       }
 
       if (response.statusCode == 200) {
-        final list =
-            (response.data as List)
-                .map((e) => model.Announcement.fromJson(e))
-                .toList()
-              ..sort((a, b) {
-                if (a.isPinned != b.isPinned) {
-                  return a.isPinned ? -1 : 1;
-                }
-                return b.createdAt.compareTo(a.createdAt);
-              });
-        if (mounted)
+        final list = (response.data as List)
+            .map((e) => model.Announcement.fromJson(e))
+            .toList()
+          ..sort((a, b) {
+            if (a.isPinned != b.isPinned) {
+              return a.isPinned ? -1 : 1;
+            }
+            return b.createdAt.compareTo(a.createdAt);
+          });
+        if (mounted) {
           setState(() {
             _announcements = list;
             _isLoading = false;
           });
+        }
       }
     } catch (e) {
       debugPrint('加载公告失败: $e');
-      if (mounted)
+      if (mounted) {
         setState(() {
           _isLoading = false;
         });
+      }
     }
   }
 
   Widget _buildDefaultBg(bool isDark) {
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        Image.asset(
-          'assets/images/morenbeijing.jpeg',
-          fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => Container(
-            color: isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
-          ),
-        ),
-        Container(
-          color: isDark
-              ? Colors.black.withValues(alpha: 0.34)
-              : Colors.white.withValues(alpha: 0.20),
-        ),
-      ],
+    return ColoredBox(
+      color: isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
     );
   }
 
   Widget _buildBackground(ThemeProvider themeProvider, bool isDark) {
-    final path = themeProvider.getBackgroundImageFor(context);
-    if (themeProvider.isBackgroundVisible && path != null && path.isNotEmpty) {
-      final isAsset = !path.startsWith('http') && !path.startsWith('/');
+    final path = themeProvider.getCustomBackgroundImageFor(context);
+    if (themeProvider.shouldShowCustomBackground &&
+        path != null &&
+        path.isNotEmpty) {
       return Stack(
         fit: StackFit.expand,
         children: [
-          isAsset
+          ThemeProvider.isBundledAssetBackground(path)
               ? Image.asset(
-                  'assets/images/$path',
+                  ThemeProvider.resolveBundledAssetPath(path),
                   fit: BoxFit.cover,
                   errorBuilder: (_, __, ___) => _buildDefaultBg(isDark),
                 )
-              : path.startsWith('/')
-              ? Image.file(
-                  File(path),
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => _buildDefaultBg(isDark),
-                )
-              : Image.network(
-                  path,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => _buildDefaultBg(isDark),
-                ),
+              : ThemeProvider.isLocalFileBackground(path)
+                  ? Image.file(
+                      File(path),
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => _buildDefaultBg(isDark),
+                    )
+                  : Image.network(
+                      path,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => _buildDefaultBg(isDark),
+                    ),
           Container(
             color: isDark
                 ? Colors.black.withValues(alpha: 0.34)
@@ -144,77 +133,99 @@ class _AnnouncementScreenState extends State<AnnouncementScreen>
     final topInset = MediaQuery.paddingOf(context).top + kToolbarHeight + 12;
     final pinned = _announcements.where((a) => a.isPinned).toList();
     final regular = _announcements.where((a) => !a.isPinned).toList();
+    final useCustomBackground = themeProvider.shouldShowCustomBackground;
+    final cleanLightMode = !useCustomBackground && !isDark;
+    final foregroundColor =
+        cleanLightMode ? const Color(0xFF1F2937) : Colors.white;
 
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        title: const Text('公告', style: TextStyle(fontWeight: FontWeight.bold)),
-        leading: const BackButton(),
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: (cleanLightMode
+              ? SystemUiOverlayStyle.dark
+              : SystemUiOverlayStyle.light)
+          .copyWith(
+        statusBarColor: Colors.transparent,
+        systemNavigationBarColor: Colors.transparent,
       ),
-      body: Stack(
-        children: [
-          Positioned.fill(child: _buildBackground(themeProvider, isDark)),
-          FadeTransition(
-            opacity: CurvedAnimation(
-              parent: _animationController,
-              curve: Curves.easeOut,
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        extendBodyBehindAppBar: true,
+        appBar: AppBar(
+          foregroundColor: foregroundColor,
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          title: Text(
+            '公告',
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              color: foregroundColor,
             ),
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : _announcements.isEmpty
-                ? _buildEmptyState(isDark)
-                : RefreshIndicator(
-                    onRefresh: _loadAnnouncements,
-                    child: ListView(
-                      physics: const BouncingScrollPhysics(),
-                      padding: EdgeInsets.fromLTRB(12, topInset, 12, 100),
-                      children: [
-                        if (pinned.isNotEmpty) ...[
-                          _buildSectionHeader(
-                            isDark,
-                            icon: Icons.push_pin_rounded,
-                            title: '置顶公告',
-                            subtitle: '${pinned.length} 条需要优先查看',
-                            accent: Colors.red,
-                          ),
-                          const SizedBox(height: 10),
-                          ...List.generate(
-                            pinned.length,
-                            (index) => _AnnouncementCard(
-                              announcement: pinned[index],
-                              isDark: isDark,
-                              index: index,
-                              emphasized: true,
-                              timeText: _formatTime(pinned[index].createdAt),
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                        ],
-                        _buildSectionHeader(
-                          isDark,
-                          icon: Icons.history_rounded,
-                          title: pinned.isEmpty ? '全部公告' : '最新公告',
-                          subtitle: '${regular.length} 条按时间排序',
-                          accent: Theme.of(context).primaryColor,
-                        ),
-                        const SizedBox(height: 10),
-                        ...List.generate(
-                          regular.length,
-                          (index) => _AnnouncementCard(
-                            announcement: regular[index],
-                            isDark: isDark,
-                            index: index + pinned.length,
-                            timeText: _formatTime(regular[index].createdAt),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
           ),
-        ],
+          leading: const BackButton(),
+        ),
+        body: Stack(
+          children: [
+            Positioned.fill(child: _buildBackground(themeProvider, isDark)),
+            FadeTransition(
+              opacity: CurvedAnimation(
+                parent: _animationController,
+                curve: Curves.easeOut,
+              ),
+              child: _isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _announcements.isEmpty
+                      ? _buildEmptyState(isDark)
+                      : RefreshIndicator(
+                          onRefresh: _loadAnnouncements,
+                          child: ListView(
+                            physics: const BouncingScrollPhysics(),
+                            padding: EdgeInsets.fromLTRB(12, topInset, 12, 100),
+                            children: [
+                              if (pinned.isNotEmpty) ...[
+                                _buildSectionHeader(
+                                  isDark,
+                                  icon: Icons.push_pin_rounded,
+                                  title: '置顶公告',
+                                  subtitle: '${pinned.length} 条需要优先查看',
+                                  accent: Colors.red,
+                                ),
+                                const SizedBox(height: 10),
+                                ...List.generate(
+                                  pinned.length,
+                                  (index) => _AnnouncementCard(
+                                    announcement: pinned[index],
+                                    isDark: isDark,
+                                    index: index,
+                                    emphasized: true,
+                                    timeText:
+                                        _formatTime(pinned[index].createdAt),
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                              ],
+                              _buildSectionHeader(
+                                isDark,
+                                icon: Icons.history_rounded,
+                                title: pinned.isEmpty ? '全部公告' : '最新公告',
+                                subtitle: '${regular.length} 条按时间排序',
+                                accent: Theme.of(context).primaryColor,
+                              ),
+                              const SizedBox(height: 10),
+                              ...List.generate(
+                                regular.length,
+                                (index) => _AnnouncementCard(
+                                  announcement: regular[index],
+                                  isDark: isDark,
+                                  index: index + pinned.length,
+                                  timeText:
+                                      _formatTime(regular[index].createdAt),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -354,21 +365,26 @@ class _AnnouncementCardState extends State<_AnnouncementCard> {
         padding: const EdgeInsets.all(16),
         borderRadius: 16,
         blur: 10,
-        opacity: widget.isDark ? 0.15 : 0.3,
+        opacity: widget.emphasized ? (widget.isDark ? 0.15 : 0.3) : 0.96,
         backgroundColor: widget.emphasized
             ? (widget.isDark
-                  ? const Color(0x99A32020)
-                  : const Color(0xFFFDF0F0))
-            : null,
+                ? const Color(0x99A32020)
+                : const Color(0xFFFDF0F0))
+            : (widget.isDark
+                ? const Color(0xE61F2430)
+                : const Color(0xFFFDFBFF)),
         borderColor: widget.emphasized
             ? Colors.red.withValues(alpha: widget.isDark ? 0.35 : 0.22)
-            : null,
+            : (widget.isDark
+                ? Colors.white.withValues(alpha: 0.10)
+                : const Color(0xFFE8E3F1)),
         onTap: widget.emphasized
             ? () {
-                if (mounted)
+                if (mounted) {
                   setState(() {
                     _expanded = !_expanded;
                   });
+                }
               }
             : null,
         child: Column(
@@ -376,7 +392,10 @@ class _AnnouncementCardState extends State<_AnnouncementCard> {
           children: [
             Row(
               children: [
+                // Priority badge
+                _buildPriorityBadge(),
                 if (widget.announcement.isPinned) ...[
+                  const SizedBox(width: 6),
                   Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 8,
@@ -398,16 +417,26 @@ class _AnnouncementCardState extends State<_AnnouncementCard> {
                       ],
                     ),
                   ),
-                  const SizedBox(width: 8),
                 ],
+                // Status indicators
+                if (_isExpired()) ...[
+                  const SizedBox(width: 6),
+                  _buildStatusBadge('已过期', Colors.grey),
+                ],
+                if (_isScheduled()) ...[
+                  const SizedBox(width: 6),
+                  _buildStatusBadge('即将发布', Colors.blue),
+                ],
+                const SizedBox(width: 8),
                 Expanded(
                   child: Text(
                     widget.announcement.title,
                     maxLines: _expanded ? null : 1,
                     overflow: _expanded ? null : TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
+                      color: widget.isDark ? Colors.white : Colors.black87,
                     ),
                   ),
                 ),
@@ -427,22 +456,89 @@ class _AnnouncementCardState extends State<_AnnouncementCard> {
                   Icon(
                     Icons.access_time,
                     size: 14,
-                    color: widget.isDark ? Colors.white30 : Colors.grey[500],
+                    color: widget.isDark ? Colors.white54 : Colors.grey[600],
                   ),
                   const SizedBox(width: 4),
                   Text(
                     widget.timeText,
                     style: TextStyle(
                       fontSize: 12,
-                      color: widget.isDark ? Colors.white30 : Colors.grey[500],
+                      color: widget.isDark ? Colors.white54 : Colors.grey[600],
                     ),
                   ),
+                  if (widget.announcement.creator != null) ...[
+                    const SizedBox(width: 12),
+                    Icon(
+                      Icons.person_outline,
+                      size: 14,
+                      color: widget.isDark ? Colors.white54 : Colors.grey[600],
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      widget.announcement.creator!['nickname']?.toString() ??
+                          '',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color:
+                            widget.isDark ? Colors.white54 : Colors.grey[600],
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ],
           ],
         ),
       ),
+    );
+  }
+
+  bool _isExpired() {
+    final e = widget.announcement.expiresAt;
+    return e != null && e.isBefore(DateTime.now());
+  }
+
+  bool _isScheduled() {
+    final p = widget.announcement.publishAt;
+    return p != null && p.isAfter(DateTime.now());
+  }
+
+  Widget _buildPriorityBadge() {
+    final p = widget.announcement.priority;
+    if (p == 'normal') return const SizedBox.shrink();
+    final isUrgent = p == 'urgent';
+    final color = isUrgent ? Colors.red : Colors.orange;
+    final label = isUrgent ? '紧急' : '重要';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(isUrgent ? Icons.warning_rounded : Icons.info_rounded,
+              color: color, size: 12),
+          const SizedBox(width: 4),
+          Text(label,
+              style: TextStyle(
+                  color: color, fontSize: 12, fontWeight: FontWeight.w600)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatusBadge(String label, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(label,
+          style: TextStyle(
+              color: color, fontSize: 12, fontWeight: FontWeight.w600)),
     );
   }
 

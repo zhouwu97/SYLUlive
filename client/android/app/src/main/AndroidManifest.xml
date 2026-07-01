@@ -128,6 +128,7 @@
         <!-- 课表桌面小部件 (AppWidgetProvider + RemoteViews + ListView) -->
         <receiver
             android:name=".TodayCourseWidgetProvider"
+            android:label="@string/widget_course_label"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
@@ -146,6 +147,7 @@
         <!-- 考试桌面小部件 (AppWidgetProvider + RemoteViews + ListView) -->
         <receiver
             android:name=".ExamWidgetProvider"
+            android:label="@string/widget_exam_label"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />

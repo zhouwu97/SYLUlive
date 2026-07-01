@@ -4,14 +4,30 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
 
+class _NavItemVisualState {
+  const _NavItemVisualState({
+    required this.color,
+    required this.scale,
+    required this.opacity,
+    required this.fontWeight,
+  });
+
+  final Color color;
+  final double scale;
+  final double opacity;
+  final FontWeight fontWeight;
+}
+
 class BottomNavWrapper extends StatelessWidget {
   final int currentIndex;
+  final double visualIndex;
   final Function(int) onTap;
   final AuthProvider authProvider;
 
   const BottomNavWrapper({
     super.key,
     required this.currentIndex,
+    required this.visualIndex,
     required this.onTap,
     required this.authProvider,
   });
@@ -66,11 +82,9 @@ class BottomNavWrapper extends StatelessWidget {
                   child: Stack(
                     alignment: Alignment.center,
                     children: [
-                      // 滑动背景指示器
-                      AnimatedPositioned(
-                        duration: const Duration(milliseconds: 300),
-                        curve: Curves.easeOutCubic,
-                        left: itemWidth * currentIndex,
+                      // 指示器位置由 HomeScreen 的连续进度统一驱动。
+                      Positioned(
+                        left: itemWidth * visualIndex,
                         width: itemWidth,
                         top: 0,
                         bottom: 0,
@@ -96,6 +110,7 @@ class BottomNavWrapper extends StatelessWidget {
                             context,
                             primaryColor,
                             itemWidth,
+                            visualIndex,
                           ),
                           _labeledItem(
                             Icons.storefront_rounded,
@@ -104,6 +119,7 @@ class BottomNavWrapper extends StatelessWidget {
                             context,
                             primaryColor,
                             itemWidth,
+                            visualIndex,
                           ),
                           _labeledItem(
                             Icons.calendar_month_rounded,
@@ -112,6 +128,7 @@ class BottomNavWrapper extends StatelessWidget {
                             context,
                             primaryColor,
                             itemWidth,
+                            visualIndex,
                           ),
                           _labeledItem(
                             Icons.apartment_rounded,
@@ -120,6 +137,7 @@ class BottomNavWrapper extends StatelessWidget {
                             context,
                             primaryColor,
                             itemWidth,
+                            visualIndex,
                           ),
                           _labeledItem(
                             Icons.person_rounded,
@@ -128,6 +146,7 @@ class BottomNavWrapper extends StatelessWidget {
                             context,
                             primaryColor,
                             itemWidth,
+                            visualIndex,
                           ),
                         ],
                       ),
@@ -191,11 +210,9 @@ class BottomNavWrapper extends StatelessWidget {
                       return Stack(
                         alignment: Alignment.center,
                         children: [
-                          // 滑动背景指示器
-                          AnimatedPositioned(
-                            duration: const Duration(milliseconds: 350),
-                            curve: Curves.fastLinearToSlowEaseIn,
-                            left: itemWidth * currentIndex,
+                          // 指示器位置由 HomeScreen 的连续进度统一驱动。
+                          Positioned(
+                            left: itemWidth * visualIndex,
                             width: itemWidth,
                             top: 0,
                             bottom: 0,
@@ -220,6 +237,7 @@ class BottomNavWrapper extends StatelessWidget {
                                 context,
                                 primaryColor,
                                 itemWidth,
+                                visualIndex,
                               ),
                               _iconOnly(
                                 Icons.storefront_rounded,
@@ -227,6 +245,7 @@ class BottomNavWrapper extends StatelessWidget {
                                 context,
                                 primaryColor,
                                 itemWidth,
+                                visualIndex,
                               ),
                               _iconOnly(
                                 Icons.calendar_month_rounded,
@@ -234,6 +253,7 @@ class BottomNavWrapper extends StatelessWidget {
                                 context,
                                 primaryColor,
                                 itemWidth,
+                                visualIndex,
                               ),
                               _iconOnly(
                                 Icons.apartment_rounded,
@@ -241,6 +261,7 @@ class BottomNavWrapper extends StatelessWidget {
                                 context,
                                 primaryColor,
                                 itemWidth,
+                                visualIndex,
                               ),
                               _iconOnly(
                                 Icons.person_rounded,
@@ -248,6 +269,7 @@ class BottomNavWrapper extends StatelessWidget {
                                 context,
                                 primaryColor,
                                 itemWidth,
+                                visualIndex,
                               ),
                             ],
                           ),
@@ -272,12 +294,14 @@ class BottomNavWrapper extends StatelessWidget {
     BuildContext context,
     Color primaryColor,
     double width,
+    double visualIndex,
   ) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final isSelected = currentIndex == index;
-    final color = isSelected
-        ? primaryColor
-        : (isDark ? Colors.white54 : Colors.grey);
+    final visualState = _visualStateFor(
+      context: context,
+      index: index,
+      primaryColor: primaryColor,
+      visualIndex: visualIndex,
+    );
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () => onTap(index),
@@ -289,20 +313,24 @@ class BottomNavWrapper extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 300),
-                curve: Curves.easeOutBack,
-                transform: Matrix4.identity()..scale(isSelected ? 1.1 : 1.0),
-                transformAlignment: Alignment.center,
-                child: Icon(icon, color: color, size: 22),
+              Transform.scale(
+                scale: visualState.scale,
+                alignment: Alignment.center,
+                child: Opacity(
+                  opacity: visualState.opacity,
+                  child: Icon(icon, color: visualState.color, size: 22),
+                ),
               ),
               const SizedBox(height: 2),
-              Text(
-                label,
-                style: TextStyle(
-                  color: color,
-                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                  fontSize: 10,
+              Opacity(
+                opacity: visualState.opacity,
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    color: visualState.color,
+                    fontWeight: visualState.fontWeight,
+                    fontSize: 10,
+                  ),
                 ),
               ),
             ],
@@ -319,12 +347,14 @@ class BottomNavWrapper extends StatelessWidget {
     BuildContext context,
     Color primaryColor,
     double width,
+    double visualIndex,
   ) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final isSelected = currentIndex == index;
-    final color = isSelected
-        ? primaryColor
-        : (isDark ? Colors.white54 : Colors.grey);
+    final visualState = _visualStateFor(
+      context: context,
+      index: index,
+      primaryColor: primaryColor,
+      visualIndex: visualIndex,
+    );
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -333,15 +363,35 @@ class BottomNavWrapper extends StatelessWidget {
         width: width,
         height: 44,
         child: Center(
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeOutBack,
-            transform: Matrix4.identity()..scale(isSelected ? 1.15 : 1.0),
-            transformAlignment: Alignment.center,
-            child: Icon(icon, color: color, size: 24),
+          child: Transform.scale(
+            scale: visualState.scale,
+            alignment: Alignment.center,
+            child: Opacity(
+              opacity: visualState.opacity,
+              child: Icon(icon, color: visualState.color, size: 24),
+            ),
           ),
         ),
       ),
+    );
+  }
+
+  _NavItemVisualState _visualStateFor({
+    required BuildContext context,
+    required int index,
+    required Color primaryColor,
+    required double visualIndex,
+  }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final activeT = (1 - (visualIndex - index).abs()).clamp(0.0, 1.0);
+    final softenedT = Curves.easeOutCubic.transform(activeT);
+    final inactiveColor = isDark ? Colors.white54 : Colors.grey;
+
+    return _NavItemVisualState(
+      color: Color.lerp(inactiveColor, primaryColor, softenedT)!,
+      scale: 1.0 + 0.08 * softenedT,
+      opacity: 0.72 + 0.28 * softenedT,
+      fontWeight: softenedT > 0.55 ? FontWeight.w700 : FontWeight.w500,
     );
   }
 }

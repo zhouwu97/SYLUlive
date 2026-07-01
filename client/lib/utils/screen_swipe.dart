@@ -19,9 +19,9 @@ int horizontalSwipeDirection({
 }) {
   final dx = end.dx - start.dx;
   final dy = end.dy - start.dy;
-  if (elapsed > const Duration(milliseconds: 400) ||
-      dx.abs() <= 60 ||
-      dx.abs() <= dy.abs() * 2) {
+  if (elapsed > const Duration(milliseconds: 360) ||
+      dx.abs() <= 90 ||
+      dx.abs() <= dy.abs() * 2.4) {
     return 0;
   }
   return dx > 0 ? -1 : 1;

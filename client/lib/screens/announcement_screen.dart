@@ -2,6 +2,7 @@ import 'dart:io' show File;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:dio/dio.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -45,7 +46,7 @@ class _AnnouncementScreenState extends State<AnnouncementScreen>
   Future<void> _loadAnnouncements() async {
     final authProvider = context.read<AuthProvider>();
     try {
-      var response;
+      Response response;
       try {
         response = await authProvider.dio.get(ApiConstants.noticesPath);
       } on DioException catch (e) {
@@ -66,55 +67,44 @@ class _AnnouncementScreenState extends State<AnnouncementScreen>
             }
             return b.createdAt.compareTo(a.createdAt);
           });
-        if (mounted)
+        if (mounted) {
           setState(() {
             _announcements = list;
             _isLoading = false;
           });
+        }
       }
     } catch (e) {
       debugPrint('加载公告失败: $e');
-      if (mounted)
+      if (mounted) {
         setState(() {
           _isLoading = false;
         });
+      }
     }
   }
 
   Widget _buildDefaultBg(bool isDark) {
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        Image.asset(
-          'assets/images/morenbeijing.jpeg',
-          fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => Container(
-            color: isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
-          ),
-        ),
-        Container(
-          color: isDark
-              ? Colors.black.withValues(alpha: 0.34)
-              : Colors.white.withValues(alpha: 0.20),
-        ),
-      ],
+    return ColoredBox(
+      color: isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
     );
   }
 
   Widget _buildBackground(ThemeProvider themeProvider, bool isDark) {
-    final path = themeProvider.getBackgroundImageFor(context);
-    if (themeProvider.isBackgroundVisible && path != null && path.isNotEmpty) {
-      final isAsset = !path.startsWith('http') && !path.startsWith('/');
+    final path = themeProvider.getCustomBackgroundImageFor(context);
+    if (themeProvider.shouldShowCustomBackground &&
+        path != null &&
+        path.isNotEmpty) {
       return Stack(
         fit: StackFit.expand,
         children: [
-          isAsset
+          ThemeProvider.isBundledAssetBackground(path)
               ? Image.asset(
-                  'assets/images/$path',
+                  ThemeProvider.resolveBundledAssetPath(path),
                   fit: BoxFit.cover,
                   errorBuilder: (_, __, ___) => _buildDefaultBg(isDark),
                 )
-              : path.startsWith('/')
+              : ThemeProvider.isLocalFileBackground(path)
                   ? Image.file(
                       File(path),
                       fit: BoxFit.cover,
@@ -143,78 +133,99 @@ class _AnnouncementScreenState extends State<AnnouncementScreen>
     final topInset = MediaQuery.paddingOf(context).top + kToolbarHeight + 12;
     final pinned = _announcements.where((a) => a.isPinned).toList();
     final regular = _announcements.where((a) => !a.isPinned).toList();
+    final useCustomBackground = themeProvider.shouldShowCustomBackground;
+    final cleanLightMode = !useCustomBackground && !isDark;
+    final foregroundColor =
+        cleanLightMode ? const Color(0xFF1F2937) : Colors.white;
 
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        title: const Text('公告', style: TextStyle(fontWeight: FontWeight.bold)),
-        leading: const BackButton(),
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: (cleanLightMode
+              ? SystemUiOverlayStyle.dark
+              : SystemUiOverlayStyle.light)
+          .copyWith(
+        statusBarColor: Colors.transparent,
+        systemNavigationBarColor: Colors.transparent,
       ),
-      body: Stack(
-        children: [
-          Positioned.fill(child: _buildBackground(themeProvider, isDark)),
-          FadeTransition(
-            opacity: CurvedAnimation(
-              parent: _animationController,
-              curve: Curves.easeOut,
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        extendBodyBehindAppBar: true,
+        appBar: AppBar(
+          foregroundColor: foregroundColor,
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          title: Text(
+            '公告',
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              color: foregroundColor,
             ),
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : _announcements.isEmpty
-                    ? _buildEmptyState(isDark)
-                    : RefreshIndicator(
-                        onRefresh: _loadAnnouncements,
-                        child: ListView(
-                          physics: const BouncingScrollPhysics(),
-                          padding: EdgeInsets.fromLTRB(12, topInset, 12, 100),
-                          children: [
-                            if (pinned.isNotEmpty) ...[
+          ),
+          leading: const BackButton(),
+        ),
+        body: Stack(
+          children: [
+            Positioned.fill(child: _buildBackground(themeProvider, isDark)),
+            FadeTransition(
+              opacity: CurvedAnimation(
+                parent: _animationController,
+                curve: Curves.easeOut,
+              ),
+              child: _isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _announcements.isEmpty
+                      ? _buildEmptyState(isDark)
+                      : RefreshIndicator(
+                          onRefresh: _loadAnnouncements,
+                          child: ListView(
+                            physics: const BouncingScrollPhysics(),
+                            padding: EdgeInsets.fromLTRB(12, topInset, 12, 100),
+                            children: [
+                              if (pinned.isNotEmpty) ...[
+                                _buildSectionHeader(
+                                  isDark,
+                                  icon: Icons.push_pin_rounded,
+                                  title: '置顶公告',
+                                  subtitle: '${pinned.length} 条需要优先查看',
+                                  accent: Colors.red,
+                                ),
+                                const SizedBox(height: 10),
+                                ...List.generate(
+                                  pinned.length,
+                                  (index) => _AnnouncementCard(
+                                    announcement: pinned[index],
+                                    isDark: isDark,
+                                    index: index,
+                                    emphasized: true,
+                                    timeText:
+                                        _formatTime(pinned[index].createdAt),
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                              ],
                               _buildSectionHeader(
                                 isDark,
-                                icon: Icons.push_pin_rounded,
-                                title: '置顶公告',
-                                subtitle: '${pinned.length} 条需要优先查看',
-                                accent: Colors.red,
+                                icon: Icons.history_rounded,
+                                title: pinned.isEmpty ? '全部公告' : '最新公告',
+                                subtitle: '${regular.length} 条按时间排序',
+                                accent: Theme.of(context).primaryColor,
                               ),
                               const SizedBox(height: 10),
                               ...List.generate(
-                                pinned.length,
+                                regular.length,
                                 (index) => _AnnouncementCard(
-                                  announcement: pinned[index],
+                                  announcement: regular[index],
                                   isDark: isDark,
-                                  index: index,
-                                  emphasized: true,
+                                  index: index + pinned.length,
                                   timeText:
-                                      _formatTime(pinned[index].createdAt),
+                                      _formatTime(regular[index].createdAt),
                                 ),
                               ),
-                              const SizedBox(height: 6),
                             ],
-                            _buildSectionHeader(
-                              isDark,
-                              icon: Icons.history_rounded,
-                              title: pinned.isEmpty ? '全部公告' : '最新公告',
-                              subtitle: '${regular.length} 条按时间排序',
-                              accent: Theme.of(context).primaryColor,
-                            ),
-                            const SizedBox(height: 10),
-                            ...List.generate(
-                              regular.length,
-                              (index) => _AnnouncementCard(
-                                announcement: regular[index],
-                                isDark: isDark,
-                                index: index + pinned.length,
-                                timeText: _formatTime(regular[index].createdAt),
-                              ),
-                            ),
-                          ],
+                          ),
                         ),
-                      ),
-          ),
-        ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -369,10 +380,11 @@ class _AnnouncementCardState extends State<_AnnouncementCard> {
                 : const Color(0xFFE8E3F1)),
         onTap: widget.emphasized
             ? () {
-                if (mounted)
+                if (mounted) {
                   setState(() {
                     _expanded = !_expanded;
                   });
+                }
               }
             : null,
         child: Column(

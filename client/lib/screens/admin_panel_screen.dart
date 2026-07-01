@@ -499,20 +499,19 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
 
   // ---- 背景 ----
   Widget _buildBackground(ThemeProvider themeProvider, bool isDark) {
-    if (themeProvider.isBackgroundVisible &&
-        themeProvider.getBackgroundImageFor(context) != null) {
-      final bgPath = themeProvider.getBackgroundImageFor(context)!;
-      final isAsset = !bgPath.startsWith('http') && !bgPath.startsWith('/');
+    if (themeProvider.shouldShowCustomBackground &&
+        themeProvider.getCustomBackgroundImageFor(context) != null) {
+      final bgPath = themeProvider.getCustomBackgroundImageFor(context)!;
       return Stack(
         fit: StackFit.expand,
         children: [
-          isAsset
+          ThemeProvider.isBundledAssetBackground(bgPath)
               ? Image.asset(
-                  'assets/images/$bgPath',
+                  ThemeProvider.resolveBundledAssetPath(bgPath),
                   fit: BoxFit.cover,
                   errorBuilder: (_, __, ___) => _buildDefaultBg(isDark),
                 )
-              : bgPath.startsWith('/')
+              : ThemeProvider.isLocalFileBackground(bgPath)
                   ? Image.file(
                       File(bgPath),
                       fit: BoxFit.cover,
@@ -535,41 +534,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
   }
 
   Widget _buildDefaultBg(bool isDark) {
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        Image(
-          image: ResizeImage(
-            const AssetImage('assets/images/morenbeijing.jpeg'),
-            width: 1080,
-          ),
-          fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: isDark
-                    ? [
-                        const Color(0xFF1A1A2E),
-                        const Color(0xFF16213E),
-                        const Color(0xFF0F3460),
-                      ]
-                    : [
-                        const Color(0xFF667EEA),
-                        const Color(0xFF764BA2),
-                        const Color(0xFFF093FB),
-                      ],
-              ),
-            ),
-          ),
-        ),
-        Container(
-          color: isDark
-              ? Colors.black.withValues(alpha: 0.35)
-              : Colors.white.withValues(alpha: 0.25),
-        ),
-      ],
+    return ColoredBox(
+      color: isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
     );
   }
 
@@ -1482,7 +1448,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
                   ],
                   const SizedBox(height: 6),
                   Text('作者：${post?['author']?['nickname'] ?? '未知'}'),
-                  Text('申请人：${applicant?['nickname'] ?? item['applicant_id']} (诚信分: ${applicant?['credit_score'] ?? '-'})'),
+                  Text(
+                      '申请人：${applicant?['nickname'] ?? item['applicant_id']} (诚信分: ${applicant?['credit_score'] ?? '-'})'),
                   Text('理由：${item['reason'] ?? ''}'),
                   Text('状态：${item['status'] ?? ''}'),
                   const SizedBox(height: 10),
@@ -1494,7 +1461,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (_) => PostDetailScreen(postId: item['post_id']),
+                              builder: (_) =>
+                                  PostDetailScreen(postId: item['post_id']),
                             ),
                           );
                         },
@@ -1561,13 +1529,17 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
                   DropdownButton<int>(
                     value: points,
                     isExpanded: true,
-                    items: [0, 2, 5, 10].map((e) => DropdownMenuItem(value: e, child: Text('$e分'))).toList(),
+                    items: [0, 2, 5, 10]
+                        .map((e) =>
+                            DropdownMenuItem(value: e, child: Text('$e分')))
+                        .toList(),
                     onChanged: (val) {
                       if (val != null) setState(() => points = val);
                     },
                   ),
                   const SizedBox(height: 16),
-                  const Text('恶意申请会扣除用户诚信分，确认继续？', style: TextStyle(color: Colors.red, fontSize: 13)),
+                  const Text('恶意申请会扣除用户诚信分，确认继续？',
+                      style: TextStyle(color: Colors.red, fontSize: 13)),
                 ],
               ),
               actions: [
@@ -1576,7 +1548,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
                   child: const Text('取消'),
                 ),
                 FilledButton(
-                  onPressed: () => Navigator.pop(ctx, {'reason': controller.text, 'points': points}),
+                  onPressed: () => Navigator.pop(
+                      ctx, {'reason': controller.text, 'points': points}),
                   child: const Text('确认驳回'),
                 ),
               ],

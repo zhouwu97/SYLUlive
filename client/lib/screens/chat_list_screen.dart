@@ -143,11 +143,17 @@ class _ChatListScreenState extends State<ChatListScreen>
 
   Widget _buildPrivateMessageBackground() {
     final themeProvider = context.watch<ThemeProvider>();
-    final bgPath = themeProvider.getBackgroundImageFor(context);
-    final fillScreen =
-        bgPath != null &&
-        bgPath.isNotEmpty &&
-        themeProvider.getBackgroundFillScreenFor(context);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bgPath = themeProvider.getCustomBackgroundImageFor(context);
+    if (!themeProvider.shouldShowCustomBackground ||
+        bgPath == null ||
+        bgPath.isEmpty) {
+      return ColoredBox(
+        color: isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
+      );
+    }
+
+    final fillScreen = themeProvider.getCustomBackgroundFillScreenFor(context);
     final imageProvider = _privateMessageBackgroundProvider(bgPath);
 
     return Stack(
@@ -162,18 +168,7 @@ class _ChatListScreenState extends State<ChatListScreen>
     );
   }
 
-  ImageProvider _privateMessageBackgroundProvider(String? bgPath) {
-    if (bgPath == null || bgPath.isEmpty) {
-      final isWide =
-          MediaQuery.of(context).size.width >
-          MediaQuery.of(context).size.height;
-      return AssetImage(
-        isWide
-            ? 'assets/images/tablet_default_landscape.png'
-            : 'assets/images/morenbeijing.jpeg',
-      );
-    }
-
+  ImageProvider _privateMessageBackgroundProvider(String bgPath) {
     if (ThemeProvider.isBundledAssetBackground(bgPath)) {
       return AssetImage(ThemeProvider.resolveBundledAssetPath(bgPath));
     }
@@ -265,8 +260,7 @@ class _ChatListScreenState extends State<ChatListScreen>
       return;
     }
 
-    final currentSelectionExists =
-        _selectedConversationId != null &&
+    final currentSelectionExists = _selectedConversationId != null &&
         provider.conversations.any(
           (conversation) => conversation.id == _selectedConversationId,
         );
@@ -366,10 +360,10 @@ class _ChatListScreenState extends State<ChatListScreen>
     final preview = lastMessage == null
         ? '暂无消息'
         : lastMessage.content.trim().isNotEmpty
-        ? lastMessage.content.trim()
-        : lastMessage.file != null
-        ? '[图片]'
-        : '暂无消息';
+            ? lastMessage.content.trim()
+            : lastMessage.file != null
+                ? '[图片]'
+                : '暂无消息';
     final selected = splitMode && _selectedConversationId == conversation.id;
 
     return ListTile(

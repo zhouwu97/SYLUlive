@@ -2405,7 +2405,6 @@ class _CompetitionShareImportScreenState
         return;
       }
 
-      final text = utf8.decode(bytes).trim();
       final decoded = jsonDecode(text);
 
       if (decoded is! Map<String, dynamic> || decoded['events'] is! List) {

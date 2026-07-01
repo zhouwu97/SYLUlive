@@ -2593,6 +2593,7 @@ class _CompetitionAdminImportScreenState
   Map<String, dynamic>? _preview;
   String? _previewedJsonText;
   String? _jsonFileName;
+  Map<String, dynamic>? _fileJsonPayload;
   bool _readingJsonFile = false;
 
   @override
@@ -2613,6 +2614,9 @@ class _CompetitionAdminImportScreenState
       return;
     }
     if (_jsonController.text == _previewedJsonText) {
+      return;
+    }
+    if (_jsonFileName != null) {
       return;
     }
     setState(() {
@@ -2665,24 +2669,38 @@ class _CompetitionAdminImportScreenState
         return;
       }
 
-      const encoder = JsonEncoder.withIndent('  ');
+      final resp = await context
+          .read<AuthProvider>()
+          .dio
+          .post('/admin/competitions/import-json/preview', data: decoded);
+
+      if (!mounted) return;
 
       setState(() {
         _jsonFileName = file.name;
-        _jsonController.text = encoder.convert(decoded);
-        _preview = null;
-        _batchId = null;
+        _fileJsonPayload = decoded;
+        _jsonController.clear();
+        _batchId = resp.data['batch_id'];
+        _preview = Map<String, dynamic>.from(resp.data['preview']);
         _previewedJsonText = null;
       });
 
-      AppFeedback.showSnackBar(context, '已读取 ${file.name}');
+      AppFeedback.showSnackBar(context, '已读取并预览 ${file.name}');
     } on FormatException {
       AppFeedback.showSnackBar(
         context,
         'JSON 格式不正确，请检查逗号、引号和括号',
         isError: true,
       );
+    } on DioException catch (e) {
+      if (!mounted) return;
+      AppFeedback.showSnackBar(
+        context,
+        AppFeedback.dioErrorMessage(e, fallback: '文件预览失败'),
+        isError: true,
+      );
     } catch (e) {
+      if (!mounted) return;
       AppFeedback.showSnackBar(
         context,
         '读取 JSON 文件失败：$e',
@@ -2696,6 +2714,14 @@ class _CompetitionAdminImportScreenState
   }
 
   List<Map<String, dynamic>> get _draftEvents {
+    if (_fileJsonPayload != null) {
+      final events = _fileJsonPayload!['events'];
+      if (events is! List) return [];
+      return events
+          .whereType<Map>()
+          .map((event) => Map<String, dynamic>.from(event))
+          .toList();
+    }
     try {
       final data = jsonDecode(_jsonController.text);
       if (data is! Map<String, dynamic>) return [];
@@ -2730,10 +2756,7 @@ class _CompetitionAdminImportScreenState
 
   bool get _canCommitPreview {
     final errors = (_preview?['errors'] as List?) ?? [];
-    return _batchId != null &&
-        _preview != null &&
-        _previewedJsonText == _jsonController.text &&
-        errors.isEmpty;
+    return _batchId != null && _preview != null && errors.isEmpty;
   }
 
   Future<void> _previewJson() async {
@@ -2822,50 +2845,68 @@ class _CompetitionAdminImportScreenState
           const SizedBox(height: 12),
           _buildJsonFileImportCard(),
           const SizedBox(height: 12),
-          TextField(
-            controller: _jsonController,
-            minLines: 8,
-            maxLines: 16,
-            decoration: InputDecoration(
-              labelText: 'AI 生成的 JSON',
-              hintText: '可以粘贴，也可以从上方选择 .json 文件',
-              filled: true,
-              fillColor: Colors.white,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(18),
-                borderSide: const BorderSide(color: _competitionBorder),
+          if (_jsonFileName == null) ...[
+            TextField(
+              controller: _jsonController,
+              minLines: 8,
+              maxLines: 16,
+              decoration: InputDecoration(
+                labelText: 'AI 生成的 JSON',
+                hintText: '可以粘贴，也可以从上方选择 .json 文件',
+                filled: true,
+                fillColor: Colors.white,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(18),
+                  borderSide: const BorderSide(color: _competitionBorder),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(18),
+                  borderSide: const BorderSide(color: _competitionBorder),
+                ),
+                alignLabelWithHint: true,
               ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(18),
-                borderSide: const BorderSide(color: _competitionBorder),
-              ),
-              alignLabelWithHint: true,
+              style: const TextStyle(fontSize: 13, height: 1.45),
             ),
-            style: const TextStyle(fontSize: 13, height: 1.45),
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: () {
-                    _jsonController.text = _competitionAiExampleJson;
-                    AppFeedback.showSnackBar(context, '已填入示例 JSON');
-                  },
-                  icon: const Icon(Icons.data_object_rounded, size: 18),
-                  label: const Text('填入示例'),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () {
+                      _jsonController.text = _competitionAiExampleJson;
+                      AppFeedback.showSnackBar(context, '已填入示例 JSON');
+                    },
+                    icon: const Icon(Icons.data_object_rounded, size: 18),
+                    label: const Text('填入示例'),
+                  ),
                 ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: FilledButton.icon(
-                  onPressed: _previewJson,
-                  icon: const Icon(Icons.fact_check_outlined, size: 18),
-                  label: const Text('检查预览'),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: _previewJson,
+                    icon: const Icon(Icons.fact_check_outlined, size: 18),
+                    label: const Text('检查预览'),
+                  ),
                 ),
+              ],
+            ),
+          ] else ...[
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () {
+                  setState(() {
+                    _jsonFileName = null;
+                    _fileJsonPayload = null;
+                    _preview = null;
+                    _batchId = null;
+                  });
+                },
+                icon: const Icon(Icons.close_rounded, size: 18),
+                label: const Text('清除文件，改为手动粘贴'),
               ),
-            ],
-          ),
+            ),
+          ],
           if (_preview != null) ...[
             const SizedBox(height: 16),
             _buildPreviewCard(),

@@ -17,6 +17,7 @@ import '../utils/app_feedback.dart';
 import '../utils/app_navigator.dart' show appNavigatorKey;
 import '../utils/responsive_util.dart';
 import '../utils/screen_swipe.dart';
+import 'course_schedule_settings_screen.dart';
 import 'edu_screen.dart';
 import 'login_screen.dart';
 import '../services/home_widget_service.dart';
@@ -734,7 +735,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                     IconButton(
                       icon: const Icon(Icons.settings_outlined, size: 22),
                       color: titleColor,
-                      onPressed: () => _showOpacitySheet(context, sc),
+                      onPressed: () => _openCourseSettings(context, sc),
                       tooltip: '设置',
                     ),
                   ],
@@ -1564,6 +1565,271 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('widget_text_color', hexColor);
     HomeWidgetService.syncTodayCourses(sc);
+  }
+
+  Future<void> _openCourseSettings(
+    BuildContext context,
+    CourseScheduleProvider sc,
+  ) async {
+    final initialSnapshot = await _reloadCourseSettingsSnapshot(sc);
+    if (!mounted || !context.mounted) return;
+
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => CourseScheduleSettingsScreen(
+          initialSnapshot: initialSnapshot,
+          callbacks: CourseScheduleSettingsCallbacks(
+            reloadSnapshot: () => _reloadCourseSettingsSnapshot(sc),
+            refreshCourses: () => _fetchCourses(context),
+            openArchive: () async {
+              _showArchiveSheet(context, sc);
+            },
+            pickSemesterStart: () => _pickSemesterStart(context),
+            shareSchedule: () => _shareSchedule(sc),
+            addCustomCourse: () => _showAddCourseDialog(context),
+            renameWidget: () => _showRenameWidgetDialog(context),
+            toggleReminder: (enabled) =>
+                _toggleCourseReminderFromSettings(context, sc, enabled),
+            changeReminderAdvanceMinutes: (minutes) =>
+                _changeReminderAdvanceMinutesFromSettings(sc, minutes),
+            requestBackgroundKeepAlive: () =>
+                _requestBackgroundKeepAliveFromSettings(context),
+            syncWidget: () => _syncWidgetFromSettings(context, sc),
+            updateOpacity: (value) => _updateOpacityFromSettings(sc, value),
+            updateSlotHeight: (value) =>
+                _updateSlotHeightFromSettings(sc, value),
+            updateWidgetTextColor: (hexColor) =>
+                _updateWidgetTextColorFromSettings(sc, hexColor),
+            resetAppearance: () => _resetAppearanceFromSettings(sc),
+          ),
+        ),
+      ),
+    );
+
+    if (mounted) setState(() {});
+  }
+
+  Future<CourseScheduleSettingsSnapshot> _reloadCourseSettingsSnapshot(
+    CourseScheduleProvider sc,
+  ) async {
+    await _loadBackgroundStatusAsync();
+    return _courseSettingsSnapshot(sc);
+  }
+
+  CourseScheduleSettingsSnapshot _courseSettingsSnapshot(
+    CourseScheduleProvider sc,
+  ) {
+    return CourseScheduleSettingsSnapshot(
+      courseCount: sc.courses.length,
+      reminderEnabled: _courseReminderEnabled,
+      reminderAdvanceMinutes: _reminderAdvanceMinutes,
+      reminderBusy: _courseReminderBusy,
+      scheduledReminderCount: _scheduledReminderCount,
+      reminderSummary: _courseReminderEnabled
+          ? '提前 $_reminderAdvanceMinutes 分钟 · 已安排 $_scheduledReminderCount 个提醒'
+          : '上课前 $_reminderAdvanceMinutes 分钟静音提醒',
+      backgroundKeepAliveSubtitle: _backgroundKeepAliveSubtitle(),
+      backgroundKeepAliveReady: _backgroundKeepAliveStatus.isReady,
+      backgroundKeepAliveSupported: _backgroundKeepAliveStatus.supported,
+      backgroundKeepAliveBusy: _backgroundKeepAliveBusy,
+      cardOpacity: _cardOpacity,
+      slotHeight: _slotHeight,
+      defaultSlotHeight: defaultSlotHeight,
+      widgetTextColor: _widgetTextColor,
+      appearanceSummary:
+          '透明度 ${(_cardOpacity * 100).round()}% · 高度 ${_slotHeight.round()} · ${_widgetTextColorLabel(_widgetTextColor)}',
+      widgetSyncText: '小组件可立即同步',
+      previewCourses: _buildWidgetPreviewCourses(sc),
+    );
+  }
+
+  List<CourseWidgetPreviewItem> _buildWidgetPreviewCourses(
+    CourseScheduleProvider sc,
+  ) {
+    final now = DateTime.now();
+    final academicWeek = sc.getAcademicWeek(now);
+    final todayCourses = sc.courses.where((course) {
+      if (course.weekday != now.weekday) return false;
+      if (academicWeek != null && !sc.isCourseActive(course, academicWeek)) {
+        return false;
+      }
+      return true;
+    }).toList()
+      ..sort((a, b) => a.startSection.compareTo(b.startSection));
+
+    return todayCourses.map((course) {
+      final startIdx = (course.startSection - 1).clamp(0, _starts.length - 1);
+      final endIdx = (course.endSection - 1).clamp(0, _ends.length - 1);
+      return CourseWidgetPreviewItem(
+        name: course.name,
+        timeText: '${_starts[startIdx]}-${_ends[endIdx]}',
+        location: course.location,
+      );
+    }).toList();
+  }
+
+  String _widgetTextColorLabel(String hexColor) {
+    switch (hexColor.toUpperCase()) {
+      case '#888888':
+        return '浅灰';
+      case '#FFFFFF':
+        return '白色';
+      case '#333333':
+      default:
+        return '深灰';
+    }
+  }
+
+  Future<void> _toggleCourseReminderFromSettings(
+    BuildContext context,
+    CourseScheduleProvider sc,
+    bool enabled,
+  ) async {
+    if (_courseReminderBusy) return;
+    if (enabled && sc.semesterStart == null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('请先选择开学第一天')));
+      return;
+    }
+    if (enabled && sc.courses.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('请先从教务导入课表')));
+      return;
+    }
+    if (enabled && !await _confirmCourseReminderEnable(context)) {
+      return;
+    }
+
+    if (mounted) setState(() => _courseReminderBusy = true);
+    final result = await CourseReminderService.instance.setEnabled(
+      enabled,
+      courses: sc.courses,
+      semesterStart: sc.semesterStart,
+    );
+    final persistedEnabled = await CourseReminderService.instance.isEnabled();
+    if (!mounted || !context.mounted) return;
+    setState(() {
+      _courseReminderEnabled = result.enabled && persistedEnabled;
+      _scheduledReminderCount = result.scheduledCount;
+      _courseReminderBusy = false;
+    });
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(result.message)));
+  }
+
+  Future<void> _changeReminderAdvanceMinutesFromSettings(
+    CourseScheduleProvider sc,
+    int minutes,
+  ) async {
+    if (_courseReminderBusy) return;
+    if (mounted) setState(() => _courseReminderBusy = true);
+    await CourseReminderService.instance.setAdvanceMinutes(
+      minutes,
+      courses: sc.courses,
+      semesterStart: sc.semesterStart,
+    );
+    final count =
+        await CourseReminderService.instance.pendingCourseReminderCount();
+    if (!mounted) return;
+    setState(() {
+      _reminderAdvanceMinutes = minutes;
+      _scheduledReminderCount = count;
+      _courseReminderBusy = false;
+    });
+  }
+
+  Future<void> _requestBackgroundKeepAliveFromSettings(
+    BuildContext context,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('后台保活授权'),
+        content: const Text(
+          '请在系统页面允许忽略电池优化、精确闹钟、自启动或后台运行。'
+          '这样即使从任务卡片清除应用，课程提醒也能由系统闹钟唤起。'
+          '如果在系统设置里强行停止应用，Android 会禁止所有提醒。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('去授权'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    if (mounted) setState(() => _backgroundKeepAliveBusy = true);
+    final status = await CourseReminderService.instance
+        .requestBackgroundKeepAlivePermissions();
+    if (!mounted || !context.mounted) return;
+    setState(() {
+      _backgroundKeepAliveStatus = status;
+      _backgroundKeepAliveBusy = false;
+    });
+    AppFeedback.showSnackBar(
+      context,
+      status.isReady ? '后台保活关键权限已开启' : '已打开系统授权页，返回后可再次点击继续设置',
+    );
+  }
+
+  Future<void> _syncWidgetFromSettings(
+    BuildContext context,
+    CourseScheduleProvider sc,
+  ) async {
+    await HomeWidgetService.syncTodayCourses(sc);
+    if (!mounted || !context.mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('桌面小组件已同步')));
+  }
+
+  Future<void> _updateOpacityFromSettings(
+    CourseScheduleProvider sc,
+    double value,
+  ) async {
+    if (mounted) setState(() => _cardOpacity = value);
+    await _saveOpacity(value);
+    await HomeWidgetService.syncTodayCourses(sc);
+  }
+
+  Future<void> _updateSlotHeightFromSettings(
+    CourseScheduleProvider sc,
+    double value,
+  ) async {
+    if (mounted) setState(() => _slotHeight = value);
+    await _saveSlotHeight(value);
+    await HomeWidgetService.syncTodayCourses(sc);
+  }
+
+  Future<void> _updateWidgetTextColorFromSettings(
+    CourseScheduleProvider sc,
+    String hexColor,
+  ) async {
+    if (mounted) setState(() => _widgetTextColor = hexColor);
+    await _saveWidgetTextColor(hexColor, sc);
+  }
+
+  Future<void> _resetAppearanceFromSettings(CourseScheduleProvider sc) async {
+    if (mounted) {
+      setState(() {
+        _cardOpacity = 0.55;
+        _slotHeight = defaultSlotHeight;
+        _widgetTextColor = '#333333';
+      });
+    }
+    await _saveOpacity(0.55);
+    await _saveSlotHeight(defaultSlotHeight);
+    await _saveWidgetTextColor('#333333', sc);
+    await HomeWidgetService.syncTodayCourses(sc);
   }
 
   String _backgroundKeepAliveSubtitle() {
@@ -2463,6 +2729,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     );
   }
 
+  // ignore: unused_element
   void _showOpacitySheet(BuildContext context, CourseScheduleProvider sc) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final primary = Theme.of(context).primaryColor;
@@ -2977,7 +3244,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   }
 
   /// 更名小组件弹窗
-  void _showRenameWidgetDialog(BuildContext context) async {
+  Future<void> _showRenameWidgetDialog(BuildContext context) async {
     final prefs = await SharedPreferences.getInstance();
     String title = prefs.getString('widget_title') ?? '我的课表';
     final controller = TextEditingController(text: title);
@@ -3018,7 +3285,10 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
   // ====== 自定义课程 ======
 
-  void _showAddCourseDialog(BuildContext context, {CourseBlock? editCourse}) {
+  Future<void> _showAddCourseDialog(
+    BuildContext context, {
+    CourseBlock? editCourse,
+  }) {
     // 原有的手动添加状态
     final nameCtrl = TextEditingController(text: editCourse?.name ?? '');
     final teacherCtrl = TextEditingController(text: editCourse?.teacher ?? '');
@@ -3082,7 +3352,7 @@ $classFilterRule
 
 ```""";
 
-    showDialog(
+    return showDialog(
       context: context,
       builder: (dialogCtx) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(

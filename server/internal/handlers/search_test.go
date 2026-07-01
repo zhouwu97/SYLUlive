@@ -54,7 +54,7 @@ func TestSearchFindsUsersByAccountAndNickname(t *testing.T) {
 	if err := db.Create(&users).Error; err != nil {
 		t.Fatalf("create users: %v", err)
 	}
-	handler := NewSearchHandler(db, NewPostHandler(db))
+	handler := NewSearchHandler(db, NewPostHandler(db, "", ""))
 
 	for _, query := range []string{"20260001", "纯盒"} {
 		response := performSearchRequest(
@@ -104,7 +104,7 @@ func TestSearchFindsPostsByTitleAndContent(t *testing.T) {
 	if err := db.Create(&posts).Error; err != nil {
 		t.Fatalf("create posts: %v", err)
 	}
-	handler := NewSearchHandler(db, NewPostHandler(db))
+	handler := NewSearchHandler(db, NewPostHandler(db, "", ""))
 
 	response := performSearchRequest(
 		t,

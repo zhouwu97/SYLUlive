@@ -27,6 +27,7 @@ class MessageProvider extends ChangeNotifier {
   final Set<int> _refreshingConversationIds = {};
   final Map<int, int> _lastMarkedReadMessageIds = {};
   final Map<int, String> _drafts = {};
+  bool _hasLoadedConversations = false;
 
   List<Conversation> get conversations => _conversations;
   List<Message> get messages => _messages;
@@ -38,6 +39,11 @@ class MessageProvider extends ChangeNotifier {
   String? get conversationError => _conversationError;
   String? get messageError => _messageError;
   int? get currentConversationId => _currentConversationId;
+  bool get hasLoadedConversations => _hasLoadedConversations;
+  int get unreadMessageCount => _conversations.fold<int>(
+        0,
+        (sum, conversation) => sum + conversation.unreadCount,
+      );
 
   MessageProvider(this._dio);
 
@@ -70,6 +76,7 @@ class MessageProvider extends ChangeNotifier {
               (e) => Conversation.fromJson(Map<String, dynamic>.from(e as Map)),
             )
             .toList();
+        _hasLoadedConversations = true;
       }
     } on DioException catch (e) {
       _conversationError = AppFeedback.dioErrorMessage(e, fallback: '加载会话列表失败');

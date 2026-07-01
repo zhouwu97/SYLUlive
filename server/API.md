@@ -95,8 +95,50 @@
 | `GET` | `/api/teachers` | 获取教师榜单列表 |
 | `GET` | `/api/teachers/:id` | 获取教师详情及评价 |
 | `POST` | `/api/teachers/:id/rate` | 评价教师 |
+| `DELETE` | `/api/teachers/rating/:id` | 删除自己的教师评价 |
 | `GET` | `/api/majors` | 获取专业评价列表 |
+| `GET` | `/api/majors/:id` | 获取专业详情及评价 |
+| `POST` | `/api/majors/:id/rate` | 评价专业 |
+| `DELETE` | `/api/majors/rating/:id` | 删除自己的专业评价 |
 | `GET` | `/api/canteens` | 获取食堂评分列表 |
+| `GET` | `/api/canteens/:id?review_sort=best\|latest&review_filter=all\|with_image\|high\|low` | 获取食堂详情及评价，支持综合/最新排序和评价筛选 |
+| `POST` | `/api/canteens/:id/rate` | 评价食堂 |
+| `PUT` | `/api/canteens/ratings/:ratingId/vote` | 给食堂评价点赞/点踩/取消投票，不能给自己的评价投票 |
+| `PUT` | `/api/canteens/:id/image` | (管理员) 修改食堂封面图片 |
+
+### 食堂评价投票
+
+`PUT /api/canteens/ratings/:ratingId/vote`
+
+请求体：
+
+```json
+{
+  "vote": "up"
+}
+```
+
+`vote` 可选值：
+
+| Value | Description |
+|---|---|
+| `up` | 点赞；已点赞时再次提交会取消 |
+| `down` | 点踩；已点踩时再次提交会取消 |
+| `none` | 取消当前投票 |
+
+成功响应：
+
+```json
+{
+  "message": "操作成功",
+  "rating_id": 1,
+  "helpful_count": 12,
+  "unhelpful_count": 1,
+  "my_vote": "up"
+}
+```
+
+食堂详情返回的每条 `ratings` 会包含 `helpful_count`、`unhelpful_count`、`my_vote`。`my_vote` 为 `up`、`down` 或 `null`。
 
 ## 6. 消息与通知 (Messages)
 

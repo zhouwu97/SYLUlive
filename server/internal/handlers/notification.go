@@ -28,11 +28,51 @@ func (h *NotificationHandler) GetUnreadCount(c *gin.Context) {
 	uid := userID.(uint)
 
 	var count int64
-	h.db.Model(&models.Notification{}).Where("user_id = ? AND type = ? AND is_read = ?", uid, "reply", false).Count(&count)
+	h.db.Model(&models.Notification{}).Where("user_id = ? AND is_read = ?", uid, false).Count(&count)
 
 	c.JSON(http.StatusOK, gin.H{
 		"count": count,
 	})
+}
+
+// GetNotifications 获取所有类型的通知列表
+func (h *NotificationHandler) GetNotifications(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	uid := userID.(uint)
+
+	var notifications []models.Notification
+	if err := h.db.Where("user_id = ?", uid).
+		Order("created_at desc").
+		Limit(100).
+		Find(&notifications).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取通知失败"})
+		return
+	}
+
+	type UserInfo struct {
+		ID       uint   `json:"id"`
+		Nickname string `json:"nickname"`
+		Avatar   string `json:"avatar"`
+	}
+
+	type NotificationRes struct {
+		models.Notification
+		FromUser *UserInfo `json:"from_user"`
+	}
+
+	var res []NotificationRes
+	for _, n := range notifications {
+		item := NotificationRes{Notification: n}
+		if n.FromUID > 0 {
+			var u models.User
+			if h.db.Where("id = ?", n.FromUID).Select("id, nickname, avatar").First(&u).Error == nil {
+				item.FromUser = &UserInfo{ID: u.ID, Nickname: u.Nickname, Avatar: u.Avatar}
+			}
+		}
+		res = append(res, item)
+	}
+
+	c.JSON(http.StatusOK, res)
 }
 
 // MarkAllRead 将所有通知标记为已读
@@ -140,5 +180,45 @@ func CreateMarketPostNotification(db *gorm.DB, postID uint, title string, price 
 			IsRead:    false,
 		}
 		db.Create(&notification)
+	}
+}
+
+// CreateFeaturedApplicationResultNotification 创建精华申请结果通知
+func CreateFeaturedApplicationResultNotification(jpushAppKey, jpushMasterSecret string, db *gorm.DB, toUserID uint, postID, appID uint, status, title, reason string, points int) {
+	content := fmt.Sprintf("你的精华申请已通过：《%s》", title)
+	if status == "rejected" {
+		if points > 0 {
+			content = fmt.Sprintf("你的精华申请未通过：%s，因恶意申请扣除 %d 点诚信分", reason, points)
+		} else {
+			content = fmt.Sprintf("你的精华申请未通过：%s", reason)
+		}
+	}
+	notification := models.Notification{
+		UserID:    toUserID,
+		Type:      "featured_application",
+		Content:   content,
+		RelatedID: appID,
+		PostID:    postID,
+		FromUID:   0, // System
+		IsRead:    false,
+	}
+	db.Create(&notification)
+
+	if jpushAppKey != "" && jpushMasterSecret != "" {
+		var user models.User
+		if err := db.Where("id = ?", toUserID).Select("device_token").First(&user).Error; err == nil && user.DeviceToken != "" {
+			go func() {
+				jpush := utils.NewJPushClient(jpushAppKey, jpushMasterSecret)
+				extras := map[string]interface{}{
+					"type":           "featured_application",
+					"post_id":        postID,
+					"application_id": appID,
+					"status":         status,
+				}
+				if err := jpush.SendNotification(user.DeviceToken, "系统通知", content, extras); err != nil {
+					fmt.Printf("JPush send failed: %v\n", err)
+				}
+			}()
+		}
 	}
 }

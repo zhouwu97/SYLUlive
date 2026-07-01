@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config/api_constants.dart';
+import '../utils/app_motion.dart';
 import '../utils/app_feedback.dart';
 import '../utils/responsive_util.dart';
 import '../utils/screen_swipe.dart';
@@ -17,11 +18,15 @@ import '../models/post.dart';
 import '../providers/auth_provider.dart';
 import '../providers/message_provider.dart';
 import '../providers/post_provider.dart';
+import '../providers/theme_provider.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/home_service_drawer.dart';
+import '../widgets/home_tab_reveal.dart';
 import '../widgets/post_card.dart';
 import 'announcement_screen.dart';
 import 'chat_list_screen.dart';
+import 'competition_center_screen.dart';
+import 'edu_grade_screen.dart';
 import 'exam_schedule_screen.dart';
 import 'feedback_screen.dart';
 import 'login_screen.dart';
@@ -51,7 +56,7 @@ class FeedModeConfig {
   });
 }
 
-/// 标签显示顺序：最新、综合、热门、关注
+/// 标签显示顺序：最新、综合、精华、关注
 /// 默认选中：综合 (index 1)
 const List<FeedModeConfig> kFeedModes = [
   FeedModeConfig(
@@ -67,16 +72,16 @@ const List<FeedModeConfig> kFeedModes = [
     supportsRemoteLoading: true,
   ),
   FeedModeConfig(
-    key: 'hot',
-    label: '热门',
-    remoteSort: 'hot',
+    key: 'featured',
+    label: '精华',
+    remoteSort: 'featured',
     supportsRemoteLoading: true,
   ),
   FeedModeConfig(
     key: 'following',
     label: '关注',
-    remoteSort: null,
-    supportsRemoteLoading: false,
+    remoteSort: 'following',
+    supportsRemoteLoading: true,
   ),
 ];
 
@@ -93,15 +98,14 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     with TickerProviderStateMixin, WidgetsBindingObserver {
   late final Map<String, ScrollController> _feedScrollControllers;
 
-  ScrollController get _currentFeedScrollController {
-    return _feedScrollControllers[_feedMode]!;
-  }
-
   late AnimationController _feedSwitchController;
-  late Animation<double> _feedSwitchAnimation;
-  double _slideDirection = 0;
+  Animation<double>? _feedSettleAnimation;
+  double _feedDragProgress = 0;
+  int? _feedTargetIndex;
   double _feedSwipeDx = 0;
   bool _feedSwipeAccepted = false;
+  int _feedRevealSerial = 0;
+  bool _feedRevealActive = false;
   final TextEditingController _searchController = TextEditingController();
   Timer? _autoRefreshTimer;
   List<model.Announcement> _announcements = [];
@@ -118,6 +122,10 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   bool _messagesLoadRequested = false;
 
   static const _autoRefreshInterval = Duration(seconds: 60);
+  static const _feedSwitchDuration = Duration(milliseconds: 480);
+  static const _feedSettleDuration = Duration(milliseconds: 220);
+  static const _feedTriggerDistance = 72.0;
+  static const _feedTriggerVelocity = 520.0;
 
   // ---- 配置辅助 ----
   FeedModeConfig get _currentConfig =>
@@ -125,7 +133,23 @@ class _ShuitieScreenState extends State<ShuitieScreen>
 
   int get _currentModeIndex => kFeedModes.indexWhere((m) => m.key == _feedMode);
 
+  double get _feedVisualIndex {
+    final currentIndex =
+        _currentModeIndex < 0 ? kDefaultFeedModeIndex : _currentModeIndex;
+    final targetIndex = _feedTargetIndex;
+    if (targetIndex == null) return currentIndex.toDouble();
+    return currentIndex +
+        (targetIndex - currentIndex) * _feedDragProgress.clamp(0.0, 1.0);
+  }
+
   String? get _currentRemoteSort => _currentConfig.remoteSort;
+
+  bool get _showCheckInDot => _checkinStatusLoaded && !_checkedIn;
+
+  bool _canLoadFeedMode(String mode) {
+    if (mode != 'following') return true;
+    return context.read<AuthProvider>().isLoggedIn;
+  }
 
   @override
   void initState() {
@@ -139,17 +163,13 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     WidgetsBinding.instance.addObserver(this);
     _feedSwitchController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 220),
-      value: 1.0,
-    );
-    _feedSwitchAnimation = CurvedAnimation(
-      parent: _feedSwitchController,
-      curve: Curves.easeOutCubic,
-    );
+      duration: _feedSettleDuration,
+    )..addListener(_handleFeedSettleTick);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final postProvider = context.read<PostProvider>();
       postProvider.loadPosts(boardId: 1, sort: 'all');
       _startAutoRefresh();
+      _ensureCheckinStatusLoaded();
 
       // 延迟加载其他非核心数据
       Future.delayed(const Duration(seconds: 3), () {
@@ -164,7 +184,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      if (_currentConfig.supportsRemoteLoading) {
+      if (_currentConfig.supportsRemoteLoading && _canLoadFeedMode(_feedMode)) {
         _refresh();
       }
       _loadAnnouncements();
@@ -178,7 +198,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     _stopAutoRefresh();
     _autoRefreshTimer = Timer.periodic(_autoRefreshInterval, (_) {
       if (!mounted) return;
-      if (_currentConfig.supportsRemoteLoading) {
+      if (_currentConfig.supportsRemoteLoading && _canLoadFeedMode(_feedMode)) {
         _refresh();
       }
       _loadAnnouncements();
@@ -200,7 +220,9 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     }
 
     _searchController.dispose();
-    _feedSwitchController.dispose();
+    _feedSwitchController
+      ..removeListener(_handleFeedSettleTick)
+      ..dispose();
     super.dispose();
   }
 
@@ -216,7 +238,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   Future<void> _loadAnnouncements() async {
     final authProvider = context.read<AuthProvider>();
     try {
-      var response;
+      Response<dynamic> response;
       try {
         response = await authProvider.dio.get(ApiConstants.noticesPath);
       } on DioException catch (e) {
@@ -278,30 +300,54 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     setState(() {});
   }
 
-  Future<void> _changeFeedMode(
-    String mode, {
-    double initialProgress = 0,
-  }) async {
+  void _handleFeedSettleTick() {
+    final targetIndex = _feedTargetIndex;
+    final animation = _feedSettleAnimation;
+    if (targetIndex == null || animation == null || !mounted) return;
+    setState(() {
+      _feedDragProgress = animation.value.clamp(0.0, 1.0);
+    });
+  }
+
+  Future<void> _changeFeedMode(String mode) async {
     if (_feedMode == mode) return;
-    final oldIndex = _currentModeIndex;
     final newIndex = kFeedModes.indexWhere((m) => m.key == mode);
-    if (oldIndex < 0 || newIndex < 0) return;
+    if (newIndex < 0) return;
+    final oldIndex =
+        _currentModeIndex < 0 ? kDefaultFeedModeIndex : _currentModeIndex;
+
+    _refreshFeedMode(mode);
+    _feedSwitchController.stop();
+    _feedSwitchController.duration = _feedSwitchDuration;
+
+    _feedSettleAnimation = Tween<double>(begin: 1.0, end: 0.0).animate(
+      CurvedAnimation(
+        parent: _feedSwitchController,
+        curve: const Interval(0.0, 0.58, curve: Curves.easeOutQuad),
+      ),
+    );
 
     setState(() {
       _feedMode = mode;
-      _slideDirection = newIndex > oldIndex ? 1 : -1;
+      _feedTargetIndex = oldIndex;
+      _feedDragProgress = 1.0;
+      _feedRevealSerial++;
+      _feedRevealActive = true;
     });
-    _feedSwitchController.forward(
-      from: initialProgress.clamp(0.0, 1.0).toDouble(),
-    );
 
-    final config = kFeedModes[newIndex];
-    if (config.supportsRemoteLoading && config.remoteSort != null) {
-      _refreshFeedMode(mode);
-    }
+    await _feedSwitchController.forward(from: 0);
+
+    if (!mounted) return;
+    setState(() {
+      _feedRevealActive = false;
+      _feedTargetIndex = null;
+      _feedDragProgress = 0;
+    });
   }
 
   void _refreshFeedMode(String mode) {
+    if (!_canLoadFeedMode(mode)) return;
+
     final config = kFeedModes.firstWhere((m) => m.key == mode);
     if (!config.supportsRemoteLoading || config.remoteSort == null) return;
     final sort = config.remoteSort!;
@@ -323,17 +369,14 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     }
   }
 
-  List<Post> _resolveVisiblePosts(List<Post> posts) {
+  List<Post> _resolveVisiblePosts(List<Post> posts, String mode) {
     if (_searchQuery.isNotEmpty) return _searchResults;
-
-    // 关注模式不显示任何帖子
-    if (!_currentConfig.supportsRemoteLoading) return [];
 
     List<Post> sortedPosts = List.from(posts);
 
     // 排序逻辑已下沉至服务端，客户端只需原样返回
     // 但对于新帖过滤可以保留部分逻辑（如果服务端未实现new模式的话）
-    if (_feedMode == 'new') {
+    if (mode == 'new') {
       final now = DateTime.now();
       final recent = sortedPosts
           .where((post) => now.difference(post.createdAt).inDays < 3)
@@ -351,6 +394,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
 
   Future<void> _refresh() async {
     if (!_currentConfig.supportsRemoteLoading) return;
+    if (!_canLoadFeedMode(_feedMode)) return;
     final modeAtStart = _feedMode;
     final sortAtStart = _currentRemoteSort;
     if (sortAtStart == null) return;
@@ -508,25 +552,37 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   }
 
   void _handleFeedSwipeStart(DragStartDetails details) {
+    _feedSwitchController.stop();
     _feedSwipeDx = 0;
     _feedSwipeAccepted = isUpperContentSwipeStart(
       details.globalPosition.dy,
       MediaQuery.sizeOf(context).height,
     );
+    if (_feedSwipeAccepted) {
+      setState(() {
+        _feedTargetIndex = null;
+        _feedDragProgress = 0;
+      });
+    }
   }
 
   void _handleFeedSwipeUpdate(DragUpdateDetails details) {
     if (!_feedSwipeAccepted) return;
     _feedSwipeDx += details.primaryDelta ?? 0;
-    final direction = _feedSwipeDx < 0 ? -1.0 : 1.0;
-    if (_slideDirection != direction && mounted) {
-      setState(() => _slideDirection = direction);
+    final targetIndex = _targetFeedIndexForDx(_feedSwipeDx);
+    if (targetIndex == null) {
+      setState(() {
+        _feedTargetIndex = null;
+        _feedDragProgress = 0;
+      });
+      return;
     }
-    final width = MediaQuery.sizeOf(context).width;
-    _feedSwitchController.value = (1 - (_feedSwipeDx.abs() / width)).clamp(
-      0.0,
-      1.0,
-    );
+
+    _refreshFeedMode(kFeedModes[targetIndex].key);
+    setState(() {
+      _feedTargetIndex = targetIndex;
+      _feedDragProgress = 0;
+    });
   }
 
   Future<void> _handleFeedSwipe(DragEndDetails details) async {
@@ -537,29 +593,84 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     }
 
     final velocity = details.primaryVelocity ?? 0;
-    final shouldSwitch = velocity.abs() >= 320 || _feedSwipeDx.abs() >= 56;
-    if (!shouldSwitch) {
-      _feedSwipeDx = 0;
-      await _feedSwitchController.forward();
+    final nextIndex = _targetFeedIndexForDx(
+      velocity.abs() >= _feedTriggerVelocity ? velocity : _feedSwipeDx,
+    );
+    final shouldSwitch = nextIndex != null &&
+        (_feedSwipeDx.abs() >= _feedTriggerDistance ||
+            velocity.abs() >= _feedTriggerVelocity);
+    _feedSwipeDx = 0;
+
+    if (shouldSwitch) {
+      await _changeFeedMode(kFeedModes[nextIndex].key);
+    } else {
+      await _settleFeedMode(
+        targetIndex: _feedTargetIndex,
+        begin: _feedDragProgress,
+        end: 0.0,
+        duration: _feedSettleDuration,
+        commit: false,
+      );
+    }
+  }
+
+  int? _targetFeedIndexForDx(double dx) {
+    if (dx == 0) return null;
+    final currentIndex = _currentModeIndex;
+    if (currentIndex < 0) return null;
+    final direction = dx < 0 ? 1 : -1;
+    final targetIndex = currentIndex + direction;
+    if (targetIndex < 0 || targetIndex >= kFeedModes.length) return null;
+    return targetIndex;
+  }
+
+  Future<void> _settleFeedMode({
+    int? targetIndex,
+    double begin = 0,
+    double end = 0,
+    Duration duration = _feedSettleDuration,
+    required bool commit,
+  }) async {
+    if (targetIndex == null || targetIndex == _currentModeIndex) {
+      if (mounted) {
+        setState(() {
+          _feedTargetIndex = null;
+          _feedDragProgress = 0;
+        });
+      }
       return;
     }
 
-    final currentIndex = _currentModeIndex;
-    if (currentIndex < 0) return;
-    final swipeDirection = velocity.abs() >= 320 ? velocity : _feedSwipeDx;
-    final transitionProgress = 1 - _feedSwitchController.value;
-    final nextIndex = swipeDirection < 0
-        ? (currentIndex + 1).clamp(0, kFeedModes.length - 1)
-        : (currentIndex - 1).clamp(0, kFeedModes.length - 1);
-    _feedSwipeDx = 0;
-    if (nextIndex != currentIndex) {
-      await _changeFeedMode(
-        kFeedModes[nextIndex].key,
-        initialProgress: transitionProgress,
-      );
-    } else {
-      await _feedSwitchController.forward();
+    if (commit) {
+      _refreshFeedMode(kFeedModes[targetIndex].key);
     }
+
+    _feedSwitchController.stop();
+    _feedSwitchController.duration = duration;
+    _feedSettleAnimation = Tween<double>(
+      begin: begin.clamp(0.0, 1.0).toDouble(),
+      end: end.clamp(0.0, 1.0).toDouble(),
+    ).animate(CurvedAnimation(
+      parent: _feedSwitchController,
+      curve: Curves.easeOutQuad,
+    ));
+
+    setState(() {
+      _feedTargetIndex = targetIndex;
+      _feedDragProgress = begin.clamp(0.0, 1.0).toDouble();
+    });
+
+    await _feedSwitchController.forward(from: 0);
+    if (!mounted) return;
+
+    setState(() {
+      if (commit) {
+        _feedMode = kFeedModes[targetIndex].key;
+        _feedRevealSerial++;
+      }
+      _feedTargetIndex = null;
+      _feedDragProgress = 0;
+    });
   }
 
   void _openMessages() {
@@ -605,6 +716,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                 checkedIn: _checkedIn,
                 streakDays: _streakDays,
                 checkInLoading: _checkInLoading,
+                showCheckInDot: _showCheckInDot,
                 announcements: _announcements,
                 onCheckIn: () {
                   _closePanelThenOpen(dialogContext, _doCheckIn);
@@ -636,6 +748,59 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                       context,
                       MaterialPageRoute(
                           builder: (_) => const AnnouncementScreen()),
+                    );
+                  });
+                },
+                onOpenCompetitions: () {
+                  _closePanelThenOpen(dialogContext, () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const CompetitionCenterScreen()),
+                    );
+                  });
+                },
+                onOpenGrades: () {
+                  _closePanelThenOpen(dialogContext, () {
+                    final auth = context.read<AuthProvider>();
+                    if (!auth.isLoggedIn || auth.user == null) {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const LoginScreen()),
+                      );
+                      return;
+                    }
+                    Navigator.push(
+                      context,
+                      PageRouteBuilder(
+                        transitionDuration: const Duration(milliseconds: 260),
+                        reverseTransitionDuration:
+                            const Duration(milliseconds: 200),
+                        pageBuilder: (_, __, ___) => const EduGradeScreen(),
+                        transitionsBuilder: (_, animation, __, child) {
+                          final curved = CurvedAnimation(
+                            parent: animation,
+                            curve: AppMotion.incoming,
+                            reverseCurve: AppMotion.outgoing,
+                          );
+                          return FadeTransition(
+                            opacity: curved,
+                            child: SlideTransition(
+                              position: Tween<Offset>(
+                                begin: const Offset(0, 0.035),
+                                end: Offset.zero,
+                              ).animate(curved),
+                              child: ScaleTransition(
+                                scale: Tween<double>(
+                                  begin: 0.995,
+                                  end: 1.0,
+                                ).animate(curved),
+                                child: child,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
                     );
                   });
                 },
@@ -690,13 +855,15 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final authProvider = context.watch<AuthProvider>();
-    final topPadding = MediaQuery.of(context).padding.top;
+    final themeProvider = context.watch<ThemeProvider>();
+    final cleanLightMode = themeProvider.isCleanBackgroundMode && !isDark;
+    final showCustomBackground = themeProvider.shouldShowCustomBackground;
 
-    // 透明沉浸式状态栏
+    // 阅读型首页在简洁模式下使用深色状态栏；自定义背景保留浅色图标。
     SystemChrome.setSystemUIOverlayStyle(
-      SystemUiOverlayStyle(
+      (cleanLightMode ? SystemUiOverlayStyle.dark : SystemUiOverlayStyle.light)
+          .copyWith(
         statusBarColor: Colors.transparent,
-        statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
         systemNavigationBarColor: Colors.transparent,
       ),
     );
@@ -704,19 +871,32 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     if (authProvider.isLoggedIn != _wasLoggedIn) {
       if (!_wasLoggedIn && authProvider.isLoggedIn) {
         _checkinStatusLoaded = false;
+      } else if (_wasLoggedIn && !authProvider.isLoggedIn) {
+        _checkinStatusLoaded = false;
+        _checkedIn = false;
+        _streakDays = 0;
       }
       _wasLoggedIn = authProvider.isLoggedIn;
       _messagesLoadRequested = false;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (_currentConfig.supportsRemoteLoading) _refresh();
+        if (!mounted) return;
+        // 登录/退出时清除关注信息流，避免跨账号数据残留
+        context.read<PostProvider>().invalidateFollowingFeed();
+        if (_currentConfig.supportsRemoteLoading &&
+            _canLoadFeedMode(_feedMode)) {
+          _refresh();
+        }
         _ensureMessagesLoaded();
+        _ensureCheckinStatusLoaded();
       });
     }
 
     final useDesktopShell = ResponsiveUtil.useDesktopShell(context);
 
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: showCustomBackground
+          ? Colors.transparent
+          : (isDark ? const Color(0xFF101219) : const Color(0xFFF7F8FC)),
       extendBodyBehindAppBar: true,
       body: Stack(
         children: [
@@ -828,21 +1008,18 @@ class _ShuitieScreenState extends State<ShuitieScreen>
 
   Widget _buildFeedTabs(bool isDark) {
     const tabWidth = 48.0;
-    const animationDuration = Duration(milliseconds: 220);
-
-    final activeIndex =
-        _currentModeIndex < 0 ? kDefaultFeedModeIndex : _currentModeIndex;
+    final visualIndex = _feedVisualIndex;
+    final activeColor = isDark ? Colors.white : Colors.black87;
+    final inactiveColor = isDark ? Colors.white54 : Colors.black45;
 
     return SizedBox(
       width: tabWidth * kFeedModes.length,
       height: 44,
       child: Stack(
         children: [
-          // 所有标签共用的一条指示线
-          AnimatedPositioned(
-            duration: animationDuration,
-            curve: Curves.easeOutCubic,
-            left: activeIndex * tabWidth + (tabWidth - 22) / 2,
+          // 指示条跟随手势连续移动，而不是等状态切完再跳转。
+          Positioned(
+            left: visualIndex * tabWidth + (tabWidth - 22) / 2,
             bottom: 3,
             width: 22,
             height: 3,
@@ -857,7 +1034,12 @@ class _ShuitieScreenState extends State<ShuitieScreen>
           Row(
             children: List.generate(kFeedModes.length, (index) {
               final config = kFeedModes[index];
-              final active = index == activeIndex;
+              final activeT = (1 - (visualIndex - index).abs()).clamp(
+                0.0,
+                1.0,
+              );
+              final color = Color.lerp(inactiveColor, activeColor, activeT)!;
+              final scale = 1.0 + 0.03 * activeT;
 
               return SizedBox(
                 width: tabWidth,
@@ -866,22 +1048,16 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                   behavior: HitTestBehavior.opaque,
                   onTap: () => _changeFeedMode(config.key),
                   child: Center(
-                    child: AnimatedScale(
-                      duration: animationDuration,
-                      curve: Curves.easeOutCubic,
-                      scale: active ? 1.04 : 1.0,
-                      child: AnimatedDefaultTextStyle(
-                        duration: animationDuration,
-                        curve: Curves.easeOutCubic,
+                    child: Transform.scale(
+                      scale: scale,
+                      child: Text(
+                        config.label,
                         style: TextStyle(
-                          fontSize: active ? 15.5 : 15,
+                          fontSize: 15 + 0.5 * activeT,
                           fontWeight:
-                              active ? FontWeight.w800 : FontWeight.w500,
-                          color: active
-                              ? (isDark ? Colors.white : Colors.black87)
-                              : (isDark ? Colors.white54 : Colors.black45),
+                              activeT > 0.5 ? FontWeight.w800 : FontWeight.w500,
+                          color: color,
                         ),
-                        child: Text(config.label),
                       ),
                     ),
                   ),
@@ -907,14 +1083,36 @@ class _ShuitieScreenState extends State<ShuitieScreen>
             child: SizedBox(
               width: 44,
               height: 44,
-              child: IconButton(
-                onPressed: _openHomeServicePanel,
-                icon: Icon(
-                  Icons.menu_rounded,
-                  size: 26,
-                  color: isDark ? Colors.white : Colors.black87,
-                ),
-                padding: EdgeInsets.zero,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  IconButton(
+                    onPressed: _openHomeServicePanel,
+                    icon: Icon(
+                      Icons.menu_rounded,
+                      size: 26,
+                      color: isDark ? Colors.white : Colors.black87,
+                    ),
+                    padding: EdgeInsets.zero,
+                  ),
+                  if (_showCheckInDot)
+                    Positioned(
+                      top: 9,
+                      right: 8,
+                      child: Container(
+                        width: 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFEF4444),
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: isDark ? Colors.black87 : Colors.white,
+                            width: 1.5,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ),
           ),
@@ -986,11 +1184,8 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     );
   }
 
-  // ---- 关注模式占位 ----
+  // ---- 关注模式未登录占位 ----
   Widget _buildFollowingPlaceholder(bool isDark) {
-    final auth = context.watch<AuthProvider>();
-    final isLoggedIn = auth.isLoggedIn;
-
     return Center(
       child: GlassContainer(
         padding: const EdgeInsets.all(24),
@@ -1001,13 +1196,13 @@ class _ShuitieScreenState extends State<ShuitieScreen>
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
-              isLoggedIn ? Icons.people_outline_rounded : Icons.login_rounded,
+              Icons.login_rounded,
               size: 64,
               color: isDark ? Colors.white60 : Colors.grey[400],
             ),
             const SizedBox(height: 16),
             Text(
-              isLoggedIn ? '关注动态暂未开放' : '登录后查看关注动态',
+              '登录后查看关注动态',
               style: TextStyle(
                 fontSize: 18,
                 color: isDark ? Colors.white70 : Colors.grey[600],
@@ -1015,7 +1210,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
             ),
             const SizedBox(height: 8),
             Text(
-              isLoggedIn ? '后续支持后，你关注的同学发布的内容会显示在这里' : '关注感兴趣的同学，他们发布的内容会显示在这里',
+              '关注感兴趣的同学，他们发布的内容会显示在这里',
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 14,
@@ -1024,25 +1219,64 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                     : Colors.grey[400],
               ),
             ),
-            if (!isLoggedIn) ...[
-              const SizedBox(height: 16),
-              OutlinedButton.icon(
-                onPressed: () => Navigator.push(
-                  context,
-                  PageRouteBuilder(
-                    opaque: false,
-                    pageBuilder: (_, __, ___) => const LoginScreen(),
-                  ),
-                ),
-                icon: const Icon(Icons.login, size: 18),
-                label: const Text('去登录'),
-                style: OutlinedButton.styleFrom(
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
+            const SizedBox(height: 16),
+            OutlinedButton.icon(
+              onPressed: () => Navigator.push(
+                context,
+                PageRouteBuilder(
+                  opaque: false,
+                  pageBuilder: (_, __, ___) => const LoginScreen(),
                 ),
               ),
-            ],
+              icon: const Icon(Icons.login, size: 18),
+              label: const Text('去登录'),
+              style: OutlinedButton.styleFrom(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ---- 关注模式已登录但无帖子 ----
+  Widget _buildFollowingEmptyState(bool isDark) {
+    return Center(
+      child: GlassContainer(
+        padding: const EdgeInsets.all(24),
+        borderRadius: 20,
+        blur: 15,
+        opacity: 0.1,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.people_outline_rounded,
+              size: 64,
+              color: isDark ? Colors.white60 : Colors.grey[400],
+            ),
+            const SizedBox(height: 16),
+            Text(
+              '还没有关注动态',
+              style: TextStyle(
+                fontSize: 18,
+                color: isDark ? Colors.white70 : Colors.grey[600],
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '关注的同学发布帖子后，会显示在这里',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 14,
+                color: isDark
+                    ? Colors.white.withValues(alpha: 0.4)
+                    : Colors.grey[400],
+              ),
+            ),
           ],
         ),
       ),
@@ -1051,189 +1285,202 @@ class _ShuitieScreenState extends State<ShuitieScreen>
 
   // ---- 普通信息流内容（含搜索框折叠） ----
   Widget _buildFeedContent(bool isDark) {
-    return RefreshIndicator(
-      onRefresh: () async {
-        await _refresh();
-        await _loadAnnouncements();
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onHorizontalDragStart: _handleFeedSwipeStart,
+      onHorizontalDragUpdate: _handleFeedSwipeUpdate,
+      onHorizontalDragEnd: _handleFeedSwipe,
+      onHorizontalDragCancel: () {
+        _feedSwipeDx = 0;
+        _feedSwipeAccepted = false;
+        unawaited(_settleFeedMode(
+          targetIndex: _feedTargetIndex,
+          begin: _feedDragProgress,
+          end: 0.0,
+          duration: _feedSettleDuration,
+          commit: false,
+        ));
       },
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 680),
-          child: Selector<PostProvider,
-              ({List<Post> posts, bool isLoading, bool hasMore, int revision})>(
-            selector: (context, postProvider) {
-              final sort = _currentRemoteSort ?? 'all';
-              return (
-                posts: postProvider.postsFor(1, sort: sort),
-                isLoading: postProvider.isLoadingFor(1, sort: sort),
-                hasMore: postProvider.hasMoreFor(1, sort: sort),
-                revision: postProvider.revisionFor(1, sort: sort),
-              );
-            },
-            builder: (context, data, child) {
-              final posts = data.posts;
-              final isFeedLoading = data.isLoading;
-              final feedHasMore = data.hasMore;
-
-              final visiblePosts = _resolveVisiblePosts(posts);
-
-              return GestureDetector(
-                behavior: HitTestBehavior.translucent,
-                onHorizontalDragStart: _handleFeedSwipeStart,
-                onHorizontalDragUpdate: _handleFeedSwipeUpdate,
-                onHorizontalDragEnd: _handleFeedSwipe,
-                onHorizontalDragCancel: () {
-                  _feedSwipeDx = 0;
-                  _feedSwipeAccepted = false;
-                  _feedSwitchController.forward();
-                },
-                child: SlideTransition(
-                  position: Tween<Offset>(
-                    begin: Offset(_slideDirection * 0.04, 0),
-                    end: Offset.zero,
-                  ).animate(_feedSwitchAnimation),
-                  child: NotificationListener<ScrollNotification>(
-                    onNotification: (notification) {
-                      if (_currentConfig.supportsRemoteLoading &&
-                          notification.metrics.pixels >=
-                              notification.metrics.maxScrollExtent - 500 &&
-                          feedHasMore &&
-                          !isFeedLoading) {
-                        context.read<PostProvider>().loadPosts(
-                              boardId: 1,
-                              sort: _currentRemoteSort ?? 'all',
-                            );
-                      }
-                      return false;
-                    },
-                    child: CustomScrollView(
-                      key: PageStorageKey<String>(
-                        'home-feed-scroll-$_feedMode',
-                      ),
-                      controller: _currentFeedScrollController,
-                      physics: const AlwaysScrollableScrollPhysics(
-                        parent: BouncingScrollPhysics(),
-                      ),
-                      slivers: [
-                        // 搜索框（可折叠）
-                        SliverPersistentHeader(
-                          pinned: false,
-                          floating: true,
-                          delegate: _SliverSearchBarDelegate(
-                            vsync: this,
-                            child: Padding(
-                              padding: const EdgeInsets.fromLTRB(
-                                12,
-                                2,
-                                12,
-                                4,
-                              ),
-                              child: _buildSearchBar(isDark),
-                            ),
-                          ),
-                        ),
-                        if (!_currentConfig.supportsRemoteLoading)
-                          SliverFillRemaining(
-                            hasScrollBody: false,
-                            child: _buildFollowingPlaceholder(isDark),
-                          )
-                        else if (isFeedLoading && posts.isEmpty)
-                          const SliverFillRemaining(
-                            child: Center(
-                              child: CircularProgressIndicator(),
-                            ),
-                          )
-                        else if (visiblePosts.isEmpty)
-                          SliverFillRemaining(
-                            child: _buildEmptyState(
-                              isDark,
-                              title:
-                                  _searchQuery.isNotEmpty ? '没有找到匹配帖子' : '暂无帖子',
-                              subtitle: _searchQuery.isNotEmpty
-                                  ? '目前只按标题搜索，换个标题关键词试试'
-                                  : '发布第一条帖子吧',
-                              onRetry: _refresh,
-                            ),
-                          )
-                        else
-                          SliverList(
-                            delegate: SliverChildBuilderDelegate((
-                              context,
-                              index,
-                            ) {
-                              final post = visiblePosts[index];
-                              final isSelected = _selectedPost?.id == post.id &&
-                                  _selectedUserId == null &&
-                                  ResponsiveUtil.useDesktopShell(context);
-                              return Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                ),
-                                child: Container(
-                                  decoration: isSelected
-                                      ? BoxDecoration(
-                                          borderRadius:
-                                              BorderRadius.circular(20),
-                                          boxShadow: [
-                                            BoxShadow(
-                                              color: Theme.of(context)
-                                                  .primaryColor
-                                                  .withValues(alpha: 0.15),
-                                              blurRadius: 20,
-                                              spreadRadius: 2,
-                                            ),
-                                          ],
-                                        )
-                                      : null,
-                                  child: PostCard(
-                                    post: post,
-                                    onAuthorTap: _openUserInSplit,
-                                    onTap: () {
-                                      if (ResponsiveUtil.useDesktopShell(
-                                        context,
-                                      )) {
-                                        _openPostInSplit(post);
-                                      } else {
-                                        Navigator.push(
-                                          context,
-                                          MaterialPageRoute(
-                                            builder: (_) => PostDetailScreen(
-                                              postId: post.id,
-                                              isMarket: false,
-                                              initialPost: post,
-                                            ),
-                                          ),
-                                        );
-                                      }
-                                    },
-                                  ),
-                                ),
-                              );
-                            }, childCount: visiblePosts.length),
-                          ),
-                        if (isFeedLoading && posts.isNotEmpty)
-                          const SliverToBoxAdapter(
-                            child: Padding(
-                              padding: EdgeInsets.symmetric(vertical: 18),
-                              child: Center(
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              ),
-                            ),
-                          ),
-                        const SliverToBoxAdapter(
-                          child: SizedBox(height: 80),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              );
-            },
+      child: RefreshIndicator(
+        onRefresh: () async {
+          await _refresh();
+          await _loadAnnouncements();
+        },
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 680),
+            child: _buildFeedModePage(isDark, _feedMode),
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildFeedModePage(bool isDark, String mode) {
+    final config = kFeedModes.firstWhere((m) => m.key == mode);
+    final sort = config.remoteSort ?? 'all';
+
+    return _buildFeedModeList(isDark, mode, config, sort);
+  }
+
+  Widget _buildFeedModeList(
+    bool isDark,
+    String mode,
+    FeedModeConfig config,
+    String sort,
+  ) {
+    final feedList = Selector<PostProvider,
+        ({List<Post> posts, bool isLoading, bool hasMore, int revision})>(
+      selector: (context, postProvider) {
+        return (
+          posts: postProvider.postsFor(1, sort: sort),
+          isLoading: postProvider.isLoadingFor(1, sort: sort),
+          hasMore: postProvider.hasMoreFor(1, sort: sort),
+          revision: postProvider.revisionFor(1, sort: sort),
+        );
+      },
+      builder: (context, data, child) {
+        final posts = data.posts;
+        final isFeedLoading = data.isLoading;
+        final feedHasMore = data.hasMore;
+        final visiblePosts = _resolveVisiblePosts(posts, mode);
+
+        return NotificationListener<ScrollNotification>(
+          onNotification: (notification) {
+            final canLoadMore =
+                mode != 'following' || context.read<AuthProvider>().isLoggedIn;
+            if (config.supportsRemoteLoading &&
+                notification.metrics.pixels >=
+                    notification.metrics.maxScrollExtent - 500 &&
+                feedHasMore &&
+                !isFeedLoading &&
+                canLoadMore) {
+              context.read<PostProvider>().loadPosts(
+                    boardId: 1,
+                    sort: sort,
+                  );
+            }
+            return false;
+          },
+          child: CustomScrollView(
+            key: PageStorageKey<String>('home-feed-scroll-$mode'),
+            controller: _feedScrollControllers[mode],
+            physics: const AlwaysScrollableScrollPhysics(
+              parent: BouncingScrollPhysics(),
+            ),
+            slivers: [
+              SliverPersistentHeader(
+                pinned: false,
+                floating: true,
+                delegate: _SliverSearchBarDelegate(
+                  vsync: this,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 2, 12, 4),
+                    child: _buildSearchBar(isDark),
+                  ),
+                ),
+              ),
+              if (mode == 'following' &&
+                  !context.read<AuthProvider>().isLoggedIn)
+                SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: _buildFollowingPlaceholder(isDark),
+                )
+              else if (isFeedLoading && posts.isEmpty)
+                const SliverFillRemaining(
+                  child: Center(
+                    child: CircularProgressIndicator(),
+                  ),
+                )
+              else if (visiblePosts.isEmpty)
+                SliverFillRemaining(
+                  child: mode == 'following'
+                      ? _buildFollowingEmptyState(isDark)
+                      : _buildEmptyState(
+                          isDark,
+                          title: _searchQuery.isNotEmpty ? '没有找到匹配帖子' : '暂无帖子',
+                          subtitle: _searchQuery.isNotEmpty
+                              ? '目前只按标题搜索，换个标题关键词试试'
+                              : '发布第一条帖子吧',
+                          onRetry: _refresh,
+                        ),
+                )
+              else
+                SliverList(
+                  delegate: SliverChildBuilderDelegate((context, index) {
+                    final post = visiblePosts[index];
+                    final isSelected = _selectedPost?.id == post.id &&
+                        _selectedUserId == null &&
+                        ResponsiveUtil.useDesktopShell(context);
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: Container(
+                        decoration: isSelected
+                            ? BoxDecoration(
+                                borderRadius: BorderRadius.circular(20),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Theme.of(context)
+                                        .primaryColor
+                                        .withValues(alpha: 0.15),
+                                    blurRadius: 20,
+                                    spreadRadius: 2,
+                                  ),
+                                ],
+                              )
+                            : null,
+                        child: HomeTabRevealItem(
+                          index: index,
+                          revealOrder: index,
+                          child: PostCard(
+                            post: post,
+                            onAuthorTap: _openUserInSplit,
+                            onTap: () {
+                              if (ResponsiveUtil.useDesktopShell(context)) {
+                                _openPostInSplit(post);
+                              } else {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => PostDetailScreen(
+                                      postId: post.id,
+                                      isMarket: false,
+                                      initialPost: post,
+                                    ),
+                                  ),
+                                );
+                              }
+                            },
+                          ),
+                        ),
+                      ),
+                    );
+                  }, childCount: visiblePosts.length),
+                ),
+              if (isFeedLoading && posts.isNotEmpty)
+                const SliverToBoxAdapter(
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(vertical: 18),
+                    child: Center(
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  ),
+                ),
+              const SliverToBoxAdapter(
+                child: SizedBox(height: 80),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (!_feedRevealActive) return feedList;
+
+    return HomeTabRevealScope(
+      animation: _feedSwitchController,
+      serial: _feedRevealSerial,
+      child: feedList,
     );
   }
 
@@ -1241,13 +1488,12 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     return GlassContainer(
       padding: const EdgeInsets.symmetric(horizontal: 12),
       borderRadius: 50,
-      blur: 16,
-      opacity: 0.85,
-      backgroundColor:
-          isDark ? const Color(0xE6171B24) : const Color(0xF2FFFFFF),
+      blur: 8,
+      opacity: 1,
+      backgroundColor: isDark ? const Color(0xE6171B24) : Colors.white,
       borderColor: isDark
           ? Colors.white.withValues(alpha: 0.12)
-          : Colors.white.withValues(alpha: 0.85),
+          : const Color(0xFFEEF0F5),
       child: TextField(
         controller: _searchController,
         onChanged: _onSearchChanged,

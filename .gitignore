@@ -25,6 +25,9 @@ server/uploads/*
 server/*.exe
 server/*.exe~
 *.apk
+.sisyphus/plans/*.jpg
+.sisyphus/plans/*.jpeg
+.sisyphus/plans/*.png
 backups.tar/
 *.aab
 *.exe
@@ -37,6 +40,7 @@ repl.go
 patch*.py
 
 check_apk.py
+replace.py
 /client/test/e2e_test.dart
 /client/integration_test/local_*.dart
 /client/test_credentials.*

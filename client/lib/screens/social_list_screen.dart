@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/social_provider.dart';
 import '../providers/auth_provider.dart';
+import '../providers/post_provider.dart';
 import '../models/user.dart';
 import 'user_home_screen.dart';
 import '../config/api_constants.dart';
@@ -249,6 +250,7 @@ class _UserListState extends State<_UserList> {
           });
           // Refresh global user state so profile follow count updates instantly
           context.read<AuthProvider>().refreshUser();
+          context.read<PostProvider>().invalidateFollowingFeed();
         }
       },
       child: Text(user.isFollowing ? '已关注' : '关注'),

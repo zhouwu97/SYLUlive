@@ -174,9 +174,8 @@ class _MyContentScreenState extends State<MyContentScreen>
                 ? '已删除 $deletedCount 项'
                 : '已删除 $deletedCount 项，${errors.first}',
           ),
-          backgroundColor: errors.isEmpty && deletedCount > 0
-              ? Colors.green
-              : Colors.red,
+          backgroundColor:
+              errors.isEmpty && deletedCount > 0 ? Colors.green : Colors.red,
         ),
       );
       if (mounted)
@@ -293,14 +292,14 @@ class _MyContentScreenState extends State<MyContentScreen>
                   child: _isLoading
                       ? const Center(child: CircularProgressIndicator())
                       : _errorMessage != null
-                      ? _buildErrorView(isDark)
-                      : TabBarView(
-                          controller: _tabController,
-                          children: [
-                            _buildPostsList(_myPosts, isDark),
-                            _buildMarketList(_myMarketPosts, isDark),
-                          ],
-                        ),
+                          ? _buildErrorView(isDark)
+                          : TabBarView(
+                              controller: _tabController,
+                              children: [
+                                _buildPostsList(_myPosts, isDark),
+                                _buildMarketList(_myMarketPosts, isDark),
+                              ],
+                            ),
                 ),
               ],
             ),
@@ -312,30 +311,31 @@ class _MyContentScreenState extends State<MyContentScreen>
 
   Widget _buildBackground(ThemeProvider themeProvider, bool isDark) {
     // 使用全局背景设置，与 profile_screen 保持一致
-    if (themeProvider.isBackgroundVisible &&
-        themeProvider.getBackgroundImageFor(context) != null) {
-      final bgPath = themeProvider.getBackgroundImageFor(context)!;
-      final isAsset = !bgPath.startsWith('http') && !bgPath.startsWith('/');
+    if (themeProvider.shouldShowCustomBackground &&
+        themeProvider.getCustomBackgroundImageFor(context) != null) {
+      final bgPath = themeProvider.getCustomBackgroundImageFor(context)!;
       return Stack(
         fit: StackFit.expand,
         children: [
-          isAsset
+          ThemeProvider.isBundledAssetBackground(bgPath)
               ? Image.asset(
-                  'assets/images/$bgPath',
+                  ThemeProvider.resolveBundledAssetPath(bgPath),
                   fit: BoxFit.cover,
                   errorBuilder: (_, __, ___) => _buildDefaultBackground(isDark),
                 )
-              : bgPath.startsWith('/')
-              ? Image.file(
-                  File(bgPath),
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => _buildDefaultBackground(isDark),
-                )
-              : Image.network(
-                  bgPath,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => _buildDefaultBackground(isDark),
-                ),
+              : ThemeProvider.isLocalFileBackground(bgPath)
+                  ? Image.file(
+                      File(bgPath),
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) =>
+                          _buildDefaultBackground(isDark),
+                    )
+                  : Image.network(
+                      bgPath,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) =>
+                          _buildDefaultBackground(isDark),
+                    ),
           Container(
             color: isDark
                 ? Colors.black.withValues(alpha: 0.4)
@@ -348,41 +348,8 @@ class _MyContentScreenState extends State<MyContentScreen>
   }
 
   Widget _buildDefaultBackground(bool isDark) {
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        Image(
-          image: ResizeImage(
-            const AssetImage('assets/images/morenbeijing.jpeg'),
-            width: 1080,
-          ),
-          fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: isDark
-                    ? [
-                        const Color(0xFF1A1A2E),
-                        const Color(0xFF16213E),
-                        const Color(0xFF0F3460),
-                      ]
-                    : [
-                        const Color(0xFF667EEA),
-                        const Color(0xFF764BA2),
-                        const Color(0xFFF093FB),
-                      ],
-              ),
-            ),
-          ),
-        ),
-        Container(
-          color: isDark
-              ? Colors.black.withValues(alpha: 0.35)
-              : Colors.white.withValues(alpha: 0.25),
-        ),
-      ],
+    return ColoredBox(
+      color: isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
     );
   }
 
@@ -770,9 +737,8 @@ class _MyContentScreenState extends State<MyContentScreen>
               subtitle,
               style: TextStyle(
                 fontSize: 14,
-                color: isDark
-                    ? Colors.white.withOpacity(0.4)
-                    : Colors.grey[400],
+                color:
+                    isDark ? Colors.white.withOpacity(0.4) : Colors.grey[400],
               ),
             ),
           ],

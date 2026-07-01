@@ -9,11 +9,17 @@ import '../providers/theme_provider.dart';
 import '../utils/responsive_util.dart';
 import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 import '../widgets/glass_container.dart';
-import '../widgets/post_card.dart';
+import '../widgets/market_post_card.dart';
 import 'create_post_screen.dart';
 import 'login_screen.dart';
 import 'market_exposure_screen.dart';
 import 'post_detail_screen.dart';
+
+abstract final class AppLayout {
+  static const double floatingNavHeight = 64;
+  static const double floatingNavBottomMargin = 12;
+  static const double fabNavGap = 12;
+}
 
 class MarketScreen extends StatefulWidget {
   final List<String>? onlyPostTypes;
@@ -37,8 +43,8 @@ class _MarketScreenState extends State<MarketScreen> {
 
   List<String> get _allowedTypes =>
       widget.onlyPostTypes == null || widget.onlyPostTypes!.isEmpty
-      ? _marketPostTypes
-      : widget.onlyPostTypes!;
+          ? _marketPostTypes
+          : widget.onlyPostTypes!;
 
   @override
   void initState() {
@@ -78,11 +84,11 @@ class _MarketScreenState extends State<MarketScreen> {
     }
 
     final results = await context.read<PostProvider>().searchPosts(
-      boardId: 2,
-      sort: _sortType,
-      query: query,
-      limit: 100,
-    );
+          boardId: 2,
+          sort: _sortType,
+          query: query,
+          limit: 100,
+        );
 
     if (!mounted || _searchQuery != query) return;
 
@@ -126,6 +132,64 @@ class _MarketScreenState extends State<MarketScreen> {
     }
   }
 
+  void _showSortBottomSheet() {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 12),
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 12),
+              _buildSortOption('time', '最新发布'),
+              _buildSortOption('price', '价格从低到高'),
+              _buildSortOption('price_desc', '价格从高到低'),
+              _buildSortOption('score', '综合排序'),
+              const SizedBox(height: 16),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildSortOption(String value, String label) {
+    final isSelected = _sortType == value;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final primaryColor = Theme.of(context).colorScheme.primary;
+
+    return ListTile(
+      title: Text(
+        label,
+        style: TextStyle(
+          color: isSelected
+              ? primaryColor
+              : (isDark ? Colors.white : Colors.black87),
+          fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+        ),
+      ),
+      trailing: isSelected ? Icon(Icons.check, color: primaryColor) : null,
+      onTap: () {
+        Navigator.pop(context);
+        if (_sortType != value) {
+          _changeSort(value);
+        }
+      },
+    );
+  }
+
   List<Post> _buildMarketPosts(List<Post> allPosts) {
     return allPosts.where((p) => _allowedTypes.contains(p.postType)).toList();
   }
@@ -137,9 +201,8 @@ class _MarketScreenState extends State<MarketScreen> {
     final topInset = MediaQuery.paddingOf(context).top + kToolbarHeight + 12;
 
     return Scaffold(
-      backgroundColor: isDark
-          ? const Color(0xFF06080D)
-          : const Color(0xFFF4F6FB),
+      backgroundColor:
+          isDark ? const Color(0xFF06080D) : const Color(0xFFF4F6FB),
       extendBodyBehindAppBar: true,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
@@ -158,19 +221,6 @@ class _MarketScreenState extends State<MarketScreen> {
               );
             },
           ),
-          if (widget.titleOverride != '失物招领')
-            PopupMenuButton<String>(
-              icon: const Icon(Icons.sort),
-              onSelected: _changeSort,
-              itemBuilder: (context) => [
-                const PopupMenuItem(value: 'time', child: Text('按时间排序')),
-                PopupMenuItem(
-                  value: _sortType == 'price' ? 'price_desc' : 'price',
-                  child: Text(_sortType == 'price' ? '价格从高到低' : '价格从低到高'),
-                ),
-                const PopupMenuItem(value: 'score', child: Text('综合排序')),
-              ],
-            ),
         ],
       ),
       body: Stack(
@@ -219,17 +269,17 @@ class _MarketScreenState extends State<MarketScreen> {
                   ),
                   slivers: [
                     SliverPadding(
-                      padding: EdgeInsets.fromLTRB(12, topInset, 12, 12),
+                      padding: EdgeInsets.fromLTRB(16, topInset, 16, 16),
                       sliver: SliverList(
                         delegate: SliverChildListDelegate([
                           _buildSearchBar(isDark),
                           if (widget.onlyPostTypes == null) ...[
-                            const SizedBox(height: 12),
+                            const SizedBox(height: 6),
                             _buildExposureEntry(isDark, exposurePosts),
-                            const SizedBox(height: 16),
+                            const SizedBox(height: 10),
                           ] else
-                            const SizedBox(height: 16),
-                          _buildSectionHeader(isDark, marketPosts.length),
+                            const SizedBox(height: 10),
+                          _buildSectionHeader(isDark),
                         ]),
                       ),
                     ),
@@ -240,21 +290,28 @@ class _MarketScreenState extends State<MarketScreen> {
                     else if (marketPosts.isEmpty)
                       SliverToBoxAdapter(
                         child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
                           child: _buildEmptyState(
                             isDark,
                             _searchQuery.isNotEmpty ? '没有找到匹配内容' : '暂无内容',
                             _searchQuery.isNotEmpty
                                 ? '换个关键词试试'
                                 : (widget.titleOverride == '失物招领'
-                                      ? '发布一条失物或招领信息吧'
-                                      : '发布你的第一条商品吧'),
+                                    ? '发布一条失物或招领信息吧'
+                                    : '发布你的第一条商品吧'),
                           ),
                         ),
                       )
                     else if (themeProvider.marketIsListView)
                       SliverPadding(
-                        padding: const EdgeInsets.fromLTRB(12, 0, 12, 80),
+                        padding: EdgeInsets.fromLTRB(
+                            16,
+                            0,
+                            16,
+                            AppLayout.floatingNavHeight +
+                                AppLayout.floatingNavBottomMargin +
+                                AppLayout.fabNavGap +
+                                170),
                         sliver: SliverList(
                           delegate: SliverChildBuilderDelegate(
                             (context, index) =>
@@ -265,11 +322,18 @@ class _MarketScreenState extends State<MarketScreen> {
                       )
                     else
                       SliverPadding(
-                        padding: const EdgeInsets.fromLTRB(12, 0, 12, 80),
+                        padding: EdgeInsets.fromLTRB(
+                            16,
+                            0,
+                            16,
+                            AppLayout.floatingNavHeight +
+                                AppLayout.floatingNavBottomMargin +
+                                AppLayout.fabNavGap +
+                                170),
                         sliver: SliverMasonryGrid.extent(
                           maxCrossAxisExtent: 300,
-                          mainAxisSpacing: 12,
-                          crossAxisSpacing: 12,
+                          mainAxisSpacing: 16,
+                          crossAxisSpacing: 16,
                           childCount: marketPosts.length,
                           itemBuilder: (context, index) =>
                               _buildMarketCard(marketPosts[index], true),
@@ -284,43 +348,54 @@ class _MarketScreenState extends State<MarketScreen> {
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       floatingActionButton: Padding(
-        padding: const EdgeInsets.only(bottom: 80),
-        child: FloatingActionButton(
-          heroTag: 'market_fab',
-          onPressed: () async {
-            final authProvider = context.read<AuthProvider>();
-            if (!authProvider.isLoggedIn) {
-              ScaffoldMessenger.of(
+        padding: const EdgeInsets.only(
+          bottom: AppLayout.floatingNavHeight +
+              AppLayout.floatingNavBottomMargin +
+              AppLayout.fabNavGap +
+              16,
+        ),
+        child: SizedBox(
+          height: 48,
+          child: FloatingActionButton.extended(
+            heroTag: 'market_fab',
+            elevation: 2,
+            label: const Text('发布'),
+            icon: const Icon(Icons.add),
+            backgroundColor: const Color(0xFF6266D9),
+            foregroundColor: Colors.white,
+            onPressed: () async {
+              final authProvider = context.read<AuthProvider>();
+              if (!authProvider.isLoggedIn) {
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(const SnackBar(content: Text('请先登录')));
+                Navigator.push(
+                  context,
+                  PageRouteBuilder(
+                    opaque: false,
+                    pageBuilder: (_, __, ___) => const LoginScreen(),
+                  ),
+                );
+                return;
+              }
+              await Navigator.push(
                 context,
-              ).showSnackBar(const SnackBar(content: Text('请先登录')));
-              Navigator.push(
-                context,
-                PageRouteBuilder(
-                  opaque: false,
-                  pageBuilder: (_, __, ___) => const LoginScreen(),
+                MaterialPageRoute(
+                  builder: (_) => CreatePostScreen(
+                    boardId: 2,
+                    defaultPostType: widget.onlyPostTypes != null &&
+                            widget.onlyPostTypes!.contains('lost')
+                        ? 'lost'
+                        : 'sell',
+                    allowedPostTypes: widget.onlyPostTypes,
+                  ),
                 ),
               );
-              return;
-            }
-            await Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => CreatePostScreen(
-                  boardId: 2,
-                  defaultPostType:
-                      widget.onlyPostTypes != null &&
-                          widget.onlyPostTypes!.contains('lost')
-                      ? 'lost'
-                      : 'sell',
-                  allowedPostTypes: widget.onlyPostTypes,
-                ),
-              ),
-            );
-            if (mounted) {
-              await _refreshCurrent();
-            }
-          },
-          child: const Icon(Icons.add),
+              if (mounted) {
+                await _refreshCurrent();
+              }
+            },
+          ),
         ),
       ),
     );
@@ -332,35 +407,41 @@ class _MarketScreenState extends State<MarketScreen> {
       borderRadius: 12,
       blur: 12,
       opacity: 0.18,
-      backgroundColor: isDark
-          ? const Color(0x99171B24)
-          : const Color(0xCCFFFFFF),
+      backgroundColor:
+          isDark ? const Color(0x99171B24) : const Color(0xCCFFFFFF),
       borderColor: isDark
           ? Colors.white.withValues(alpha: 0.08)
           : Colors.white.withValues(alpha: 0.72),
-      child: TextField(
-        controller: _searchController,
-        onChanged: _onSearchChanged,
-        onSubmitted: _runSearch,
-        textInputAction: TextInputAction.search,
-        style: const TextStyle(fontSize: 14),
-        decoration: InputDecoration(
-          border: InputBorder.none,
-          isDense: true,
-          contentPadding: const EdgeInsets.symmetric(vertical: 10),
-          hintText: '搜索商品名称，支持模糊匹配',
-          hintStyle: const TextStyle(fontSize: 14),
-          prefixIcon: const Icon(Icons.search, size: 20),
-          suffixIcon: _searchController.text.isEmpty
-              ? null
-              : IconButton(
-                  icon: const Icon(Icons.close, size: 16),
-                  onPressed: () {
-                    _searchController.clear();
-                    _runSearch('');
-                    setState(() {});
-                  },
-                ),
+      child: SizedBox(
+        height: 44,
+        child: Center(
+          child: TextField(
+            controller: _searchController,
+            onChanged: _onSearchChanged,
+            onSubmitted: _runSearch,
+            textInputAction: TextInputAction.search,
+            style: const TextStyle(fontSize: 14),
+            decoration: InputDecoration(
+              border: InputBorder.none,
+              isDense: true,
+              contentPadding: const EdgeInsets.symmetric(vertical: 12),
+              hintText: '搜索商品、用户或关键词',
+              hintStyle: const TextStyle(fontSize: 14),
+              prefixIcon: const Icon(Icons.search, size: 20),
+              prefixIconConstraints:
+                  const BoxConstraints(minWidth: 36, minHeight: 36),
+              suffixIcon: _searchController.text.isEmpty
+                  ? null
+                  : IconButton(
+                      icon: const Icon(Icons.close, size: 16),
+                      onPressed: () {
+                        _searchController.clear();
+                        _runSearch('');
+                        setState(() {});
+                      },
+                    ),
+            ),
+          ),
         ),
       ),
     );
@@ -374,89 +455,56 @@ class _MarketScreenState extends State<MarketScreen> {
         context,
         MaterialPageRoute(builder: (_) => const MarketExposureScreen()),
       ),
-      child: GlassContainer(
-        padding: const EdgeInsets.all(14),
-        borderRadius: 50,
-        blur: 12,
-        opacity: 0.18,
-        backgroundColor: isDark
-            ? const Color(0xA31C1620)
-            : const Color(0xD9FFF4F2),
-        borderColor: isDark ? const Color(0x66FF8A80) : const Color(0x88FFD5D0),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        height: 52,
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF1C1620) : const Color(0xFFFFF7F2),
+          borderRadius: BorderRadius.circular(12),
+        ),
         child: Row(
           children: [
             Container(
-              width: 38,
-              height: 38,
+              width: 28,
+              height: 28,
               decoration: BoxDecoration(
                 color: const Color(0xFFFF6B6B).withValues(alpha: 0.14),
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(8),
               ),
               child: const Icon(
                 Icons.gpp_maybe_outlined,
                 color: Color(0xFFFF6B6B),
-                size: 20,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Text(
-                        '曝光台',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
-                          color: isDark ? Colors.white : Colors.black87,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 3,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(
-                            0xFFFF6B6B,
-                          ).withValues(alpha: 0.14),
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: Text(
-                          '${exposurePosts.length} 条',
-                          style: const TextStyle(
-                            color: Color(0xFFFF6B6B),
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    latest == null
-                        ? '单独查看曝光内容，不打断正常逛集市'
-                        : (latest.title.isNotEmpty
-                              ? latest.title
-                              : latest.content),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: isDark ? Colors.white60 : Colors.grey[700],
-                    ),
-                  ),
-                ],
+                size: 16,
               ),
             ),
             const SizedBox(width: 8),
+            Text(
+              '曝光台',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                color: isDark ? Colors.white : Colors.black87,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                latest == null
+                    ? '校园交易风险提醒'
+                    : (latest.title.isNotEmpty ? latest.title : latest.content),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: isDark ? Colors.white70 : const Color(0xFF666D7A),
+                ),
+              ),
+            ),
+            const SizedBox(width: 4),
             Icon(
               Icons.chevron_right_rounded,
-              color: isDark ? Colors.white38 : Colors.grey[500],
+              size: 16,
+              color: isDark ? Colors.white60 : const Color(0xFF666D7A),
             ),
           ],
         ),
@@ -464,27 +512,64 @@ class _MarketScreenState extends State<MarketScreen> {
     );
   }
 
-  Widget _buildSectionHeader(bool isDark, int count) {
-    final title = _searchQuery.isNotEmpty
-        ? '搜索结果'
-        : (widget.titleOverride ?? '商品列表');
+  Widget _buildSectionHeader(bool isDark) {
+    final sectionTitle =
+        _searchQuery.isNotEmpty ? '搜索结果' : (widget.titleOverride ?? '最新商品');
+
+    String sortLabel = '最新发布';
+    switch (_sortType) {
+      case 'time':
+        sortLabel = '最新发布';
+        break;
+      case 'price':
+        sortLabel = '价格低到高';
+        break;
+      case 'price_desc':
+        sortLabel = '价格高到低';
+        break;
+      case 'score':
+        sortLabel = '综合排序';
+        break;
+    }
+
     return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(
-          title,
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w700,
-            color: isDark ? Colors.white : Colors.black87,
-          ),
+        Row(
+          children: [
+            Text(
+              sectionTitle,
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+                color: isDark ? Colors.white : Colors.black87,
+              ),
+            ),
+          ],
         ),
-        const SizedBox(width: 8),
-        Text(
-          '$count',
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            color: isDark ? Colors.white38 : Colors.grey[600],
+        InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: _showSortBottomSheet,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            child: Row(
+              children: [
+                Text(
+                  sortLabel,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: isDark ? Colors.white60 : Colors.black54,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(width: 2),
+                Icon(
+                  Icons.keyboard_arrow_down_rounded,
+                  size: 18,
+                  color: isDark ? Colors.white60 : Colors.black54,
+                ),
+              ],
+            ),
           ),
         ),
       ],
@@ -494,9 +579,9 @@ class _MarketScreenState extends State<MarketScreen> {
   Widget _buildMarketCard(Post post, [bool inGrid = false]) {
     return Padding(
       padding: EdgeInsets.only(bottom: inGrid ? 0 : 12),
-      child: PostCard(
+      child: MarketPostCard(
         post: post,
-        showPrice: true,
+        compact: inGrid,
         onTap: () {
           Navigator.push(
             context,
@@ -520,9 +605,8 @@ class _MarketScreenState extends State<MarketScreen> {
       borderRadius: 12,
       blur: 12,
       opacity: 0.18,
-      backgroundColor: isDark
-          ? const Color(0x99171B24)
-          : const Color(0xCCFFFFFF),
+      backgroundColor:
+          isDark ? const Color(0x99171B24) : const Color(0xCCFFFFFF),
       borderColor: isDark
           ? Colors.white.withValues(alpha: 0.08)
           : Colors.white.withValues(alpha: 0.72),

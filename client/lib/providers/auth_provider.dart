@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show MethodChannel;
 import 'package:dio/dio.dart';
 import 'package:cookie_jar/cookie_jar.dart';
 import 'package:dio_cookie_manager/dio_cookie_manager.dart';
@@ -70,11 +71,9 @@ class AuthProvider extends ChangeNotifier {
           if (error.response?.statusCode == 401 && _token != null) {
             // 无效令牌，自动登出
             debugPrint('检测到 401，自动登出');
-            _token = null;
-            _user = null;
-            _dio.options.headers.remove('Authorization');
-            _clearStoredAuth();
-            notifyListeners();
+            // 统一走 _clearLocalSession，与手动退出相同路径
+            // 不 await — 拦截器内部不能阻塞
+            _clearLocalSession(clearPushAlias: true);
             // 重置 overlay 标记，允许再次弹出
             AuthExpiredManager.resetSessionFlag();
             // 延迟一帧弹出重新登录提示
@@ -269,6 +268,13 @@ class AuthProvider extends ChangeNotifier {
     } catch (e) {
       debugPrint('服务端登出异常: $e');
     }
+    await _clearLocalSession(clearPushAlias: true);
+  }
+
+  /// 统一的本地会话清理
+  ///
+  /// [clearPushAlias] 为 true 时同时清除极光 Alias（手动退出 / 401）。
+  Future<void> _clearLocalSession({required bool clearPushAlias}) async {
     _token = null;
     _user = null;
     _applyAuthHeader();
@@ -276,7 +282,20 @@ class AuthProvider extends ChangeNotifier {
       await _cookieJar!.deleteAll();
     }
     await _clearStoredAuth();
+    if (clearPushAlias) {
+      await _clearPushAlias();
+    }
     notifyListeners();
+  }
+
+  /// 清除极光推送 Alias，防止退出后仍收到前用户私信通知
+  Future<void> _clearPushAlias() async {
+    try {
+      await const MethodChannel('shenliyuan/private_message_notifications')
+          .invokeMethod('clearAlias');
+    } catch (e) {
+      debugPrint('清除 JPush Alias 失败: $e');
+    }
   }
 
   Future<void> _clearStoredAuth() async {

@@ -73,30 +73,45 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Stack(
-      children: [
-        Column(
-          children: [
-            if (_showDisclaimer) _buildDisclaimer(isDark),
-            _buildSearchBar(isDark),
-            _buildSegmentedControl(isDark),
-            Expanded(
-              child: _tabCtrl.index == 0
-                  ? _buildCanteenList(isDark)
-                  : (_tabCtrl.index == 1
+    final bgColor = isDark ? const Color(0xFF101219) : Colors.white;
+    return Scaffold(
+      backgroundColor: bgColor,
+      appBar: AppBar(
+        leading: const BackButton(),
+        title: const Text('校园榜单'),
+        centerTitle: true,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        backgroundColor: bgColor,
+        surfaceTintColor: Colors.transparent,
+        foregroundColor: isDark ? Colors.white : const Color(0xFF20212B),
+      ),
+      body: Stack(
+        children: [
+          Column(
+            children: [
+              if (_tabCtrl.index == 1 && _showDisclaimer)
+                _buildDisclaimer(isDark),
+              _buildSearchBar(isDark),
+              _buildSegmentedControl(isDark),
+              Expanded(
+                child: _tabCtrl.index == 0
+                    ? _buildCanteenList(isDark)
+                    : (_tabCtrl.index == 1
                         ? _buildSubjectList(isDark)
                         : _buildMajorList(isDark)),
-            ),
-          ],
-        ),
-        Positioned(right: 20, bottom: 20, child: _buildFAB(context)),
-      ],
+              ),
+            ],
+          ),
+          Positioned(right: 20, bottom: 20, child: _buildFAB(context)),
+        ],
+      ),
     );
   }
 
   Widget _buildSegmentedControl(bool isDark) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 20, 16, 12),
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
       child: Container(
         height: 40,
         decoration: BoxDecoration(
@@ -146,130 +161,145 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
     );
   }
 
+  String get _fabLabel => switch (_tabCtrl.index) {
+        0 => '添加食堂',
+        1 => '添加教师',
+        _ => '添加专业',
+      };
+
   Widget _buildFAB(BuildContext context) {
     final bottomSafe = MediaQuery.of(context).padding.bottom;
     return Padding(
       padding: EdgeInsets.only(bottom: bottomSafe > 0 ? bottomSafe : 0),
-      child: FloatingActionButton(
+      child: FloatingActionButton.extended(
         heroTag: 'teacher_rate_fab',
         onPressed: _showAddDialog,
-        backgroundColor: const Color(0xFF16A34A),
-        elevation: 4,
-        shape: const CircleBorder(),
-        child: const Icon(Icons.add, color: Colors.white, size: 28),
+        backgroundColor: const Color(0xFF7367C6),
+        foregroundColor: Colors.white,
+        elevation: 8,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(18),
+        ),
+        icon: const Icon(Icons.add_rounded, color: Colors.white, size: 22),
+        label: Text(
+          _fabLabel,
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w600,
+            fontSize: 14,
+          ),
+        ),
       ),
     );
   }
 
   Widget _buildDisclaimer(bool isDark) => GlassContainer(
-    margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-    padding: const EdgeInsets.all(12),
-    borderRadius: 14,
-    blur: 12,
-    opacity: 0.18,
-    backgroundColor: isDark ? const Color(0xA3182033) : const Color(0xCCEAF1FF),
-    child: Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(
-          Icons.info_outline,
-          size: 20,
-          color: isDark ? Colors.blue[300] : Colors.blue[700],
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Text(
-            '教师榜已按学科聚合。添加教师时请填写完整课程名称，例如“数据结构”“高等数学A1”，避免同一学科被拆散。',
-            style: TextStyle(
-              fontSize: 12,
-              color: isDark ? Colors.grey[300] : Colors.grey[700],
-              height: 1.45,
+        margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+        padding: const EdgeInsets.all(12),
+        borderRadius: 14,
+        blur: 12,
+        opacity: 0.18,
+        backgroundColor:
+            isDark ? const Color(0xA3182033) : const Color(0xCCEAF1FF),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              Icons.info_outline,
+              size: 20,
+              color: isDark ? Colors.blue[300] : Colors.blue[700],
             ),
-          ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                '教师榜已按学科聚合。添加教师时请填写完整课程名称，例如“数据结构”“高等数学A1”，避免同一学科被拆散。',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: isDark ? Colors.grey[300] : Colors.grey[700],
+                  height: 1.45,
+                ),
+              ),
+            ),
+            GestureDetector(
+              onTap: () async {
+                if (mounted) setState(() => _showDisclaimer = false);
+                final prefs = await SharedPreferences.getInstance();
+                await prefs.setBool('has_shown_teacher_disclaimer', true);
+              },
+              child: const Icon(Icons.close, size: 16, color: Colors.grey),
+            ),
+          ],
         ),
-        GestureDetector(
-          onTap: () async {
-            if (mounted) setState(() => _showDisclaimer = false);
-            final prefs = await SharedPreferences.getInstance();
-            await prefs.setBool('has_shown_teacher_disclaimer', true);
-          },
-          child: const Icon(Icons.close, size: 16, color: Colors.grey),
-        ),
-      ],
-    ),
-  );
+      );
 
   Widget _buildSearchBar(bool isDark) => Padding(
-    padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-    child: GlassContainer(
-      borderRadius: 50,
-      blur: 12,
-      opacity: 0.18,
-      backgroundColor: isDark
-          ? const Color(0x99171B24)
-          : const Color(0xCCFFFFFF),
-      borderColor: isDark
-          ? Colors.white.withValues(alpha: 0.08)
-          : Colors.white.withValues(alpha: 0.72),
-      child: TextField(
-        controller: _searchCtrl,
-        decoration: InputDecoration(
-          hintText: _tabCtrl.index == 0
-              ? '搜索食堂...'
-              : (_tabCtrl.index == 1 ? '搜索学科或教师...' : '搜索专业...'),
-          prefixIcon: const Icon(Icons.search, size: 20),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide.none,
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+        child: GlassContainer(
+          borderRadius: 50,
+          blur: 12,
+          opacity: 0.18,
+          backgroundColor:
+              isDark ? const Color(0x99171B24) : const Color(0xCCFFFFFF),
+          borderColor: isDark
+              ? Colors.white.withValues(alpha: 0.08)
+              : Colors.white.withValues(alpha: 0.72),
+          child: TextField(
+            controller: _searchCtrl,
+            decoration: InputDecoration(
+              hintText: _tabCtrl.index == 0
+                  ? '搜索食堂...'
+                  : (_tabCtrl.index == 1 ? '搜索学科或教师...' : '搜索专业...'),
+              prefixIcon: const Icon(Icons.search, size: 20),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide.none,
+              ),
+              contentPadding: const EdgeInsets.symmetric(vertical: 10),
+            ),
+            onChanged: (value) {
+              if (_tabCtrl.index == 1) {
+                context.read<TeacherProvider>().loadTeachers(
+                      query: value.trim().isEmpty ? null : value,
+                    );
+              } else {
+                setState(() {});
+              }
+            },
           ),
-          contentPadding: const EdgeInsets.symmetric(vertical: 10),
         ),
-        onChanged: (value) {
-          if (_tabCtrl.index == 1) {
-            context.read<TeacherProvider>().loadTeachers(
-              query: value.trim().isEmpty ? null : value,
-            );
-          } else {
-            setState(() {});
-          }
-        },
-      ),
-    ),
-  );
+      );
 
   Widget _buildSubjectList(bool isDark) => Consumer<TeacherProvider>(
-    builder: (_, provider, __) {
-      if (provider.isLoading && provider.teachers.isEmpty) {
-        return const Center(child: CircularProgressIndicator());
-      }
+        builder: (_, provider, __) {
+          if (provider.isLoading && provider.teachers.isEmpty) {
+            return const Center(child: CircularProgressIndicator());
+          }
 
-      final groups = _buildSubjectGroups(provider.teachers, _currentQuery);
-      if (groups.isEmpty) {
-        return Center(
-          child: Text(
-            '暂无学科数据',
-            style: TextStyle(color: isDark ? Colors.white54 : Colors.grey[600]),
-          ),
-        );
-      }
+          final groups = _buildSubjectGroups(provider.teachers, _currentQuery);
+          if (groups.isEmpty) {
+            return Center(
+              child: Text(
+                '暂无学科数据',
+                style: TextStyle(
+                    color: isDark ? Colors.white54 : Colors.grey[600]),
+              ),
+            );
+          }
 
-      Widget buildCard(int index) {
-        final group = groups[index];
-        final topTeachers = group.teachers
-            .take(3)
-            .map((t) => t.name)
-            .join(' · ');
-        return _buildLeaderboardCard(
-          isDark: isDark,
-          rank: index + 1,
-          title: group.subject,
-          subtitle: topTeachers.isEmpty ? '暂无教师' : '代表教师 · $topTeachers',
-          average: group.averageStar,
-          count: group.ratingCount,
-          extraLabel: '${group.teachers.length} 位教师',
-          icon: Icons.auto_stories_outlined,
-          onTap: () =>
-              Navigator.push(
+          Widget buildCard(int index) {
+            final group = groups[index];
+            final topTeachers =
+                group.teachers.take(3).map((t) => t.name).join(' · ');
+            return _buildLeaderboardCard(
+              isDark: isDark,
+              rank: index + 1,
+              title: group.subject,
+              subtitle: topTeachers.isEmpty ? '暂无教师' : '代表教师 · $topTeachers',
+              average: group.averageStar,
+              count: group.ratingCount,
+              extraLabel: '${group.teachers.length} 位教师',
+              icon: Icons.auto_stories_outlined,
+              onTap: () => Navigator.push(
                 context,
                 MaterialPageRoute(
                   builder: (_) => SubjectRankingDetailScreen(
@@ -280,70 +310,71 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
               ).then((changed) async {
                 if (changed != true || !mounted) return;
                 await context.read<TeacherProvider>().loadTeachers(
-                  query: _currentQuery,
-                );
+                      query: _currentQuery,
+                    );
               }),
-        );
-      }
+            );
+          }
 
-      return RefreshIndicator(
-        onRefresh: () async {
-          await context.read<TeacherProvider>().loadTeachers(
-            query: _currentQuery,
+          return RefreshIndicator(
+            onRefresh: () async {
+              await context.read<TeacherProvider>().loadTeachers(
+                    query: _currentQuery,
+                  );
+            },
+            child: ResponsiveUtil.isDesktop(context)
+                ? MasonryGridView.count(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
+                    crossAxisCount:
+                        MediaQuery.of(context).size.width > 900 ? 3 : 2,
+                    mainAxisSpacing: 16,
+                    crossAxisSpacing: 16,
+                    itemCount: groups.length,
+                    itemBuilder: (_, index) => buildCard(index),
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.fromLTRB(12, 8, 12, 80),
+                    itemCount: groups.length,
+                    itemBuilder: (_, index) => buildCard(index),
+                  ),
           );
         },
-        child: ResponsiveUtil.isDesktop(context)
-            ? MasonryGridView.count(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
-                crossAxisCount: MediaQuery.of(context).size.width > 900 ? 3 : 2,
-                mainAxisSpacing: 16,
-                crossAxisSpacing: 16,
-                itemCount: groups.length,
-                itemBuilder: (_, index) => buildCard(index),
-              )
-            : ListView.builder(
-                padding: const EdgeInsets.fromLTRB(12, 8, 12, 80),
-                itemCount: groups.length,
-                itemBuilder: (_, index) => buildCard(index),
-              ),
       );
-    },
-  );
 
   Widget _buildMajorList(bool isDark) => Consumer<MajorProvider>(
-    builder: (_, provider, __) {
-      final query = _currentQuery?.toLowerCase();
-      final majors = query == null
-          ? provider.majors
-          : provider.majors
-                .where((m) => m.name.toLowerCase().contains(query))
-                .toList();
+        builder: (_, provider, __) {
+          final query = _currentQuery?.toLowerCase();
+          final majors = query == null
+              ? provider.majors
+              : provider.majors
+                  .where((m) => m.name.toLowerCase().contains(query))
+                  .toList();
 
-      if (provider.isLoading && provider.majors.isEmpty) {
-        return const Center(child: CircularProgressIndicator());
-      }
-      if (majors.isEmpty) {
-        return Center(
-          child: Text(
-            '暂无专业',
-            style: TextStyle(color: isDark ? Colors.white54 : Colors.grey[600]),
-          ),
-        );
-      }
+          if (provider.isLoading && provider.majors.isEmpty) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (majors.isEmpty) {
+            return Center(
+              child: Text(
+                '暂无专业',
+                style: TextStyle(
+                    color: isDark ? Colors.white54 : Colors.grey[600]),
+              ),
+            );
+          }
 
-      Widget buildCard(int index) {
-        final major = majors[index];
-        return _buildLeaderboardCard(
-          isDark: isDark,
-          rank: index + 1,
-          title: major.name,
-          subtitle: major.level,
-          average: major.averageStar,
-          count: major.ratingCount,
-          extraLabel: '专业评分',
-          icon: Icons.school_outlined,
-          onTap: () =>
-              Navigator.push(
+          Widget buildCard(int index) {
+            final major = majors[index];
+            return _buildLeaderboardCard(
+              isDark: isDark,
+              rank: index + 1,
+              title: major.name,
+              subtitle: major.level,
+              average: major.averageStar,
+              count: major.ratingCount,
+              extraLabel: '专业评分',
+              icon: Icons.school_outlined,
+              onTap: () => Navigator.push(
                 context,
                 MaterialPageRoute(
                   builder: (_) => MajorDetailScreen(
@@ -355,28 +386,29 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
                 if (!mounted) return;
                 context.read<MajorProvider>().loadMajors();
               }),
-        );
-      }
+            );
+          }
 
-      return RefreshIndicator(
-        onRefresh: () => context.read<MajorProvider>().loadMajors(),
-        child: ResponsiveUtil.isDesktop(context)
-            ? MasonryGridView.count(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
-                crossAxisCount: MediaQuery.of(context).size.width > 900 ? 3 : 2,
-                mainAxisSpacing: 16,
-                crossAxisSpacing: 16,
-                itemCount: majors.length,
-                itemBuilder: (_, index) => buildCard(index),
-              )
-            : ListView.builder(
-                padding: const EdgeInsets.fromLTRB(12, 8, 12, 80),
-                itemCount: majors.length,
-                itemBuilder: (_, index) => buildCard(index),
-              ),
+          return RefreshIndicator(
+            onRefresh: () => context.read<MajorProvider>().loadMajors(),
+            child: ResponsiveUtil.isDesktop(context)
+                ? MasonryGridView.count(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
+                    crossAxisCount:
+                        MediaQuery.of(context).size.width > 900 ? 3 : 2,
+                    mainAxisSpacing: 16,
+                    crossAxisSpacing: 16,
+                    itemCount: majors.length,
+                    itemBuilder: (_, index) => buildCard(index),
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.fromLTRB(12, 8, 12, 80),
+                    itemCount: majors.length,
+                    itemBuilder: (_, index) => buildCard(index),
+                  ),
+          );
+        },
       );
-    },
-  );
 
   Widget _buildLeaderboardCard({
     required bool isDark,
@@ -392,53 +424,78 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
     String? imageUrl,
   }) {
     final accent = _rankColor(rank - 1);
+    final hasImage = imageUrl != null && imageUrl.isNotEmpty;
     return GlassContainer(
       margin: const EdgeInsets.only(bottom: 12),
-      borderRadius: 20,
+      borderRadius: 16,
       blur: 12,
       opacity: 0.18,
-      backgroundColor: isDark
-          ? const Color(0x99171B24)
-          : const Color(0xCCFFFFFF),
+      backgroundColor:
+          isDark ? const Color(0x99171B24) : const Color(0xCCFFFFFF),
       borderColor: isDark
           ? Colors.white.withValues(alpha: 0.08)
           : Colors.white.withValues(alpha: 0.72),
       onTap: onTap,
       onLongPress: onLongPress,
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(14),
         child: Row(
           children: [
-            Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                color: accent.withValues(alpha: 0.14),
-                borderRadius: BorderRadius.circular(16),
-                image: imageUrl != null && imageUrl.isNotEmpty
-                    ? DecorationImage(
-                        image: CachedNetworkImageProvider(imageUrl),
-                        fit: BoxFit.cover,
-                      )
-                    : null,
-              ),
-              child: imageUrl != null && imageUrl.isNotEmpty
-                  ? null
-                  : Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(icon, color: accent, size: 18),
-                        const SizedBox(height: 2),
-                        Text(
-                          '#$rank',
-                          style: TextStyle(
-                            color: accent,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ],
+            // Left: image with rank badge overlay, or icon + rank
+            SizedBox(
+              width: 60,
+              height: 60,
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Container(
+                    width: 60,
+                    height: 60,
+                    decoration: BoxDecoration(
+                      color: hasImage ? null : accent.withValues(alpha: 0.14),
+                      borderRadius: BorderRadius.circular(16),
+                      image: hasImage
+                          ? DecorationImage(
+                              image: CachedNetworkImageProvider(imageUrl),
+                              fit: BoxFit.cover,
+                            )
+                          : null,
                     ),
+                    child:
+                        hasImage ? null : Icon(icon, color: accent, size: 24),
+                  ),
+                  // Rank badge overlay (always visible, top-left)
+                  Positioned(
+                    top: -4,
+                    left: -4,
+                    child: Container(
+                      width: 22,
+                      height: 22,
+                      decoration: BoxDecoration(
+                        color: accent,
+                        borderRadius: BorderRadius.circular(7),
+                        boxShadow: [
+                          BoxShadow(
+                            color: accent.withValues(alpha: 0.45),
+                            blurRadius: 4,
+                            offset: const Offset(0, 1),
+                          ),
+                        ],
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        '$rank',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                          height: 1,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -455,17 +512,19 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
                       color: isDark ? Colors.white : Colors.black87,
                     ),
                   ),
-                  const SizedBox(height: 6),
-                  Text(
-                    subtitle,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 13,
-                      height: 1.35,
-                      color: isDark ? Colors.white60 : Colors.black54,
+                  if (subtitle.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      subtitle,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 13,
+                        height: 1.35,
+                        color: isDark ? Colors.white60 : Colors.black54,
+                      ),
                     ),
-                  ),
+                  ],
                   const SizedBox(height: 10),
                   Wrap(
                     spacing: 8,
@@ -481,11 +540,12 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
                         Icons.rate_review_outlined,
                         '$count 条评价',
                       ),
-                      _buildMetricChip(
-                        isDark,
-                        Icons.layers_outlined,
-                        extraLabel,
-                      ),
+                      if (extraLabel.isNotEmpty)
+                        _buildMetricChip(
+                          isDark,
+                          Icons.layers_outlined,
+                          extraLabel,
+                        ),
                     ],
                   ),
                 ],
@@ -537,11 +597,9 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
     final map = <String, List<Teacher>>{};
 
     for (final teacher in teachers) {
-      final subject = teacher.course.trim().isEmpty
-          ? '未分类课程'
-          : teacher.course.trim();
-      final hit =
-          keyword == null ||
+      final subject =
+          teacher.course.trim().isEmpty ? '未分类课程' : teacher.course.trim();
+      final hit = keyword == null ||
           subject.toLowerCase().contains(keyword) ||
           teacher.name.toLowerCase().contains(keyword);
       if (!hit) continue;
@@ -549,8 +607,7 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
     }
 
     final groups = map.entries.map((entry) {
-      final items = [...entry.value]
-        ..sort((a, b) {
+      final items = [...entry.value]..sort((a, b) {
           final compare = b.averageStar.compareTo(a.averageStar);
           if (compare != 0) return compare;
           return b.ratingCount.compareTo(a.ratingCount);
@@ -578,8 +635,8 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
         final canteens = query == null
             ? provider.canteens
             : provider.canteens
-                  .where((m) => m.name.toLowerCase().contains(query))
-                  .toList();
+                .where((m) => m.name.toLowerCase().contains(query))
+                .toList();
 
         if (provider.isLoading && provider.canteens.isEmpty) {
           return const Center(child: CircularProgressIndicator());
@@ -601,12 +658,12 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
             isDark: isDark,
             rank: index + 1,
             title: canteen.name,
-            subtitle: '评分: ${canteen.averageStar.toStringAsFixed(1)}',
+            subtitle: '',
             average: canteen.averageStar,
             count: canteen.ratingCount,
-            extraLabel: '食堂评分',
+            extraLabel: '',
             icon: Icons.restaurant,
-            imageUrl: canteen.image != null && canteen.image.isNotEmpty
+            imageUrl: canteen.image.isNotEmpty
                 ? ApiConstants.fullUrl(canteen.image)
                 : null,
             onLongPress: isAdmin
@@ -644,19 +701,18 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
                     );
                   }
                 : null,
-            onTap: () =>
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => CanteenDetailScreen(
-                      canteenId: canteen.id,
-                      canteenName: canteen.name,
-                    ),
-                  ),
-                ).then((_) {
-                  if (!mounted) return;
-                  context.read<CanteenProvider>().loadCanteens();
-                }),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => CanteenDetailScreen(
+                  canteenId: canteen.id,
+                  canteenName: canteen.name,
+                ),
+              ),
+            ).then((_) {
+              if (!mounted) return;
+              context.read<CanteenProvider>().loadCanteens();
+            }),
           );
         }
 
@@ -664,17 +720,16 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
           onRefresh: () => context.read<CanteenProvider>().loadCanteens(),
           child: ResponsiveUtil.isDesktop(context)
               ? MasonryGridView.count(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
-                  crossAxisCount: MediaQuery.of(context).size.width > 900
-                      ? 3
-                      : 2,
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 104),
+                  crossAxisCount:
+                      MediaQuery.of(context).size.width > 900 ? 3 : 2,
                   mainAxisSpacing: 16,
                   crossAxisSpacing: 16,
                   itemCount: canteens.length,
                   itemBuilder: (_, index) => buildCard(index),
                 )
               : ListView.builder(
-                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 80),
+                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 104),
                   itemCount: canteens.length,
                   itemBuilder: (_, index) => buildCard(index),
                 ),
@@ -683,12 +738,252 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
     );
   }
 
+  Future<void> _showAddCanteenSheet() async {
+    final nameCtrl = TextEditingController();
+    List<String> uploadedImageUrls = [];
+    var submitting = false;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (sheetContext, setModalState) {
+            final bottomInset = MediaQuery.of(sheetContext).viewInsets.bottom;
+            return Padding(
+              padding: EdgeInsets.only(bottom: bottomInset),
+              child: Container(
+                decoration: const BoxDecoration(
+                  color: Color(0xFFFAF8FF),
+                  borderRadius: BorderRadius.vertical(
+                    top: Radius.circular(28),
+                  ),
+                ),
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+                child: SafeArea(
+                  top: false,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Center(
+                        child: Container(
+                          width: 42,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFD8D4E8),
+                            borderRadius: BorderRadius.circular(99),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      Row(
+                        children: [
+                          Container(
+                            width: 44,
+                            height: 44,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFFE8C2),
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: const Icon(
+                              Icons.storefront_rounded,
+                              color: Color(0xFFF59E0B),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          const Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '添加食堂',
+                                  style: TextStyle(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.w800,
+                                    color: Color(0xFF222233),
+                                  ),
+                                ),
+                                SizedBox(height: 4),
+                                Text(
+                                  '填写名称并上传一张店铺图片',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: Color(0xFF8B8794),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 22),
+                      TextField(
+                        controller: nameCtrl,
+                        textInputAction: TextInputAction.done,
+                        decoration: InputDecoration(
+                          hintText: '请输入食堂 / 店铺名',
+                          prefixIcon: const Icon(Icons.restaurant_rounded),
+                          filled: true,
+                          fillColor: Colors.white,
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 14,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            borderSide: const BorderSide(
+                              color: Color(0xFFE8E4F0),
+                            ),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            borderSide: const BorderSide(
+                              color: Color(0xFFE8E4F0),
+                            ),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            borderSide: const BorderSide(
+                              color: Color(0xFF7367C6),
+                              width: 1.4,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      ImageUploadWidget(
+                        maxImages: 1,
+                        largeCard: true,
+                        emptyTitle: '添加图片',
+                        emptySubtitle: '建议上传店铺门面或招牌图',
+                        onImagesUploaded: (urls) {
+                          uploadedImageUrls = urls;
+                          setModalState(() {});
+                        },
+                      ),
+                      const SizedBox(height: 22),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: submitting
+                                  ? null
+                                  : () => Navigator.pop(sheetContext),
+                              style: OutlinedButton.styleFrom(
+                                minimumSize: const Size.fromHeight(48),
+                                side: const BorderSide(
+                                  color: Color(0xFFE0DCEF),
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                              ),
+                              child: const Text('取消'),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: FilledButton(
+                              onPressed: submitting
+                                  ? null
+                                  : () async {
+                                      final name = nameCtrl.text.trim();
+                                      if (name.isEmpty) {
+                                        ScaffoldMessenger.of(sheetContext)
+                                            .showSnackBar(
+                                          const SnackBar(
+                                            content: Text('请输入食堂 / 店铺名'),
+                                          ),
+                                        );
+                                        return;
+                                      }
+                                      if (uploadedImageUrls.isEmpty) {
+                                        ScaffoldMessenger.of(sheetContext)
+                                            .showSnackBar(
+                                          const SnackBar(
+                                            content: Text('请上传一张食堂封面图片'),
+                                          ),
+                                        );
+                                        return;
+                                      }
+
+                                      setModalState(() => submitting = true);
+                                      final success = await context
+                                          .read<CanteenProvider>()
+                                          .addCanteen(
+                                            name,
+                                            uploadedImageUrls.first,
+                                          );
+                                      if (!mounted || !sheetContext.mounted) {
+                                        return;
+                                      }
+                                      setModalState(() => submitting = false);
+                                      if (success) {
+                                        Navigator.pop(sheetContext);
+                                        ScaffoldMessenger.of(context)
+                                            .showSnackBar(
+                                          const SnackBar(
+                                            content: Text('添加成功，经验+10'),
+                                          ),
+                                        );
+                                        await context
+                                            .read<CanteenProvider>()
+                                            .loadCanteens();
+                                      } else {
+                                        ScaffoldMessenger.of(sheetContext)
+                                            .showSnackBar(
+                                          const SnackBar(
+                                            content: Text('添加失败，请稍后重试'),
+                                          ),
+                                        );
+                                      }
+                                    },
+                              style: FilledButton.styleFrom(
+                                backgroundColor: const Color(0xFF7367C6),
+                                foregroundColor: Colors.white,
+                                minimumSize: const Size.fromHeight(48),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                              ),
+                              child: submitting
+                                  ? const SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.white,
+                                      ),
+                                    )
+                                  : const Text('提交'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    nameCtrl.dispose();
+  }
+
   Future<void> _showAddDialog() async {
+    if (_tabCtrl.index == 0) {
+      await _showAddCanteenSheet();
+      return;
+    }
+
     final nameCtrl = TextEditingController();
     final courseCtrl = TextEditingController();
     final levelCtrl = TextEditingController(text: '本科');
-    List<String> uploadedImageUrls = [];
-    final isCanteen = _tabCtrl.index == 0;
     final isTeacher = _tabCtrl.index == 1;
     final isMajor = _tabCtrl.index == 2;
 
@@ -722,13 +1017,6 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
                   DropdownMenuItem(value: '研究生', child: Text('研究生')),
                 ],
                 onChanged: (v) => levelCtrl.text = v!,
-              )
-            else if (isCanteen)
-              ImageUploadWidget(
-                maxImages: 1,
-                onImagesUploaded: (urls) {
-                  uploadedImageUrls = urls;
-                },
               ),
           ],
         ),
@@ -749,12 +1037,6 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
                 ).showSnackBar(const SnackBar(content: Text('请填写完整课程名称')));
                 return;
               }
-              if (isCanteen && uploadedImageUrls.isEmpty) {
-                ScaffoldMessenger.of(
-                  context,
-                ).showSnackBar(const SnackBar(content: Text('请上传一张食堂封面图片')));
-                return;
-              }
 
               Navigator.pop(ctx);
 
@@ -762,26 +1044,15 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
                 await context.read<TeacherProvider>().addTeacher(name, course);
                 if (!mounted) return;
                 await context.read<TeacherProvider>().loadTeachers(
-                  query: _currentQuery,
-                );
+                      query: _currentQuery,
+                    );
               } else if (isMajor) {
                 await context.read<MajorProvider>().addMajor(
-                  name,
-                  levelCtrl.text,
-                );
+                      name,
+                      levelCtrl.text,
+                    );
                 if (!mounted) return;
                 await context.read<MajorProvider>().loadMajors();
-              } else if (isCanteen) {
-                final success = await context
-                    .read<CanteenProvider>()
-                    .addCanteen(name, uploadedImageUrls.first);
-                if (success) {
-                  ScaffoldMessenger.of(
-                    context,
-                  ).showSnackBar(const SnackBar(content: Text('添加成功，经验+10')));
-                }
-                if (!mounted) return;
-                await context.read<CanteenProvider>().loadCanteens();
               }
             },
             child: const Text('提交'),
@@ -796,10 +1067,10 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
   }
 
   Color _rankColor(int index) {
-    if (index == 0) return const Color(0xFFF59E0B);
-    if (index == 1) return const Color(0xFF6366F1);
-    if (index == 2) return const Color(0xFF10B981);
-    return const Color(0xFF8B5CF6);
+    if (index == 0) return const Color(0xFFFFB800); // gold
+    if (index == 1) return const Color(0xFF94A3B8); // silver-gray
+    if (index == 2) return const Color(0xFFCA8A4B); // bronze
+    return const Color(0xFF6D5EF9); // theme purple
   }
 }
 

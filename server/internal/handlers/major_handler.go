@@ -159,6 +159,28 @@ func (h *MajorHandler) Rate(c *gin.Context) {
 	}
 }
 
+// DeleteRating 删除自己的专业评价
+func (h *MajorHandler) DeleteRating(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效ID"})
+		return
+	}
+
+	result := h.db.Where("id = ? AND user_id = ?", id, userID).Delete(&models.MajorRating{})
+	if result.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
+		return
+	}
+	if result.RowsAffected == 0 {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权删除"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "已删除"})
+}
+
 func (h *MajorHandler) Verify(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	var m models.Major
@@ -166,7 +188,7 @@ func (h *MajorHandler) Verify(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "找不到该专业"})
 		return
 	}
-	
+
 	if err := h.db.Model(&m).Update("verified", true).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
 		return
@@ -182,7 +204,7 @@ func (h *MajorHandler) Reject(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "找不到该专业"})
 		return
 	}
-	
+
 	if err := h.db.Delete(&models.Major{}, id).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
 		return

@@ -4,9 +4,10 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart'
-    show Clipboard, ClipboardData, rootBundle;
+    show Clipboard, ClipboardData, MethodChannel, rootBundle;
 import 'package:image_cropper/image_cropper.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
 import 'package:package_info_plus/package_info_plus.dart';
@@ -15,6 +16,8 @@ import 'package:url_launcher/url_launcher.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/course_schedule_provider.dart';
+import '../services/diagnostic_log_service.dart';
+import '../models/diagnostic_log_entry.dart';
 import '../services/keep_alive_service.dart';
 import '../services/wallpaper_prefetch_service.dart';
 import '../utils/update_checker.dart';
@@ -90,10 +93,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
         extendBodyBehindAppBar: true,
         appBar: AppBar(
           backgroundColor: Colors.transparent,
+          surfaceTintColor: Colors.transparent,
           elevation: 0,
+          foregroundColor: isDark ? Colors.white : const Color(0xFF111827),
           title: const Text('设置'),
         ),
         body: Stack(
+          fit: StackFit.expand,
           children: [
             _buildBackground(themeProvider, isDark),
             SafeArea(
@@ -117,7 +123,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Widget _buildBackground(ThemeProvider themeProvider, bool isDark) {
-    String? bgPath = themeProvider.getBackgroundImageFor(context);
+    String? bgPath = themeProvider.shouldShowCustomBackground
+        ? themeProvider.getCustomBackgroundImageFor(context)
+        : null;
 
     if (bgPath != null && bgPath.isNotEmpty) {
       final isAsset = ThemeProvider.isBundledAssetBackground(bgPath);
@@ -134,7 +142,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _buildBackgroundImage(
             imageProvider: imageProvider,
             isDark: isDark,
-            fillScreen: themeProvider.getBackgroundFillScreenFor(context),
+            fillScreen:
+                themeProvider.getCustomBackgroundFillScreenFor(context) ||
+                    _isUsingFallbackBackgroundDirection(themeProvider),
             blur: themeProvider.backgroundBlur,
           ),
           Container(
@@ -145,31 +155,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ],
       );
     }
-    return _buildDefaultBackground(isDark);
+    return _buildCleanBackground(isDark);
   }
 
-  Widget _buildDefaultBackground(bool isDark) {
+  bool _isUsingFallbackBackgroundDirection(ThemeProvider themeProvider) {
     final isWide =
         MediaQuery.of(context).size.width > MediaQuery.of(context).size.height;
-    final defaultImage = isWide
-        ? 'assets/images/tablet_default_landscape.png'
-        : 'assets/images/morenbeijing.jpeg';
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        _buildBackgroundImage(
-          imageProvider: AssetImage(defaultImage),
-          alignment: Alignment.center,
-          isDark: isDark,
-          fillScreen: false,
-          blur: context.read<ThemeProvider>().backgroundBlur,
-        ),
-        Container(
-          color: isDark
-              ? Colors.black.withValues(alpha: 0.35)
-              : Colors.white.withValues(alpha: 0.25),
-        ),
-      ],
+    return (isWide && !themeProvider.hasLandscapeBackground) ||
+        (!isWide && !themeProvider.hasBackground);
+  }
+
+  Widget _buildCleanBackground(bool isDark) {
+    return SizedBox.expand(
+      child: ColoredBox(
+        color: isDark ? const Color(0xFF101219) : const Color(0xFFF8FAFC),
+      ),
     );
   }
 
@@ -231,13 +231,45 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // 背景设置 — 独立卡片
+        // 外观模式
+        _buildSettingsRow(
+          child: _buildSettingsTile(
+            icon: Icons.light_mode,
+            iconColor: Colors.blue,
+            title: '简洁模式',
+            subtitle: '使用干净背景，不删除已保存图片',
+            trailing: themeProvider.isCleanBackgroundMode
+                ? Icon(Icons.check_circle,
+                    color: Theme.of(context).primaryColor)
+                : null,
+            isDark: isDark,
+            onTap: () => themeProvider.setCleanBackgroundMode(),
+          ),
+        ),
         _buildSettingsRow(
           child: _buildSettingsTile(
             icon: Icons.wallpaper,
             iconColor: Colors.purple,
             title: '自定义背景',
-            subtitle: '默认或竖屏时显示的背景',
+            subtitle: '显示你选择的背景图片',
+            trailing: themeProvider.backgroundMode == AppBackgroundMode.custom
+                ? Icon(Icons.check_circle,
+                    color: Theme.of(context).primaryColor)
+                : null,
+            isDark: isDark,
+            onTap: () => _handleCustomBackgroundModeTap(themeProvider),
+          ),
+        ),
+
+        const SizedBox(height: 8),
+
+        // 背景图片
+        _buildSettingsRow(
+          child: _buildSettingsTile(
+            icon: Icons.wallpaper,
+            iconColor: Colors.purple,
+            title: '选择背景图片',
+            subtitle: themeProvider.hasAnyBackground ? '当前：已保存' : '当前：未设置',
             isDark: isDark,
             onTap: () => _showBackgroundPicker(context, themeProvider, false),
           ),
@@ -271,14 +303,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
             isDark: isDark,
           ),
         ),
+
         _buildSettingsRow(
           child: _buildSettingsTile(
-            icon: Icons.restore,
-            iconColor: Colors.orange,
-            title: '默认壁纸',
-            subtitle: '恢复为系统默认背景',
+            icon: Icons.delete_outline,
+            iconColor: Colors.redAccent,
+            title: '移除背景图片',
+            subtitle: '删除已保存的竖屏和横屏背景',
             isDark: isDark,
-            onTap: () => _showRestoreDefaultDialog(context, themeProvider),
+            onTap: themeProvider.hasAnyBackground
+                ? () => _showClearBackgroundDialog(context, themeProvider)
+                : null,
           ),
         ),
 
@@ -409,6 +444,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 MaterialPageRoute(builder: (_) => const DiagnosticLogScreen()),
               );
             },
+          ),
+        ),
+        _buildSettingsRow(
+          child: _buildSettingsTile(
+            icon: Icons.troubleshoot,
+            iconColor: Colors.teal,
+            title: '推送诊断',
+            subtitle: '查看极光推送、权限与渠道状态',
+            isDark: isDark,
+            onTap: () => _showPushDiagnostics(context, isDark),
           ),
         ),
         _buildSettingsRow(
@@ -644,6 +689,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     bool isLandscape,
   ) {
     final backgrounds = [
+      isLandscape ? 'tablet_default_landscape.png' : 'morenbeijing.jpeg',
       if (isLandscape) ...[
         'tablet_landscape_01.png',
         'tablet_landscape_02.png',
@@ -728,17 +774,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           itemCount: backgrounds.length,
                           itemBuilder: (context, index) {
                             final value = backgrounds[index];
-                            final imagePath = _wallpaperThumbnailAsset(value);
+                            final imagePath = _backgroundPreviewAsset(value);
                             return GestureDetector(
                               onTap: () async {
-                                final navigator = Navigator.of(context);
                                 await _useBundledBackground(
                                   context,
                                   themeProvider,
                                   value,
                                   isLandscape,
                                 );
-                                if (navigator.mounted) navigator.pop();
+                                if (context.mounted) {
+                                  Navigator.pop(context);
+                                }
                               },
                               child: Stack(
                                 fit: StackFit.expand,
@@ -786,34 +833,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _pickerActionButton(
-                            label: '直接使用',
-                            icon: Icons.photo_library,
-                            onTap: () => _pickGalleryBackground(
-                              context,
-                              themeProvider,
-                              isLandscape,
-                              edit: false,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: _pickerActionButton(
-                            label: '编辑图片',
-                            icon: Icons.crop,
-                            onTap: () => _pickGalleryBackground(
-                              context,
-                              themeProvider,
-                              isLandscape,
-                              edit: true,
-                            ),
-                          ),
-                        ),
-                      ],
+                    _pickerActionButton(
+                      label: '自定义背景',
+                      icon: Icons.photo_library,
+                      onTap: () => _pickGalleryBackground(
+                        context,
+                        themeProvider,
+                        isLandscape,
+                      ),
                     ),
                   ],
                 ),
@@ -825,19 +852,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  void _setBackground(
+  Future<void> _handleCustomBackgroundModeTap(
+      ThemeProvider themeProvider) async {
+    final switched = await themeProvider.trySetCustomBackgroundMode();
+    if (!mounted) return;
+    if (!switched) {
+      _showBackgroundPicker(context, themeProvider, false);
+    }
+  }
+
+  Future<void> _setBackground(
     ThemeProvider themeProvider,
     bool isLandscape,
     String imagePath, {
     bool fillScreen = false,
-  }) {
+  }) async {
     if (isLandscape) {
-      themeProvider.setLandscapeBackgroundImage(
+      await themeProvider.setLandscapeBackgroundImage(
         imagePath,
         fillScreen: fillScreen,
       );
     } else {
-      themeProvider.setBackgroundImage(imagePath, fillScreen: fillScreen);
+      await themeProvider.setBackgroundImage(imagePath, fillScreen: fillScreen);
     }
   }
 
@@ -853,6 +889,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return 'assets/images/wallpaper_thumbs/${path.basenameWithoutExtension(assetName)}.jpg';
   }
 
+  String _backgroundPreviewAsset(String assetName) {
+    if (_remoteWallpaperUrl(assetName) == null) {
+      return ThemeProvider.resolveBundledAssetPath(assetName);
+    }
+    return _wallpaperThumbnailAsset(assetName);
+  }
+
   Future<void> _useBundledBackground(
     BuildContext context,
     ThemeProvider themeProvider,
@@ -861,17 +904,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
   ) async {
     final remoteUrl = _remoteWallpaperUrl(assetName);
     if (remoteUrl == null) {
-      _setBackground(themeProvider, isLandscape, assetName, fillScreen: true);
+      await _setBackground(
+        themeProvider,
+        isLandscape,
+        assetName,
+        fillScreen: false,
+      );
       return;
     }
 
     if (kIsWeb) {
-      _setBackground(themeProvider, isLandscape, remoteUrl, fillScreen: true);
+      await _setBackground(
+        themeProvider,
+        isLandscape,
+        remoteUrl,
+        fillScreen: true,
+      );
       return;
     }
 
     if (!context.read<AuthProvider>().isLoggedIn) {
-      _setBackground(
+      await _setBackground(
         themeProvider,
         isLandscape,
         _wallpaperThumbnailAsset(assetName),
@@ -890,10 +943,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     try {
       final savedPath = await _downloadWallpaper(remoteUrl, assetName);
-      _setBackground(themeProvider, isLandscape, savedPath, fillScreen: true);
+      await _setBackground(
+        themeProvider,
+        isLandscape,
+        savedPath,
+        fillScreen: true,
+      );
     } catch (e) {
       debugPrint('Download wallpaper failed: $e');
-      _setBackground(
+      await _setBackground(
         themeProvider,
         isLandscape,
         _wallpaperThumbnailAsset(assetName),
@@ -945,7 +1003,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       }
 
       sourcePath ??= await _copyAssetToTempFile(
-        'wallpaper_thumbs/${path.basenameWithoutExtension(assetName)}.jpg',
+        _backgroundPreviewAsset(assetName),
       );
 
       String? savedPath;
@@ -963,7 +1021,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             await File(sourcePath).delete();
           } catch (_) {}
           final fallbackSource = await _copyAssetToTempFile(
-            'wallpaper_thumbs/${path.basenameWithoutExtension(assetName)}.jpg',
+            _backgroundPreviewAsset(assetName),
           );
           savedPath = await _cropAndSaveBackground(
             fallbackSource,
@@ -975,7 +1033,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
       }
 
       if (savedPath == null) return;
-      _setBackground(themeProvider, isLandscape, savedPath, fillScreen: true);
+      await _setBackground(
+        themeProvider,
+        isLandscape,
+        savedPath,
+        fillScreen: true,
+      );
       if (context.mounted) Navigator.pop(context);
     } catch (e) {
       debugPrint('Edit bundled background failed: $e');
@@ -1003,19 +1066,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _pickGalleryBackground(
     BuildContext context,
     ThemeProvider themeProvider,
-    bool isLandscape, {
-    required bool edit,
-  }) async {
+    bool isLandscape,
+  ) async {
     final picker = ImagePicker();
     final image = await picker.pickImage(source: ImageSource.gallery);
     if (image == null) return;
 
     try {
-      final savedPath = edit
-          ? await _cropAndSaveBackground(image.path, isLandscape: isLandscape)
-          : await _saveBackgroundFile(image.path, isLandscape: isLandscape);
+      final savedPath = await _cropAndSaveBackground(
+        image.path,
+        isLandscape: isLandscape,
+      );
       if (savedPath == null) return;
-      _setBackground(themeProvider, isLandscape, savedPath, fillScreen: edit);
+      await _setBackground(
+        themeProvider,
+        isLandscape,
+        savedPath,
+        fillScreen: true,
+      );
       if (context.mounted) Navigator.pop(context);
     } catch (e) {
       debugPrint('Pick gallery background failed: $e');
@@ -1129,25 +1197,60 @@ class _SettingsScreenState extends State<SettingsScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('恢复默认壁纸'),
-        content: const Text('将清除当前自定义背景，所有页面恢复为系统默认壁纸。'),
+        title: const Text('恢复简洁模式'),
+        content: const Text('将暂时不显示背景图片，但会保留已保存的竖屏和横屏背景。'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
             child: const Text('取消'),
           ),
           TextButton(
-            onPressed: () {
-              themeProvider.clearBackground();
+            onPressed: () async {
+              await themeProvider.setCleanBackgroundMode();
+              if (!context.mounted || !ctx.mounted) return;
               Navigator.pop(ctx);
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
-                  content: Text('已恢复默认壁纸'),
+                  content: Text('已恢复简洁模式，背景图片仍已保留'),
                   backgroundColor: Colors.green,
                 ),
               );
             },
-            child: const Text('确认恢复', style: TextStyle(color: Colors.red)),
+            child: const Text('确认恢复'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showClearBackgroundDialog(
+    BuildContext context,
+    ThemeProvider themeProvider,
+  ) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('移除背景图片'),
+        content: const Text('将删除已保存的竖屏和横屏背景，并切回简洁模式。此操作不会影响其他设置。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () async {
+              await themeProvider.clearBackground();
+              if (!context.mounted || !ctx.mounted) return;
+              Navigator.pop(ctx);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('已移除背景图片'),
+                  backgroundColor: Colors.green,
+                ),
+              );
+            },
+            child: const Text('确认移除', style: TextStyle(color: Colors.red)),
           ),
         ],
       ),
@@ -1666,4 +1769,434 @@ class _SettingsScreenState extends State<SettingsScreen> {
       debugPrint('Could not launch URL: $url');
     }
   }
+
+  // ── 推送诊断 ──
+
+  static final _pushDiagChannel = MethodChannel(
+    'shenliyuan/private_message_notifications',
+  );
+
+  Future<void> _showPushDiagnostics(
+    BuildContext context,
+    bool isDark,
+  ) async {
+    final info = await _gatherPushDiagnostics();
+    if (!mounted) return;
+
+    final primary = Theme.of(context).primaryColor;
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withOpacity(0.4),
+      builder: (sheetCtx) {
+        final isDarkSheet = Theme.of(sheetCtx).brightness == Brightness.dark;
+        return Container(
+          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(sheetCtx).size.height * 0.75,
+          ),
+          decoration: BoxDecoration(
+            color: isDarkSheet
+                ? const Color(0xFF1E1E2E).withOpacity(0.95)
+                : Colors.white.withOpacity(0.95),
+            borderRadius: BorderRadius.circular(28),
+            border: Border.all(
+              color: isDarkSheet
+                  ? Colors.white.withOpacity(0.1)
+                  : Colors.white.withOpacity(0.5),
+              width: 1.5,
+            ),
+          ),
+          child: SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // 拖拽指示条
+                Padding(
+                  padding: const EdgeInsets.only(top: 12, bottom: 16),
+                  child: Container(
+                    width: 48,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: isDarkSheet ? Colors.white24 : Colors.grey[300],
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                ),
+                // 标题
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: Row(
+                    children: [
+                      Icon(Icons.troubleshoot, color: primary, size: 24),
+                      const SizedBox(width: 10),
+                      Text(
+                        '推送诊断',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
+                          color: isDarkSheet
+                              ? Colors.white
+                              : const Color(0xFF2D3142),
+                        ),
+                      ),
+                      const Spacer(),
+                      IconButton(
+                        icon: const Icon(Icons.copy, size: 20),
+                        tooltip: '复制诊断信息',
+                        onPressed: () => _copyPushDiagnostics(sheetCtx, info),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                // 诊断列表
+                Flexible(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+                    child: Column(
+                      children: [
+                        _diagRow(
+                          'RegistrationID',
+                          info.registrationId != null
+                              ? '***${info.registrationId!.length > 6 ? info.registrationId!.substring(info.registrationId!.length - 6) : info.registrationId}'
+                              : '未获取',
+                          info.registrationId != null
+                              ? Icons.check_circle
+                              : Icons.warning_amber_rounded,
+                          info.registrationId != null
+                              ? Colors.green
+                              : Colors.orange,
+                          isDarkSheet,
+                        ),
+                        _diagRow(
+                          '通知总权限',
+                          info.notificationsEnabled ? '已开启' : '已关闭',
+                          info.notificationsEnabled
+                              ? Icons.check_circle
+                              : Icons.cancel,
+                          info.notificationsEnabled ? Colors.green : Colors.red,
+                          isDarkSheet,
+                        ),
+                        _diagRow(
+                          '私信通知渠道',
+                          !info.privateMessageChannelExists
+                              ? '渠道不存在'
+                              : info.privateMessageChannelBlocked
+                                  ? '已关闭'
+                                  : '已开启',
+                          !info.privateMessageChannelExists ||
+                                  info.privateMessageChannelBlocked
+                              ? Icons.cancel
+                              : Icons.check_circle,
+                          !info.privateMessageChannelExists ||
+                                  info.privateMessageChannelBlocked
+                              ? Colors.red
+                              : Colors.green,
+                          isDarkSheet,
+                        ),
+                        if (info.privateMessageChannelExists)
+                          _diagRow(
+                            '渠道重要性',
+                            _importanceLabel(
+                                info.privateMessageChannelImportance),
+                            info.privateMessageChannelImportance >= 4
+                                ? Icons.notifications_active
+                                : Icons.notifications,
+                            info.privateMessageChannelImportance >= 4
+                                ? Colors.green
+                                : Colors.orange,
+                            isDarkSheet,
+                          ),
+                        _diagRow(
+                          '已存储 Alias',
+                          info.storedAlias != null
+                              ? '***${info.storedAlias!.length > 4 ? info.storedAlias!.substring(info.storedAlias!.length - 4) : info.storedAlias}'
+                              : '未存储',
+                          info.storedAlias != null
+                              ? Icons.check_circle
+                              : Icons.warning_amber_rounded,
+                          info.storedAlias != null
+                              ? Colors.green
+                              : Colors.orange,
+                          isDarkSheet,
+                        ),
+                        _diagRow(
+                          'Alias 最近状态',
+                          info.aliasLastStatus ?? '无记录',
+                          info.aliasLastStatus == '成功'
+                              ? Icons.check_circle
+                              : info.aliasLastStatus == '失败'
+                                  ? Icons.error
+                                  : Icons.help_outline,
+                          info.aliasLastStatus == '成功'
+                              ? Colors.green
+                              : info.aliasLastStatus == '失败'
+                                  ? Colors.red
+                                  : Colors.grey,
+                          isDarkSheet,
+                          subtitle: info.aliasLastTime,
+                        ),
+                        if (info.error != null) ...[
+                          const SizedBox(height: 12),
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.orange.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                color: Colors.orange.withValues(alpha: 0.3),
+                              ),
+                            ),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Icon(Icons.warning_amber_rounded,
+                                    size: 16, color: Colors.orange),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    info.error!,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: isDarkSheet
+                                          ? Colors.orange[200]
+                                          : Colors.orange[800],
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 24),
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            onPressed: () {
+                              Navigator.pop(sheetCtx);
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => const DiagnosticLogScreen(),
+                                ),
+                              );
+                            },
+                            icon: const Icon(Icons.receipt_long_rounded,
+                                size: 18),
+                            label: const Text('查看完整推送日志'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<_PushDiagnosticInfo> _gatherPushDiagnostics() async {
+    Map<String, dynamic> native = {};
+    List<DiagnosticLogEntry> logs = [];
+    final errors = <String>[];
+
+    // 原生诊断（含 RegistrationID、权限、渠道状态）
+    try {
+      final result = await _pushDiagChannel
+          .invokeMapMethod<String, dynamic>('getPushDiagnostics');
+      native = result ?? {};
+    } catch (e) {
+      errors.add('原生诊断读取失败: $e');
+    }
+
+    // Alias 状态（从诊断日志）
+    try {
+      logs = await DiagnosticLogService.instance.getLogs();
+    } catch (e) {
+      errors.add('日志读取失败: $e');
+    }
+
+    // 从日志中提取最近一次 Alias 绑定状态
+    String? aliasLastStatus;
+    String? aliasLastTime;
+    for (final log in logs) {
+      if (log.source != '推送') continue;
+      if (log.type == 'Alias 绑定成功') {
+        aliasLastStatus = '成功';
+        final effectiveTime =
+            log.lastSeenAt > 0 ? log.lastSeenAt : log.timestamp;
+        aliasLastTime = DateFormat(
+          'MM-dd HH:mm:ss',
+        ).format(DateTime.fromMillisecondsSinceEpoch(effectiveTime));
+        break;
+      }
+      if (log.type == 'Alias 绑定失败') {
+        aliasLastStatus = '失败';
+        final effectiveTime =
+            log.lastSeenAt > 0 ? log.lastSeenAt : log.timestamp;
+        aliasLastTime = DateFormat(
+          'MM-dd HH:mm:ss',
+        ).format(DateTime.fromMillisecondsSinceEpoch(effectiveTime));
+        break;
+      }
+    }
+
+    return _PushDiagnosticInfo(
+      // 使用原生返回的 RegistrationID，避免重复 JPush 插件查询
+      registrationId: native['registrationId']?.toString(),
+      notificationsEnabled: native['notificationsEnabled'] == true,
+      privateMessageChannelExists:
+          native['privateMessageChannelExists'] == true,
+      privateMessageChannelImportance:
+          (native['privateMessageChannelImportance'] as num?)?.toInt() ?? -1,
+      privateMessageChannelBlocked:
+          native['privateMessageChannelBlocked'] == true,
+      storedAlias: native['storedAlias']?.toString(),
+      aliasLastStatus: aliasLastStatus,
+      aliasLastTime: aliasLastTime,
+      error: errors.isNotEmpty ? errors.join('\n') : null,
+    );
+  }
+
+  void _copyPushDiagnostics(
+    BuildContext context,
+    _PushDiagnosticInfo info,
+  ) {
+    final sb = StringBuffer();
+    sb.writeln('═══ 推送诊断 ═══');
+    sb.writeln('RegistrationID: ${_maskValue(info.registrationId, 6)}');
+    sb.writeln('通知总权限: ${info.notificationsEnabled ? "已开启" : "已关闭"}');
+    sb.writeln('私信通知渠道存在: ${info.privateMessageChannelExists}');
+    sb.writeln('私信通知渠道已关闭: ${info.privateMessageChannelBlocked}');
+    sb.writeln(
+      '渠道重要性: ${_importanceLabel(info.privateMessageChannelImportance)}',
+    );
+    sb.writeln('已存储 Alias: ${_maskValue(info.storedAlias, 4)}');
+    sb.writeln(
+      'Alias 最近状态: ${info.aliasLastStatus ?? "无记录"}'
+      '${info.aliasLastTime != null ? " (${info.aliasLastTime})" : ""}',
+    );
+    if (info.error != null) {
+      sb.writeln('诊断异常: ${info.error}');
+    }
+    Clipboard.setData(ClipboardData(text: sb.toString()));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('诊断信息已复制到剪贴板（ID 已掩码）'),
+        behavior: SnackBarBehavior.floating,
+        margin: EdgeInsets.all(16),
+        duration: Duration(seconds: 2),
+      ),
+    );
+  }
+
+  /// 掩码敏感值，仅保留末 N 位
+  String _maskValue(String? value, int visibleLength) {
+    if (value == null || value.isEmpty) return '未获取';
+    if (value.length <= visibleLength) return '***';
+    return '***${value.substring(value.length - visibleLength)}';
+  }
+
+  String _importanceLabel(int importance) {
+    switch (importance) {
+      case 0:
+        return '无 (IMPORTANCE_NONE)';
+      case 1:
+        return '最低 (IMPORTANCE_MIN)';
+      case 2:
+        return '低 (IMPORTANCE_LOW)';
+      case 3:
+        return '默认 (IMPORTANCE_DEFAULT)';
+      case 4:
+        return '高 (IMPORTANCE_HIGH)';
+      case 5:
+        return '最高 (IMPORTANCE_MAX)';
+      default:
+        return '未知 ($importance)';
+    }
+  }
+
+  Widget _diagRow(
+    String label,
+    String value,
+    IconData icon,
+    Color iconColor,
+    bool isDark, {
+    String? subtitle,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 20, color: iconColor),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: isDark ? Colors.white54 : Colors.grey[600],
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  value,
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    fontFamily: 'monospace',
+                    color: isDark ? Colors.white : const Color(0xFF2D3142),
+                  ),
+                ),
+                if (subtitle != null)
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: isDark ? Colors.white38 : Colors.grey[500],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 推送诊断信息
+class _PushDiagnosticInfo {
+  final String? registrationId;
+  final bool notificationsEnabled;
+  final bool privateMessageChannelExists;
+  final int privateMessageChannelImportance;
+  final bool privateMessageChannelBlocked;
+  final String? storedAlias;
+  final String? aliasLastStatus;
+  final String? aliasLastTime;
+  final String? error;
+
+  const _PushDiagnosticInfo({
+    required this.registrationId,
+    required this.notificationsEnabled,
+    required this.privateMessageChannelExists,
+    required this.privateMessageChannelImportance,
+    required this.privateMessageChannelBlocked,
+    required this.storedAlias,
+    required this.aliasLastStatus,
+    required this.aliasLastTime,
+    this.error,
+  });
 }

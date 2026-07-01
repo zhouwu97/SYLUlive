@@ -18,12 +18,14 @@ import (
 
 // PostHandler 帖子处理器
 type PostHandler struct {
-	db *gorm.DB
+	db                *gorm.DB
+	jpushAppKey       string
+	jpushMasterSecret string
 }
 
 // NewPostHandler 创建帖子处理器
-func NewPostHandler(db *gorm.DB) *PostHandler {
-	return &PostHandler{db: db}
+func NewPostHandler(db *gorm.DB, jpushAppKey, jpushMasterSecret string) *PostHandler {
+	return &PostHandler{db: db, jpushAppKey: jpushAppKey, jpushMasterSecret: jpushMasterSecret}
 }
 
 // Snapshot 帖子快照
@@ -65,6 +67,7 @@ func (h *PostHandler) GetList(c *gin.Context) {
 
 	var posts []models.Post
 	var total int64
+	now := time.Now()
 
 	// 如果是加载更多，并且带有有效的 session_id，尝试走快照
 	if scene == "loadmore" && sessionID != "" {
@@ -138,6 +141,23 @@ func (h *PostHandler) GetList(c *gin.Context) {
 		}
 	}
 
+	// 关注信息流：仅显示当前用户关注的人发布的帖子
+	if sort == "following" {
+		rawUserID, exists := c.Get("user_id")
+		userID, ok := rawUserID.(uint)
+		if !exists || !ok || userID == 0 {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"error": "登录后才能查看关注动态",
+			})
+			return
+		}
+		followingSubQuery := h.db.
+			Model(&models.UserFollow{}).
+			Select("following_id").
+			Where("follower_id = ?", userID)
+		query = query.Where("author_id IN (?)", followingSubQuery)
+	}
+
 	if searchQuery != "" {
 		searchLike := "%" + searchQuery + "%"
 		query = query.Where(
@@ -145,22 +165,31 @@ func (h *PostHandler) GetList(c *gin.Context) {
 			searchLike,
 			searchLike,
 		)
-		query = query.Order(clause.Expr{
-			SQL: `CASE
+		query = query.Clauses(clause.OrderBy{
+			Expression: clause.Expr{
+				SQL: `CASE
 				WHEN LOWER(title) = ? THEN 0
 				WHEN LOWER(title) LIKE ? THEN 1
 				WHEN LOWER(title) LIKE ? THEN 2
 				WHEN LOWER(content) LIKE ? THEN 3
 				ELSE 4
-			END,
-			POSITION(? IN LOWER(title)),
-			CHAR_LENGTH(title)`,
-			Vars: []interface{}{
-				searchQuery,
-				searchQuery + "%",
-				searchLike,
-				searchLike,
-				searchQuery,
+			END ASC,
+			CASE
+				WHEN is_pinned = ? AND (pinned_until IS NULL OR pinned_until > ?)
+				THEN 0 ELSE 1
+			END ASC,
+			pinned_weight DESC,
+			pinned_at DESC NULLS LAST,
+			created_at DESC`,
+				Vars: []interface{}{
+					searchQuery,
+					searchQuery + "%",
+					searchLike,
+					searchLike,
+					true,
+					now,
+				},
+				WithoutParentheses: true,
 			},
 		})
 	}
@@ -170,7 +199,8 @@ func (h *PostHandler) GetList(c *gin.Context) {
 	if scene == "refresh" && (sort == "all" || sort == "hot") && searchQuery == "" && sinceStr == "" {
 		isSnapshotting = true
 		if sort == "all" {
-			query = query.Order("(10.0 + like_count*5 + reply_count*10 + view_count*0.2) / POWER((EXTRACT(EPOCH FROM (NOW() - created_at))/3600.0 + 2), 2) DESC")
+			query = applyPinnedOrder(query, now).
+				Order("(10.0 + like_count*5 + reply_count*10 + view_count*0.2) / POWER((EXTRACT(EPOCH FROM (NOW() - created_at))/3600.0 + 2), 2) DESC")
 		} else if sort == "hot" {
 			query = query.Order("(view_count*1 + like_count*20 + reply_count*50) DESC")
 		}
@@ -181,12 +211,17 @@ func (h *PostHandler) GetList(c *gin.Context) {
 			query = query.Order("price ASC").Order("created_at DESC")
 		case "price_desc":
 			query = query.Order("price DESC").Order("created_at DESC")
-		default:
+		case "following":
 			query = query.Order("created_at DESC")
+		default:
+			if searchQuery == "" {
+				query = applyPinnedOrder(query, now)
+				query = query.Order("created_at DESC")
+			}
 		}
 	}
 
-	query.Count(&total)
+	query.Session(&gorm.Session{}).Count(&total)
 
 	if isSnapshotting {
 		var allIDs []uint
@@ -202,7 +237,8 @@ func (h *PostHandler) GetList(c *gin.Context) {
 			snapshotQuery = snapshotQuery.Where("post_type = ?", postType)
 		}
 		if sort == "all" {
-			snapshotQuery = snapshotQuery.Order("(10.0 + like_count*5 + reply_count*10 + view_count*0.2) / POWER((EXTRACT(EPOCH FROM (NOW() - created_at))/3600.0 + 2), 2) DESC")
+			snapshotQuery = applyPinnedOrder(snapshotQuery, now).
+				Order("(10.0 + like_count*5 + reply_count*10 + view_count*0.2) / POWER((EXTRACT(EPOCH FROM (NOW() - created_at))/3600.0 + 2), 2) DESC")
 		} else if sort == "hot" {
 			snapshotQuery = snapshotQuery.Order("(view_count*1 + like_count*20 + reply_count*50) DESC")
 		}

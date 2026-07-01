@@ -1,7 +1,7 @@
 import 'dart:ui';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show Clipboard, ClipboardData;
+import 'package:flutter/services.dart' show SystemUiOverlayStyle;
 import 'package:image_picker/image_picker.dart';
 import 'package:image_cropper/image_cropper.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -30,7 +30,7 @@ import 'admin_panel_screen.dart';
 import 'super_admin_screen.dart';
 import 'admin_members_screen.dart';
 import 'oneclass_orders_screen.dart';
-import 'user_replies_screen.dart';
+import 'notifications_screen.dart';
 import 'settings_screen.dart';
 import 'feedback_screen.dart';
 import 'user_home_screen.dart';
@@ -145,108 +145,87 @@ class _ProfileScreenState extends State<ProfileScreen>
     final themeProvider = context.watch<ThemeProvider>();
     final user = authProvider.user;
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final cleanLightMode = themeProvider.isCleanBackgroundMode && !isDark;
+    final overlayStyle = (cleanLightMode
+            ? SystemUiOverlayStyle.dark
+            : SystemUiOverlayStyle.light)
+        .copyWith(
+      statusBarColor: Colors.transparent,
+      systemNavigationBarColor: Colors.transparent,
+    );
 
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: Stack(
-        children: [
-          // 内容
-          CustomScrollView(
-            physics: const BouncingScrollPhysics(),
-            slivers: [
-              SliverToBoxAdapter(
-                child: SafeArea(
-                  bottom: false,
-                  child: Column(
-                    children: [
-                      _buildHeader(user, authProvider, isDark),
-                      if (authProvider.isLoggedIn)
-                        _buildSocialStatsSection(context, user, isDark),
-                    ],
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: overlayStyle,
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        body: Stack(
+          children: [
+            // 内容
+            CustomScrollView(
+              physics: const BouncingScrollPhysics(),
+              slivers: [
+                SliverToBoxAdapter(
+                  child: SafeArea(
+                    bottom: false,
+                    child: Column(
+                      children: [
+                        _buildHeader(user, authProvider, isDark),
+                        if (authProvider.isLoggedIn)
+                          _buildSocialStatsSection(context, user, isDark),
+                      ],
+                    ),
                   ),
                 ),
-              ),
 
-              // 管理入口（仅管理员可见）
-              if (user?.isAdmin == true)
+                // 管理入口（仅管理员可见）
+                if (user?.isAdmin == true)
+                  SliverToBoxAdapter(
+                    child: _buildAdminSection(context, user, isDark),
+                  ),
+
+                // 收到邀请（所有用户）
+                if (authProvider.isLoggedIn)
+                  SliverToBoxAdapter(
+                    child:
+                        _buildInvitationSection(context, authProvider, isDark),
+                  ),
+
+                // 教务版块（绑定状态 + 题库入口）
                 SliverToBoxAdapter(
-                  child: _buildAdminSection(context, user, isDark),
+                  child: _buildEduSection(context, authProvider, isDark),
                 ),
 
-              // 收到邀请（所有用户）
-              if (authProvider.isLoggedIn)
+                // 我的内容
                 SliverToBoxAdapter(
-                  child: _buildInvitationSection(context, authProvider, isDark),
+                  child: _buildMyContentSection(context, isDark),
                 ),
 
-              // 教务版块（绑定状态 + 题库入口）
-              SliverToBoxAdapter(
-                child: _buildEduSection(context, authProvider, isDark),
-              ),
-
-              // 我的内容
-              SliverToBoxAdapter(
-                child: _buildMyContentSection(context, isDark),
-              ),
-
-              // 设置区域
-              SliverToBoxAdapter(
-                child: _buildSettingsSection(
-                  context,
-                  themeProvider,
-                  authProvider,
-                  isDark,
+                // 设置区域
+                SliverToBoxAdapter(
+                  child: _buildSettingsSection(
+                    context,
+                    themeProvider,
+                    authProvider,
+                    isDark,
+                  ),
                 ),
-              ),
 
-              SliverToBoxAdapter(
-                child: SizedBox(
-                  height: MediaQuery.of(context).padding.bottom + 90,
+                SliverToBoxAdapter(
+                  child: SizedBox(
+                    height: MediaQuery.of(context).padding.bottom + 90,
+                  ),
                 ),
-              ),
-            ],
-          ),
-        ],
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildDefaultBackground(bool isDark) {
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        Image(
-          image: ResizeImage(
-            const AssetImage('assets/images/morenbeijing.jpeg'),
-            width: 1080,
-          ),
-          fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: isDark
-                    ? [
-                        const Color(0xFF1A1A2E),
-                        const Color(0xFF16213E),
-                        const Color(0xFF0F3460),
-                      ]
-                    : [
-                        const Color(0xFF667EEA),
-                        const Color(0xFF764BA2),
-                        const Color(0xFFF093FB),
-                      ],
-              ),
-            ),
-          ),
-        ),
-        Container(
-          color: isDark
-              ? Colors.black.withValues(alpha: 0.35)
-              : Colors.white.withValues(alpha: 0.25),
-        ),
-      ],
+    return ColoredBox(
+      color: isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
     );
   }
 
@@ -290,9 +269,9 @@ class _ProfileScreenState extends State<ProfileScreen>
                       child: GestureDetector(
                         onLongPress: user?.avatar.isNotEmpty == true
                             ? () => _showAvatarPreview(
-                                context,
-                                ApiConstants.fullUrl(user!.avatar),
-                              )
+                                  context,
+                                  ApiConstants.fullUrl(user!.avatar),
+                                )
                             : null,
                         child: CachedAvatar(
                           imageUrl: ApiConstants.fullUrl(user?.avatar ?? ''),
@@ -350,9 +329,8 @@ class _ProfileScreenState extends State<ProfileScreen>
                                   style: TextStyle(
                                     fontSize: 22,
                                     fontWeight: FontWeight.w700,
-                                    color: isDark
-                                        ? Colors.white
-                                        : Colors.black87,
+                                    color:
+                                        isDark ? Colors.white : Colors.black87,
                                   ),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
@@ -363,9 +341,8 @@ class _ProfileScreenState extends State<ProfileScreen>
                                 Icon(
                                   Icons.edit,
                                   size: 16,
-                                  color: isDark
-                                      ? Colors.white54
-                                      : Colors.black54,
+                                  color:
+                                      isDark ? Colors.white54 : Colors.black54,
                                 ),
                               ],
                             ],
@@ -790,8 +767,7 @@ class _ProfileScreenState extends State<ProfileScreen>
     final pendingInvitations = await loadList('/admin/invitations/pending');
     final pendingRemovals = await loadList('/admin/removals/pending');
 
-    final adminCount =
-        pendingTeachers.length +
+    final adminCount = pendingTeachers.length +
         pendingMajors.length +
         pendingInvitations.where((i) => i['my_vote'] != true).length +
         pendingRemovals.where((r) => r['can_vote'] == true).length;
@@ -860,7 +836,11 @@ class _ProfileScreenState extends State<ProfileScreen>
   }
 
   Widget _buildMyContentSection(BuildContext context, bool isDark) {
-    final totalUnreadCount = _unreadReplyCount + _unreadMessageCount;
+    final messageProvider = context.watch<MessageProvider>();
+    final unreadMessageCount = messageProvider.hasLoadedConversations
+        ? messageProvider.unreadMessageCount
+        : _unreadMessageCount;
+    final totalUnreadCount = _unreadReplyCount + unreadMessageCount;
     final items = [
       _buildSettingsRow(
         child: _buildSettingsTile(
@@ -868,7 +848,7 @@ class _ProfileScreenState extends State<ProfileScreen>
           iconColor: const Color(0xFF10B981),
           title: '私信',
           subtitle: totalUnreadCount > 0
-              ? '共$totalUnreadCount条未读，含$_unreadMessageCount条私信'
+              ? '共$totalUnreadCount条未读，含$unreadMessageCount条私信'
               : '查看私信与系统通知',
           trailing: totalUnreadCount > 0
               ? Container(
@@ -896,8 +876,8 @@ class _ProfileScreenState extends State<ProfileScreen>
         child: _buildSettingsTile(
           icon: Icons.notifications_active_outlined,
           iconColor: Colors.orange,
-          title: '收到的回复',
-          subtitle: _unreadReplyCount > 0 ? '$_unreadReplyCount条新回复' : null,
+          title: '通知',
+          subtitle: _unreadReplyCount > 0 ? '$_unreadReplyCount条新通知' : null,
           trailing: _unreadReplyCount > 0
               ? Container(
                   width: 8,
@@ -913,7 +893,7 @@ class _ProfileScreenState extends State<ProfileScreen>
           onTap: () {
             Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => const UserRepliesScreen()),
+              MaterialPageRoute(builder: (_) => const NotificationsScreen()),
             ).then((_) {
               _loadUnreadCount();
             });
@@ -1338,8 +1318,8 @@ class _ProfileScreenState extends State<ProfileScreen>
                           }
                           final message =
                               (res.data is Map && res.data['message'] != null)
-                              ? res.data['message'].toString()
-                              : '已接受邀请';
+                                  ? res.data['message'].toString()
+                                  : '已接受邀请';
                           if (mounted) {
                             messenger.showSnackBar(
                               SnackBar(

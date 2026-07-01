@@ -8,6 +8,7 @@ import '../providers/theme_provider.dart';
 import '../utils/app_feedback.dart';
 import '../widgets/glass_container.dart';
 import 'dart:io' show File;
+import 'post_detail_screen.dart';
 
 class _OptionalListResult {
   final List<dynamic> items;
@@ -32,6 +33,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
   List<dynamic> _pendingTeachers = [];
   List<dynamic> _pendingInvitations = [];
   List<dynamic> _pendingRemovals = [];
+  List<dynamic> _featuredApplications = [];
   List<dynamic> _logs = [];
   List<dynamic> _pendingMajors = [];
   bool _reportsForbidden = false;
@@ -42,7 +44,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 5, vsync: this);
+    _tabController = TabController(length: 6, vsync: this);
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadData());
   }
 
@@ -86,6 +88,11 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
         '/admin/removals/pending',
         '管理员罢免代办',
       );
+      final featuredApplications = await _loadOptionalList(
+        dio,
+        '/admin/featured-applications',
+        '精华申请',
+      );
       final logs = await _loadOptionalList(dio, '/teachers/logs', '管理员日志');
       if (!mounted) return;
       setState(() {
@@ -96,6 +103,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
         _pendingMajors = pendingMajors;
         _pendingInvitations = pendingInvitations;
         _pendingRemovals = pendingRemovals;
+        _featuredApplications = featuredApplications;
         _logs = logs;
         _isLoading = false;
       });
@@ -409,8 +417,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final themeProvider = context.watch<ThemeProvider>();
     final pendingCount = _reports.where((r) => r['status'] == 'pending').length;
-    final todoCount =
-        _pendingTeachers.length +
+    final todoCount = _pendingTeachers.length +
         _pendingMajors.length +
         _pendingInvitations.where((i) => i['my_vote'] != true).length +
         _pendingRemovals.where((r) => r['can_vote'] == true).length;
@@ -458,6 +465,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
                       ),
                       Tab(text: '候选人 (${_candidates.length})'),
                       Tab(text: '代办${todoCount > 0 ? ' ($todoCount)' : ''}'),
+                      Tab(text: '精华 (${_featuredApplications.length})'),
                       const Tab(text: '操作日志'),
                       const Tab(text: '公告'),
                     ],
@@ -468,17 +476,18 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
                   child: _isLoading
                       ? const Center(child: CircularProgressIndicator())
                       : _errorMessage != null
-                      ? _buildErrorView(isDark)
-                      : TabBarView(
-                          controller: _tabController,
-                          children: [
-                            _buildReportsTab(isDark),
-                            _buildCandidatesTab(isDark),
-                            _buildTeachersTab(isDark),
-                            _buildLogsTab(isDark),
-                            _buildAnnouncementTab(),
-                          ],
-                        ),
+                          ? _buildErrorView(isDark)
+                          : TabBarView(
+                              controller: _tabController,
+                              children: [
+                                _buildReportsTab(isDark),
+                                _buildCandidatesTab(isDark),
+                                _buildTeachersTab(isDark),
+                                _buildFeaturedApplicationsTab(isDark),
+                                _buildLogsTab(isDark),
+                                _buildAnnouncementTab(),
+                              ],
+                            ),
                 ),
               ],
             ),
@@ -490,30 +499,29 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
 
   // ---- 背景 ----
   Widget _buildBackground(ThemeProvider themeProvider, bool isDark) {
-    if (themeProvider.isBackgroundVisible &&
-        themeProvider.getBackgroundImageFor(context) != null) {
-      final bgPath = themeProvider.getBackgroundImageFor(context)!;
-      final isAsset = !bgPath.startsWith('http') && !bgPath.startsWith('/');
+    if (themeProvider.shouldShowCustomBackground &&
+        themeProvider.getCustomBackgroundImageFor(context) != null) {
+      final bgPath = themeProvider.getCustomBackgroundImageFor(context)!;
       return Stack(
         fit: StackFit.expand,
         children: [
-          isAsset
+          ThemeProvider.isBundledAssetBackground(bgPath)
               ? Image.asset(
-                  'assets/images/$bgPath',
+                  ThemeProvider.resolveBundledAssetPath(bgPath),
                   fit: BoxFit.cover,
                   errorBuilder: (_, __, ___) => _buildDefaultBg(isDark),
                 )
-              : bgPath.startsWith('/')
-              ? Image.file(
-                  File(bgPath),
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => _buildDefaultBg(isDark),
-                )
-              : Image.network(
-                  bgPath,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => _buildDefaultBg(isDark),
-                ),
+              : ThemeProvider.isLocalFileBackground(bgPath)
+                  ? Image.file(
+                      File(bgPath),
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => _buildDefaultBg(isDark),
+                    )
+                  : Image.network(
+                      bgPath,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => _buildDefaultBg(isDark),
+                    ),
           Container(
             color: isDark
                 ? Colors.black.withValues(alpha: 0.4)
@@ -526,41 +534,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
   }
 
   Widget _buildDefaultBg(bool isDark) {
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        Image(
-          image: ResizeImage(
-            const AssetImage('assets/images/morenbeijing.jpeg'),
-            width: 1080,
-          ),
-          fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: isDark
-                    ? [
-                        const Color(0xFF1A1A2E),
-                        const Color(0xFF16213E),
-                        const Color(0xFF0F3460),
-                      ]
-                    : [
-                        const Color(0xFF667EEA),
-                        const Color(0xFF764BA2),
-                        const Color(0xFFF093FB),
-                      ],
-              ),
-            ),
-          ),
-        ),
-        Container(
-          color: isDark
-              ? Colors.black.withValues(alpha: 0.35)
-              : Colors.white.withValues(alpha: 0.25),
-        ),
-      ],
+    return ColoredBox(
+      color: isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
     );
   }
 
@@ -990,9 +965,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
                           children: [
                             CircleAvatar(
                               radius: 20,
-                              backgroundColor: isDark
-                                  ? Colors.white12
-                                  : Colors.grey[200],
+                              backgroundColor:
+                                  isDark ? Colors.white12 : Colors.grey[200],
                               child: Text(
                                 (c['nickname'] ?? '?')
                                     .substring(0, 1)
@@ -1207,9 +1181,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
                   trailing: myVote
                       ? const Chip(label: Text('已投票'))
                       : FilledButton(
-                          onPressed: canVote
-                              ? () => _voteRemoval(removal)
-                              : null,
+                          onPressed:
+                              canVote ? () => _voteRemoval(removal) : null,
                           style: FilledButton.styleFrom(
                             backgroundColor: Colors.red,
                           ),
@@ -1434,6 +1407,203 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
     }
   }
 
+  Widget _buildFeaturedApplicationsTab(bool isDark) {
+    if (_featuredApplications.isEmpty) {
+      return const Center(child: Text('暂无精华申请'));
+    }
+    return RefreshIndicator(
+      onRefresh: _loadData,
+      child: ListView.builder(
+        padding: const EdgeInsets.all(16),
+        itemCount: _featuredApplications.length,
+        itemBuilder: (context, index) {
+          final item = Map<String, dynamic>.from(
+            _featuredApplications[index] as Map,
+          );
+          final post = item['post'] as Map?;
+          final applicant = item['applicant'] as Map?;
+          return Card(
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    post?['title']?.toString().isNotEmpty == true
+                        ? post!['title'].toString()
+                        : '帖子 #${item['post_id']}',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  if (post?['content']?.toString().isNotEmpty == true) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      post!['content'].toString(),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 14, color: Colors.grey),
+                    ),
+                  ],
+                  const SizedBox(height: 6),
+                  Text('作者：${post?['author']?['nickname'] ?? '未知'}'),
+                  Text(
+                      '申请人：${applicant?['nickname'] ?? item['applicant_id']} (诚信分: ${applicant?['credit_score'] ?? '-'})'),
+                  Text('理由：${item['reason'] ?? ''}'),
+                  Text('状态：${item['status'] ?? ''}'),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      OutlinedButton(
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) =>
+                                  PostDetailScreen(postId: item['post_id']),
+                            ),
+                          );
+                        },
+                        child: const Text('查看原帖'),
+                      ),
+                      if (item['status'] == 'pending') ...[
+                        OutlinedButton(
+                          onPressed: () => _rejectFeatured(item['id'], false),
+                          child: const Text('普通驳回'),
+                        ),
+                        OutlinedButton(
+                          onPressed: () => _rejectFeatured(item['id'], true),
+                          child: const Text('恶意驳回'),
+                        ),
+                        FilledButton(
+                          onPressed: () => _approveFeatured(item['id']),
+                          child: const Text('通过'),
+                        ),
+                      ],
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _approveFeatured(dynamic id) async {
+    final reason = await _askAdminReason('通过精华申请', '审核理由');
+    if (reason == null) return;
+    await context.read<AuthProvider>().dio.post(
+      '/admin/featured-applications/$id/approve',
+      data: {'reason': reason},
+    );
+    await _loadData();
+  }
+
+  Future<void> _rejectFeatured(dynamic id, bool malicious) async {
+    int penaltyPoints = 0;
+    String? reason;
+    if (malicious) {
+      final result = await showDialog<Map<String, dynamic>>(
+        context: context,
+        builder: (ctx) {
+          final controller = TextEditingController();
+          int points = 5;
+          return StatefulBuilder(builder: (context, setState) {
+            return AlertDialog(
+              title: const Text('恶意驳回并扣分'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: controller,
+                    minLines: 2,
+                    maxLines: 5,
+                    decoration: const InputDecoration(hintText: '说明恶意/低质量原因'),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text('选择扣除诚信分：'),
+                  DropdownButton<int>(
+                    value: points,
+                    isExpanded: true,
+                    items: [0, 2, 5, 10]
+                        .map((e) =>
+                            DropdownMenuItem(value: e, child: Text('$e分')))
+                        .toList(),
+                    onChanged: (val) {
+                      if (val != null) setState(() => points = val);
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  const Text('恶意申请会扣除用户诚信分，确认继续？',
+                      style: TextStyle(color: Colors.red, fontSize: 13)),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('取消'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(
+                      ctx, {'reason': controller.text, 'points': points}),
+                  child: const Text('确认驳回'),
+                ),
+              ],
+            );
+          });
+        },
+      );
+      if (result == null) return;
+      reason = result['reason'];
+      penaltyPoints = result['points'];
+    } else {
+      reason = await _askAdminReason('驳回精华申请', '审核理由');
+      if (reason == null) return;
+    }
+
+    await context.read<AuthProvider>().dio.post(
+      '/admin/featured-applications/$id/reject',
+      data: {
+        'reason': reason,
+        'is_malicious': malicious,
+        'penalty_points': penaltyPoints,
+      },
+    );
+    await _loadData();
+  }
+
+  Future<String?> _askAdminReason(String title, String hint) async {
+    final controller = TextEditingController();
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: TextField(
+          controller: controller,
+          minLines: 2,
+          maxLines: 5,
+          decoration: InputDecoration(hintText: hint),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            child: const Text('确认'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    return result?.trim().isEmpty == true ? null : result;
+  }
+
   // ---- 操作日志 Tab ----
   Widget _buildLogsTab(bool isDark) {
     if (_logs.isEmpty) {
@@ -1502,8 +1672,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
             Expanded(
               child: FutureBuilder(
                 future: context.read<AuthProvider>().dio.get(
-                  ApiConstants.noticesPath,
-                ),
+                      '${ApiConstants.noticesPath}/admin/list',
+                    ),
                 builder: (_, snap) {
                   if (!snap.hasData)
                     return const Center(child: CircularProgressIndicator());
@@ -1531,10 +1701,22 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
                             context,
                             announcement: a,
                           ).then((_) => setLocalState(() {})),
-                          title: Text(
-                            a['title'] ?? '',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                          title: Row(
+                            children: [
+                              // Status badge
+                              _announcementStatusChip(a, isDark),
+                              const SizedBox(width: 6),
+                              // Priority badge
+                              _announcementPriorityChip(a, isDark),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  a['title'] ?? '',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
                           ),
                           subtitle: Text(
                             a['content'] ?? '',
@@ -1616,6 +1798,64 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
     );
   }
 
+  Widget _announcementStatusChip(Map a, bool isDark) {
+    final s = a['status']?.toString() ?? 'published';
+    Color c;
+    String label;
+    switch (s) {
+      case 'draft':
+        c = Colors.grey;
+        label = '草稿';
+        break;
+      case 'archived':
+        c = Colors.brown;
+        label = '归档';
+        break;
+      default:
+        c = Colors.green;
+        label = '已发布';
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: c.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(label,
+          style:
+              TextStyle(fontSize: 10, color: c, fontWeight: FontWeight.w600)),
+    );
+  }
+
+  Widget _announcementPriorityChip(Map a, bool isDark) {
+    final p = a['priority']?.toString() ?? 'normal';
+    Color c;
+    String label;
+    switch (p) {
+      case 'urgent':
+        c = Colors.red;
+        label = '紧急';
+        break;
+      case 'important':
+        c = Colors.orange;
+        label = '重要';
+        break;
+      default:
+        c = Colors.blue;
+        label = '普通';
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: c.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(label,
+          style:
+              TextStyle(fontSize: 10, color: c, fontWeight: FontWeight.w600)),
+    );
+  }
+
   Future<void> _showAnnouncementEditor(
     BuildContext context, {
     Map<dynamic, dynamic>? announcement,
@@ -1624,21 +1864,53 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
     final contentCtrl = TextEditingController();
     final isEditing = announcement != null;
     bool isPinned = announcement?['is_pinned'] == true;
+
+    // New fields
+    String status = announcement?['status']?.toString() ?? 'published';
+    String displayMode = announcement?['display_mode']?.toString() ?? 'center';
+    String priority = announcement?['priority']?.toString() ?? 'normal';
+    DateTime? publishAt;
+    DateTime? expiresAt;
+    bool includeNewUsers = announcement?['include_new_users'] == true;
+
+    // Parse publish_at from announcement
+    final rawPublishAt = announcement?['publish_at']?.toString();
+    if (rawPublishAt != null && rawPublishAt.isNotEmpty) {
+      publishAt = DateTime.tryParse(rawPublishAt);
+    }
+    // Parse expires_at from announcement
+    final rawExpiresAt = announcement?['expires_at']?.toString();
+    if (rawExpiresAt != null && rawExpiresAt.isNotEmpty) {
+      expiresAt = DateTime.tryParse(rawExpiresAt);
+    }
+
     final draftKey = _announcementDraftKey(announcement?['id'] as int?);
     final prefs = await SharedPreferences.getInstance();
     final draftTitle = prefs.getString('${draftKey}_title');
     final draftContent = prefs.getString('${draftKey}_content');
     final draftPinned = prefs.getBool('${draftKey}_pinned');
+    final draftStatus = prefs.getString('${draftKey}_status');
+    final draftDisplayMode = prefs.getString('${draftKey}_display_mode');
+    final draftPriority = prefs.getString('${draftKey}_priority');
+    final draftIncludeNewUsers = prefs.getBool('${draftKey}_include_new');
 
     titleCtrl.text = draftTitle ?? (announcement?['title']?.toString() ?? '');
     contentCtrl.text =
         draftContent ?? (announcement?['content']?.toString() ?? '');
     isPinned = draftPinned ?? isPinned;
+    if (draftStatus != null) status = draftStatus;
+    if (draftDisplayMode != null) displayMode = draftDisplayMode;
+    if (draftPriority != null) priority = draftPriority;
+    if (draftIncludeNewUsers != null) includeNewUsers = draftIncludeNewUsers;
 
     Future<void> saveDraft() async {
       await prefs.setString('${draftKey}_title', titleCtrl.text);
       await prefs.setString('${draftKey}_content', contentCtrl.text);
       await prefs.setBool('${draftKey}_pinned', isPinned);
+      await prefs.setString('${draftKey}_status', status);
+      await prefs.setString('${draftKey}_display_mode', displayMode);
+      await prefs.setString('${draftKey}_priority', priority);
+      await prefs.setBool('${draftKey}_include_new', includeNewUsers);
     }
 
     void draftListener() {
@@ -1693,6 +1965,169 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
                     await saveDraft();
                   },
                 ),
+                const SizedBox(height: 8),
+                // Status dropdown
+                DropdownButtonFormField<String>(
+                  value: status,
+                  decoration: const InputDecoration(
+                    labelText: '发布状态',
+                    border: OutlineInputBorder(),
+                    contentPadding:
+                        EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                  ),
+                  items: const [
+                    DropdownMenuItem(value: 'draft', child: Text('草稿')),
+                    DropdownMenuItem(value: 'published', child: Text('已发布')),
+                    DropdownMenuItem(value: 'archived', child: Text('已归档')),
+                  ],
+                  onChanged: (v) {
+                    if (v != null) {
+                      setDialogState(() => status = v);
+                      saveDraft();
+                    }
+                  },
+                ),
+                const SizedBox(height: 12),
+                // DisplayMode dropdown
+                DropdownButtonFormField<String>(
+                  value: displayMode,
+                  decoration: const InputDecoration(
+                    labelText: '展示方式',
+                    border: OutlineInputBorder(),
+                    contentPadding:
+                        EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                  ),
+                  items: const [
+                    DropdownMenuItem(value: 'center', child: Text('公告中心')),
+                    DropdownMenuItem(value: 'banner', child: Text('首页横幅')),
+                    DropdownMenuItem(value: 'modal', child: Text('弹窗提醒')),
+                  ],
+                  onChanged: (v) {
+                    if (v != null) {
+                      setDialogState(() => displayMode = v);
+                      saveDraft();
+                    }
+                  },
+                ),
+                const SizedBox(height: 12),
+                // Priority dropdown
+                DropdownButtonFormField<String>(
+                  value: priority,
+                  decoration: const InputDecoration(
+                    labelText: '优先级',
+                    border: OutlineInputBorder(),
+                    contentPadding:
+                        EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                  ),
+                  items: const [
+                    DropdownMenuItem(value: 'normal', child: Text('普通')),
+                    DropdownMenuItem(value: 'important', child: Text('重要')),
+                    DropdownMenuItem(value: 'urgent', child: Text('紧急')),
+                  ],
+                  onChanged: (v) {
+                    if (v != null) {
+                      setDialogState(() => priority = v);
+                      saveDraft();
+                    }
+                  },
+                ),
+                const SizedBox(height: 12),
+                // PublishAt picker
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('定时发布'),
+                  subtitle: Text(publishAt != null
+                      ? '${publishAt!.toLocal()}'.substring(0, 16)
+                      : '立即发布'),
+                  trailing: publishAt != null
+                      ? IconButton(
+                          icon: const Icon(Icons.clear),
+                          onPressed: () =>
+                              setDialogState(() => publishAt = null),
+                        )
+                      : null,
+                  onTap: () async {
+                    final date = await showDatePicker(
+                      context: ctx,
+                      initialDate: publishAt ?? DateTime.now(),
+                      firstDate: DateTime.now(),
+                      lastDate: DateTime.now().add(const Duration(days: 365)),
+                    );
+                    if (date == null || !ctx.mounted) return;
+                    final time = await showTimePicker(
+                      context: ctx,
+                      initialTime: publishAt != null
+                          ? TimeOfDay.fromDateTime(publishAt!)
+                          : TimeOfDay.now(),
+                    );
+                    if (time == null) return;
+                    setDialogState(() {
+                      publishAt = DateTime(
+                        date.year,
+                        date.month,
+                        date.day,
+                        time.hour,
+                        time.minute,
+                      );
+                    });
+                    saveDraft();
+                  },
+                ),
+                const SizedBox(height: 12),
+                // ExpiresAt picker
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('过期时间'),
+                  subtitle: Text(expiresAt != null
+                      ? '${expiresAt!.toLocal()}'.substring(0, 16)
+                      : '永不过期'),
+                  trailing: expiresAt != null
+                      ? IconButton(
+                          icon: const Icon(Icons.clear),
+                          onPressed: () =>
+                              setDialogState(() => expiresAt = null),
+                        )
+                      : null,
+                  onTap: () async {
+                    final date = await showDatePicker(
+                      context: ctx,
+                      initialDate: expiresAt ?? DateTime.now(),
+                      firstDate: DateTime.now(),
+                      lastDate:
+                          DateTime.now().add(const Duration(days: 365 * 5)),
+                    );
+                    if (date == null || !ctx.mounted) return;
+                    final time = await showTimePicker(
+                      context: ctx,
+                      initialTime: expiresAt != null
+                          ? TimeOfDay.fromDateTime(expiresAt!)
+                          : const TimeOfDay(hour: 23, minute: 59),
+                    );
+                    if (time == null) return;
+                    setDialogState(() {
+                      expiresAt = DateTime(
+                        date.year,
+                        date.month,
+                        date.day,
+                        time.hour,
+                        time.minute,
+                      );
+                    });
+                    saveDraft();
+                  },
+                ),
+                const SizedBox(height: 12),
+                // IncludeNewUsers switch
+                SwitchListTile(
+                  value: includeNewUsers,
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('向公告发布后注册的新用户展示'),
+                  subtitle: const Text('开启后，新注册用户也能看到此公告'),
+                  onChanged: (value) async {
+                    setDialogState(() => includeNewUsers = value);
+                    await saveDraft();
+                  },
+                ),
               ],
             ),
           ),
@@ -1715,28 +2150,35 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
     if (ok == true &&
         (titleCtrl.text.isNotEmpty || contentCtrl.text.isNotEmpty)) {
       final dio = context.read<AuthProvider>().dio;
+      final postData = {
+        'title': titleCtrl.text,
+        'content': contentCtrl.text,
+        'is_pinned': isPinned,
+        'status': status,
+        'display_mode': displayMode,
+        'priority': priority,
+        'publish_at': publishAt?.toUtc().toIso8601String(),
+        'expires_at': expiresAt?.toUtc().toIso8601String(),
+        'include_new_users': includeNewUsers,
+      };
       if (isEditing) {
         await dio.put(
           '${ApiConstants.noticesPath}/${announcement['id']}',
-          data: {
-            'title': titleCtrl.text,
-            'content': contentCtrl.text,
-            'is_pinned': isPinned,
-          },
+          data: postData,
         );
       } else {
         await dio.post(
           ApiConstants.noticesPath,
-          data: {
-            'title': titleCtrl.text,
-            'content': contentCtrl.text,
-            'is_pinned': isPinned,
-          },
+          data: postData,
         );
       }
       await prefs.remove('${draftKey}_title');
       await prefs.remove('${draftKey}_content');
       await prefs.remove('${draftKey}_pinned');
+      await prefs.remove('${draftKey}_status');
+      await prefs.remove('${draftKey}_display_mode');
+      await prefs.remove('${draftKey}_priority');
+      await prefs.remove('${draftKey}_include_new');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -1782,9 +2224,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
               subtitle,
               style: TextStyle(
                 fontSize: 14,
-                color: isDark
-                    ? Colors.white.withOpacity(0.4)
-                    : Colors.grey[400],
+                color:
+                    isDark ? Colors.white.withOpacity(0.4) : Colors.grey[400],
               ),
             ),
           ],

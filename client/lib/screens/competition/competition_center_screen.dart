@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:dio/dio.dart';
@@ -2386,9 +2387,16 @@ class _CompetitionShareImportScreenState
       if (result == null || result.files.isEmpty) return;
 
       final file = result.files.single;
-      final bytes = file.bytes;
+      
+      String? text;
+      if (file.bytes != null) {
+        text = utf8.decode(file.bytes!).trim();
+      } else if (file.path != null) {
+        text = await File(file.path!).readAsString();
+        text = text.trim();
+      }
 
-      if (bytes == null) {
+      if (text == null || text.isEmpty) {
         AppFeedback.showSnackBar(
           context,
           '读取文件失败，请重新选择 JSON 文件',
@@ -2628,9 +2636,16 @@ class _CompetitionAdminImportScreenState
       if (result == null || result.files.isEmpty) return;
 
       final file = result.files.single;
-      final bytes = file.bytes;
 
-      if (bytes == null) {
+      String? text;
+      if (file.bytes != null) {
+        text = utf8.decode(file.bytes!).trim();
+      } else if (file.path != null) {
+        text = await File(file.path!).readAsString();
+        text = text.trim();
+      }
+
+      if (text == null || text.isEmpty) {
         AppFeedback.showSnackBar(
           context,
           '读取文件失败，请重新选择 JSON 文件',
@@ -2639,7 +2654,6 @@ class _CompetitionAdminImportScreenState
         return;
       }
 
-      final text = utf8.decode(bytes).trim();
       final decoded = jsonDecode(text);
 
       if (decoded is! Map<String, dynamic> || decoded['events'] is! List) {

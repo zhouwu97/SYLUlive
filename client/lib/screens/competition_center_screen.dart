@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -17,6 +18,102 @@ const _competitionBorder = Color(0xFFE8E4F0);
 const _competitionMuted = Color(0xFF8B8794);
 const _competitionOrange = Color(0xFFF59E0B);
 const _competitionDanger = Color(0xFFEF4444);
+const _competitionCategorySlugHint =
+    'innovation_startup、computer_ai、electronic_info、smart_manufacturing_vehicle、art_design、business_economics、math_science、materials_chem_env、language_humanities、defense_security_other';
+
+const _competitionAiPrompt = '''
+你是校园竞赛信息整理助手。请把我提供的比赛通知整理成校园 App 可导入的 JSON。
+
+只允许输出 JSON，不要输出 Markdown，不要解释，不要使用 ``` 包裹。
+
+固定格式如下：
+{
+  "events": [
+    {
+      "title": "比赛名称",
+      "summary": "一句话摘要，80字以内",
+      "description": "比赛说明，可包含报名方式、参赛对象、赛程等",
+      "primary_category_slug": "分类slug，必须使用系统已有分类：$_competitionCategorySlugHint",
+      "tags": ["数学建模", "创新创业"],
+      "competition_level": "国家级/省级/校级/企业赛/平台赛/其他",
+      "school_recognition_status": "recognized/not_recognized/pending/unknown",
+      "school_recognition_grade": "",
+      "recommendation_level": "S/A/B/C",
+      "importance_score": 80,
+      "recommendation_reason": "推荐理由，60字以内",
+      "organizer": "主办方",
+      "host_unit": "承办/指导单位，没有就空字符串",
+      "target_audience": "参赛对象",
+      "participation_type": "个人/团队/个人或团队",
+      "team_size_min": 1,
+      "team_size_max": 5,
+      "registration_start": "YYYY-MM-DD，不确定填空字符串",
+      "registration_end": "YYYY-MM-DD，不确定填空字符串",
+      "event_start": "YYYY-MM-DD，不确定填空字符串",
+      "event_end": "YYYY-MM-DD，不确定填空字符串",
+      "registration_time_text": "原文报名时间描述",
+      "event_time_text": "原文比赛时间描述",
+      "location": "地点，没有填空字符串",
+      "is_online": false,
+      "official_url": "官网链接，没有填空字符串",
+      "notice_url": "通知链接，没有填空字符串",
+      "attachment_urls": [],
+      "source_channel": "school_catalog/college_notice/enterprise/industry_association/platform/admin_manual/ai_import",
+      "source_note": "来源说明",
+      "status": "draft"
+    }
+  ]
+}
+
+规则：
+1. 日期字段必须是 YYYY-MM-DD，不能确定就留空字符串。
+2. URL 必须是 http 或 https，不确定就留空字符串。
+3. recommendation_level 只能是 S/A/B/C。
+4. school_recognition_status 只能是 recognized/not_recognized/pending/unknown。
+5. source_channel 优先用 college_notice、school_catalog、enterprise、platform。
+6. primary_category_slug 必须使用系统已有分类：$_competitionCategorySlugHint。
+7. 不要编造学校是否认定；不确定用 pending 或 unknown。
+''';
+
+const _competitionAiExampleJson = '''
+{
+  "events": [
+    {
+      "title": "中国国际大学生创新大赛",
+      "summary": "面向大学生创新创业项目的综合类赛事。",
+      "description": "比赛面向在校大学生团队，围绕创新创业项目进行申报、路演和评审。",
+      "primary_category_slug": "innovation_startup",
+      "tags": ["创新创业", "路演", "团队赛"],
+      "competition_level": "国家级",
+      "school_recognition_status": "pending",
+      "school_recognition_grade": "",
+      "recommendation_level": "S",
+      "importance_score": 95,
+      "recommendation_reason": "认可度高，适合有项目基础的学生重点关注。",
+      "organizer": "教育部等",
+      "host_unit": "",
+      "target_audience": "在校大学生",
+      "participation_type": "团队",
+      "team_size_min": 3,
+      "team_size_max": 15,
+      "registration_start": "",
+      "registration_end": "",
+      "event_start": "",
+      "event_end": "",
+      "registration_time_text": "以学校通知为准",
+      "event_time_text": "以官方赛程为准",
+      "location": "",
+      "is_online": false,
+      "official_url": "",
+      "notice_url": "",
+      "attachment_urls": [],
+      "source_channel": "ai_import",
+      "source_note": "AI 根据比赛通知整理",
+      "status": "draft"
+    }
+  ]
+}
+''';
 
 class CompetitionCenterScreen extends StatefulWidget {
   const CompetitionCenterScreen({super.key});
@@ -139,8 +236,8 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
           if (user?.isAdmin == true)
             TextButton.icon(
               onPressed: _openAdminImport,
-              icon: const Icon(Icons.admin_panel_settings_outlined, size: 18),
-              label: const Text('管理'),
+              icon: const Icon(Icons.auto_awesome_rounded, size: 18),
+              label: const Text('AI导入'),
             ),
         ],
       ),
@@ -165,10 +262,13 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
                     ? SingleChildScrollView(
                         child: _CompetitionEmptyState(
                           title: '暂无官方比赛',
-                          message:
-                              '管理员还没有维护官方比赛库。你可以先通过分享码或 AI JSON 导入自己的比赛日历。',
-                          primaryText: '去导入',
-                          onPrimary: _openShareImport,
+                          message: user?.isAdmin == true
+                              ? '官方比赛库还没有内容。可以先用 AI JSON 导入比赛草稿，再发布到官方库。'
+                              : '官方比赛库暂无内容。你可以先通过分享码导入自己的比赛日历。',
+                          primaryText: user?.isAdmin == true ? 'AI导入' : '导入分享',
+                          onPrimary: user?.isAdmin == true
+                              ? _openAdminImport
+                              : _openShareImport,
                           secondaryText: '刷新',
                           onSecondary: _load,
                         ),
@@ -193,15 +293,15 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
       return deadline != null && !deadline.isBefore(DateTime.now());
     }).length;
     return Container(
-      margin: const EdgeInsets.fromLTRB(20, 10, 20, 14),
-      padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
+      margin: const EdgeInsets.fromLTRB(20, 6, 20, 10),
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
           colors: [Color(0xFF7C72D8), Color(0xFF6F66B8)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
-        borderRadius: BorderRadius.circular(22),
+        borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
             color: _competitionPrimary.withValues(alpha: 0.20),
@@ -224,14 +324,14 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
                       '比赛日历',
                       style: TextStyle(
                         color: Colors.white,
-                        fontSize: 22,
+                        fontSize: 20,
                         fontWeight: FontWeight.w800,
-                        height: 1.15,
+                        height: 1.1,
                       ),
                     ),
                     SizedBox(height: 6),
                     Text(
-                      '官方比赛、我的计划、分享导入统一管理',
+                      '官方库 / 我的日历 / 分享导入',
                       style: TextStyle(
                         color: Color(0xFFE8E3FF),
                         fontSize: 13,
@@ -244,7 +344,7 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
               _buildImportButton(),
             ],
           ),
-          const SizedBox(height: 22),
+          const SizedBox(height: 14),
           Row(
             children: [
               Expanded(
@@ -312,7 +412,7 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
               '$value',
               style: const TextStyle(
                 color: Colors.white,
-                fontSize: 22,
+                fontSize: 19,
                 fontWeight: FontWeight.w800,
                 height: 1,
               ),
@@ -327,12 +427,12 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
             ],
           ],
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 5),
         Text(
           label,
           style: TextStyle(
             color: Colors.white.withValues(alpha: 0.78),
-            fontSize: 12,
+            fontSize: 11,
             fontWeight: FontWeight.w500,
           ),
         ),
@@ -429,8 +529,7 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
             _SoftActionButton(
               icon: Icons.sort_rounded,
               label: '即将截止',
-              onTap: () =>
-                  AppFeedback.showSnackBar(context, '当前按报名截止时间排序'),
+              onTap: () => AppFeedback.showSnackBar(context, '当前按报名截止时间排序'),
             ),
           ],
         ),
@@ -1234,6 +1333,7 @@ class CompetitionCalendarScreen extends StatefulWidget {
 
 class _CompetitionCalendarScreenState extends State<CompetitionCalendarScreen> {
   List<dynamic> _items = [];
+  List<CompetitionCategory> _categories = [];
   bool _loading = true;
 
   @override
@@ -1243,24 +1343,105 @@ class _CompetitionCalendarScreenState extends State<CompetitionCalendarScreen> {
   }
 
   Future<void> _load() async {
-    final resp = await context
-        .read<AuthProvider>()
-        .dio
-        .get('/user/competition-calendar');
-    if (!mounted) return;
-    setState(() {
-      _items = (resp.data['items'] as List?) ?? [];
-      _loading = false;
-    });
+    if (mounted) setState(() => _loading = true);
+    try {
+      final dio = context.read<AuthProvider>().dio;
+      final results = await Future.wait([
+        dio.get('/user/competition-calendar'),
+        dio.get('/competitions/categories'),
+      ]);
+      if (!mounted) return;
+      setState(() {
+        _items = (results[0].data['items'] as List?) ?? [];
+        _categories = ((results[1].data as List?) ?? [])
+            .map((e) => CompetitionCategory.fromJson(e))
+            .toList();
+        _loading = false;
+      });
+    } on DioException catch (e) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+      AppFeedback.showSnackBar(
+        context,
+        AppFeedback.dioErrorMessage(e, fallback: '加载我的比赛日历失败'),
+        isError: true,
+      );
+    }
   }
 
   Future<void> _share() async {
-    final resp = await context
-        .read<AuthProvider>()
-        .dio
-        .post('/user/competition-calendar/share');
-    if (!mounted) return;
-    AppFeedback.showSnackBar(context, '分享码：${resp.data['share_code']}');
+    try {
+      final resp = await context
+          .read<AuthProvider>()
+          .dio
+          .post('/user/competition-calendar/share');
+      if (!mounted) return;
+      final code = '${resp.data['share_code'] ?? ''}';
+      await Clipboard.setData(ClipboardData(text: code));
+      if (!mounted) return;
+      AppFeedback.showSnackBar(context, '分享码已复制：$code');
+    } on DioException catch (e) {
+      if (!mounted) return;
+      AppFeedback.showSnackBar(
+        context,
+        AppFeedback.dioErrorMessage(e, fallback: '生成分享码失败'),
+        isError: true,
+      );
+    }
+  }
+
+  Future<void> _openEditor({Map<String, dynamic>? item}) async {
+    if (_categories.isEmpty) {
+      AppFeedback.showSnackBar(context, '分类加载失败，暂时无法编辑比赛', isError: true);
+      return;
+    }
+    final changed = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => CompetitionCalendarItemEditorScreen(
+          categories: _categories,
+          item: item,
+        ),
+      ),
+    );
+    if (changed == true) {
+      await _load();
+    }
+  }
+
+  Future<void> _deleteItem(Map<String, dynamic> item) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('删除比赛'),
+        content: Text('确定从我的日历删除「${item['title'] ?? '未命名比赛'}」吗？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final dio = context.read<AuthProvider>().dio;
+    try {
+      await dio.delete('/user/competition-calendar/items/${item['id']}');
+      if (!mounted) return;
+      AppFeedback.showSnackBar(context, '已删除比赛');
+      await _load();
+    } on DioException catch (e) {
+      if (!mounted) return;
+      AppFeedback.showSnackBar(
+        context,
+        AppFeedback.dioErrorMessage(e, fallback: '删除失败'),
+        isError: true,
+      );
+    }
   }
 
   @override
@@ -1273,7 +1454,26 @@ class _CompetitionCalendarScreenState extends State<CompetitionCalendarScreen> {
         centerTitle: true,
         title: const Text('我的比赛日历'),
         actions: [
-          IconButton(onPressed: _share, icon: const Icon(Icons.ios_share)),
+          IconButton(
+            tooltip: '新增比赛',
+            onPressed: () => _openEditor(),
+            icon: const Icon(Icons.add_rounded),
+          ),
+          IconButton(
+            tooltip: '导入分享码',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const CompetitionShareImportScreen(),
+              ),
+            ).then((_) => _load()),
+            icon: const Icon(Icons.input_rounded),
+          ),
+          IconButton(
+            tooltip: '生成分享码',
+            onPressed: _share,
+            icon: const Icon(Icons.ios_share),
+          ),
         ],
       ),
       body: _loading
@@ -1287,19 +1487,19 @@ class _CompetitionCalendarScreenState extends State<CompetitionCalendarScreen> {
                 if (_items.isEmpty)
                   _CompetitionEmptyState(
                     title: '你的比赛日历还是空的',
-                    message: '可以从官方比赛复制到日历，也可以通过 AI JSON 或分享码导入自己的参赛计划。',
-                    primaryText: '去导入',
-                    onPrimary: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const CompetitionShareImportScreen(),
-                      ),
-                    ).then((_) => _load()),
+                    message: '可以从官方比赛复制到日历，也可以手动新增或通过分享码导入自己的参赛计划。',
+                    primaryText: '新增比赛',
+                    onPrimary: () => _openEditor(),
                     secondaryText: '刷新',
                     onSecondary: _load,
                   ),
                 ..._items.map((raw) {
                   final item = Map<String, dynamic>.from(raw as Map);
+                  final deadline = _calendarItemTimeText(
+                      item, 'registration_end', 'registration_time_text');
+                  final source = _calendarItemSourceLabel(
+                    '${item['source_type'] ?? ''}',
+                  );
                   return Container(
                     margin: const EdgeInsets.only(bottom: 10),
                     padding: const EdgeInsets.all(16),
@@ -1334,13 +1534,15 @@ class _CompetitionCalendarScreenState extends State<CompetitionCalendarScreen> {
                             const Spacer(),
                             IconButton(
                               visualDensity: VisualDensity.compact,
+                              tooltip: '编辑',
+                              icon: const Icon(Icons.edit_outlined),
+                              onPressed: () => _openEditor(item: item),
+                            ),
+                            IconButton(
+                              visualDensity: VisualDensity.compact,
+                              tooltip: '删除',
                               icon: const Icon(Icons.delete_outline),
-                              onPressed: () async {
-                                await context.read<AuthProvider>().dio.delete(
-                                      '/user/competition-calendar/items/${item['id']}',
-                                    );
-                                _load();
-                              },
+                              onPressed: () => _deleteItem(item),
                             ),
                           ],
                         ),
@@ -1355,7 +1557,7 @@ class _CompetitionCalendarScreenState extends State<CompetitionCalendarScreen> {
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          '报名截止：${item['registration_time_text'] ?? '未设置'}',
+                          '报名截止：${deadline.isEmpty ? '未设置' : deadline}',
                           style: const TextStyle(
                             color: _competitionOrange,
                             fontSize: 13,
@@ -1364,7 +1566,7 @@ class _CompetitionCalendarScreenState extends State<CompetitionCalendarScreen> {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          '来源：${item['source_type'] ?? '我的导入'}',
+                          '来源：$source',
                           style: const TextStyle(
                             color: _competitionMuted,
                             fontSize: 12,
@@ -1377,6 +1579,302 @@ class _CompetitionCalendarScreenState extends State<CompetitionCalendarScreen> {
               ],
             ),
     );
+  }
+}
+
+class CompetitionCalendarItemEditorScreen extends StatefulWidget {
+  final List<CompetitionCategory> categories;
+  final Map<String, dynamic>? item;
+
+  const CompetitionCalendarItemEditorScreen({
+    super.key,
+    required this.categories,
+    this.item,
+  });
+
+  @override
+  State<CompetitionCalendarItemEditorScreen> createState() =>
+      _CompetitionCalendarItemEditorScreenState();
+}
+
+class _CompetitionCalendarItemEditorScreenState
+    extends State<CompetitionCalendarItemEditorScreen> {
+  final _titleController = TextEditingController();
+  final _summaryController = TextEditingController();
+  final _descriptionController = TextEditingController();
+  final _organizerController = TextEditingController();
+  final _competitionLevelController = TextEditingController();
+  final _registrationEndController = TextEditingController();
+  final _registrationTextController = TextEditingController();
+  final _eventStartController = TextEditingController();
+  final _eventTextController = TextEditingController();
+  final _locationController = TextEditingController();
+  final _officialUrlController = TextEditingController();
+  final _noticeUrlController = TextEditingController();
+
+  int? _categoryId;
+  String _recognition = 'pending';
+  String _recommendation = 'A';
+  bool _isOnline = false;
+  bool _saving = false;
+
+  bool get _isEditing => widget.item != null;
+
+  @override
+  void initState() {
+    super.initState();
+    final item = widget.item;
+    _categoryId = _intValue(item?['category_id']);
+    if (_categoryId == null || _categoryId == 0) {
+      _categoryId = widget.categories.first.id;
+    }
+    _titleController.text = '${item?['title'] ?? ''}';
+    _summaryController.text = '${item?['summary'] ?? ''}';
+    _descriptionController.text = '${item?['description'] ?? ''}';
+    _organizerController.text = '${item?['organizer'] ?? ''}';
+    _competitionLevelController.text = '${item?['competition_level'] ?? ''}';
+    _registrationEndController.text = _dateOnly(item?['registration_end']);
+    _registrationTextController.text =
+        '${item?['registration_time_text'] ?? ''}';
+    _eventStartController.text = _dateOnly(item?['event_start']);
+    _eventTextController.text = '${item?['event_time_text'] ?? ''}';
+    _locationController.text = '${item?['location'] ?? ''}';
+    _officialUrlController.text = '${item?['official_url'] ?? ''}';
+    _noticeUrlController.text = '${item?['notice_url'] ?? ''}';
+    _recognition = '${item?['school_recognition_status'] ?? 'pending'}';
+    if (_recognition.isEmpty) _recognition = 'pending';
+    _recommendation = '${item?['recommendation_level'] ?? 'A'}';
+    if (_recommendation.isEmpty) _recommendation = 'A';
+    _isOnline = item?['is_online'] == true;
+  }
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    _summaryController.dispose();
+    _descriptionController.dispose();
+    _organizerController.dispose();
+    _competitionLevelController.dispose();
+    _registrationEndController.dispose();
+    _registrationTextController.dispose();
+    _eventStartController.dispose();
+    _eventTextController.dispose();
+    _locationController.dispose();
+    _officialUrlController.dispose();
+    _noticeUrlController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    final title = _titleController.text.trim();
+    if (title.isEmpty) {
+      AppFeedback.showSnackBar(context, '请填写比赛名称', isError: true);
+      return;
+    }
+    if (_categoryId == null || _categoryId == 0) {
+      AppFeedback.showSnackBar(context, '请选择比赛分类', isError: true);
+      return;
+    }
+    setState(() => _saving = true);
+    final data = {
+      'title': title,
+      'summary': _summaryController.text.trim(),
+      'description': _descriptionController.text.trim(),
+      'primary_category_id': _categoryId,
+      'competition_level': _competitionLevelController.text.trim(),
+      'school_recognition_status': _recognition,
+      'recommendation_level': _recommendation,
+      'organizer': _organizerController.text.trim(),
+      'registration_end': _registrationEndController.text.trim(),
+      'registration_time_text': _registrationTextController.text.trim(),
+      'event_start': _eventStartController.text.trim(),
+      'event_time_text': _eventTextController.text.trim(),
+      'location': _locationController.text.trim(),
+      'is_online': _isOnline,
+      'official_url': _officialUrlController.text.trim(),
+      'notice_url': _noticeUrlController.text.trim(),
+      'source_channel': 'user_submitted',
+      'status': 'draft',
+      'tags': <String>[],
+      'attachment_urls': <String>[],
+    };
+
+    try {
+      final dio = context.read<AuthProvider>().dio;
+      if (_isEditing) {
+        await dio.put(
+          '/user/competition-calendar/items/${widget.item!['id']}',
+          data: data,
+        );
+      } else {
+        await dio.post('/user/competition-calendar/items', data: data);
+      }
+      if (!mounted) return;
+      AppFeedback.showSnackBar(context, _isEditing ? '已更新比赛' : '已新增比赛');
+      Navigator.pop(context, true);
+    } on DioException catch (e) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      AppFeedback.showSnackBar(
+        context,
+        AppFeedback.dioErrorMessage(e, fallback: _isEditing ? '更新失败' : '新增失败'),
+        isError: true,
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: _competitionBg,
+      appBar: AppBar(
+        backgroundColor: _competitionBg,
+        surfaceTintColor: Colors.transparent,
+        centerTitle: true,
+        title: Text(_isEditing ? '编辑比赛' : '新增比赛'),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+        children: [
+          _input(_titleController, '比赛名称', required: true),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<int>(
+            initialValue: _categoryId,
+            decoration: _inputDecoration('比赛分类'),
+            items: widget.categories
+                .map(
+                  (category) => DropdownMenuItem(
+                    value: category.id,
+                    child: Text(category.name),
+                  ),
+                )
+                .toList(),
+            onChanged: (value) => setState(() => _categoryId = value),
+          ),
+          const SizedBox(height: 12),
+          _input(_summaryController, '一句话摘要'),
+          const SizedBox(height: 12),
+          _input(_descriptionController, '比赛说明', minLines: 4, maxLines: 8),
+          const SizedBox(height: 12),
+          _input(_organizerController, '主办方'),
+          const SizedBox(height: 12),
+          _input(_competitionLevelController, '比赛级别'),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: DropdownButtonFormField<String>(
+                  initialValue: _recommendation,
+                  decoration: _inputDecoration('推荐程度'),
+                  items: const [
+                    DropdownMenuItem(value: 'S', child: Text('S 强烈推荐')),
+                    DropdownMenuItem(value: 'A', child: Text('A 推荐')),
+                    DropdownMenuItem(value: 'B', child: Text('B 可参加')),
+                    DropdownMenuItem(value: 'C', child: Text('C 兴趣')),
+                  ],
+                  onChanged: (value) =>
+                      setState(() => _recommendation = value ?? 'A'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: DropdownButtonFormField<String>(
+                  initialValue: _recognition,
+                  decoration: _inputDecoration('学校认定'),
+                  items: const [
+                    DropdownMenuItem(value: 'recognized', child: Text('已认定')),
+                    DropdownMenuItem(
+                        value: 'not_recognized', child: Text('未认定')),
+                    DropdownMenuItem(value: 'pending', child: Text('待确认')),
+                    DropdownMenuItem(value: 'unknown', child: Text('未知')),
+                  ],
+                  onChanged: (value) =>
+                      setState(() => _recognition = value ?? 'pending'),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          _input(_registrationEndController, '报名截止日期 YYYY-MM-DD'),
+          const SizedBox(height: 12),
+          _input(_registrationTextController, '报名时间说明'),
+          const SizedBox(height: 12),
+          _input(_eventStartController, '比赛开始日期 YYYY-MM-DD'),
+          const SizedBox(height: 12),
+          _input(_eventTextController, '比赛时间说明'),
+          const SizedBox(height: 12),
+          SwitchListTile(
+            value: _isOnline,
+            onChanged: (value) => setState(() => _isOnline = value),
+            title: const Text('线上比赛'),
+            contentPadding: EdgeInsets.zero,
+            activeThumbColor: _competitionPrimary,
+          ),
+          _input(_locationController, '地点'),
+          const SizedBox(height: 12),
+          _input(_officialUrlController, '官网链接'),
+          const SizedBox(height: 12),
+          _input(_noticeUrlController, '通知链接'),
+          const SizedBox(height: 20),
+          FilledButton(
+            onPressed: _saving ? null : _save,
+            style: FilledButton.styleFrom(
+              minimumSize: const Size.fromHeight(48),
+              backgroundColor: _competitionPrimary,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(15),
+              ),
+            ),
+            child: Text(_saving ? '保存中...' : '保存'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _input(
+    TextEditingController controller,
+    String label, {
+    bool required = false,
+    int minLines = 1,
+    int maxLines = 1,
+  }) {
+    return TextField(
+      controller: controller,
+      minLines: minLines,
+      maxLines: maxLines,
+      decoration: _inputDecoration(required ? '$label *' : label),
+    );
+  }
+
+  InputDecoration _inputDecoration(String label) {
+    return InputDecoration(
+      labelText: label,
+      filled: true,
+      fillColor: Colors.white,
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: const BorderSide(color: _competitionBorder),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: const BorderSide(color: _competitionBorder),
+      ),
+    );
+  }
+
+  int? _intValue(dynamic value) {
+    if (value is num) return value.toInt();
+    return int.tryParse('$value');
+  }
+
+  String _dateOnly(dynamic value) {
+    final raw = '${value ?? ''}'.trim();
+    if (raw.isEmpty || raw == 'null') return '';
+    final parsed = DateTime.tryParse(raw);
+    if (parsed == null) return raw;
+    return '${parsed.year}-${parsed.month.toString().padLeft(2, '0')}-${parsed.day.toString().padLeft(2, '0')}';
   }
 }
 
@@ -1468,73 +1966,566 @@ class _CompetitionAdminImportScreenState
   final _jsonController = TextEditingController();
   String? _batchId;
   Map<String, dynamic>? _preview;
+  String? _previewedJsonText;
+
+  @override
+  void initState() {
+    super.initState();
+    _jsonController.addListener(_handleJsonChanged);
+  }
 
   @override
   void dispose() {
+    _jsonController.removeListener(_handleJsonChanged);
     _jsonController.dispose();
     super.dispose();
   }
 
-  Future<void> _previewJson() async {
-    final data = jsonDecode(_jsonController.text) as Map<String, dynamic>;
-    final resp = await context
-        .read<AuthProvider>()
-        .dio
-        .post('/admin/competitions/import-json/preview', data: data);
-    if (!mounted) return;
+  void _handleJsonChanged() {
+    if (_preview == null && _batchId == null && _previewedJsonText == null) {
+      return;
+    }
+    if (_jsonController.text == _previewedJsonText) {
+      return;
+    }
     setState(() {
-      _batchId = resp.data['batch_id'];
-      _preview = Map<String, dynamic>.from(resp.data['preview']);
+      _preview = null;
+      _batchId = null;
+      _previewedJsonText = null;
     });
+  }
+
+  List<Map<String, dynamic>> get _draftEvents {
+    try {
+      final data = jsonDecode(_jsonController.text);
+      if (data is! Map<String, dynamic>) return [];
+      final events = data['events'];
+      if (events is! List) return [];
+      return events
+          .whereType<Map>()
+          .map((event) => Map<String, dynamic>.from(event))
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  List<Map<String, dynamic>> get _sortedDraftEvents {
+    final indexed = _draftEvents.asMap().entries.toList();
+    indexed.sort((left, right) {
+      final leftDate = _draftSortDate(left.value);
+      final rightDate = _draftSortDate(right.value);
+      if (leftDate != null && rightDate != null) {
+        final compared = leftDate.compareTo(rightDate);
+        if (compared != 0) return compared;
+      } else if (leftDate != null) {
+        return -1;
+      } else if (rightDate != null) {
+        return 1;
+      }
+      return left.key.compareTo(right.key);
+    });
+    return indexed.map((entry) => entry.value).toList();
+  }
+
+  bool get _canCommitPreview {
+    final errors = (_preview?['errors'] as List?) ?? [];
+    return _batchId != null &&
+        _preview != null &&
+        _previewedJsonText == _jsonController.text &&
+        errors.isEmpty;
+  }
+
+  Future<void> _previewJson() async {
+    try {
+      final decoded = jsonDecode(_jsonController.text);
+      if (decoded is! Map<String, dynamic>) {
+        AppFeedback.showSnackBar(
+          context,
+          'JSON 顶层必须是 {"events": [...]}',
+          isError: true,
+        );
+        return;
+      }
+      final resp = await context
+          .read<AuthProvider>()
+          .dio
+          .post('/admin/competitions/import-json/preview', data: decoded);
+      if (!mounted) return;
+      setState(() {
+        _batchId = resp.data['batch_id'];
+        _preview = Map<String, dynamic>.from(resp.data['preview']);
+        _previewedJsonText = _jsonController.text;
+      });
+    } on FormatException {
+      AppFeedback.showSnackBar(
+        context,
+        'JSON 格式不正确，请检查逗号、引号和括号',
+        isError: true,
+      );
+    } on DioException catch (e) {
+      if (!mounted) return;
+      AppFeedback.showSnackBar(
+        context,
+        AppFeedback.dioErrorMessage(e, fallback: '提交预览失败'),
+        isError: true,
+      );
+    } catch (_) {
+      if (!mounted) return;
+      AppFeedback.showSnackBar(
+        context,
+        '提交预览失败，请检查 JSON 格式',
+        isError: true,
+      );
+    }
   }
 
   Future<void> _commit() async {
     final count = (_preview?['item_count'] as num?)?.toInt() ?? 0;
-    await context.read<AuthProvider>().dio.post(
-      '/admin/competitions/import-json/commit',
-      data: {
-        'batch_id': _batchId,
-        'selected_actions': [
-          for (var i = 0; i < count; i++) {'index': i, 'action': 'create'}
-        ],
-      },
-    );
-    if (!mounted) return;
-    AppFeedback.showSnackBar(context, 'AI 导入已提交，默认进入草稿');
-    Navigator.pop(context);
+    try {
+      await context.read<AuthProvider>().dio.post(
+        '/admin/competitions/import-json/commit',
+        data: {
+          'batch_id': _batchId,
+          'selected_actions': [
+            for (var i = 0; i < count; i++) {'index': i, 'action': 'create'}
+          ],
+        },
+      );
+      if (!mounted) return;
+      AppFeedback.showSnackBar(context, 'AI 导入已提交，默认进入草稿');
+      Navigator.pop(context);
+    } on DioException catch (e) {
+      if (!mounted) return;
+      AppFeedback.showSnackBar(
+        context,
+        AppFeedback.dioErrorMessage(e, fallback: '确认入库失败'),
+        isError: true,
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('AI 辅助导入比赛')),
+      backgroundColor: _competitionBg,
+      appBar: AppBar(
+        backgroundColor: _competitionBg,
+        surfaceTintColor: Colors.transparent,
+        centerTitle: true,
+        title: const Text('AI 辅助导入比赛'),
+      ),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 24),
         children: [
+          _buildPromptCard(),
+          const SizedBox(height: 12),
           TextField(
             controller: _jsonController,
-            minLines: 12,
-            maxLines: 24,
-            decoration: const InputDecoration(
-              labelText: '粘贴 AI 输出 JSON',
-              border: OutlineInputBorder(),
+            minLines: 10,
+            maxLines: 22,
+            decoration: InputDecoration(
+              labelText: '粘贴 AI 生成的 JSON',
+              hintText: '必须是 {"events": [...]}',
+              filled: true,
+              fillColor: Colors.white,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(18),
+                borderSide: const BorderSide(color: _competitionBorder),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(18),
+                borderSide: const BorderSide(color: _competitionBorder),
+              ),
+              alignLabelWithHint: true,
             ),
+            style: const TextStyle(fontSize: 13, height: 1.45),
           ),
           const SizedBox(height: 12),
-          FilledButton(onPressed: _previewJson, child: const Text('提交预览')),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () {
+                    _jsonController.text = _competitionAiExampleJson;
+                    AppFeedback.showSnackBar(context, '已填入示例 JSON');
+                  },
+                  icon: const Icon(Icons.data_object_rounded, size: 18),
+                  label: const Text('填入示例'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: _previewJson,
+                  icon: const Icon(Icons.fact_check_outlined, size: 18),
+                  label: const Text('检查预览'),
+                ),
+              ),
+            ],
+          ),
           if (_preview != null) ...[
             const SizedBox(height: 16),
-            Text('batch_id：$_batchId'),
-            Text(
-                '条目：${_preview!['item_count']}，有效：${_preview!['valid_count']}'),
-            if ((_preview!['errors'] as List).isNotEmpty)
-              Text('错误：${jsonEncode(_preview!['errors'])}'),
-            const SizedBox(height: 12),
-            FilledButton(onPressed: _commit, child: const Text('确认入库')),
+            _buildPreviewCard(),
           ],
         ],
       ),
     );
+  }
+
+  Widget _buildPromptCard() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: _competitionBorder),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  color: _competitionLight,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.auto_awesome_rounded,
+                  color: _competitionPrimary,
+                  size: 19,
+                ),
+              ),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text(
+                  '先复制提示词给 AI',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                    color: Color(0xFF242330),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          const Text(
+            '把比赛通知、官网链接或公告原文一起发给 AI，让它只输出固定 JSON。然后把 JSON 粘贴到下面检查预览。',
+            style: TextStyle(
+              color: _competitionMuted,
+              fontSize: 13,
+              height: 1.45,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            '分类 slug 必须使用系统已有分类；当前可用：$_competitionCategorySlugHint。',
+            style: TextStyle(
+              color: _competitionOrange,
+              fontSize: 12,
+              height: 1.4,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: () async {
+                    await Clipboard.setData(
+                      const ClipboardData(text: _competitionAiPrompt),
+                    );
+                    if (!mounted) return;
+                    AppFeedback.showSnackBar(context, '已复制 AI 导入提示词');
+                  },
+                  icon: const Icon(Icons.copy_rounded, size: 17),
+                  label: const Text('复制提示词'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: _competitionPrimary,
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () async {
+                    await Clipboard.setData(
+                      const ClipboardData(text: _competitionAiExampleJson),
+                    );
+                    if (!mounted) return;
+                    AppFeedback.showSnackBar(context, '已复制示例 JSON');
+                  },
+                  icon: const Icon(Icons.content_paste_rounded, size: 17),
+                  label: const Text('复制示例'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPreviewCard() {
+    final errors = (_preview?['errors'] as List?) ?? [];
+    final draftEvents = _sortedDraftEvents;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: _competitionBorder),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            '预览结果',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w900,
+              color: Color(0xFF242330),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              _previewPill('条目', '${_preview!['item_count'] ?? 0}'),
+              const SizedBox(width: 8),
+              _previewPill('有效', '${_preview!['valid_count'] ?? 0}'),
+              const SizedBox(width: 8),
+              _previewPill('错误', '${errors.length}'),
+            ],
+          ),
+          if (errors.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            ...errors.map(
+              (error) => Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Text(
+                  _previewErrorText(error),
+                  style: const TextStyle(
+                    color: _competitionDanger,
+                    fontSize: 12,
+                    height: 1.35,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+          ],
+          if (draftEvents.isNotEmpty) ...[
+            const SizedBox(height: 14),
+            const Text(
+              '日历预览',
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w900,
+                color: Color(0xFF242330),
+              ),
+            ),
+            const SizedBox(height: 8),
+            ...draftEvents.map(_buildDraftEventCard),
+          ],
+          const SizedBox(height: 14),
+          FilledButton(
+            onPressed: _canCommitPreview ? _commit : null,
+            style: FilledButton.styleFrom(
+              minimumSize: const Size.fromHeight(46),
+              backgroundColor: _competitionPrimary,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(15),
+              ),
+            ),
+            child: const Text('确认入库草稿'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _previewPill(String label, String value) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: BoxDecoration(
+          color: _competitionLight.withValues(alpha: 0.7),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Column(
+          children: [
+            Text(
+              value,
+              style: const TextStyle(
+                color: _competitionPrimaryDark,
+                fontSize: 17,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 3),
+            Text(
+              label,
+              style: const TextStyle(
+                color: _competitionMuted,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDraftEventCard(Map<String, dynamic> event) {
+    final title = _draftValue(event, 'title');
+    final category = _draftValue(event, 'primary_category_slug');
+    final recommendation = _draftValue(event, 'recommendation_level');
+    final recognition = _recognitionLabel(
+      _draftValue(event, 'school_recognition_status'),
+    );
+    final organizer = _draftValue(event, 'organizer');
+    final source = _sourceLabel(_draftValue(event, 'source_channel'));
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: _competitionBg,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _competitionBorder),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title.isEmpty ? '未命名比赛' : title,
+            style: const TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w900,
+              color: Color(0xFF242330),
+            ),
+          ),
+          const SizedBox(height: 8),
+          _draftLine(
+            Icons.alarm_rounded,
+            '报名截止',
+            _draftTimeText(event, 'registration_end', 'registration_time_text'),
+          ),
+          _draftLine(
+            Icons.calendar_month_rounded,
+            '比赛时间',
+            _draftTimeText(event, 'event_start', 'event_time_text'),
+          ),
+          if (organizer.isNotEmpty)
+            _draftLine(Icons.account_balance_outlined, '主办方', organizer),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              if (category.isNotEmpty) _draftChip('分类 $category'),
+              if (recommendation.isNotEmpty) _draftChip('$recommendation 推荐'),
+              _draftChip(recognition),
+              _draftChip(source),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _draftLine(IconData icon, String label, String value) {
+    final text = value.trim().isEmpty ? '未填写' : value.trim();
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Row(
+        children: [
+          Icon(icon, size: 14, color: _competitionMuted),
+          const SizedBox(width: 5),
+          Text(
+            '$label：',
+            style: const TextStyle(
+              color: _competitionMuted,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          Expanded(
+            child: Text(
+              text,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Color(0xFF444150),
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _draftChip(String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      decoration: BoxDecoration(
+        color: _competitionLight.withValues(alpha: 0.74),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: _competitionPrimaryDark,
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+
+  DateTime? _draftSortDate(Map<String, dynamic> event) {
+    return _parseDraftDate(_draftValue(event, 'registration_end')) ??
+        _parseDraftDate(_draftValue(event, 'event_start'));
+  }
+
+  DateTime? _parseDraftDate(String raw) {
+    final value = raw.trim();
+    if (value.isEmpty) return null;
+    return DateTime.tryParse(value);
+  }
+
+  String _draftTimeText(
+    Map<String, dynamic> event,
+    String dateKey,
+    String textKey,
+  ) {
+    final date = _draftValue(event, dateKey);
+    if (date.isNotEmpty) return date;
+    return _draftValue(event, textKey);
+  }
+
+  String _draftValue(Map<String, dynamic> event, String key) {
+    return '${event[key] ?? ''}'.trim();
+  }
+
+  String _previewErrorText(dynamic error) {
+    if (error is Map) {
+      final index = error['index'];
+      final field = error['field'];
+      final message = error['message'];
+      final prefix = index == null || '$index' == '-1' ? '全局' : '第 $index 条';
+      return '$prefix：$field - $message';
+    }
+    return '$error';
   }
 }
 
@@ -1544,6 +2535,32 @@ String _deadlineText(CompetitionEvent event) {
     return '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
   }
   return event.registrationTimeText;
+}
+
+String _calendarItemTimeText(
+  Map<String, dynamic> item,
+  String dateKey,
+  String textKey,
+) {
+  final rawDate = '${item[dateKey] ?? ''}'.trim();
+  final parsed = DateTime.tryParse(rawDate);
+  if (parsed != null) {
+    return '${parsed.year}-${parsed.month.toString().padLeft(2, '0')}-${parsed.day.toString().padLeft(2, '0')}';
+  }
+  return '${item[textKey] ?? ''}'.trim();
+}
+
+String _calendarItemSourceLabel(String value) {
+  switch (value) {
+    case 'official':
+      return '官方比赛';
+    case 'share':
+      return '分享导入';
+    case 'manual':
+      return '手动新增';
+    default:
+      return value.isEmpty ? '我的导入' : value;
+  }
 }
 
 String _recognitionLabel(String value) {

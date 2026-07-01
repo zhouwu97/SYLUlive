@@ -1,5 +1,6 @@
 import 'package:html/parser.dart' show parse;
 import 'package:html/dom.dart' show Document, Element;
+import 'package:flutter/foundation.dart' show kDebugMode;
 
 import 'erke_models.dart';
 
@@ -307,12 +308,14 @@ class ErkeParser {
     final hasSuffixCountA1 =
         !hasExactCountA1 && doc.querySelectorAll('[id\$="CountA1"]').isNotEmpty;
 
-    print('[Erke] yearly GET selectedYear=$selectedYear');
-    print('[Erke] yearly GET availableYears=${availableYears.join(",")}');
-    print(
-        '[Erke] yearly GET hasScores=$hasScores hasExactCountA1=$hasExactCountA1 hasSuffixCountA1=$hasSuffixCountA1');
-    print(
-        '[Erke] yearly GET submitButton=$submitButtonName eventTarget=$eventTarget');
+    if (kDebugMode) {
+      print('[Erke] yearly GET selectedYear=$selectedYear');
+      print('[Erke] yearly GET availableYears=${availableYears.join(",")}');
+      print(
+          '[Erke] yearly GET hasScores=$hasScores hasExactCountA1=$hasExactCountA1 hasSuffixCountA1=$hasSuffixCountA1');
+      print(
+          '[Erke] yearly GET submitButton=$submitButtonName eventTarget=$eventTarget');
+    }
 
     return YearPageForm(
       availableYears: availableYears,

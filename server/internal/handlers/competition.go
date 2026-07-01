@@ -56,6 +56,12 @@ type competitionEventInput struct {
 	EventEnd                string   `json:"event_end"`
 	RegistrationTimeText    string   `json:"registration_time_text"`
 	EventTimeText           string   `json:"event_time_text"`
+	TimePrecision           string   `json:"time_precision"`
+	TimeStatus              string   `json:"time_status"`
+	TimeNote                string   `json:"time_note"`
+	SortMonth               int      `json:"sort_month"`
+	PlanStatus              string   `json:"plan_status"`
+	UserDeadline            string   `json:"user_deadline"`
 	Location                string   `json:"location"`
 	IsOnline                bool     `json:"is_online"`
 	OfficialURL             string   `json:"official_url"`
@@ -96,14 +102,55 @@ func jsonArray(values []string) datatypes.JSON {
 	return datatypes.JSON(b)
 }
 
-func sortDate(regEnd, eventStart *time.Time, fallback time.Time) *time.Time {
+func sortDate(regEnd, eventStart *time.Time, sortMonth int, fallback time.Time) *time.Time {
 	if regEnd != nil {
 		return regEnd
 	}
 	if eventStart != nil {
 		return eventStart
 	}
-	return &fallback
+	if sortMonth >= 1 && sortMonth <= 12 {
+		candidate := time.Date(fallback.Year(), time.Month(sortMonth), 1, 0, 0, 0, 0, time.Local)
+		if candidate.Before(fallback.AddDate(0, -2, 0)) {
+			candidate = candidate.AddDate(1, 0, 0)
+		}
+		return &candidate
+	}
+	return nil
+}
+
+func normalizeTimePrecision(value string) string {
+	switch strings.TrimSpace(value) {
+	case "exact", "month", "month_range", "quarter", "half_year", "season", "unknown":
+		return strings.TrimSpace(value)
+	default:
+		return "unknown"
+	}
+}
+
+func normalizeTimeStatus(value string) string {
+	switch strings.TrimSpace(value) {
+	case "confirmed", "estimated", "historical", "pending":
+		return strings.TrimSpace(value)
+	default:
+		return "pending"
+	}
+}
+
+func normalizePlanStatus(value string) string {
+	switch strings.TrimSpace(value) {
+	case "watching", "preparing", "registered", "submitted", "finished", "archived":
+		return strings.TrimSpace(value)
+	default:
+		return "watching"
+	}
+}
+
+func normalizeSortMonth(value int) int {
+	if value >= 1 && value <= 12 {
+		return value
+	}
+	return 0
 }
 
 func validURL(raw string) bool {
@@ -175,7 +222,7 @@ func (h *CompetitionHandler) applyEventFilters(c *gin.Context, query *gorm.DB) *
 		query = query.Joins("JOIN competition_categories cc ON cc.id = competition_events.primary_category_id").
 			Where("cc.slug = ?", slug)
 	}
-	for _, key := range []string{"school_recognition_status", "school_recognition_grade", "recommendation_level", "source_channel", "competition_level"} {
+	for _, key := range []string{"school_recognition_status", "school_recognition_grade", "recommendation_level", "source_channel", "competition_level", "time_status", "time_precision"} {
 		if value := strings.TrimSpace(c.Query(key)); value != "" {
 			query = query.Where(key+" IN ?", strings.Split(value, ","))
 		}
@@ -195,6 +242,9 @@ func (h *CompetitionHandler) applyEventFilters(c *gin.Context, query *gorm.DB) *
 		query = query.Where("registration_start > ?", time.Now())
 	case "ended":
 		query = query.Where("COALESCE(event_end, registration_end, event_start) < ?", time.Now())
+	case "time_pending":
+		query = query.Where("registration_end IS NULL").
+			Where("time_status IN ?", []string{"pending", "historical", "estimated"})
 	}
 	return query
 }
@@ -396,6 +446,15 @@ func (h *CompetitionHandler) eventFromInput(input competitionEventInput) (models
 		return models.CompetitionEvent{}, fmt.Errorf("请选择主分类")
 	}
 	now := time.Now()
+	sortMonth := normalizeSortMonth(input.SortMonth)
+	timePrecision := normalizeTimePrecision(input.TimePrecision)
+	timeStatus := normalizeTimeStatus(input.TimeStatus)
+	if regEnd != nil && strings.TrimSpace(input.TimePrecision) == "" {
+		timePrecision = "exact"
+	}
+	if regEnd != nil && strings.TrimSpace(input.TimeStatus) == "" {
+		timeStatus = "confirmed"
+	}
 	return models.CompetitionEvent{
 		Title: input.Title, Subtitle: input.Subtitle, Summary: input.Summary, Description: input.Description,
 		PrimaryCategoryID: categoryID, Tags: jsonArray(input.Tags), CompetitionLevel: input.CompetitionLevel,
@@ -407,7 +466,9 @@ func (h *CompetitionHandler) eventFromInput(input competitionEventInput) (models
 		TeamSizeMin: input.TeamSizeMin, TeamSizeMax: input.TeamSizeMax,
 		RegistrationStart: regStart, RegistrationEnd: regEnd, EventStart: eventStart, EventEnd: eventEnd,
 		RegistrationTimeText: input.RegistrationTimeText, EventTimeText: input.EventTimeText,
-		SortDate: sortDate(regEnd, eventStart, now), Location: input.Location, IsOnline: input.IsOnline,
+		TimePrecision: timePrecision, TimeStatus: timeStatus, TimeNote: strings.TrimSpace(input.TimeNote),
+		SortMonth: sortMonth, SortDate: sortDate(regEnd, eventStart, sortMonth, now),
+		Location: input.Location, IsOnline: input.IsOnline,
 		OfficialURL: input.OfficialURL, NoticeURL: input.NoticeURL, AttachmentURLs: jsonArray(input.AttachmentURLs),
 		SourceChannel: input.SourceChannel, SourceNote: input.SourceNote, SourceArticleID: input.SourceArticleID,
 		Status: input.Status,
@@ -504,7 +565,7 @@ func (h *CompetitionHandler) ensureCalendar(userID uint) (models.UserCompetition
 	if err != gorm.ErrRecordNotFound {
 		return calendar, err
 	}
-	calendar = models.UserCompetitionCalendar{UserID: userID, Title: "我的比赛日历", Visibility: "private"}
+	calendar = models.UserCompetitionCalendar{UserID: userID, Title: "我的竞赛计划", Visibility: "private"}
 	return calendar, h.db.Create(&calendar).Error
 }
 
@@ -566,6 +627,10 @@ func (h *CompetitionHandler) CreateCalendarItem(c *gin.Context) {
 		return
 	}
 	item := calendarItemFromEvent(calendar.ID, userID, event, "manual", nil, "", nil)
+	if err := applyCalendarPlanInput(&item, input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	if err := h.db.Create(&item).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "新增比赛失败"})
 		return
@@ -594,10 +659,10 @@ func (h *CompetitionHandler) CopyOfficialToCalendar(c *gin.Context) {
 		item := calendarItemFromEvent(calendar.ID, userID, event, "official", &event.ID, "", nil)
 		return tx.Create(&item).Error
 	}); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "加入我的日历失败"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "加入我的计划失败"})
 		return
 	}
-	c.JSON(http.StatusCreated, gin.H{"message": "已加入我的日历"})
+	c.JSON(http.StatusCreated, gin.H{"message": "已加入我的计划"})
 }
 
 func (h *CompetitionHandler) ensureCalendarTx(tx *gorm.DB, userID uint) (models.UserCompetitionCalendar, error) {
@@ -609,11 +674,20 @@ func (h *CompetitionHandler) ensureCalendarTx(tx *gorm.DB, userID uint) (models.
 	if err != gorm.ErrRecordNotFound {
 		return calendar, err
 	}
-	calendar = models.UserCompetitionCalendar{UserID: userID, Title: "我的比赛日历", Visibility: "private"}
+	calendar = models.UserCompetitionCalendar{UserID: userID, Title: "我的竞赛计划", Visibility: "private"}
 	return calendar, tx.Create(&calendar).Error
 }
 
 func calendarItemFromEvent(calendarID, userID uint, event models.CompetitionEvent, sourceType string, sourceEventID *uint, shareCode string, snapshotID *uint) models.UserCompetitionCalendarItem {
+	timePrecision := normalizeTimePrecision(event.TimePrecision)
+	timeStatus := normalizeTimeStatus(event.TimeStatus)
+	if event.RegistrationEnd != nil && strings.TrimSpace(event.TimePrecision) == "" {
+		timePrecision = "exact"
+	}
+	if event.RegistrationEnd != nil && strings.TrimSpace(event.TimeStatus) == "" {
+		timeStatus = "confirmed"
+	}
+	sortMonth := normalizeSortMonth(event.SortMonth)
 	return models.UserCompetitionCalendarItem{
 		CalendarID: calendarID, UserID: userID, Title: event.Title, Summary: event.Summary,
 		Description: event.Description, CategoryID: event.PrimaryCategoryID, Tags: event.Tags,
@@ -624,14 +698,26 @@ func calendarItemFromEvent(calendarID, userID uint, event models.CompetitionEven
 		RegistrationStart: event.RegistrationStart, RegistrationEnd: event.RegistrationEnd,
 		EventStart: event.EventStart, EventEnd: event.EventEnd,
 		RegistrationTimeText: event.RegistrationTimeText, EventTimeText: event.EventTimeText,
-		SortDate: event.SortDate, SourceType: sourceType, SourceEventID: sourceEventID,
+		TimePrecision: timePrecision, TimeStatus: timeStatus, TimeNote: event.TimeNote,
+		SortMonth: sortMonth, SortDate: event.SortDate, PlanStatus: "watching",
+		SourceType: sourceType, SourceEventID: sourceEventID,
 		SourceShareCode: shareCode, SourceSnapshotID: snapshotID, OriginalHash: eventHash(event),
 	}
 }
 
 func eventHash(event models.CompetitionEvent) string {
-	b, _ := json.Marshal([]interface{}{event.Title, event.OfficialURL, event.RegistrationEnd, event.EventStart})
+	b, _ := json.Marshal([]interface{}{event.Title, event.OfficialURL, event.RegistrationEnd, event.EventStart, event.TimePrecision, event.TimeStatus, event.SortMonth})
 	return hashJSON(b)
+}
+
+func applyCalendarPlanInput(item *models.UserCompetitionCalendarItem, input competitionEventInput) error {
+	userDeadline, err := parseDatePtr(input.UserDeadline)
+	if err != nil {
+		return fmt.Errorf("用户提醒日期格式错误，应为 YYYY-MM-DD")
+	}
+	item.PlanStatus = normalizePlanStatus(input.PlanStatus)
+	item.UserDeadline = userDeadline
+	return nil
 }
 
 func (h *CompetitionHandler) UpdateCalendarItem(c *gin.Context) {
@@ -654,6 +740,10 @@ func (h *CompetitionHandler) UpdateCalendarItem(c *gin.Context) {
 		return
 	}
 	item := calendarItemFromEvent(0, userID, event, "", nil, "", nil)
+	if err := applyCalendarPlanInput(&item, input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	item.IsCustomModified = true
 	if err := h.db.Model(&models.UserCompetitionCalendarItem{}).
 		Where("id = ? AND user_id = ?", id, userID).Updates(item).Error; err != nil {

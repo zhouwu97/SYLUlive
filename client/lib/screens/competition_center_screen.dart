@@ -1025,6 +1025,9 @@ class _CompetitionDetailScreenState extends State<CompetitionDetailScreen> {
                     _info(_competitionTimeLine(event)?.label ?? '报名安排',
                         _competitionTimeLine(event)?.value ?? ''),
                     _info('比赛时间', event.eventTimeText),
+                    _info('时间状态', _competitionTimeState(event).label),
+                    _info('时间精度', event.timePrecisionLabel),
+                    _info('时间说明', event.timeNote),
                     _info('比赛级别', event.competitionLevel),
                     _info('地点', event.isOnline ? '线上' : event.location),
                     if (event.recommendationReason.isNotEmpty)
@@ -2570,6 +2573,33 @@ _CompetitionTimeState _competitionTimeState(CompetitionEvent event) {
     );
   }
 
+  if (event.hasTimeStatus) {
+    switch (event.timeStatus) {
+      case 'confirmed':
+        return const _CompetitionTimeState(
+          label: '已确认',
+          color: _competitionPrimary,
+          highlight: true,
+        );
+      case 'estimated':
+        return const _CompetitionTimeState(
+          label: '预计时间',
+          color: _competitionOrange,
+          highlight: true,
+        );
+      case 'historical':
+        return const _CompetitionTimeState(
+          label: '往年参考',
+          color: _competitionPrimaryDark,
+        );
+      default:
+        return const _CompetitionTimeState(
+          label: '待通知',
+          color: _competitionMuted,
+        );
+    }
+  }
+
   final text = '${event.registrationTimeText} ${event.eventTimeText}';
   if (_containsAny(text, const ['预计', '暂定', '计划', '大概', '约'])) {
     return const _CompetitionTimeState(
@@ -2611,6 +2641,13 @@ _CompetitionTimeLine? _competitionTimeLine(CompetitionEvent event) {
       icon: Icons.calendar_month_rounded,
       label: '比赛时间',
       value: event.eventTimeText.trim(),
+    );
+  }
+  if (event.sortMonth >= 1 && event.sortMonth <= 12) {
+    return _CompetitionTimeLine(
+      icon: Icons.event_note_rounded,
+      label: '预计月份',
+      value: '${event.sortMonth} 月左右',
     );
   }
   return null;

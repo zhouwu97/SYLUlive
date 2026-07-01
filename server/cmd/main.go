@@ -580,6 +580,7 @@ func main() {
 		// 旧路径兼容一段时间
 		user.GET("/notifications", notificationHandler.GetNotifications)
 		user.GET("/notifications/unread_count", notificationHandler.GetUnreadCount)
+		user.GET("/notifications/unread-count", notificationHandler.GetUnreadCount)
 		user.POST("/notifications/read", notificationHandler.MarkAllRead)
 
 		user.GET("/competition-calendar", competitionHandler.GetCalendar)

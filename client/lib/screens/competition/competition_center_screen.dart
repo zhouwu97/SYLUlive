@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:dio/dio.dart';
@@ -2382,6 +2381,7 @@ class _CompetitionShareImportScreenState
         type: FileType.custom,
         allowedExtensions: ['json'],
         withData: true,
+        withReadStream: true,
       );
 
       if (result == null || result.files.isEmpty) return;
@@ -2391,8 +2391,8 @@ class _CompetitionShareImportScreenState
       String? text;
       if (file.bytes != null) {
         text = utf8.decode(file.bytes!).trim();
-      } else if (file.path != null) {
-        text = await File(file.path!).readAsString();
+      } else if (file.readStream != null) {
+        text = await file.readStream!.transform(utf8.decoder).join();
         text = text.trim();
       }
 
@@ -2631,6 +2631,7 @@ class _CompetitionAdminImportScreenState
         type: FileType.custom,
         allowedExtensions: ['json'],
         withData: true,
+        withReadStream: true,
       );
 
       if (result == null || result.files.isEmpty) return;
@@ -2640,8 +2641,8 @@ class _CompetitionAdminImportScreenState
       String? text;
       if (file.bytes != null) {
         text = utf8.decode(file.bytes!).trim();
-      } else if (file.path != null) {
-        text = await File(file.path!).readAsString();
+      } else if (file.readStream != null) {
+        text = await file.readStream!.transform(utf8.decoder).join();
         text = text.trim();
       }
 

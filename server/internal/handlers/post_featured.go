@@ -65,11 +65,22 @@ func (h *PostHandler) GetFeaturedList(c *gin.Context) {
 		Where("status != ? AND is_featured = ?", models.PostStatusDeleted, true).
 		Preload("Author").Preload("Images").Preload("Images.File")
 
+	boardIDStr := c.Query("board")
+	if boardIDStr != "" {
+		boardID, err := strconv.Atoi(boardIDStr)
+		if err == nil {
+			query = query.Where("board_id = ?", boardID)
+		}
+	}
+
 	var total int64
 	query.Count(&total)
 
 	var posts []models.Post
-	if err := query.Order("featured_at DESC NULLS LAST").Order("created_at DESC").
+	now := time.Now()
+	if err := applyPinnedOrder(query, now).
+		Order("featured_at DESC NULLS LAST").
+		Order("created_at DESC").
 		Offset(offset).Limit(limit).Find(&posts).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取精华列表失败"})
 		return
@@ -116,6 +127,24 @@ func (h *PostHandler) CreateFeaturedApplication(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusCreated, app)
+}
+
+func (h *PostHandler) GetFeaturedApplicationStatus(c *gin.Context) {
+	userID, ok := currentUserID(c)
+	if !ok {
+		return
+	}
+	postID, ok := parseUintParam(c, "id")
+	if !ok {
+		return
+	}
+	var app models.FeaturedApplication
+	err := h.db.Where("post_id = ? AND applicant_id = ? AND status = ?", postID, userID, "pending").First(&app).Error
+	if err == nil {
+		c.JSON(http.StatusOK, gin.H{"has_pending": true, "status": "pending"})
+	} else {
+		c.JSON(http.StatusOK, gin.H{"has_pending": false})
+	}
 }
 
 func (h *PostHandler) GetMyFeaturedApplications(c *gin.Context) {
@@ -190,6 +219,13 @@ func (h *PostHandler) AdminApproveFeaturedApplication(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "精华申请不可通过或已被处理"})
 		return
 	}
+
+	var app models.FeaturedApplication
+	h.db.First(&app, appID)
+	var post models.Post
+	h.db.First(&post, app.PostID)
+	CreateFeaturedApplicationResultNotification(h.jpushAppKey, h.jpushMasterSecret, h.db, app.ApplicantID, post.ID, app.ID, "approved", post.Title, "", 0)
+
 	c.JSON(http.StatusOK, gin.H{"message": "已通过精华申请"})
 }
 
@@ -242,6 +278,13 @@ func (h *PostHandler) AdminRejectFeaturedApplication(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "精华申请不可驳回或已被处理"})
 		return
 	}
+
+	var app models.FeaturedApplication
+	h.db.First(&app, appID)
+	var post models.Post
+	h.db.First(&post, app.PostID)
+	CreateFeaturedApplicationResultNotification(h.jpushAppKey, h.jpushMasterSecret, h.db, app.ApplicantID, post.ID, app.ID, "rejected", post.Title, input.Reason, input.PenaltyPoints)
+
 	c.JSON(http.StatusOK, gin.H{"message": "已驳回精华申请"})
 }
 

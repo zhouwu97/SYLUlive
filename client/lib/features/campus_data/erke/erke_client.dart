@@ -7,6 +7,7 @@ import 'package:asn1lib/asn1lib.dart';
 import 'package:html/parser.dart' show parse;
 import 'package:html/dom.dart' show Document;
 import 'package:fast_gbk/fast_gbk.dart';
+import 'package:flutter/foundation.dart' show kDebugMode;
 
 import '../common/erke_endpoints.dart';
 import 'erke_models.dart';
@@ -288,15 +289,19 @@ class ErkeClient {
     final form = ErkeParser.parseYearPageForm(getHtml);
     final requestedYear = year;
 
-    print('[Erke] yearly requestedYear=$requestedYear'
-        ' getSelectedYear=${form.selectedYear}');
+    if (kDebugMode) {
+      print('[Erke] yearly requestedYear=$requestedYear'
+          ' getSelectedYear=${form.selectedYear}');
+    }
 
     // 3. 判断是否需要 POST（年份不同时必须 POST）
     final hasScores = ErkeParser.yearlyPageHasScores(getHtml);
     final canUseGet = hasScores &&
         (requestedYear == null || requestedYear == form.selectedYear);
 
-    print('[Erke] yearly shouldPost=${!canUseGet}');
+    if (kDebugMode) {
+      print('[Erke] yearly shouldPost=${!canUseGet}');
+    }
 
     if (canUseGet) {
       return getHtml;
@@ -308,8 +313,10 @@ class ErkeClient {
       throw Exception('无效的学年: $targetYear (可选: ${form.availableYears})');
     }
 
-    print('[Erke] yearly POST eventTarget=YearTime'
-        ' targetYear=$targetYear');
+    if (kDebugMode) {
+      print('[Erke] yearly POST eventTarget=YearTime'
+          ' targetYear=$targetYear');
+    }
     final formData = <String, dynamic>{
       ...form.hiddenInputs,
       '__EVENTTARGET': 'YearTime',
@@ -335,8 +342,10 @@ class ErkeClient {
 
     // 5. 验证 POST 结果
     final returnedForm = ErkeParser.parseYearPageForm(postHtml);
-    print('[Erke] yearly POST returnedYear=${returnedForm.selectedYear}'
-        ' hasScores=${ErkeParser.yearlyPageHasScores(postHtml)}');
+    if (kDebugMode) {
+      print('[Erke] yearly POST returnedYear=${returnedForm.selectedYear}'
+          ' hasScores=${ErkeParser.yearlyPageHasScores(postHtml)}');
+    }
 
     if (returnedForm.selectedYear != targetYear) {
       throw ErkePageChangedException(

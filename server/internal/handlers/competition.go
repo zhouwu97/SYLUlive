@@ -1022,6 +1022,7 @@ func (h *CompetitionHandler) AdminImportJSONPreview(c *gin.Context) {
 
 func (h *CompetitionHandler) validateImportPayload(payload map[string]interface{}) gin.H {
 	errors := []gin.H{}
+	warnings := []gin.H{}
 	events, _ := payload["events"].([]interface{})
 	if len(events) == 0 {
 		errors = append(errors, gin.H{"index": -1, "field": "events", "message": "events 不能为空"})
@@ -1029,20 +1030,38 @@ func (h *CompetitionHandler) validateImportPayload(payload map[string]interface{
 	validCount := 0
 	for i, raw := range events {
 		item, _ := raw.(map[string]interface{})
+		hasError := false
 		if strings.TrimSpace(fmt.Sprint(item["title"])) == "" {
 			errors = append(errors, gin.H{"index": i, "field": "title", "message": "标题不能为空"})
-			continue
+			hasError = true
 		}
 		slug := strings.TrimSpace(fmt.Sprint(item["primary_category_slug"]))
 		var count int64
 		h.db.Model(&models.CompetitionCategory{}).Where("slug = ?", slug).Count(&count)
 		if count == 0 {
 			errors = append(errors, gin.H{"index": i, "field": "primary_category_slug", "message": "分类不存在：" + slug})
-			continue
+			hasError = true
 		}
-		validCount++
+		for _, field := range []string{"official_url", "notice_url"} {
+			if !validURL(strings.TrimSpace(fmt.Sprint(item[field]))) {
+				errors = append(errors, gin.H{"index": i, "field": field, "message": "URL 必须是 http/https"})
+				hasError = true
+			}
+		}
+		if strings.TrimSpace(fmt.Sprint(item["registration_end"])) == "" &&
+			strings.TrimSpace(fmt.Sprint(item["event_start"])) == "" &&
+			strings.TrimSpace(fmt.Sprint(item["time_note"])) == "" {
+			warnings = append(warnings, gin.H{"index": i, "field": "time_note", "message": "时间为空时建议说明来源"})
+		}
+		if strings.TrimSpace(fmt.Sprint(item["school_recognition_status"])) == "recognized" &&
+			strings.TrimSpace(fmt.Sprint(item["source_note"])) == "" {
+			warnings = append(warnings, gin.H{"index": i, "field": "source_note", "message": "学校认定为已认定时建议填写来源说明"})
+		}
+		if !hasError {
+			validCount++
+		}
 	}
-	return gin.H{"item_count": len(events), "valid_count": validCount, "errors": errors}
+	return gin.H{"item_count": len(events), "valid_count": validCount, "errors": errors, "warnings": warnings}
 }
 
 func (h *CompetitionHandler) AdminImportJSONCommit(c *gin.Context) {

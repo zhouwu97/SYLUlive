@@ -169,7 +169,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   String? _replyToName;
   int? _replyToUserId;
   bool _isSending = false;
-  final Set<int> _expandedThreads = {};
   bool _hasPendingFeaturedApp = false;
 
   final Map<int, GlobalKey> _replyKeys = {};
@@ -2627,18 +2626,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     bool compact = false,
     int depth = 0,
   }) {
-    // 获取该顶级评论的所有子回复（扁平化）
-    final childMap = <int, List<Reply>>{};
-    for (final r in _replies) {
-      if (r.parentReplyId != null) {
-        childMap.putIfAbsent(r.parentReplyId!, () => []).add(r);
-      }
-    }
-    final allChildren = childMap[thread.parent.id] ?? [];
-    final isExpanded = _expandedThreads.contains(thread.parent.id);
-    final visibleChildren =
-        !isExpanded ? allChildren.take(2).toList() : allChildren;
-    final hasMore = !isExpanded && allChildren.length > 2;
+    final allChildren = _collectThreadChildren(thread.parent.id);
+    final visibleChildren = allChildren.take(1).toList();
+    final hasMore = allChildren.length > 1;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
@@ -2647,7 +2637,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         children: [
           // 主评论
           _buildMainReply(thread.parent, isDark),
-          // 子回复区域（扁平化展示）
+          // 子回复区域（摘要展示）
           if (visibleChildren.isNotEmpty)
             Container(
               margin: const EdgeInsets.only(left: 44, top: 4),
@@ -2666,20 +2656,30 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                   ),
                   if (hasMore)
                     GestureDetector(
-                      onTap: () {
-                        if (mounted)
-                          setState(() {
-                            _expandedThreads.add(thread.parent.id);
-                          });
-                      },
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => _showReplyThreadSheet(
+                        parentReply: thread.parent,
+                        anchorReply: null,
+                      ),
                       child: Padding(
-                        padding: const EdgeInsets.only(top: 6),
-                        child: Text(
-                          '共 ${allChildren.length} 条回复，点击查看全部',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Theme.of(context).primaryColor,
-                          ),
+                        padding: const EdgeInsets.only(top: 6, bottom: 2),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              '共 ${allChildren.length} 条回复 ',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                                color: Theme.of(context).primaryColor,
+                              ),
+                            ),
+                            Icon(
+                              Icons.chevron_right_rounded,
+                              size: 14,
+                              color: Theme.of(context).primaryColor,
+                            ),
+                          ],
                         ),
                       ),
                     ),
@@ -2689,6 +2689,25 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         ],
       ),
     );
+  }
+
+  List<Reply> _collectThreadChildren(int rootId) {
+    final result = <Reply>[];
+
+    void collect(int parentId) {
+      final children = _replies
+          .where((r) => r.parentReplyId == parentId)
+          .toList()
+        ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+
+      for (final child in children) {
+        result.add(child);
+        collect(child.id);
+      }
+    }
+
+    collect(rootId);
+    return result;
   }
 
   /// 主评论（顶级）
@@ -2812,7 +2831,16 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       padding: EdgeInsets.only(bottom: 6, left: depth * 4.0),
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: () => _showChildReplyDetailSheet(r, isDark, threadParentId),
+        onTap: () {
+          final parent = _replies.firstWhere(
+            (rp) => rp.id == threadParentId,
+            orElse: () => r,
+          );
+          _showReplyThreadSheet(
+            parentReply: parent,
+            anchorReply: r,
+          );
+        },
         onLongPress: () => _showReplyActionSheet(r, isOwn, isDark),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
@@ -2879,133 +2907,450 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
-  void _showChildReplyDetailSheet(Reply reply, bool isDark, int threadParentId) {
-    final currentUser = context.read<AuthProvider>().user;
-    final isOwn = currentUser?.id == reply.authorId;
-    final isAdmin = currentUser?.isAdmin ?? false;
-
+  void _showReplyThreadSheet({
+    required Reply parentReply,
+    required Reply? anchorReply,
+  }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    
     showModalBottomSheet(
       context: context,
-      backgroundColor: isDark ? const Color(0xFF171B24) : Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withValues(alpha: 0.08),
+      builder: (sheetContext) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.72,
+          minChildSize: 0.50,
+          maxChildSize: 0.92,
+          expand: false,
+          builder: (context, scrollController) {
+            return Container(
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF171B24) : Colors.white,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+              ),
+              child: Column(
+                children: [
+                  _buildReplyThreadSheetHeader(sheetContext, isDark),
+                  Expanded(
+                    child: CustomScrollView(
+                      controller: scrollController,
+                      slivers: [
+                        SliverToBoxAdapter(
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                            child: _buildSheetParentReply(sheetContext, parentReply, isDark),
+                          ),
+                        ),
+                        SliverToBoxAdapter(
+                          child: _buildRelatedRepliesHeader(parentReply.id, isDark),
+                        ),
+                        SliverPadding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          sliver: _buildSheetChildrenList(sheetContext, parentReply, isDark),
+                        ),
+                      ],
+                    ),
+                  ),
+                  _buildSheetReplyInputBar(sheetContext, parentReply, isDark),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildReplyThreadSheetHeader(BuildContext sheetContext, bool isDark) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const SizedBox(height: 10),
+        Container(
+          width: 36,
+          height: 4,
+          decoration: BoxDecoration(
+            color: isDark ? Colors.white24 : Colors.grey[300],
+            borderRadius: BorderRadius.circular(2),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const SizedBox(width: 24), // balance close button
+              Text(
+                '评论详情',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: isDark ? Colors.white : Colors.black87,
+                ),
+              ),
+              GestureDetector(
+                onTap: () => Navigator.pop(sheetContext),
+                child: Icon(
+                  Icons.close,
+                  size: 24,
+                  color: isDark ? Colors.white54 : Colors.grey[600],
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
+        Divider(
+          height: 1,
+          thickness: 1,
+          color: isDark ? Colors.white10 : Colors.grey[200],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSheetParentReply(BuildContext sheetContext, Reply r, bool isDark) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        GestureDetector(
+          onTap: () {
+            Navigator.pop(sheetContext);
+            if (r.author != null) {
+              _openAuthorHome(r.author!.id);
+            }
+          },
+          child: CachedAvatar(
+            radius: 18,
+            imageUrl: r.author?.avatar.isNotEmpty == true
+                ? ApiConstants.fullUrl(r.author!.avatar)
+                : null,
+            fallbackText: r.author?.nickname,
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Text(
+                    r.author?.nickname ?? '匿名',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: isDark
+                          ? Colors.white.withValues(alpha: 0.82)
+                          : Colors.black87,
+                    ),
+                  ),
+                  if (r.author != null) ...[
+                    const SizedBox(width: 4),
+                    _buildLevelBadgeSmall(r.author!, isDark),
+                  ],
+                  const SizedBox(width: 8),
+                  Text(
+                    _formatTime(r.createdAt),
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: isDark ? Colors.white24 : Colors.grey[400],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              SelectionContainer.disabled(
+                child: Text(
+                  r.content,
+                  style: TextStyle(
+                    fontSize: 14,
+                    height: 1.55,
+                    color: isDark ? Colors.white70 : Colors.grey[800],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  GestureDetector(
+                    onTap: () {
+                      Navigator.pop(sheetContext);
+                      _openReplyComposer(
+                        parentReplyId: r.id,
+                        replyToName: r.author?.nickname,
+                        replyToUserId: r.authorId,
+                      );
+                    },
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.reply,
+                          size: 14,
+                          color: isDark ? Colors.white38 : Colors.grey[500],
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          '回复',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: isDark ? Colors.white38 : Colors.grey[500],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Spacer(),
+                  GestureDetector(
+                    onTap: () {
+                      Navigator.pop(sheetContext);
+                      showReportSheet(
+                        context,
+                        targetId: r.id,
+                        targetType: 'reply',
+                      );
+                    },
+                    child: Icon(
+                      Icons.more_horiz,
+                      size: 16,
+                      color: isDark ? Colors.white24 : Colors.grey[300],
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildRelatedRepliesHeader(int parentReplyId, bool isDark) {
+    final children = _collectThreadChildren(parentReplyId);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          height: 8,
+          color: isDark ? Colors.black26 : const Color(0xFFF3F4F6),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                '相关回复共 ${children.length} 条',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: isDark ? Colors.white60 : Colors.grey[700],
+                ),
+              ),
+              Text(
+                '按时间',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: isDark ? Colors.white30 : Colors.grey[400],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSheetChildrenList(BuildContext sheetContext, Reply parentReply, bool isDark) {
+    final children = _collectThreadChildren(parentReply.id);
+    
+    if (children.isEmpty) {
+      return const SliverToBoxAdapter(
+        child: SizedBox(height: 100),
+      );
+    }
+    
+    return SliverList(
+      delegate: SliverChildBuilderDelegate(
+        (context, index) {
+          return _buildSheetChildReplyItem(sheetContext, children[index], parentReply, isDark);
+        },
+        childCount: children.length,
       ),
-      builder: (ctx) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 20, 16, 16),
+    );
+  }
+
+  Widget _buildSheetChildReplyItem(
+    BuildContext sheetContext,
+    Reply child,
+    Reply parentReply,
+    bool isDark,
+  ) {
+    final currentUser = context.read<AuthProvider>().user;
+    final isOwn = currentUser?.id == child.authorId;
+    final isAdmin = currentUser?.isAdmin ?? false;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          GestureDetector(
+            onTap: () {
+              Navigator.pop(sheetContext);
+              if (child.author != null) {
+                _openAuthorHome(child.author!.id);
+              }
+            },
+            child: CachedAvatar(
+              radius: 14,
+              imageUrl: child.author?.avatar.isNotEmpty == true
+                  ? ApiConstants.fullUrl(child.author!.avatar)
+                  : null,
+              fallbackText: child.author?.nickname,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
             child: Column(
-              mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
                   children: [
-                    GestureDetector(
-                      onTap: () {
-                        Navigator.pop(ctx);
-                        if (reply.author != null) {
-                          _openAuthorHome(reply.author!.id);
-                        }
-                      },
-                      child: CachedAvatar(
-                        radius: 18,
-                        imageUrl: reply.author?.avatar.isNotEmpty == true
-                            ? ApiConstants.fullUrl(reply.author!.avatar)
-                            : null,
-                        fallbackText: reply.author?.nickname,
+                    Text(
+                      child.author?.nickname ?? '匿名',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w500,
+                        color: isDark ? Colors.white70 : Colors.black87,
                       ),
                     ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTap: () {
-                          Navigator.pop(ctx);
-                          if (reply.author != null) {
-                            _openAuthorHome(reply.author!.id);
-                          }
-                        },
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Text(
-                                  reply.author?.nickname ?? '匿名',
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w600,
-                                    color: isDark ? Colors.white : Colors.black87,
-                                  ),
-                                ),
-                                if (reply.author != null) ...[
-                                  const SizedBox(width: 6),
-                                  _buildLevelBadgeSmall(reply.author!, isDark),
-                                ],
-                              ],
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              _formatTime(reply.createdAt),
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: isDark ? Colors.white38 : Colors.grey[400],
-                              ),
-                            ),
-                          ],
-                        ),
+                    if (child.author != null) ...[
+                      const SizedBox(width: 4),
+                      _buildLevelBadgeSmall(child.author!, isDark),
+                    ],
+                    const SizedBox(width: 8),
+                    Text(
+                      _formatTime(child.createdAt),
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: isDark ? Colors.white24 : Colors.grey[400],
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 12),
-                _buildChildContent(reply, isDark),
-                const SizedBox(height: 24),
+                const SizedBox(height: 4),
+                _buildChildContent(child, isDark),
+                const SizedBox(height: 8),
                 Row(
                   children: [
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: () {
-                          Navigator.pop(ctx);
-                          _openReplyComposer(
-                            parentReplyId: threadParentId,
-                            replyToName: reply.author?.nickname,
-                            replyToUserId: reply.authorId,
-                          );
-                        },
-                        icon: const Icon(Icons.reply, size: 16),
-                        label: const Text('回复'),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: Theme.of(context).primaryColor,
-                          side: BorderSide(color: Theme.of(context).primaryColor.withValues(alpha: 0.5)),
+                    GestureDetector(
+                      onTap: () {
+                        Navigator.pop(sheetContext);
+                        _openReplyComposer(
+                          parentReplyId: parentReply.id,
+                          replyToName: child.author?.nickname,
+                          replyToUserId: child.authorId,
+                        );
+                      },
+                      child: Text(
+                        '回复',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500,
+                          color: isDark ? Colors.white38 : Colors.grey[500],
                         ),
                       ),
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: () async {
-                          Navigator.pop(ctx);
-                          if (isOwn || isAdmin) {
-                            await _deleteReply(reply);
-                          } else {
-                            showReportSheet(context, targetId: reply.id, targetType: 'reply');
-                          }
+                    const Spacer(),
+                    if (isOwn || isAdmin)
+                      GestureDetector(
+                        onTap: () async {
+                          Navigator.pop(sheetContext);
+                          await _deleteReply(child);
                         },
-                        icon: Icon((isOwn || isAdmin) ? Icons.delete_outline : Icons.report_problem_outlined, size: 16),
-                        label: Text((isOwn || isAdmin) ? '删除' : '举报'),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: (isOwn || isAdmin) ? Colors.red : Colors.grey[600],
+                        child: Text(
+                          '删除',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.red[400],
+                          ),
+                        ),
+                      )
+                    else
+                      GestureDetector(
+                        onTap: () {
+                          Navigator.pop(sheetContext);
+                          showReportSheet(context, targetId: child.id, targetType: 'reply');
+                        },
+                        child: Text(
+                          '举报',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: isDark ? Colors.white24 : Colors.grey[400],
+                          ),
                         ),
                       ),
-                    ),
                   ],
                 ),
               ],
             ),
           ),
-        );
-      },
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSheetReplyInputBar(BuildContext sheetContext, Reply parentReply, bool isDark) {
+    return Container(
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF131720) : Colors.white,
+        border: Border(
+          top: BorderSide(
+            color: isDark
+                ? Colors.white.withValues(alpha: 0.08)
+                : const Color(0xFFEDEDED),
+          ),
+        ),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+          child: GestureDetector(
+            onTap: () {
+              Navigator.pop(sheetContext);
+              _openReplyComposer(
+                parentReplyId: parentReply.id,
+                replyToName: parentReply.author?.nickname,
+                replyToUserId: parentReply.authorId,
+              );
+            },
+            child: Container(
+              height: 38,
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              decoration: BoxDecoration(
+                color: isDark
+                    ? Colors.white.withValues(alpha: 0.08)
+                    : const Color(0xFFF5F6F8),
+                borderRadius: BorderRadius.circular(19),
+              ),
+              alignment: Alignment.centerLeft,
+              child: Text(
+                '说点什么...',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: isDark ? Colors.white38 : Colors.grey[500],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 

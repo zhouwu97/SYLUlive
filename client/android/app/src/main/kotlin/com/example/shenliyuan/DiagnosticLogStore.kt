@@ -148,7 +148,7 @@ object DiagnosticLogStore {
                         put("detail", safeDetail)
                         put("sessionId", sessionId)
                         put("pid", processPid)
-                        put("appVersion", "1.5.16")
+                        put("appVersion", appVersion(appContext))
                         put("manufacturer", Build.MANUFACTURER)
                         put("model", Build.MODEL)
                         put("sdkInt", Build.VERSION.SDK_INT)
@@ -193,6 +193,14 @@ object DiagnosticLogStore {
         } catch (_: FileNotFoundException) {
             mutableListOf()
         }
+    }
+
+    private fun appVersion(context: Context): String {
+        return runCatching {
+            context.packageManager
+                .getPackageInfo(context.packageName, 0)
+                .versionName ?: "unknown"
+        }.getOrDefault("unknown")
     }
 
     private fun writeEntriesAtomically(atomicFile: AtomicFile, entries: List<JSONObject>) {

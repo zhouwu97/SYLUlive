@@ -3,10 +3,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shenliyuan/utils/app_feedback.dart';
 
 void main() {
-  test('handles Dio transform timeout as a service timeout', () {
+  test('handles Dio receive timeout as a service timeout', () {
     final error = DioException(
       requestOptions: RequestOptions(path: '/test'),
-      type: DioExceptionType.transformTimeout,
+      type: DioExceptionType.receiveTimeout,
     );
 
     final message = AppFeedback.dioErrorMessage(

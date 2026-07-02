@@ -148,7 +148,7 @@ object DiagnosticLogStore {
                         put("detail", safeDetail)
                         put("sessionId", sessionId)
                         put("pid", processPid)
-                        put("appVersion", "1.5.16")
+                        put("appVersion", BuildConfig.VERSION_NAME)
                         put("manufacturer", Build.MANUFACTURER)
                         put("model", Build.MODEL)
                         put("sdkInt", Build.VERSION.SDK_INT)

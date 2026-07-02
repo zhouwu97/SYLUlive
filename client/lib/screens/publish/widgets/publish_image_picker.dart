@@ -49,7 +49,7 @@ mixin PublishImagePickerMixin<T extends StatefulWidget> on State<T> {
         if (mounted) {
           ScaffoldMessenger.of(
             context,
-          ).showSnackBar(const SnackBar(content: Text('最多只能添加9张图片')));
+          ).showSnackBar(const SnackBar(content: Text('最多只能添加 9 张图片')));
         }
       }
     } catch (e) {

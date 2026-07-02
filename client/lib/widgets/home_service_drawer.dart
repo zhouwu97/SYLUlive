@@ -63,16 +63,16 @@ class HomeServiceDrawer extends StatelessWidget {
             const SizedBox(height: 16),
             Expanded(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
+                padding: const EdgeInsets.symmetric(horizontal: 18),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     _buildAnnouncementSection(context, isDark),
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 16),
                     _buildQuickEntries(context, isDark),
-                    const SizedBox(height: 18),
+                    const SizedBox(height: 16),
                     _buildWaterCategorySection(context, isDark),
-                    const SizedBox(height: 18),
+                    const SizedBox(height: 20),
                     _buildMoreServices(context, isDark),
                     const SizedBox(height: 32),
                   ],
@@ -277,54 +277,59 @@ class HomeServiceDrawer extends StatelessWidget {
               child: Text(
                 '水帖分类',
                 style: TextStyle(
-                  fontSize: 15,
+                  fontSize: 14,
                   fontWeight: FontWeight.w700,
                   color: isDark ? Colors.white : Colors.black87,
                 ),
               ),
             ),
-            TextButton(
-              onPressed: onOpenAllWaterPosts,
-              style: TextButton.styleFrom(
-                visualDensity: VisualDensity.compact,
-                padding: const EdgeInsets.symmetric(horizontal: 8),
+            InkWell(
+              onTap: onOpenAllWaterPosts,
+              borderRadius: BorderRadius.circular(999),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '全部',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color:
+                            isDark ? Colors.white54 : const Color(0xFF6B7280),
+                      ),
+                    ),
+                    Icon(
+                      Icons.chevron_right_rounded,
+                      size: 15,
+                      color: isDark ? Colors.white38 : const Color(0xFF9CA3AF),
+                    ),
+                  ],
+                ),
               ),
-              child: const Text('全部水帖'),
             ),
           ],
         ),
-        const SizedBox(height: 8),
-        Container(
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: isDark
-                ? Colors.white.withValues(alpha: 0.05)
-                : const Color(0xFFF7F9FC),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color: isDark
-                  ? Colors.white.withValues(alpha: 0.08)
-                  : const Color(0xFFE9EDF5),
-            ),
+        const SizedBox(height: 10),
+        GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: kWaterPostCategories.length,
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 3,
+            mainAxisExtent: 56,
+            crossAxisSpacing: 8,
+            mainAxisSpacing: 8,
           ),
-          child: Column(
-            children: [
-              for (var i = 0; i < kWaterPostCategories.length; i++) ...[
-                _WaterCategoryRow(
-                  category: kWaterPostCategories[i],
-                  isDark: isDark,
-                  onTap: () => onOpenWaterCategory(kWaterPostCategories[i]),
-                ),
-                if (i != kWaterPostCategories.length - 1)
-                  Divider(
-                    height: 10,
-                    color: isDark
-                        ? Colors.white.withValues(alpha: 0.06)
-                        : const Color(0xFFEDEFF3),
-                  ),
-              ],
-            ],
-          ),
+          itemBuilder: (context, index) {
+            final category = kWaterPostCategories[index];
+            return _WaterCategoryTile(
+              category: category,
+              isDark: isDark,
+              onTap: () => onOpenWaterCategory(category),
+            );
+          },
         ),
       ],
     );
@@ -416,7 +421,7 @@ class _QuickEntryCard extends StatelessWidget {
         child: Stack(
           children: [
             Container(
-              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
+              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
               decoration: BoxDecoration(
                 color: isDark
                     ? Colors.white.withValues(alpha: 0.06)
@@ -433,28 +438,28 @@ class _QuickEntryCard extends StatelessWidget {
                 children: [
                   isLoading
                       ? SizedBox(
-                          width: 24,
-                          height: 24,
+                          width: 22,
+                          height: 22,
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
                             color: iconColor,
                           ),
                         )
                       : Container(
-                          width: 30,
-                          height: 30,
+                          width: 28,
+                          height: 28,
                           decoration: BoxDecoration(
                             color: iconColor.withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(10),
+                            borderRadius: BorderRadius.circular(9),
                           ),
-                          child: Icon(icon, color: iconColor, size: 18),
+                          child: Icon(icon, color: iconColor, size: 16),
                         ),
-                  const SizedBox(height: 6),
+                  const SizedBox(height: 5),
                   Text(
                     title,
                     textAlign: TextAlign.center,
                     style: TextStyle(
-                      fontSize: 12,
+                      fontSize: 11,
                       fontWeight: FontWeight.w700,
                       color: isDark ? Colors.white : Colors.black87,
                     ),
@@ -466,7 +471,7 @@ class _QuickEntryCard extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontSize: 10,
+                      fontSize: 9,
                       color: isDark ? Colors.white54 : Colors.black54,
                     ),
                   ),
@@ -497,12 +502,12 @@ class _QuickEntryCard extends StatelessWidget {
   }
 }
 
-class _WaterCategoryRow extends StatelessWidget {
+class _WaterCategoryTile extends StatelessWidget {
   final WaterPostCategory category;
   final bool isDark;
   final VoidCallback onTap;
 
-  const _WaterCategoryRow({
+  const _WaterCategoryTile({
     required this.category,
     required this.isDark,
     required this.onTap,
@@ -514,50 +519,39 @@ class _WaterCategoryRow extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(10),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-          child: Row(
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          height: 56,
+          decoration: BoxDecoration(
+            color: category.color.withValues(alpha: isDark ? 0.16 : 0.09),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: category.color.withValues(alpha: isDark ? 0.20 : 0.10),
+            ),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Container(
-                width: 30,
-                height: 30,
+                width: 26,
+                height: 26,
                 decoration: BoxDecoration(
-                  color: category.color.withValues(alpha: 0.12),
+                  color: category.color.withValues(alpha: isDark ? 0.24 : 0.14),
                   borderRadius: BorderRadius.circular(9),
                 ),
-                child: Icon(category.icon, color: category.color, size: 17),
+                child: Icon(category.icon, color: category.color, size: 18),
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      category.label,
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: isDark ? Colors.white : Colors.black87,
-                      ),
-                    ),
-                    const SizedBox(height: 1),
-                    Text(
-                      category.hint,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: isDark ? Colors.white54 : Colors.black54,
-                      ),
-                    ),
-                  ],
+              const SizedBox(height: 5),
+              Text(
+                category.label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: isDark ? Colors.white : const Color(0xFF30343B),
                 ),
-              ),
-              Icon(
-                Icons.chevron_right_rounded,
-                size: 18,
-                color: isDark ? Colors.white38 : Colors.black26,
               ),
             ],
           ),

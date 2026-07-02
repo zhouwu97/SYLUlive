@@ -9,23 +9,6 @@ import '../widgets/post_card.dart';
 import 'create_post_screen.dart';
 import 'post_detail_screen.dart';
 
-class WaterCategoryFeedRoute extends StatelessWidget {
-  final WaterPostCategory category;
-
-  const WaterCategoryFeedRoute({super.key, required this.category});
-
-  @override
-  Widget build(BuildContext context) {
-    return ChangeNotifierProvider(
-      create: (context) => PostProvider(
-        context.read<AuthProvider>().dio,
-        enableCache: false,
-      ),
-      child: WaterCategoryFeedScreen(category: category),
-    );
-  }
-}
-
 class FeedTab {
   final String label;
   final String sort;

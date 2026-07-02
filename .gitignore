@@ -22,6 +22,7 @@ server/uploads/*
 /shenliyuan
 /shenliyuan.exe
 /shenliyuan.exe~
+server/shenliyuan.new
 server/*.exe
 server/*.exe~
 *.apk

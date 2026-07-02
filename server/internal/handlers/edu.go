@@ -36,6 +36,15 @@ var (
 	ErrorGradesNoOpen = errors.New("当前学期暂无成绩")
 )
 
+type eduLoginError struct {
+	Code    string
+	Message string
+}
+
+func (e *eduLoginError) Error() string {
+	return e.Message
+}
+
 // PublicKey 公钥结构
 type PublicKey struct {
 	Modulus  string `json:"modulus"`
@@ -56,7 +65,7 @@ func NewEduHandler(db *gorm.DB) *EduHandler {
 func baseHttpHeaders() map[string]string {
 	return map[string]string{
 		"User-Agent":    "Mozilla/5.0 (Windows NT 6.1; WOW64; rv:29.0) Gecko/20100101 Firefox/29.0",
-		"Content-Type":  "application/x-www-form-urlencoded;charset=uft-8",
+		"Content-Type":  "application/x-www-form-urlencoded;charset=utf-8",
 		"Cache-Control": "no-cache",
 	}
 }
@@ -109,7 +118,12 @@ func (h *EduHandler) BindEdu(c *gin.Context) {
 	// 尝试登录
 	_, err = syluLogin(client, input.StudentID, encryptedPassword, csrfToken)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		var loginErr *eduLoginError
+		if errors.As(err, &loginErr) {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": loginErr.Message, "code": loginErr.Code})
+			return
+		}
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error(), "code": "UNKNOWN_LOGIN_STATE"})
 		return
 	}
 
@@ -227,7 +241,12 @@ func (h *EduHandler) PreVerify(c *gin.Context) {
 
 	_, err = syluLogin(client, input.StudentID, encryptedPassword, csrfToken)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "教务密码错误", "success": false})
+		var loginErr *eduLoginError
+		if errors.As(err, &loginErr) {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": loginErr.Message, "code": loginErr.Code, "success": false})
+			return
+		}
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error(), "code": "UNKNOWN_LOGIN_STATE", "success": false})
 		return
 	}
 
@@ -502,6 +521,62 @@ func rsaByPublicKey(password string, publicKey *PublicKey) (string, error) {
 	return base64.StdEncoding.EncodeToString(encryptedBytes), nil
 }
 
+func classifyEduLoginFailure(statusCode int, body string) error {
+	if strings.Contains(body, "用户名或密码错误") ||
+		strings.Contains(body, "账号或密码错误") ||
+		strings.Contains(body, "账户或密码错误") ||
+		strings.Contains(body, "账号密码错误") ||
+		strings.Contains(body, "密码错误") ||
+		strings.Contains(body, "用户不存在") {
+		return &eduLoginError{Code: "INVALID_CREDENTIALS", Message: "教务账号或密码错误"}
+	}
+	if statusCode == http.StatusOK {
+		return &eduLoginError{Code: "UNKNOWN_LOGIN_STATE", Message: "学校登录状态未知，请稍后重试或联系管理员"}
+	}
+	if statusCode >= 500 || statusCode == 0 {
+		return &eduLoginError{Code: "REMOTE_SYSTEM_UNAVAILABLE", Message: "学校教务系统暂时不可用，请稍后再试"}
+	}
+	return &eduLoginError{Code: "CAS_FLOW_CHANGED", Message: "学校登录页面可能发生变化，请稍后重试或联系管理员"}
+}
+
+func summarizeEduLoginFailureBody(body string) (string, string) {
+	title := ""
+	if matches := regexp.MustCompile(`(?is)<title[^>]*>(.*?)</title>`).FindStringSubmatch(body); len(matches) > 1 {
+		title = strings.Join(strings.Fields(matches[1]), " ")
+	}
+
+	text := regexp.MustCompile(`(?is)<script[^>]*>.*?</script>|<style[^>]*>.*?</style>`).ReplaceAllString(body, " ")
+	text = regexp.MustCompile(`(?s)<[^>]+>`).ReplaceAllString(text, " ")
+	text = strings.Join(strings.Fields(text), " ")
+	runes := []rune(text)
+	if len(runes) > 120 {
+		text = string(runes[:120])
+	}
+
+	return title, text
+}
+
+func logEduLoginFailure(resp *resty.Response, err error) {
+	statusCode := 0
+	finalURL := ""
+	body := ""
+	if resp != nil {
+		statusCode = resp.StatusCode()
+		body = string(resp.Body())
+		if resp.RawResponse != nil && resp.RawResponse.Request != nil && resp.RawResponse.Request.URL != nil {
+			finalURL = resp.RawResponse.Request.URL.Redacted()
+		}
+	}
+
+	code := "UNKNOWN_LOGIN_STATE"
+	var loginErr *eduLoginError
+	if errors.As(err, &loginErr) {
+		code = loginErr.Code
+	}
+	title, hint := summarizeEduLoginFailureBody(body)
+	log.Printf("[EDU] login failed status=%d final_url=%q title=%q code=%s body_hint=%q", statusCode, finalURL, title, code, hint)
+}
+
 func syluLogin(client *resty.Client, studentID, encryptedPassword, csrfToken string) ([]*http.Cookie, error) {
 	loginResp, err := client.SetRedirectPolicy(resty.NoRedirectPolicy()).R().
 		SetFormData(map[string]string{
@@ -517,9 +592,18 @@ func syluLogin(client *resty.Client, studentID, encryptedPassword, csrfToken str
 	if err != nil && err.Error() == Error302.Error() {
 		return loginResp.Cookies(), nil
 	} else if err != nil {
-		return nil, errors.New("服务器连接失败:" + err.Error())
+		loginErr := &eduLoginError{Code: "REMOTE_SYSTEM_UNAVAILABLE", Message: "学校教务系统暂时不可用，请稍后再试"}
+		logEduLoginFailure(loginResp, loginErr)
+		return nil, loginErr
 	}
-	return nil, errors.New("账号或密码错误")
+	if loginResp == nil {
+		loginErr := &eduLoginError{Code: "REMOTE_SYSTEM_UNAVAILABLE", Message: "学校教务系统暂时不可用，请稍后再试"}
+		logEduLoginFailure(nil, loginErr)
+		return nil, loginErr
+	}
+	loginErr := classifyEduLoginFailure(loginResp.StatusCode(), string(loginResp.Body()))
+	logEduLoginFailure(loginResp, loginErr)
+	return nil, loginErr
 }
 
 func buildCookieString(cookies []*http.Cookie) string {

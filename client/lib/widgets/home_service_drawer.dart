@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../config/water_post_taxonomy.dart';
 import '../models/announcement.dart' as model;
 
 /// 校园服务抽屉 —— 纯展示组件，所有数据和回调由外部提供。
@@ -17,6 +18,8 @@ class HomeServiceDrawer extends StatelessWidget {
   final VoidCallback onOpenGrades;
   final VoidCallback onOpenExamSchedule;
   final VoidCallback onOpenFeedback;
+  final VoidCallback onOpenAllWaterPosts;
+  final ValueChanged<WaterPostCategory> onOpenWaterCategory;
 
   const HomeServiceDrawer({
     super.key,
@@ -33,6 +36,8 @@ class HomeServiceDrawer extends StatelessWidget {
     required this.onOpenGrades,
     required this.onOpenExamSchedule,
     required this.onOpenFeedback,
+    required this.onOpenAllWaterPosts,
+    required this.onOpenWaterCategory,
   });
 
   @override
@@ -58,13 +63,15 @@ class HomeServiceDrawer extends StatelessWidget {
             const SizedBox(height: 16),
             Expanded(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
+                padding: const EdgeInsets.symmetric(horizontal: 18),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     _buildAnnouncementSection(context, isDark),
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 16),
                     _buildQuickEntries(context, isDark),
+                    const SizedBox(height: 16),
+                    _buildWaterCategorySection(context, isDark),
                     const SizedBox(height: 20),
                     _buildMoreServices(context, isDark),
                     const SizedBox(height: 32),
@@ -114,43 +121,64 @@ class HomeServiceDrawer extends StatelessWidget {
 
   // ---- 三个快捷入口（签到、失物招领、工具箱）----
   Widget _buildQuickEntries(BuildContext context, bool isDark) {
-    return Row(
-      children: [
-        Expanded(
-          child: _QuickEntryCard(
-            icon: Icons.task_alt_rounded,
-            iconColor: checkedIn ? Colors.grey : const Color(0xFF16A34A),
-            title: checkedIn ? '已签到' : '签到',
-            subtitle: checkedIn ? '连续$streakDays天' : '每日一次',
-            isDark: isDark,
-            isLoading: checkInLoading,
-            showDot: showCheckInDot,
-            onTap: onCheckIn,
-          ),
+    return Container(
+      height: 50,
+      decoration: BoxDecoration(
+        color: isDark
+            ? Colors.white.withValues(alpha: 0.06)
+            : const Color(0xFFF7F9FC),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: isDark
+              ? Colors.white.withValues(alpha: 0.08)
+              : const Color(0xFFE9EDF5),
         ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: _QuickEntryCard(
-            icon: Icons.luggage_outlined,
-            iconColor: const Color(0xFF0EA5A4),
-            title: '失物招领',
-            subtitle: '查看线索',
-            isDark: isDark,
-            onTap: onOpenLostFound,
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: _CompactQuickEntryItem(
+              icon: Icons.task_alt_rounded,
+              iconColor: checkedIn ? Colors.grey : const Color(0xFF16A34A),
+              title: checkedIn ? '已签到' : '签到',
+              isDark: isDark,
+              isLoading: checkInLoading,
+              showDot: showCheckInDot,
+              onTap: onCheckIn,
+            ),
           ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: _QuickEntryCard(
-            icon: Icons.handyman_outlined,
-            iconColor: const Color(0xFFF97316),
-            title: '工具箱',
-            subtitle: '快捷小工具',
-            isDark: isDark,
-            onTap: onOpenToolbox,
+          _buildQuickDivider(isDark),
+          Expanded(
+            child: _CompactQuickEntryItem(
+              icon: Icons.luggage_outlined,
+              iconColor: const Color(0xFF0EA5A4),
+              title: '失物招领',
+              isDark: isDark,
+              onTap: onOpenLostFound,
+            ),
           ),
-        ),
-      ],
+          _buildQuickDivider(isDark),
+          Expanded(
+            child: _CompactQuickEntryItem(
+              icon: Icons.handyman_outlined,
+              iconColor: const Color(0xFFF97316),
+              title: '工具箱',
+              isDark: isDark,
+              onTap: onOpenToolbox,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildQuickDivider(bool isDark) {
+    return Container(
+      width: 1,
+      height: 24,
+      color: isDark
+          ? Colors.white.withValues(alpha: 0.08)
+          : const Color(0xFFE5E7EB),
     );
   }
 
@@ -259,6 +287,75 @@ class HomeServiceDrawer extends StatelessWidget {
     );
   }
 
+  // ---- 水帖分类 ----
+  Widget _buildWaterCategorySection(BuildContext context, bool isDark) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                '水帖分类',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: isDark ? Colors.white : Colors.black87,
+                ),
+              ),
+            ),
+            InkWell(
+              onTap: onOpenAllWaterPosts,
+              borderRadius: BorderRadius.circular(999),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '全部',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color:
+                            isDark ? Colors.white54 : const Color(0xFF6B7280),
+                      ),
+                    ),
+                    Icon(
+                      Icons.chevron_right_rounded,
+                      size: 15,
+                      color: isDark ? Colors.white38 : const Color(0xFF9CA3AF),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final itemWidth = (constraints.maxWidth - 20) / 3;
+            return Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: kWaterPostCategories.map((category) {
+                return SizedBox(
+                  width: itemWidth,
+                  child: _WaterCategoryMiniItem(
+                    category: category,
+                    isDark: isDark,
+                    onTap: () => onOpenWaterCategory(category),
+                  ),
+                );
+              }).toList(),
+            );
+          },
+        ),
+      ],
+    );
+  }
+
   // ---- 更多服务 ----
   Widget _buildMoreServices(BuildContext context, bool isDark) {
     return Column(
@@ -314,21 +411,19 @@ class HomeServiceDrawer extends StatelessWidget {
 }
 
 // ---- 快捷入口卡片 ----
-class _QuickEntryCard extends StatelessWidget {
+class _CompactQuickEntryItem extends StatelessWidget {
   final IconData icon;
   final Color iconColor;
   final String title;
-  final String subtitle;
   final bool isDark;
   final bool isLoading;
   final bool showDot;
   final VoidCallback onTap;
 
-  const _QuickEntryCard({
+  const _CompactQuickEntryItem({
     required this.icon,
     required this.iconColor,
     required this.title,
-    required this.subtitle,
     required this.isDark,
     this.isLoading = false,
     this.showDot = false,
@@ -337,88 +432,100 @@ class _QuickEntryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: isLoading ? null : onTap,
-        borderRadius: BorderRadius.circular(14),
-        child: Stack(
-          children: [
-            Container(
-              padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 6),
-              decoration: BoxDecoration(
-                color: isDark
-                    ? Colors.white.withValues(alpha: 0.06)
-                    : const Color(0xFFF7F9FC),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(
-                  color: isDark
-                      ? Colors.white.withValues(alpha: 0.08)
-                      : const Color(0xFFE9EDF5),
-                ),
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  isLoading
-                      ? SizedBox(
-                          width: 24,
-                          height: 24,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: iconColor,
-                          ),
-                        )
-                      : Container(
-                          width: 34,
-                          height: 34,
-                          decoration: BoxDecoration(
-                            color: iconColor.withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Icon(icon, color: iconColor, size: 18),
+    return InkWell(
+      onTap: isLoading ? null : onTap,
+      child: Stack(
+        children: [
+          Center(
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                isLoading
+                    ? SizedBox(
+                        width: 15,
+                        height: 15,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: iconColor,
                         ),
-                  const SizedBox(height: 8),
-                  Text(
+                      )
+                    : Icon(icon, size: 16, color: iconColor),
+                const SizedBox(width: 5),
+                Flexible(
+                  child: Text(
                     title,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: isDark ? Colors.white : Colors.black87,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    subtitle,
-                    textAlign: TextAlign.center,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontSize: 10,
-                      color: isDark ? Colors.white54 : Colors.black54,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            if (showDot)
-              Positioned(
-                top: 8,
-                right: 8,
-                child: Container(
-                  width: 8,
-                  height: 8,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFEF4444),
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: isDark ? const Color(0xFF181D28) : Colors.white,
-                      width: 1.5,
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w600,
+                      color: isDark ? Colors.white70 : const Color(0xFF20232A),
                     ),
                   ),
                 ),
+              ],
+            ),
+          ),
+          if (showDot)
+            Positioned(
+              top: 9,
+              right: 12,
+              child: Container(
+                width: 6,
+                height: 6,
+                decoration: const BoxDecoration(
+                  color: Color(0xFFEF4444),
+                  shape: BoxShape.circle,
+                ),
               ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _WaterCategoryMiniItem extends StatelessWidget {
+  final WaterPostCategory category;
+  final bool isDark;
+  final VoidCallback onTap;
+
+  const _WaterCategoryMiniItem({
+    required this.category,
+    required this.isDark,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: SizedBox(
+        height: 48,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 28,
+              height: 28,
+              decoration: BoxDecoration(
+                color: category.color.withValues(alpha: isDark ? 0.14 : 0.10),
+                borderRadius: BorderRadius.circular(9),
+              ),
+              child: Icon(category.icon, size: 17, color: category.color),
+            ),
+            const SizedBox(height: 3),
+            Text(
+              category.label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 10.5,
+                fontWeight: FontWeight.w600,
+                color: isDark ? Colors.white70 : const Color(0xFF374151),
+              ),
+            ),
           ],
         ),
       ),

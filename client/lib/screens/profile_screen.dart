@@ -836,7 +836,11 @@ class _ProfileScreenState extends State<ProfileScreen>
   }
 
   Widget _buildMyContentSection(BuildContext context, bool isDark) {
-    final totalUnreadCount = _unreadReplyCount + _unreadMessageCount;
+    final messageProvider = context.watch<MessageProvider>();
+    final unreadMessageCount = messageProvider.hasLoadedConversations
+        ? messageProvider.unreadMessageCount
+        : _unreadMessageCount;
+    final totalUnreadCount = _unreadReplyCount + unreadMessageCount;
     final items = [
       _buildSettingsRow(
         child: _buildSettingsTile(
@@ -844,7 +848,7 @@ class _ProfileScreenState extends State<ProfileScreen>
           iconColor: const Color(0xFF10B981),
           title: '私信',
           subtitle: totalUnreadCount > 0
-              ? '共$totalUnreadCount条未读，含$_unreadMessageCount条私信'
+              ? '共$totalUnreadCount条未读，含$unreadMessageCount条私信'
               : '查看私信与系统通知',
           trailing: totalUnreadCount > 0
               ? Container(

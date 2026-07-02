@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:dio/dio.dart';
@@ -1748,59 +1747,39 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
-  /// 单张图：模糊背景铺满，前景按原比例完整展示。
+  /// 单张图：按图片原比例展示，不额外生成虚化或裁切背景。
   Widget _buildSingleWaterImage(String url, bool isDark) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(14),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxHeight: 420),
-        child: Stack(
-          children: [
-            Positioned.fill(
-              child: ImageFiltered(
-                imageFilter: ImageFilter.blur(sigmaX: 25, sigmaY: 25),
-                child: CachedNetworkImage(
-                  cacheManager: PostImageCache.manager,
-                  imageUrl: url,
-                  fit: BoxFit.cover,
-                  color: isDark ? Colors.black45 : Colors.white54,
-                  colorBlendMode: BlendMode.darken,
-                  placeholder: (_, __) => Container(
-                    color: isDark ? Colors.white10 : Colors.grey[200],
-                  ),
-                  errorWidget: (_, __, ___) => Container(
-                    color: isDark ? Colors.white10 : Colors.grey[200],
-                  ),
+    return GestureDetector(
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ImageViewerScreen(
+            imageUrls: [url],
+            initialIndex: 0,
+          ),
+        ),
+      ),
+      child: SizedBox(
+        width: double.infinity,
+        child: Center(
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(14),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 420),
+              child: CachedNetworkImage(
+                cacheManager: PostImageCache.manager,
+                imageUrl: url,
+                fit: BoxFit.contain,
+                placeholder: (_, __) => const SizedBox.shrink(),
+                errorWidget: (_, __, ___) => Container(
+                  height: 300,
+                  color: isDark ? Colors.white10 : Colors.grey[200],
+                  child: const Icon(Icons.broken_image,
+                      size: 40, color: Colors.grey),
                 ),
               ),
             ),
-            GestureDetector(
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => ImageViewerScreen(
-                    imageUrls: [url],
-                    initialIndex: 0,
-                  ),
-                ),
-              ),
-              child: Center(
-                child: CachedNetworkImage(
-                  cacheManager: PostImageCache.manager,
-                  imageUrl: url,
-                  fit: BoxFit.contain,
-                  width: double.infinity,
-                  placeholder: (_, __) => const SizedBox.shrink(),
-                  errorWidget: (_, __, ___) => Container(
-                    height: 300,
-                    color: isDark ? Colors.white10 : Colors.grey[200],
-                    child: const Icon(Icons.broken_image,
-                        size: 40, color: Colors.grey),
-                  ),
-                ),
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );

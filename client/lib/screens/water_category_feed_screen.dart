@@ -283,6 +283,7 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
                 final post = posts[index];
                 return PostCard(
                   post: post,
+                  showCategoryBadge: false,
                   onTap: () => _openPost(post),
                 );
               },

@@ -127,6 +127,54 @@ class _MockHttpOverrides extends HttpOverrides {
   }
 }
 
+Map<String, dynamic> _postJsonWithImages({
+  required int id,
+  required String title,
+  required List<String> imageUrls,
+}) {
+  return {
+    "id": id,
+    "title": title,
+    "content": "Content",
+    "board_id": 1,
+    "author_id": 1,
+    "author": {
+      "id": 1,
+      "nickname": "TestUser",
+      "avatar": "http://example.com/avatar.png",
+      "student_id": "123",
+      "created_at": "2026-01-01T00:00:00.000Z",
+    },
+    "created_at": "2026-01-01T00:00:00.000Z",
+    "images": [
+      for (var index = 0; index < imageUrls.length; index++)
+        {
+          "id": index + 1,
+          "post_id": id,
+          "file_id": index + 1,
+          "sort_order": index,
+          "file": {
+            "id": index + 1,
+            "hash": "image_$index",
+            "path": imageUrls[index],
+            "size": 1,
+            "mime_type": "image/png",
+          },
+        },
+    ],
+  };
+}
+
+Post _postWithImages({
+  required int id,
+  required String title,
+  required List<String> imageUrls,
+}) {
+  return Post.fromJson(
+    _postJsonWithImages(id: id, title: title, imageUrls: imageUrls),
+  );
+}
+
 class FakeDio extends Fake implements Dio {
   @override
   Future<Response<T>> get<T>(
@@ -137,6 +185,39 @@ class FakeDio extends Fake implements Dio {
     CancelToken? cancelToken,
     void Function(int, int)? onReceiveProgress,
   }) async {
+    if (path.startsWith('/posts/102/replies')) {
+      return Response<T>(
+        requestOptions: RequestOptions(path: path),
+        data: [] as dynamic,
+      );
+    } else if (path.startsWith('/posts/102')) {
+      return Response<T>(
+        requestOptions: RequestOptions(path: path),
+        data: _postJsonWithImages(
+          id: 102,
+          title: 'Single image',
+          imageUrls: ['http://example.com/one.png'],
+        ) as dynamic,
+      );
+    }
+    if (path.startsWith('/posts/103/replies')) {
+      return Response<T>(
+        requestOptions: RequestOptions(path: path),
+        data: [] as dynamic,
+      );
+    } else if (path.startsWith('/posts/103')) {
+      return Response<T>(
+        requestOptions: RequestOptions(path: path),
+        data: _postJsonWithImages(
+          id: 103,
+          title: 'Two images',
+          imageUrls: [
+            'http://example.com/one.png',
+            'http://example.com/two.png',
+          ],
+        ) as dynamic,
+      );
+    }
     if (path.startsWith('/posts/101/replies')) {
       return Response<T>(
         requestOptions: RequestOptions(path: path),
@@ -309,6 +390,22 @@ class FakeThemeProvider extends Fake
   bool get isDarkMode => false;
 }
 
+Widget _postDetailTestApp(Post post) {
+  return MultiProvider(
+    providers: [
+      ChangeNotifierProvider<AuthProvider>(create: (_) => FakeAuthProvider()),
+      ChangeNotifierProvider<PostProvider>(create: (_) => FakePostProvider()),
+      ChangeNotifierProvider<ThemeProvider>(create: (_) => FakeThemeProvider()),
+    ],
+    child: MaterialApp(
+      home: PostDetailScreen(
+        postId: post.id,
+        initialPost: post,
+      ),
+    ),
+  );
+}
+
 void main() {
   setUpAll(() {
     HttpOverrides.global = _MockHttpOverrides();
@@ -413,90 +510,17 @@ void main() {
 
   testWidgets('PostDetailScreen renders post images as a three-column grid',
       (WidgetTester tester) async {
-    final mockUser = User(
-      id: 1,
-      studentId: '123',
-      nickname: 'TestUser',
-      avatar: 'http://example.com/avatar.png',
-      createdAt: DateTime.now(),
-    );
-
-    final fakePost = Post.fromJson({
-      "id": 101,
-      "title": "Three images",
-      "content": "Content",
-      "board_id": 1,
-      "author_id": 1,
-      "author": {
-        "id": mockUser.id,
-        "nickname": mockUser.nickname,
-        "avatar": mockUser.avatar,
-        "student_id": mockUser.studentId,
-        "created_at": mockUser.createdAt.toIso8601String(),
-      },
-      "created_at": "2026-01-01T00:00:00.000Z",
-      "images": [
-        {
-          "id": 1,
-          "post_id": 101,
-          "file_id": 1,
-          "sort_order": 0,
-          "file": {
-            "id": 1,
-            "hash": "a",
-            "path": "http://example.com/one.png",
-            "size": 1,
-            "mime_type": "image/png"
-          }
-        },
-        {
-          "id": 2,
-          "post_id": 101,
-          "file_id": 2,
-          "sort_order": 1,
-          "file": {
-            "id": 2,
-            "hash": "b",
-            "path": "http://example.com/two.png",
-            "size": 1,
-            "mime_type": "image/png"
-          }
-        },
-        {
-          "id": 3,
-          "post_id": 101,
-          "file_id": 3,
-          "sort_order": 2,
-          "file": {
-            "id": 3,
-            "hash": "c",
-            "path": "http://example.com/three.png",
-            "size": 1,
-            "mime_type": "image/png"
-          }
-        }
+    final fakePost = _postWithImages(
+      id: 101,
+      title: 'Three images',
+      imageUrls: [
+        'http://example.com/one.png',
+        'http://example.com/two.png',
+        'http://example.com/three.png',
       ],
-    });
-
-    await tester.pumpWidget(
-      MultiProvider(
-        providers: [
-          ChangeNotifierProvider<AuthProvider>(
-              create: (_) => FakeAuthProvider()),
-          ChangeNotifierProvider<PostProvider>(
-              create: (_) => FakePostProvider()),
-          ChangeNotifierProvider<ThemeProvider>(
-              create: (_) => FakeThemeProvider()),
-        ],
-        child: MaterialApp(
-          home: PostDetailScreen(
-            postId: 101,
-            initialPost: fakePost,
-          ),
-        ),
-      ),
     );
 
+    await tester.pumpWidget(_postDetailTestApp(fakePost));
     await tester.pumpAndSettle();
 
     expect(tester.takeException(), isNull);
@@ -519,6 +543,101 @@ void main() {
             widget.imageUrl.endsWith('.png'),
       ),
       findsNWidgets(3),
+    );
+  });
+
+  testWidgets('PostDetailScreen renders one image with single-image treatment',
+      (WidgetTester tester) async {
+    final fakePost = _postWithImages(
+      id: 102,
+      title: 'Single image',
+      imageUrls: ['http://example.com/one.png'],
+    );
+
+    await tester.pumpWidget(_postDetailTestApp(fakePost));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('Single image'), findsOneWidget);
+    expect(find.byType(GridView), findsNothing);
+    expect(find.byType(ImageFiltered), findsNothing);
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is CachedNetworkImage &&
+            widget.imageUrl == 'http://example.com/one.png' &&
+            widget.fit == BoxFit.contain,
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is CachedNetworkImage &&
+            widget.imageUrl == 'http://example.com/one.png',
+      ),
+      findsOneWidget,
+    );
+    final singleImageFinder = find.byWidgetPredicate(
+      (widget) =>
+          widget is CachedNetworkImage &&
+          widget.imageUrl == 'http://example.com/one.png',
+    );
+    expect(
+      find.ancestor(
+        of: singleImageFinder,
+        matching: find.byWidgetPredicate(
+          (widget) => widget is SizedBox && widget.width == double.infinity,
+        ),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.ancestor(
+        of: singleImageFinder,
+        matching: find.byWidgetPredicate(
+          (widget) =>
+              widget is Center &&
+              widget.widthFactor == null &&
+              widget.heightFactor == null,
+        ),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('PostDetailScreen renders two images side by side',
+      (WidgetTester tester) async {
+    final fakePost = _postWithImages(
+      id: 103,
+      title: 'Two images',
+      imageUrls: [
+        'http://example.com/one.png',
+        'http://example.com/two.png',
+      ],
+    );
+
+    await tester.pumpWidget(_postDetailTestApp(fakePost));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('Two images'), findsOneWidget);
+    expect(find.byType(GridView), findsNothing);
+    expect(
+      find.byWidgetPredicate(
+        (widget) => widget is AspectRatio && widget.aspectRatio == 1,
+      ),
+      findsNWidgets(2),
+    );
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is CachedNetworkImage &&
+            widget.imageUrl.startsWith('http://example.com/') &&
+            widget.imageUrl.endsWith('.png') &&
+            widget.fit == BoxFit.cover,
+      ),
+      findsNWidgets(2),
     );
   });
 }

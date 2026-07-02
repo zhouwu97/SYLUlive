@@ -36,7 +36,7 @@ import 'post_detail_screen.dart';
 import 'search_results_screen.dart';
 import 'toolbox_screen.dart';
 import 'user_home_screen.dart';
-import 'water_category_feed_screen.dart';
+import 'water_category_feed_route.dart';
 
 // ---- Feed Mode 统一配置 ----
 

@@ -36,6 +36,30 @@ type Snapshot struct {
 
 var ActiveSnapshots sync.Map // key: session_id (string), value: Snapshot
 
+var allowedWaterPostTypes = map[string]struct{}{
+	"freshman_help": {},
+	"course_study":  {},
+	"competition":   {},
+	"campus_life":   {},
+	"complaint":     {},
+	"experience":    {},
+	"campus_news":   {},
+}
+
+func normalizeWaterPostType(boardID models.BoardID, postType string) (string, error) {
+	postType = strings.TrimSpace(postType)
+	if boardID != models.BoardShuitie {
+		return postType, nil
+	}
+	if postType == "" {
+		return "campus_life", nil
+	}
+	if _, ok := allowedWaterPostTypes[postType]; ok {
+		return postType, nil
+	}
+	return "", fmt.Errorf("invalid water post_type: %s", postType)
+}
+
 // GetList 获取帖子列表
 func (h *PostHandler) GetList(c *gin.Context) {
 	boardIDStr := c.Query("board")
@@ -356,13 +380,19 @@ func (h *PostHandler) Create(c *gin.Context) {
 		return
 	}
 
+	normalizedType, err := normalizeWaterPostType(models.BoardID(input.BoardID), input.PostType)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的水帖分类"})
+		return
+	}
+
 	// 先创建帖子
 	post := models.Post{
 		Title:    input.Title,
 		Content:  input.Content,
 		BoardID:  models.BoardID(input.BoardID),
 		AuthorID: userID.(uint),
-		PostType: input.PostType,
+		PostType: normalizedType,
 		Price:    input.Price,
 		Contact:  input.Contact,
 		Status:   models.PostStatusNormal,
@@ -520,10 +550,16 @@ func (h *PostHandler) Update(c *gin.Context) {
 		return
 	}
 
+	normalizedType, err := normalizeWaterPostType(post.BoardID, input.PostType)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的水帖分类"})
+		return
+	}
+
 	updates := map[string]interface{}{
 		"title":     input.Title,
 		"content":   input.Content,
-		"post_type": input.PostType,
+		"post_type": normalizedType,
 		"price":     input.Price,
 		"contact":   input.Contact,
 	}

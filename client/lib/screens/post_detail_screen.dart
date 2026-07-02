@@ -264,9 +264,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         _replies.where((r) => r.id == widget.targetReplyId).firstOrNull;
     if (targetReply == null) return;
 
-    // 如果目标是子回复，强制展开它的父级楼中楼
     if (targetReply.parentReplyId != null) {
-      _expandedThreads.add(targetReply.parentReplyId!);
+      // 目标是子回复时，在面板改版后我们依然只高亮/滚动到顶级父回复
+      // 因为子回复现在包裹在 BottomSheet 里面
     }
 
     setState(() {}); // 触发重新渲染，确保子组件挂载

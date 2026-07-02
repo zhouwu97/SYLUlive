@@ -170,6 +170,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   int? _replyToUserId;
   bool _isSending = false;
   final Set<int> _expandedThreads = {};
+  final Set<int> _expandedChildReplyIds = {};
   bool _hasPendingFeaturedApp = false;
 
   final Map<int, GlobalKey> _replyKeys = {};
@@ -1894,7 +1895,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   Widget _buildWaterActionBar(bool isDark) {
     return Container(
-      height: 48,
+      height: 44,
       margin: const EdgeInsets.symmetric(horizontal: 16),
       decoration: BoxDecoration(
         border: Border(
@@ -1916,7 +1917,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               children: [
                 Icon(
                   _liked ? Icons.thumb_up : Icons.thumb_up_outlined,
-                  size: 18,
+                  size: 17,
                   color: _liked
                       ? Theme.of(context).primaryColor
                       : (isDark ? Colors.white38 : Colors.grey[500]),
@@ -1925,7 +1926,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 Text(
                   '$_likeCount',
                   style: TextStyle(
-                    fontSize: 13,
+                    fontSize: 12,
                     color: _liked
                         ? Theme.of(context).primaryColor
                         : (isDark ? Colors.white38 : Colors.grey[500]),
@@ -1943,14 +1944,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               children: [
                 Icon(
                   Icons.chat_bubble_outline,
-                  size: 18,
+                  size: 17,
                   color: isDark ? Colors.white38 : Colors.grey[500],
                 ),
                 const SizedBox(width: 4),
                 Text(
                   '评论 ${_post?.replyCount ?? 0}',
                   style: TextStyle(
-                    fontSize: 13,
+                    fontSize: 12,
                     color: isDark ? Colors.white38 : Colors.grey[500],
                   ),
                 ),
@@ -1961,14 +1962,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           // 浏览量
           Icon(
             Icons.visibility_outlined,
-            size: 16,
+            size: 15,
             color: isDark ? Colors.white24 : Colors.grey[400],
           ),
           const SizedBox(width: 3),
           Text(
             '浏览 ${_post?.viewCount ?? 0}',
             style: TextStyle(
-              fontSize: 12,
+              fontSize: 11.5,
               color: isDark ? Colors.white24 : Colors.grey[400],
             ),
           ),
@@ -2840,8 +2841,84 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
-  /// 子回复（楼中楼）
   Widget _buildChildReply(Reply r, bool isDark, {int depth = 0}) {
+    if (_expandedChildReplyIds.contains(r.id)) {
+      return _buildChildReplyFull(r, isDark, depth: depth);
+    } else {
+      return _buildChildReplyCompact(r, isDark, depth: depth);
+    }
+  }
+
+  Widget _buildChildReplyCompact(Reply r, bool isDark, {int depth = 0}) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: 6, left: depth * 4.0),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () {
+          setState(() {
+            _expandedChildReplyIds.add(r.id);
+          });
+        },
+        child: Text.rich(
+          TextSpan(
+            children: [
+              TextSpan(
+                text: '${r.author?.nickname ?? '匿名'}：',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: isDark ? Colors.white70 : Colors.black87,
+                ),
+              ),
+              _buildCompactContentSpan(r, isDark),
+            ],
+          ),
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(height: 1.35),
+        ),
+      ),
+    );
+  }
+
+  InlineSpan _buildCompactContentSpan(Reply r, bool isDark) {
+    final content = r.content;
+    final atRegex = RegExp(r'^@(\S+)\s');
+    final match = atRegex.firstMatch(content);
+    if (match != null) {
+      final atName = match.group(1)!;
+      final rest = content.substring(match.end);
+      return TextSpan(
+        children: [
+          TextSpan(
+            text: '@$atName ',
+            style: TextStyle(
+              fontSize: 13,
+              color: Theme.of(context).primaryColor,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          TextSpan(
+            text: rest,
+            style: TextStyle(
+              fontSize: 13,
+              color: isDark ? Colors.white60 : const Color(0xFF60646C),
+            ),
+          ),
+        ],
+      );
+    }
+    return TextSpan(
+      text: content,
+      style: TextStyle(
+        fontSize: 13,
+        color: isDark ? Colors.white60 : const Color(0xFF60646C),
+      ),
+    );
+  }
+
+  /// 子回复（楼中楼）展开视图
+  Widget _buildChildReplyFull(Reply r, bool isDark, {int depth = 0}) {
     // 从 content 中解析 @username
     final contentWidget = _buildChildContent(r, isDark);
     // 回复按钮指向顶级评论（楼中楼的根），避免多层嵌套
@@ -2907,6 +2984,21 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           ),
                         ),
                         const Spacer(),
+                        GestureDetector(
+                          onTap: () {
+                            setState(() {
+                              _expandedChildReplyIds.remove(r.id);
+                            });
+                          },
+                          child: Text(
+                            '收起',
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: isDark ? Colors.white24 : Colors.grey[400],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
                         Text(
                           '回复',
                           style: TextStyle(

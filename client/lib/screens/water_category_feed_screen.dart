@@ -150,16 +150,15 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
       appBar: AppBar(
         backgroundColor: isDark ? const Color(0xFF0D1117) : Colors.white,
         surfaceTintColor: Colors.transparent,
-        elevation: 0.5,
+        elevation: 0,
         centerTitle: false,
-        title: Text(widget.category.label),
-        actions: [
-          IconButton(
-            tooltip: '发布',
-            onPressed: _openComposer,
-            icon: const Icon(Icons.add_rounded),
+        title: Text(
+          widget.category.label,
+          style: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w700,
           ),
-        ],
+        ),
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: _openComposer,
@@ -269,10 +268,7 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
             child: Center(child: CircularProgressIndicator()),
           )
         else if (posts.isEmpty)
-          SliverFillRemaining(
-            hasScrollBody: false,
-            child: _buildEmptyState(isDark),
-          )
+          SliverToBoxAdapter(child: _buildEmptyState(isDark))
         else ...[
           SliverPadding(
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 96),
@@ -319,29 +315,37 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
   Widget _buildHeader(bool isDark) {
     final category = widget.category;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+      padding: const EdgeInsets.fromLTRB(14, 10, 14, 8),
       child: Container(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(14, 13, 14, 13),
         decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF171B24) : Colors.white,
-          borderRadius: BorderRadius.circular(8),
+          color: isDark
+              ? Color.alphaBlend(
+                  category.color.withValues(alpha: 0.12),
+                  const Color(0xFF171B24),
+                )
+              : Color.alphaBlend(
+                  category.color.withValues(alpha: 0.04),
+                  Colors.white,
+                ),
+          borderRadius: BorderRadius.circular(18),
           border: Border.all(
             color: isDark
-                ? Colors.white.withValues(alpha: 0.08)
-                : const Color(0xFFEDEFF3),
+                ? category.color.withValues(alpha: 0.18)
+                : category.color.withValues(alpha: 0.10),
           ),
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Container(
-              width: 38,
-              height: 38,
+              width: 34,
+              height: 34,
               decoration: BoxDecoration(
                 color: category.color.withValues(alpha: 0.12),
-                shape: BoxShape.circle,
+                borderRadius: BorderRadius.circular(12),
               ),
-              child: Icon(category.icon, color: category.color, size: 22),
+              child: Icon(category.icon, color: category.color, size: 20),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -351,24 +355,26 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
                   Text(
                     category.label,
                     style: TextStyle(
-                      fontSize: 18,
+                      fontSize: 16,
                       fontWeight: FontWeight.w700,
                       color: isDark ? Colors.white : const Color(0xFF16181D),
                     ),
                   ),
-                  const SizedBox(height: 5),
+                  const SizedBox(height: 4),
                   Text(
                     category.hint,
                     style: TextStyle(
-                      fontSize: 13,
+                      fontSize: 12,
+                      height: 1.28,
                       color: isDark ? Colors.white60 : const Color(0xFF6D7480),
                     ),
                   ),
-                  const SizedBox(height: 7),
+                  const SizedBox(height: 6),
                   Text(
                     category.actionHint,
                     style: TextStyle(
-                      fontSize: 12,
+                      fontSize: 11,
+                      height: 1.3,
                       color: isDark ? Colors.white38 : const Color(0xFF8A919D),
                     ),
                   ),
@@ -384,12 +390,12 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
   Widget _buildTabs(bool isDark) {
     return Container(
       color: isDark ? const Color(0xFF0D1117) : const Color(0xFFF7F8FA),
-      padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+      padding: const EdgeInsets.fromLTRB(14, 0, 14, 6),
       child: Container(
-        height: 44,
+        height: 40,
         decoration: BoxDecoration(
           color: isDark ? const Color(0xFF171B24) : Colors.white,
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(16),
           border: Border.all(
             color: isDark
                 ? Colors.white.withValues(alpha: 0.08)
@@ -410,36 +416,35 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
 
   Widget _buildTabButton(bool isDark, int index) {
     final selected = _currentTabIndex == index;
-    return InkWell(
-      borderRadius: BorderRadius.circular(8),
-      onTap: () => _changeSort(index),
-      child: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              _tabs[index].label,
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                color: selected
-                    ? Theme.of(context).colorScheme.primary
-                    : isDark
-                        ? Colors.white60
-                        : const Color(0xFF626A75),
-              ),
+    final primary = Theme.of(context).colorScheme.primary;
+    final foreground = selected
+        ? primary
+        : isDark
+            ? Colors.white60
+            : const Color(0xFF626A75);
+
+    return Padding(
+      padding: const EdgeInsets.all(4),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => _changeSort(index),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: selected
+                ? primary.withValues(alpha: isDark ? 0.20 : 0.12)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Text(
+            _tabs[index].label,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+              color: foreground,
             ),
-            const SizedBox(height: 4),
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 180),
-              width: selected ? 18 : 0,
-              height: 2,
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.primary,
-                borderRadius: BorderRadius.circular(999),
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -448,38 +453,56 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
   Widget _buildEmptyState(bool isDark) {
     final category = widget.category;
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 28),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(category.icon, size: 42, color: category.color),
-          const SizedBox(height: 16),
-          Text(
-            category.emptyTitle,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 17,
-              fontWeight: FontWeight.w700,
-              color: isDark ? Colors.white : const Color(0xFF20232A),
+      padding: const EdgeInsets.fromLTRB(20, 84, 20, 0),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.fromLTRB(18, 20, 18, 18),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF171B24) : Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: isDark
+                ? Colors.white.withValues(alpha: 0.08)
+                : const Color(0xFFEDEFF3),
+          ),
+        ),
+        child: Column(
+          children: [
+            Icon(category.icon, size: 38, color: category.color),
+            const SizedBox(height: 14),
+            Text(
+              category.emptyTitle,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 15.5,
+                fontWeight: FontWeight.w700,
+                color: isDark ? Colors.white : const Color(0xFF20232A),
+              ),
             ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            category.emptyDescription,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 13,
-              height: 1.45,
-              color: isDark ? Colors.white54 : const Color(0xFF7B818C),
+            const SizedBox(height: 7),
+            Text(
+              category.emptyDescription,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 12,
+                height: 1.42,
+                color: isDark ? Colors.white54 : const Color(0xFF7B818C),
+              ),
             ),
-          ),
-          const SizedBox(height: 20),
-          FilledButton.icon(
-            onPressed: _openComposer,
-            icon: const Icon(Icons.edit_rounded, size: 18),
-            label: const Text('发布第一条'),
-          ),
-        ],
+            const SizedBox(height: 16),
+            SizedBox(
+              height: 36,
+              child: FilledButton.icon(
+                onPressed: _openComposer,
+                icon: const Icon(Icons.edit_rounded, size: 17),
+                label: const Text(
+                  '发布第一条',
+                  style: TextStyle(fontSize: 13),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -527,10 +550,10 @@ class _WaterCategoryTabHeader extends SliverPersistentHeaderDelegate {
   _WaterCategoryTabHeader({required this.isDark, required this.child});
 
   @override
-  double get minExtent => 52;
+  double get minExtent => 46;
 
   @override
-  double get maxExtent => 52;
+  double get maxExtent => 46;
 
   @override
   Widget build(

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../config/water_post_taxonomy.dart';
 import '../models/announcement.dart' as model;
 
 /// 校园服务抽屉 —— 纯展示组件，所有数据和回调由外部提供。
@@ -17,6 +18,8 @@ class HomeServiceDrawer extends StatelessWidget {
   final VoidCallback onOpenGrades;
   final VoidCallback onOpenExamSchedule;
   final VoidCallback onOpenFeedback;
+  final VoidCallback onOpenAllWaterPosts;
+  final ValueChanged<WaterPostCategory> onOpenWaterCategory;
 
   const HomeServiceDrawer({
     super.key,
@@ -33,6 +36,8 @@ class HomeServiceDrawer extends StatelessWidget {
     required this.onOpenGrades,
     required this.onOpenExamSchedule,
     required this.onOpenFeedback,
+    required this.onOpenAllWaterPosts,
+    required this.onOpenWaterCategory,
   });
 
   @override
@@ -65,7 +70,9 @@ class HomeServiceDrawer extends StatelessWidget {
                     _buildAnnouncementSection(context, isDark),
                     const SizedBox(height: 20),
                     _buildQuickEntries(context, isDark),
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 18),
+                    _buildWaterCategorySection(context, isDark),
+                    const SizedBox(height: 18),
                     _buildMoreServices(context, isDark),
                     const SizedBox(height: 32),
                   ],
@@ -259,6 +266,70 @@ class HomeServiceDrawer extends StatelessWidget {
     );
   }
 
+  // ---- 水帖分类 ----
+  Widget _buildWaterCategorySection(BuildContext context, bool isDark) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                '水帖分类',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  color: isDark ? Colors.white : Colors.black87,
+                ),
+              ),
+            ),
+            TextButton(
+              onPressed: onOpenAllWaterPosts,
+              style: TextButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+              ),
+              child: const Text('全部水帖'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: isDark
+                ? Colors.white.withValues(alpha: 0.05)
+                : const Color(0xFFF7F9FC),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: isDark
+                  ? Colors.white.withValues(alpha: 0.08)
+                  : const Color(0xFFE9EDF5),
+            ),
+          ),
+          child: Column(
+            children: [
+              for (var i = 0; i < kWaterPostCategories.length; i++) ...[
+                _WaterCategoryRow(
+                  category: kWaterPostCategories[i],
+                  isDark: isDark,
+                  onTap: () => onOpenWaterCategory(kWaterPostCategories[i]),
+                ),
+                if (i != kWaterPostCategories.length - 1)
+                  Divider(
+                    height: 10,
+                    color: isDark
+                        ? Colors.white.withValues(alpha: 0.06)
+                        : const Color(0xFFEDEFF3),
+                  ),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
   // ---- 更多服务 ----
   Widget _buildMoreServices(BuildContext context, bool isDark) {
     return Column(
@@ -345,7 +416,7 @@ class _QuickEntryCard extends StatelessWidget {
         child: Stack(
           children: [
             Container(
-              padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 6),
+              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
               decoration: BoxDecoration(
                 color: isDark
                     ? Colors.white.withValues(alpha: 0.06)
@@ -370,15 +441,15 @@ class _QuickEntryCard extends StatelessWidget {
                           ),
                         )
                       : Container(
-                          width: 34,
-                          height: 34,
+                          width: 30,
+                          height: 30,
                           decoration: BoxDecoration(
                             color: iconColor.withValues(alpha: 0.12),
                             borderRadius: BorderRadius.circular(10),
                           ),
                           child: Icon(icon, color: iconColor, size: 18),
                         ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 6),
                   Text(
                     title,
                     textAlign: TextAlign.center,
@@ -388,7 +459,7 @@ class _QuickEntryCard extends StatelessWidget {
                       color: isDark ? Colors.white : Colors.black87,
                     ),
                   ),
-                  const SizedBox(height: 2),
+                  const SizedBox(height: 1),
                   Text(
                     subtitle,
                     textAlign: TextAlign.center,
@@ -420,6 +491,76 @@ class _QuickEntryCard extends StatelessWidget {
                 ),
               ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _WaterCategoryRow extends StatelessWidget {
+  final WaterPostCategory category;
+  final bool isDark;
+  final VoidCallback onTap;
+
+  const _WaterCategoryRow({
+    required this.category,
+    required this.isDark,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+          child: Row(
+            children: [
+              Container(
+                width: 30,
+                height: 30,
+                decoration: BoxDecoration(
+                  color: category.color.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(9),
+                ),
+                child: Icon(category.icon, color: category.color, size: 17),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      category.label,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: isDark ? Colors.white : Colors.black87,
+                      ),
+                    ),
+                    const SizedBox(height: 1),
+                    Text(
+                      category.hint,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: isDark ? Colors.white54 : Colors.black54,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.chevron_right_rounded,
+                size: 18,
+                color: isDark ? Colors.white38 : Colors.black26,
+              ),
+            ],
+          ),
         ),
       ),
     );

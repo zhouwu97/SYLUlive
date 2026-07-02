@@ -22,17 +22,24 @@ from config import INDEX_URL, COURSE_URL, GRADE_URL
 
 class EduError(Exception):
     """教务错误基类"""
-    pass
+
+    def __init__(self, message: str, code: str = "EDU_ERROR"):
+        super().__init__(message)
+        self.code = code
 
 
 class CookieLapseError(EduError):
     """Cookie失效"""
-    pass
+
+    def __init__(self, message: str = "教务登录会话已失效，请重新登录"):
+        super().__init__(message, "SESSION_EXPIRED")
 
 
 class LoginFailedError(EduError):
     """登录失败"""
-    pass
+
+    def __init__(self, message: str, code: str = "UNKNOWN_LOGIN_STATE"):
+        super().__init__(message, code)
 
 
 class CourseNotOpenError(EduError):
@@ -47,7 +54,9 @@ class GradesNotOpenError(EduError):
 
 class NetworkError(EduError):
     """网络错误"""
-    pass
+
+    def __init__(self, message: str, code: str = "REMOTE_SYSTEM_UNAVAILABLE"):
+        super().__init__(message, code)
 
 
 # ============== 数据模型 ==============
@@ -110,6 +119,26 @@ class EduCrawler:
         """获取当前时间戳(毫秒!"""
         return str(int(time.time() * 1000))
 
+    def _credential_error_message(self, html: str) -> Optional[str]:
+        """仅在官方页面明确提示账号/密码错误时返回用户提示。"""
+        text = BeautifulSoup(html or "", "html.parser").get_text(" ", strip=True)
+        combined = f"{text} {html or ''}"
+        patterns = [
+            "用户名或密码错误",
+            "账号或密码错误",
+            "账户或密码错误",
+            "账号密码错误",
+            "密码错误",
+            "用户不存在",
+        ]
+        if any(pattern in combined for pattern in patterns):
+            return "教务账号或密码错误"
+        return None
+
+    def _page_title(self, html: str) -> str:
+        soup = BeautifulSoup(html or "", "html.parser")
+        return soup.title.get_text(strip=True) if soup.title else ""
+
     # ============== 认证相关 ==============
 
     async def get_csrf_token(self) -> str:
@@ -129,7 +158,10 @@ class EduCrawler:
                         if ',' in csrf:
                             csrf = csrf.split(',')[0]
                         return csrf
-                    raise LoginFailedError("无法获取CSRF Token")
+                    raise LoginFailedError(
+                        "学校登录页面可能发生变化，请稍后重试或联系管理员",
+                        "CSRF_MISSING",
+                    )
                 elif resp.status_code == 302:
                     # 重定向,获取cookie
                     self.cookies = resp.cookies
@@ -163,13 +195,16 @@ class EduCrawler:
         )
 
         if resp.status_code != 200:
-            raise NetworkError(f"获取公钥失败,状态码: {resp.status_code}")
+            raise NetworkError("学校教务系统暂时不可用，请稍后再试")
 
         try:
             data = resp.json()
             return PublicKey(modulus=data["modulus"], exponent=data["exponent"])
         except (json.JSONDecodeError, KeyError) as e:
-            raise NetworkError(f"解析公钥失败: {e}")
+            raise LoginFailedError(
+                "学校登录加密参数解析失败，请稍后重试或联系管理员",
+                "PUBLIC_KEY_PARSE_ERROR",
+            ) from e
 
     def _rsa_encrypt(self, password: str, public_key: PublicKey) -> str:
         """RSA加密密码"""
@@ -194,7 +229,10 @@ class EduCrawler:
             )
             return base64.b64encode(encrypted).decode('ascii')
         except binascii.Error as e:
-            raise LoginFailedError(f"密码加密失败: {e}")
+            raise LoginFailedError(
+                "教务密码加密失败，请稍后重试",
+                "PUBLIC_KEY_PARSE_ERROR",
+            ) from e
 
     async def login(self, student_id: str, password: str) -> str:
         """登录教务系统，返回Cookie字符串"""
@@ -255,7 +293,14 @@ class EduCrawler:
             if 'alert' in resp.text:
                 error_match = re.search(r'alert\("([^"]+)"\)', resp.text)
                 if error_match:
-                    raise LoginFailedError(error_match.group(1))
+                    message = error_match.group(1)
+                    credential_message = self._credential_error_message(message)
+                    if credential_message:
+                        raise LoginFailedError(credential_message, "INVALID_CREDENTIALS")
+                    raise LoginFailedError(
+                        "学校登录页面可能发生变化，请稍后重试或联系管理员",
+                        "CAS_FLOW_CHANGED",
+                    )
             # 尝试获取JSESSIONID
             set_cookie = resp.headers.get("set-cookie", "")
             if 'JSESSIONID' in set_cookie:
@@ -264,12 +309,25 @@ class EduCrawler:
                         match = re.search(r'JSESSIONID=([^;]+)', part)
                         if match:
                             return f"JSESSIONID={match.group(1)}"
-            raise LoginFailedError("登录失败,请检查账号密码")
+            raise LoginFailedError("教务登录会话建立失败，请稍后重试", "SESSION_COOKIE_MISSING")
         elif resp.status_code == 200:
             error_match = re.search(r'alert\("([^"]+)"\)', resp.text)
             if error_match:
-                raise LoginFailedError(error_match.group(1))
-            raise LoginFailedError("账号或密码错证")
+                message = error_match.group(1)
+                credential_message = self._credential_error_message(message)
+                if credential_message:
+                    raise LoginFailedError(credential_message, "INVALID_CREDENTIALS")
+                raise LoginFailedError(
+                    "学校登录页面可能发生变化，请稍后重试或联系管理员",
+                    "CAS_FLOW_CHANGED",
+                )
+            credential_message = self._credential_error_message(resp.text)
+            if credential_message:
+                raise LoginFailedError(credential_message, "INVALID_CREDENTIALS")
+            raise LoginFailedError(
+                "学校登录状态未知，请稍后重试或联系管理员",
+                "UNKNOWN_LOGIN_STATE",
+            )
         else:
             raise NetworkError(f"登录请求失败,状态码: {resp.status_code}")
 

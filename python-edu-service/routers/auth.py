@@ -10,6 +10,14 @@ from services.crawler import EduCrawler, CookieLapseError, LoginFailedError, Net
 router = APIRouter(prefix="/api/edu", tags=["认证"])
 
 
+def _error_code(exc: Exception) -> str:
+    return getattr(exc, "code", "UNKNOWN_LOGIN_STATE")
+
+
+def _error_detail(exc: Exception) -> dict:
+    return {"code": _error_code(exc), "message": str(exc)}
+
+
 @router.post("/pre_verify", response_model=PreVerifyResponse)
 async def pre_verify_edu_account(
     input: PreVerifyInput,
@@ -33,22 +41,26 @@ async def pre_verify_edu_account(
         except LoginFailedError as e:
             return PreVerifyResponse(
                 success=False,
-                message=str(e)
+                message=str(e),
+                code=_error_code(e),
             )
         except CookieLapseError as e:
             return PreVerifyResponse(
                 success=False,
-                message=str(e)
+                message=str(e),
+                code=_error_code(e),
             )
         except NetworkError as e:
             return PreVerifyResponse(
                 success=False,
-                message=f"网络错误: {str(e)}"
+                message=str(e),
+                code=_error_code(e),
             )
         except Exception as e:
             return PreVerifyResponse(
                 success=False,
-                message=f"验证失败: {str(e)}"
+                message="教务验证失败，请稍后重试",
+                code="UNKNOWN_LOGIN_STATE",
             )
 
 
@@ -112,11 +124,11 @@ async def bind_edu_account(
             )
 
         except LoginFailedError as e:
-            raise HTTPException(status_code=401, detail=str(e))
+            raise HTTPException(status_code=401, detail=_error_detail(e))
         except CookieLapseError as e:
-            raise HTTPException(status_code=401, detail=str(e))
+            raise HTTPException(status_code=401, detail=_error_detail(e))
         except NetworkError as e:
-            raise HTTPException(status_code=503, detail=str(e))
+            raise HTTPException(status_code=503, detail=_error_detail(e))
         except Exception as e:
             await db.rollback()
             raise HTTPException(status_code=500, detail=f"绑定失败: {str(e)}")
@@ -190,7 +202,7 @@ async def refresh_cookie(
             await db.commit()
             return {"success": True, "message": "Cookie刷新成功"}
         except (LoginFailedError, CookieLapseError, NetworkError) as e:
-            raise HTTPException(status_code=401, detail=str(e))
+            raise HTTPException(status_code=401, detail=_error_detail(e))
 
 
 @router.post("/login_edu", response_model=LoginEduResponse)
@@ -217,10 +229,14 @@ async def login_edu_account(
             )
 
         except LoginFailedError as e:
-            return LoginEduResponse(success=False, message="教务密码错误")
+            return LoginEduResponse(success=False, message=str(e), code=_error_code(e))
         except CookieLapseError as e:
-            return LoginEduResponse(success=False, message=str(e))
+            return LoginEduResponse(success=False, message=str(e), code=_error_code(e))
         except NetworkError as e:
-            return LoginEduResponse(success=False, message=f"网络错误: {str(e)}")
+            return LoginEduResponse(success=False, message=str(e), code=_error_code(e))
         except Exception as e:
-            return LoginEduResponse(success=False, message=f"验证失败: {str(e)}")
+            return LoginEduResponse(
+                success=False,
+                message="教务登录失败，请稍后重试",
+                code="UNKNOWN_LOGIN_STATE",
+            )

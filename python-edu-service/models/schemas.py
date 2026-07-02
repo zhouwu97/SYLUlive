@@ -17,6 +17,7 @@ class BindResponse(BaseModel):
     """绑定响应"""
     success: bool
     message: str
+    code: Optional[str] = None
     student_id: str
     cookie: Optional[str] = None  # 登录Cookie，供Go服务器存储
     name: Optional[str] = None
@@ -51,6 +52,7 @@ class PreVerifyResponse(BaseModel):
     """预验证响应"""
     success: bool
     message: str
+    code: Optional[str] = None
     student_id: Optional[str] = None
     name: Optional[str] = None
 
@@ -66,6 +68,7 @@ class LoginEduResponse(BaseModel):
     """统一登录响应"""
     success: bool
     message: str
+    code: Optional[str] = None
     student_id: Optional[str] = None
     name: Optional[str] = None
     grade: Optional[str] = None

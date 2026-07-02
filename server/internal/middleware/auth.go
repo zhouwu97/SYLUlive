@@ -64,7 +64,7 @@ func AuthMiddleware(db *gorm.DB, jwtSecret string) gin.HandlerFunc {
 			return
 		}
 		if tokenVersion != claims.TokenVersion {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "账号密码已修改，请重新登录"})
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "账号状态已更新，请重新登录"})
 			c.Abort()
 			return
 		}
@@ -123,8 +123,17 @@ func getCachedTokenVersion(db *gorm.DB, userID uint) (int, error) {
 }
 
 func clearTokenVersionCacheForTest() {
+	InvalidateTokenVersionCache(0)
+}
+
+// InvalidateTokenVersionCache 清除指定用户的令牌版本缓存。
+func InvalidateTokenVersionCache(userID uint) {
 	tokenVersionCache.Lock()
-	tokenVersionCache.values = make(map[uint]cachedTokenVersion)
+	if userID == 0 {
+		tokenVersionCache.values = make(map[uint]cachedTokenVersion)
+	} else {
+		delete(tokenVersionCache.values, userID)
+	}
 	tokenVersionCache.Unlock()
 }
 

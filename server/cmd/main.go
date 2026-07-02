@@ -209,6 +209,7 @@ func main() {
 	db.Exec(`UPDATE announcements SET status = 'published' WHERE status = ''`)
 	db.Exec(`UPDATE announcements SET display_mode = 'center' WHERE display_mode = ''`)
 	db.Exec(`UPDATE announcements SET priority = 'normal' WHERE priority = ''`)
+	db.Exec(`UPDATE posts SET post_type = 'campus_life' WHERE board_id = 1 AND (post_type IS NULL OR post_type = '')`)
 
 	// 启动时自动修复可能不同步的评论数和点赞数
 	log.Println("正在同步数据(评论数、帖子点赞、用户总获赞)...")
@@ -577,10 +578,10 @@ func main() {
 
 		user.GET("/replies/received", replyHandler.GetReceivedList)
 
+		// 旧路径兼容一段时间
 		user.GET("/notifications", notificationHandler.GetNotifications)
-
 		user.GET("/notifications/unread_count", notificationHandler.GetUnreadCount)
-
+		user.GET("/notifications/unread-count", notificationHandler.GetUnreadCount)
 		user.POST("/notifications/read", notificationHandler.MarkAllRead)
 
 		user.GET("/competition-calendar", competitionHandler.GetCalendar)
@@ -597,6 +598,8 @@ func main() {
 		user.POST("/competition-calendar/share/:share_code/revoke", competitionHandler.RevokeShare)
 		user.POST("/competition-calendar/import-share/preview", competitionHandler.PreviewShareImport)
 		user.POST("/competition-calendar/import-share/commit", competitionHandler.CommitShareImport)
+		user.POST("/competition-calendar/import-json/preview", competitionHandler.PreviewCalendarJSONImport)
+		user.POST("/competition-calendar/import-json/commit", competitionHandler.CommitCalendarJSONImport)
 		user.GET("/featured-applications", postHandler.GetMyFeaturedApplications)
 		user.GET("/collaboration-applications/sent", postHandler.GetMyCollaborationApplicationsSent)
 		user.GET("/collaboration-applications/received", postHandler.GetMyCollaborationApplicationsReceived)
@@ -621,6 +624,11 @@ func main() {
 		userOptional.GET("/:id/posts/count", userHandler.GetUserPostCount)
 		userOptional.GET("/:id/posts", userHandler.GetUserPosts)
 	}
+
+	r.GET("/api/notifications", middleware.AuthMiddleware(db, cfg.JWTSecret), notificationHandler.GetNotifications)
+	r.GET("/api/notifications/unread-count", middleware.AuthMiddleware(db, cfg.JWTSecret), notificationHandler.GetUnreadCount)
+	r.GET("/api/notifications/unread_count", middleware.AuthMiddleware(db, cfg.JWTSecret), notificationHandler.GetUnreadCount) // keep for backwards compatibility just in case
+	r.POST("/api/notifications/read", middleware.AuthMiddleware(db, cfg.JWTSecret), notificationHandler.MarkAllRead)
 
 	// 帖子路由
 
@@ -1203,7 +1211,7 @@ func main() {
 
 		c.JSON(http.StatusOK, gin.H{
 
-			"version": "1.5.19",
+			"version": "1.5.29",
 
 			"min_version": "1.4.0", // 增加最低版本限制，低于此版本的客户端将被强制更新
 
@@ -1215,7 +1223,7 @@ func main() {
 
 			"gitee_download_url": "https://gitee.com/chunhezi/SYLUlive/releases",
 
-			"update_msg": "1. 修复推送通知点击后无法精准跳转二级回复及应用崩溃问题\n2. 完善帖子详情和结构化路由机制\n3. 修复相关组件报错",
+			"update_msg": "1. 优化水帖分类侧边栏入口\n2. 精修水帖分类专题页样式\n3. 优化水帖详情页分类入口、阅读数对齐与正文密度",
 		})
 
 	})

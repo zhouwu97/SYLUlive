@@ -1571,14 +1571,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 const SizedBox(height: 12),
                 _buildWaterAuthorHeader(p, isDark),
                 if (p.title.isNotEmpty || p.content.isNotEmpty) ...[
-                  const SizedBox(height: 14),
+                  const SizedBox(height: 10),
                   _buildWaterPostBody(p, isDark),
                 ],
                 if (p.images.isNotEmpty) ...[
-                  const SizedBox(height: 14),
+                  const SizedBox(height: 10),
                   _buildAdaptiveWaterImages(p, isDark),
                 ],
-                const SizedBox(height: 12),
+                const SizedBox(height: 8),
                 _buildWaterActionBar(isDark),
               ],
             ),
@@ -1647,7 +1647,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           p.author?.nickname ?? '匿名',
                           style: TextStyle(
                             fontWeight: FontWeight.w600,
-                            fontSize: 15.5,
+                            fontSize: 14.5,
                             color: isDark ? Colors.white : Colors.black87,
                           ),
                           overflow: TextOverflow.ellipsis,
@@ -1663,7 +1663,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                   Text(
                     '${_formatTime(p.createdAt)} · 诚信${p.author?.creditScore ?? 100}%',
                     style: TextStyle(
-                      fontSize: 12.5,
+                      fontSize: 11.5,
                       color: isDark ? Colors.white38 : const Color(0xFF9AA0A6),
                     ),
                   ),
@@ -1675,7 +1675,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               '${p.viewCount}阅读',
               textAlign: TextAlign.right,
               style: TextStyle(
-                fontSize: 13,
+                fontSize: 12,
                 color: isDark ? Colors.white54 : const Color(0xFF60646C),
               ),
             ),
@@ -1697,21 +1697,21 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             Text(
               p.title,
               style: TextStyle(
-                fontSize: 21,
+                fontSize: 20,
                 fontWeight: FontWeight.w700,
-                height: 1.35,
+                height: 1.30,
                 color: isDark ? Colors.white : Colors.black87,
               ),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 8),
           ],
           if (p.content.isNotEmpty)
             SelectionContainer.disabled(
               child: Text(
                 p.content,
                 style: TextStyle(
-                  fontSize: 16,
-                  height: 1.65,
+                  fontSize: 15,
+                  height: 1.58,
                   color: isDark
                       ? Colors.white.withValues(alpha: 0.82)
                       : const Color(0xFF333333),

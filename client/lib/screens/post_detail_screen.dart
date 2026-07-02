@@ -6,6 +6,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../config/api_constants.dart';
+import '../config/water_post_taxonomy.dart';
 import '../models/post.dart';
 import '../models/reply.dart';
 import '../models/user.dart';
@@ -1028,6 +1029,18 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     targetType: 'post',
                   );
                   break;
+                case 'apply_featured':
+                  _applyFeatured();
+                  break;
+                case 'apply_collaboration':
+                  _applyCollaboration();
+                  break;
+                case 'submit_revision':
+                  _submitRevisionProposal();
+                  break;
+                case 'creation_management':
+                  _openCreationManagement();
+                  break;
                 case 'unfeature':
                   _unfeaturePost();
                   break;
@@ -1040,6 +1053,35 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                   value: _post!.isActivePinned ? 'unpin' : 'pin',
                   child: Text(_post!.isActivePinned ? '取消置顶' : '置顶到首页'),
                 ));
+              }
+              if (_post?.boardId == 1) {
+                if (_post?.isFeatured == true) {
+                  if (isOwn) {
+                    items.add(const PopupMenuItem(
+                      value: 'creation_management',
+                      child: Text('创作管理'),
+                    ));
+                  } else {
+                    items.add(const PopupMenuItem(
+                      value: 'apply_collaboration',
+                      child: Text('申请共同创作'),
+                    ));
+                    items.add(const PopupMenuItem(
+                      value: 'submit_revision',
+                      child: Text('提交修改版本'),
+                    ));
+                  }
+                } else if (_hasPendingFeaturedApp) {
+                  items.add(const PopupMenuItem(
+                    enabled: false,
+                    child: Text('精华申请待审核'),
+                  ));
+                } else {
+                  items.add(const PopupMenuItem(
+                    value: 'apply_featured',
+                    child: Text('申请精华'),
+                  ));
+                }
               }
               // 自己的帖子：编辑 + 删除（不举报自己）
               if (isOwn) {
@@ -1475,7 +1517,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 if (p.title.isNotEmpty || p.content.isNotEmpty) ...[
                   const SizedBox(height: 14),
                   _buildWaterPostBody(p, isDark),
-                  _buildFeaturedCollaborationActions(p, isDark),
                 ],
                 if (p.images.isNotEmpty) ...[
                   const SizedBox(height: 14),
@@ -1515,7 +1556,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 16),
         child: Row(
           children: [
-            // 头像
             GestureDetector(
               onTap: () {
                 if (p.author?.avatar.isNotEmpty == true) {
@@ -1530,7 +1570,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 }
               },
               child: CachedAvatar(
-                radius: 22,
+                radius: 24,
                 imageUrl: p.author?.avatar.isNotEmpty == true
                     ? ApiConstants.fullUrl(p.author!.avatar)
                     : null,
@@ -1544,7 +1584,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // 第一行：昵称 + 等级
                   Row(
                     children: [
                       Flexible(
@@ -1552,7 +1591,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           p.author?.nickname ?? '匿名',
                           style: TextStyle(
                             fontWeight: FontWeight.w600,
-                            fontSize: 15,
+                            fontSize: 15.5,
                             color: isDark ? Colors.white : Colors.black87,
                           ),
                           overflow: TextOverflow.ellipsis,
@@ -1562,45 +1601,29 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                         const SizedBox(width: 6),
                         _buildLevelBadge(p.author!, isDark),
                       ],
-                    ],
-                  ),
-                  const SizedBox(height: 3),
-                  // 第二行：诚信分 + 发布时间
-                  Row(
-                    children: [
-                      _buildCreditBadge(p.author?.creditScore ?? 100),
-                      const SizedBox(width: 8),
+                      const Spacer(),
                       Text(
-                        _formatTime(p.createdAt),
+                        '${p.viewCount}阅读',
                         style: TextStyle(
-                          fontSize: 11,
-                          color: isDark ? Colors.white30 : Colors.grey[400],
+                          fontSize: 13,
+                          color:
+                              isDark ? Colors.white54 : const Color(0xFF60646C),
                         ),
                       ),
                     ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '${_formatTime(p.createdAt)} · 诚信${p.author?.creditScore ?? 100}%',
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      color: isDark ? Colors.white38 : const Color(0xFF9AA0A6),
+                    ),
                   ),
                 ],
               ),
             ),
           ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCreditBadge(int score) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-      decoration: BoxDecoration(
-        color: _creditColor(score).withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: Text(
-        '诚信 $score%',
-        style: TextStyle(
-          fontSize: 10,
-          fontWeight: FontWeight.w600,
-          color: _creditColor(score),
         ),
       ),
     );
@@ -1614,6 +1637,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          _buildWaterCategoryTag(p, isDark),
+          if (p.title.isNotEmpty || p.content.isNotEmpty)
+            const SizedBox(height: 12),
           if (p.title.isNotEmpty) ...[
             Text(
               p.title,
@@ -1644,90 +1670,23 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
-  Widget _buildFeaturedCollaborationActions(Post p, bool isDark) {
-    final user = context.watch<AuthProvider>().user;
-    if (user == null || widget.isMarket) return const SizedBox.shrink();
-
-    final isOwner = user.id == p.authorId;
-    final actions = <Widget>[];
-    if (!p.isFeatured) {
-      if (_hasPendingFeaturedApp) {
-        actions.add(
-          const OutlinedButton(
-            onPressed: null,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.hourglass_empty, size: 18),
-                SizedBox(width: 8),
-                Text('精华申请待审核'),
-              ],
-            ),
-          ),
-        );
-      } else {
-        actions.add(
-          OutlinedButton.icon(
-            onPressed: _applyFeatured,
-            icon: const Icon(Icons.workspace_premium_outlined, size: 18),
-            label: const Text('申请精华'),
-          ),
-        );
-      }
-    } else if (!isOwner) {
-      actions.add(
-        OutlinedButton.icon(
-          onPressed: _applyCollaboration,
-          icon: const Icon(Icons.edit_note_rounded, size: 18),
-          label: const Text('申请共同创作'),
+  Widget _buildWaterCategoryTag(Post p, bool isDark) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+      decoration: BoxDecoration(
+        color: isDark
+            ? Colors.white.withValues(alpha: 0.08)
+            : const Color(0xFFF3F4F6),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        waterCategoryLabelOf(p.postType),
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w500,
+          color: isDark ? Colors.white70 : const Color(0xFF60646C),
         ),
-      );
-      actions.add(
-        FilledButton.icon(
-          onPressed: _submitRevisionProposal,
-          icon: const Icon(Icons.publish_outlined, size: 18),
-          label: const Text('提交修改版本'),
-        ),
-      );
-    } else {
-      actions.add(
-        FilledButton.icon(
-          onPressed: _openCreationManagement,
-          icon: const Icon(Icons.manage_accounts_outlined, size: 18),
-          label: const Text('创作管理'),
-        ),
-      );
-    }
-
-    if (actions.isEmpty) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
-      child: Wrap(spacing: 10, runSpacing: 8, children: [
-        if (p.isFeatured)
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-            decoration: BoxDecoration(
-              color: const Color(0xFFFFB020).withValues(alpha: 0.14),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: const Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.workspace_premium_rounded,
-                    size: 16, color: Color(0xFFD97706)),
-                SizedBox(width: 5),
-                Text(
-                  '精华',
-                  style: TextStyle(
-                    color: Color(0xFFD97706),
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ...actions,
-      ]),
+      ),
     );
   }
 
@@ -1759,25 +1718,24 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           ),
         ),
       ),
-      child: SizedBox(
-        width: double.infinity,
-        child: Center(
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(14),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 420),
-              child: CachedNetworkImage(
-                cacheManager: PostImageCache.manager,
-                imageUrl: url,
-                fit: BoxFit.contain,
-                placeholder: (_, __) => const SizedBox.shrink(),
-                errorWidget: (_, __, ___) => Container(
-                  height: 300,
-                  color: isDark ? Colors.white10 : Colors.grey[200],
-                  child: const Icon(Icons.broken_image,
-                      size: 40, color: Colors.grey),
-                ),
-              ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: CachedNetworkImage(
+          cacheManager: PostImageCache.manager,
+          imageUrl: url,
+          width: double.infinity,
+          fit: BoxFit.fitWidth,
+          placeholder: (_, __) => Container(
+            height: 220,
+            color: isDark ? Colors.white10 : const Color(0xFFF0F1F3),
+          ),
+          errorWidget: (_, __, ___) => Container(
+            height: 220,
+            color: isDark ? Colors.white10 : const Color(0xFFF0F1F3),
+            child: const Icon(
+              Icons.broken_image,
+              size: 40,
+              color: Colors.grey,
             ),
           ),
         ),
@@ -2031,13 +1989,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     onTap: () {
                       _replyController.clear();
                       _replyFocus.unfocus();
-                      if (mounted)
+                      if (mounted) {
                         setState(() {
                           _isReplyComposerOpen = false;
                           _parentReplyId = null;
                           _replyToName = null;
                           _replyToUserId = null;
                         });
+                      }
                     },
                     child: Container(
                       width: 36,
@@ -2126,63 +2085,92 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     return Container(
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF131720) : Colors.white,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 8,
-            offset: const Offset(0, -2),
+        border: Border(
+          top: BorderSide(
+            color: isDark
+                ? Colors.white.withValues(alpha: 0.08)
+                : const Color(0xFFEDEDED),
           ),
-        ],
+        ),
       ),
       child: SafeArea(
+        top: false,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-          child: GestureDetector(
-            onTap: () => _openReplyComposer(),
-            child: Container(
-              height: 44,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              decoration: BoxDecoration(
-                color: isDark
-                    ? Colors.white.withValues(alpha: 0.06)
-                    : const Color(0xFFF5F5F5),
-                borderRadius: BorderRadius.circular(22),
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.edit_outlined,
-                    size: 16,
-                    color: isDark ? Colors.white38 : Colors.grey[400],
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    '说点什么…',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: isDark ? Colors.white38 : Colors.grey[500],
-                    ),
-                  ),
-                  const Spacer(),
-                  Container(
-                    width: 32,
-                    height: 28,
+          padding: const EdgeInsets.fromLTRB(12, 7, 12, 7),
+          child: Row(
+            children: [
+              Expanded(
+                child: GestureDetector(
+                  onTap: () => _openReplyComposer(),
+                  child: Container(
+                    height: 38,
+                    padding: const EdgeInsets.symmetric(horizontal: 13),
                     decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(8),
                       color: isDark
                           ? Colors.white.withValues(alpha: 0.08)
-                          : const Color(0xFFE8E8E8),
+                          : const Color(0xFFF5F6F8),
+                      borderRadius: BorderRadius.circular(19),
                     ),
-                    child: Icon(
-                      Icons.send_rounded,
-                      size: 14,
-                      color: isDark ? Colors.white30 : Colors.grey[400],
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      '说点什么...',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: isDark ? Colors.white38 : Colors.grey[500],
+                      ),
                     ),
                   ),
-                ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              _buildBottomStat(
+                icon: Icons.chat_bubble_outline_rounded,
+                label: '${_post?.replyCount ?? _replies.length}',
+                color: isDark ? Colors.white54 : const Color(0xFF60646C),
+                onTap: _openReplyComposer,
+              ),
+              const SizedBox(width: 10),
+              _buildBottomStat(
+                icon: _liked ? Icons.thumb_up : Icons.thumb_up_outlined,
+                label: '$_likeCount',
+                color: _liked
+                    ? const Color(0xFFFF6B6B)
+                    : (isDark ? Colors.white54 : const Color(0xFF60646C)),
+                onTap: _toggleLike,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBottomStat({
+    required IconData icon,
+    required String label,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: onTap,
+      child: SizedBox(
+        width: 38,
+        height: 38,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 22, color: color),
+            Text(
+              label,
+              maxLines: 1,
+              style: TextStyle(
+                fontSize: 12,
+                height: 1.0,
+                color: color,
               ),
             ),
-          ),
+          ],
         ),
       ),
     );

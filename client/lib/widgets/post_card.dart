@@ -2,6 +2,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../config/api_constants.dart';
+import '../config/water_post_taxonomy.dart';
 import '../models/post.dart';
 import '../models/user.dart';
 import '../screens/image_viewer_screen.dart';
@@ -17,6 +18,7 @@ class PostCard extends StatefulWidget {
   final VoidCallback? onTap;
   final bool showPrice;
   final bool showWarning;
+  final bool showCategoryBadge;
   final bool disableAuthorNavigation;
   final ValueChanged<int>? onAuthorTap;
 
@@ -26,6 +28,7 @@ class PostCard extends StatefulWidget {
     this.onTap,
     this.showPrice = false,
     this.showWarning = false,
+    this.showCategoryBadge = true,
     this.disableAuthorNavigation = false,
     this.onAuthorTap,
   });
@@ -151,7 +154,9 @@ class _PostCardState extends State<PostCard>
                     ],
                   ),
                 ),
-                if (widget.post.author != null)
+                if (widget.post.boardId == 1 && widget.showCategoryBadge)
+                  _buildCategoryTag(context, isDark)
+                else if (widget.post.author != null)
                   Container(
                     padding: EdgeInsets.symmetric(
                       horizontal: isDesktop ? 8 : 6,
@@ -238,13 +243,37 @@ class _PostCardState extends State<PostCard>
               const SizedBox(height: 8),
               _buildPriceOrWarningTag(context),
             ],
-            if (widget.post.postType.isNotEmpty && !widget.showWarning) ...[
+            if (widget.post.boardId != 1 &&
+                widget.post.postType.isNotEmpty &&
+                !widget.showWarning) ...[
               const SizedBox(height: 6),
               _buildTypeTag(widget.post.postType),
             ],
             const SizedBox(height: 6),
             _buildBottomMeta(context),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCategoryTag(BuildContext context, bool isDark) {
+    return Container(
+      height: 20,
+      padding: const EdgeInsets.symmetric(horizontal: 7),
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: isDark
+            ? Colors.white.withValues(alpha: 0.08)
+            : const Color(0xFFF3F4F6),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        waterCategoryLabelOf(widget.post.postType),
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w500,
+          color: isDark ? Colors.white70 : const Color(0xFF60646C),
         ),
       ),
     );

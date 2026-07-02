@@ -101,14 +101,17 @@ class EduProvider extends ChangeNotifier {
     return _gradeDetailCache[_gradeDetailCacheKey(grade, year, semester)];
   }
 
+  String _eduPasswordKey(String studentId) => 'edu_pwd_${studentId.trim()}';
+
   /// 删除教务密码（解绑后）
   Future<void> _deleteEduPassword(String studentId) async {
+    final key = _eduPasswordKey(studentId);
     if (kIsWeb) {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.remove('edu_pwd_$studentId');
+      await prefs.remove(key);
     } else {
       const storage = FlutterSecureStorage();
-      await storage.delete(key: 'edu_pwd_$studentId');
+      await storage.delete(key: key);
     }
   }
 
@@ -236,23 +239,63 @@ class EduProvider extends ChangeNotifier {
     return prefs.getBool('edu_bound_$userId') ?? false;
   }
 
+  Future<void> _clearBoundStatusFor(String userId) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('edu_bound_$userId');
+    await prefs.remove('edu_student_id_$userId');
+    await prefs.remove('edu_grade_$userId');
+    await prefs.remove('edu_college_$userId');
+    await prefs.remove('edu_major_$userId');
+    await prefs.remove('edu_last_semester_$userId');
+  }
+
+  /// 清除本机教务登录态，不修改服务器绑定关系。
+  Future<void> clearLocalSession() async {
+    final oldUserId = _userId;
+    final oldStudentId = _studentId;
+
+    _statusGeneration++;
+    _userId = null;
+    _isBound = false;
+    _studentId = '';
+    _name = '';
+    _grade = '';
+    _college = '';
+    _major = '';
+    _isLoading = false;
+    _statusLoaded = false;
+    _errorMessage = null;
+    _gradeCache.clear();
+    _gradeDetailCache.clear();
+    notifyListeners();
+
+    if (oldStudentId.trim().isNotEmpty) {
+      await _deleteEduPassword(oldStudentId);
+    }
+    if (oldUserId != null && oldUserId.isNotEmpty) {
+      await _clearBoundStatusFor(oldUserId);
+    }
+  }
+
   Future<void> _saveEduPassword(String studentId, String password) async {
+    final key = _eduPasswordKey(studentId);
     if (kIsWeb) {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('edu_pwd_$studentId', password);
+      await prefs.setString(key, password);
     } else {
       const storage = FlutterSecureStorage();
-      await storage.write(key: 'edu_pwd_$studentId', value: password);
+      await storage.write(key: key, value: password);
     }
   }
 
   Future<String?> _loadEduPassword(String studentId) async {
+    final key = _eduPasswordKey(studentId);
     if (kIsWeb) {
       final prefs = await SharedPreferences.getInstance();
-      return prefs.getString('edu_pwd_$studentId');
+      return prefs.getString(key);
     } else {
       const storage = FlutterSecureStorage();
-      return await storage.read(key: 'edu_pwd_$studentId');
+      return await storage.read(key: key);
     }
   }
 

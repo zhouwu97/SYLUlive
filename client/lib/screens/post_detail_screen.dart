@@ -170,7 +170,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   int? _replyToUserId;
   bool _isSending = false;
   final Set<int> _expandedThreads = {};
-  final Set<int> _expandedChildReplyIds = {};
   bool _hasPendingFeaturedApp = false;
 
   final Map<int, GlobalKey> _replyKeys = {};
@@ -1013,31 +1012,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       backgroundColor: isDark ? const Color(0xFF131720) : Colors.white,
       elevation: 0.5,
       automaticallyImplyLeading: !widget.hideBackButton,
-      leadingWidth: widget.hideBackButton ? null : 156,
-      leading: widget.hideBackButton
-          ? null
-          : Row(
-              children: [
-                const BackButton(),
-                Expanded(
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: _buildWaterAppBarCategoryChip(isDark),
-                  ),
-                ),
-              ],
-            ),
-      titleSpacing: widget.hideBackButton ? 16 : 4,
-      title: widget.hideBackButton
-          ? Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _buildWaterAppBarCategoryChip(isDark),
-                const SizedBox(width: 8),
-                _buildWaterAppBarTitle(isDark),
-              ],
-            )
-          : _buildWaterAppBarTitle(isDark),
+      leadingWidth: widget.hideBackButton ? null : 56,
+      leading: widget.hideBackButton ? null : const BackButton(),
+      titleSpacing: widget.hideBackButton ? 16 : 0,
+      title: _buildWaterAppBarCategoryChip(isDark),
       centerTitle: false,
       actions: [
         if (_post != null)
@@ -1158,44 +1136,29 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
-  Widget _buildWaterAppBarTitle(bool isDark) {
-    return Text(
-      '帖子详情',
-      style: TextStyle(
-        fontSize: 16,
-        fontWeight: FontWeight.w700,
-        color: isDark ? Colors.white : const Color(0xFF171A1F),
-      ),
-    );
-  }
-
   Widget _buildWaterAppBarCategoryChip(bool isDark) {
     final category = _resolvedWaterCategory;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: _openWaterCategoryFromDetail,
-      child: Container(
-        height: 32,
-        alignment: Alignment.center,
-        child: Container(
-          height: 26,
-          padding: const EdgeInsets.symmetric(horizontal: 10),
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: category.color.withValues(alpha: isDark ? 0.18 : 0.10),
-            borderRadius: BorderRadius.circular(999),
-          ),
-          child: Text(
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
             category.label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              fontSize: 11.5,
+              fontSize: 15,
               fontWeight: FontWeight.w600,
-              color: isDark ? Colors.white70 : category.color,
+              color: isDark ? Colors.white.withValues(alpha: 0.8) : Colors.black87,
             ),
           ),
-        ),
+          const SizedBox(width: 2),
+          Icon(
+            Icons.chevron_right,
+            size: 16,
+            color: isDark ? Colors.white.withValues(alpha: 0.5) : Colors.black54,
+          ),
+        ],
       ),
     );
   }
@@ -1592,14 +1555,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 const SizedBox(height: 12),
                 _buildWaterAuthorHeader(p, isDark),
                 if (p.title.isNotEmpty || p.content.isNotEmpty) ...[
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 8),
                   _buildWaterPostBody(p, isDark),
                 ],
                 if (p.images.isNotEmpty) ...[
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 8),
                   _buildAdaptiveWaterImages(p, isDark),
                 ],
-                const SizedBox(height: 8),
+                const SizedBox(height: 6),
                 _buildWaterActionBar(isDark),
               ],
             ),
@@ -1668,7 +1631,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           p.author?.nickname ?? '匿名',
                           style: TextStyle(
                             fontWeight: FontWeight.w600,
-                            fontSize: 14.5,
+                            fontSize: 14,
                             color: isDark ? Colors.white : Colors.black87,
                           ),
                           overflow: TextOverflow.ellipsis,
@@ -1684,7 +1647,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                   Text(
                     '${_formatTime(p.createdAt)} · 诚信${p.author?.creditScore ?? 100}%',
                     style: TextStyle(
-                      fontSize: 11.5,
+                      fontSize: 11,
                       color: isDark ? Colors.white38 : const Color(0xFF9AA0A6),
                     ),
                   ),
@@ -1696,7 +1659,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               '${p.viewCount}阅读',
               textAlign: TextAlign.right,
               style: TextStyle(
-                fontSize: 12,
+                fontSize: 11.5,
                 color: isDark ? Colors.white54 : const Color(0xFF60646C),
               ),
             ),
@@ -1718,21 +1681,21 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             Text(
               p.title,
               style: TextStyle(
-                fontSize: 20,
+                fontSize: 18.5,
                 fontWeight: FontWeight.w700,
-                height: 1.30,
+                height: 1.25,
                 color: isDark ? Colors.white : Colors.black87,
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 6),
           ],
           if (p.content.isNotEmpty)
             SelectionContainer.disabled(
               child: Text(
                 p.content,
                 style: TextStyle(
-                  fontSize: 15,
-                  height: 1.58,
+                  fontSize: 14.5,
+                  height: 1.55,
                   color: isDark
                       ? Colors.white.withValues(alpha: 0.82)
                       : const Color(0xFF333333),
@@ -1895,7 +1858,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   Widget _buildWaterActionBar(bool isDark) {
     return Container(
-      height: 44,
+      height: 42,
       margin: const EdgeInsets.symmetric(horizontal: 16),
       decoration: BoxDecoration(
         border: Border(
@@ -1917,7 +1880,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               children: [
                 Icon(
                   _liked ? Icons.thumb_up : Icons.thumb_up_outlined,
-                  size: 17,
+                  size: 16,
                   color: _liked
                       ? Theme.of(context).primaryColor
                       : (isDark ? Colors.white38 : Colors.grey[500]),
@@ -1926,7 +1889,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 Text(
                   '$_likeCount',
                   style: TextStyle(
-                    fontSize: 12,
+                    fontSize: 11.5,
                     color: _liked
                         ? Theme.of(context).primaryColor
                         : (isDark ? Colors.white38 : Colors.grey[500]),
@@ -1944,14 +1907,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               children: [
                 Icon(
                   Icons.chat_bubble_outline,
-                  size: 17,
+                  size: 16,
                   color: isDark ? Colors.white38 : Colors.grey[500],
                 ),
                 const SizedBox(width: 4),
                 Text(
                   '评论 ${_post?.replyCount ?? 0}',
                   style: TextStyle(
-                    fontSize: 12,
+                    fontSize: 11.5,
                     color: isDark ? Colors.white38 : Colors.grey[500],
                   ),
                 ),
@@ -1962,14 +1925,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           // 浏览量
           Icon(
             Icons.visibility_outlined,
-            size: 15,
+            size: 14,
             color: isDark ? Colors.white24 : Colors.grey[400],
           ),
           const SizedBox(width: 3),
           Text(
             '浏览 ${_post?.viewCount ?? 0}',
             style: TextStyle(
-              fontSize: 11.5,
+              fontSize: 11,
               color: isDark ? Colors.white24 : Colors.grey[400],
             ),
           ),
@@ -2842,181 +2805,171 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   Widget _buildChildReply(Reply r, bool isDark, {int depth = 0}) {
-    if (_expandedChildReplyIds.contains(r.id)) {
-      return _buildChildReplyFull(r, isDark, depth: depth);
-    } else {
-      return _buildChildReplyCompact(r, isDark, depth: depth);
-    }
-  }
-
-  Widget _buildChildReplyCompact(Reply r, bool isDark, {int depth = 0}) {
+    final threadParentId = _findTopLevelParentId(r);
+    final currentUser = context.read<AuthProvider>().user;
+    final isOwn = currentUser?.id == r.authorId;
     return Padding(
       padding: EdgeInsets.only(bottom: 6, left: depth * 4.0),
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: () {
-          setState(() {
-            _expandedChildReplyIds.add(r.id);
-          });
-        },
-        child: Text.rich(
-          TextSpan(
-            children: [
-              TextSpan(
-                text: '${r.author?.nickname ?? '匿名'}：',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: isDark ? Colors.white70 : Colors.black87,
-                ),
-              ),
-              _buildCompactContentSpan(r, isDark),
-            ],
-          ),
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(height: 1.35),
-        ),
-      ),
-    );
-  }
-
-  InlineSpan _buildCompactContentSpan(Reply r, bool isDark) {
-    final content = r.content;
-    final atRegex = RegExp(r'^@(\S+)\s');
-    final match = atRegex.firstMatch(content);
-    if (match != null) {
-      final atName = match.group(1)!;
-      final rest = content.substring(match.end);
-      return TextSpan(
-        children: [
-          TextSpan(
-            text: '@$atName ',
-            style: TextStyle(
-              fontSize: 13,
-              color: Theme.of(context).primaryColor,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          TextSpan(
-            text: rest,
-            style: TextStyle(
-              fontSize: 13,
-              color: isDark ? Colors.white60 : const Color(0xFF60646C),
-            ),
-          ),
-        ],
-      );
-    }
-    return TextSpan(
-      text: content,
-      style: TextStyle(
-        fontSize: 13,
-        color: isDark ? Colors.white60 : const Color(0xFF60646C),
-      ),
-    );
-  }
-
-  /// 子回复（楼中楼）展开视图
-  Widget _buildChildReplyFull(Reply r, bool isDark, {int depth = 0}) {
-    // 从 content 中解析 @username
-    final contentWidget = _buildChildContent(r, isDark);
-    // 回复按钮指向顶级评论（楼中楼的根），避免多层嵌套
-    final threadParentId = _findTopLevelParentId(r);
-    final currentUser = context.read<AuthProvider>().user;
-    final isOwn = currentUser?.id == r.authorId;
-    return _buildReplyAnchor(
-      reply: r,
-      isDark: isDark,
-      child: GestureDetector(
-        onTap: () => _openReplyComposer(
-          parentReplyId: threadParentId,
-          replyToName: r.author?.nickname,
-          replyToUserId: r.authorId,
-        ),
+        onTap: () => _showChildReplyDetailSheet(r, isDark, threadParentId),
         onLongPress: () => _showReplyActionSheet(r, isOwn, isDark),
-        child: Padding(
-          padding: EdgeInsets.only(bottom: 8, left: depth * 4.0),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              GestureDetector(
-                onTap: () {
-                  if (r.author != null) {
-                    _openAuthorHome(r.author!.id);
-                  }
-                },
-                child: CachedAvatar(
-                  radius: 10,
-                  imageUrl: r.author?.avatar.isNotEmpty == true
-                      ? ApiConstants.fullUrl(r.author!.avatar)
-                      : null,
-                  fallbackText: r.author?.nickname,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF1F222A) : const Color(0xFFF7F8FA),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Text.rich(
+            TextSpan(
+              children: [
+                TextSpan(
+                  text: '${r.author?.nickname ?? '匿名'}：',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w400,
+                    color: isDark ? Colors.white54 : const Color(0xFF6B7280),
+                  ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                _buildCompactContentSpan(r, isDark),
+              ],
+            ),
+            style: const TextStyle(height: 1.35),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showChildReplyDetailSheet(Reply reply, bool isDark, int threadParentId) {
+    final currentUser = context.read<AuthProvider>().user;
+    final isOwn = currentUser?.id == reply.authorId;
+    final isAdmin = currentUser?.isAdmin ?? false;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: isDark ? const Color(0xFF171B24) : Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 20, 16, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
                   children: [
-                    Row(
-                      children: [
-                        Text(
-                          r.author?.nickname ?? '匿名',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: isDark
-                                ? Colors.white.withValues(alpha: 0.70)
-                                : Colors.black87,
-                          ),
-                        ),
-                        if (r.author != null) ...[
-                          const SizedBox(width: 4),
-                          _buildLevelBadgeSmall(r.author!, isDark),
-                        ],
-                        const SizedBox(width: 8),
-                        Text(
-                          _formatTime(r.createdAt),
-                          style: TextStyle(
-                            fontSize: 10,
-                            color: isDark ? Colors.white24 : Colors.grey[400],
-                          ),
-                        ),
-                        const Spacer(),
-                        GestureDetector(
-                          onTap: () {
-                            setState(() {
-                              _expandedChildReplyIds.remove(r.id);
-                            });
-                          },
-                          child: Text(
-                            '收起',
-                            style: TextStyle(
-                              fontSize: 10,
-                              color: isDark ? Colors.white24 : Colors.grey[400],
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Text(
-                          '回复',
-                          style: TextStyle(
-                            fontSize: 10,
-                            color: isDark ? Colors.white24 : Colors.grey[400],
-                          ),
-                        ),
-                      ],
+                    GestureDetector(
+                      onTap: () {
+                        Navigator.pop(ctx);
+                        if (reply.author != null) {
+                          _openAuthorHome(reply.author!.id);
+                        }
+                      },
+                      child: CachedAvatar(
+                        radius: 18,
+                        imageUrl: reply.author?.avatar.isNotEmpty == true
+                            ? ApiConstants.fullUrl(reply.author!.avatar)
+                            : null,
+                        fallbackText: reply.author?.nickname,
+                      ),
                     ),
-                    const SizedBox(height: 2),
-                    contentWidget,
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () {
+                          Navigator.pop(ctx);
+                          if (reply.author != null) {
+                            _openAuthorHome(reply.author!.id);
+                          }
+                        },
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Text(
+                                  reply.author?.nickname ?? '匿名',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                    color: isDark ? Colors.white : Colors.black87,
+                                  ),
+                                ),
+                                if (reply.author != null) ...[
+                                  const SizedBox(width: 6),
+                                  _buildLevelBadgeSmall(reply.author!, isDark),
+                                ],
+                              ],
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              _formatTime(reply.createdAt),
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: isDark ? Colors.white38 : Colors.grey[400],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                   ],
                 ),
-              ),
-            ],
+                const SizedBox(height: 12),
+                _buildChildContent(reply, isDark),
+                const SizedBox(height: 24),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () {
+                          Navigator.pop(ctx);
+                          _openReplyComposer(
+                            parentReplyId: threadParentId,
+                            replyToName: reply.author?.nickname,
+                            replyToUserId: reply.authorId,
+                          );
+                        },
+                        icon: const Icon(Icons.reply, size: 16),
+                        label: const Text('回复'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Theme.of(context).primaryColor,
+                          side: BorderSide(color: Theme.of(context).primaryColor.withValues(alpha: 0.5)),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () async {
+                          Navigator.pop(ctx);
+                          if (isOwn || isAdmin) {
+                            await _deleteReply(reply);
+                          } else {
+                            showReportSheet(context, targetId: reply.id, targetType: 'reply');
+                          }
+                        },
+                        icon: Icon((isOwn || isAdmin) ? Icons.delete_outline : Icons.report_problem_outlined, size: 16),
+                        label: Text((isOwn || isAdmin) ? '删除' : '举报'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: (isOwn || isAdmin) ? Colors.red : Colors.grey[600],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 

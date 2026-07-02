@@ -519,26 +519,26 @@ class _WaterCategoryMiniItem extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
       child: SizedBox(
-        height: 52,
+        height: 48,
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
-              width: 30,
-              height: 30,
+              width: 28,
+              height: 28,
               decoration: BoxDecoration(
                 color: category.color.withValues(alpha: isDark ? 0.14 : 0.10),
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(9),
               ),
-              child: Icon(category.icon, size: 18, color: category.color),
+              child: Icon(category.icon, size: 17, color: category.color),
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 3),
             Text(
               category.label,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                fontSize: 10.8,
+                fontSize: 10.5,
                 fontWeight: FontWeight.w600,
                 color: isDark ? Colors.white70 : const Color(0xFF374151),
               ),

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:dio/dio.dart';
@@ -1739,11 +1740,120 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: _buildMultiWaterImageGrid(urls, isDark),
+      child: switch (urls.length) {
+        1 => _buildSingleWaterImage(urls.first, isDark),
+        2 => _buildTwoWaterImages(urls, isDark),
+        _ => _buildMultiWaterImageGrid(urls, isDark),
+      },
     );
   }
 
-  /// 普通帖子图片：最多 9 张，统一按 3 列方格展示。
+  /// 单张图：模糊背景铺满，前景按原比例完整展示。
+  Widget _buildSingleWaterImage(String url, bool isDark) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(14),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxHeight: 420),
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: ImageFiltered(
+                imageFilter: ImageFilter.blur(sigmaX: 25, sigmaY: 25),
+                child: CachedNetworkImage(
+                  cacheManager: PostImageCache.manager,
+                  imageUrl: url,
+                  fit: BoxFit.cover,
+                  color: isDark ? Colors.black45 : Colors.white54,
+                  colorBlendMode: BlendMode.darken,
+                  placeholder: (_, __) => Container(
+                    color: isDark ? Colors.white10 : Colors.grey[200],
+                  ),
+                  errorWidget: (_, __, ___) => Container(
+                    color: isDark ? Colors.white10 : Colors.grey[200],
+                  ),
+                ),
+              ),
+            ),
+            GestureDetector(
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => ImageViewerScreen(
+                    imageUrls: [url],
+                    initialIndex: 0,
+                  ),
+                ),
+              ),
+              child: Center(
+                child: CachedNetworkImage(
+                  cacheManager: PostImageCache.manager,
+                  imageUrl: url,
+                  fit: BoxFit.contain,
+                  width: double.infinity,
+                  placeholder: (_, __) => const SizedBox.shrink(),
+                  errorWidget: (_, __, ___) => Container(
+                    height: 300,
+                    color: isDark ? Colors.white10 : Colors.grey[200],
+                    child: const Icon(Icons.broken_image,
+                        size: 40, color: Colors.grey),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 两张图：左右并排的等宽方格。
+  Widget _buildTwoWaterImages(List<String> urls, bool isDark) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(14),
+      child: Row(
+        children: List.generate(urls.length, (index) {
+          final url = urls[index];
+          return Expanded(
+            child: GestureDetector(
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => ImageViewerScreen(
+                    imageUrls: urls,
+                    initialIndex: index,
+                  ),
+                ),
+              ),
+              child: Container(
+                margin: EdgeInsets.only(
+                  right: index == 0 ? 2 : 0,
+                  left: index == 1 ? 2 : 0,
+                ),
+                child: AspectRatio(
+                  aspectRatio: 1,
+                  child: CachedNetworkImage(
+                    cacheManager: PostImageCache.manager,
+                    imageUrl: url,
+                    fit: BoxFit.cover,
+                    placeholder: (_, __) => Container(
+                      color: isDark ? Colors.white10 : Colors.grey[200],
+                    ),
+                    errorWidget: (_, __, ___) => Container(
+                      color: isDark ? Colors.white10 : Colors.grey[200],
+                      child: const Icon(Icons.broken_image,
+                          size: 32, color: Colors.grey),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+        }),
+      ),
+    );
+  }
+
+  /// 三张及以上普通帖子图片：最多 9 张，统一按 3 列方格展示。
   Widget _buildMultiWaterImageGrid(List<String> urls, bool isDark) {
     return ClipRRect(
       borderRadius: BorderRadius.circular(14),

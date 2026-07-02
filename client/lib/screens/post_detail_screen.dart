@@ -2843,6 +2843,42 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
+  InlineSpan _buildCompactContentSpan(Reply r, bool isDark) {
+    final content = r.content;
+    final atRegex = RegExp(r'^@(\S+)\s');
+    final match = atRegex.firstMatch(content);
+    if (match != null) {
+      final atName = match.group(1)!;
+      final rest = content.substring(match.end);
+      return TextSpan(
+        children: [
+          TextSpan(
+            text: '@$atName ',
+            style: TextStyle(
+              fontSize: 12.5,
+              color: Theme.of(context).primaryColor,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          TextSpan(
+            text: rest,
+            style: TextStyle(
+              fontSize: 12.5,
+              color: isDark ? Colors.white60 : const Color(0xFF4B5563),
+            ),
+          ),
+        ],
+      );
+    }
+    return TextSpan(
+      text: content,
+      style: TextStyle(
+        fontSize: 12.5,
+        color: isDark ? Colors.white60 : const Color(0xFF4B5563),
+      ),
+    );
+  }
+
   void _showChildReplyDetailSheet(Reply reply, bool isDark, int threadParentId) {
     final currentUser = context.read<AuthProvider>().user;
     final isOwn = currentUser?.id == reply.authorId;

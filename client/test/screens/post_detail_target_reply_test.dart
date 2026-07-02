@@ -560,11 +560,13 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(find.text('Single image'), findsOneWidget);
     expect(find.byType(GridView), findsNothing);
+    expect(find.byType(ImageFiltered), findsNothing);
     expect(
       find.byWidgetPredicate(
         (widget) =>
-            widget is ImageFiltered &&
-            widget.imageFilter.toString().contains('blur'),
+            widget is CachedNetworkImage &&
+            widget.imageUrl == 'http://example.com/one.png' &&
+            widget.fit == BoxFit.contain,
       ),
       findsOneWidget,
     );
@@ -572,8 +574,33 @@ void main() {
       find.byWidgetPredicate(
         (widget) =>
             widget is CachedNetworkImage &&
-            widget.imageUrl == 'http://example.com/one.png' &&
-            widget.fit == BoxFit.contain,
+            widget.imageUrl == 'http://example.com/one.png',
+      ),
+      findsOneWidget,
+    );
+    final singleImageFinder = find.byWidgetPredicate(
+      (widget) =>
+          widget is CachedNetworkImage &&
+          widget.imageUrl == 'http://example.com/one.png',
+    );
+    expect(
+      find.ancestor(
+        of: singleImageFinder,
+        matching: find.byWidgetPredicate(
+          (widget) => widget is SizedBox && widget.width == double.infinity,
+        ),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.ancestor(
+        of: singleImageFinder,
+        matching: find.byWidgetPredicate(
+          (widget) =>
+              widget is Center &&
+              widget.widthFactor == null &&
+              widget.heightFactor == null,
+        ),
       ),
       findsOneWidget,
     );

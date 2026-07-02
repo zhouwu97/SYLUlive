@@ -1012,23 +1012,31 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       backgroundColor: isDark ? const Color(0xFF131720) : Colors.white,
       elevation: 0.5,
       automaticallyImplyLeading: !widget.hideBackButton,
-      leading: widget.hideBackButton ? null : const BackButton(),
-      titleSpacing: widget.hideBackButton ? 16 : 0,
-      title: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _buildWaterAppBarCategoryChip(isDark),
-          const SizedBox(width: 8),
-          Text(
-            '帖子详情',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w700,
-              color: isDark ? Colors.white : const Color(0xFF171A1F),
+      leadingWidth: widget.hideBackButton ? null : 156,
+      leading: widget.hideBackButton
+          ? null
+          : Row(
+              children: [
+                const BackButton(),
+                Expanded(
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: _buildWaterAppBarCategoryChip(isDark),
+                  ),
+                ),
+              ],
             ),
-          ),
-        ],
-      ),
+      titleSpacing: widget.hideBackButton ? 16 : 4,
+      title: widget.hideBackButton
+          ? Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildWaterAppBarCategoryChip(isDark),
+                const SizedBox(width: 8),
+                _buildWaterAppBarTitle(isDark),
+              ],
+            )
+          : _buildWaterAppBarTitle(isDark),
       centerTitle: false,
       actions: [
         if (_post != null)
@@ -1146,6 +1154,17 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             },
           ),
       ],
+    );
+  }
+
+  Widget _buildWaterAppBarTitle(bool isDark) {
+    return Text(
+      '帖子详情',
+      style: TextStyle(
+        fontSize: 16,
+        fontWeight: FontWeight.w700,
+        color: isDark ? Colors.white : const Color(0xFF171A1F),
+      ),
     );
   }
 

@@ -1211,7 +1211,7 @@ func main() {
 
 		c.JSON(http.StatusOK, gin.H{
 
-			"version": "1.5.19",
+			"version": "1.5.28",
 
 			"min_version": "1.4.0", // 增加最低版本限制，低于此版本的客户端将被强制更新
 
@@ -1223,7 +1223,7 @@ func main() {
 
 			"gitee_download_url": "https://gitee.com/chunhezi/SYLUlive/releases",
 
-			"update_msg": "1. 修复推送通知点击后无法精准跳转二级回复及应用崩溃问题\n2. 完善帖子详情和结构化路由机制\n3. 修复相关组件报错",
+			"update_msg": "1. 新增水帖分类专题页\n2. 支持发帖选择水帖分类\n3. 优化水帖卡片与详情页分类展示",
 		})
 
 	})

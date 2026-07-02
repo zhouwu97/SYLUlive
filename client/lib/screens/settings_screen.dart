@@ -16,6 +16,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/course_schedule_provider.dart';
+import '../providers/edu_provider.dart';
 import '../services/diagnostic_log_service.dart';
 import '../models/diagnostic_log_entry.dart';
 import '../services/keep_alive_service.dart';
@@ -523,7 +524,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 child: InkWell(
                   borderRadius: BorderRadius.circular(16),
                   onTap: () async {
-                    // 登出前清空课表等关联状态，防止跨账号数据泄漏
+                    // 登出前清空本机教务和课表状态，防止跨账号数据泄漏。
+                    await context.read<EduProvider>().clearLocalSession();
                     context.read<CourseScheduleProvider>().clearAllUserState();
                     await authProvider.logout();
                     if (context.mounted) {

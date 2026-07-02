@@ -179,6 +179,12 @@ class AuthProvider extends ChangeNotifier {
     return AppFeedback.dioErrorMessage(e, fallback: '操作失败，请稍后再试');
   }
 
+  String _maskStudentId(String studentId) {
+    final value = studentId.trim();
+    if (value.length <= 4) return '****';
+    return '${value.substring(0, 2)}****${value.substring(value.length - 2)}';
+  }
+
   Future<AuthResult> register(
     String studentId,
     String password, {
@@ -490,7 +496,7 @@ class AuthProvider extends ChangeNotifier {
     try {
       // 教务服务使用专用的 eduDio，路由是 /api/edu/pre_verify
       debugPrint('=== verifyEdu 开始 ===');
-      debugPrint('student_id: $studentId');
+      debugPrint('student_id: ${_maskStudentId(studentId)}');
       debugPrint('baseUrl: ${_eduDio.options.baseUrl}');
       debugPrint('fullUrl: ${_eduDio.options.baseUrl}/api/edu/pre_verify');
 
@@ -501,8 +507,12 @@ class AuthProvider extends ChangeNotifier {
 
       debugPrint('=== verifyEdu 响应 ===');
       debugPrint('statusCode: ${response.statusCode}');
-      debugPrint('data: ${response.data}');
       debugPrint('data type: ${response.data.runtimeType}');
+      if (response.data is Map) {
+        debugPrint(
+          'success: ${response.data['success']} code: ${response.data['code']}',
+        );
+      }
 
       if (response.statusCode == 200 && response.data['success'] == true) {
         return AuthResult.success();
@@ -514,7 +524,10 @@ class AuthProvider extends ChangeNotifier {
       debugPrint('message: ${e.message}');
       debugPrint('response: ${e.response}');
       debugPrint('response.statusCode: ${e.response?.statusCode}');
-      debugPrint('response.data: ${e.response?.data}');
+      if (e.response?.data is Map) {
+        final data = e.response?.data as Map;
+        debugPrint('response.code: ${data['code']}');
+      }
       debugPrint('requestOptions.uri: ${e.requestOptions.uri}');
       return AuthResult.failure(_parseDioError(e));
     } catch (e, st) {

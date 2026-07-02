@@ -13,6 +13,14 @@ class AppFeedback {
     final data = e.response?.data;
     if (data is Map) {
       final detail = data['detail'] ?? data['error'] ?? data['message'];
+      if (detail is Map) {
+        final nestedMessage =
+            detail['message'] ?? detail['error'] ?? detail['detail'];
+        if (nestedMessage != null &&
+            nestedMessage.toString().trim().isNotEmpty) {
+          return nestedMessage.toString();
+        }
+      }
       if (detail != null && detail.toString().trim().isNotEmpty) {
         return detail.toString();
       }
@@ -47,8 +55,6 @@ class AppFeedback {
         return '请求发送超时，请检查网络后重试';
       case DioExceptionType.receiveTimeout:
         return '$serviceName响应超时，请稍后再试';
-      case DioExceptionType.transformTimeout:
-        return '$serviceName数据解析超时，请稍后重试';
       case DioExceptionType.connectionError:
         return '无法连接$serviceName，请检查网络或稍后重试';
       case DioExceptionType.badCertificate:

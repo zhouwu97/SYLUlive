@@ -49,3 +49,23 @@ replace.py
 android/.kotlin/
 *.salive
 
+# 本地 AI/IDE/任务工具目录，不属于项目源码
+.agents/
+.claude/
+.codex/
+.sisyphus/
+
+# 本地构建、崩溃与调试日志
+*.log
+hs_err_pid*.log
+replay_pid*.log
+flutter_*.log
+
+# Python 测试与探测输出
+.pytest_cache/
+python-edu-service/tools/*/output/
+
+# 本地临时说明与误提交二进制
+/before-low-conflict-cleanup.txt
+/server/shenliyuan.new
+

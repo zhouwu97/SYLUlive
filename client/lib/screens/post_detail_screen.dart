@@ -2843,6 +2843,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         },
         onLongPress: () => _showReplyActionSheet(r, isOwn, isDark),
         child: Container(
+          width: double.infinity,
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
           decoration: BoxDecoration(
             color: isDark ? const Color(0xFF1F222A) : const Color(0xFFF7F8FA),

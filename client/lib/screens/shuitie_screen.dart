@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config/api_constants.dart';
+import '../config/water_post_taxonomy.dart';
 import '../utils/app_motion.dart';
 import '../utils/app_feedback.dart';
 import '../utils/responsive_util.dart';
@@ -35,6 +36,7 @@ import 'post_detail_screen.dart';
 import 'search_results_screen.dart';
 import 'toolbox_screen.dart';
 import 'user_home_screen.dart';
+import 'water_category_feed_screen.dart';
 
 // ---- Feed Mode 统一配置 ----
 
@@ -818,6 +820,22 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                     Navigator.push(
                       context,
                       MaterialPageRoute(builder: (_) => const FeedbackScreen()),
+                    );
+                  });
+                },
+                onOpenAllWaterPosts: () {
+                  _closePanelThenOpen(dialogContext, () {
+                    _changeFeedMode('all');
+                  });
+                },
+                onOpenWaterCategory: (WaterPostCategory category) {
+                  _closePanelThenOpen(dialogContext, () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) =>
+                            WaterCategoryFeedRoute(category: category),
+                      ),
                     );
                   });
                 },

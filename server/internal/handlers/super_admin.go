@@ -16,6 +16,7 @@ import (
 	"gorm.io/gorm"
 
 	"shenliyuan/internal/models"
+	"shenliyuan/internal/services"
 )
 
 // SuperAdminHandler 超级管理员处理器
@@ -136,7 +137,7 @@ func (h *SuperAdminHandler) UpdateUserRole(c *gin.Context) {
 
 	}
 
-	if err := h.db.Model(&user).Update("role", input.Role).Error; err != nil {
+	if err := services.UpdateUserRoleAndInvalidateToken(h.db, user.ID, models.Role(input.Role)); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
 		return
 	}

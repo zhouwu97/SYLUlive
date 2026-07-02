@@ -312,22 +312,22 @@ class HomeServiceDrawer extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 10),
-        GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          itemCount: kWaterPostCategories.length,
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 3,
-            mainAxisExtent: 56,
-            crossAxisSpacing: 8,
-            mainAxisSpacing: 8,
-          ),
-          itemBuilder: (context, index) {
-            final category = kWaterPostCategories[index];
-            return _WaterCategoryTile(
-              category: category,
-              isDark: isDark,
-              onTap: () => onOpenWaterCategory(category),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final itemWidth = (constraints.maxWidth - 20) / 3;
+            return Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: kWaterPostCategories.map((category) {
+                return SizedBox(
+                  width: itemWidth,
+                  child: _WaterCategoryMiniItem(
+                    category: category,
+                    isDark: isDark,
+                    onTap: () => onOpenWaterCategory(category),
+                  ),
+                );
+              }).toList(),
             );
           },
         ),
@@ -502,12 +502,12 @@ class _QuickEntryCard extends StatelessWidget {
   }
 }
 
-class _WaterCategoryTile extends StatelessWidget {
+class _WaterCategoryMiniItem extends StatelessWidget {
   final WaterPostCategory category;
   final bool isDark;
   final VoidCallback onTap;
 
-  const _WaterCategoryTile({
+  const _WaterCategoryMiniItem({
     required this.category,
     required this.isDark,
     required this.onTap,
@@ -515,46 +515,35 @@ class _WaterCategoryTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(14),
-        child: Container(
-          height: 56,
-          decoration: BoxDecoration(
-            color: category.color.withValues(alpha: isDark ? 0.16 : 0.09),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color: category.color.withValues(alpha: isDark ? 0.20 : 0.10),
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: SizedBox(
+        height: 52,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 30,
+              height: 30,
+              decoration: BoxDecoration(
+                color: category.color.withValues(alpha: isDark ? 0.14 : 0.10),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(category.icon, size: 18, color: category.color),
             ),
-          ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                width: 26,
-                height: 26,
-                decoration: BoxDecoration(
-                  color: category.color.withValues(alpha: isDark ? 0.24 : 0.14),
-                  borderRadius: BorderRadius.circular(9),
-                ),
-                child: Icon(category.icon, color: category.color, size: 18),
+            const SizedBox(height: 4),
+            Text(
+              category.label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 10.8,
+                fontWeight: FontWeight.w600,
+                color: isDark ? Colors.white70 : const Color(0xFF374151),
               ),
-              const SizedBox(height: 5),
-              Text(
-                category.label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  color: isDark ? Colors.white : const Color(0xFF30343B),
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

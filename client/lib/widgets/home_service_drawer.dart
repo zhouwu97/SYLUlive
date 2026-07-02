@@ -121,43 +121,64 @@ class HomeServiceDrawer extends StatelessWidget {
 
   // ---- 三个快捷入口（签到、失物招领、工具箱）----
   Widget _buildQuickEntries(BuildContext context, bool isDark) {
-    return Row(
-      children: [
-        Expanded(
-          child: _QuickEntryCard(
-            icon: Icons.task_alt_rounded,
-            iconColor: checkedIn ? Colors.grey : const Color(0xFF16A34A),
-            title: checkedIn ? '已签到' : '签到',
-            subtitle: checkedIn ? '连续$streakDays天' : '每日一次',
-            isDark: isDark,
-            isLoading: checkInLoading,
-            showDot: showCheckInDot,
-            onTap: onCheckIn,
-          ),
+    return Container(
+      height: 50,
+      decoration: BoxDecoration(
+        color: isDark
+            ? Colors.white.withValues(alpha: 0.06)
+            : const Color(0xFFF7F9FC),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: isDark
+              ? Colors.white.withValues(alpha: 0.08)
+              : const Color(0xFFE9EDF5),
         ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: _QuickEntryCard(
-            icon: Icons.luggage_outlined,
-            iconColor: const Color(0xFF0EA5A4),
-            title: '失物招领',
-            subtitle: '查看线索',
-            isDark: isDark,
-            onTap: onOpenLostFound,
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: _CompactQuickEntryItem(
+              icon: Icons.task_alt_rounded,
+              iconColor: checkedIn ? Colors.grey : const Color(0xFF16A34A),
+              title: checkedIn ? '已签到' : '签到',
+              isDark: isDark,
+              isLoading: checkInLoading,
+              showDot: showCheckInDot,
+              onTap: onCheckIn,
+            ),
           ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: _QuickEntryCard(
-            icon: Icons.handyman_outlined,
-            iconColor: const Color(0xFFF97316),
-            title: '工具箱',
-            subtitle: '快捷小工具',
-            isDark: isDark,
-            onTap: onOpenToolbox,
+          _buildQuickDivider(isDark),
+          Expanded(
+            child: _CompactQuickEntryItem(
+              icon: Icons.luggage_outlined,
+              iconColor: const Color(0xFF0EA5A4),
+              title: '失物招领',
+              isDark: isDark,
+              onTap: onOpenLostFound,
+            ),
           ),
-        ),
-      ],
+          _buildQuickDivider(isDark),
+          Expanded(
+            child: _CompactQuickEntryItem(
+              icon: Icons.handyman_outlined,
+              iconColor: const Color(0xFFF97316),
+              title: '工具箱',
+              isDark: isDark,
+              onTap: onOpenToolbox,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildQuickDivider(bool isDark) {
+    return Container(
+      width: 1,
+      height: 24,
+      color: isDark
+          ? Colors.white.withValues(alpha: 0.08)
+          : const Color(0xFFE5E7EB),
     );
   }
 
@@ -390,21 +411,19 @@ class HomeServiceDrawer extends StatelessWidget {
 }
 
 // ---- 快捷入口卡片 ----
-class _QuickEntryCard extends StatelessWidget {
+class _CompactQuickEntryItem extends StatelessWidget {
   final IconData icon;
   final Color iconColor;
   final String title;
-  final String subtitle;
   final bool isDark;
   final bool isLoading;
   final bool showDot;
   final VoidCallback onTap;
 
-  const _QuickEntryCard({
+  const _CompactQuickEntryItem({
     required this.icon,
     required this.iconColor,
     required this.title,
-    required this.subtitle,
     required this.isDark,
     this.isLoading = false,
     this.showDot = false,
@@ -413,90 +432,54 @@ class _QuickEntryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: isLoading ? null : onTap,
-        borderRadius: BorderRadius.circular(14),
-        child: Stack(
-          children: [
-            Container(
-              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
-              decoration: BoxDecoration(
-                color: isDark
-                    ? Colors.white.withValues(alpha: 0.06)
-                    : const Color(0xFFF7F9FC),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(
-                  color: isDark
-                      ? Colors.white.withValues(alpha: 0.08)
-                      : const Color(0xFFE9EDF5),
-                ),
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  isLoading
-                      ? SizedBox(
-                          width: 22,
-                          height: 22,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: iconColor,
-                          ),
-                        )
-                      : Container(
-                          width: 28,
-                          height: 28,
-                          decoration: BoxDecoration(
-                            color: iconColor.withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(9),
-                          ),
-                          child: Icon(icon, color: iconColor, size: 16),
+    return InkWell(
+      onTap: isLoading ? null : onTap,
+      child: Stack(
+        children: [
+          Center(
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                isLoading
+                    ? SizedBox(
+                        width: 15,
+                        height: 15,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: iconColor,
                         ),
-                  const SizedBox(height: 5),
-                  Text(
+                      )
+                    : Icon(icon, size: 16, color: iconColor),
+                const SizedBox(width: 5),
+                Flexible(
+                  child: Text(
                     title,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      color: isDark ? Colors.white : Colors.black87,
-                    ),
-                  ),
-                  const SizedBox(height: 1),
-                  Text(
-                    subtitle,
-                    textAlign: TextAlign.center,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontSize: 9,
-                      color: isDark ? Colors.white54 : Colors.black54,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            if (showDot)
-              Positioned(
-                top: 8,
-                right: 8,
-                child: Container(
-                  width: 8,
-                  height: 8,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFEF4444),
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: isDark ? const Color(0xFF181D28) : Colors.white,
-                      width: 1.5,
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w600,
+                      color: isDark ? Colors.white70 : const Color(0xFF20232A),
                     ),
                   ),
                 ),
+              ],
+            ),
+          ),
+          if (showDot)
+            Positioned(
+              top: 9,
+              right: 12,
+              child: Container(
+                width: 6,
+                height: 6,
+                decoration: const BoxDecoration(
+                  color: Color(0xFFEF4444),
+                  shape: BoxShape.circle,
+                ),
               ),
-          ],
-        ),
+            ),
+        ],
       ),
     );
   }

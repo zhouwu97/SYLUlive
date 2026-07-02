@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:dio/dio.dart';
@@ -7,6 +6,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../config/api_constants.dart';
+import '../config/water_post_taxonomy.dart';
 import '../models/post.dart';
 import '../models/reply.dart';
 import '../models/user.dart';
@@ -17,6 +17,7 @@ import '../widgets/report_sheet.dart';
 import '../widgets/cached_avatar.dart';
 import 'create_post_screen.dart';
 import 'image_viewer_screen.dart';
+import 'water_category_feed_route.dart';
 
 import 'user_home_screen.dart';
 
@@ -168,7 +169,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   String? _replyToName;
   int? _replyToUserId;
   bool _isSending = false;
-  final Set<int> _expandedThreads = {};
   bool _hasPendingFeaturedApp = false;
 
   final Map<int, GlobalKey> _replyKeys = {};
@@ -264,9 +264,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         _replies.where((r) => r.id == widget.targetReplyId).firstOrNull;
     if (targetReply == null) return;
 
-    // 如果目标是子回复，强制展开它的父级楼中楼
     if (targetReply.parentReplyId != null) {
-      _expandedThreads.add(targetReply.parentReplyId!);
+      // 目标是子回复时，在面板改版后我们依然只高亮/滚动到顶级父回复
+      // 因为子回复现在包裹在 BottomSheet 里面
     }
 
     setState(() {}); // 触发重新渲染，确保子组件挂载
@@ -986,7 +986,20 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
-  /// 水帖专用 AppBar：不透明背景 + 居中标题 + 更多菜单
+  WaterPostCategory get _resolvedWaterCategory {
+    return waterCategoryOf(_post?.postType) ?? waterCategoryOf('campus_life')!;
+  }
+
+  Future<void> _openWaterCategoryFromDetail() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) =>
+            WaterCategoryFeedRoute(category: _resolvedWaterCategory),
+      ),
+    );
+  }
+
+  /// 水帖专用 AppBar：不透明背景 + 分类入口 + 更多菜单
   PreferredSizeWidget _buildWaterAppBar(
     bool isDark, {
     required bool canEdit,
@@ -998,12 +1011,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       backgroundColor: isDark ? const Color(0xFF131720) : Colors.white,
       elevation: 0.5,
       automaticallyImplyLeading: !widget.hideBackButton,
+      leadingWidth: widget.hideBackButton ? null : 56,
       leading: widget.hideBackButton ? null : const BackButton(),
-      title: const Text(
-        '帖子详情',
-        style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
-      ),
-      centerTitle: true,
+      titleSpacing: widget.hideBackButton ? 16 : 0,
+      title: _buildWaterAppBarCategoryChip(isDark),
+      centerTitle: false,
       actions: [
         if (_post != null)
           PopupMenuButton<String>(
@@ -1029,6 +1041,18 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     targetType: 'post',
                   );
                   break;
+                case 'apply_featured':
+                  _applyFeatured();
+                  break;
+                case 'apply_collaboration':
+                  _applyCollaboration();
+                  break;
+                case 'submit_revision':
+                  _submitRevisionProposal();
+                  break;
+                case 'creation_management':
+                  _openCreationManagement();
+                  break;
                 case 'unfeature':
                   _unfeaturePost();
                   break;
@@ -1041,6 +1065,35 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                   value: _post!.isActivePinned ? 'unpin' : 'pin',
                   child: Text(_post!.isActivePinned ? '取消置顶' : '置顶到首页'),
                 ));
+              }
+              if (_post?.boardId == 1) {
+                if (_post?.isFeatured == true) {
+                  if (isOwn) {
+                    items.add(const PopupMenuItem(
+                      value: 'creation_management',
+                      child: Text('创作管理'),
+                    ));
+                  } else {
+                    items.add(const PopupMenuItem(
+                      value: 'apply_collaboration',
+                      child: Text('申请共同创作'),
+                    ));
+                    items.add(const PopupMenuItem(
+                      value: 'submit_revision',
+                      child: Text('提交修改版本'),
+                    ));
+                  }
+                } else if (_hasPendingFeaturedApp) {
+                  items.add(const PopupMenuItem(
+                    enabled: false,
+                    child: Text('精华申请待审核'),
+                  ));
+                } else {
+                  items.add(const PopupMenuItem(
+                    value: 'apply_featured',
+                    child: Text('申请精华'),
+                  ));
+                }
               }
               // 自己的帖子：编辑 + 删除（不举报自己）
               if (isOwn) {
@@ -1079,6 +1132,33 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             },
           ),
       ],
+    );
+  }
+
+  Widget _buildWaterAppBarCategoryChip(bool isDark) {
+    final category = _resolvedWaterCategory;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: _openWaterCategoryFromDetail,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            category.label,
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+              color: isDark ? Colors.white.withValues(alpha: 0.8) : Colors.black87,
+            ),
+          ),
+          const SizedBox(width: 2),
+          Icon(
+            Icons.chevron_right,
+            size: 16,
+            color: isDark ? Colors.white.withValues(alpha: 0.5) : Colors.black54,
+          ),
+        ],
+      ),
     );
   }
 
@@ -1474,15 +1554,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 const SizedBox(height: 12),
                 _buildWaterAuthorHeader(p, isDark),
                 if (p.title.isNotEmpty || p.content.isNotEmpty) ...[
-                  const SizedBox(height: 14),
+                  const SizedBox(height: 8),
                   _buildWaterPostBody(p, isDark),
-                  _buildFeaturedCollaborationActions(p, isDark),
                 ],
                 if (p.images.isNotEmpty) ...[
-                  const SizedBox(height: 14),
+                  const SizedBox(height: 8),
                   _buildAdaptiveWaterImages(p, isDark),
                 ],
-                const SizedBox(height: 12),
+                const SizedBox(height: 6),
                 _buildWaterActionBar(isDark),
               ],
             ),
@@ -1516,7 +1595,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 16),
         child: Row(
           children: [
-            // 头像
             GestureDetector(
               onTap: () {
                 if (p.author?.avatar.isNotEmpty == true) {
@@ -1531,7 +1609,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 }
               },
               child: CachedAvatar(
-                radius: 22,
+                radius: 24,
                 imageUrl: p.author?.avatar.isNotEmpty == true
                     ? ApiConstants.fullUrl(p.author!.avatar)
                     : null,
@@ -1539,21 +1617,20 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               ),
             ),
             const SizedBox(width: 12),
-            // 信息
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // 第一行：昵称 + 等级
                   Row(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       Flexible(
                         child: Text(
                           p.author?.nickname ?? '匿名',
                           style: TextStyle(
                             fontWeight: FontWeight.w600,
-                            fontSize: 15,
+                            fontSize: 14,
                             color: isDark ? Colors.white : Colors.black87,
                           ),
                           overflow: TextOverflow.ellipsis,
@@ -1565,43 +1642,27 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                       ],
                     ],
                   ),
-                  const SizedBox(height: 3),
-                  // 第二行：诚信分 + 发布时间
-                  Row(
-                    children: [
-                      _buildCreditBadge(p.author?.creditScore ?? 100),
-                      const SizedBox(width: 8),
-                      Text(
-                        _formatTime(p.createdAt),
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: isDark ? Colors.white30 : Colors.grey[400],
-                        ),
-                      ),
-                    ],
+                  const SizedBox(height: 4),
+                  Text(
+                    '${_formatTime(p.createdAt)} · 诚信${p.author?.creditScore ?? 100}%',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: isDark ? Colors.white38 : const Color(0xFF9AA0A6),
+                    ),
                   ),
                 ],
               ),
             ),
+            const SizedBox(width: 8),
+            Text(
+              '${p.viewCount}阅读',
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                fontSize: 11.5,
+                color: isDark ? Colors.white54 : const Color(0xFF60646C),
+              ),
+            ),
           ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCreditBadge(int score) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-      decoration: BoxDecoration(
-        color: _creditColor(score).withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: Text(
-        '诚信 $score%',
-        style: TextStyle(
-          fontSize: 10,
-          fontWeight: FontWeight.w600,
-          color: _creditColor(score),
         ),
       ),
     );
@@ -1619,21 +1680,21 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             Text(
               p.title,
               style: TextStyle(
-                fontSize: 21,
+                fontSize: 18.5,
                 fontWeight: FontWeight.w700,
-                height: 1.35,
+                height: 1.25,
                 color: isDark ? Colors.white : Colors.black87,
               ),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 6),
           ],
           if (p.content.isNotEmpty)
             SelectionContainer.disabled(
               child: Text(
                 p.content,
                 style: TextStyle(
-                  fontSize: 16,
-                  height: 1.65,
+                  fontSize: 14.5,
+                  height: 1.55,
                   color: isDark
                       ? Colors.white.withValues(alpha: 0.82)
                       : const Color(0xFF333333),
@@ -1645,184 +1706,66 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
-  Widget _buildFeaturedCollaborationActions(Post p, bool isDark) {
-    final user = context.watch<AuthProvider>().user;
-    if (user == null || widget.isMarket) return const SizedBox.shrink();
-
-    final isOwner = user.id == p.authorId;
-    final actions = <Widget>[];
-    if (!p.isFeatured) {
-      if (_hasPendingFeaturedApp) {
-        actions.add(
-          const OutlinedButton(
-            onPressed: null,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.hourglass_empty, size: 18),
-                SizedBox(width: 8),
-                Text('精华申请待审核'),
-              ],
-            ),
-          ),
-        );
-      } else {
-        actions.add(
-          OutlinedButton.icon(
-            onPressed: _applyFeatured,
-            icon: const Icon(Icons.workspace_premium_outlined, size: 18),
-            label: const Text('申请精华'),
-          ),
-        );
-      }
-    } else if (!isOwner) {
-      actions.add(
-        OutlinedButton.icon(
-          onPressed: _applyCollaboration,
-          icon: const Icon(Icons.edit_note_rounded, size: 18),
-          label: const Text('申请共同创作'),
-        ),
-      );
-      actions.add(
-        FilledButton.icon(
-          onPressed: _submitRevisionProposal,
-          icon: const Icon(Icons.publish_outlined, size: 18),
-          label: const Text('提交修改版本'),
-        ),
-      );
-    } else {
-      actions.add(
-        FilledButton.icon(
-          onPressed: _openCreationManagement,
-          icon: const Icon(Icons.manage_accounts_outlined, size: 18),
-          label: const Text('创作管理'),
-        ),
-      );
-    }
-
-    if (actions.isEmpty) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
-      child: Wrap(spacing: 10, runSpacing: 8, children: [
-        if (p.isFeatured)
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-            decoration: BoxDecoration(
-              color: const Color(0xFFFFB020).withValues(alpha: 0.14),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: const Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.workspace_premium_rounded,
-                    size: 16, color: Color(0xFFD97706)),
-                SizedBox(width: 5),
-                Text(
-                  '精华',
-                  style: TextStyle(
-                    color: Color(0xFFD97706),
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ...actions,
-      ]),
-    );
-  }
-
   // ---- 自适应图片布局 ----
 
   Widget _buildAdaptiveWaterImages(Post p, bool isDark) {
-    final urls = _resolvedImageUrls(p);
+    final urls = _resolvedImageUrls(p).take(9).toList(growable: false);
     if (urls.isEmpty) return const SizedBox.shrink();
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Column(
-        children: [
-          if (urls.length == 1)
-            _buildSingleWaterImage(urls[0], isDark)
-          else if (urls.length == 2)
-            _buildTwoWaterImages(urls, isDark)
-          else if (urls.length == 3)
-            _buildThreeWaterImages(urls, isDark)
-          else if (urls.length == 4)
-            _buildFourWaterImages(urls, isDark)
-          else
-            _buildMultiWaterImageGrid(urls, isDark),
-        ],
-      ),
+      child: switch (urls.length) {
+        1 => _buildSingleWaterImage(urls.first, isDark),
+        2 => _buildTwoWaterImages(urls, isDark),
+        _ => _buildMultiWaterImageGrid(urls, isDark),
+      },
     );
   }
 
-  /// 单张图：模糊背景 + contain 前景，最大高度 420
+  /// 单张图：按图片原比例展示，不额外生成虚化或裁切背景。
   Widget _buildSingleWaterImage(String url, bool isDark) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(14),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxHeight: 420),
-        child: Stack(
-          children: [
-            // 模糊背景
-            Positioned.fill(
-              child: ImageFiltered(
-                imageFilter: ImageFilter.blur(sigmaX: 25, sigmaY: 25),
-                child: CachedNetworkImage(
-                  cacheManager: PostImageCache.manager,
-                  imageUrl: url,
-                  fit: BoxFit.cover,
-                  color: isDark ? Colors.black45 : Colors.white54,
-                  colorBlendMode: BlendMode.darken,
-                  placeholder: (_, __) => Container(
-                    color: isDark ? Colors.white10 : Colors.grey[200],
-                  ),
-                  errorWidget: (_, __, ___) => Container(
-                    color: isDark ? Colors.white10 : Colors.grey[200],
-                  ),
-                ),
-              ),
+    return GestureDetector(
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ImageViewerScreen(
+            imageUrls: [url],
+            initialIndex: 0,
+          ),
+        ),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: CachedNetworkImage(
+          cacheManager: PostImageCache.manager,
+          imageUrl: url,
+          width: double.infinity,
+          fit: BoxFit.fitWidth,
+          placeholder: (_, __) => Container(
+            height: 220,
+            color: isDark ? Colors.white10 : const Color(0xFFF0F1F3),
+          ),
+          errorWidget: (_, __, ___) => Container(
+            height: 220,
+            color: isDark ? Colors.white10 : const Color(0xFFF0F1F3),
+            child: const Icon(
+              Icons.broken_image,
+              size: 40,
+              color: Colors.grey,
             ),
-            // 前景清晰图
-            GestureDetector(
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => ImageViewerScreen(
-                    imageUrls: [url],
-                    initialIndex: 0,
-                  ),
-                ),
-              ),
-              child: Center(
-                child: CachedNetworkImage(
-                  cacheManager: PostImageCache.manager,
-                  imageUrl: url,
-                  fit: BoxFit.contain,
-                  width: double.infinity,
-                  placeholder: (_, __) => const SizedBox.shrink(),
-                  errorWidget: (_, __, ___) => Container(
-                    height: 300,
-                    color: isDark ? Colors.white10 : Colors.grey[200],
-                    child: const Icon(Icons.broken_image,
-                        size: 40, color: Colors.grey),
-                  ),
-                ),
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );
   }
 
-  /// 两张图：左右各一半
+  /// 两张图：左右并排的等宽方格。
   Widget _buildTwoWaterImages(List<String> urls, bool isDark) {
     return ClipRRect(
       borderRadius: BorderRadius.circular(14),
       child: Row(
-        children: urls.map((url) {
+        children: List.generate(urls.length, (index) {
+          final url = urls[index];
           return Expanded(
             child: GestureDetector(
               onTap: () => Navigator.push(
@@ -1830,14 +1773,15 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 MaterialPageRoute(
                   builder: (_) => ImageViewerScreen(
                     imageUrls: urls,
-                    initialIndex: urls.indexOf(url),
+                    initialIndex: index,
                   ),
                 ),
               ),
               child: Container(
-                margin: urls.indexOf(url) == 0
-                    ? const EdgeInsets.only(right: 2)
-                    : const EdgeInsets.only(left: 2),
+                margin: EdgeInsets.only(
+                  right: index == 0 ? 2 : 0,
+                  left: index == 1 ? 2 : 0,
+                ),
                 child: AspectRatio(
                   aspectRatio: 1,
                   child: CachedNetworkImage(
@@ -1857,153 +1801,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               ),
             ),
           );
-        }).toList(),
+        }),
       ),
     );
   }
 
-  /// 三张图：左侧大图 + 右侧两张堆叠
-  Widget _buildThreeWaterImages(List<String> urls, bool isDark) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(14),
-      child: Row(
-        children: [
-          // 左侧大图
-          Expanded(
-            flex: 2,
-            child: GestureDetector(
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) =>
-                      ImageViewerScreen(imageUrls: urls, initialIndex: 0),
-                ),
-              ),
-              child: Container(
-                margin: const EdgeInsets.only(right: 2),
-                child: CachedNetworkImage(
-                  cacheManager: PostImageCache.manager,
-                  imageUrl: urls[0],
-                  fit: BoxFit.cover,
-                  placeholder: (_, __) => Container(
-                    color: isDark ? Colors.white10 : Colors.grey[200],
-                  ),
-                  errorWidget: (_, __, ___) => Container(
-                    color: isDark ? Colors.white10 : Colors.grey[200],
-                    child: const Icon(Icons.broken_image,
-                        size: 32, color: Colors.grey),
-                  ),
-                ),
-              ),
-            ),
-          ),
-          // 右侧两张
-          Expanded(
-            flex: 1,
-            child: Column(
-              children: [
-                Expanded(
-                  child: GestureDetector(
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) =>
-                            ImageViewerScreen(imageUrls: urls, initialIndex: 1),
-                      ),
-                    ),
-                    child: Container(
-                      margin: const EdgeInsets.only(left: 2, bottom: 2),
-                      child: CachedNetworkImage(
-                        cacheManager: PostImageCache.manager,
-                        imageUrl: urls[1],
-                        fit: BoxFit.cover,
-                        width: double.infinity,
-                        height: double.infinity,
-                        placeholder: (_, __) => Container(
-                          color: isDark ? Colors.white10 : Colors.grey[200],
-                        ),
-                        errorWidget: (_, __, ___) => Container(
-                          color: isDark ? Colors.white10 : Colors.grey[200],
-                          child: const Icon(Icons.broken_image,
-                              size: 24, color: Colors.grey),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                Expanded(
-                  child: GestureDetector(
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) =>
-                            ImageViewerScreen(imageUrls: urls, initialIndex: 2),
-                      ),
-                    ),
-                    child: Container(
-                      margin: const EdgeInsets.only(left: 2, top: 2),
-                      child: CachedNetworkImage(
-                        cacheManager: PostImageCache.manager,
-                        imageUrl: urls[2],
-                        fit: BoxFit.cover,
-                        width: double.infinity,
-                        height: double.infinity,
-                        placeholder: (_, __) => Container(
-                          color: isDark ? Colors.white10 : Colors.grey[200],
-                        ),
-                        errorWidget: (_, __, ___) => Container(
-                          color: isDark ? Colors.white10 : Colors.grey[200],
-                          child: const Icon(Icons.broken_image,
-                              size: 24, color: Colors.grey),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// 四张图：标准 2×2
-  Widget _buildFourWaterImages(List<String> urls, bool isDark) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(14),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: _buildGridImageTile(urls[0], 0, urls, isDark,
-                    margin: const EdgeInsets.only(right: 2, bottom: 2)),
-              ),
-              Expanded(
-                child: _buildGridImageTile(urls[1], 1, urls, isDark,
-                    margin: const EdgeInsets.only(left: 2, bottom: 2)),
-              ),
-            ],
-          ),
-          Row(
-            children: [
-              Expanded(
-                child: _buildGridImageTile(urls[2], 2, urls, isDark,
-                    margin: const EdgeInsets.only(right: 2, top: 2)),
-              ),
-              Expanded(
-                child: _buildGridImageTile(urls[3], 3, urls, isDark,
-                    margin: const EdgeInsets.only(left: 2, top: 2)),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// 5+ 张图：3 列宫格
+  /// 三张及以上普通帖子图片：最多 9 张，统一按 3 列方格展示。
   Widget _buildMultiWaterImageGrid(List<String> urls, bool isDark) {
     return ClipRRect(
       borderRadius: BorderRadius.circular(14),
@@ -2050,48 +1853,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
-  Widget _buildGridImageTile(
-    String url,
-    int index,
-    List<String> allUrls,
-    bool isDark, {
-    EdgeInsetsGeometry? margin,
-  }) {
-    return GestureDetector(
-      onTap: () => Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) =>
-              ImageViewerScreen(imageUrls: allUrls, initialIndex: index),
-        ),
-      ),
-      child: Container(
-        margin: margin,
-        child: AspectRatio(
-          aspectRatio: 1,
-          child: CachedNetworkImage(
-            cacheManager: PostImageCache.manager,
-            imageUrl: url,
-            fit: BoxFit.cover,
-            placeholder: (_, __) => Container(
-              color: isDark ? Colors.white10 : Colors.grey[200],
-            ),
-            errorWidget: (_, __, ___) => Container(
-              color: isDark ? Colors.white10 : Colors.grey[200],
-              child:
-                  const Icon(Icons.broken_image, size: 32, color: Colors.grey),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
   // ---- 水帖操作栏 ----
 
   Widget _buildWaterActionBar(bool isDark) {
     return Container(
-      height: 48,
+      height: 42,
       margin: const EdgeInsets.symmetric(horizontal: 16),
       decoration: BoxDecoration(
         border: Border(
@@ -2113,7 +1879,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               children: [
                 Icon(
                   _liked ? Icons.thumb_up : Icons.thumb_up_outlined,
-                  size: 18,
+                  size: 16,
                   color: _liked
                       ? Theme.of(context).primaryColor
                       : (isDark ? Colors.white38 : Colors.grey[500]),
@@ -2122,7 +1888,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 Text(
                   '$_likeCount',
                   style: TextStyle(
-                    fontSize: 13,
+                    fontSize: 11.5,
                     color: _liked
                         ? Theme.of(context).primaryColor
                         : (isDark ? Colors.white38 : Colors.grey[500]),
@@ -2140,14 +1906,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               children: [
                 Icon(
                   Icons.chat_bubble_outline,
-                  size: 18,
+                  size: 16,
                   color: isDark ? Colors.white38 : Colors.grey[500],
                 ),
                 const SizedBox(width: 4),
                 Text(
                   '评论 ${_post?.replyCount ?? 0}',
                   style: TextStyle(
-                    fontSize: 13,
+                    fontSize: 11.5,
                     color: isDark ? Colors.white38 : Colors.grey[500],
                   ),
                 ),
@@ -2158,14 +1924,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           // 浏览量
           Icon(
             Icons.visibility_outlined,
-            size: 16,
+            size: 14,
             color: isDark ? Colors.white24 : Colors.grey[400],
           ),
           const SizedBox(width: 3),
           Text(
             '浏览 ${_post?.viewCount ?? 0}',
             style: TextStyle(
-              fontSize: 12,
+              fontSize: 11,
               color: isDark ? Colors.white24 : Colors.grey[400],
             ),
           ),
@@ -2239,13 +2005,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     onTap: () {
                       _replyController.clear();
                       _replyFocus.unfocus();
-                      if (mounted)
+                      if (mounted) {
                         setState(() {
                           _isReplyComposerOpen = false;
                           _parentReplyId = null;
                           _replyToName = null;
                           _replyToUserId = null;
                         });
+                      }
                     },
                     child: Container(
                       width: 36,
@@ -2334,63 +2101,92 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     return Container(
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF131720) : Colors.white,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 8,
-            offset: const Offset(0, -2),
+        border: Border(
+          top: BorderSide(
+            color: isDark
+                ? Colors.white.withValues(alpha: 0.08)
+                : const Color(0xFFEDEDED),
           ),
-        ],
+        ),
       ),
       child: SafeArea(
+        top: false,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-          child: GestureDetector(
-            onTap: () => _openReplyComposer(),
-            child: Container(
-              height: 44,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              decoration: BoxDecoration(
-                color: isDark
-                    ? Colors.white.withValues(alpha: 0.06)
-                    : const Color(0xFFF5F5F5),
-                borderRadius: BorderRadius.circular(22),
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.edit_outlined,
-                    size: 16,
-                    color: isDark ? Colors.white38 : Colors.grey[400],
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    '说点什么…',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: isDark ? Colors.white38 : Colors.grey[500],
-                    ),
-                  ),
-                  const Spacer(),
-                  Container(
-                    width: 32,
-                    height: 28,
+          padding: const EdgeInsets.fromLTRB(12, 7, 12, 7),
+          child: Row(
+            children: [
+              Expanded(
+                child: GestureDetector(
+                  onTap: () => _openReplyComposer(),
+                  child: Container(
+                    height: 38,
+                    padding: const EdgeInsets.symmetric(horizontal: 13),
                     decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(8),
                       color: isDark
                           ? Colors.white.withValues(alpha: 0.08)
-                          : const Color(0xFFE8E8E8),
+                          : const Color(0xFFF5F6F8),
+                      borderRadius: BorderRadius.circular(19),
                     ),
-                    child: Icon(
-                      Icons.send_rounded,
-                      size: 14,
-                      color: isDark ? Colors.white30 : Colors.grey[400],
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      '说点什么...',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: isDark ? Colors.white38 : Colors.grey[500],
+                      ),
                     ),
                   ),
-                ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              _buildBottomStat(
+                icon: Icons.chat_bubble_outline_rounded,
+                label: '${_post?.replyCount ?? _replies.length}',
+                color: isDark ? Colors.white54 : const Color(0xFF60646C),
+                onTap: _openReplyComposer,
+              ),
+              const SizedBox(width: 10),
+              _buildBottomStat(
+                icon: _liked ? Icons.thumb_up : Icons.thumb_up_outlined,
+                label: '$_likeCount',
+                color: _liked
+                    ? const Color(0xFFFF6B6B)
+                    : (isDark ? Colors.white54 : const Color(0xFF60646C)),
+                onTap: _toggleLike,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBottomStat({
+    required IconData icon,
+    required String label,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: onTap,
+      child: SizedBox(
+        width: 38,
+        height: 38,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 22, color: color),
+            Text(
+              label,
+              maxLines: 1,
+              style: TextStyle(
+                fontSize: 12,
+                height: 1.0,
+                color: color,
               ),
             ),
-          ),
+          ],
         ),
       ),
     );
@@ -2830,18 +2626,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     bool compact = false,
     int depth = 0,
   }) {
-    // 获取该顶级评论的所有子回复（扁平化）
-    final childMap = <int, List<Reply>>{};
-    for (final r in _replies) {
-      if (r.parentReplyId != null) {
-        childMap.putIfAbsent(r.parentReplyId!, () => []).add(r);
-      }
-    }
-    final allChildren = childMap[thread.parent.id] ?? [];
-    final isExpanded = _expandedThreads.contains(thread.parent.id);
-    final visibleChildren =
-        !isExpanded ? allChildren.take(2).toList() : allChildren;
-    final hasMore = !isExpanded && allChildren.length > 2;
+    final allChildren = _collectThreadChildren(thread.parent.id);
+    final visibleChildren = allChildren.take(1).toList();
+    final hasMore = allChildren.length > 1;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
@@ -2850,7 +2637,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         children: [
           // 主评论
           _buildMainReply(thread.parent, isDark),
-          // 子回复区域（扁平化展示）
+          // 子回复区域（摘要展示）
           if (visibleChildren.isNotEmpty)
             Container(
               margin: const EdgeInsets.only(left: 44, top: 4),
@@ -2869,20 +2656,30 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                   ),
                   if (hasMore)
                     GestureDetector(
-                      onTap: () {
-                        if (mounted)
-                          setState(() {
-                            _expandedThreads.add(thread.parent.id);
-                          });
-                      },
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => _showReplyThreadSheet(
+                        parentReply: thread.parent,
+                        anchorReply: null,
+                      ),
                       child: Padding(
-                        padding: const EdgeInsets.only(top: 6),
-                        child: Text(
-                          '共 ${allChildren.length} 条回复，点击查看全部',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Theme.of(context).primaryColor,
-                          ),
+                        padding: const EdgeInsets.only(top: 6, bottom: 2),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              '共 ${allChildren.length} 条回复 ',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                                color: Theme.of(context).primaryColor,
+                              ),
+                            ),
+                            Icon(
+                              Icons.chevron_right_rounded,
+                              size: 14,
+                              color: Theme.of(context).primaryColor,
+                            ),
+                          ],
                         ),
                       ),
                     ),
@@ -2892,6 +2689,25 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         ],
       ),
     );
+  }
+
+  List<Reply> _collectThreadChildren(int rootId) {
+    final result = <Reply>[];
+
+    void collect(int parentId) {
+      final children = _replies
+          .where((r) => r.parentReplyId == parentId)
+          .toList()
+        ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+
+      for (final child in children) {
+        result.add(child);
+        collect(child.id);
+      }
+    }
+
+    collect(rootId);
+    return result;
   }
 
   /// 主评论（顶级）
@@ -3007,88 +2823,532 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
-  /// 子回复（楼中楼）
   Widget _buildChildReply(Reply r, bool isDark, {int depth = 0}) {
-    // 从 content 中解析 @username
-    final contentWidget = _buildChildContent(r, isDark);
-    // 回复按钮指向顶级评论（楼中楼的根），避免多层嵌套
     final threadParentId = _findTopLevelParentId(r);
     final currentUser = context.read<AuthProvider>().user;
     final isOwn = currentUser?.id == r.authorId;
-    return _buildReplyAnchor(
-      reply: r,
-      isDark: isDark,
+    return Padding(
+      padding: EdgeInsets.only(bottom: 6, left: depth * 4.0),
       child: GestureDetector(
-        onTap: () => _openReplyComposer(
-          parentReplyId: threadParentId,
-          replyToName: r.author?.nickname,
-          replyToUserId: r.authorId,
-        ),
+        behavior: HitTestBehavior.opaque,
+        onTap: () {
+          final parent = _replies.firstWhere(
+            (rp) => rp.id == threadParentId,
+            orElse: () => r,
+          );
+          _showReplyThreadSheet(
+            parentReply: parent,
+            anchorReply: r,
+          );
+        },
         onLongPress: () => _showReplyActionSheet(r, isOwn, isDark),
-        child: Padding(
-          padding: EdgeInsets.only(bottom: 8, left: depth * 4.0),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF1F222A) : const Color(0xFFF7F8FA),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Text.rich(
+            TextSpan(
+              children: [
+                TextSpan(
+                  text: '${r.author?.nickname ?? '匿名'}：',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w400,
+                    color: isDark ? Colors.white54 : const Color(0xFF6B7280),
+                  ),
+                ),
+                _buildCompactContentSpan(r, isDark),
+              ],
+            ),
+            style: const TextStyle(height: 1.35),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ),
+    );
+  }
+
+  InlineSpan _buildCompactContentSpan(Reply r, bool isDark) {
+    final content = r.content;
+    final atRegex = RegExp(r'^@(\S+)\s');
+    final match = atRegex.firstMatch(content);
+    if (match != null) {
+      final atName = match.group(1)!;
+      final rest = content.substring(match.end);
+      return TextSpan(
+        children: [
+          TextSpan(
+            text: '@$atName ',
+            style: TextStyle(
+              fontSize: 12.5,
+              color: Theme.of(context).primaryColor,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          TextSpan(
+            text: rest,
+            style: TextStyle(
+              fontSize: 12.5,
+              color: isDark ? Colors.white60 : const Color(0xFF4B5563),
+            ),
+          ),
+        ],
+      );
+    }
+    return TextSpan(
+      text: content,
+      style: TextStyle(
+        fontSize: 12.5,
+        color: isDark ? Colors.white60 : const Color(0xFF4B5563),
+      ),
+    );
+  }
+
+  void _showReplyThreadSheet({
+    required Reply parentReply,
+    required Reply? anchorReply,
+  }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withValues(alpha: 0.08),
+      builder: (sheetContext) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.72,
+          minChildSize: 0.50,
+          maxChildSize: 0.92,
+          expand: false,
+          builder: (context, scrollController) {
+            return Container(
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF171B24) : Colors.white,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+              ),
+              child: Column(
+                children: [
+                  _buildReplyThreadSheetHeader(sheetContext, isDark),
+                  Expanded(
+                    child: CustomScrollView(
+                      controller: scrollController,
+                      slivers: [
+                        SliverToBoxAdapter(
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                            child: _buildSheetParentReply(sheetContext, parentReply, isDark),
+                          ),
+                        ),
+                        SliverToBoxAdapter(
+                          child: _buildRelatedRepliesHeader(parentReply.id, isDark),
+                        ),
+                        SliverPadding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          sliver: _buildSheetChildrenList(sheetContext, parentReply, isDark),
+                        ),
+                      ],
+                    ),
+                  ),
+                  _buildSheetReplyInputBar(sheetContext, parentReply, isDark),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildReplyThreadSheetHeader(BuildContext sheetContext, bool isDark) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const SizedBox(height: 10),
+        Container(
+          width: 36,
+          height: 4,
+          decoration: BoxDecoration(
+            color: isDark ? Colors.white24 : Colors.grey[300],
+            borderRadius: BorderRadius.circular(2),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              GestureDetector(
-                onTap: () {
-                  if (r.author != null) {
-                    _openAuthorHome(r.author!.id);
-                  }
-                },
-                child: CachedAvatar(
-                  radius: 10,
-                  imageUrl: r.author?.avatar.isNotEmpty == true
-                      ? ApiConstants.fullUrl(r.author!.avatar)
-                      : null,
-                  fallbackText: r.author?.nickname,
+              const SizedBox(width: 24), // balance close button
+              Text(
+                '评论详情',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: isDark ? Colors.white : Colors.black87,
                 ),
               ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
+              GestureDetector(
+                onTap: () => Navigator.pop(sheetContext),
+                child: Icon(
+                  Icons.close,
+                  size: 24,
+                  color: isDark ? Colors.white54 : Colors.grey[600],
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
+        Divider(
+          height: 1,
+          thickness: 1,
+          color: isDark ? Colors.white10 : Colors.grey[200],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSheetParentReply(BuildContext sheetContext, Reply r, bool isDark) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        GestureDetector(
+          onTap: () {
+            Navigator.pop(sheetContext);
+            if (r.author != null) {
+              _openAuthorHome(r.author!.id);
+            }
+          },
+          child: CachedAvatar(
+            radius: 18,
+            imageUrl: r.author?.avatar.isNotEmpty == true
+                ? ApiConstants.fullUrl(r.author!.avatar)
+                : null,
+            fallbackText: r.author?.nickname,
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Text(
+                    r.author?.nickname ?? '匿名',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: isDark
+                          ? Colors.white.withValues(alpha: 0.82)
+                          : Colors.black87,
+                    ),
+                  ),
+                  if (r.author != null) ...[
+                    const SizedBox(width: 4),
+                    _buildLevelBadgeSmall(r.author!, isDark),
+                  ],
+                  const SizedBox(width: 8),
+                  Text(
+                    _formatTime(r.createdAt),
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: isDark ? Colors.white24 : Colors.grey[400],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              SelectionContainer.disabled(
+                child: Text(
+                  r.content,
+                  style: TextStyle(
+                    fontSize: 14,
+                    height: 1.55,
+                    color: isDark ? Colors.white70 : Colors.grey[800],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  GestureDetector(
+                    onTap: () {
+                      Navigator.pop(sheetContext);
+                      _openReplyComposer(
+                        parentReplyId: r.id,
+                        replyToName: r.author?.nickname,
+                        replyToUserId: r.authorId,
+                      );
+                    },
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text(
-                          r.author?.nickname ?? '匿名',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: isDark
-                                ? Colors.white.withValues(alpha: 0.70)
-                                : Colors.black87,
-                          ),
+                        Icon(
+                          Icons.reply,
+                          size: 14,
+                          color: isDark ? Colors.white38 : Colors.grey[500],
                         ),
-                        if (r.author != null) ...[
-                          const SizedBox(width: 4),
-                          _buildLevelBadgeSmall(r.author!, isDark),
-                        ],
-                        const SizedBox(width: 8),
-                        Text(
-                          _formatTime(r.createdAt),
-                          style: TextStyle(
-                            fontSize: 10,
-                            color: isDark ? Colors.white24 : Colors.grey[400],
-                          ),
-                        ),
-                        const Spacer(),
+                        const SizedBox(width: 4),
                         Text(
                           '回复',
                           style: TextStyle(
-                            fontSize: 10,
-                            color: isDark ? Colors.white24 : Colors.grey[400],
+                            fontSize: 12,
+                            color: isDark ? Colors.white38 : Colors.grey[500],
                           ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 2),
-                    contentWidget,
-                  ],
+                  ),
+                  const Spacer(),
+                  GestureDetector(
+                    onTap: () {
+                      Navigator.pop(sheetContext);
+                      showReportSheet(
+                        context,
+                        targetId: r.id,
+                        targetType: 'reply',
+                      );
+                    },
+                    child: Icon(
+                      Icons.more_horiz,
+                      size: 16,
+                      color: isDark ? Colors.white24 : Colors.grey[300],
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildRelatedRepliesHeader(int parentReplyId, bool isDark) {
+    final children = _collectThreadChildren(parentReplyId);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          height: 8,
+          color: isDark ? Colors.black26 : const Color(0xFFF3F4F6),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                '相关回复共 ${children.length} 条',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: isDark ? Colors.white60 : Colors.grey[700],
+                ),
+              ),
+              Text(
+                '按时间',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: isDark ? Colors.white30 : Colors.grey[400],
                 ),
               ),
             ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSheetChildrenList(BuildContext sheetContext, Reply parentReply, bool isDark) {
+    final children = _collectThreadChildren(parentReply.id);
+    
+    if (children.isEmpty) {
+      return const SliverToBoxAdapter(
+        child: SizedBox(height: 100),
+      );
+    }
+    
+    return SliverList(
+      delegate: SliverChildBuilderDelegate(
+        (context, index) {
+          return _buildSheetChildReplyItem(sheetContext, children[index], parentReply, isDark);
+        },
+        childCount: children.length,
+      ),
+    );
+  }
+
+  Widget _buildSheetChildReplyItem(
+    BuildContext sheetContext,
+    Reply child,
+    Reply parentReply,
+    bool isDark,
+  ) {
+    final currentUser = context.read<AuthProvider>().user;
+    final isOwn = currentUser?.id == child.authorId;
+    final isAdmin = currentUser?.isAdmin ?? false;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          GestureDetector(
+            onTap: () {
+              Navigator.pop(sheetContext);
+              if (child.author != null) {
+                _openAuthorHome(child.author!.id);
+              }
+            },
+            child: CachedAvatar(
+              radius: 14,
+              imageUrl: child.author?.avatar.isNotEmpty == true
+                  ? ApiConstants.fullUrl(child.author!.avatar)
+                  : null,
+              fallbackText: child.author?.nickname,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      child.author?.nickname ?? '匿名',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w500,
+                        color: isDark ? Colors.white70 : Colors.black87,
+                      ),
+                    ),
+                    if (child.author != null) ...[
+                      const SizedBox(width: 4),
+                      _buildLevelBadgeSmall(child.author!, isDark),
+                    ],
+                    const SizedBox(width: 8),
+                    Text(
+                      _formatTime(child.createdAt),
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: isDark ? Colors.white24 : Colors.grey[400],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                _buildChildContent(child, isDark),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    GestureDetector(
+                      onTap: () {
+                        Navigator.pop(sheetContext);
+                        _openReplyComposer(
+                          parentReplyId: parentReply.id,
+                          replyToName: child.author?.nickname,
+                          replyToUserId: child.authorId,
+                        );
+                      },
+                      child: Text(
+                        '回复',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500,
+                          color: isDark ? Colors.white38 : Colors.grey[500],
+                        ),
+                      ),
+                    ),
+                    const Spacer(),
+                    if (isOwn || isAdmin)
+                      GestureDetector(
+                        onTap: () async {
+                          Navigator.pop(sheetContext);
+                          await _deleteReply(child);
+                        },
+                        child: Text(
+                          '删除',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.red[400],
+                          ),
+                        ),
+                      )
+                    else
+                      GestureDetector(
+                        onTap: () {
+                          Navigator.pop(sheetContext);
+                          showReportSheet(context, targetId: child.id, targetType: 'reply');
+                        },
+                        child: Text(
+                          '举报',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: isDark ? Colors.white24 : Colors.grey[400],
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSheetReplyInputBar(BuildContext sheetContext, Reply parentReply, bool isDark) {
+    return Container(
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF131720) : Colors.white,
+        border: Border(
+          top: BorderSide(
+            color: isDark
+                ? Colors.white.withValues(alpha: 0.08)
+                : const Color(0xFFEDEDED),
+          ),
+        ),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+          child: GestureDetector(
+            onTap: () {
+              Navigator.pop(sheetContext);
+              _openReplyComposer(
+                parentReplyId: parentReply.id,
+                replyToName: parentReply.author?.nickname,
+                replyToUserId: parentReply.authorId,
+              );
+            },
+            child: Container(
+              height: 38,
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              decoration: BoxDecoration(
+                color: isDark
+                    ? Colors.white.withValues(alpha: 0.08)
+                    : const Color(0xFFF5F6F8),
+                borderRadius: BorderRadius.circular(19),
+              ),
+              alignment: Alignment.centerLeft,
+              child: Text(
+                '说点什么...',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: isDark ? Colors.white38 : Colors.grey[500],
+                ),
+              ),
+            ),
           ),
         ),
       ),

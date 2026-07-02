@@ -958,6 +958,109 @@ func (h *CompetitionHandler) CommitShareImport(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "导入完成"})
 }
 
+func (h *CompetitionHandler) PreviewCalendarJSONImport(c *gin.Context) {
+	var payload map[string]interface{}
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "JSON 格式错误"})
+		return
+	}
+
+	result := h.validateImportPayload(payload)
+	c.JSON(http.StatusOK, gin.H{"preview": result})
+}
+
+func (h *CompetitionHandler) CommitCalendarJSONImport(c *gin.Context) {
+	userID, ok := currentUserID(c)
+	if !ok {
+		return
+	}
+
+	var input struct {
+		Strategy string                  `json:"strategy"`
+		Events   []competitionEventInput `json:"events"`
+	}
+
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误"})
+		return
+	}
+
+	if input.Strategy != "replace" && input.Strategy != "merge" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "导入策略只能是 replace 或 merge"})
+		return
+	}
+
+	if len(input.Events) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "events 不能为空"})
+		return
+	}
+
+	created := 0
+
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		calendar, err := h.ensureCalendarTx(tx, userID)
+		if err != nil {
+			return err
+		}
+
+		if input.Strategy == "replace" {
+			if err := tx.Where("calendar_id = ?", calendar.ID).
+				Delete(&models.UserCompetitionCalendarItem{}).Error; err != nil {
+				return err
+			}
+		}
+
+		for i, eventInput := range input.Events {
+			event, err := h.eventFromInput(eventInput)
+			if err != nil {
+				return err
+			}
+
+			if input.Strategy == "merge" {
+				var count int64
+				tx.Model(&models.UserCompetitionCalendarItem{}).
+					Where(
+						"calendar_id = ? AND title = ? AND official_url = ?",
+						calendar.ID,
+						event.Title,
+						event.OfficialURL,
+					).
+					Count(&count)
+				if count > 0 {
+					continue
+				}
+			}
+
+			item := calendarItemFromEvent(
+				calendar.ID,
+				userID,
+				event,
+				"local_json",
+				nil,
+				"",
+				nil,
+			)
+			item.IsCustomModified = true
+			item.DisplayOrder = i
+
+			if err := tx.Create(&item).Error; err != nil {
+				return err
+			}
+			created++
+		}
+
+		return nil
+	}); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "导入失败：" + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "导入完成",
+		"created": created,
+	})
+}
+
 func (h *CompetitionHandler) loadShareSnapshot(c *gin.Context, code string) (models.CalendarShareSnapshot, []models.UserCompetitionCalendarItem, bool) {
 	var snapshot models.CalendarShareSnapshot
 	if err := h.db.Where("share_code = ?", strings.TrimSpace(code)).First(&snapshot).Error; err != nil {

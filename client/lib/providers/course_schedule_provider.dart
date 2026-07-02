@@ -595,12 +595,18 @@ class CourseScheduleProvider extends ChangeNotifier {
     if (e.response != null) {
       final data = e.response!.data;
       if (data is Map) {
-        if (data.containsKey('detail')) return data['detail'].toString();
+        if (data.containsKey('detail')) {
+          final detail = data['detail'];
+          if (detail is Map && detail['message'] != null) {
+            return detail['message'].toString();
+          }
+          return detail.toString();
+        }
         if (data.containsKey('error')) return data['error'].toString();
       }
       switch (e.response!.statusCode) {
         case 401:
-          return '账号或密码错误';
+          return '教务登录状态已失效，请重新登录';
         case 503:
           return '教务系统不可用，请稍后重试';
         default:

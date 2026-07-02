@@ -25,7 +25,10 @@ class CreatePostScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (boardId == 1) {
-      return WaterPostComposer(editingPost: editingPost);
+      return WaterPostComposer(
+        editingPost: editingPost,
+        initialPostType: defaultPostType,
+      );
     }
     return MarketPublishForm(
       defaultPostType: defaultPostType,

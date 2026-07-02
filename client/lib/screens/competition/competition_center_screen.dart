@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -2327,6 +2328,8 @@ class _CompetitionCalendarItemEditorScreenState
   }
 }
 
+enum _ImportMode { shareCode, jsonFile }
+
 class CompetitionShareImportScreen extends StatefulWidget {
   const CompetitionShareImportScreen({super.key});
 
@@ -2337,8 +2340,13 @@ class CompetitionShareImportScreen extends StatefulWidget {
 
 class _CompetitionShareImportScreenState
     extends State<CompetitionShareImportScreen> {
+  _ImportMode _mode = _ImportMode.shareCode;
+
   final _controller = TextEditingController();
   Map<String, dynamic>? _preview;
+  bool _readingJsonFile = false;
+  String? _jsonFileName;
+  Map<String, dynamic>? _jsonPayload;
 
   @override
   void dispose() {
@@ -2355,7 +2363,7 @@ class _CompetitionShareImportScreenState
     setState(() => _preview = Map<String, dynamic>.from(resp.data));
   }
 
-  Future<void> _commit(String strategy) async {
+  Future<void> _commitShare(String strategy) async {
     await context.read<AuthProvider>().dio.post(
       '/user/competition-calendar/import-share/commit',
       data: {'share_code': _controller.text.trim(), 'strategy': strategy},
@@ -2363,6 +2371,120 @@ class _CompetitionShareImportScreenState
     if (!mounted) return;
     AppFeedback.showSnackBar(context, '导入完成');
     Navigator.pop(context);
+  }
+
+  Future<void> _pickJsonFile() async {
+    try {
+      setState(() => _readingJsonFile = true);
+
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['json'],
+        withData: true,
+        withReadStream: true,
+      );
+
+      if (result == null || result.files.isEmpty) return;
+
+      final file = result.files.single;
+
+      String? text;
+      if (file.bytes != null) {
+        text = utf8.decode(file.bytes!).trim();
+      } else if (file.readStream != null) {
+        text = await file.readStream!.transform(utf8.decoder).join();
+        text = text.trim();
+      }
+
+      if (text == null || text.isEmpty) {
+        AppFeedback.showSnackBar(
+          context,
+          '读取文件失败，请重新选择 JSON 文件',
+          isError: true,
+        );
+        return;
+      }
+
+      final decoded = jsonDecode(text);
+
+      if (decoded is! Map<String, dynamic> || decoded['events'] is! List) {
+        AppFeedback.showSnackBar(
+          context,
+          'JSON 顶层必须是 {"events": [...]}',
+          isError: true,
+        );
+        return;
+      }
+
+      final resp = await context.read<AuthProvider>().dio.post(
+            '/user/competition-calendar/import-json/preview',
+            data: decoded,
+          );
+
+      if (!mounted) return;
+
+      setState(() {
+        _jsonFileName = file.name;
+        _jsonPayload = decoded;
+        _preview = Map<String, dynamic>.from(resp.data['preview']);
+      });
+
+      AppFeedback.showSnackBar(context, '已读取 ${file.name}');
+    } on FormatException {
+      AppFeedback.showSnackBar(
+        context,
+        'JSON 格式不正确，请检查逗号、引号和括号',
+        isError: true,
+      );
+    } on DioException catch (e) {
+      if (!mounted) return;
+      AppFeedback.showSnackBar(
+        context,
+        AppFeedback.dioErrorMessage(e, fallback: '读取 JSON 文件或预览失败'),
+        isError: true,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      AppFeedback.showSnackBar(
+        context,
+        '读取 JSON 文件或预览失败：$e',
+        isError: true,
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _readingJsonFile = false);
+      }
+    }
+  }
+
+  Future<void> _commitJson(String strategy) async {
+    if (_jsonPayload == null) return;
+    try {
+      await context.read<AuthProvider>().dio.post(
+        '/user/competition-calendar/import-json/commit',
+        data: {
+          'strategy': strategy,
+          'events': _jsonPayload!['events'],
+        },
+      );
+      if (!mounted) return;
+      AppFeedback.showSnackBar(context, '导入完成');
+      Navigator.pop(context);
+    } on DioException catch (e) {
+      if (!mounted) return;
+      AppFeedback.showSnackBar(
+        context,
+        AppFeedback.dioErrorMessage(e, fallback: '导入失败'),
+        isError: true,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      AppFeedback.showSnackBar(
+        context,
+        '导入失败：$e',
+        isError: true,
+      );
+    }
   }
 
   @override
@@ -2373,12 +2495,58 @@ class _CompetitionShareImportScreenState
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          TextField(
-            controller: _controller,
-            decoration: const InputDecoration(labelText: '分享码'),
+          SegmentedButton<_ImportMode>(
+            segments: const [
+              ButtonSegment(
+                value: _ImportMode.shareCode,
+                label: Text('分享码导入'),
+              ),
+              ButtonSegment(
+                value: _ImportMode.jsonFile,
+                label: Text('JSON 文件导入'),
+              ),
+            ],
+            selected: {_mode},
+            onSelectionChanged: (Set<_ImportMode> newSelection) {
+              setState(() {
+                _mode = newSelection.first;
+                _preview = null;
+              });
+            },
           ),
-          const SizedBox(height: 12),
-          FilledButton(onPressed: _previewShare, child: const Text('预览')),
+          const SizedBox(height: 24),
+          if (_mode == _ImportMode.shareCode) ...[
+            TextField(
+              controller: _controller,
+              decoration: const InputDecoration(labelText: '分享码'),
+            ),
+            const SizedBox(height: 12),
+            FilledButton(onPressed: _previewShare, child: const Text('预览')),
+          ] else ...[
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFE8E4F0)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _jsonFileName == null ? '未选择文件' : '已选择: $_jsonFileName',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 12),
+                  OutlinedButton.icon(
+                    onPressed: _readingJsonFile ? null : _pickJsonFile,
+                    icon: const Icon(Icons.upload_file_rounded, size: 18),
+                    label: Text(_readingJsonFile ? '读取中...' : '选择 JSON 文件'),
+                  ),
+                ],
+              ),
+            ),
+          ],
           if (_preview != null) ...[
             const SizedBox(height: 16),
             Text('预览 ${items.length} 个比赛',
@@ -2386,14 +2554,22 @@ class _CompetitionShareImportScreenState
             ...items.map((e) => ListTile(title: Text(e['title'] ?? ''))),
             Row(children: [
               Expanded(
-                  child: OutlinedButton(
-                      onPressed: () => _commit('merge'),
-                      child: const Text('合并'))),
+                child: OutlinedButton(
+                  onPressed: () => _mode == _ImportMode.shareCode
+                      ? _commitShare('merge')
+                      : _commitJson('merge'),
+                  child: const Text('合并'),
+                ),
+              ),
               const SizedBox(width: 10),
               Expanded(
-                  child: FilledButton(
-                      onPressed: () => _commit('replace'),
-                      child: const Text('覆盖'))),
+                child: FilledButton(
+                  onPressed: () => _mode == _ImportMode.shareCode
+                      ? _commitShare('replace')
+                      : _commitJson('replace'),
+                  child: const Text('覆盖'),
+                ),
+              ),
             ]),
           ],
         ],
@@ -2416,6 +2592,11 @@ class _CompetitionAdminImportScreenState
   String? _batchId;
   Map<String, dynamic>? _preview;
   String? _previewedJsonText;
+  String? _jsonFileName;
+  Map<String, dynamic>? _fileJsonPayload;
+  bool _readingJsonFile = false;
+  bool _showAllPreviewEvents = false;
+  String _previewFilter = 'all';
 
   @override
   void initState() {
@@ -2437,14 +2618,116 @@ class _CompetitionAdminImportScreenState
     if (_jsonController.text == _previewedJsonText) {
       return;
     }
+    if (_jsonFileName != null) {
+      return;
+    }
     setState(() {
       _preview = null;
       _batchId = null;
       _previewedJsonText = null;
+      _showAllPreviewEvents = false;
+      _previewFilter = 'all';
     });
   }
 
+  Future<void> _pickJsonFile() async {
+    try {
+      setState(() => _readingJsonFile = true);
+
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['json'],
+        withData: true,
+        withReadStream: true,
+      );
+
+      if (result == null || result.files.isEmpty) return;
+
+      final file = result.files.single;
+
+      String? text;
+      if (file.bytes != null) {
+        text = utf8.decode(file.bytes!).trim();
+      } else if (file.readStream != null) {
+        text = await file.readStream!.transform(utf8.decoder).join();
+        text = text.trim();
+      }
+
+      if (text == null || text.isEmpty) {
+        AppFeedback.showSnackBar(
+          context,
+          '读取文件失败，请重新选择 JSON 文件',
+          isError: true,
+        );
+        return;
+      }
+
+      final decoded = jsonDecode(text);
+
+      if (decoded is! Map<String, dynamic> || decoded['events'] is! List) {
+        AppFeedback.showSnackBar(
+          context,
+          'JSON 顶层必须是 {"events": [...]}',
+          isError: true,
+        );
+        return;
+      }
+
+      final resp = await context
+          .read<AuthProvider>()
+          .dio
+          .post('/admin/competitions/import-json/preview', data: decoded);
+
+      if (!mounted) return;
+
+      setState(() {
+        _jsonFileName = file.name;
+        _fileJsonPayload = decoded;
+        _jsonController.clear();
+        _batchId = resp.data['batch_id'];
+        _preview = Map<String, dynamic>.from(resp.data['preview']);
+        _previewedJsonText = null;
+        _showAllPreviewEvents = false;
+        _previewFilter = 'all';
+      });
+
+      AppFeedback.showSnackBar(context, '已读取并预览 ${file.name}');
+    } on FormatException {
+      AppFeedback.showSnackBar(
+        context,
+        'JSON 格式不正确，请检查逗号、引号和括号',
+        isError: true,
+      );
+    } on DioException catch (e) {
+      if (!mounted) return;
+      AppFeedback.showSnackBar(
+        context,
+        AppFeedback.dioErrorMessage(e, fallback: '文件预览失败'),
+        isError: true,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      AppFeedback.showSnackBar(
+        context,
+        '读取 JSON 文件失败：$e',
+        isError: true,
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _readingJsonFile = false);
+      }
+    }
+  }
+
   List<Map<String, dynamic>> get _draftEvents {
+    if (_fileJsonPayload != null) {
+      final events = _fileJsonPayload!['events'];
+      if (events is! List) return [];
+      return events
+          .whereType<Map>()
+          .map((event) => Map<String, dynamic>.from(event))
+          .toList();
+    }
     try {
       final data = jsonDecode(_jsonController.text);
       if (data is! Map<String, dynamic>) return [];
@@ -2477,12 +2760,33 @@ class _CompetitionAdminImportScreenState
     return indexed.map((entry) => entry.value).toList();
   }
 
+  List<Map<String, dynamic>> get _filteredDraftEvents {
+    return _sortedDraftEvents.where((event) {
+      switch (_previewFilter) {
+        case 'missing_date':
+          return !_draftHasExactDate(event);
+        case 'pending':
+          return _draftValue(event, 'time_status').isEmpty ||
+              _draftValue(event, 'time_status') == 'pending';
+        case 'confirmed':
+          return _draftValue(event, 'time_status') == 'confirmed';
+        case 'warning':
+          return _draftEventHasWarning(event);
+        default:
+          return true;
+      }
+    }).toList();
+  }
+
+  List<Map<String, dynamic>> get _visibleDraftEvents {
+    final filtered = _filteredDraftEvents;
+    if (_showAllPreviewEvents) return filtered;
+    return filtered.take(10).toList();
+  }
+
   bool get _canCommitPreview {
     final errors = (_preview?['errors'] as List?) ?? [];
-    return _batchId != null &&
-        _preview != null &&
-        _previewedJsonText == _jsonController.text &&
-        errors.isEmpty;
+    return _batchId != null && _preview != null && errors.isEmpty;
   }
 
   Future<void> _previewJson() async {
@@ -2505,6 +2809,8 @@ class _CompetitionAdminImportScreenState
         _batchId = resp.data['batch_id'];
         _preview = Map<String, dynamic>.from(resp.data['preview']);
         _previewedJsonText = _jsonController.text;
+        _showAllPreviewEvents = false;
+        _previewFilter = 'all';
       });
     } on FormatException {
       AppFeedback.showSnackBar(
@@ -2569,54 +2875,117 @@ class _CompetitionAdminImportScreenState
         children: [
           _buildPromptCard(),
           const SizedBox(height: 12),
-          TextField(
-            controller: _jsonController,
-            minLines: 10,
-            maxLines: 22,
-            decoration: InputDecoration(
-              labelText: '粘贴 AI 生成的 JSON',
-              hintText: '必须是 {"events": [...]}',
-              filled: true,
-              fillColor: Colors.white,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(18),
-                borderSide: const BorderSide(color: _competitionBorder),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(18),
-                borderSide: const BorderSide(color: _competitionBorder),
-              ),
-              alignLabelWithHint: true,
-            ),
-            style: const TextStyle(fontSize: 13, height: 1.45),
-          ),
+          _buildJsonFileImportCard(),
           const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: () {
-                    _jsonController.text = _competitionAiExampleJson;
-                    AppFeedback.showSnackBar(context, '已填入示例 JSON');
-                  },
-                  icon: const Icon(Icons.data_object_rounded, size: 18),
-                  label: const Text('填入示例'),
+          if (_jsonFileName == null) ...[
+            TextField(
+              controller: _jsonController,
+              minLines: 8,
+              maxLines: 16,
+              decoration: InputDecoration(
+                labelText: 'AI 生成的 JSON',
+                hintText: '可以粘贴，也可以从上方选择 .json 文件',
+                filled: true,
+                fillColor: Colors.white,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(18),
+                  borderSide: const BorderSide(color: _competitionBorder),
                 ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: FilledButton.icon(
-                  onPressed: _previewJson,
-                  icon: const Icon(Icons.fact_check_outlined, size: 18),
-                  label: const Text('检查预览'),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(18),
+                  borderSide: const BorderSide(color: _competitionBorder),
                 ),
+                alignLabelWithHint: true,
               ),
-            ],
-          ),
+              style: const TextStyle(fontSize: 13, height: 1.45),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () {
+                      _jsonController.text = _competitionAiExampleJson;
+                      AppFeedback.showSnackBar(context, '已填入示例 JSON');
+                    },
+                    icon: const Icon(Icons.data_object_rounded, size: 18),
+                    label: const Text('填入示例'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: _previewJson,
+                    icon: const Icon(Icons.fact_check_outlined, size: 18),
+                    label: const Text('检查预览'),
+                  ),
+                ),
+              ],
+            ),
+          ] else ...[
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () {
+                  setState(() {
+                    _jsonFileName = null;
+                    _fileJsonPayload = null;
+                    _preview = null;
+                    _batchId = null;
+                    _showAllPreviewEvents = false;
+                    _previewFilter = 'all';
+                  });
+                },
+                icon: const Icon(Icons.close_rounded, size: 18),
+                label: const Text('清除文件，改为手动粘贴'),
+              ),
+            ),
+          ],
           if (_preview != null) ...[
             const SizedBox(height: 16),
             _buildPreviewCard(),
           ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildJsonFileImportCard() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: _competitionBorder),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            '也可以直接导入 JSON 文件',
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w900,
+              color: Color(0xFF242330),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            _jsonFileName == null
+                ? '适合 100 条以上的大 JSON，不用再复制粘贴。'
+                : '当前文件：$_jsonFileName',
+            style: const TextStyle(
+              color: _competitionMuted,
+              fontSize: 12,
+              height: 1.4,
+            ),
+          ),
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: _readingJsonFile ? null : _pickJsonFile,
+            icon: const Icon(Icons.upload_file_rounded, size: 18),
+            label: Text(_readingJsonFile ? '读取中...' : '选择 JSON 文件'),
+          ),
         ],
       ),
     );
@@ -2745,6 +3114,8 @@ class _CompetitionAdminImportScreenState
     final errors = (_preview?['errors'] as List?) ?? [];
     final warnings = (_preview?['warnings'] as List?) ?? [];
     final draftEvents = _sortedDraftEvents;
+    final filteredEvents = _filteredDraftEvents;
+    final visibleEvents = _visibleDraftEvents;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -2775,6 +3146,12 @@ class _CompetitionAdminImportScreenState
               _previewPill('警告', '${warnings.length}'),
             ],
           ),
+          const SizedBox(height: 12),
+          _buildImportConclusionCard(draftEvents, errors, warnings),
+          if (draftEvents.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            _buildIssueOverview(draftEvents),
+          ],
           if (errors.isNotEmpty) ...[
             const SizedBox(height: 12),
             ...errors.map(
@@ -2811,16 +3188,45 @@ class _CompetitionAdminImportScreenState
           ],
           if (draftEvents.isNotEmpty) ...[
             const SizedBox(height: 14),
-            const Text(
-              '计划预览',
-              style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w900,
-                color: Color(0xFF242330),
-              ),
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    '计划预览',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w900,
+                      color: Color(0xFF242330),
+                    ),
+                  ),
+                ),
+                Text(
+                  '显示 ${visibleEvents.length} / ${filteredEvents.length}',
+                  style: const TextStyle(
+                    color: _competitionMuted,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 8),
-            ...draftEvents.map(_buildDraftEventCard),
+            _buildPreviewFilters(draftEvents),
+            const SizedBox(height: 10),
+            ...visibleEvents.map(_buildDraftEventCompactCard),
+            if (!_showAllPreviewEvents && filteredEvents.length > 10) ...[
+              const SizedBox(height: 2),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () => setState(() {
+                    _showAllPreviewEvents = true;
+                  }),
+                  icon: const Icon(Icons.unfold_more_rounded, size: 18),
+                  label: Text('展开全部 ${filteredEvents.length} 条'),
+                ),
+              ),
+            ],
           ],
           const SizedBox(height: 14),
           FilledButton(
@@ -2835,6 +3241,204 @@ class _CompetitionAdminImportScreenState
             ),
             child: const Text('确认入库草稿'),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildImportConclusionCard(
+    List<Map<String, dynamic>> events,
+    List<dynamic> errors,
+    List<dynamic> warnings,
+  ) {
+    final missingRegistration = _countWhere(
+      events,
+      (event) => _draftValue(event, 'registration_end').isEmpty,
+    );
+    final missingEvent = _countWhere(
+      events,
+      (event) => _draftValue(event, 'event_start').isEmpty,
+    );
+    final title = errors.isNotEmpty
+        ? '存在错误，修正后再导入'
+        : warnings.isNotEmpty
+            ? '可导入，但需要关注警告'
+            : missingRegistration > 0 || missingEvent > 0
+                ? '可导入，但需要后续补日期'
+                : '可导入为草稿';
+    final icon = errors.isNotEmpty
+        ? Icons.error_outline_rounded
+        : warnings.isNotEmpty
+            ? Icons.warning_amber_rounded
+            : Icons.check_circle_outline_rounded;
+    final color = errors.isNotEmpty
+        ? _competitionDanger
+        : warnings.isNotEmpty
+            ? _competitionOrange
+            : _competitionPrimary;
+    final validCount = (_preview?['valid_count'] as num?)?.toInt() ?? 0;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(13),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: color.withValues(alpha: 0.22)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: color, size: 20),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  '$validCount 条有效，${errors.length} 条错误，${warnings.length} 条警告。'
+                  '这些比赛会先进入草稿库，不会直接发布给普通用户。',
+                  style: const TextStyle(
+                    color: Color(0xFF444150),
+                    fontSize: 12,
+                    height: 1.45,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildIssueOverview(List<Map<String, dynamic>> events) {
+    final missingRegistration = _countWhere(
+      events,
+      (event) => _draftValue(event, 'registration_end').isEmpty,
+    );
+    final missingEvent = _countWhere(
+      events,
+      (event) => _draftValue(event, 'event_start').isEmpty,
+    );
+    final pending = _countWhere(
+      events,
+      (event) =>
+          _draftValue(event, 'time_status').isEmpty ||
+          _draftValue(event, 'time_status') == 'pending',
+    );
+    final confirmed = _countWhere(
+      events,
+      (event) => _draftValue(event, 'time_status') == 'confirmed',
+    );
+
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        _issuePill('缺报名日期', missingRegistration),
+        _issuePill('缺比赛日期', missingEvent),
+        _issuePill('待通知', pending),
+        _issuePill('已确认', confirmed),
+      ],
+    );
+  }
+
+  Widget _issuePill(String label, int count) {
+    final active = count > 0;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: active
+            ? _competitionOrange.withValues(alpha: 0.1)
+            : _competitionLight.withValues(alpha: 0.54),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: active
+              ? _competitionOrange.withValues(alpha: 0.2)
+              : _competitionBorder,
+        ),
+      ),
+      child: Text(
+        '$label $count',
+        style: TextStyle(
+          color: active ? _competitionOrange : _competitionPrimaryDark,
+          fontSize: 12,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPreviewFilters(List<Map<String, dynamic>> events) {
+    final filters = [
+      ('all', '全部', events.length),
+      (
+        'missing_date',
+        '缺日期',
+        _countWhere(events, (e) => !_draftHasExactDate(e))
+      ),
+      (
+        'pending',
+        '待通知',
+        _countWhere(
+          events,
+          (e) =>
+              _draftValue(e, 'time_status').isEmpty ||
+              _draftValue(e, 'time_status') == 'pending',
+        ),
+      ),
+      (
+        'confirmed',
+        '已确认',
+        _countWhere(
+            events, (e) => _draftValue(e, 'time_status') == 'confirmed'),
+      ),
+      ('warning', '有警告', _countWhere(events, _draftEventHasWarning)),
+    ];
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          for (final filter in filters) ...[
+            ChoiceChip(
+              label: Text('${filter.$2} ${filter.$3}'),
+              selected: _previewFilter == filter.$1,
+              onSelected: (_) => setState(() {
+                _previewFilter = filter.$1;
+                _showAllPreviewEvents = false;
+              }),
+              labelStyle: TextStyle(
+                color: _previewFilter == filter.$1
+                    ? Colors.white
+                    : _competitionPrimaryDark,
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+              ),
+              selectedColor: _competitionPrimary,
+              backgroundColor: _competitionLight.withValues(alpha: 0.52),
+              side: BorderSide(
+                color: _previewFilter == filter.$1
+                    ? _competitionPrimary
+                    : _competitionBorder,
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(999),
+              ),
+            ),
+            const SizedBox(width: 8),
+          ],
         ],
       ),
     );
@@ -2873,7 +3477,7 @@ class _CompetitionAdminImportScreenState
     );
   }
 
-  Widget _buildDraftEventCard(Map<String, dynamic> event) {
+  Widget _buildDraftEventCompactCard(Map<String, dynamic> event) {
     final title = _draftValue(event, 'title');
     final category = _draftValue(event, 'primary_category_slug');
     final recommendation = _draftValue(event, 'recommendation_level');
@@ -2885,65 +3489,113 @@ class _CompetitionAdminImportScreenState
     final timeStatus = _timeStatusLabel(_draftValue(event, 'time_status'));
     final timeNote = _draftValue(event, 'time_note');
     final sortMonth = _draftValue(event, 'sort_month');
-    final hasExactDate = _draftValue(event, 'registration_end').isNotEmpty ||
-        _draftValue(event, 'event_start').isNotEmpty;
+    final hasExactDate = _draftHasExactDate(event);
+    final timeSummary = _draftTimeSummary(event);
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: _competitionBg,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: _competitionBorder),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title.isEmpty ? '未命名比赛' : title,
-            style: const TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w900,
-              color: Color(0xFF242330),
-            ),
-          ),
-          const SizedBox(height: 8),
-          _draftLine(
-            Icons.alarm_rounded,
-            '报名截止',
-            _draftTimeText(event, 'registration_end', 'registration_time_text'),
-          ),
-          _draftLine(
-            Icons.calendar_month_rounded,
-            '比赛时间',
-            _draftTimeText(event, 'event_start', 'event_time_text'),
-          ),
-          _draftLine(Icons.verified_outlined, '时间状态', timeStatus),
-          _draftLine(
-            Icons.event_note_rounded,
-            '预计月份',
-            sortMonth.isEmpty || sortMonth == '0' ? '未填写' : '$sortMonth 月',
-          ),
-          _draftLine(
-            Icons.rule_rounded,
-            '日期精度',
-            hasExactDate ? '包含精确日期' : '未填写精确日期',
-          ),
-          if (timeNote.isNotEmpty)
-            _draftLine(Icons.notes_rounded, '时间说明', timeNote),
-          if (organizer.isNotEmpty)
-            _draftLine(Icons.account_balance_outlined, '主办方', organizer),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          tilePadding: const EdgeInsets.fromLTRB(14, 4, 10, 4),
+          childrenPadding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+          iconColor: _competitionPrimaryDark,
+          collapsedIconColor: _competitionMuted,
+          title: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (category.isNotEmpty) _draftChip('分类 $category'),
-              if (recommendation.isNotEmpty) _draftChip('$recommendation 推荐'),
-              _draftChip(recognition),
-              _draftChip(source),
+              Text(
+                title.isEmpty ? '未命名比赛' : title,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w900,
+                  color: Color(0xFF242330),
+                  height: 1.25,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  const Icon(
+                    Icons.schedule_rounded,
+                    size: 14,
+                    color: _competitionMuted,
+                  ),
+                  const SizedBox(width: 5),
+                  const Text(
+                    '时间：',
+                    style: TextStyle(
+                      color: _competitionMuted,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  Expanded(
+                    child: Text(
+                      timeSummary,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xFF444150),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 9),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  if (category.isNotEmpty) _draftChip('分类 $category'),
+                  if (recommendation.isNotEmpty)
+                    _draftChip('$recommendation 推荐'),
+                  _draftChip(recognition),
+                  _draftChip(source),
+                ],
+              ),
             ],
           ),
-        ],
+          children: [
+            _draftLine(
+              Icons.alarm_rounded,
+              '报名截止',
+              _draftTimeText(
+                event,
+                'registration_end',
+                'registration_time_text',
+              ),
+            ),
+            _draftLine(
+              Icons.calendar_month_rounded,
+              '比赛时间',
+              _draftTimeText(event, 'event_start', 'event_time_text'),
+            ),
+            _draftLine(Icons.verified_outlined, '时间状态', timeStatus),
+            _draftLine(
+              Icons.event_note_rounded,
+              '预计月份',
+              sortMonth.isEmpty || sortMonth == '0' ? '未填写' : '$sortMonth 月',
+            ),
+            _draftLine(
+              Icons.rule_rounded,
+              '日期精度',
+              hasExactDate ? '包含精确日期' : '未填写精确日期',
+            ),
+            if (timeNote.isNotEmpty)
+              _draftLine(Icons.notes_rounded, '时间说明', timeNote),
+            if (organizer.isNotEmpty)
+              _draftLine(Icons.account_balance_outlined, '主办方', organizer),
+          ],
+        ),
       ),
     );
   }
@@ -2997,6 +3649,51 @@ class _CompetitionAdminImportScreenState
         ),
       ),
     );
+  }
+
+  int _countWhere(
+    List<Map<String, dynamic>> events,
+    bool Function(Map<String, dynamic>) test,
+  ) {
+    return events.where(test).length;
+  }
+
+  bool _draftHasExactDate(Map<String, dynamic> event) {
+    return _draftValue(event, 'registration_end').isNotEmpty ||
+        _draftValue(event, 'event_start').isNotEmpty;
+  }
+
+  bool _draftEventHasWarning(Map<String, dynamic> event) {
+    final hasAnyTime = _draftValue(event, 'registration_end').isNotEmpty ||
+        _draftValue(event, 'event_start').isNotEmpty ||
+        _draftValue(event, 'registration_time_text').isNotEmpty ||
+        _draftValue(event, 'event_time_text').isNotEmpty;
+    if (!hasAnyTime && _draftValue(event, 'time_note').isEmpty) {
+      return true;
+    }
+    return _draftValue(event, 'school_recognition_status') == 'recognized' &&
+        _draftValue(event, 'source_note').isEmpty;
+  }
+
+  String _draftTimeSummary(Map<String, dynamic> event) {
+    final status = _timeStatusLabel(_draftValue(event, 'time_status'));
+    final registrationEnd = _draftValue(event, 'registration_end');
+    if (registrationEnd.isNotEmpty) return '报名截止 $registrationEnd';
+
+    final eventStart = _draftValue(event, 'event_start');
+    if (eventStart.isNotEmpty) return '比赛开始 $eventStart';
+
+    final registrationText = _draftValue(event, 'registration_time_text');
+    if (registrationText.isNotEmpty) return '$status · $registrationText';
+
+    final eventText = _draftValue(event, 'event_time_text');
+    if (eventText.isNotEmpty) return '$status · $eventText';
+
+    final sortMonth = int.tryParse(_draftValue(event, 'sort_month'));
+    if (sortMonth != null && sortMonth >= 1 && sortMonth <= 12) {
+      return '$status · 预计 $sortMonth 月';
+    }
+    return status;
   }
 
   DateTime? _draftSortDate(Map<String, dynamic> event) {

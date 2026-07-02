@@ -13,6 +13,14 @@ class AppFeedback {
     final data = e.response?.data;
     if (data is Map) {
       final detail = data['detail'] ?? data['error'] ?? data['message'];
+      if (detail is Map) {
+        final nestedMessage =
+            detail['message'] ?? detail['error'] ?? detail['detail'];
+        if (nestedMessage != null &&
+            nestedMessage.toString().trim().isNotEmpty) {
+          return nestedMessage.toString();
+        }
+      }
       if (detail != null && detail.toString().trim().isNotEmpty) {
         return detail.toString();
       }

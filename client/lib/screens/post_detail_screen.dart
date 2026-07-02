@@ -17,6 +17,7 @@ import '../widgets/report_sheet.dart';
 import '../widgets/cached_avatar.dart';
 import 'create_post_screen.dart';
 import 'image_viewer_screen.dart';
+import 'water_category_feed_route.dart';
 
 import 'user_home_screen.dart';
 
@@ -986,7 +987,20 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
-  /// 水帖专用 AppBar：不透明背景 + 居中标题 + 更多菜单
+  WaterPostCategory get _resolvedWaterCategory {
+    return waterCategoryOf(_post?.postType) ?? waterCategoryOf('campus_life')!;
+  }
+
+  Future<void> _openWaterCategoryFromDetail() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) =>
+            WaterCategoryFeedRoute(category: _resolvedWaterCategory),
+      ),
+    );
+  }
+
+  /// 水帖专用 AppBar：不透明背景 + 分类入口 + 更多菜单
   PreferredSizeWidget _buildWaterAppBar(
     bool isDark, {
     required bool canEdit,
@@ -999,11 +1013,23 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       elevation: 0.5,
       automaticallyImplyLeading: !widget.hideBackButton,
       leading: widget.hideBackButton ? null : const BackButton(),
-      title: const Text(
-        '帖子详情',
-        style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
+      titleSpacing: widget.hideBackButton ? 16 : 0,
+      title: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _buildWaterAppBarCategoryChip(isDark),
+          const SizedBox(width: 8),
+          Text(
+            '帖子详情',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              color: isDark ? Colors.white : const Color(0xFF171A1F),
+            ),
+          ),
+        ],
       ),
-      centerTitle: true,
+      centerTitle: false,
       actions: [
         if (_post != null)
           PopupMenuButton<String>(
@@ -1120,6 +1146,36 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             },
           ),
       ],
+    );
+  }
+
+  Widget _buildWaterAppBarCategoryChip(bool isDark) {
+    final category = _resolvedWaterCategory;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: _openWaterCategoryFromDetail,
+        borderRadius: BorderRadius.circular(999),
+        child: Container(
+          height: 26,
+          padding: const EdgeInsets.symmetric(horizontal: 9),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: category.color.withValues(alpha: isDark ? 0.18 : 0.10),
+            borderRadius: BorderRadius.circular(999),
+          ),
+          child: Text(
+            category.label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 11.5,
+              fontWeight: FontWeight.w600,
+              color: isDark ? Colors.white70 : category.color,
+            ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -1578,13 +1634,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               ),
             ),
             const SizedBox(width: 12),
-            // 信息
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Row(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       Flexible(
                         child: Text(
@@ -1601,15 +1657,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                         const SizedBox(width: 6),
                         _buildLevelBadge(p.author!, isDark),
                       ],
-                      const Spacer(),
-                      Text(
-                        '${p.viewCount}阅读',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color:
-                              isDark ? Colors.white54 : const Color(0xFF60646C),
-                        ),
-                      ),
                     ],
                   ),
                   const SizedBox(height: 4),
@@ -1621,6 +1668,15 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     ),
                   ),
                 ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              '${p.viewCount}阅读',
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                fontSize: 13,
+                color: isDark ? Colors.white54 : const Color(0xFF60646C),
               ),
             ),
           ],
@@ -1637,9 +1693,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildWaterCategoryTag(p, isDark),
-          if (p.title.isNotEmpty || p.content.isNotEmpty)
-            const SizedBox(height: 12),
           if (p.title.isNotEmpty) ...[
             Text(
               p.title,
@@ -1666,26 +1719,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               ),
             ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildWaterCategoryTag(Post p, bool isDark) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-      decoration: BoxDecoration(
-        color: isDark
-            ? Colors.white.withValues(alpha: 0.08)
-            : const Color(0xFFF3F4F6),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        waterCategoryLabelOf(p.postType),
-        style: TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w500,
-          color: isDark ? Colors.white70 : const Color(0xFF60646C),
-        ),
       ),
     );
   }

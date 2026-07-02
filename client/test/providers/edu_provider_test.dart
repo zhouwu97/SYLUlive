@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:dio/dio.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shenliyuan/providers/edu_provider.dart';
@@ -7,8 +8,43 @@ import 'package:shenliyuan/models/edu_grade.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
-  SharedPreferences.setMockInitialValues({});
+  const secureStorageChannel =
+      MethodChannel('plugins.it_nomads.com/flutter_secure_storage');
+  final secureStore = <String, String>{};
   late EduProvider provider;
+
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+    secureStore.clear();
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(secureStorageChannel, (call) async {
+      final args = Map<String, dynamic>.from(call.arguments as Map);
+      final key = args['key'] as String?;
+      switch (call.method) {
+        case 'read':
+          return secureStore[key];
+        case 'write':
+          secureStore[key!] = args['value'] as String;
+          return null;
+        case 'delete':
+          secureStore.remove(key);
+          return null;
+        case 'deleteAll':
+          secureStore.clear();
+          return null;
+        case 'containsKey':
+          return secureStore.containsKey(key);
+        case 'readAll':
+          return secureStore;
+      }
+      return null;
+    });
+  });
+
+  tearDown(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(secureStorageChannel, null);
+  });
 
   /// Create a provider with a Dio that intercepts /edu/grades and
   /// resolves with the given [responseData] after an optional [delay].
@@ -63,7 +99,13 @@ void main() {
 
     test('clearGradeCacheForUser only removes targeted user entries', () async {
       provider = createProvider(responseData: [
-        {'name': '课程A', 'grade': '90', 'credits': 3, 'gpa': 4.0, 'is_degree': true},
+        {
+          'name': '课程A',
+          'grade': '90',
+          'credits': 3,
+          'gpa': 4.0,
+          'is_degree': true
+        },
       ]);
 
       // Populate cache for user A
@@ -87,7 +129,8 @@ void main() {
       expect(provider.getCachedGrades('2025', 3), isNull);
     });
 
-    test('fetchGrades rejects result when user switches during request', () async {
+    test('fetchGrades rejects result when user switches during request',
+        () async {
       final completer = Completer<void>();
 
       final dio = Dio();
@@ -145,7 +188,13 @@ void main() {
 
     test('fetchGrades writes to correct user cache on success', () async {
       provider = createProvider(responseData: [
-        {'name': '数据结构', 'grade': '90', 'credits': 4, 'gpa': 4.0, 'is_degree': true},
+        {
+          'name': '数据结构',
+          'grade': '90',
+          'credits': 4,
+          'gpa': 4.0,
+          'is_degree': true
+        },
       ]);
 
       provider.setUserId('user_123');
@@ -205,7 +254,13 @@ void main() {
 
     test('setUserId clears cache for old user', () async {
       provider = createProvider(responseData: [
-        {'name': '课程', 'grade': '80', 'credits': 2, 'gpa': 3.0, 'is_degree': false},
+        {
+          'name': '课程',
+          'grade': '80',
+          'credits': 2,
+          'gpa': 3.0,
+          'is_degree': false
+        },
       ]);
 
       provider.setUserId('user_a');
@@ -253,6 +308,140 @@ void main() {
       expect(grades[1].name, '体育4');
       expect(grades[1].isPassed, true); // 84 >= 60
       expect(grades[0].isPassed, true); // 64.7 >= 60
+    });
+
+    test('clearLocalSession clears local edu state and saved keys', () async {
+      SharedPreferences.setMockInitialValues({
+        'edu_bound_user_a': true,
+        'edu_student_id_user_a': ' 2403130233 ',
+        'edu_grade_user_a': '2024',
+        'edu_college_user_a': '信息科学与工程学院',
+        'edu_major_user_a': '软件工程',
+        'edu_last_semester_user_a': '2025_3',
+      });
+      secureStore['edu_pwd_2403130233'] = 'old-password';
+
+      final dio = Dio();
+      dio.interceptors.add(
+        InterceptorsWrapper(
+          onRequest: (options, handler) {
+            if (options.path == '/edu/status') {
+              handler.resolve(
+                Response(
+                  requestOptions: options,
+                  statusCode: 200,
+                  data: {
+                    'edu_bound': true,
+                    'edu_student_id': ' 2403130233 ',
+                    'edu_grade': '2024',
+                    'edu_college': '信息科学与工程学院',
+                    'edu_major': '软件工程',
+                  },
+                ),
+              );
+              return;
+            }
+            if (options.path == '/edu/grades') {
+              handler.resolve(
+                Response(
+                  requestOptions: options,
+                  statusCode: 200,
+                  data: {
+                    'grades': [
+                      {
+                        'name': '数据结构',
+                        'grade': '90',
+                        'credits': 4,
+                        'gpa': 4.0,
+                        'is_degree': true,
+                      }
+                    ],
+                  },
+                ),
+              );
+              return;
+            }
+            handler.next(options);
+          },
+        ),
+      );
+      final p = EduProvider(dio);
+
+      p.setUserId('user_a');
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+      await p.fetchGrades('2025', 3);
+      expect(p.isBound, true);
+      expect(p.getCachedGrades('2025', 3), isNotNull);
+
+      await p.clearLocalSession();
+
+      expect(p.userId, isNull);
+      expect(p.isBound, false);
+      expect(p.studentId, isEmpty);
+      expect(p.grade, isEmpty);
+      expect(p.college, isEmpty);
+      expect(p.major, isEmpty);
+      expect(p.isLoading, false);
+      expect(p.isStatusLoaded, false);
+      expect(p.getCachedGrades('2025', 3), isNull);
+      expect(secureStore.containsKey('edu_pwd_2403130233'), false);
+
+      final prefs = await SharedPreferences.getInstance();
+      for (final key in [
+        'edu_bound_user_a',
+        'edu_student_id_user_a',
+        'edu_grade_user_a',
+        'edu_college_user_a',
+        'edu_major_user_a',
+        'edu_last_semester_user_a',
+      ]) {
+        expect(prefs.containsKey(key), false, reason: key);
+      }
+    });
+
+    test('clearLocalSession prevents stale loadStatus from restoring binding',
+        () async {
+      final statusCompleter = Completer<void>();
+      final dio = Dio();
+      dio.interceptors.add(
+        InterceptorsWrapper(
+          onRequest: (options, handler) {
+            if (options.path == '/edu/status') {
+              statusCompleter.future.then((_) {
+                handler.resolve(
+                  Response(
+                    requestOptions: options,
+                    statusCode: 200,
+                    data: {
+                      'edu_bound': true,
+                      'edu_student_id': '2403130233',
+                      'edu_grade': '2024',
+                      'edu_college': '信息科学与工程学院',
+                      'edu_major': '软件工程',
+                    },
+                  ),
+                );
+              });
+              return;
+            }
+            handler.next(options);
+          },
+        ),
+      );
+      final p = EduProvider(dio);
+
+      p.setUserId('user_a');
+      await Future<void>.delayed(Duration.zero);
+      await p.clearLocalSession();
+      statusCompleter.complete();
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(p.userId, isNull);
+      expect(p.isBound, false);
+      expect(p.studentId, isEmpty);
+      expect(p.isStatusLoaded, false);
     });
   });
 }

@@ -19,6 +19,7 @@ import (
 	"shenliyuan/internal/middleware"
 
 	"shenliyuan/internal/models"
+	"shenliyuan/internal/services"
 )
 
 // InvitationHandler 邀请处理器
@@ -114,7 +115,7 @@ func (h *InvitationHandler) DirectPromote(c *gin.Context) {
 
 	}
 
-	if err := h.db.Model(&user).Update("role", models.RoleAdmin).Error; err != nil {
+	if err := services.UpdateUserRoleAndInvalidateToken(h.db, user.ID, models.RoleAdmin); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
 		return
 	}
@@ -331,9 +332,7 @@ func (h *InvitationHandler) Accept(c *gin.Context) {
 
 			}
 
-			return tx.Model(&models.User{}).
-				Where("id = ?", invitation.UserID).
-				Update("role", models.RoleAdmin).Error
+			return services.UpdateUserRoleAndInvalidateToken(tx, invitation.UserID, models.RoleAdmin)
 
 		}); err != nil {
 
@@ -608,7 +607,7 @@ func (h *InvitationHandler) voteInvitation(c *gin.Context, invitation models.Inv
 
 			}
 
-			return tx.Model(&models.User{}).Where("id = ?", invitation.UserID).Update("role", models.RoleAdmin).Error
+			return services.UpdateUserRoleAndInvalidateToken(tx, invitation.UserID, models.RoleAdmin)
 
 		}); err != nil {
 

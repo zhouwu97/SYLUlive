@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"shenliyuan/internal/models"
+	"shenliyuan/internal/services"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -311,7 +312,7 @@ func (h *TeacherHandler) VoteRemoveAdmin(c *gin.Context) {
 	h.db.Model(&models.AdminRemovalVote{}).Where("target_admin_id = ?", adminID).Count(&votes)
 
 	if votes > totalAdmins/2 {
-		if err := h.db.Model(&models.User{}).Where("id = ?", adminID).Update("role", models.RoleUser).Error; err != nil {
+		if err := services.UpdateUserRoleAndInvalidateToken(h.db, uint(adminID), models.RoleUser); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库操作失败"})
 			return
 		}

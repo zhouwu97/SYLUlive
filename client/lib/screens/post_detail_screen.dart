@@ -1151,14 +1151,15 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   Widget _buildWaterAppBarCategoryChip(bool isDark) {
     final category = _resolvedWaterCategory;
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: _openWaterCategoryFromDetail,
-        borderRadius: BorderRadius.circular(999),
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: _openWaterCategoryFromDetail,
+      child: Container(
+        height: 32,
+        alignment: Alignment.center,
         child: Container(
           height: 26,
-          padding: const EdgeInsets.symmetric(horizontal: 9),
+          padding: const EdgeInsets.symmetric(horizontal: 10),
           alignment: Alignment.center,
           decoration: BoxDecoration(
             color: category.color.withValues(alpha: isDark ? 0.18 : 0.10),

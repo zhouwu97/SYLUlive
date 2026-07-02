@@ -12,6 +12,8 @@ import (
 	crand "crypto/rand"
 	"math/big"
 
+	"mime"
+
 	"net/http"
 
 	"net/smtp"
@@ -340,11 +342,21 @@ func sendMailCode(qq, code string) error {
 
 	auth := smtp.PlainAuth("", VerifyCodeConfig.SMTPUser, VerifyCodeConfig.SMTPPass, VerifyCodeConfig.SMTPHost)
 
-	subject := "沈理校园注册验证码"
+	message := buildVerifyCodeEmail(to, VerifyCodeConfig.SMTPFrom, code)
+
+	return smtp.SendMail(addr, auth, VerifyCodeConfig.SMTPFrom, []string{to}, message)
+}
+
+func buildVerifyCodeEmail(to, from, code string) []byte {
+	subject := mime.QEncoding.Encode("UTF-8", "沈理校园注册验证码")
 
 	body := fmt.Sprintf(`
 
-<html>
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8">
+  </head>
 
   <body style="font-family: Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif; line-height: 1.6; color: #222;">
 
@@ -358,7 +370,7 @@ func sendMailCode(qq, code string) error {
 
     </div>
 
-    <p style="margin: 0 0 6px;"><strong>有效期：</strong>10 鍒嗛挓</p>
+    <p style="margin: 0 0 6px;"><strong>有效期：</strong>10 分钟</p>
 
     <p style="margin: 0; color: #666;">如果不是本人操作，请忽略此邮件。</p>
 
@@ -366,19 +378,19 @@ func sendMailCode(qq, code string) error {
 
 </html>`, code)
 
-	message := []byte("To: " + to + "\r\n" +
+	return []byte("To: " + to + "\r\n" +
 
-		"From: " + VerifyCodeConfig.SMTPFrom + "\r\n" +
+		"From: " + from + "\r\n" +
 
 		"Subject: " + subject + "\r\n" +
 
 		"MIME-Version: 1.0\r\n" +
 
-		"Content-Type: text/html; charset=UTF-8\r\n\r\n" +
+		"Content-Type: text/html; charset=UTF-8\r\n" +
+
+		"Content-Transfer-Encoding: 8bit\r\n\r\n" +
 
 		body)
-
-	return smtp.SendMail(addr, auth, VerifyCodeConfig.SMTPFrom, []string{to}, message)
 
 }
 
@@ -702,7 +714,7 @@ func (h *AuthHandler) RegisterWithEdu(c *gin.Context) {
 
 		}
 
-		c.JSON(http.StatusUnauthorized, gin.H{"error": verifyResult.Message})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": verifyResult.Message, "code": verifyResult.Code})
 
 		return
 
@@ -931,6 +943,8 @@ type eduVerifyResult struct {
 
 	Message string `json:"message"`
 
+	Code string `json:"code"`
+
 	StudentID string `json:"student_id"`
 
 	Name string `json:"name"`
@@ -1004,7 +1018,7 @@ func (h *AuthHandler) LoginEdu(c *gin.Context) {
 
 		if !result.Success {
 
-			c.JSON(http.StatusUnauthorized, gin.H{"error": result.Message})
+			c.JSON(http.StatusUnauthorized, gin.H{"error": result.Message, "code": result.Code})
 
 			return
 
@@ -1142,7 +1156,7 @@ func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 
 		}
 
-		c.JSON(http.StatusUnauthorized, gin.H{"error": result.Message})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": result.Message, "code": result.Code})
 
 		return
 
@@ -1238,7 +1252,7 @@ func verifyEduWithPython(studentID, eduPassword, appPassword string) (*eduVerify
 		var errResp struct {
 			Error string `json:"error"`
 
-			Detail string `json:"detail"`
+			Detail interface{} `json:"detail"`
 		}
 
 		_ = json.Unmarshal(resp.Body(), &errResp)
@@ -1249,10 +1263,19 @@ func verifyEduWithPython(studentID, eduPassword, appPassword string) (*eduVerify
 
 		}
 
-		if errResp.Detail != "" {
-
-			return nil, errors.New(errResp.Detail)
-
+		switch detail := errResp.Detail.(type) {
+		case string:
+			if detail != "" {
+				return nil, errors.New(detail)
+			}
+		case map[string]interface{}:
+			message, _ := detail["message"].(string)
+			if message == "" {
+				message, _ = detail["error"].(string)
+			}
+			if message != "" {
+				return nil, errors.New(message)
+			}
 		}
 
 		return nil, errors.New("教务服务验证失败")

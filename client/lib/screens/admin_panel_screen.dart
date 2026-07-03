@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:dio/dio.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
@@ -78,26 +79,32 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     final themeProvider = context.watch<ThemeProvider>();
     final bottomSafe = MediaQuery.of(context).padding.bottom;
 
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        title: const Text('管理员面板'),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: (isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark)
+          .copyWith(
+        statusBarColor: Colors.transparent,
+        systemNavigationBarColor: Colors.transparent,
       ),
-      body: Stack(
-        children: [
-          Positioned.fill(child: _buildBackground(context, themeProvider, isDark)),
-          SafeArea(
-            child: ListView(
-              physics: const BouncingScrollPhysics(),
-              padding: EdgeInsets.fromLTRB(16, 8, 16, bottomSafe + 24),
-              children: [
-                _buildPendingSection(isDark),
-                const SizedBox(height: 18),
-                
-                _AdminSectionGroup(
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        extendBodyBehindAppBar: true,
+        appBar: AppBar(
+          title: const Text('管理员面板'),
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+        ),
+        body: Stack(
+          children: [
+            Positioned.fill(child: _buildBackground(context, themeProvider, isDark)),
+            SafeArea(
+              child: ListView(
+                physics: const BouncingScrollPhysics(),
+                padding: EdgeInsets.fromLTRB(16, 8, 16, bottomSafe + 36),
+                children: [
+                  _buildPendingSection(isDark),
+                  const SizedBox(height: 18),
+                  
+                  _AdminSectionGroup(
                   title: '社区治理',
                   isDark: isDark,
                   children: [

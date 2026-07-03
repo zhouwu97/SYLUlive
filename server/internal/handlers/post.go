@@ -60,6 +60,29 @@ func normalizeWaterPostType(boardID models.BoardID, postType string) (string, er
 	return "", fmt.Errorf("invalid water post_type: %s", postType)
 }
 
+// validateWaterSectionActive 校验 post_type 对应的版块存在且 active；返回版块 ID。
+func validateWaterSectionActive(db *gorm.DB, postType string) (uint, error) {
+	var section models.WaterSection
+	err := db.Where("slug = ? AND status = ?", postType, "active").First(&section).Error
+	if err == gorm.ErrRecordNotFound {
+		return 0, fmt.Errorf("无效版块")
+	}
+	if err != nil {
+		return 0, err
+	}
+	return section.ID, nil
+}
+
+// validateWaterTagBelongsToSection 校验标签属于该版块且启用；返回标签 ID（uint）以备写入。
+func validateWaterTagBelongsToSection(db *gorm.DB, tagID uint, sectionID uint) error {
+	var tag models.WaterSectionTag
+	err := db.Where("id = ? AND section_id = ? AND is_enabled = ?", tagID, sectionID, true).First(&tag).Error
+	if err == gorm.ErrRecordNotFound {
+		return fmt.Errorf("标签不属于该版块")
+	}
+	return err
+}
+
 // GetList 获取帖子列表
 func (h *PostHandler) GetList(c *gin.Context) {
 	boardIDStr := c.Query("board")
@@ -156,6 +179,50 @@ func (h *PostHandler) GetList(c *gin.Context) {
 
 	if postType != "" {
 		query = query.Where("post_type = ?", postType)
+	}
+
+	// tag_id 过滤：仅水帖版块生效
+	tagIDStr := c.Query("tag_id")
+	tagIDProvided := tagIDStr != ""
+	var tagID uint
+	if tagIDProvided {
+		parsed, err := strconv.ParseUint(tagIDStr, 10, 64)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的标签ID"})
+			return
+		}
+		tagID = uint(parsed)
+		// tag_id 仅支持水帖版块
+		parsedBoard, boardErr := strconv.Atoi(boardIDStr)
+		if boardErr != nil || models.BoardID(parsedBoard) != models.BoardShuitie {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "tag_id 仅支持水帖版块"})
+			return
+		}
+		// 校验标签存在且属于 type 对应 section
+		if postType != "" {
+			sectionID, secErr := validateWaterSectionActive(h.db, postType)
+			if secErr != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "标签不属于该版块"})
+				return
+			}
+			if tagErr := validateWaterTagBelongsToSection(h.db, tagID, sectionID); tagErr != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": tagErr.Error()})
+				return
+			}
+		} else {
+			// 未指定 type：只要标签存在且属于任意 active section
+			var exists int64
+			h.db.Model(&models.WaterSectionTag{}).
+				Joins("JOIN water_sections ON water_sections.id = water_section_tags.section_id").
+				Where("water_section_tags.id = ? AND water_section_tags.is_enabled = ? AND water_sections.status = ?",
+					tagID, true, "active").
+				Count(&exists)
+			if exists == 0 {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "标签不属于该版块"})
+				return
+			}
+		}
+		query = query.Where("water_tag_id = ?", tagID)
 	}
 
 	if sinceStr != "" {
@@ -260,6 +327,9 @@ func (h *PostHandler) GetList(c *gin.Context) {
 		if postType != "" {
 			snapshotQuery = snapshotQuery.Where("post_type = ?", postType)
 		}
+		if tagIDProvided {
+			snapshotQuery = snapshotQuery.Where("water_tag_id = ?", tagID)
+		}
 		if sort == "all" {
 			snapshotQuery = applyPinnedOrder(snapshotQuery, now).
 				Order("(10.0 + like_count*5 + reply_count*10 + view_count*0.2) / POWER((EXTRACT(EPOCH FROM (NOW() - created_at))/3600.0 + 2), 2) DESC")
@@ -352,12 +422,13 @@ func (h *PostHandler) fillLikes(c *gin.Context, posts []models.Post) {
 
 // CreatePostInput 创建帖子输入
 type CreatePostInput struct {
-	Title    string  `form:"title"`
-	Content  string  `form:"content" binding:"required"`
-	BoardID  int     `form:"board_id" binding:"required"`
-	PostType string  `form:"post_type"`
-	Price    float64 `form:"price"`
-	Contact  string  `form:"contact"`
+	Title      string  `form:"title"`
+	Content    string  `form:"content" binding:"required"`
+	BoardID    int     `form:"board_id" binding:"required"`
+	PostType   string  `form:"post_type"`
+	Price      float64 `form:"price"`
+	Contact    string  `form:"contact"`
+	WaterTagID *uint   `form:"water_tag_id"`
 }
 
 // Create 创建帖子
@@ -396,6 +467,22 @@ func (h *PostHandler) Create(c *gin.Context) {
 		Price:    input.Price,
 		Contact:  input.Contact,
 		Status:   models.PostStatusNormal,
+	}
+
+	// 水帖版块额外校验版块活跃状态与标签归属
+	if post.BoardID == models.BoardShuitie {
+		sectionID, secErr := validateWaterSectionActive(h.db, normalizedType)
+		if secErr != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": secErr.Error()})
+			return
+		}
+		if input.WaterTagID != nil && *input.WaterTagID != 0 {
+			if tagErr := validateWaterTagBelongsToSection(h.db, *input.WaterTagID, sectionID); tagErr != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": tagErr.Error()})
+				return
+			}
+			post.WaterTagID = input.WaterTagID
+		}
 	}
 
 	if err := h.db.Create(&post).Error; err != nil {
@@ -504,11 +591,12 @@ func (h *PostHandler) GetOne(c *gin.Context) {
 
 // UpdatePostInput 更新帖子输入
 type UpdatePostInput struct {
-	Title    string  `form:"title"`
-	Content  string  `form:"content"`
-	PostType string  `form:"post_type"`
-	Price    float64 `form:"price"`
-	Contact  string  `form:"contact"`
+	Title      string  `form:"title"`
+	Content    string  `form:"content"`
+	PostType   string  `form:"post_type"`
+	Price      float64 `form:"price"`
+	Contact    string  `form:"contact"`
+	WaterTagID *uint   `form:"water_tag_id"`
 }
 
 // Update 更新帖子
@@ -562,6 +650,30 @@ func (h *PostHandler) Update(c *gin.Context) {
 		"post_type": normalizedType,
 		"price":     input.Price,
 		"contact":   input.Contact,
+	}
+
+	// 水帖版块额外校验版块活跃状态与标签归属
+	if post.BoardID == models.BoardShuitie {
+		sectionID, secErr := validateWaterSectionActive(h.db, normalizedType)
+		if secErr != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": secErr.Error()})
+			return
+		}
+		// 计算编辑后最终标签 ID，重新校验是否属于新版块
+		finalTagID := post.WaterTagID
+		if input.WaterTagID != nil {
+			finalTagID = input.WaterTagID
+		}
+		if finalTagID != nil && *finalTagID != 0 {
+			if tagErr := validateWaterTagBelongsToSection(h.db, *finalTagID, sectionID); tagErr != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": tagErr.Error()})
+				return
+			}
+			updates["water_tag_id"] = finalTagID
+		} else if input.WaterTagID != nil {
+			// 用户显式传 0 表示清空标签
+			updates["water_tag_id"] = nil
+		}
 	}
 
 	if err := h.db.Model(&post).Updates(updates).Error; err != nil {

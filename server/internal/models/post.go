@@ -34,9 +34,10 @@ type Post struct {
 	// PostType 板块相关类型：
 	//   board_id = BoardShuitie 时，post_type 表示 WaterSection.Slug（如 course_study）。
 	//   board_id = BoardMarket 时，post_type 仍为 marketplace_buy / marketplace_sell 等旧语义。
-	PostType string  `gorm:"size:50;index" json:"post_type"`
-	Price    float64 `gorm:"default:0" json:"price"`  // 价格（校园集市用）
-	Contact  string  `gorm:"size:500" json:"contact"` // 联系方式
+	PostType   string  `gorm:"size:50;index" json:"post_type"`
+	Price      float64 `gorm:"default:0" json:"price"`      // 价格（校园集市用）
+	Contact    string  `gorm:"size:500" json:"contact"`     // 联系方式
+	MarketTags string  `gorm:"size:200" json:"market_tags"` // 商品交易选项，逗号分隔
 	// WaterTagID 水帖版块内标签 ID，仅在 board_id = BoardShuitie 时使用；旧帖子与旧客户端可不传。
 	WaterTagID         *uint       `gorm:"index" json:"water_tag_id"`
 	Status             PostStatus  `gorm:"default:normal;index" json:"status"` // 状态

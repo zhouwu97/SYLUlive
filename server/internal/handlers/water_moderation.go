@@ -77,6 +77,40 @@ func (h *WaterModerationHandler) writeLog(sectionID uint, operatorID uint, actio
 	}
 }
 
+func (h *WaterModerationHandler) notifyTarget(userID uint, operatorID uint, action string, section models.WaterSection, relatedID uint, postID uint, reason string) {
+	if userID == 0 {
+		return
+	}
+	actionText := map[string]string{
+		models.ModActionDeletePost:  "你的帖子已被版块管理删除",
+		models.ModActionRestorePost: "你的帖子已恢复",
+		models.ModActionMuteUser:    "你已被版块禁言",
+		models.ModActionUnmuteUser:  "你在版块内的禁言已解除",
+	}[action]
+	if actionText == "" {
+		actionText = "版块管理通知"
+	}
+	content := fmt.Sprintf("%s：%s", section.Title, actionText)
+	if strings.TrimSpace(reason) != "" {
+		content = fmt.Sprintf("%s。原因：%s", content, strings.TrimSpace(reason))
+	}
+	if action == models.ModActionDeletePost || action == models.ModActionMuteUser {
+		content = fmt.Sprintf("%s。如认为处理有误，可联系版块管理员申诉。", content)
+	}
+	notification := models.Notification{
+		UserID:    userID,
+		Type:      "water_moderation",
+		Content:   content,
+		RelatedID: relatedID,
+		PostID:    postID,
+		FromUID:   operatorID,
+		IsRead:    false,
+	}
+	if err := h.db.Create(&notification).Error; err != nil {
+		fmt.Printf("[WaterModeration] write notification failed: %v\n", err)
+	}
+}
+
 func validateModerationReason(reason string, actionName string) (string, string) {
 	trimmed := strings.TrimSpace(reason)
 	if trimmed == "" {
@@ -356,6 +390,7 @@ func (h *WaterModerationHandler) DeletePost(c *gin.Context) {
 	h.db.Model(&post).Update("status", models.PostStatusDeleted)
 	h.writeLog(section.ID, operator.ID, models.ModActionDeletePost, "post", uint(postID), &post.AuthorID, reason,
 		fmt.Sprintf(`{"post_id":%d,"author_id":%d}`, post.ID, post.AuthorID))
+	h.notifyTarget(post.AuthorID, operator.ID, models.ModActionDeletePost, *section, post.ID, post.ID, reason)
 	c.JSON(http.StatusOK, gin.H{"message": "帖子已删除"})
 }
 
@@ -434,6 +469,7 @@ func (h *WaterModerationHandler) RestorePost(c *gin.Context) {
 	})
 	h.writeLog(section.ID, operator.ID, models.ModActionRestorePost, "post", uint(postID), &post.AuthorID, reason,
 		fmt.Sprintf("before:%s after:%s", before, after))
+	h.notifyTarget(post.AuthorID, operator.ID, models.ModActionRestorePost, *section, post.ID, post.ID, reason)
 	c.JSON(http.StatusOK, gin.H{"message": "帖子已恢复"})
 }
 
@@ -528,6 +564,7 @@ func (h *WaterModerationHandler) MuteUser(c *gin.Context) {
 		_ = h.db.First(&existing, existing.ID)
 		snapshot, _ := json.Marshal(existing)
 		h.writeLog(section.ID, operator.ID, models.ModActionMuteUser, "user", uint(targetUserID), nil, reason, string(snapshot))
+		h.notifyTarget(uint(targetUserID), operator.ID, models.ModActionMuteUser, *section, existing.ID, 0, reason)
 		c.JSON(http.StatusOK, gin.H{"message": "禁言已更新", "mute": existing})
 		return
 	}
@@ -546,6 +583,7 @@ func (h *WaterModerationHandler) MuteUser(c *gin.Context) {
 		_ = h.db.First(&existing, existing.ID)
 		snapshot, _ := json.Marshal(existing)
 		h.writeLog(section.ID, operator.ID, models.ModActionMuteUser, "user", uint(targetUserID), nil, reason, string(snapshot))
+		h.notifyTarget(uint(targetUserID), operator.ID, models.ModActionMuteUser, *section, existing.ID, 0, reason)
 		c.JSON(http.StatusOK, gin.H{"message": "禁言成功", "mute": existing})
 		return
 	}
@@ -565,6 +603,7 @@ func (h *WaterModerationHandler) MuteUser(c *gin.Context) {
 
 	snapshot, _ := json.Marshal(mute)
 	h.writeLog(section.ID, operator.ID, models.ModActionMuteUser, "user", uint(targetUserID), nil, reason, string(snapshot))
+	h.notifyTarget(uint(targetUserID), operator.ID, models.ModActionMuteUser, *section, mute.ID, 0, reason)
 	c.JSON(http.StatusCreated, gin.H{"message": "禁言成功", "mute": mute})
 }
 
@@ -619,6 +658,7 @@ func (h *WaterModerationHandler) UnmuteUser(c *gin.Context) {
 		"lift_reason": reason,
 	})
 	h.writeLog(section.ID, operator.ID, models.ModActionUnmuteUser, "user", uint(targetUserID), nil, reason, "")
+	h.notifyTarget(uint(targetUserID), operator.ID, models.ModActionUnmuteUser, *section, mute.ID, 0, reason)
 	c.JSON(http.StatusOK, gin.H{"message": "已解除禁言"})
 }
 

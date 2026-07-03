@@ -398,7 +398,15 @@ func (h *UserHandler) GetUserPosts(c *gin.Context) {
 	offset := (page - 1) * limit
 
 	var posts []models.Post
-	if err := h.db.Preload("Author").Where("author_id = ? AND status = ?", targetID, models.PostStatusNormal).Order("created_at DESC").Offset(offset).Limit(limit).Find(&posts).Error; err != nil {
+	if err := h.db.
+		Preload("Author").
+		Preload("Images").
+		Preload("Images.File").
+		Where("author_id = ? AND status = ?", targetID, models.PostStatusNormal).
+		Order("created_at DESC").
+		Offset(offset).
+		Limit(limit).
+		Find(&posts).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取帖子失败"})
 		return
 	}

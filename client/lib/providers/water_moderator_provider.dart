@@ -14,6 +14,7 @@ class WaterModeratorProvider extends ChangeNotifier {
   final Map<String, WaterSectionPermission> _permissionBySlug = {};
   final Map<String, DateTime> _permissionLoadedAt = {};
   final Map<String, List<WaterSectionModerator>> _moderatorsBySlug = {};
+  int? _sessionUserId;
 
   bool _isLoadingPermission = false;
   bool _isLoadingModerators = false;
@@ -25,6 +26,16 @@ class WaterModeratorProvider extends ChangeNotifier {
   bool get isLoadingModerators => _isLoadingModerators;
   String? get error => _error;
 
+  void syncSessionUser(int? userId) {
+    if (_sessionUserId == userId) return;
+    _sessionUserId = userId;
+    _permissionBySlug.clear();
+    _permissionLoadedAt.clear();
+    _moderatorsBySlug.clear();
+    _error = null;
+    notifyListeners();
+  }
+
   // ── 权限 ──
 
   /// 获取已缓存的权限；没有返回 empty。
@@ -32,7 +43,8 @@ class WaterModeratorProvider extends ChangeNotifier {
       _permissionBySlug[slug] ?? WaterSectionPermission.empty();
 
   /// 加载当前用户在某个 section 的权限。带 1 分钟轻缓存。
-  Future<void> loadMyPermission(String slug, {bool forceRefresh = false}) async {
+  Future<void> loadMyPermission(String slug,
+      {bool forceRefresh = false}) async {
     if (!forceRefresh) {
       final loadedAt = _permissionLoadedAt[slug];
       if (loadedAt != null &&

@@ -32,6 +32,8 @@ func newWaterSectionTestDB(t *testing.T) *gorm.DB {
 		&models.Like{},
 		&models.WaterSection{},
 		&models.WaterSectionTag{},
+		&models.WaterSectionPin{},
+		&models.WaterSectionMute{},
 	); err != nil {
 		t.Fatalf("migrate database: %v", err)
 	}

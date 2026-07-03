@@ -8,8 +8,8 @@ import '../models/water_section.dart';
 import '../providers/water_moderator_provider.dart';
 import '../providers/water_moderation_provider.dart';
 
-/// 版块管理页 —— 当前只做“版主管理”。
-/// 仅 admin / super_admin 可见入口；版主和普通用户无入口。
+/// 版块管理页。
+/// 按当前用户权限展示任免、禁言列表和操作日志。
 class WaterSectionManageScreen extends StatefulWidget {
   final WaterSection section;
 
@@ -25,9 +25,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _loadModerators();
-      _loadMutes();
-      _loadLogs();
+      _refreshAll();
     });
   }
 
@@ -44,17 +42,32 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
   }
 
   Future<void> _loadMutes() async {
-    await context.read<WaterModerationProvider>().loadMutes(widget.section.slug);
+    await context
+        .read<WaterModerationProvider>()
+        .loadMutes(widget.section.slug);
   }
 
   Future<void> _loadLogs() async {
     await context.read<WaterModerationProvider>().loadLogs(widget.section.slug);
   }
 
-  void _refreshAll() {
-    _loadModerators();
-    _loadMutes();
-    _loadLogs();
+  Future<void> _refreshAll() async {
+    final moderatorProvider = context.read<WaterModeratorProvider>();
+    await moderatorProvider.loadMyPermission(
+      widget.section.slug,
+      forceRefresh: true,
+    );
+    if (!mounted) return;
+    final perm = moderatorProvider.permissionOf(widget.section.slug);
+    if (perm.canManageModerators) {
+      await _loadModerators();
+    }
+    if (perm.canMuteUser) {
+      await _loadMutes();
+    }
+    if (perm.isGlobalAdmin || perm.isModerator) {
+      await _loadLogs();
+    }
   }
 
   List<WaterSectionModerator> get _moderators =>
@@ -101,14 +114,14 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              '只有管理员可以管理版块版主',
+              '你没有该版块的管理权限',
               style: TextStyle(
                   fontSize: 13,
                   color: isDark ? Colors.white54 : const Color(0xFF7B818C)),
             ),
             const SizedBox(height: 24),
             OutlinedButton(
-              onPressed: _loadModerators,
+              onPressed: _refreshAll,
               child: const Text('重试'),
             ),
           ],
@@ -118,21 +131,32 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
   }
 
   Widget _buildContent(bool isDark) {
+    final perm = context
+        .watch<WaterModeratorProvider>()
+        .permissionOf(widget.section.slug);
+    if (!perm.isGlobalAdmin && !perm.isModerator) {
+      return _buildErrorView(isDark);
+    }
+
     return RefreshIndicator(
       onRefresh: () async => _refreshAll(),
       child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 40),
         children: [
           _buildSectionInfoCard(isDark),
-          const SizedBox(height: 16),
-          _buildModeratorListHeader(isDark),
-          const SizedBox(height: 8),
-          if (_moderators.isEmpty)
-            _buildEmptyModerators(isDark)
-          else
-            ..._moderators.map((m) => _buildModeratorCard(m, isDark)),
-          const SizedBox(height: 24),
-          _buildMutesSection(isDark),
+          if (perm.canManageModerators) ...[
+            const SizedBox(height: 16),
+            _buildModeratorListHeader(isDark),
+            const SizedBox(height: 8),
+            if (_moderators.isEmpty)
+              _buildEmptyModerators(isDark)
+            else
+              ..._moderators.map((m) => _buildModeratorCard(m, isDark)),
+          ],
+          if (perm.canMuteUser) ...[
+            const SizedBox(height: 24),
+            _buildMutesSection(isDark),
+          ],
           const SizedBox(height: 24),
           _buildLogsSection(isDark),
         ],
@@ -314,8 +338,9 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
                       'ID: ${mod.userId}',
                       style: TextStyle(
                           fontSize: 11,
-                          color:
-                              isDark ? Colors.white38 : const Color(0xFF9CA3AF)),
+                          color: isDark
+                              ? Colors.white38
+                              : const Color(0xFF9CA3AF)),
                     ),
                   ],
                 ),
@@ -441,9 +466,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
             onPressed: () async {
               Navigator.pop(ctx);
               try {
-                await context
-                    .read<WaterModeratorProvider>()
-                    .revokeModerator(
+                await context.read<WaterModeratorProvider>().revokeModerator(
                       sectionSlug: widget.section.slug,
                       moderatorId: mod.id,
                     );
@@ -473,8 +496,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
   Widget _buildMutesSection(bool isDark) {
     final mutes =
         context.watch<WaterModerationProvider>().mutesOf(widget.section.slug);
-    final isLoading =
-        context.watch<WaterModerationProvider>().isLoadingMutes;
+    final isLoading = context.watch<WaterModerationProvider>().isLoadingMutes;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -503,10 +525,11 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
           Container(
             padding: const EdgeInsets.all(20),
             decoration: _cardDecoration(isDark),
-            child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+            child:
+                const Center(child: CircularProgressIndicator(strokeWidth: 2)),
           )
         else if (mutes.isEmpty)
-          _buildEmptyList(isDark, '暂无禁言记录')
+          _buildEmptyList(isDark, '暂无正在禁言的用户')
         else
           ...mutes.map((m) => _buildMuteCard(m, isDark)),
       ],
@@ -517,7 +540,8 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
     final untilText = mute.until != null
         ? '至 ${mute.until!.toLocal().toString().substring(0, 16)}'
         : '永久';
-    final isExpired = mute.until != null && mute.until!.isBefore(DateTime.now());
+    final isExpired =
+        mute.until != null && mute.until!.isBefore(DateTime.now());
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.only(bottom: 8),
@@ -528,32 +552,47 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
         children: [
           Row(
             children: [
-              CircleAvatar(radius: 14, child: Text(mute.displayName[0].toUpperCase(), style: const TextStyle(fontSize: 11))),
+              CircleAvatar(
+                radius: 14,
+                child: Text(
+                  mute.displayName.isNotEmpty
+                      ? mute.displayName[0].toUpperCase()
+                      : '?',
+                  style: const TextStyle(fontSize: 11),
+                ),
+              ),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(mute.displayName,
                     style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w700,
-                        color: isDark ? Colors.white : const Color(0xFF20232A))),
+                        color:
+                            isDark ? Colors.white : const Color(0xFF20232A))),
               ),
               if (isExpired)
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                   decoration: BoxDecoration(
                     color: Colors.orange.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(999),
                   ),
-                  child: const Text('已过期', style: TextStyle(fontSize: 10, color: Colors.orange)),
+                  child: const Text('已过期',
+                      style: TextStyle(fontSize: 10, color: Colors.orange)),
                 ),
             ],
           ),
           const SizedBox(height: 6),
           Text(mute.reason,
-              style: TextStyle(fontSize: 12, color: isDark ? Colors.white54 : const Color(0xFF7B818C))),
+              style: TextStyle(
+                  fontSize: 12,
+                  color: isDark ? Colors.white54 : const Color(0xFF7B818C))),
           const SizedBox(height: 4),
           Text(untilText,
-              style: TextStyle(fontSize: 11, color: isDark ? Colors.white38 : const Color(0xFF9CA3AF))),
+              style: TextStyle(
+                  fontSize: 11,
+                  color: isDark ? Colors.white38 : const Color(0xFF9CA3AF))),
           const SizedBox(height: 8),
           Align(
             alignment: Alignment.centerRight,
@@ -575,15 +614,29 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
         title: const Text('解除禁言'),
         content: Text('确认解除「${mute.displayName}」在本版块的禁言吗？'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
           TextButton(
             onPressed: () async {
               Navigator.pop(ctx);
-              await context.read<WaterModerationProvider>().unmuteUser(
-                    sectionSlug: widget.section.slug,
-                    userId: mute.userId,
-                  );
-              if (mounted) _loadMutes();
+              final ok =
+                  await context.read<WaterModerationProvider>().unmuteUser(
+                        sectionSlug: widget.section.slug,
+                        userId: mute.userId,
+                      );
+              if (!mounted) return;
+              if (ok) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('已解除禁言')),
+                );
+                _loadMutes();
+                _loadLogs();
+              } else {
+                final error = context.read<WaterModerationProvider>().error;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text(error ?? '解除禁言失败')),
+                );
+              }
             },
             child: const Text('确认'),
           ),
@@ -599,8 +652,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
         .watch<WaterModerationProvider>()
         .logsOf(widget.section.slug)
         .logs;
-    final isLoading =
-        context.watch<WaterModerationProvider>().isLoadingLogs;
+    final isLoading = context.watch<WaterModerationProvider>().isLoadingLogs;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -625,7 +677,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
                 const Center(child: CircularProgressIndicator(strokeWidth: 2)),
           )
         else if (logs.isEmpty)
-          _buildEmptyList(isDark, '暂无操作日志')
+          _buildEmptyList(isDark, '暂无管理记录')
         else
           ...logs.map((l) => _buildLogCard(l, isDark)),
       ],
@@ -633,9 +685,8 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
   }
 
   Widget _buildLogCard(WaterModerationLog log, bool isDark) {
-    final time = log.createdAt != null
-        ? log.createdAt!.toLocal().toString().substring(0, 19)
-        : '';
+    final time =
+        log.createdAt != null ? _formatFriendlyTime(log.createdAt!) : '';
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.only(bottom: 6),
@@ -651,12 +702,14 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
                     style: TextStyle(
                         fontSize: 12.5,
                         fontWeight: FontWeight.w700,
-                        color: isDark ? Colors.white : const Color(0xFF20232A))),
+                        color:
+                            isDark ? Colors.white : const Color(0xFF20232A))),
                 const SizedBox(height: 2),
                 Text(log.reason.isNotEmpty ? log.reason : '无原因',
                     style: TextStyle(
                         fontSize: 11,
-                        color: isDark ? Colors.white54 : const Color(0xFF7B818C)),
+                        color:
+                            isDark ? Colors.white54 : const Color(0xFF7B818C)),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis),
               ],
@@ -683,6 +736,20 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
                 color: isDark ? Colors.white38 : const Color(0xFF9CA3AF))),
       ),
     );
+  }
+
+  String _formatFriendlyTime(DateTime time) {
+    final local = time.toLocal();
+    final now = DateTime.now();
+    final diff = now.difference(local);
+    if (diff.inMinutes < 1) return '刚刚';
+    if (diff.inHours < 1) return '${diff.inMinutes}分钟前';
+    if (diff.inDays < 1) return '${diff.inHours}小时前';
+    final month = local.month.toString().padLeft(2, '0');
+    final day = local.day.toString().padLeft(2, '0');
+    final hour = local.hour.toString().padLeft(2, '0');
+    final minute = local.minute.toString().padLeft(2, '0');
+    return '$month/$day $hour:$minute';
   }
 
   BoxDecoration _cardDecoration(bool isDark) {
@@ -917,8 +984,9 @@ class _ModeratorFormSheetState extends State<_ModeratorFormSheet> {
                     borderRadius: BorderRadius.circular(12),
                   ),
                   filled: true,
-                  fillColor:
-                      isDark ? Colors.white.withValues(alpha: 0.06) : const Color(0xFFF9FAFB),
+                  fillColor: isDark
+                      ? Colors.white.withValues(alpha: 0.06)
+                      : const Color(0xFFF9FAFB),
                 ),
               ),
               const SizedBox(height: 14),
@@ -970,8 +1038,9 @@ class _ModeratorFormSheetState extends State<_ModeratorFormSheet> {
                   borderRadius: BorderRadius.circular(12),
                 ),
                 filled: true,
-                fillColor:
-                    isDark ? Colors.white.withValues(alpha: 0.06) : const Color(0xFFF9FAFB),
+                fillColor: isDark
+                    ? Colors.white.withValues(alpha: 0.06)
+                    : const Color(0xFFF9FAFB),
               ),
             ),
             const SizedBox(height: 20),
@@ -998,7 +1067,8 @@ class _ModeratorFormSheetState extends State<_ModeratorFormSheet> {
                       ),
               ),
             ),
-            SizedBox(height: MediaQuery.of(context).viewInsets.bottom > 0 ? 16 : 0),
+            SizedBox(
+                height: MediaQuery.of(context).viewInsets.bottom > 0 ? 16 : 0),
           ],
         ),
       ),
@@ -1050,11 +1120,12 @@ class _ModeratorFormSheetState extends State<_ModeratorFormSheet> {
         title: Text(
           label,
           style: TextStyle(
-              fontSize: 13.5, color: isDark ? Colors.white : const Color(0xFF20232A)),
+              fontSize: 13.5,
+              color: isDark ? Colors.white : const Color(0xFF20232A)),
         ),
         value: value,
         onChanged: onChanged,
-        activeColor: Theme.of(context).colorScheme.primary,
+        activeThumbColor: Theme.of(context).colorScheme.primary,
       ),
     );
   }

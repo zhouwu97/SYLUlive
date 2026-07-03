@@ -116,6 +116,8 @@ func (h *PostHandler) GetList(c *gin.Context) {
 	var posts []models.Post
 	var total int64
 	now := time.Now()
+	var requestedBoardID *models.BoardID
+	var waterSectionFeedID uint
 
 	// 如果是加载更多，并且带有有效的 session_id，尝试走快照
 	if scene == "loadmore" && sessionID != "" {
@@ -150,6 +152,7 @@ func (h *PostHandler) GetList(c *gin.Context) {
 
 					// 直接返回，不再走正常查询
 					h.fillLikes(c, posts)
+					h.fillWaterSectionPinState(posts, now)
 					if posts == nil {
 						posts = []models.Post{}
 					}
@@ -169,17 +172,24 @@ func (h *PostHandler) GetList(c *gin.Context) {
 	}
 
 	// 走正常的查询（或 refresh 阶段）
-	query := h.db.Model(&models.Post{}).Where("status != ?", models.PostStatusDeleted).Preload("Author").Preload("Images").Preload("Images.File")
+	query := h.db.Model(&models.Post{}).Where("posts.status != ?", models.PostStatusDeleted).Preload("Author").Preload("Images").Preload("Images.File")
 
 	if boardIDStr != "" {
 		boardID, err := strconv.Atoi(boardIDStr)
 		if err == nil {
+			bid := models.BoardID(boardID)
+			requestedBoardID = &bid
 			query = query.Where("board_id = ?", boardID)
 		}
 	}
 
 	if postType != "" {
 		query = query.Where("post_type = ?", postType)
+	}
+	if requestedBoardID != nil && *requestedBoardID == models.BoardShuitie && postType != "" {
+		if sectionID, err := validateWaterSectionActive(h.db, postType); err == nil {
+			waterSectionFeedID = sectionID
+		}
 	}
 
 	// tag_id 过滤：仅水帖版块生效
@@ -270,9 +280,9 @@ func (h *PostHandler) GetList(c *gin.Context) {
 				WHEN is_pinned = ? AND (pinned_until IS NULL OR pinned_until > ?)
 				THEN 0 ELSE 1
 			END ASC,
-			pinned_weight DESC,
-			pinned_at DESC NULLS LAST,
-			created_at DESC`,
+			posts.pinned_weight DESC,
+			posts.pinned_at DESC NULLS LAST,
+			posts.created_at DESC`,
 				Vars: []interface{}{
 					searchQuery,
 					searchQuery + "%",
@@ -291,24 +301,27 @@ func (h *PostHandler) GetList(c *gin.Context) {
 	if scene == "refresh" && (sort == "all" || sort == "hot") && searchQuery == "" && sinceStr == "" {
 		isSnapshotting = true
 		if sort == "all" {
+			query = applyWaterSectionPinOrder(query, waterSectionFeedID, now)
 			query = applyPinnedOrder(query, now).
-				Order("(10.0 + like_count*5 + reply_count*10 + view_count*0.2) / POWER((EXTRACT(EPOCH FROM (NOW() - created_at))/3600.0 + 2), 2) DESC")
+				Order("(10.0 + posts.like_count*5 + posts.reply_count*10 + posts.view_count*0.2) / POWER((EXTRACT(EPOCH FROM (NOW() - posts.created_at))/3600.0 + 2), 2) DESC")
 		} else if sort == "hot" {
-			query = query.Order("(view_count*1 + like_count*20 + reply_count*50) DESC")
+			query = applyWaterSectionPinOrder(query, waterSectionFeedID, now)
+			query = query.Order("(posts.view_count*1 + posts.like_count*20 + posts.reply_count*50) DESC")
 		}
 	} else {
 		// 常规排序
 		switch sort {
 		case "price":
-			query = query.Order("price ASC").Order("created_at DESC")
+			query = query.Order("posts.price ASC").Order("posts.created_at DESC")
 		case "price_desc":
-			query = query.Order("price DESC").Order("created_at DESC")
+			query = query.Order("posts.price DESC").Order("posts.created_at DESC")
 		case "following":
-			query = query.Order("created_at DESC")
+			query = query.Order("posts.created_at DESC")
 		default:
 			if searchQuery == "" {
+				query = applyWaterSectionPinOrder(query, waterSectionFeedID, now)
 				query = applyPinnedOrder(query, now)
-				query = query.Order("created_at DESC")
+				query = query.Order("posts.created_at DESC")
 			}
 		}
 	}
@@ -318,7 +331,7 @@ func (h *PostHandler) GetList(c *gin.Context) {
 	if isSnapshotting {
 		var allIDs []uint
 		// 这里必须清除Preload等，单纯Pluck
-		snapshotQuery := h.db.Model(&models.Post{}).Where("status != ?", models.PostStatusDeleted)
+		snapshotQuery := h.db.Model(&models.Post{}).Where("posts.status != ?", models.PostStatusDeleted)
 		if boardIDStr != "" {
 			boardID, err := strconv.Atoi(boardIDStr)
 			if err == nil {
@@ -332,10 +345,12 @@ func (h *PostHandler) GetList(c *gin.Context) {
 			snapshotQuery = snapshotQuery.Where("water_tag_id = ?", tagID)
 		}
 		if sort == "all" {
+			snapshotQuery = applyWaterSectionPinOrder(snapshotQuery, waterSectionFeedID, now)
 			snapshotQuery = applyPinnedOrder(snapshotQuery, now).
-				Order("(10.0 + like_count*5 + reply_count*10 + view_count*0.2) / POWER((EXTRACT(EPOCH FROM (NOW() - created_at))/3600.0 + 2), 2) DESC")
+				Order("(10.0 + posts.like_count*5 + posts.reply_count*10 + posts.view_count*0.2) / POWER((EXTRACT(EPOCH FROM (NOW() - posts.created_at))/3600.0 + 2), 2) DESC")
 		} else if sort == "hot" {
-			snapshotQuery = snapshotQuery.Order("(view_count*1 + like_count*20 + reply_count*50) DESC")
+			snapshotQuery = applyWaterSectionPinOrder(snapshotQuery, waterSectionFeedID, now)
+			snapshotQuery = snapshotQuery.Order("(posts.view_count*1 + posts.like_count*20 + posts.reply_count*50) DESC")
 		}
 		if sort == "hot" {
 			snapshotQuery = snapshotQuery.Limit(500)
@@ -384,6 +399,7 @@ func (h *PostHandler) GetList(c *gin.Context) {
 	}
 
 	h.fillLikes(c, posts)
+	h.fillWaterSectionPinState(posts, now)
 	if posts == nil {
 		posts = []models.Post{}
 	}
@@ -417,6 +433,86 @@ func (h *PostHandler) fillLikes(c *gin.Context, posts []models.Post) {
 					posts[i].IsLiked = true
 				}
 			}
+		}
+	}
+}
+
+func applyWaterSectionPinOrder(query *gorm.DB, sectionID uint, now time.Time) *gorm.DB {
+	if sectionID == 0 {
+		return query
+	}
+	return query.
+		Joins(
+			`LEFT JOIN water_section_pins wsp_active ON wsp_active.post_id = posts.id
+				AND wsp_active.section_id = ?
+				AND wsp_active.status = ?
+				AND (wsp_active.pinned_until IS NULL OR wsp_active.pinned_until > ?)`,
+			sectionID,
+			models.PinStatusActive,
+			now,
+		).
+		Order("CASE WHEN wsp_active.id IS NULL THEN 1 ELSE 0 END ASC").
+		Order("wsp_active.weight DESC").
+		Order("wsp_active.created_at DESC NULLS LAST")
+}
+
+func (h *PostHandler) fillWaterSectionPinState(posts []models.Post, now time.Time) {
+	if len(posts) == 0 {
+		return
+	}
+
+	postIDs := make([]uint, 0, len(posts))
+	slugs := map[string]struct{}{}
+	for _, post := range posts {
+		if post.BoardID != models.BoardShuitie || post.PostType == "" {
+			continue
+		}
+		postIDs = append(postIDs, post.ID)
+		slugs[post.PostType] = struct{}{}
+	}
+	if len(postIDs) == 0 {
+		return
+	}
+
+	slugList := make([]string, 0, len(slugs))
+	for slug := range slugs {
+		slugList = append(slugList, slug)
+	}
+	var sections []models.WaterSection
+	if err := h.db.Where("slug IN ?", slugList).Find(&sections).Error; err != nil {
+		return
+	}
+	sectionIDBySlug := map[string]uint{}
+	sectionIDs := make([]uint, 0, len(sections))
+	for _, section := range sections {
+		sectionIDBySlug[section.Slug] = section.ID
+		sectionIDs = append(sectionIDs, section.ID)
+	}
+	if len(sectionIDs) == 0 {
+		return
+	}
+
+	var pins []models.WaterSectionPin
+	if err := h.db.
+		Where("post_id IN ? AND section_id IN ? AND status = ? AND (pinned_until IS NULL OR pinned_until > ?)",
+			postIDs, sectionIDs, models.PinStatusActive, now).
+		Find(&pins).Error; err != nil {
+		return
+	}
+	pinIDByPostAndSection := map[string]uint{}
+	for _, pin := range pins {
+		key := fmt.Sprintf("%d:%d", pin.PostID, pin.SectionID)
+		pinIDByPostAndSection[key] = pin.ID
+	}
+	for i := range posts {
+		sectionID := sectionIDBySlug[posts[i].PostType]
+		if sectionID == 0 {
+			continue
+		}
+		key := fmt.Sprintf("%d:%d", posts[i].ID, sectionID)
+		if pinID, ok := pinIDByPostAndSection[key]; ok {
+			posts[i].WaterSectionPinned = true
+			posts[i].WaterSectionPinID = &pinID
 		}
 	}
 }
@@ -596,6 +692,9 @@ func (h *PostHandler) GetOne(c *gin.Context) {
 		post.IsLiked = count > 0
 	}
 
+	responsePosts := []models.Post{post}
+	h.fillWaterSectionPinState(responsePosts, time.Now())
+	post = responsePosts[0]
 	c.JSON(http.StatusOK, post)
 }
 

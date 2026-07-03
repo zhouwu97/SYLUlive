@@ -47,6 +47,13 @@ var allowedWaterPostTypes = map[string]struct{}{
 	"campus_news":   {},
 }
 
+var allowedMarketTags = map[string]struct{}{
+	"自提":     {},
+	"可送宿舍楼下": {},
+	"可小刀":    {},
+	"急出":     {},
+}
+
 func normalizeWaterPostType(boardID models.BoardID, postType string) (string, error) {
 	postType = strings.TrimSpace(postType)
 	if boardID != models.BoardShuitie {
@@ -59,6 +66,30 @@ func normalizeWaterPostType(boardID models.BoardID, postType string) (string, er
 		return postType, nil
 	}
 	return "", fmt.Errorf("invalid water post_type: %s", postType)
+}
+
+func normalizeMarketTags(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	seen := map[string]struct{}{}
+	tags := []string{}
+	for _, item := range strings.Split(raw, ",") {
+		tag := strings.TrimSpace(item)
+		if tag == "" {
+			continue
+		}
+		if _, ok := allowedMarketTags[tag]; !ok {
+			continue
+		}
+		if _, exists := seen[tag]; exists {
+			continue
+		}
+		seen[tag] = struct{}{}
+		tags = append(tags, tag)
+	}
+	return strings.Join(tags, ",")
 }
 
 // validateWaterSectionActive 校验 post_type 对应的版块存在且 active；返回版块 ID。
@@ -525,6 +556,7 @@ type CreatePostInput struct {
 	PostType   string  `form:"post_type"`
 	Price      float64 `form:"price"`
 	Contact    string  `form:"contact"`
+	MarketTags string  `form:"market_tags"`
 	WaterTagID *uint   `form:"water_tag_id"`
 }
 
@@ -556,14 +588,15 @@ func (h *PostHandler) Create(c *gin.Context) {
 
 	// 先创建帖子
 	post := models.Post{
-		Title:    input.Title,
-		Content:  input.Content,
-		BoardID:  models.BoardID(input.BoardID),
-		AuthorID: userID.(uint),
-		PostType: normalizedType,
-		Price:    input.Price,
-		Contact:  input.Contact,
-		Status:   models.PostStatusNormal,
+		Title:      input.Title,
+		Content:    input.Content,
+		BoardID:    models.BoardID(input.BoardID),
+		AuthorID:   userID.(uint),
+		PostType:   normalizedType,
+		Price:      input.Price,
+		Contact:    input.Contact,
+		MarketTags: normalizeMarketTags(input.MarketTags),
+		Status:     models.PostStatusNormal,
 	}
 
 	// 水帖版块额外校验版块活跃状态与标签归属
@@ -705,6 +738,7 @@ type UpdatePostInput struct {
 	PostType   string  `form:"post_type"`
 	Price      float64 `form:"price"`
 	Contact    string  `form:"contact"`
+	MarketTags string  `form:"market_tags"`
 	WaterTagID *uint   `form:"water_tag_id"`
 }
 
@@ -754,11 +788,12 @@ func (h *PostHandler) Update(c *gin.Context) {
 	}
 
 	updates := map[string]interface{}{
-		"title":     input.Title,
-		"content":   input.Content,
-		"post_type": normalizedType,
-		"price":     input.Price,
-		"contact":   input.Contact,
+		"title":       input.Title,
+		"content":     input.Content,
+		"post_type":   normalizedType,
+		"price":       input.Price,
+		"contact":     input.Contact,
+		"market_tags": normalizeMarketTags(input.MarketTags),
 	}
 
 	// 水帖版块额外校验版块活跃状态与标签归属

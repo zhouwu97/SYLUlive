@@ -75,6 +75,28 @@ type updateWaterSectionRequest struct {
 	Reason            string    `json:"reason"`
 }
 
+type createWaterSectionTagRequest struct {
+	Slug        string `json:"slug"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	SortOrder   int    `json:"sort_order"`
+	IsDefault   bool   `json:"is_default"`
+	Reason      string `json:"reason"`
+}
+
+type updateWaterSectionTagRequest struct {
+	Name        *string `json:"name"`
+	Description *string `json:"description"`
+	SortOrder   *int    `json:"sort_order"`
+	IsDefault   *bool   `json:"is_default"`
+	Reason      string  `json:"reason"`
+}
+
+type updateWaterSectionTagStatusRequest struct {
+	IsEnabled *bool  `json:"is_enabled"`
+	Reason    string `json:"reason"`
+}
+
 type waterSectionEditSnapshot struct {
 	Title             string   `json:"title"`
 	Subtitle          string   `json:"subtitle"`
@@ -89,7 +111,19 @@ type waterSectionEditSnapshot struct {
 	DefaultSort       string   `json:"default_sort"`
 }
 
+type waterSectionTagSnapshot struct {
+	ID          uint   `json:"id"`
+	SectionID   uint   `json:"section_id"`
+	Slug        string `json:"slug"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	SortOrder   int    `json:"sort_order"`
+	IsDefault   bool   `json:"is_default"`
+	IsEnabled   bool   `json:"is_enabled"`
+}
+
 var waterSectionColorPattern = regexp.MustCompile(`^#[0-9A-Fa-f]{6}$`)
+var waterSectionTagSlugPattern = regexp.MustCompile(`^[a-z0-9_-]{1,64}$`)
 
 // toTagResponse 把 WaterSectionTag 转成响应体
 func toTagResponse(tag models.WaterSectionTag) waterSectionTagResponse {
@@ -157,6 +191,19 @@ func waterSectionSnapshot(section models.WaterSection) waterSectionEditSnapshot 
 	}
 }
 
+func waterSectionTagSnapshotFrom(tag models.WaterSectionTag) waterSectionTagSnapshot {
+	return waterSectionTagSnapshot{
+		ID:          tag.ID,
+		SectionID:   tag.SectionID,
+		Slug:        tag.Slug,
+		Name:        tag.Name,
+		Description: tag.Description,
+		SortOrder:   tag.SortOrder,
+		IsDefault:   tag.IsDefault,
+		IsEnabled:   tag.IsEnabled,
+	}
+}
+
 func runeLen(s string) int {
 	return len([]rune(s))
 }
@@ -177,6 +224,30 @@ func validateWaterSectionDefaultSort(value string) bool {
 	}
 }
 
+func validateTagSlug(value string) string {
+	if value == "" {
+		return "标签标识不能为空"
+	}
+	if !waterSectionTagSlugPattern.MatchString(value) {
+		return "标签标识只允许小写英文、数字、下划线、短横线"
+	}
+	return ""
+}
+
+func validateTagName(value string) string {
+	if value == "" {
+		return "标签名称不能为空"
+	}
+	if msg := validateMaxLen(value, 40, "标签名称"); msg != "" {
+		return msg
+	}
+	return ""
+}
+
+func validateTagDescription(value string) string {
+	return validateMaxLen(value, 200, "标签描述")
+}
+
 func (h *WaterSectionHandler) currentUserOr401(c *gin.Context) (*models.User, bool) {
 	userID, exists := c.Get("user_id")
 	if !exists {
@@ -189,6 +260,40 @@ func (h *WaterSectionHandler) currentUserOr401(c *gin.Context) (*models.User, bo
 		return nil, false
 	}
 	return &user, true
+}
+
+func (h *WaterSectionHandler) getActiveSectionOr404(c *gin.Context) (*models.WaterSection, bool) {
+	slug := c.Param("slug")
+	if slug == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少版块标识"})
+		return nil, false
+	}
+	var section models.WaterSection
+	err := h.db.Where("slug = ? AND status = ?", slug, "active").First(&section).Error
+	if err == gorm.ErrRecordNotFound {
+		c.JSON(http.StatusNotFound, gin.H{"error": "版块不存在"})
+		return nil, false
+	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取版块失败"})
+		return nil, false
+	}
+	return &section, true
+}
+
+func (h *WaterSectionHandler) getTagInSectionOr404(c *gin.Context, sectionID uint) (*models.WaterSectionTag, bool) {
+	tagID := c.Param("tag_id")
+	var tag models.WaterSectionTag
+	err := h.db.Where("id = ? AND section_id = ?", tagID, sectionID).First(&tag).Error
+	if err == gorm.ErrRecordNotFound {
+		c.JSON(http.StatusNotFound, gin.H{"error": "标签不存在"})
+		return nil, false
+	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取标签失败"})
+		return nil, false
+	}
+	return &tag, true
 }
 
 func (h *WaterSectionHandler) writeEditSectionLog(sectionID, operatorID uint, reason string, snapshot string) {
@@ -204,6 +309,41 @@ func (h *WaterSectionHandler) writeEditSectionLog(sectionID, operatorID uint, re
 	if err := h.db.Create(&log).Error; err != nil {
 		fmt.Printf("[WaterSection] write edit log failed: %v\n", err)
 	}
+}
+
+func (h *WaterSectionHandler) writeTagLog(sectionID, operatorID uint, action string, tagID uint, reason string, snapshot string) {
+	log := models.WaterModerationLog{
+		SectionID:  sectionID,
+		OperatorID: operatorID,
+		Action:     action,
+		TargetType: "tag",
+		TargetID:   tagID,
+		Reason:     reason,
+		Snapshot:   snapshot,
+	}
+	if err := h.db.Create(&log).Error; err != nil {
+		fmt.Printf("[WaterSection] write tag log failed: %v\n", err)
+	}
+}
+
+func (h *WaterSectionHandler) ensureCanManageTags(c *gin.Context, sectionID uint, operator *models.User) bool {
+	if h.permSvc.CanManageTags(sectionID, operator) {
+		return true
+	}
+	c.JSON(http.StatusForbidden, gin.H{"error": "没有管理标签的权限"})
+	return false
+}
+
+func (h *WaterSectionHandler) tagValueExists(sectionID uint, column string, value string, excludeID uint) (bool, error) {
+	query := h.db.Model(&models.WaterSectionTag{}).Where("section_id = ? AND "+column+" = ?", sectionID, value)
+	if excludeID != 0 {
+		query = query.Where("id <> ?", excludeID)
+	}
+	var count int64
+	if err := query.Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
 }
 
 // List GET /api/water/sections
@@ -426,4 +566,214 @@ func (h *WaterSectionHandler) Update(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"section": toSectionResponse(section)})
+}
+
+// CreateTag POST /api/water/sections/:slug/tags
+// 新增版块标签；不做全站标签，也不物理删除旧标签。
+func (h *WaterSectionHandler) CreateTag(c *gin.Context) {
+	operator, ok := h.currentUserOr401(c)
+	if !ok {
+		return
+	}
+	section, ok := h.getActiveSectionOr404(c)
+	if !ok {
+		return
+	}
+	if !h.ensureCanManageTags(c, section.ID, operator) {
+		return
+	}
+
+	var req createWaterSectionTagRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请求体格式错误"})
+		return
+	}
+
+	slug := strings.TrimSpace(req.Slug)
+	name := strings.TrimSpace(req.Name)
+	description := strings.TrimSpace(req.Description)
+	if msg := validateTagSlug(slug); msg != "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": msg})
+		return
+	}
+	if msg := validateTagName(name); msg != "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": msg})
+		return
+	}
+	if msg := validateTagDescription(description); msg != "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": msg})
+		return
+	}
+
+	if exists, err := h.tagValueExists(section.ID, "slug", slug, 0); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "检查标签标识失败"})
+		return
+	} else if exists {
+		c.JSON(http.StatusConflict, gin.H{"error": "标签标识已存在"})
+		return
+	}
+	if exists, err := h.tagValueExists(section.ID, "name", name, 0); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "检查标签名称失败"})
+		return
+	} else if exists {
+		c.JSON(http.StatusConflict, gin.H{"error": "标签名称已存在"})
+		return
+	}
+
+	tag := models.WaterSectionTag{
+		SectionID:   section.ID,
+		Slug:        slug,
+		Name:        name,
+		Description: description,
+		SortOrder:   req.SortOrder,
+		IsDefault:   req.IsDefault,
+		IsEnabled:   true,
+	}
+	if err := h.db.Create(&tag).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建标签失败"})
+		return
+	}
+
+	snapshot, _ := json.Marshal(gin.H{"after": waterSectionTagSnapshotFrom(tag)})
+	reason := strings.TrimSpace(req.Reason)
+	if reason == "" {
+		reason = "新增标签"
+	}
+	h.writeTagLog(section.ID, operator.ID, models.ModActionCreateTag, tag.ID, reason, string(snapshot))
+	c.JSON(http.StatusCreated, gin.H{"tag": tag})
+}
+
+// UpdateTag PATCH /api/water/sections/:slug/tags/:tag_id
+// 修改标签展示信息；本阶段不开放修改 slug。
+func (h *WaterSectionHandler) UpdateTag(c *gin.Context) {
+	operator, ok := h.currentUserOr401(c)
+	if !ok {
+		return
+	}
+	section, ok := h.getActiveSectionOr404(c)
+	if !ok {
+		return
+	}
+	if !h.ensureCanManageTags(c, section.ID, operator) {
+		return
+	}
+	tag, ok := h.getTagInSectionOr404(c, section.ID)
+	if !ok {
+		return
+	}
+
+	var req updateWaterSectionTagRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请求体格式错误"})
+		return
+	}
+
+	changed := false
+	before := waterSectionTagSnapshotFrom(*tag)
+	if req.Name != nil {
+		name := strings.TrimSpace(*req.Name)
+		if msg := validateTagName(name); msg != "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": msg})
+			return
+		}
+		if exists, err := h.tagValueExists(section.ID, "name", name, tag.ID); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "检查标签名称失败"})
+			return
+		} else if exists {
+			c.JSON(http.StatusConflict, gin.H{"error": "标签名称已存在"})
+			return
+		}
+		tag.Name = name
+		changed = true
+	}
+	if req.Description != nil {
+		description := strings.TrimSpace(*req.Description)
+		if msg := validateTagDescription(description); msg != "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": msg})
+			return
+		}
+		tag.Description = description
+		changed = true
+	}
+	if req.SortOrder != nil {
+		tag.SortOrder = *req.SortOrder
+		changed = true
+	}
+	if req.IsDefault != nil {
+		tag.IsDefault = *req.IsDefault
+		changed = true
+	}
+	if !changed {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "没有可更新字段"})
+		return
+	}
+
+	if err := h.db.Save(tag).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存标签失败"})
+		return
+	}
+	after := waterSectionTagSnapshotFrom(*tag)
+	snapshot, _ := json.Marshal(gin.H{"before": before, "after": after})
+	reason := strings.TrimSpace(req.Reason)
+	if reason == "" {
+		reason = "修改标签"
+	}
+	h.writeTagLog(section.ID, operator.ID, models.ModActionUpdateTag, tag.ID, reason, string(snapshot))
+	c.JSON(http.StatusOK, gin.H{"tag": tag})
+}
+
+// UpdateTagStatus PATCH /api/water/sections/:slug/tags/:tag_id/status
+// 启用或停用标签；旧帖子 water_tag_id 保持不变。
+func (h *WaterSectionHandler) UpdateTagStatus(c *gin.Context) {
+	operator, ok := h.currentUserOr401(c)
+	if !ok {
+		return
+	}
+	section, ok := h.getActiveSectionOr404(c)
+	if !ok {
+		return
+	}
+	if !h.ensureCanManageTags(c, section.ID, operator) {
+		return
+	}
+	tag, ok := h.getTagInSectionOr404(c, section.ID)
+	if !ok {
+		return
+	}
+
+	var req updateWaterSectionTagStatusRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请求体格式错误"})
+		return
+	}
+	if req.IsEnabled == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少标签状态"})
+		return
+	}
+	if tag.IsEnabled == *req.IsEnabled {
+		c.JSON(http.StatusOK, gin.H{"tag": tag})
+		return
+	}
+
+	before := waterSectionTagSnapshotFrom(*tag)
+	tag.IsEnabled = *req.IsEnabled
+	if err := h.db.Save(tag).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存标签状态失败"})
+		return
+	}
+
+	action := models.ModActionDisableTag
+	defaultReason := "停用标签"
+	if tag.IsEnabled {
+		action = models.ModActionEnableTag
+		defaultReason = "启用标签"
+	}
+	reason := strings.TrimSpace(req.Reason)
+	if reason == "" {
+		reason = defaultReason
+	}
+	after := waterSectionTagSnapshotFrom(*tag)
+	snapshot, _ := json.Marshal(gin.H{"before": before, "after": after})
+	h.writeTagLog(section.ID, operator.ID, action, tag.ID, reason, string(snapshot))
+	c.JSON(http.StatusOK, gin.H{"tag": tag})
 }

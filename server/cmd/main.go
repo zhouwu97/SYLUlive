@@ -693,6 +693,9 @@ func main() {
 	waterMod.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
 	{
 		waterMod.PATCH("", waterSectionHandler.Update)
+		waterMod.POST("/tags", waterSectionHandler.CreateTag)
+		waterMod.PATCH("/tags/:tag_id/status", waterSectionHandler.UpdateTagStatus)
+		waterMod.PATCH("/tags/:tag_id", waterSectionHandler.UpdateTag)
 		waterMod.POST("/posts/:post_id/pin", waterModerationHandler.PinPost)
 		waterMod.DELETE("/posts/:post_id/pin", waterModerationHandler.UnpinPost)
 		waterMod.DELETE("/posts/:post_id/moderate", waterModerationHandler.DeletePost)

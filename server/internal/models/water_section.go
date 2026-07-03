@@ -180,6 +180,10 @@ const (
 	ModActionMuteUser    = "mute_user"
 	ModActionUnmuteUser  = "unmute_user"
 	ModActionEditSection = "edit_section"
+	ModActionCreateTag   = "create_tag"
+	ModActionUpdateTag   = "update_tag"
+	ModActionEnableTag   = "enable_tag"
+	ModActionDisableTag  = "disable_tag"
 )
 
 // waterSectionSeedEntry seed 表条目

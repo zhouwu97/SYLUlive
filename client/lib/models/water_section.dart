@@ -36,6 +36,20 @@ class WaterSectionTag {
       isEnabled: json['is_enabled'] != false,
     );
   }
+
+  Map<String, dynamic> toUpdateJson({
+    String? reason,
+    bool includeSlug = false,
+  }) {
+    return {
+      if (includeSlug) 'slug': slug,
+      'name': name,
+      'description': description,
+      'sort_order': sortOrder,
+      'is_default': isDefault,
+      if (reason != null && reason.trim().isNotEmpty) 'reason': reason.trim(),
+    };
+  }
 }
 
 /// 水帖版块（一级容器）
@@ -110,11 +124,29 @@ class WaterSection {
     );
   }
 
+  Map<String, dynamic> toDisplayUpdateJson({String? reason}) {
+    return {
+      'title': title,
+      'subtitle': subtitle,
+      'description': description,
+      'icon_key': iconKey,
+      'color_hex': colorHex,
+      'publish_action_text': publishActionText,
+      'empty_title': emptyTitle,
+      'empty_description': emptyDescription,
+      'starter_questions': starterQuestions,
+      'notice_text': noticeText,
+      'default_sort': defaultSort,
+      if (reason != null && reason.trim().isNotEmpty) 'reason': reason.trim(),
+    };
+  }
+
   /// 已启用标签（按 sort_order）
   List<WaterSectionTag> get enabledTags =>
       tags.where((t) => t.isEnabled).toList();
 
-  bool get isSensitive => sensitiveLevel == 'caution' || sensitiveLevel == 'strict';
+  bool get isSensitive =>
+      sensitiveLevel == 'caution' || sensitiveLevel == 'strict';
 
   /// 将旧客户端硬编码分类转成 fallback WaterSection（接口失败时使用）
   factory WaterSection.fromLegacyCategory(WaterPostCategory category) {
@@ -125,7 +157,8 @@ class WaterSection {
       subtitle: category.hint,
       description: category.hint,
       iconKey: '',
-      colorHex: '#${category.color.toARGB32().toRadixString(16).padLeft(8, '0').substring(2)}',
+      colorHex:
+          '#${category.color.toARGB32().toRadixString(16).padLeft(8, '0').substring(2)}',
       publishActionText: category.publishActionText,
       emptyTitle: category.emptyTitle,
       emptyDescription: category.emptyDescription,
@@ -203,7 +236,8 @@ IconData iconKeyToIconData(String iconKey, {String fallbackSlug = ''}) {
 }
 
 /// colorHex -> Color；解析失败走 fallback
-Color colorHexToColor(String colorHex, {Color fallback = const Color(0xFF6E7681)}) {
+Color colorHexToColor(String colorHex,
+    {Color fallback = const Color(0xFF6E7681)}) {
   if (colorHex.isEmpty) return fallback;
   var hex = colorHex;
   if (hex.startsWith('#')) hex = hex.substring(1);

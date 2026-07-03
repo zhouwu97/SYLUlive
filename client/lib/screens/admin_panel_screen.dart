@@ -9,6 +9,7 @@ import '../utils/app_feedback.dart';
 import '../widgets/glass_container.dart';
 import 'dart:io' show File;
 import 'post_detail_screen.dart';
+import 'admin_water_sections_screen.dart';
 
 class _OptionalListResult {
   final List<dynamic> items;
@@ -44,7 +45,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 6, vsync: this);
+    _tabController = TabController(length: 7, vsync: this);
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadData());
   }
 
@@ -451,6 +452,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
                   ),
                   child: TabBar(
                     controller: _tabController,
+                    isScrollable: true,
+                    tabAlignment: TabAlignment.start,
                     indicatorColor: Theme.of(context).primaryColor,
                     indicatorWeight: 3,
                     labelStyle: const TextStyle(
@@ -466,6 +469,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
                       Tab(text: '候选人 (${_candidates.length})'),
                       Tab(text: '代办${todoCount > 0 ? ' ($todoCount)' : ''}'),
                       Tab(text: '精华 (${_featuredApplications.length})'),
+                      const Tab(text: '水帖版块'),
                       const Tab(text: '操作日志'),
                       const Tab(text: '公告'),
                     ],
@@ -484,6 +488,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
                                 _buildCandidatesTab(isDark),
                                 _buildTeachersTab(isDark),
                                 _buildFeaturedApplicationsTab(isDark),
+                                _buildWaterSectionsTab(isDark),
                                 _buildLogsTab(isDark),
                                 _buildAnnouncementTab(),
                               ],
@@ -2231,6 +2236,65 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
           ],
         ),
       ),
+    );
+  }
+
+  // ---- 水帖版块 Tab ----
+  Widget _buildWaterSectionsTab(bool isDark) {
+    return ListView(
+      physics: const BouncingScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(12, 16, 12, 80),
+      children: [
+        GlassContainer(
+          margin: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.all(16),
+          borderRadius: 14,
+          blur: 8,
+          opacity: isDark ? 0.12 : 0.35,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.forum_outlined, color: Theme.of(context).primaryColor, size: 24),
+                  const SizedBox(width: 8),
+                  Text(
+                    '水帖版块管理',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: isDark ? Colors.white : Colors.black87,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Text(
+                '管理版块展示、标签、版主、禁言与日志',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: isDark ? Colors.white70 : Colors.grey[600],
+                ),
+              ),
+              const SizedBox(height: 16),
+              Align(
+                alignment: Alignment.centerRight,
+                child: FilledButton(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const AdminWaterSectionsScreen(),
+                      ),
+                    );
+                  },
+                  child: const Text('进入'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

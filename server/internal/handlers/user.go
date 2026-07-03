@@ -406,6 +406,75 @@ func (h *UserHandler) GetUserPosts(c *gin.Context) {
 	c.JSON(http.StatusOK, posts)
 }
 
+// GetUserMarketPosts 获取用户主页展示的集市出售记录，包含已售出历史。
+func (h *UserHandler) GetUserMarketPosts(c *gin.Context) {
+	targetIDStr := c.Param("id")
+	targetID, err := strconv.ParseUint(targetIDStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的用户ID"})
+		return
+	}
+
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 || limit > 50 {
+		limit = 20
+	}
+	offset := (page - 1) * limit
+	postType := c.DefaultQuery("post_type", "sell")
+
+	buildQuery := func() *gorm.DB {
+		return h.db.Model(&models.Post{}).Where(
+			"author_id = ? AND board_id = ? AND post_type = ? AND status <> ?",
+			targetID,
+			models.BoardMarket,
+			postType,
+			models.PostStatusDeleted,
+		)
+	}
+
+	var total int64
+	if err := buildQuery().Count(&total).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取商品数量失败"})
+		return
+	}
+
+	var sold int64
+	if err := buildQuery().
+		Where("status = ?", models.PostStatusSold).
+		Count(&sold).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取售出数量失败"})
+		return
+	}
+
+	var posts []models.Post
+	if err := buildQuery().
+		Preload("Author").
+		Preload("Images").
+		Preload("Images.File").
+		Order("created_at DESC").
+		Offset(offset).
+		Limit(limit).
+		Find(&posts).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取商品失败"})
+		return
+	}
+	if posts == nil {
+		posts = []models.Post{}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"items": posts,
+		"total": total,
+		"sold":  sold,
+		"page":  page,
+		"limit": limit,
+	})
+}
+
 // GetUserPostCount returns the number of visible posts created by a user.
 func (h *UserHandler) GetUserPostCount(c *gin.Context) {
 	targetID, err := strconv.ParseUint(c.Param("id"), 10, 64)

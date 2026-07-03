@@ -54,6 +54,21 @@ class WaterModerationService {
     );
   }
 
+  Future<void> restorePost({
+    required String sectionSlug,
+    required int postId,
+    String? reason,
+  }) async {
+    final body = <String, dynamic>{};
+    if (reason != null && reason.trim().isNotEmpty) {
+      body['reason'] = reason.trim();
+    }
+    await _dio.post(
+      '${_base(sectionSlug)}/posts/$postId/restore',
+      data: body,
+    );
+  }
+
   // ── 禁言 ──
 
   Future<WaterSectionMute> muteUser({

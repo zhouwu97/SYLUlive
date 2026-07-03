@@ -79,6 +79,20 @@ class WaterModerationProvider extends ChangeNotifier {
     });
   }
 
+  Future<bool> restorePost({
+    required String sectionSlug,
+    required int postId,
+    String? reason,
+  }) async {
+    return _operation(() async {
+      await _service.restorePost(
+        sectionSlug: sectionSlug,
+        postId: postId,
+        reason: reason,
+      );
+    });
+  }
+
   Future<bool> muteUser({
     required String sectionSlug,
     required int userId,

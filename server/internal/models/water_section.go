@@ -177,6 +177,7 @@ const (
 	ModActionPinPost     = "pin_post"
 	ModActionUnpinPost   = "unpin_post"
 	ModActionDeletePost  = "delete_post"
+	ModActionRestorePost = "restore_post"
 	ModActionMuteUser    = "mute_user"
 	ModActionUnmuteUser  = "unmute_user"
 	ModActionEditSection = "edit_section"

@@ -359,6 +359,84 @@ func (h *WaterModerationHandler) DeletePost(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "帖子已删除"})
 }
 
+// ── 管理员恢复帖子 ──
+
+type restorePostInput struct {
+	Reason string `json:"reason"`
+}
+
+// RestorePost POST /api/water/sections/:slug/posts/:post_id/restore
+func (h *WaterModerationHandler) RestorePost(c *gin.Context) {
+	operator, ok := h.getOperatorOr401(c)
+	if !ok {
+		return
+	}
+	section, ok := h.getSectionOr404(c)
+	if !ok {
+		return
+	}
+
+	if !h.permSvc.IsGlobalWaterAdmin(operator) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "只有管理员可以恢复帖子"})
+		return
+	}
+
+	postIDStr := c.Param("post_id")
+	postID, err := strconv.ParseUint(postIDStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的帖子 ID"})
+		return
+	}
+
+	var post models.Post
+	if err := h.db.First(&post, postID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "帖子不存在"})
+		return
+	}
+	if post.BoardID != models.BoardShuitie {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "只能恢复水帖版块帖子"})
+		return
+	}
+	if post.PostType != section.Slug {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "帖子不属于该版块"})
+		return
+	}
+	if post.Status != models.PostStatusDeleted {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "帖子未被删除"})
+		return
+	}
+
+	var input restorePostInput
+	_ = c.ShouldBindJSON(&input)
+	reason := strings.TrimSpace(input.Reason)
+	if reason == "" {
+		reason = "恢复帖子"
+	} else if validReason, msg := validateModerationReason(reason, "恢复"); msg != "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": msg})
+		return
+	} else {
+		reason = validReason
+	}
+
+	before, _ := json.Marshal(gin.H{
+		"post_id":   post.ID,
+		"author_id": post.AuthorID,
+		"status":    post.Status,
+	})
+	if err := h.db.Model(&post).Update("status", models.PostStatusNormal).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "恢复帖子失败"})
+		return
+	}
+	after, _ := json.Marshal(gin.H{
+		"post_id":   post.ID,
+		"author_id": post.AuthorID,
+		"status":    models.PostStatusNormal,
+	})
+	h.writeLog(section.ID, operator.ID, models.ModActionRestorePost, "post", uint(postID), &post.AuthorID, reason,
+		fmt.Sprintf("before:%s after:%s", before, after))
+	c.JSON(http.StatusOK, gin.H{"message": "帖子已恢复"})
+}
+
 // ── 版块禁言 ──
 
 type muteUserInput struct {

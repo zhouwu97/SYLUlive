@@ -1040,6 +1040,13 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
   Widget _buildLogCard(WaterModerationLog log, bool isDark) {
     final time =
         log.createdAt != null ? _formatFriendlyTime(log.createdAt!) : '';
+    final perm = context
+        .watch<WaterModeratorProvider>()
+        .permissionOf(widget.section.slug);
+    final canRestorePost = perm.isGlobalAdmin &&
+        log.action == 'delete_post' &&
+        log.targetType == 'post' &&
+        log.targetId > 0;
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.only(bottom: 6),
@@ -1068,13 +1075,92 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
               ],
             ),
           ),
-          Text(time,
-              style: TextStyle(
-                  fontSize: 10,
-                  color: isDark ? Colors.white38 : const Color(0xFF9CA3AF))),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(time,
+                  style: TextStyle(
+                      fontSize: 10,
+                      color:
+                          isDark ? Colors.white38 : const Color(0xFF9CA3AF))),
+              if (canRestorePost) ...[
+                const SizedBox(height: 4),
+                TextButton.icon(
+                  onPressed:
+                      context.watch<WaterModerationProvider>().isOperating
+                          ? null
+                          : () => _confirmRestorePost(log),
+                  icon: const Icon(Icons.restore_rounded, size: 14),
+                  label: const Text('恢复', style: TextStyle(fontSize: 11)),
+                  style: TextButton.styleFrom(
+                    minimumSize: const Size(0, 28),
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                  ),
+                ),
+              ],
+            ],
+          ),
         ],
       ),
     );
+  }
+
+  Future<void> _confirmRestorePost(WaterModerationLog log) async {
+    final reasonController = TextEditingController(text: '恢复误删帖子');
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('恢复帖子'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('确认恢复帖子 #${log.targetId} 吗？'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: reasonController,
+              maxLength: 100,
+              decoration: const InputDecoration(
+                labelText: '恢复原因',
+                hintText: '可选',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('确认恢复'),
+          ),
+        ],
+      ),
+    );
+    final reason = reasonController.text.trim();
+    reasonController.dispose();
+    if (!mounted || confirmed != true) return;
+
+    final provider = context.read<WaterModerationProvider>();
+    final ok = await provider.restorePost(
+      sectionSlug: widget.section.slug,
+      postId: log.targetId,
+      reason: reason,
+    );
+    if (!mounted) return;
+    if (ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('帖子已恢复')),
+      );
+      _loadLogs();
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(provider.error ?? '恢复帖子失败')),
+      );
+    }
   }
 
   Widget _buildEmptyList(bool isDark, String text) {

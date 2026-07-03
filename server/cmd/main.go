@@ -94,6 +94,10 @@ func main() {
 
 		&models.Post{},
 
+		&models.WaterSection{},
+
+		&models.WaterSectionTag{},
+
 		&models.PostImage{},
 		&models.FeaturedApplication{},
 		&models.CollaborationApplication{},
@@ -196,6 +200,9 @@ func main() {
 	if err := models.EnsureCompetitionCategories(db); err != nil {
 		log.Fatal("竞赛分类种子初始化失败:", err)
 	}
+	if err := models.EnsureWaterSections(db); err != nil {
+		log.Fatal("水帖版块种子初始化失败:", err)
+	}
 	if err := ensureFeatureCollaborationIndexes(db); err != nil {
 		log.Fatal("精华共同创作索引迁移失败:", err)
 	}
@@ -264,6 +271,8 @@ func main() {
 	postHandler := handlers.NewPostHandler(db, cfg.JPushAppKey, cfg.JPushMasterSecret)
 	searchHandler := handlers.NewSearchHandler(db, postHandler)
 	competitionHandler := handlers.NewCompetitionHandler(db)
+
+	waterSectionHandler := handlers.NewWaterSectionHandler(db)
 
 	replyHandler := handlers.NewReplyHandler(db, cfg.JPushAppKey, cfg.JPushMasterSecret)
 
@@ -650,6 +659,10 @@ func main() {
 	}
 
 	r.GET("/api/search", middleware.OptionalAuthMiddleware(db, cfg.JWTSecret), searchHandler.Search)
+
+	// 水帖版块读取接口（公开）
+	r.GET("/api/water/sections", waterSectionHandler.List)
+	r.GET("/api/water/sections/:slug", waterSectionHandler.Get)
 
 	r.POST("/api/collaboration-applications/:id/approve", middleware.AuthMiddleware(db, cfg.JWTSecret), postHandler.ApproveCollaborationApplication)
 	r.POST("/api/collaboration-applications/:id/reject", middleware.AuthMiddleware(db, cfg.JWTSecret), postHandler.RejectCollaborationApplication)

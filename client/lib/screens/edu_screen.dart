@@ -18,6 +18,7 @@ class EduScreen extends StatefulWidget {
 class _EduScreenState extends State<EduScreen> {
   final _studentIdController = TextEditingController();
   final _passwordController = TextEditingController();
+  static const Duration _courseFetchTimeout = Duration(seconds: 25);
 
   @override
   void initState() {
@@ -376,26 +377,52 @@ class _EduScreenState extends State<EduScreen> {
                   : () async {
                       setDialogState(() => isFetching = true);
                       final scaffoldMessenger = ScaffoldMessenger.of(context);
-                      final result = await eduProvider.getCourses(
-                        selectedYear,
-                        selectedSemester,
-                      );
-                      if (context.mounted) {
-                        Navigator.pop(context); // 请求结束后关闭对话框
-                        if (result != null &&
-                            result.success &&
-                            result.data != null) {
-                          _showCoursesResult(
-                            context,
-                            result.data!,
-                            selectedYear,
-                            selectedSemester,
-                            eduProvider,
-                          );
-                        } else {
+                      try {
+                        final result = await eduProvider
+                            .getCourses(selectedYear, selectedSemester)
+                            .timeout(_courseFetchTimeout);
+                        if (context.mounted) {
+                          Navigator.pop(context); // 请求结束后关闭对话框
+                          if (result != null &&
+                              result.success &&
+                              result.data != null) {
+                            _showCoursesResult(
+                              context,
+                              result.data!,
+                              selectedYear,
+                              selectedSemester,
+                              eduProvider,
+                            );
+                          } else {
+                            scaffoldMessenger.showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  result?.errorMessage ??
+                                      '获取课表失败，请稍后重试或重新绑定教务账号',
+                                ),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          }
+                        }
+                      } on TimeoutException {
+                        if (context.mounted) {
+                          Navigator.pop(context);
                           scaffoldMessenger.showSnackBar(
                             SnackBar(
-                              content: Text(result?.errorMessage ?? '获取课表失败'),
+                              content: Text(
+                                '获取课表超过 ${_courseFetchTimeout.inSeconds} 秒，请稍后重试',
+                              ),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                        }
+                      } catch (e) {
+                        if (context.mounted) {
+                          Navigator.pop(context);
+                          scaffoldMessenger.showSnackBar(
+                            SnackBar(
+                              content: Text('获取课表异常：$e'),
                               backgroundColor: Colors.red,
                             ),
                           );
@@ -512,6 +539,7 @@ class _EduScreenState extends State<EduScreen> {
                           duration: Duration(seconds: 4),
                         ),
                       );
+                      Navigator.of(navContext).maybePop();
                     } catch (e) {
                       messenger.showSnackBar(
                         SnackBar(

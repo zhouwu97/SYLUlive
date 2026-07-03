@@ -11,7 +11,6 @@ class HomeServiceDrawer extends StatelessWidget {
   final bool showCheckInDot;
   final List<model.Announcement> announcements;
   final VoidCallback onCheckIn;
-  final VoidCallback onOpenLostFound;
   final VoidCallback onOpenToolbox;
   final VoidCallback onOpenAnnouncements;
   final VoidCallback onOpenCompetitions;
@@ -29,7 +28,6 @@ class HomeServiceDrawer extends StatelessWidget {
     required this.showCheckInDot,
     required this.announcements,
     required this.onCheckIn,
-    required this.onOpenLostFound,
     required this.onOpenToolbox,
     required this.onOpenAnnouncements,
     required this.onOpenCompetitions,
@@ -49,11 +47,18 @@ class HomeServiceDrawer extends StatelessWidget {
     return Container(
       width: drawerWidth,
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF181D28) : Colors.white,
+        color: isDark ? const Color(0xFF151A24) : const Color(0xFFFFFFFF),
         borderRadius: const BorderRadius.only(
-          topRight: Radius.circular(24),
-          bottomRight: Radius.circular(24),
+          topRight: Radius.circular(28),
+          bottomRight: Radius.circular(28),
         ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: isDark ? 0.24 : 0.08),
+            blurRadius: 24,
+            offset: const Offset(8, 0),
+          ),
+        ],
       ),
       child: SafeArea(
         child: Column(
@@ -63,7 +68,8 @@ class HomeServiceDrawer extends StatelessWidget {
             const SizedBox(height: 16),
             Expanded(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 18),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 18, vertical: 2),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -119,7 +125,7 @@ class HomeServiceDrawer extends StatelessWidget {
     );
   }
 
-  // ---- 三个快捷入口（签到、失物招领、工具箱）----
+  // ---- 快捷入口（签到、工具箱）----
   Widget _buildQuickEntries(BuildContext context, bool isDark) {
     return Container(
       height: 50,
@@ -145,16 +151,6 @@ class HomeServiceDrawer extends StatelessWidget {
               isLoading: checkInLoading,
               showDot: showCheckInDot,
               onTap: onCheckIn,
-            ),
-          ),
-          _buildQuickDivider(isDark),
-          Expanded(
-            child: _CompactQuickEntryItem(
-              icon: Icons.luggage_outlined,
-              iconColor: const Color(0xFF0EA5A4),
-              title: '失物招领',
-              isDark: isDark,
-              onTap: onOpenLostFound,
             ),
           ),
           _buildQuickDivider(isDark),
@@ -299,8 +295,8 @@ class HomeServiceDrawer extends StatelessWidget {
                 '水帖分类',
                 style: TextStyle(
                   fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                  color: isDark ? Colors.white : Colors.black87,
+                  fontWeight: FontWeight.w800,
+                  color: isDark ? Colors.white : const Color(0xFF111827),
                 ),
               ),
             ),
@@ -308,7 +304,7 @@ class HomeServiceDrawer extends StatelessWidget {
               onTap: onOpenAllWaterPosts,
               borderRadius: BorderRadius.circular(999),
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -316,14 +312,15 @@ class HomeServiceDrawer extends StatelessWidget {
                       '全部',
                       style: TextStyle(
                         fontSize: 12,
-                        fontWeight: FontWeight.w600,
+                        fontWeight: FontWeight.w700,
                         color:
                             isDark ? Colors.white54 : const Color(0xFF6B7280),
                       ),
                     ),
+                    const SizedBox(width: 1),
                     Icon(
                       Icons.chevron_right_rounded,
-                      size: 15,
+                      size: 16,
                       color: isDark ? Colors.white38 : const Color(0xFF9CA3AF),
                     ),
                   ],
@@ -333,24 +330,39 @@ class HomeServiceDrawer extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 10),
-        LayoutBuilder(
-          builder: (context, constraints) {
-            final itemWidth = (constraints.maxWidth - 20) / 3;
-            return Wrap(
-              spacing: 10,
-              runSpacing: 10,
-              children: kWaterPostCategories.map((category) {
-                return SizedBox(
-                  width: itemWidth,
-                  child: _WaterCategoryMiniItem(
-                    category: category,
-                    isDark: isDark,
-                    onTap: () => onOpenWaterCategory(category),
-                  ),
-                );
-              }).toList(),
-            );
-          },
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.fromLTRB(10, 12, 10, 12),
+          decoration: BoxDecoration(
+            color: isDark
+                ? Colors.white.withValues(alpha: 0.045)
+                : const Color(0xFFF9FAFB),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: isDark
+                  ? Colors.white.withValues(alpha: 0.07)
+                  : const Color(0xFFEDF1F7),
+            ),
+          ),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final itemWidth = (constraints.maxWidth - 16) / 3;
+              return Wrap(
+                spacing: 8,
+                runSpacing: 10,
+                children: kWaterPostCategories.map((category) {
+                  return SizedBox(
+                    width: itemWidth,
+                    child: _WaterCategoryMiniItem(
+                      category: category,
+                      isDark: isDark,
+                      onTap: () => onOpenWaterCategory(category),
+                    ),
+                  );
+                }).toList(),
+              );
+            },
+          ),
         ),
       ],
     );
@@ -365,47 +377,77 @@ class HomeServiceDrawer extends StatelessWidget {
           '更多服务',
           style: TextStyle(
             fontSize: 15,
-            fontWeight: FontWeight.w700,
-            color: isDark ? Colors.white : Colors.black87,
+            fontWeight: FontWeight.w800,
+            color: isDark ? Colors.white : const Color(0xFF111827),
           ),
         ),
         const SizedBox(height: 10),
-        _ServiceRow(
-          icon: Icons.workspace_premium_outlined,
-          color: const Color(0xFFD97706),
-          title: '竞赛中心',
-          subtitle: '比赛日历',
-          isDark: isDark,
-          onTap: onOpenCompetitions,
-        ),
-        const SizedBox(height: 8),
-        _ServiceRow(
-          icon: Icons.assessment_outlined,
-          color: const Color(0xFF5D64C4),
-          title: '成绩查询',
-          subtitle: '查看学期成绩与绩点',
-          isDark: isDark,
-          onTap: onOpenGrades,
-        ),
-        const SizedBox(height: 8),
-        _ServiceRow(
-          icon: Icons.event_note_rounded,
-          color: Colors.deepPurpleAccent,
-          title: '考试安排',
-          subtitle: 'AI 一键提取',
-          isDark: isDark,
-          onTap: onOpenExamSchedule,
-        ),
-        const SizedBox(height: 8),
-        _ServiceRow(
-          icon: Icons.feedback_outlined,
-          color: const Color(0xFF0EA5E9),
-          title: '意见反馈',
-          subtitle: 'Bug 报告与功能建议',
-          isDark: isDark,
-          onTap: onOpenFeedback,
+        Container(
+          decoration: BoxDecoration(
+            color: isDark
+                ? Colors.white.withValues(alpha: 0.045)
+                : const Color(0xFFF9FAFB),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: isDark
+                  ? Colors.white.withValues(alpha: 0.07)
+                  : const Color(0xFFEDF1F7),
+            ),
+          ),
+          child: Column(
+            children: [
+              _ServiceRow(
+                icon: Icons.workspace_premium_outlined,
+                color: const Color(0xFFD97706),
+                title: '竞赛中心',
+                subtitle: '比赛日历',
+                isDark: isDark,
+                onTap: onOpenCompetitions,
+              ),
+              _buildServiceDivider(isDark),
+              _ServiceRow(
+                icon: Icons.assessment_outlined,
+                color: const Color(0xFF5D64C4),
+                title: '成绩查询',
+                subtitle: '查看学期成绩与绩点',
+                isDark: isDark,
+                onTap: onOpenGrades,
+              ),
+              _buildServiceDivider(isDark),
+              _ServiceRow(
+                icon: Icons.event_note_rounded,
+                color: const Color(0xFF8B5CF6),
+                title: '考试安排',
+                subtitle: 'AI 一键提取',
+                isDark: isDark,
+                onTap: onOpenExamSchedule,
+              ),
+              _buildServiceDivider(isDark),
+              _ServiceRow(
+                icon: Icons.feedback_outlined,
+                color: const Color(0xFF0EA5E9),
+                title: '意见反馈',
+                subtitle: 'Bug 报告与功能建议',
+                isDark: isDark,
+                onTap: onOpenFeedback,
+              ),
+            ],
+          ),
         ),
       ],
+    );
+  }
+
+  Widget _buildServiceDivider(bool isDark) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 58, right: 14),
+      child: Divider(
+        height: 1,
+        thickness: 1,
+        color: isDark
+            ? Colors.white.withValues(alpha: 0.06)
+            : const Color(0xFFEFF3F8),
+      ),
     );
   }
 }
@@ -498,35 +540,47 @@ class _WaterCategoryMiniItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: SizedBox(
-        height: 48,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: 28,
-              height: 28,
-              decoration: BoxDecoration(
-                color: category.color.withValues(alpha: isDark ? 0.14 : 0.10),
-                borderRadius: BorderRadius.circular(9),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          height: 68,
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  color: category.color.withValues(alpha: isDark ? 0.18 : 0.11),
+                  borderRadius: BorderRadius.circular(13),
+                ),
+                child: Icon(
+                  category.icon,
+                  size: 18,
+                  color: category.color,
+                ),
               ),
-              child: Icon(category.icon, size: 17, color: category.color),
-            ),
-            const SizedBox(height: 3),
-            Text(
-              category.label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 10.5,
-                fontWeight: FontWeight.w600,
-                color: isDark ? Colors.white70 : const Color(0xFF374151),
+              const SizedBox(height: 6),
+              Text(
+                category.label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 11.5,
+                  height: 1.1,
+                  fontWeight: FontWeight.w700,
+                  color: isDark ? Colors.white70 : const Color(0xFF374151),
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -557,17 +611,17 @@ class _ServiceRow extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(18),
         child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+          padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
           child: Row(
             children: [
               Container(
-                width: 34,
-                height: 34,
+                width: 36,
+                height: 36,
                 decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(10),
+                  color: color.withValues(alpha: isDark ? 0.18 : 0.12),
+                  borderRadius: BorderRadius.circular(13),
                 ),
                 child: Icon(icon, color: color, size: 18),
               ),
@@ -580,15 +634,19 @@ class _ServiceRow extends StatelessWidget {
                       title,
                       style: TextStyle(
                         fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: isDark ? Colors.white : Colors.black87,
+                        height: 1.15,
+                        fontWeight: FontWeight.w700,
+                        color: isDark ? Colors.white : const Color(0xFF111827),
                       ),
                     ),
+                    const SizedBox(height: 3),
                     Text(
                       subtitle,
                       style: TextStyle(
-                        fontSize: 11,
-                        color: isDark ? Colors.white54 : Colors.black54,
+                        fontSize: 11.5,
+                        height: 1.15,
+                        color:
+                            isDark ? Colors.white54 : const Color(0xFF8A93A3),
                       ),
                     ),
                   ],
@@ -597,7 +655,7 @@ class _ServiceRow extends StatelessWidget {
               Icon(
                 Icons.chevron_right_rounded,
                 size: 20,
-                color: isDark ? Colors.white38 : Colors.black26,
+                color: isDark ? Colors.white30 : const Color(0xFFB8C0CC),
               ),
             ],
           ),

@@ -1024,7 +1024,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) =>
-            WaterCategoryFeedRoute(category: _resolvedWaterCategory),
+            WaterCategoryFeedRoute.fromLegacyCategory(_resolvedWaterCategory),
       ),
     );
   }

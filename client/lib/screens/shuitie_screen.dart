@@ -8,7 +8,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config/api_constants.dart';
-import '../config/water_post_taxonomy.dart';
+import '../models/water_section.dart';
 import '../utils/app_motion.dart';
 import '../utils/app_feedback.dart';
 import '../utils/responsive_util.dart';
@@ -21,6 +21,7 @@ import '../providers/auth_provider.dart';
 import '../providers/message_provider.dart';
 import '../providers/post_provider.dart';
 import '../providers/theme_provider.dart';
+import '../providers/water_section_provider.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/home_service_drawer.dart';
 import '../widgets/home_tab_reveal.dart';
@@ -173,6 +174,9 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       postProvider.loadPosts(boardId: 1, sort: 'all');
       _startAutoRefresh();
       _ensureCheckinStatusLoaded();
+
+      // 预热水帖版块缓存，供服务抽屉使用
+      context.read<WaterSectionProvider>().loadSections();
 
       // 延迟加载其他非核心数据
       Future.delayed(const Duration(seconds: 3), () {
@@ -730,6 +734,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                 checkInLoading: _checkInLoading,
                 showCheckInDot: _showCheckInDot,
                 announcements: _announcements,
+                waterSections: context.read<WaterSectionProvider>().activeSections,
                 onCheckIn: () {
                   _closePanelThenOpen(dialogContext, _doCheckIn);
                 },
@@ -825,13 +830,13 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                     _changeFeedMode('all');
                   });
                 },
-                onOpenWaterCategory: (WaterPostCategory category) {
+                onOpenWaterSection: (WaterSection section) {
                   _closePanelThenOpen(dialogContext, () {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
                         builder: (_) =>
-                            WaterCategoryFeedRoute(category: category),
+                            WaterCategoryFeedRoute.fromSection(section),
                       ),
                     );
                   });

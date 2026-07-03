@@ -699,6 +699,7 @@ func main() {
 		waterMod.POST("/posts/:post_id/pin", waterModerationHandler.PinPost)
 		waterMod.DELETE("/posts/:post_id/pin", waterModerationHandler.UnpinPost)
 		waterMod.DELETE("/posts/:post_id/moderate", waterModerationHandler.DeletePost)
+		waterMod.POST("/posts/:post_id/restore", waterModerationHandler.RestorePost)
 		waterMod.POST("/users/:user_id/mute", waterModerationHandler.MuteUser)
 		waterMod.DELETE("/users/:user_id/mute", waterModerationHandler.UnmuteUser)
 		waterMod.GET("/mutes", waterModerationHandler.ListMutes)

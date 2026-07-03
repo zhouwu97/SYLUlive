@@ -31,7 +31,7 @@ class MarketPostCard extends StatelessWidget {
       case 'buy':
         return '求购';
       case 'proxy':
-        return '代取';
+        return '办事';
       case 'lost':
         return '寻物';
       case 'found':
@@ -114,7 +114,9 @@ class MarketPostCard extends StatelessWidget {
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                         ),
-                      if (post.title.isNotEmpty && post.content.isNotEmpty) ...[
+                      if (post.title.isNotEmpty &&
+                          post.content.isNotEmpty &&
+                          post.marketTags.isEmpty) ...[
                         const SizedBox(height: 4),
                         Text(
                           post.content,
@@ -129,6 +131,10 @@ class MarketPostCard extends StatelessWidget {
                         ),
                       ],
                       const Spacer(),
+                      if (post.marketTags.isNotEmpty) ...[
+                        _buildMarketTags(context, isDark, maxTags: 2),
+                        const SizedBox(height: 6),
+                      ],
                       _buildPriceRow(context, isDark, showViews: true),
                       const SizedBox(height: 6),
                       _buildListUserInfo(context, isDark),
@@ -199,6 +205,10 @@ class MarketPostCard extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                       ),
                     const SizedBox(height: 6),
+                    if (post.marketTags.isNotEmpty) ...[
+                      _buildMarketTags(context, isDark, maxTags: 2),
+                      const SizedBox(height: 6),
+                    ],
                     _buildPriceRow(context, isDark),
                     const SizedBox(height: 8),
                     _buildGridUserInfo(context, isDark),
@@ -429,6 +439,44 @@ class MarketPostCard extends StatelessWidget {
           ),
         ],
       ],
+    );
+  }
+
+  Widget _buildMarketTags(
+    BuildContext context,
+    bool isDark, {
+    int maxTags = 2,
+  }) {
+    final tags = post.marketTags.take(maxTags).toList(growable: false);
+    final primary = Theme.of(context).colorScheme.primary;
+    return Wrap(
+      spacing: 6,
+      runSpacing: 4,
+      children: tags
+          .map(
+            (tag) => Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+              decoration: BoxDecoration(
+                color: isDark
+                    ? primary.withValues(alpha: 0.14)
+                    : primary.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(
+                  color: primary.withValues(alpha: isDark ? 0.24 : 0.16),
+                ),
+              ),
+              child: Text(
+                tag,
+                style: TextStyle(
+                  fontSize: 10.5,
+                  height: 1.0,
+                  color: primary,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          )
+          .toList(),
     );
   }
 

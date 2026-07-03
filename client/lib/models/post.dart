@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'user.dart';
 
 // 帖子图片模型
@@ -68,6 +70,7 @@ class Post {
   final String postType;
   final double price;
   final String contact;
+  final List<String> marketTags;
   final int? waterTagId;
   final String status;
   final int viewCount;
@@ -100,6 +103,7 @@ class Post {
     this.postType = '',
     this.price = 0,
     this.contact = '',
+    this.marketTags = const [],
     this.waterTagId,
     this.status = 'normal',
     this.viewCount = 0,
@@ -134,6 +138,7 @@ class Post {
       postType: json['post_type'] ?? '',
       price: (json['price'] ?? 0).toDouble(),
       contact: json['contact'] ?? '',
+      marketTags: _parseStringList(json['market_tags']),
       waterTagId: json['water_tag_id'] != null
           ? (json['water_tag_id'] as num).toInt()
           : null,
@@ -168,6 +173,33 @@ class Post {
 
   String get firstImageUrl => images.isNotEmpty ? images.first.url : '';
 
+  static List<String> _parseStringList(dynamic value) {
+    if (value == null) return const [];
+    if (value is List) {
+      return value
+          .map((item) => item.toString().trim())
+          .where((item) => item.isNotEmpty)
+          .toList(growable: false);
+    }
+    if (value is String) {
+      final trimmed = value.trim();
+      if (trimmed.isEmpty) return const [];
+      if (trimmed.startsWith('[')) {
+        try {
+          return _parseStringList(jsonDecode(trimmed));
+        } catch (_) {
+          // 兼容旧接口偶发返回普通字符串的情况，继续按逗号切分。
+        }
+      }
+      return trimmed
+          .split(',')
+          .map((item) => item.trim())
+          .where((item) => item.isNotEmpty)
+          .toList(growable: false);
+    }
+    return const [];
+  }
+
   bool get isActivePinned {
     if (!isPinned) return false;
     if (pinnedUntil == null) return true;
@@ -183,6 +215,7 @@ class Post {
     String? postType,
     double? price,
     String? contact,
+    List<String>? marketTags,
     int? waterTagId,
     String? status,
     int? viewCount,
@@ -217,6 +250,7 @@ class Post {
       postType: postType ?? this.postType,
       price: price ?? this.price,
       contact: contact ?? this.contact,
+      marketTags: marketTags ?? this.marketTags,
       waterTagId: waterTagId ?? this.waterTagId,
       status: status ?? this.status,
       viewCount: viewCount ?? this.viewCount,

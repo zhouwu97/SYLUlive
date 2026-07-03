@@ -1455,9 +1455,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   Widget _buildWaterAppBarCategoryChip(bool isDark) {
     final sectionSlug = _post?.postType ?? '';
     final sectionProvider = context.watch<WaterSectionProvider?>();
-    final section = sectionSlug.isNotEmpty
-        ? sectionProvider?.getBySlug(sectionSlug)
-        : null;
+    final section =
+        sectionSlug.isNotEmpty ? sectionProvider?.getBySlug(sectionSlug) : null;
     final label = section?.title ?? waterCategoryOf(sectionSlug)?.label ?? '水帖';
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -1600,6 +1599,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                               ),
                             ],
                           ),
+                          const SizedBox(height: 16),
+                        ],
+                        if (p.marketTags.isNotEmpty) ...[
+                          _buildMarketTagWrap(p.marketTags, isDark),
                           const SizedBox(height: 16),
                         ],
                         Text(
@@ -1746,6 +1749,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           ),
                           const SizedBox(height: 16),
                         ],
+                        if (p.marketTags.isNotEmpty) ...[
+                          _buildMarketTagWrap(p.marketTags, isDark),
+                          const SizedBox(height: 16),
+                        ],
                         Text(
                           p.content,
                           style: TextStyle(
@@ -1786,6 +1793,38 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         ),
         _buildReplyBar(isDark),
       ],
+    );
+  }
+
+  Widget _buildMarketTagWrap(List<String> tags, bool isDark) {
+    final primary = Theme.of(context).colorScheme.primary;
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: tags
+          .map(
+            (tag) => Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: isDark
+                    ? primary.withValues(alpha: 0.14)
+                    : primary.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(
+                  color: primary.withValues(alpha: isDark ? 0.24 : 0.16),
+                ),
+              ),
+              child: Text(
+                tag,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: primary,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          )
+          .toList(growable: false),
     );
   }
 
@@ -3325,7 +3364,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             return Container(
               decoration: BoxDecoration(
                 color: isDark ? const Color(0xFF171B24) : Colors.white,
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                borderRadius:
+                    const BorderRadius.vertical(top: Radius.circular(16)),
               ),
               child: Column(
                 children: [
@@ -3337,15 +3377,18 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                         SliverToBoxAdapter(
                           child: Padding(
                             padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-                            child: _buildSheetParentReply(sheetContext, parentReply, isDark),
+                            child: _buildSheetParentReply(
+                                sheetContext, parentReply, isDark),
                           ),
                         ),
                         SliverToBoxAdapter(
-                          child: _buildRelatedRepliesHeader(parentReply.id, isDark),
+                          child: _buildRelatedRepliesHeader(
+                              parentReply.id, isDark),
                         ),
                         SliverPadding(
                           padding: const EdgeInsets.symmetric(horizontal: 16),
-                          sliver: _buildSheetChildrenList(sheetContext, parentReply, isDark),
+                          sliver: _buildSheetChildrenList(
+                              sheetContext, parentReply, isDark),
                         ),
                       ],
                     ),
@@ -3409,7 +3452,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
-  Widget _buildSheetParentReply(BuildContext sheetContext, Reply r, bool isDark) {
+  Widget _buildSheetParentReply(
+      BuildContext sheetContext, Reply r, bool isDark) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -3562,7 +3606,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
-  Widget _buildSheetChildrenList(BuildContext sheetContext, Reply parentReply, bool isDark) {
+  Widget _buildSheetChildrenList(
+      BuildContext sheetContext, Reply parentReply, bool isDark) {
     final children = _collectThreadChildren(parentReply.id);
 
     if (children.isEmpty) {
@@ -3574,7 +3619,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     return SliverList(
       delegate: SliverChildBuilderDelegate(
         (context, index) {
-          return _buildSheetChildReplyItem(sheetContext, children[index], parentReply, isDark);
+          return _buildSheetChildReplyItem(
+              sheetContext, children[index], parentReply, isDark);
         },
         childCount: children.length,
       ),
@@ -3682,7 +3728,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                       GestureDetector(
                         onTap: () {
                           Navigator.pop(sheetContext);
-                          showReportSheet(context, targetId: child.id, targetType: 'reply');
+                          showReportSheet(context,
+                              targetId: child.id, targetType: 'reply');
                         },
                         child: Text(
                           '举报',
@@ -3702,7 +3749,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
-  Widget _buildSheetReplyInputBar(BuildContext sheetContext, Reply parentReply, bool isDark) {
+  Widget _buildSheetReplyInputBar(
+      BuildContext sheetContext, Reply parentReply, bool isDark) {
     return Container(
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF131720) : Colors.white,

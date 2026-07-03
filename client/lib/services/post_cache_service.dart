@@ -92,6 +92,7 @@ class PostCacheService {
       'post_type': post.postType,
       'price': post.price,
       'contact': post.contact,
+      'market_tags': post.marketTags,
       'status': post.status,
       'view_count': post.viewCount,
       'reply_count': post.replyCount,

@@ -25,7 +25,13 @@ class _BoardState {
 class CreatePostResult {
   final bool success;
   final String? errorMessage;
-  const CreatePostResult({required this.success, this.errorMessage});
+  final Post? post;
+
+  const CreatePostResult({
+    required this.success,
+    this.errorMessage,
+    this.post,
+  });
 }
 
 class DeletePostResult {
@@ -175,6 +181,40 @@ class PostProvider extends ChangeNotifier {
     }
   }
 
+  void _upsertPostInBoards(Post post) {
+    var touched = false;
+    for (final entry in _boards.entries) {
+      final keyParts = entry.key.split('|');
+      final boardId = int.tryParse(keyParts.first) ?? 0;
+      if (boardId != post.boardId) continue;
+
+      final sort = keyParts.length > 1 ? keyParts[1] : 'time';
+      final type =
+          keyParts.length > 2 && keyParts[2].isNotEmpty ? keyParts[2] : null;
+      final tagId = keyParts.length > 3 && keyParts[3].isNotEmpty
+          ? int.tryParse(keyParts[3])
+          : null;
+      if (type != null && type != post.postType) continue;
+      if (tagId != null && tagId != post.waterTagId) continue;
+
+      final board = entry.value;
+      final index = board.posts.indexWhere((p) => p.id == post.id);
+      if (index >= 0) {
+        board.posts[index] = post;
+      } else if (sort == 'time') {
+        board.posts = [post, ...board.posts];
+      } else {
+        continue;
+      }
+      board.revision++;
+      _savePostsToCache(boardId, sort, board.posts);
+      touched = true;
+    }
+    if (touched) {
+      notifyListeners();
+    }
+  }
+
   /// SWR 模式：先读缓存秒开 → 后台增量拉取
   Future<void> _loadCachedThenRefresh(
     int boardId, {
@@ -304,7 +344,7 @@ class PostProvider extends ChangeNotifier {
   }) {
     final board = _ensureBoard(boardId, sort: sort, type: type, tagId: tagId);
     final page = board.currentPage;
-    final key = 'load_${boardId}_${sort}_${type}_${tagId}_${page}';
+    final key = 'load_${boardId}_${sort}_${type}_${tagId}_$page';
 
     if (_inflightRequests.containsKey(key)) return _inflightRequests[key]!;
 
@@ -414,7 +454,7 @@ class PostProvider extends ChangeNotifier {
     int? tagId,
     String sort = 'time',
   }) {
-    final key = 'refresh_${boardId}_${sort}_${type}_${tagId}';
+    final key = 'refresh_${boardId}_${sort}_${type}_$tagId';
 
     if (_inflightRequests.containsKey(key)) return _inflightRequests[key]!;
 
@@ -547,6 +587,7 @@ class PostProvider extends ChangeNotifier {
     double? price,
     String? contact,
     List<int>? fileIds,
+    List<String>? marketTags,
   }) async {
     try {
       final formData = FormData.fromMap({
@@ -559,11 +600,19 @@ class PostProvider extends ChangeNotifier {
         if (contact != null && contact.isNotEmpty) 'contact': contact,
         if (fileIds != null && fileIds.isNotEmpty)
           'file_ids': fileIds.join(','),
+        if (marketTags != null && marketTags.isNotEmpty)
+          'market_tags': marketTags.join(','),
       });
 
       final response = await _dio.post('/posts', data: formData);
       if (response.statusCode == 201) {
-        return const CreatePostResult(success: true);
+        final created = response.data is Map<String, dynamic>
+            ? Post.fromJson(response.data as Map<String, dynamic>)
+            : null;
+        if (created != null) {
+          _upsertPostInBoards(created);
+        }
+        return CreatePostResult(success: true, post: created);
       }
       return CreatePostResult(
         success: false,
@@ -587,6 +636,7 @@ class PostProvider extends ChangeNotifier {
     double? price,
     String? contact,
     List<int>? fileIds,
+    List<String>? marketTags,
   }) async {
     try {
       final formData = FormData.fromMap({
@@ -598,6 +648,7 @@ class PostProvider extends ChangeNotifier {
         'contact': contact ?? '',
         if (waterTagId != null && waterTagId > 0) 'water_tag_id': waterTagId,
         'file_ids': fileIds?.join(',') ?? '',
+        'market_tags': marketTags?.join(',') ?? '',
       });
 
       final response = await _dio.put('/posts/$postId', data: formData);
@@ -605,7 +656,7 @@ class PostProvider extends ChangeNotifier {
         final updated = Post.fromJson(response.data as Map<String, dynamic>);
         _replacePostInBoards(updated);
         notifyListeners();
-        return const CreatePostResult(success: true);
+        return CreatePostResult(success: true, post: updated);
       }
       return CreatePostResult(
         success: false,

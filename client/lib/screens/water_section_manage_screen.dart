@@ -3,8 +3,10 @@ import 'package:dio/dio.dart';
 import 'package:provider/provider.dart';
 
 import '../models/water_moderator.dart';
+import '../models/water_moderation.dart';
 import '../models/water_section.dart';
 import '../providers/water_moderator_provider.dart';
+import '../providers/water_moderation_provider.dart';
 
 /// 版块管理页 —— 当前只做“版主管理”。
 /// 仅 admin / super_admin 可见入口；版主和普通用户无入口。
@@ -25,14 +27,14 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _loadModerators());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadModerators();
+      _loadMutes();
+      _loadLogs();
+    });
   }
 
   Future<void> _loadModerators() async {
-    setState(() {
-      _isLoading = true;
-      _error = null;
-    });
     try {
       await context
           .read<WaterModeratorProvider>()
@@ -40,8 +42,22 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
     } catch (e) {
       _error = e.toString();
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) setState(() {});
     }
+  }
+
+  Future<void> _loadMutes() async {
+    await context.read<WaterModerationProvider>().loadMutes(widget.section.slug);
+  }
+
+  Future<void> _loadLogs() async {
+    await context.read<WaterModerationProvider>().loadLogs(widget.section.slug);
+  }
+
+  void _refreshAll() {
+    _loadModerators();
+    _loadMutes();
+    _loadLogs();
   }
 
   List<WaterSectionModerator> get _moderators =>
@@ -64,11 +80,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
           style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
         ),
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-              ? _buildErrorView(isDark)
-              : _buildContent(isDark),
+      body: _buildContent(isDark),
     );
   }
 
@@ -110,7 +122,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
 
   Widget _buildContent(bool isDark) {
     return RefreshIndicator(
-      onRefresh: _loadModerators,
+      onRefresh: () async => _refreshAll(),
       child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 40),
         children: [
@@ -122,6 +134,10 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
             _buildEmptyModerators(isDark)
           else
             ..._moderators.map((m) => _buildModeratorCard(m, isDark)),
+          const SizedBox(height: 24),
+          _buildMutesSection(isDark),
+          const SizedBox(height: 24),
+          _buildLogsSection(isDark),
         ],
       ),
     );
@@ -176,13 +192,6 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
             style: TextStyle(
                 fontSize: 12.5,
                 color: isDark ? Colors.white54 : const Color(0xFF7B818C)),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            '当前仅支持管理员任免版主，版块内容管理将在后续开放。',
-            style: TextStyle(
-                fontSize: 11.5,
-                color: isDark ? Colors.white38 : const Color(0xFF9CA3AF)),
           ),
         ],
       ),
@@ -461,7 +470,238 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
       ),
     );
   }
+
+  // ── 禁言列表 ──
+
+  Widget _buildMutesSection(bool isDark) {
+    final mutes =
+        context.watch<WaterModerationProvider>().mutesOf(widget.section.slug);
+    final isLoading =
+        context.watch<WaterModerationProvider>().isLoadingMutes;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text(
+              '禁言列表',
+              style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                  color: isDark ? Colors.white : const Color(0xFF20232A)),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              '${mutes.length}',
+              style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: isDark ? Colors.white38 : const Color(0xFF9CA3AF)),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        if (isLoading)
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: _cardDecoration(isDark),
+            child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+          )
+        else if (mutes.isEmpty)
+          _buildEmptyList(isDark, '暂无禁言记录')
+        else
+          ...mutes.map((m) => _buildMuteCard(m, isDark)),
+      ],
+    );
+  }
+
+  Widget _buildMuteCard(WaterSectionMute mute, bool isDark) {
+    final untilText = mute.until != null
+        ? '至 ${mute.until!.toLocal().toString().substring(0, 16)}'
+        : '永久';
+    final isExpired = mute.until != null && mute.until!.isBefore(DateTime.now());
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: _cardDecoration(isDark),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              CircleAvatar(radius: 14, child: Text(mute.displayName[0].toUpperCase(), style: const TextStyle(fontSize: 11))),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(mute.displayName,
+                    style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: isDark ? Colors.white : const Color(0xFF20232A))),
+              ),
+              if (isExpired)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: const Text('已过期', style: TextStyle(fontSize: 10, color: Colors.orange)),
+                ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(mute.reason,
+              style: TextStyle(fontSize: 12, color: isDark ? Colors.white54 : const Color(0xFF7B818C))),
+          const SizedBox(height: 4),
+          Text(untilText,
+              style: TextStyle(fontSize: 11, color: isDark ? Colors.white38 : const Color(0xFF9CA3AF))),
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              onPressed: () => _confirmUnmute(mute),
+              icon: const Icon(Icons.lock_open_outlined, size: 14),
+              label: const Text('解除禁言', style: TextStyle(fontSize: 11)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _confirmUnmute(WaterSectionMute mute) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('解除禁言'),
+        content: Text('确认解除「${mute.displayName}」在本版块的禁言吗？'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              await context.read<WaterModerationProvider>().unmuteUser(
+                    sectionSlug: widget.section.slug,
+                    userId: mute.userId,
+                  );
+              if (mounted) _loadMutes();
+            },
+            child: const Text('确认'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── 操作日志 ──
+
+  Widget _buildLogsSection(bool isDark) {
+    final logs = context
+        .watch<WaterModerationProvider>()
+        .logsOf(widget.section.slug)
+        .logs;
+    final isLoading =
+        context.watch<WaterModerationProvider>().isLoadingLogs;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text(
+              '操作日志',
+              style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                  color: isDark ? Colors.white : const Color(0xFF20232A)),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        if (isLoading)
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: _cardDecoration(isDark),
+            child:
+                const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+          )
+        else if (logs.isEmpty)
+          _buildEmptyList(isDark, '暂无操作日志')
+        else
+          ...logs.map((l) => _buildLogCard(l, isDark)),
+      ],
+    );
+  }
+
+  Widget _buildLogCard(WaterModerationLog log, bool isDark) {
+    final time = log.createdAt != null
+        ? log.createdAt!.toLocal().toString().substring(0, 19)
+        : '';
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.all(10),
+      decoration: _cardDecoration(isDark),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(log.actionLabel,
+                    style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w700,
+                        color: isDark ? Colors.white : const Color(0xFF20232A))),
+                const SizedBox(height: 2),
+                Text(log.reason.isNotEmpty ? log.reason : '无原因',
+                    style: TextStyle(
+                        fontSize: 11,
+                        color: isDark ? Colors.white54 : const Color(0xFF7B818C)),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis),
+              ],
+            ),
+          ),
+          Text(time,
+              style: TextStyle(
+                  fontSize: 10,
+                  color: isDark ? Colors.white38 : const Color(0xFF9CA3AF))),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyList(bool isDark, String text) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 24),
+      decoration: _cardDecoration(isDark),
+      child: Center(
+        child: Text(text,
+            style: TextStyle(
+                fontSize: 12,
+                color: isDark ? Colors.white38 : const Color(0xFF9CA3AF))),
+      ),
+    );
+  }
+
+  BoxDecoration _cardDecoration(bool isDark) {
+    return BoxDecoration(
+      color: isDark ? const Color(0xFF171B24) : Colors.white,
+      borderRadius: BorderRadius.circular(14),
+      border: Border.all(
+        color: isDark
+            ? Colors.white.withValues(alpha: 0.08)
+            : const Color(0xFFEDEFF3),
+      ),
+    );
+  }
 }
+
+// ── 版主表单 BottomSheet ──
 
 // ── 版主表单 BottomSheet ──
 

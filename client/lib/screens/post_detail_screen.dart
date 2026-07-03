@@ -901,24 +901,54 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final post = _post;
     if (post == null) return;
     final actionLabel = _marketCompleteLabel(post.postType);
+    final nextStatus = post.postType == 'sell' ? 'sold' : 'closed';
     final postProvider = context.read<PostProvider>();
     final confirmed = await AppFeedback.confirmDanger(
       context,
       title: actionLabel,
-      message: '确认后会直接删除这条帖子，避免继续占用集市列表。此操作不可撤销。',
+      message: '确认后这条发布会保留在主页和集市记录中，并显示为$actionLabel，不会删除这条发布。',
+      confirmText: actionLabel,
     );
     if (!confirmed) return;
-    final result = await postProvider.deletePostDetailed(post.id);
+    final updated = await postProvider.updatePostStatus(
+      postId: post.id,
+      status: nextStatus,
+    );
     if (!mounted) return;
-    if (result.success) {
-      AppFeedback.showSnackBar(context, '$actionLabel，帖子已移除');
-      Navigator.pop(context, true);
+    if (updated != null) {
+      setState(() => _post = updated);
+      AppFeedback.showSnackBar(context, '已标记为$actionLabel');
     } else {
       AppFeedback.showSnackBar(
         context,
-        result.errorMessage ?? '$actionLabel失败',
+        '$actionLabel失败',
         isError: true,
       );
+    }
+  }
+
+  Future<void> _markAsSold() async {
+    final post = _post;
+    if (post == null) return;
+    final postProvider = context.read<PostProvider>();
+    final confirmed = await AppFeedback.confirmDanger(
+      context,
+      title: '标记已售出',
+      message: '标记后商品会保留在主页和集市记录中，并显示为已售出，不会删除这条发布。',
+      confirmText: '标记已售出',
+    );
+    if (!confirmed) return;
+
+    final updated = await postProvider.updatePostStatus(
+      postId: post.id,
+      status: 'sold',
+    );
+    if (!mounted) return;
+    if (updated != null) {
+      setState(() => _post = updated);
+      AppFeedback.showSnackBar(context, '已标记为已售出');
+    } else {
+      AppFeedback.showSnackBar(context, '标记失败', isError: true);
     }
   }
 
@@ -1025,6 +1055,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 case 'edit':
                   _editPost();
                   break;
+                case 'mark_sold':
+                  _markAsSold();
+                  break;
                 case 'delete':
                   _deletePost();
                   break;
@@ -1101,6 +1134,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                   value: 'edit',
                   child: Text('编辑帖子'),
                 ));
+                if (_canMarkSellPostSold()) {
+                  items.add(const PopupMenuItem(
+                    value: 'mark_sold',
+                    child: Text('标记已售出'),
+                  ));
+                }
                 items.add(const PopupMenuItem(
                   value: 'delete',
                   child: Text('删除帖子', style: TextStyle(color: Colors.red)),
@@ -3174,7 +3213,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         child: SizedBox(height: 100),
       );
     }
-    
+
     return SliverList(
       delegate: SliverChildBuilderDelegate(
         (context, index) {
@@ -3607,7 +3646,22 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   bool _canUseOwnerMarketActions() {
-    return widget.isMarket && _isCurrentUserPostOwner();
+    final post = _post;
+    return widget.isMarket &&
+        _isCurrentUserPostOwner() &&
+        post != null &&
+        post.status != 'sold' &&
+        post.status != 'closed';
+  }
+
+  bool _canMarkSellPostSold() {
+    final post = _post;
+    return _isCurrentUserPostOwner() &&
+        post != null &&
+        post.boardId == 2 &&
+        post.postType == 'sell' &&
+        post.status != 'sold' &&
+        post.status != 'closed';
   }
 
   List<String> _resolvedImageUrls(Post post) {

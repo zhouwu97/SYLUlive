@@ -32,7 +32,6 @@ import 'edu_grade_screen.dart';
 import 'exam_schedule_screen.dart';
 import 'feedback_screen.dart';
 import 'login_screen.dart';
-import 'market_screen.dart';
 import 'post_detail_screen.dart';
 import 'search_results_screen.dart';
 import 'toolbox_screen.dart';
@@ -733,19 +732,6 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                 announcements: _announcements,
                 onCheckIn: () {
                   _closePanelThenOpen(dialogContext, _doCheckIn);
-                },
-                onOpenLostFound: () {
-                  _closePanelThenOpen(dialogContext, () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const MarketScreen(
-                          onlyPostTypes: ['lost', 'found'],
-                          titleOverride: '失物招领',
-                        ),
-                      ),
-                    );
-                  });
                 },
                 onOpenToolbox: () {
                   _closePanelThenOpen(dialogContext, () {

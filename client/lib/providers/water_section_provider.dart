@@ -10,10 +10,11 @@ import '../services/water_section_service.dart';
 class WaterSectionProvider extends ChangeNotifier {
   static const _cacheTtl = Duration(minutes: 5);
 
-final WaterSectionService? _service;
+  final WaterSectionService? _service;
 
   List<WaterSection> _sections = const [];
   bool _isLoading = false;
+  bool _isSaving = false;
   String? _error;
   DateTime? _lastLoadedAt;
   bool _usingFallback = false;
@@ -23,6 +24,7 @@ final WaterSectionService? _service;
 
   List<WaterSection> get sections => _sections;
   bool get isLoading => _isLoading;
+  bool get isSaving => _isSaving;
   String? get error => _error;
   bool get usingFallback => _usingFallback;
   DateTime? get lastLoadedAt => _lastLoadedAt;
@@ -49,18 +51,16 @@ final WaterSectionService? _service;
         _usingFallback = false;
       } else {
         // 无网络层（测试环境）：直接 fallback
-        _sections = kWaterPostCategories
-            .map(WaterSection.fromLegacyCategory)
-            .toList();
+        _sections =
+            kWaterPostCategories.map(WaterSection.fromLegacyCategory).toList();
         _usingFallback = true;
       }
       _error = null;
       _lastLoadedAt = DateTime.now();
     } catch (e) {
       // fallback：本地 taxonomy 转成 WaterSection
-      _sections = kWaterPostCategories
-          .map(WaterSection.fromLegacyCategory)
-          .toList();
+      _sections =
+          kWaterPostCategories.map(WaterSection.fromLegacyCategory).toList();
       _usingFallback = true;
       _error = e.toString();
       debugPrint('WaterSectionProvider fallback: $_error');
@@ -89,5 +89,169 @@ final WaterSectionService? _service;
     final campusLife =
         kWaterPostCategories.firstWhere((c) => c.value == 'campus_life');
     return WaterSection.fromLegacyCategory(campusLife);
+  }
+
+  Future<void> refreshSections() => loadSections(forceRefresh: true);
+
+  Future<WaterSection?> refreshSection(String slug) async {
+    if (_service == null) return getBySlug(slug);
+    try {
+      final fresh = await _service!.fetchSection(slug);
+      _upsertSection(fresh);
+      _error = null;
+      notifyListeners();
+      return fresh;
+    } catch (e) {
+      _error = _mapError(e);
+      notifyListeners();
+      return getBySlug(slug);
+    }
+  }
+
+  Future<bool> updateSectionDisplay({
+    required String slug,
+    required Map<String, dynamic> fields,
+  }) async {
+    return _save(() async {
+      final fresh = await _service!.updateSectionDisplay(
+        slug: slug,
+        fields: fields,
+      );
+      _upsertSection(fresh);
+    });
+  }
+
+  Future<bool> createTag({
+    required String sectionSlug,
+    required Map<String, dynamic> fields,
+  }) async {
+    return _save(() async {
+      await _service!.createTag(sectionSlug: sectionSlug, fields: fields);
+      await _refreshSectionAfterMutation(sectionSlug);
+    });
+  }
+
+  Future<bool> updateTag({
+    required String sectionSlug,
+    required int tagId,
+    required Map<String, dynamic> fields,
+  }) async {
+    return _save(() async {
+      await _service!.updateTag(
+        sectionSlug: sectionSlug,
+        tagId: tagId,
+        fields: fields,
+      );
+      await _refreshSectionAfterMutation(sectionSlug);
+    });
+  }
+
+  Future<bool> enableTag({
+    required String sectionSlug,
+    required int tagId,
+    String? reason,
+  }) {
+    return updateTagStatus(
+      sectionSlug: sectionSlug,
+      tagId: tagId,
+      isEnabled: true,
+      reason: reason,
+    );
+  }
+
+  Future<bool> disableTag({
+    required String sectionSlug,
+    required int tagId,
+    String? reason,
+  }) {
+    return updateTagStatus(
+      sectionSlug: sectionSlug,
+      tagId: tagId,
+      isEnabled: false,
+      reason: reason,
+    );
+  }
+
+  Future<bool> updateTagStatus({
+    required String sectionSlug,
+    required int tagId,
+    required bool isEnabled,
+    String? reason,
+  }) async {
+    return _save(() async {
+      await _service!.updateTagStatus(
+        sectionSlug: sectionSlug,
+        tagId: tagId,
+        isEnabled: isEnabled,
+        reason: reason,
+      );
+      await _refreshSectionAfterMutation(sectionSlug);
+    });
+  }
+
+  Future<bool> _save(Future<void> Function() action) async {
+    if (_service == null) {
+      _error = '网络异常，请稍后重试';
+      notifyListeners();
+      return false;
+    }
+    _isSaving = true;
+    _error = null;
+    notifyListeners();
+    try {
+      await action();
+      _error = null;
+      return true;
+    } catch (e) {
+      _error = _mapError(e);
+      return false;
+    } finally {
+      _isSaving = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> _refreshSectionAfterMutation(String slug) async {
+    final fresh = await _service!.fetchSection(slug);
+    _upsertSection(fresh);
+  }
+
+  void _upsertSection(WaterSection section) {
+    final next = [..._sections];
+    final index = next.indexWhere((s) => s.slug == section.slug);
+    if (index >= 0) {
+      next[index] = section;
+    } else {
+      next.add(section);
+    }
+    next.sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+    _sections = next;
+    _usingFallback = false;
+    _lastLoadedAt = DateTime.now();
+  }
+
+  String _mapError(Object error) {
+    if (error is DioException) {
+      final status = error.response?.statusCode;
+      final data = error.response?.data;
+      String? message;
+      if (data is Map) {
+        message = '${data['error'] ?? data['message'] ?? ''}'.trim();
+      }
+      if (status == 403) return '没有该操作权限';
+      if (status == 400 && message != null && message.isNotEmpty) {
+        return message;
+      }
+      if (status == 409 && message != null && message.isNotEmpty) {
+        return message;
+      }
+      if (error.type == DioExceptionType.connectionTimeout ||
+          error.type == DioExceptionType.receiveTimeout ||
+          error.type == DioExceptionType.sendTimeout ||
+          error.type == DioExceptionType.connectionError) {
+        return '网络异常，请稍后重试';
+      }
+    }
+    return '操作失败，请稍后重试';
   }
 }

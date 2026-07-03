@@ -67,12 +67,17 @@ func newWaterSectionRoleUser(t *testing.T, db *gorm.DB, studentID string, role m
 
 func addWaterSectionModerator(t *testing.T, db *gorm.DB, sectionID uint, userID uint, canEdit bool) {
 	t.Helper()
+	addWaterSectionModeratorWithPerms(t, db, sectionID, userID, canEdit, false)
+}
+
+func addWaterSectionModeratorWithPerms(t *testing.T, db *gorm.DB, sectionID uint, userID uint, canEdit bool, canManageTags bool) {
+	t.Helper()
 	mod := models.WaterSectionModerator{
 		SectionID:      sectionID,
 		UserID:         userID,
 		Role:           models.ModeratorRoleModerator,
 		CanEditSection: canEdit,
-		CanManageTags:  false,
+		CanManageTags:  canManageTags,
 		CanPinPost:     false,
 		CanDeletePost:  false,
 		CanMuteUser:    false,
@@ -95,6 +100,29 @@ func performWaterSectionGET(t *testing.T, handler gin.HandlerFunc, path string) 
 		slug := path[slugStart+len("/sections/"):]
 		ctx.Params = gin.Params{{Key: "slug", Value: slug}}
 	}
+	handler(ctx)
+	return rec
+}
+
+func performWaterSectionJSON(t *testing.T, handler gin.HandlerFunc, method, path string, userID uint, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(rec)
+	ctx.Request = httptest.NewRequest(method, path, strings.NewReader(body))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+	ctx.Set("user_id", userID)
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	params := gin.Params{}
+	for i, part := range parts {
+		if part == "sections" && i+1 < len(parts) {
+			params = append(params, gin.Param{Key: "slug", Value: parts[i+1]})
+		}
+		if part == "tags" && i+1 < len(parts) {
+			params = append(params, gin.Param{Key: "tag_id", Value: parts[i+1]})
+		}
+	}
+	ctx.Params = params
 	handler(ctx)
 	return rec
 }
@@ -468,6 +496,262 @@ func TestUpdateWaterSectionIgnoresStructuralFields(t *testing.T) {
 	if after.Title != "结构字段测试" {
 		t.Fatalf("allowed field should update, got %q", after.Title)
 	}
+}
+
+func TestCreateWaterSectionTagPermissions(t *testing.T) {
+	cases := []struct {
+		name       string
+		userRole   models.Role
+		modSection string
+		canManage  bool
+		path       string
+		wantStatus int
+	}{
+		{name: "admin", userRole: models.RoleAdmin, path: "/api/water/sections/course_study/tags", wantStatus: http.StatusCreated},
+		{name: "super admin", userRole: models.RoleSuperAdmin, path: "/api/water/sections/campus_life/tags", wantStatus: http.StatusCreated},
+		{name: "section moderator", userRole: models.RoleUser, modSection: "course_study", canManage: true, path: "/api/water/sections/course_study/tags", wantStatus: http.StatusCreated},
+		{name: "moderator without permission", userRole: models.RoleUser, modSection: "course_study", canManage: false, path: "/api/water/sections/course_study/tags", wantStatus: http.StatusForbidden},
+		{name: "other section moderator", userRole: models.RoleUser, modSection: "course_study", canManage: true, path: "/api/water/sections/campus_life/tags", wantStatus: http.StatusForbidden},
+		{name: "regular user", userRole: models.RoleUser, path: "/api/water/sections/course_study/tags", wantStatus: http.StatusForbidden},
+	}
+
+	for i, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			db := newWaterSectionTestDB(t)
+			if err := models.EnsureWaterSections(db); err != nil {
+				t.Fatalf("ensure: %v", err)
+			}
+			user := newWaterSectionRoleUser(t, db, fmt.Sprintf("tag_perm_%d", i), tc.userRole)
+			if tc.modSection != "" {
+				var section models.WaterSection
+				db.Where("slug = ?", tc.modSection).First(&section)
+				addWaterSectionModeratorWithPerms(t, db, section.ID, user.ID, false, tc.canManage)
+			}
+			handler := NewWaterSectionHandler(db)
+			body := fmt.Sprintf(`{"slug":"new_tag_%d","name":"新标签%d","description":"测试","sort_order":10,"reason":"新增标签"}`, i, i)
+			rec := performWaterSectionJSON(t, handler.CreateTag, http.MethodPost, tc.path, user.ID, body)
+			if rec.Code != tc.wantStatus {
+				t.Fatalf("expected %d, got %d body=%s", tc.wantStatus, rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
+
+func TestCreateWaterSectionTagValidationAndDuplicates(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+	}{
+		{name: "invalid slug", body: `{"slug":"Bad Slug","name":"合法名称"}`},
+		{name: "empty name", body: `{"slug":"valid_slug","name":""}`},
+		{name: "duplicate slug", body: `{"slug":"exam","name":"新考试"}`},
+		{name: "duplicate name", body: `{"slug":"new_exam","name":"考试"}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			db := newWaterSectionTestDB(t)
+			if err := models.EnsureWaterSections(db); err != nil {
+				t.Fatalf("ensure: %v", err)
+			}
+			admin := newWaterSectionRoleUser(t, db, "tag_validation_"+strings.ReplaceAll(tc.name, " ", "_"), models.RoleAdmin)
+			handler := NewWaterSectionHandler(db)
+			rec := performWaterSectionJSON(t, handler.CreateTag, http.MethodPost, "/api/water/sections/course_study/tags", admin.ID, tc.body)
+			if rec.Code != http.StatusBadRequest && rec.Code != http.StatusConflict {
+				t.Fatalf("expected 400/409, got %d body=%s", rec.Code, rec.Body.String())
+			}
+		})
+	}
+
+	db := newWaterSectionTestDB(t)
+	if err := models.EnsureWaterSections(db); err != nil {
+		t.Fatalf("ensure: %v", err)
+	}
+	admin := newWaterSectionRoleUser(t, db, "tag_duplicate_cross_section", models.RoleAdmin)
+	handler := NewWaterSectionHandler(db)
+	rec := performWaterSectionJSON(t, handler.CreateTag, http.MethodPost, "/api/water/sections/campus_life/tags", admin.ID, `{"slug":"exam","name":"考试"}`)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("same slug/name in different section should be allowed, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestCreateWaterSectionTagWritesLog(t *testing.T) {
+	db := newWaterSectionTestDB(t)
+	if err := models.EnsureWaterSections(db); err != nil {
+		t.Fatalf("ensure: %v", err)
+	}
+	admin := newWaterSectionRoleUser(t, db, "tag_create_log_admin", models.RoleAdmin)
+	handler := NewWaterSectionHandler(db)
+	rec := performWaterSectionJSON(t, handler.CreateTag, http.MethodPost, "/api/water/sections/course_study/tags",
+		admin.ID, `{"slug":"create_log","name":"创建日志","reason":"新增创建日志标签"}`)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var tag models.WaterSectionTag
+	if err := db.Where("slug = ?", "create_log").First(&tag).Error; err != nil {
+		t.Fatalf("find tag: %v", err)
+	}
+	var log models.WaterModerationLog
+	if err := db.Where("target_id = ? AND action = ?", tag.ID, models.ModActionCreateTag).First(&log).Error; err != nil {
+		t.Fatalf("find log: %v", err)
+	}
+	if log.TargetType != "tag" || log.Reason != "新增创建日志标签" || !strings.Contains(log.Snapshot, `"after"`) {
+		t.Fatalf("unexpected log: %+v", log)
+	}
+}
+
+func TestUpdateWaterSectionTagFieldsAndKeepsSlug(t *testing.T) {
+	db := newWaterSectionTestDB(t)
+	if err := models.EnsureWaterSections(db); err != nil {
+		t.Fatalf("ensure: %v", err)
+	}
+	admin := newWaterSectionRoleUser(t, db, "tag_update_admin", models.RoleAdmin)
+	var section models.WaterSection
+	var tag models.WaterSectionTag
+	db.Where("slug = ?", "course_study").First(&section)
+	db.Where("section_id = ? AND slug = ?", section.ID, "exam").First(&tag)
+	handler := NewWaterSectionHandler(db)
+
+	path := fmt.Sprintf("/api/water/sections/course_study/tags/%d", tag.ID)
+	rec := performWaterSectionJSON(t, handler.UpdateTag, http.MethodPatch, path, admin.ID,
+		`{"slug":"changed_slug","name":"考试安排","description":"考试安排、复习经验、往年题型","sort_order":30,"is_default":true,"reason":"优化标签名称"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var updated models.WaterSectionTag
+	db.First(&updated, tag.ID)
+	if updated.Slug != tag.Slug {
+		t.Fatalf("slug should not change, got %q", updated.Slug)
+	}
+	if updated.Name != "考试安排" || updated.Description == "" || updated.SortOrder != 30 || !updated.IsDefault {
+		t.Fatalf("tag fields not updated: %+v", updated)
+	}
+}
+
+func TestUpdateWaterSectionTagWritesLog(t *testing.T) {
+	db := newWaterSectionTestDB(t)
+	if err := models.EnsureWaterSections(db); err != nil {
+		t.Fatalf("ensure: %v", err)
+	}
+	admin := newWaterSectionRoleUser(t, db, "tag_update_log_admin", models.RoleAdmin)
+	var section models.WaterSection
+	var tag models.WaterSectionTag
+	db.Where("slug = ?", "course_study").First(&section)
+	db.Where("section_id = ? AND slug = ?", section.ID, "exam").First(&tag)
+	handler := NewWaterSectionHandler(db)
+
+	path := fmt.Sprintf("/api/water/sections/course_study/tags/%d", tag.ID)
+	rec := performWaterSectionJSON(t, handler.UpdateTag, http.MethodPatch, path, admin.ID, `{"name":"考试安排","reason":"记录修改"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var log models.WaterModerationLog
+	if err := db.Where("section_id = ? AND target_id = ? AND action = ?", section.ID, tag.ID, models.ModActionUpdateTag).First(&log).Error; err != nil {
+		t.Fatalf("find log: %v", err)
+	}
+	if log.TargetType != "tag" || log.Reason != "记录修改" || !strings.Contains(log.Snapshot, `"before"`) || !strings.Contains(log.Snapshot, `"after"`) {
+		t.Fatalf("unexpected log: %+v", log)
+	}
+}
+
+func TestUpdateWaterSectionTagStatusLogs(t *testing.T) {
+	db := newWaterSectionTestDB(t)
+	if err := models.EnsureWaterSections(db); err != nil {
+		t.Fatalf("ensure: %v", err)
+	}
+	admin := newWaterSectionRoleUser(t, db, "tag_status_admin", models.RoleAdmin)
+	var section models.WaterSection
+	var tag models.WaterSectionTag
+	db.Where("slug = ?", "course_study").First(&section)
+	db.Where("section_id = ? AND slug = ?", section.ID, "exam").First(&tag)
+	handler := NewWaterSectionHandler(db)
+	path := fmt.Sprintf("/api/water/sections/course_study/tags/%d/status", tag.ID)
+
+	disable := performWaterSectionJSON(t, handler.UpdateTagStatus, http.MethodPatch, path, admin.ID, `{"is_enabled":false,"reason":"暂停使用"}`)
+	if disable.Code != http.StatusOK {
+		t.Fatalf("disable expected 200, got %d body=%s", disable.Code, disable.Body.String())
+	}
+	enable := performWaterSectionJSON(t, handler.UpdateTagStatus, http.MethodPatch, path, admin.ID, `{"is_enabled":true,"reason":"恢复使用"}`)
+	if enable.Code != http.StatusOK {
+		t.Fatalf("enable expected 200, got %d body=%s", enable.Code, enable.Body.String())
+	}
+	for _, action := range []string{models.ModActionDisableTag, models.ModActionEnableTag} {
+		var count int64
+		db.Model(&models.WaterModerationLog{}).Where("section_id = ? AND target_id = ? AND action = ?", section.ID, tag.ID, action).Count(&count)
+		if count != 1 {
+			t.Fatalf("expected one %s log, got %d", action, count)
+		}
+	}
+}
+
+func TestDisabledWaterSectionTagCannotBeUsedForNewPostAndOldPostKeepsTag(t *testing.T) {
+	db := newWaterSectionTestDB(t)
+	if err := models.EnsureWaterSections(db); err != nil {
+		t.Fatalf("ensure: %v", err)
+	}
+	user := newWaterTestUser(t, db, false)
+	var section models.WaterSection
+	var tag models.WaterSectionTag
+	db.Where("slug = ?", "course_study").First(&section)
+	db.Where("section_id = ? AND slug = ?", section.ID, "exam").First(&tag)
+	oldPost := models.Post{
+		Title:      "old tagged",
+		Content:    "old tagged content",
+		BoardID:    models.BoardShuitie,
+		AuthorID:   user.ID,
+		PostType:   section.Slug,
+		Status:     models.PostStatusNormal,
+		WaterTagID: &tag.ID,
+	}
+	if err := db.Create(&oldPost).Error; err != nil {
+		t.Fatalf("create old post: %v", err)
+	}
+	if err := db.Model(&tag).Update("is_enabled", false).Error; err != nil {
+		t.Fatalf("disable tag: %v", err)
+	}
+
+	form := url.Values{}
+	form.Set("content", "new tagged content")
+	form.Set("board_id", "1")
+	form.Set("post_type", section.Slug)
+	form.Set("water_tag_id", fmt.Sprintf("%d", tag.ID))
+	rec := performPostCreate(t, NewPostHandler(db, "", "").Create, user.ID, form)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("disabled tag should reject new post, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var loaded models.Post
+	if err := db.First(&loaded, oldPost.ID).Error; err != nil {
+		t.Fatalf("load old post: %v", err)
+	}
+	if loaded.WaterTagID == nil || *loaded.WaterTagID != tag.ID {
+		t.Fatalf("old post water_tag_id should stay, got %+v", loaded.WaterTagID)
+	}
+}
+
+func TestWaterSectionTagManagementNotFoundCases(t *testing.T) {
+	db := newWaterSectionTestDB(t)
+	if err := models.EnsureWaterSections(db); err != nil {
+		t.Fatalf("ensure: %v", err)
+	}
+	admin := newWaterSectionRoleUser(t, db, "tag_not_found_admin", models.RoleAdmin)
+	handler := NewWaterSectionHandler(db)
+
+	missingSection := performWaterSectionJSON(t, handler.CreateTag, http.MethodPost, "/api/water/sections/not_exist/tags", admin.ID, `{"slug":"x","name":"X"}`)
+	if missingSection.Code != http.StatusNotFound {
+		t.Fatalf("expected missing section 404, got %d body=%s", missingSection.Code, missingSection.Body.String())
+	}
+
+	var course models.WaterSection
+	var campus models.WaterSection
+	var campusTag models.WaterSectionTag
+	db.Where("slug = ?", "course_study").First(&course)
+	db.Where("slug = ?", "campus_life").First(&campus)
+	db.Where("section_id = ? AND slug = ?", campus.ID, "canteen").First(&campusTag)
+	path := fmt.Sprintf("/api/water/sections/course_study/tags/%d", campusTag.ID)
+	wrongSection := performWaterSectionJSON(t, handler.UpdateTag, http.MethodPatch, path, admin.ID, `{"name":"错误版块"}`)
+	if wrongSection.Code != http.StatusNotFound {
+		t.Fatalf("expected wrong section tag 404, got %d body=%s", wrongSection.Code, wrongSection.Body.String())
+	}
+	_ = course
 }
 
 // 5. GET /api/posts?board=1&type=course_study&tag_id=xxx 只返回该 tag 下帖子。

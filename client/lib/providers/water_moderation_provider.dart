@@ -15,6 +15,7 @@ class WaterModerationProvider extends ChangeNotifier {
   bool _isLoadingMutes = false;
   bool _isLoadingLogs = false;
   String? _error;
+  int? _sessionUserId;
 
   WaterModerationProvider(Dio dio) : _service = WaterModerationService(dio);
 
@@ -22,6 +23,15 @@ class WaterModerationProvider extends ChangeNotifier {
   bool get isLoadingMutes => _isLoadingMutes;
   bool get isLoadingLogs => _isLoadingLogs;
   String? get error => _error;
+
+  void syncSessionUser(int? userId) {
+    if (_sessionUserId == userId) return;
+    _sessionUserId = userId;
+    _mutesBySlug.clear();
+    _logsBySlug.clear();
+    _error = null;
+    notifyListeners();
+  }
 
   List<WaterSectionMute> mutesOf(String slug) => _mutesBySlug[slug] ?? [];
   WaterModerationLogPage logsOf(String slug) =>
@@ -51,8 +61,8 @@ class WaterModerationProvider extends ChangeNotifier {
     required String sectionSlug,
     required int postId,
   }) async {
-    return _operation(
-        () async => await _service.unpinPost(sectionSlug: sectionSlug, postId: postId));
+    return _operation(() async =>
+        await _service.unpinPost(sectionSlug: sectionSlug, postId: postId));
   }
 
   Future<bool> deletePostByModerator({
@@ -110,14 +120,7 @@ class WaterModerationProvider extends ChangeNotifier {
       return true;
     } on DioException catch (e) {
       _isOperating = false;
-      final statusCode = e.response?.statusCode;
-      if (statusCode == 400) {
-        _error = _extractError(e.response?.data) ?? '请求参数有误';
-      } else if (statusCode == 403) {
-        _error = '没有该操作权限';
-      } else {
-        _error = '操作失败，请稍后重试';
-      }
+      _error = _mapOperationError(e);
       notifyListeners();
       return false;
     } catch (e) {
@@ -129,10 +132,41 @@ class WaterModerationProvider extends ChangeNotifier {
   }
 
   String? _extractError(dynamic data) {
-    if (data is Map && data['error'] is String) {
-      return data['error'];
+    if (data is Map) {
+      final detail = data['error'] ?? data['message'];
+      if (detail is String && detail.trim().isNotEmpty) {
+        return detail.trim();
+      }
     }
     return null;
+  }
+
+  String _mapOperationError(DioException e) {
+    switch (e.response?.statusCode) {
+      case 400:
+        final message = _extractError(e.response?.data);
+        if (message == null) return '操作参数不正确';
+        if (message.contains('置顶已达上限')) {
+          return '该版块最多置顶 3 条帖子';
+        }
+        if (message.contains('禁言时长不能超过')) {
+          return '禁言时间超出允许范围';
+        }
+        return message;
+      case 403:
+        return '没有该操作权限';
+      case 409:
+        return '当前状态已变化，请刷新后重试';
+    }
+    switch (e.type) {
+      case DioExceptionType.connectionTimeout:
+      case DioExceptionType.sendTimeout:
+      case DioExceptionType.receiveTimeout:
+      case DioExceptionType.connectionError:
+        return '网络异常，请稍后重试';
+      default:
+        return '操作失败，请稍后重试';
+    }
   }
 
   // ── 禁言列表 ──

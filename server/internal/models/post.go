@@ -26,38 +26,40 @@ const (
 
 // Post 帖子模型
 type Post struct {
-	ID             uint        `gorm:"primaryKey" json:"id"`
-	Title          string      `gorm:"size:200" json:"title"`              // 标题（水贴可为空）
-	Content        string      `gorm:"type:text" json:"content"`           // Markdown内容
-	BoardID        BoardID     `gorm:"not null;index" json:"board_id"`     // 板块ID
-	AuthorID       uint        `gorm:"not null;index" json:"author_id"`    // 作者ID
+	ID       uint    `gorm:"primaryKey" json:"id"`
+	Title    string  `gorm:"size:200" json:"title"`           // 标题（水贴可为空）
+	Content  string  `gorm:"type:text" json:"content"`        // Markdown内容
+	BoardID  BoardID `gorm:"not null;index" json:"board_id"`  // 板块ID
+	AuthorID uint    `gorm:"not null;index" json:"author_id"` // 作者ID
 	// PostType 板块相关类型：
 	//   board_id = BoardShuitie 时，post_type 表示 WaterSection.Slug（如 course_study）。
 	//   board_id = BoardMarket 时，post_type 仍为 marketplace_buy / marketplace_sell 等旧语义。
-	PostType       string      `gorm:"size:50;index" json:"post_type"`
-	Price          float64     `gorm:"default:0" json:"price"`             // 价格（校园集市用）
-	Contact        string      `gorm:"size:500" json:"contact"`            // 联系方式
+	PostType string  `gorm:"size:50;index" json:"post_type"`
+	Price    float64 `gorm:"default:0" json:"price"`  // 价格（校园集市用）
+	Contact  string  `gorm:"size:500" json:"contact"` // 联系方式
 	// WaterTagID 水帖版块内标签 ID，仅在 board_id = BoardShuitie 时使用；旧帖子与旧客户端可不传。
-	WaterTagID     *uint       `gorm:"index" json:"water_tag_id"`
-	Status         PostStatus  `gorm:"default:normal;index" json:"status"` // 状态
-	ViewCount      int         `gorm:"default:0" json:"view_count"`        // 观看次数
-	ReplyCount     int         `gorm:"default:0" json:"reply_count"`       // 回复数量
-	LikeCount      int         `gorm:"default:0" json:"like_count"`        // 点赞数量
-	IsLiked        bool        `gorm:"-" json:"is_liked"`                  // 当前用户是否已赞
-	IsPinned       bool        `gorm:"default:false;index" json:"is_pinned"`
-	PinnedAt       *time.Time  `gorm:"index" json:"pinned_at"`
-	PinnedUntil    *time.Time  `gorm:"index" json:"pinned_until"`
-	PinnedBy       uint        `gorm:"index" json:"pinned_by"`
-	PinnedWeight   int         `gorm:"default:0;index" json:"pinned_weight"`
-	PinnedReason   string      `gorm:"size:500" json:"pinned_reason"`
-	IsFeatured     bool        `gorm:"default:false;index" json:"is_featured"`
-	FeaturedAt     *time.Time  `json:"featured_at"`
-	FeaturedBy     uint        `gorm:"index" json:"featured_by"`
-	FeaturedReason string      `gorm:"size:500" json:"featured_reason"`
-	Images         []PostImage `gorm:"foreignKey:PostID" json:"images"`
-	Author         User        `gorm:"foreignKey:AuthorID" json:"author"`
-	CreatedAt      time.Time   `json:"created_at"`
-	UpdatedAt      time.Time   `json:"updated_at"`
+	WaterTagID         *uint       `gorm:"index" json:"water_tag_id"`
+	Status             PostStatus  `gorm:"default:normal;index" json:"status"` // 状态
+	ViewCount          int         `gorm:"default:0" json:"view_count"`        // 观看次数
+	ReplyCount         int         `gorm:"default:0" json:"reply_count"`       // 回复数量
+	LikeCount          int         `gorm:"default:0" json:"like_count"`        // 点赞数量
+	IsLiked            bool        `gorm:"-" json:"is_liked"`                  // 当前用户是否已赞
+	IsPinned           bool        `gorm:"default:false;index" json:"is_pinned"`
+	PinnedAt           *time.Time  `gorm:"index" json:"pinned_at"`
+	PinnedUntil        *time.Time  `gorm:"index" json:"pinned_until"`
+	PinnedBy           uint        `gorm:"index" json:"pinned_by"`
+	PinnedWeight       int         `gorm:"default:0;index" json:"pinned_weight"`
+	PinnedReason       string      `gorm:"size:500" json:"pinned_reason"`
+	IsFeatured         bool        `gorm:"default:false;index" json:"is_featured"`
+	FeaturedAt         *time.Time  `json:"featured_at"`
+	FeaturedBy         uint        `gorm:"index" json:"featured_by"`
+	FeaturedReason     string      `gorm:"size:500" json:"featured_reason"`
+	WaterSectionPinned bool        `gorm:"-" json:"water_section_pinned"`
+	WaterSectionPinID  *uint       `gorm:"-" json:"water_section_pin_id,omitempty"`
+	Images             []PostImage `gorm:"foreignKey:PostID" json:"images"`
+	Author             User        `gorm:"foreignKey:AuthorID" json:"author"`
+	CreatedAt          time.Time   `json:"created_at"`
+	UpdatedAt          time.Time   `json:"updated_at"`
 }
 
 // PostImage 帖子图片关联

@@ -66,14 +66,16 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
   WaterSection _sectionFromCategory() =>
       WaterSection.fromLegacyCategory(widget.category);
 
-  void _resolveSection() {
+  Future<void> _resolveSection() async {
     final provider = context.read<WaterSectionProvider>();
+    final moderatorProvider = context.read<WaterModeratorProvider>();
     if (provider.sections.isEmpty && !provider.isLoading) {
-      provider.loadSections();
+      await provider.loadSections();
     }
-    // 拉取当前用户对该版块的权限（判断是否显示管理按钮）
+    if (!mounted) return;
+    // 进入版块页时强制刷新权限，避免切号或罢免后残留管理入口。
     final slug = widget.section?.slug ?? widget.category.value;
-    context.read<WaterModeratorProvider>().loadMyPermission(slug);
+    await moderatorProvider.loadMyPermission(slug, forceRefresh: true);
     final fresh =
         provider.getBySlug(slug) ?? widget.section ?? _sectionFromCategory();
     if (!mounted) return;
@@ -154,25 +156,30 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
     }
   }
 
-  void _openManageScreen() {
-    Navigator.of(context).push(
+  Future<void> _openManageScreen() async {
+    await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => WaterSectionManageScreen(section: _activeSection),
       ),
     );
+    if (!mounted) return;
+    await context
+        .read<WaterModeratorProvider>()
+        .loadMyPermission(_activeSection.slug, forceRefresh: true);
   }
 
   Widget _buildManageAction(bool isDark) {
     final slug = _activeSection.slug;
-    final perm =
-        context.watch<WaterModeratorProvider>().permissionOf(slug);
-    if (!perm.canManageModeratorsEntry) return const SizedBox.shrink();
+    final perm = context.watch<WaterModeratorProvider>().permissionOf(slug);
+    if (!perm.isGlobalAdmin && !perm.isModerator) {
+      return const SizedBox.shrink();
+    }
     return Padding(
       padding: const EdgeInsets.only(right: 4),
       child: TextButton.icon(
         onPressed: _openManageScreen,
-        icon: Icon(Icons.admin_panel_settings_rounded, size: 16,
-            color: Theme.of(context).colorScheme.primary),
+        icon: Icon(Icons.admin_panel_settings_rounded,
+            size: 16, color: Theme.of(context).colorScheme.primary),
         label: Text(
           '管理',
           style: TextStyle(
@@ -390,8 +397,7 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
                     '已经到底了',
                     style: TextStyle(
                       fontSize: 12,
-                      color:
-                          isDark ? Colors.white38 : const Color(0xFF9AA0A6),
+                      color: isDark ? Colors.white38 : const Color(0xFF9AA0A6),
                     ),
                   ),
                 ),
@@ -506,11 +512,11 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
                 runSpacing: 8,
                 children: tagShowcase.map((tag) {
                   return Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 6),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     decoration: BoxDecoration(
-                      color: categoryColor
-                          .withValues(alpha: isDark ? 0.16 : 0.10),
+                      color:
+                          categoryColor.withValues(alpha: isDark ? 0.16 : 0.10),
                       borderRadius: BorderRadius.circular(999),
                     ),
                     child: Text(
@@ -530,11 +536,11 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
                 runSpacing: 8,
                 children: fallbackQuick.map((tag) {
                   return Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 6),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     decoration: BoxDecoration(
-                      color: categoryColor
-                          .withValues(alpha: isDark ? 0.16 : 0.10),
+                      color:
+                          categoryColor.withValues(alpha: isDark ? 0.16 : 0.10),
                       borderRadius: BorderRadius.circular(999),
                     ),
                     child: Text(
@@ -555,8 +561,7 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 decoration: BoxDecoration(
-                  color:
-                      categoryColor.withValues(alpha: isDark ? 0.10 : 0.06),
+                  color: categoryColor.withValues(alpha: isDark ? 0.10 : 0.06),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Row(
@@ -612,8 +617,7 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
             Expanded(
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
                 itemCount: tags.length + 1,
                 separatorBuilder: (_, __) => const SizedBox(width: 4),
                 itemBuilder: (context, index) {
@@ -761,7 +765,7 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
       child: Column(
         children: [
           _buildPrimaryEmptyCard(
-            isDark, categoryColor, icon, emptyTitle, emptyDesc, publishLabel),
+              isDark, categoryColor, icon, emptyTitle, emptyDesc, publishLabel),
           const SizedBox(height: 12),
           _buildStarterQuestionCard(isDark, categoryColor, starterQuestions),
         ],
@@ -861,8 +865,7 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
                   height: 40,
                   child: OutlinedButton.icon(
                     onPressed: _showPostTips,
-                    icon:
-                        const Icon(Icons.lightbulb_outline_rounded, size: 17),
+                    icon: const Icon(Icons.lightbulb_outline_rounded, size: 17),
                     label: const Text(
                       '发帖建议',
                       style: TextStyle(
@@ -944,8 +947,8 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
                   decoration: BoxDecoration(
-                    color: categoryColor
-                        .withValues(alpha: isDark ? 0.14 : 0.08),
+                    color:
+                        categoryColor.withValues(alpha: isDark ? 0.14 : 0.08),
                     borderRadius: BorderRadius.circular(999),
                   ),
                   child: Text(

@@ -64,6 +64,16 @@ class MajorProvider extends ChangeNotifier {
   double get averageStar => _averageStar;
   bool get isLoading => _isLoading;
 
+  List<int> get starCounts {
+    final counts = [0, 0, 0, 0, 0];
+    for (var r in _ratings) {
+      if (r.star >= 1 && r.star <= 5) {
+        counts[r.star - 1]++;
+      }
+    }
+    return counts;
+  }
+
   MajorProvider(this._dio);
 
   Future<void> loadMajors() async {

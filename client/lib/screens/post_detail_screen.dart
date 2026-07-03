@@ -668,7 +668,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
     if (!mounted) return;
     if (ok) {
-      AppFeedback.showSnackBar(context, '已置顶到该版块');
+      AppFeedback.showSnackBar(context, '已置顶到该版块（仅影响当前版块，不影响首页）');
       setState(() => _post = _post?.copyWith(
             waterSectionPinned: true,
           ));
@@ -727,7 +727,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final confirmed = await AppFeedback.confirmDanger(
       context,
       title: '版主删除',
-      message: '该操作会将帖子从列表隐藏并记录管理日志。确认删除？',
+      message: '删除后该帖子将从列表隐藏，并记录管理日志。确认继续吗？',
       confirmText: '确认删除',
     );
     if (!confirmed) return;
@@ -780,7 +780,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final confirmed = await AppFeedback.confirmDanger(
       context,
       title: '禁言作者',
-      message: '确认禁言该用户 ${daysResult} 天吗？被禁言期间该用户无法在本版块内发帖。',
+      message:
+          '禁言仅在该版块生效。被禁言期间该用户暂时不能在本版块发帖或编辑内容。确认禁言 ${daysResult} 天吗？',
       confirmText: '确认禁言',
     );
     if (!confirmed) return;
@@ -794,7 +795,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
     if (!mounted) return;
     if (ok) {
-      AppFeedback.showSnackBar(context, '已禁言该用户');
+      AppFeedback.showSnackBar(context, '已禁言该用户。如需隐藏内容请另行删除帖子');
     } else {
       AppFeedback.showSnackBar(context, provider.error ?? '禁言失败', isError: true);
     }
@@ -1290,7 +1291,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             itemBuilder: (context) {
               final items = <PopupMenuEntry<String>>[];
               final sectionSlug = _post?.postType ?? '';
-              final perm = sectionSlug.isNotEmpty
+              // 仅水帖版块显示版主操作，集市不显示
+              final isWaterPost = _post?.boardId == 1;
+              final perm = (isWaterPost && sectionSlug.isNotEmpty)
                   ? context.read<WaterModeratorProvider>().permissionOf(sectionSlug)
                   : null;
 
@@ -1311,16 +1314,22 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                   }
                 }
                 if (perm.canDeletePost) {
+                  // 如果作者是自己，可以走普通删除；版主删除仍然需要
                   items.add(const PopupMenuItem(
                     value: 'moderate_delete',
                     child: Text('版主删除', style: TextStyle(color: Colors.red)),
                   ));
                 }
                 if (perm.canMuteUser && _post?.authorId != null) {
-                  items.add(const PopupMenuItem(
-                    value: 'mute_author',
-                    child: Text('禁言作者'),
-                  ));
+                  // 不显示禁言自己的入口
+                  final currentUserId =
+                      context.read<AuthProvider>().user?.id;
+                  if (currentUserId != _post!.authorId) {
+                    items.add(const PopupMenuItem(
+                      value: 'mute_author',
+                      child: Text('禁言作者'),
+                    ));
+                  }
                 }
                 if (perm.canPinPost || perm.canDeletePost || perm.canMuteUser) {
                   items.add(const PopupMenuDivider());

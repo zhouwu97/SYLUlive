@@ -578,6 +578,29 @@ class PostProvider extends ChangeNotifier {
     }
   }
 
+  Future<Post?> updatePostStatus({
+    required int postId,
+    required String status,
+  }) async {
+    try {
+      final response = await _dio.patch(
+        '/posts/$postId/status',
+        data: {'status': status},
+      );
+      if (response.statusCode == 200 && response.data != null) {
+        final updated = Post.fromJson(response.data as Map<String, dynamic>);
+        _replacePostInBoards(updated);
+        notifyListeners();
+        return updated;
+      }
+    } on DioException catch (e) {
+      debugPrint('更新帖子状态失败: ${AppFeedback.dioErrorMessage(e)}');
+    } catch (e) {
+      debugPrint('更新帖子状态失败: $e');
+    }
+    return null;
+  }
+
   Future<int?> uploadImage(String filePath) async {
     try {
       String uploadPath = filePath;

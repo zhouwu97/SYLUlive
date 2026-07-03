@@ -3,6 +3,18 @@ import 'package:dio/dio.dart';
 import '../models/user.dart';
 import '../models/post.dart';
 
+class UserMarketPostsResult {
+  final List<Post> items;
+  final int total;
+  final int sold;
+
+  const UserMarketPostsResult({
+    required this.items,
+    required this.total,
+    required this.sold,
+  });
+}
+
 class SocialProvider extends ChangeNotifier {
   final Dio _dio;
   bool _isLoading = false;
@@ -96,6 +108,37 @@ class SocialProvider extends ChangeNotifier {
     } catch (e) {
       debugPrint('获取用户帖子失败: $e');
       return [];
+    }
+  }
+
+  Future<UserMarketPostsResult> getUserMarketPosts(
+    int userId, {
+    int page = 1,
+    int limit = 20,
+  }) async {
+    try {
+      final response = await _dio.get(
+        '/user/$userId/market-posts',
+        queryParameters: {
+          'post_type': 'sell',
+          'page': page,
+          'limit': limit,
+        },
+      );
+      final data = response.data as Map<String, dynamic>;
+      final items = ((data['items'] as List?) ?? [])
+          .map((json) => Post.fromJson(json as Map<String, dynamic>))
+          .toList();
+
+      return UserMarketPostsResult(
+        items: items,
+        total: (data['total'] as num?)?.toInt() ?? items.length,
+        sold: (data['sold'] as num?)?.toInt() ??
+            items.where((post) => post.status == 'sold').length,
+      );
+    } catch (e) {
+      debugPrint('获取用户商品失败: $e');
+      return const UserMarketPostsResult(items: [], total: 0, sold: 0);
     }
   }
 }

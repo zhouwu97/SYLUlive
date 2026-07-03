@@ -18,7 +18,9 @@ const (
 type PostStatus string
 
 const (
-	PostStatusNormal  PostStatus = "normal"  // 正常
+	PostStatusNormal  PostStatus = "normal"  // 正常 / 出售中
+	PostStatusSold    PostStatus = "sold"    // 已售出，保留历史记录
+	PostStatusClosed  PostStatus = "closed"  // 已关闭，保留历史记录
 	PostStatusDeleted PostStatus = "deleted" // 已删除
 )
 

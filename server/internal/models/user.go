@@ -36,8 +36,7 @@ type User struct {
 	ReportCount    int       `gorm:"default:0;index" json:"report_count"`            // 90天内举报数
 	QQ             string    `gorm:"size:20" json:"qq"`                              // QQ号
 	DeviceToken    string    `gorm:"size:255" json:"-"`                              // 极光 RegistrationID
-	Credits        int       `gorm:"default:0" json:"credits"`                       // 代答积分
-	AiBalanceCents int       `gorm:"default:0" json:"ai_balance_cents"`              // 融智云考 AI 余额，单位：分
+
 	CreatedAt      time.Time `json:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at"`
 
@@ -50,8 +49,7 @@ type User struct {
 	EduCollege   string `gorm:"size:100" json:"edu_college"`    // 学院
 	EduMajor     string `gorm:"size:100" json:"edu_major"`      // 专业
 
-	// VIP 权限控制（题库导出桌面端高级功能）
-	VipExpiry *time.Time `gorm:"index" json:"vip_expiry"` // VIP 过期时间，nil 表示非 VIP
+
 
 	LastCheckInDate  string `gorm:"size:10" json:"last_check_in_date"` // 最后签到日期
 	IsCheckedInToday bool   `gorm:"-" json:"is_checked_in_today"`      // 动态字段，不在数据库映射

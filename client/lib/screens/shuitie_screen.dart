@@ -8,11 +8,12 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config/api_constants.dart';
-import '../config/water_post_taxonomy.dart';
+import '../models/water_section.dart';
 import '../utils/app_motion.dart';
 import '../utils/app_feedback.dart';
 import '../utils/responsive_util.dart';
 import '../utils/screen_swipe.dart';
+import '../utils/search_focus_gate.dart';
 
 import '../models/announcement.dart' as model;
 import '../models/post.dart';
@@ -20,6 +21,7 @@ import '../providers/auth_provider.dart';
 import '../providers/message_provider.dart';
 import '../providers/post_provider.dart';
 import '../providers/theme_provider.dart';
+import '../providers/water_section_provider.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/home_service_drawer.dart';
 import '../widgets/home_tab_reveal.dart';
@@ -31,7 +33,6 @@ import 'edu_grade_screen.dart';
 import 'exam_schedule_screen.dart';
 import 'feedback_screen.dart';
 import 'login_screen.dart';
-import 'market_screen.dart';
 import 'post_detail_screen.dart';
 import 'search_results_screen.dart';
 import 'toolbox_screen.dart';
@@ -109,6 +110,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   int _feedRevealSerial = 0;
   bool _feedRevealActive = false;
   final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
   Timer? _autoRefreshTimer;
   List<model.Announcement> _announcements = [];
   bool _wasLoggedIn = false;
@@ -173,6 +175,9 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       _startAutoRefresh();
       _ensureCheckinStatusLoaded();
 
+      // 预热水帖版块缓存，供服务抽屉使用
+      context.read<WaterSectionProvider>().loadSections();
+
       // 延迟加载其他非核心数据
       Future.delayed(const Duration(seconds: 3), () {
         if (mounted) {
@@ -222,6 +227,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     }
 
     _searchController.dispose();
+    _searchFocusNode.dispose();
     _feedSwitchController
       ..removeListener(_handleFeedSettleTick)
       ..dispose();
@@ -282,6 +288,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     final query = raw.trim();
     if (query.isEmpty) return;
 
+    _searchFocusNode.unfocus();
     _searchController.clear();
     if (mounted) {
       setState(() {
@@ -295,6 +302,13 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       MaterialPageRoute(
         builder: (_) => SearchResultsScreen(query: query, boardId: 1),
       ),
+    );
+  }
+
+  bool _exitSearchInputMode() {
+    return consumeSearchInputExit(
+      hasFocus: _searchFocusNode.hasFocus,
+      unfocus: _searchFocusNode.unfocus,
     );
   }
 
@@ -720,21 +734,9 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                 checkInLoading: _checkInLoading,
                 showCheckInDot: _showCheckInDot,
                 announcements: _announcements,
+                waterSections: context.read<WaterSectionProvider>().activeSections,
                 onCheckIn: () {
                   _closePanelThenOpen(dialogContext, _doCheckIn);
-                },
-                onOpenLostFound: () {
-                  _closePanelThenOpen(dialogContext, () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const MarketScreen(
-                          onlyPostTypes: ['lost', 'found'],
-                          titleOverride: '失物招领',
-                        ),
-                      ),
-                    );
-                  });
                 },
                 onOpenToolbox: () {
                   _closePanelThenOpen(dialogContext, () {
@@ -828,13 +830,13 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                     _changeFeedMode('all');
                   });
                 },
-                onOpenWaterCategory: (WaterPostCategory category) {
+                onOpenWaterSection: (WaterSection section) {
                   _closePanelThenOpen(dialogContext, () {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
                         builder: (_) =>
-                            WaterCategoryFeedRoute(category: category),
+                            WaterCategoryFeedRoute.fromSection(section),
                       ),
                     );
                   });
@@ -1383,6 +1385,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
           child: CustomScrollView(
             key: PageStorageKey<String>('home-feed-scroll-$mode'),
             controller: _feedScrollControllers[mode],
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
             physics: const AlwaysScrollableScrollPhysics(
               parent: BouncingScrollPhysics(),
             ),
@@ -1454,6 +1457,9 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                             post: post,
                             onAuthorTap: _openUserInSplit,
                             onTap: () {
+                              if (_exitSearchInputMode()) {
+                                return;
+                              }
                               if (ResponsiveUtil.useDesktopShell(context)) {
                                 _openPostInSplit(post);
                               } else {
@@ -1514,6 +1520,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
           : const Color(0xFFEEF0F5),
       child: TextField(
         controller: _searchController,
+        focusNode: _searchFocusNode,
         onChanged: _onSearchChanged,
         onSubmitted: _runSearch,
         textInputAction: TextInputAction.search,

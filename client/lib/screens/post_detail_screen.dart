@@ -11,6 +11,8 @@ import '../models/post.dart';
 import '../models/reply.dart';
 import '../models/user.dart';
 import '../providers/post_provider.dart';
+import '../providers/water_moderator_provider.dart';
+import '../providers/water_moderation_provider.dart';
 import '../utils/app_feedback.dart';
 import '../utils/post_image_cache.dart';
 import '../widgets/report_sheet.dart';
@@ -185,6 +187,15 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       _isLoading = false;
     }
     _loadPost();
+    _loadWaterSectionPermission();
+  }
+
+  void _loadWaterSectionPermission() {
+    final post = _post ?? widget.initialPost;
+    if (post == null || post.boardId != 1 || post.postType.isEmpty) return;
+    context
+        .read<WaterModeratorProvider>()
+        .loadMyPermission(post.postType);
   }
 
   @override
@@ -586,7 +597,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   Future<String?> _askReason({
     required String title,
-    required String hint,
+    String hint = '请输入原因',
+    String confirmText = '确认',
   }) async {
     final controller = TextEditingController();
     final result = await showDialog<String>(
@@ -595,25 +607,197 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         title: Text(title),
         content: TextField(
           controller: controller,
-          minLines: 3,
-          maxLines: 6,
-          decoration: InputDecoration(hintText: hint),
+          decoration: InputDecoration(
+            hintText: hint,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+          maxLines: 2,
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
             child: const Text('取消'),
           ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-            child: const Text('提交'),
+          TextButton(
+            onPressed: () {
+              final text = controller.text.trim();
+              Navigator.pop(ctx, text);
+            },
+            child: Text(confirmText),
           ),
         ],
       ),
     );
     controller.dispose();
-    if (result == null || result.trim().isEmpty) return null;
-    return result.trim();
+    if (result == null || result.isEmpty) return null;
+    return result;
+  }
+
+  // ── 版块置顶 ──
+
+  Future<void> _sectionPinPost() async {
+    final post = _post;
+    if (post == null) return;
+    final sectionSlug = post.postType;
+    if (sectionSlug.isEmpty) return;
+
+    final daysResult = await showDialog<int>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('版块置顶时长'),
+        children: [1, 3, 7].map((d) {
+          return SimpleDialogOption(
+            onPressed: () => Navigator.pop(ctx, d),
+            child: Text('$d 天'),
+          );
+        }).toList(),
+      ),
+    );
+    if (daysResult == null) return;
+    final reason = await _askReason(title: '置顶原因', hint: '为什么置顶这篇帖子');
+    if (reason == null) return;
+
+    final provider = context.read<WaterModerationProvider>();
+    final ok = await provider.pinPost(
+      sectionSlug: sectionSlug,
+      postId: post.id,
+      reason: reason,
+      pinnedUntil: DateTime.now().add(Duration(days: daysResult)),
+    );
+    if (!mounted) return;
+    if (ok) {
+      AppFeedback.showSnackBar(context, '已置顶到该版块');
+      setState(() => _post = _post?.copyWith(
+            waterSectionPinned: true,
+          ));
+    } else {
+      AppFeedback.showSnackBar(context, provider.error ?? '置顶失败', isError: true);
+    }
+  }
+
+  Future<void> _sectionUnpinPost() async {
+    final post = _post;
+    if (post == null) return;
+    final sectionSlug = post.postType;
+    if (sectionSlug.isEmpty) return;
+
+    final confirmed = await AppFeedback.confirmDanger(
+      context,
+      title: '取消版块置顶',
+      message: '确定要取消该帖子在当前版块的置顶吗？',
+      confirmText: '取消置顶',
+    );
+    if (!confirmed) return;
+
+    final provider = context.read<WaterModerationProvider>();
+    final ok = await provider.unpinPost(
+      sectionSlug: sectionSlug,
+      postId: post.id,
+    );
+    if (!mounted) return;
+    if (ok) {
+      AppFeedback.showSnackBar(context, '已取消版块置顶');
+      setState(() => _post = _post?.copyWith(
+            waterSectionPinned: false,
+          ));
+    } else {
+      AppFeedback.showSnackBar(context, provider.error ?? '取消置顶失败', isError: true);
+    }
+  }
+
+  // ── 版主删除 ──
+
+  Future<void> _moderateDeletePost() async {
+    final post = _post;
+    if (post == null) return;
+    final sectionSlug = post.postType;
+    if (sectionSlug.isEmpty) return;
+
+    final reason = await _askReason(
+        title: '删除原因', hint: '请填写删除原因（至少 2 个字）');
+    if (reason == null || reason.length < 2) {
+      if (mounted) {
+        AppFeedback.showSnackBar(context, '删除原因至少 2 个字', isError: true);
+      }
+      return;
+    }
+
+    final confirmed = await AppFeedback.confirmDanger(
+      context,
+      title: '版主删除',
+      message: '该操作会将帖子从列表隐藏并记录管理日志。确认删除？',
+      confirmText: '确认删除',
+    );
+    if (!confirmed) return;
+
+    final provider = context.read<WaterModerationProvider>();
+    final ok = await provider.deletePostByModerator(
+      sectionSlug: sectionSlug,
+      postId: post.id,
+      reason: reason,
+    );
+    if (!mounted) return;
+    if (ok) {
+      AppFeedback.showSnackBar(context, '帖子已删除');
+      Navigator.pop(context, true);
+    } else {
+      AppFeedback.showSnackBar(context, provider.error ?? '删除失败', isError: true);
+    }
+  }
+
+  // ── 禁言作者 ──
+
+  Future<void> _muteAuthor() async {
+    final post = _post;
+    if (post == null) return;
+    final sectionSlug = post.postType;
+    if (sectionSlug.isEmpty) return;
+    if (post.authorId == 0) return;
+
+    final daysResult = await showDialog<int>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('禁言时长'),
+        children: [1, 3, 7].map((d) {
+          return SimpleDialogOption(
+            onPressed: () => Navigator.pop(ctx, d),
+            child: Text('$d 天'),
+          );
+        }).toList(),
+      ),
+    );
+    if (daysResult == null) return;
+    final reason = await _askReason(title: '禁言原因', hint: '请填写禁言原因（至少 2 个字）');
+    if (reason == null || reason.length < 2) {
+      if (mounted) {
+        AppFeedback.showSnackBar(context, '禁言原因至少 2 个字', isError: true);
+      }
+      return;
+    }
+
+    final confirmed = await AppFeedback.confirmDanger(
+      context,
+      title: '禁言作者',
+      message: '确认禁言该用户 ${daysResult} 天吗？被禁言期间该用户无法在本版块内发帖。',
+      confirmText: '确认禁言',
+    );
+    if (!confirmed) return;
+
+    final provider = context.read<WaterModerationProvider>();
+    final ok = await provider.muteUser(
+      sectionSlug: sectionSlug,
+      userId: post.authorId,
+      reason: reason,
+      until: DateTime.now().add(Duration(days: daysResult)),
+    );
+    if (!mounted) return;
+    if (ok) {
+      AppFeedback.showSnackBar(context, '已禁言该用户');
+    } else {
+      AppFeedback.showSnackBar(context, provider.error ?? '禁言失败', isError: true);
+    }
   }
 
   Future<void> _applyFeatured() async {
@@ -1089,10 +1273,61 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 case 'unfeature':
                   _unfeaturePost();
                   break;
+                case 'section_pin':
+                  _sectionPinPost();
+                  break;
+                case 'section_unpin':
+                  _sectionUnpinPost();
+                  break;
+                case 'moderate_delete':
+                  _moderateDeletePost();
+                  break;
+                case 'mute_author':
+                  _muteAuthor();
+                  break;
               }
             },
             itemBuilder: (context) {
               final items = <PopupMenuEntry<String>>[];
+              final sectionSlug = _post?.postType ?? '';
+              final perm = sectionSlug.isNotEmpty
+                  ? context.read<WaterModeratorProvider>().permissionOf(sectionSlug)
+                  : null;
+
+              // ── 版块管理操作（版主/管理员可见）──
+              if (_post?.boardId == 1 && sectionSlug.isNotEmpty && perm != null &&
+                  (perm.isGlobalAdmin || perm.isModerator)) {
+                if (perm.canPinPost) {
+                  if (_post?.waterSectionPinned == true) {
+                    items.add(const PopupMenuItem(
+                      value: 'section_unpin',
+                      child: Text('取消版块置顶'),
+                    ));
+                  } else {
+                    items.add(const PopupMenuItem(
+                      value: 'section_pin',
+                      child: Text('设为版块置顶'),
+                    ));
+                  }
+                }
+                if (perm.canDeletePost) {
+                  items.add(const PopupMenuItem(
+                    value: 'moderate_delete',
+                    child: Text('版主删除', style: TextStyle(color: Colors.red)),
+                  ));
+                }
+                if (perm.canMuteUser && _post?.authorId != null) {
+                  items.add(const PopupMenuItem(
+                    value: 'mute_author',
+                    child: Text('禁言作者'),
+                  ));
+                }
+                if (perm.canPinPost || perm.canDeletePost || perm.canMuteUser) {
+                  items.add(const PopupMenuDivider());
+                }
+              }
+
+              // ── 全局置顶（仅 admin）──
               if (isAdmin && _post?.boardId == 1) {
                 items.add(PopupMenuItem(
                   value: _post!.isActivePinned ? 'unpin' : 'pin',

@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 import '../config/api_constants.dart';
 import '../config/water_post_taxonomy.dart';
 import '../models/post.dart';
+import '../models/water_section.dart';
 import '../models/user.dart';
+import '../providers/water_section_provider.dart';
 import '../screens/image_viewer_screen.dart';
 import '../utils/post_image_cache.dart';
 import 'cached_avatar.dart';
@@ -238,6 +240,10 @@ class _PostCardState extends State<PostCard>
               SizedBox(height: isDesktop ? 12 : 6),
               _buildImageGrid(context, widget.post.images),
             ],
+            if (widget.post.boardId == 1 && !widget.showCategoryBadge) ...[
+              const SizedBox(height: 6),
+              _buildWaterInlineTag(context, isDark),
+            ],
             if ((widget.showPrice && widget.post.price > 0) ||
                 widget.showWarning) ...[
               const SizedBox(height: 8),
@@ -258,6 +264,11 @@ class _PostCardState extends State<PostCard>
   }
 
   Widget _buildCategoryTag(BuildContext context, bool isDark) {
+    final labels = _waterLabels(context);
+    final text = labels.sectionLabel.isNotEmpty && labels.tagLabel.isNotEmpty
+        ? '${labels.sectionLabel} · ${labels.tagLabel}'
+        : labels.sectionLabel;
+    if (text.isEmpty) return const SizedBox.shrink();
     return Container(
       height: 20,
       padding: const EdgeInsets.symmetric(horizontal: 7),
@@ -269,14 +280,61 @@ class _PostCardState extends State<PostCard>
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
-        waterCategoryLabelOf(widget.post.postType),
+        text,
         style: TextStyle(
           fontSize: 11,
           fontWeight: FontWeight.w500,
           color: isDark ? Colors.white70 : const Color(0xFF60646C),
         ),
+        overflow: TextOverflow.ellipsis,
       ),
     );
+  }
+
+  Widget _buildWaterInlineTag(BuildContext context, bool isDark) {
+    final tagLabel = _waterLabels(context).tagLabel;
+    if (tagLabel.isEmpty) return const SizedBox.shrink();
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: isDark
+              ? Colors.white.withValues(alpha: 0.08)
+              : const Color(0xFFF3F4F6),
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Text(
+          '#$tagLabel',
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            color: isDark ? Colors.white60 : const Color(0xFF60646C),
+          ),
+        ),
+      ),
+    );
+  }
+
+  _WaterPostLabels _waterLabels(BuildContext context) {
+    if (widget.post.boardId != 1) return const _WaterPostLabels();
+    final provider = context.watch<WaterSectionProvider>();
+    final section = provider.getBySlug(widget.post.postType);
+    final sectionLabel =
+        section?.title ?? waterCategoryLabelOf(widget.post.postType);
+    final tag = _findTag(section, widget.post.waterTagId);
+    return _WaterPostLabels(
+      sectionLabel: sectionLabel,
+      tagLabel: tag?.name ?? '',
+    );
+  }
+
+  WaterSectionTag? _findTag(WaterSection? section, int? tagId) {
+    if (section == null || tagId == null || tagId <= 0) return null;
+    for (final tag in section.tags) {
+      if (tag.id == tagId) return tag;
+    }
+    return null;
   }
 
   Widget _buildPriceOrWarningTag(BuildContext context) {
@@ -683,4 +741,14 @@ class _PostCardState extends State<PostCard>
     if (diff.inDays < 7) return '${diff.inDays}天前';
     return '${dateTime.month}/${dateTime.day}';
   }
+}
+
+class _WaterPostLabels {
+  final String sectionLabel;
+  final String tagLabel;
+
+  const _WaterPostLabels({
+    this.sectionLabel = '',
+    this.tagLabel = '',
+  });
 }

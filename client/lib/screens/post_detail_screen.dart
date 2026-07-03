@@ -10,9 +10,11 @@ import '../config/water_post_taxonomy.dart';
 import '../models/post.dart';
 import '../models/reply.dart';
 import '../models/user.dart';
+import '../models/water_section.dart';
 import '../providers/post_provider.dart';
 import '../providers/water_moderator_provider.dart';
 import '../providers/water_moderation_provider.dart';
+import '../providers/water_section_provider.dart';
 import '../utils/app_feedback.dart';
 import '../utils/post_image_cache.dart';
 import '../widgets/report_sheet.dart';
@@ -1994,6 +1996,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          _buildWaterSectionTagInfo(p, isDark),
           if (p.title.isNotEmpty) ...[
             Text(
               p.title,
@@ -2019,6 +2022,77 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 ),
               ),
             ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildWaterSectionTagInfo(Post p, bool isDark) {
+    if (p.boardId != 1 || p.postType.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    final provider = context.watch<WaterSectionProvider>();
+    final section = provider.getBySlug(p.postType);
+    final sectionLabel = section?.title ?? waterCategoryLabelOf(p.postType);
+    final tag = _findWaterTag(section, p.waterTagId);
+    if (sectionLabel.isEmpty && tag == null) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Wrap(
+        spacing: 6,
+        runSpacing: 6,
+        children: [
+          if (sectionLabel.isNotEmpty)
+            _buildWaterMetaPill(
+              isDark,
+              Icons.forum_outlined,
+              '版块：$sectionLabel',
+            ),
+          if (tag != null)
+            _buildWaterMetaPill(
+              isDark,
+              Icons.sell_outlined,
+              '标签：${tag.name}',
+            ),
+        ],
+      ),
+    );
+  }
+
+  WaterSectionTag? _findWaterTag(WaterSection? section, int? tagId) {
+    if (section == null || tagId == null || tagId <= 0) return null;
+    for (final tag in section.tags) {
+      if (tag.id == tagId) return tag;
+    }
+    return null;
+  }
+
+  Widget _buildWaterMetaPill(bool isDark, IconData icon, String text) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: isDark
+            ? Colors.white.withValues(alpha: 0.08)
+            : const Color(0xFFF3F4F6),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            icon,
+            size: 12,
+            color: isDark ? Colors.white54 : const Color(0xFF60646C),
+          ),
+          const SizedBox(width: 4),
+          Text(
+            text,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: isDark ? Colors.white60 : const Color(0xFF60646C),
+            ),
+          ),
         ],
       ),
     );

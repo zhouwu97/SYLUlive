@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../config/water_post_taxonomy.dart';
 import '../models/announcement.dart' as model;
+import '../models/water_section.dart';
 
 /// 校园服务抽屉 —— 纯展示组件，所有数据和回调由外部提供。
 class HomeServiceDrawer extends StatelessWidget {
@@ -18,7 +19,10 @@ class HomeServiceDrawer extends StatelessWidget {
   final VoidCallback onOpenExamSchedule;
   final VoidCallback onOpenFeedback;
   final VoidCallback onOpenAllWaterPosts;
-  final ValueChanged<WaterPostCategory> onOpenWaterCategory;
+  final ValueChanged<WaterPostCategory>? onOpenWaterCategory;
+  final ValueChanged<WaterSection>? onOpenWaterSection;
+  final List<WaterSection> waterSections;
+  final bool waterSectionsLoading;
 
   const HomeServiceDrawer({
     super.key,
@@ -35,7 +39,10 @@ class HomeServiceDrawer extends StatelessWidget {
     required this.onOpenExamSchedule,
     required this.onOpenFeedback,
     required this.onOpenAllWaterPosts,
-    required this.onOpenWaterCategory,
+    this.onOpenWaterCategory,
+    this.onOpenWaterSection,
+    this.waterSections = const [],
+    this.waterSectionsLoading = false,
   });
 
   @override
@@ -285,6 +292,9 @@ class HomeServiceDrawer extends StatelessWidget {
 
   // ---- 水帖分类 ----
   Widget _buildWaterCategorySection(BuildContext context, bool isDark) {
+    final sections = _resolvedSections;
+    final categoryCount = sections.length;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -312,7 +322,7 @@ class HomeServiceDrawer extends StatelessWidget {
                       borderRadius: BorderRadius.circular(999),
                     ),
                     child: Text(
-                      '${kWaterPostCategories.length}个',
+                      waterSectionsLoading ? '加载中' : '$categoryCount 个版块',
                       style: TextStyle(
                         fontSize: 10.5,
                         fontWeight: FontWeight.w800,
@@ -368,28 +378,60 @@ class HomeServiceDrawer extends StatelessWidget {
                   : const Color(0xFFEDF1F7),
             ),
           ),
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final itemWidth = (constraints.maxWidth - 10) / 2;
-              return Wrap(
-                spacing: 10,
-                runSpacing: 10,
-                children: kWaterPostCategories.map((category) {
-                  return SizedBox(
-                    width: itemWidth,
-                    child: _WaterCategoryMiniItem(
-                      category: category,
-                      isDark: isDark,
-                      onTap: () => onOpenWaterCategory(category),
+          child: waterSectionsLoading
+              ? SizedBox(
+                  height: 80,
+                  child: Center(
+                    child: SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: isDark ? Colors.white54 : const Color(0xFF9CA3AF),
+                      ),
                     ),
-                  );
-                }).toList(),
-              );
-            },
-          ),
+                  ),
+                )
+              : LayoutBuilder(
+                  builder: (context, constraints) {
+                    final itemWidth = (constraints.maxWidth - 10) / 2;
+                    return Wrap(
+                      spacing: 10,
+                      runSpacing: 10,
+                      children: sections.map((section) {
+                        return SizedBox(
+                          width: itemWidth,
+                          child: _WaterCategoryMiniItem(
+                            section: section,
+                            isDark: isDark,
+                            onTap: () => _openCategory(section),
+                          ),
+                        );
+                      }).toList(),
+                    );
+                  },
+                ),
         ),
       ],
     );
+  }
+
+  void _openCategory(WaterSection section) {
+    if (onOpenWaterSection != null) {
+      onOpenWaterSection!(section);
+    } else if (onOpenWaterCategory != null) {
+      // legacy fallback: convert WaterSection → WaterPostCategory
+      final legacy = waterCategoryOf(section.slug);
+      if (legacy != null) {
+        onOpenWaterCategory!(legacy);
+      }
+    }
+  }
+
+  /// 动态版块（来自 provider）优先；为空或接口失败时兜底到本地 taxonomy。
+  List<WaterSection> get _resolvedSections {
+    if (waterSections.isNotEmpty) return waterSections;
+    return kWaterPostCategories.map(WaterSection.fromLegacyCategory).toList();
   }
 
   // ---- 更多服务 ----
@@ -552,18 +594,20 @@ class _CompactQuickEntryItem extends StatelessWidget {
 }
 
 class _WaterCategoryMiniItem extends StatelessWidget {
-  final WaterPostCategory category;
+  final WaterSection section;
   final bool isDark;
   final VoidCallback onTap;
 
   const _WaterCategoryMiniItem({
-    required this.category,
+    required this.section,
     required this.isDark,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
+    final color = colorHexToColor(section.colorHex);
+    final icon = iconKeyToIconData(section.iconKey, fallbackSlug: section.slug);
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -573,10 +617,10 @@ class _WaterCategoryMiniItem extends StatelessWidget {
           height: 74,
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
-            color: category.color.withValues(alpha: isDark ? 0.13 : 0.07),
+            color: color.withValues(alpha: isDark ? 0.13 : 0.07),
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
-              color: category.color.withValues(alpha: isDark ? 0.18 : 0.10),
+              color: color.withValues(alpha: isDark ? 0.18 : 0.10),
             ),
           ),
           child: Row(
@@ -585,13 +629,13 @@ class _WaterCategoryMiniItem extends StatelessWidget {
                 width: 34,
                 height: 34,
                 decoration: BoxDecoration(
-                  color: category.color.withValues(alpha: isDark ? 0.18 : 0.11),
+                  color: color.withValues(alpha: isDark ? 0.18 : 0.11),
                   borderRadius: BorderRadius.circular(13),
                 ),
                 child: Icon(
-                  category.icon,
+                  icon,
                   size: 18,
-                  color: category.color,
+                  color: color,
                 ),
               ),
               const SizedBox(width: 8),
@@ -601,7 +645,7 @@ class _WaterCategoryMiniItem extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      category.label,
+                      section.title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -613,7 +657,9 @@ class _WaterCategoryMiniItem extends StatelessWidget {
                     ),
                     const SizedBox(height: 3),
                     Text(
-                      category.hint,
+                      section.subtitle.isNotEmpty
+                          ? section.subtitle
+                          : section.description,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(

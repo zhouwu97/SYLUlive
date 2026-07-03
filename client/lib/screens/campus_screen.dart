@@ -5,6 +5,14 @@ import '../main.dart';
 import '../models/campus_article.dart';
 import '../services/campus_article_service.dart';
 import '../widgets/home_tab_reveal.dart';
+
+import '../widgets/campus/campus_theme.dart';
+import '../widgets/campus/campus_header.dart';
+import '../widgets/campus/campus_feature_notice_card.dart';
+import '../widgets/campus/campus_service_grid.dart';
+import '../widgets/campus/campus_news_section_header.dart';
+import '../widgets/campus/campus_news_card.dart';
+
 import 'campus_article_detail_screen.dart';
 import 'campus_article_list_screen.dart';
 import 'campus_calendar_screen.dart';
@@ -181,7 +189,7 @@ class _CampusScreenState extends State<CampusScreen>
 
     return Scaffold(
       backgroundColor:
-          isDark ? const Color(0xFF101219) : const Color(0xFFF8F7FC),
+          isDark ? const Color(0xFF101219) : CampusTheme.bg,
       body: SafeArea(
         bottom: false,
         child: RefreshIndicator(
@@ -192,47 +200,49 @@ class _CampusScreenState extends State<CampusScreen>
             ),
             slivers: [
               SliverPadding(
-                padding: const EdgeInsets.fromLTRB(16, 18, 16, 156),
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
                 sliver: SliverList(
                   delegate: SliverChildListDelegate([
                     HomeTabRevealItem(
                       index: 0,
-                      child: _CampusHeader(semester: _currentSemesterText()),
+                      child: CampusHeader(semester: _currentSemesterText()),
                     ),
-                    const SizedBox(height: 18),
+                    const SizedBox(height: 12),
                     HomeTabRevealItem(
                       index: 1,
                       child: _buildLatestCard(isDark),
                     ),
-                    const SizedBox(height: 24),
-                    const HomeTabRevealItem(
+                    const SizedBox(height: 16),
+                    HomeTabRevealItem(
                       index: 2,
-                      child: _SectionTitle(
-                        title: '校园服务',
-                        subtitle: '常用校园功能',
+                      child: CampusServiceGrid(
+                        isDark: isDark,
+                        onEduTap: () => _openPage(const EduScreen()),
+                        onRateTap: () => _openPage(const TeacherRateScreen()),
+                        onMapTap: () => _openPage(const CampusMapTabPage()),
+                        onCalendarTap: () => _openPage(const CampusCalendarScreen()),
                       ),
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 16),
                     HomeTabRevealItem(
                       index: 3,
-                      child: _buildServiceRow(isDark),
-                    ),
-                    const SizedBox(height: 26),
-                    HomeTabRevealItem(
-                      index: 4,
-                      child: _CampusInfoSectionTitle(
-                        title: '校园资讯',
-                        subtitle: '校内通知与赛事信息',
+                      child: CampusNewsSectionHeader(
+                        isDark: isDark,
                         onCompetitionTap: () =>
                             _openPage(const CompetitionCenterScreen()),
                       ),
                     ),
-                    const SizedBox(height: 12),
-                    HomeTabRevealItem(
-                      index: 5,
-                      child: _buildRecentList(isDark),
-                    ),
+                    const SizedBox(height: 8),
                   ]),
+                ),
+              ),
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 126),
+                sliver: SliverToBoxAdapter(
+                  child: HomeTabRevealItem(
+                    index: 4,
+                    child: _buildRecentList(isDark),
+                  ),
                 ),
               ),
             ],
@@ -254,7 +264,7 @@ class _CampusScreenState extends State<CampusScreen>
 
     // 有数据 → 显示真实卡片
     if (latest != null) {
-      return _LatestArticleCard(
+      return CampusFeatureNoticeCard(
         article: latest,
         isDark: isDark,
         onTap: () => _openArticleDetail(latest),
@@ -324,12 +334,12 @@ class _CampusScreenState extends State<CampusScreen>
     return Column(
       children: [
         for (final article in recent) ...[
-          _RecentArticleItem(
+          CampusNewsCard(
             article: article,
             isDark: isDark,
             onTap: () => _openArticleDetail(article),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 7),
         ],
         _buildViewAllLink(isDark),
       ],

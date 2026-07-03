@@ -5,14 +5,15 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../../config/api_constants.dart';
 import '../../../models/post.dart';
+import 'dashed_outline.dart';
 
-/// Image grid for publish forms.
+/// 发布表单图片网格。
 ///
-/// Displays existing (network) and newly selected (local) images in a 3-column
-/// square grid.  The first image is tagged with a "封面" (cover) badge.
-/// The grid is always visible — when there are zero images the add cell still
-/// renders.
+/// 以三列方形网格展示已上传图片和本地新选图片。第一张图片会标记为「封面」。
+/// 空图片状态下仍展示添加入口，水帖页会将其渲染成单个虚线上传卡片。
 class PublishImageGrid extends StatelessWidget {
+  static const Color _teal = Color(0xFF12B8A6);
+
   final List<PostImage> existingImages;
   final List<XFile> selectedImages;
   final bool canAddMore;
@@ -36,14 +37,24 @@ class PublishImageGrid extends StatelessWidget {
 
   double get _spacing => compact ? 8.0 : 10.0;
   double get _radius => compact ? 10.0 : 12.0;
-  double get _deleteSize => compact ? 20.0 : 24.0;
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    // Always at least 1 cell (the add cell when empty), plus an extra add
-    // cell at the end when there are images and room for more.
+    if (totalImages == 0) {
+      final tileSize = compact ? 132.0 : 148.0;
+      return Align(
+        alignment: Alignment.centerLeft,
+        child: SizedBox(
+          width: tileSize,
+          height: tileSize,
+          child: _buildAddCell(isDark),
+        ),
+      );
+    }
+
+    // 至少保留一个添加入口；已有图片且还能继续添加时，入口放在末尾。
     final int cellCount =
         max(1, totalImages) + (canAddMore && totalImages > 0 ? 1 : 0);
 
@@ -57,41 +68,13 @@ class PublishImageGrid extends StatelessWidget {
       ),
       itemCount: cellCount,
       itemBuilder: (context, index) {
-        // ---- add cell (first position when empty, last position when has images) ----
+        // ---- 添加入口：空状态在首位，有图片时在末尾 ----
         final isAddSlot = (totalImages == 0) || (index == totalImages);
         if (isAddSlot) {
-          return GestureDetector(
-            onTap: onAddImage,
-            child: Container(
-              decoration: BoxDecoration(
-                color: isDark
-                    ? Colors.white.withValues(alpha: 0.06)
-                    : const Color(0xFFF5F5F8),
-                borderRadius: BorderRadius.circular(_radius),
-              ),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.add,
-                    size: compact ? 24 : 28,
-                    color: Colors.grey.withValues(alpha: 0.6),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '添加照片',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey.withValues(alpha: 0.7),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          );
+          return _buildAddCell(isDark);
         }
 
-        // ---- image thumbnail ----
+        // ---- 图片缩略图 ----
         final isExisting = index < existingImages.length;
         final isFirst = index == 0;
 
@@ -119,7 +102,7 @@ class PublishImageGrid extends StatelessWidget {
                     ),
             ),
 
-            // cover badge
+            // 封面角标
             if (isFirst)
               Positioned(
                 top: 6,
@@ -141,7 +124,7 @@ class PublishImageGrid extends StatelessWidget {
                 ),
               ),
 
-            // delete button
+            // 删除按钮
             Positioned(
               top: 4,
               right: 4,
@@ -166,6 +149,45 @@ class PublishImageGrid extends StatelessWidget {
           ],
         );
       },
+    );
+  }
+
+  Widget _buildAddCell(bool isDark) {
+    return GestureDetector(
+      onTap: onAddImage,
+      child: DashedOutline(
+        color: isDark
+            ? _teal.withValues(alpha: 0.55)
+            : _teal.withValues(alpha: 0.34),
+        radius: _radius + 4,
+        child: Container(
+          decoration: BoxDecoration(
+            color: isDark
+                ? _teal.withValues(alpha: 0.08)
+                : const Color(0xFFF3FFFC),
+            borderRadius: BorderRadius.circular(_radius + 4),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.add_a_photo_outlined,
+                size: compact ? 30 : 34,
+                color: _teal,
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                '添加照片',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: _teal,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

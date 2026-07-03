@@ -159,7 +159,7 @@ func (h *SearchHandler) searchUsers(
 	var users []models.User
 	if err := query.
 		Select("id", "student_id", "nickname", "gender", "avatar", "background",
-			"credit_score", "role", "admin_exp", "exp", "credits", "created_at",
+			"credit_score", "role", "admin_exp", "exp", "created_at",
 			"edu_bound", "edu_grade", "edu_college", "edu_major",
 			"followers_count", "following_count", "total_likes_received").
 		Offset((page - 1) * limit).

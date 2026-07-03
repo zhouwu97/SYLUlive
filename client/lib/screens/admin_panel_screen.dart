@@ -92,6 +92,11 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
           title: const Text('管理员面板'),
           backgroundColor: Colors.transparent,
           elevation: 0,
+          systemOverlayStyle: (isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark)
+              .copyWith(
+            statusBarColor: Colors.transparent,
+            systemNavigationBarColor: Colors.transparent,
+          ),
         ),
         body: Stack(
           children: [
@@ -99,7 +104,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
             SafeArea(
               child: ListView(
                 physics: const BouncingScrollPhysics(),
-                padding: EdgeInsets.fromLTRB(16, 8, 16, bottomSafe + 36),
+                padding: EdgeInsets.fromLTRB(16, 8, 16, bottomSafe + 24),
                 children: [
                   _buildPendingSection(isDark),
                   const SizedBox(height: 18),
@@ -300,7 +305,7 @@ class _AdminSectionGroup extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.only(left: 4, top: 14, bottom: 8),
+          padding: const EdgeInsets.only(left: 4, top: 18, bottom: 8),
           child: Text(
             title,
             style: TextStyle(
@@ -318,7 +323,6 @@ class _AdminSectionGroup extends StatelessWidget {
           separatorBuilder: (context, index) => const SizedBox(height: 8),
           itemBuilder: (context, index) => children[index],
         ),
-        const SizedBox(height: 16),
       ],
     );
   }

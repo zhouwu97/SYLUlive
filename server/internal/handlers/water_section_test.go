@@ -32,8 +32,10 @@ func newWaterSectionTestDB(t *testing.T) *gorm.DB {
 		&models.Like{},
 		&models.WaterSection{},
 		&models.WaterSectionTag{},
+		&models.WaterSectionModerator{},
 		&models.WaterSectionPin{},
 		&models.WaterSectionMute{},
+		&models.WaterModerationLog{},
 	); err != nil {
 		t.Fatalf("migrate database: %v", err)
 	}
@@ -49,6 +51,40 @@ func newWaterTestUser(t *testing.T, db *gorm.DB, eduBound bool) models.User {
 	return user
 }
 
+func newWaterSectionRoleUser(t *testing.T, db *gorm.DB, studentID string, role models.Role) models.User {
+	t.Helper()
+	user := models.User{
+		StudentID:    studentID,
+		PasswordHash: "x",
+		Nickname:     studentID,
+		Role:         role,
+	}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("create role user: %v", err)
+	}
+	return user
+}
+
+func addWaterSectionModerator(t *testing.T, db *gorm.DB, sectionID uint, userID uint, canEdit bool) {
+	t.Helper()
+	mod := models.WaterSectionModerator{
+		SectionID:      sectionID,
+		UserID:         userID,
+		Role:           models.ModeratorRoleModerator,
+		CanEditSection: canEdit,
+		CanManageTags:  false,
+		CanPinPost:     false,
+		CanDeletePost:  false,
+		CanMuteUser:    false,
+		Status:         models.ModeratorStatusActive,
+		AssignedBy:     userID,
+		AssignReason:   "test",
+	}
+	if err := db.Create(&mod).Error; err != nil {
+		t.Fatalf("create moderator: %v", err)
+	}
+}
+
 func performWaterSectionGET(t *testing.T, handler gin.HandlerFunc, path string) *httptest.ResponseRecorder {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
@@ -57,6 +93,25 @@ func performWaterSectionGET(t *testing.T, handler gin.HandlerFunc, path string) 
 	ctx.Request = httptest.NewRequest(http.MethodGet, path, nil)
 	if slugStart := strings.Index(path, "/sections/"); slugStart >= 0 {
 		slug := path[slugStart+len("/sections/"):]
+		ctx.Params = gin.Params{{Key: "slug", Value: slug}}
+	}
+	handler(ctx)
+	return rec
+}
+
+func performWaterSectionPATCH(t *testing.T, handler gin.HandlerFunc, path string, userID uint, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(rec)
+	ctx.Request = httptest.NewRequest(http.MethodPatch, path, strings.NewReader(body))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+	ctx.Set("user_id", userID)
+	if slugStart := strings.Index(path, "/sections/"); slugStart >= 0 {
+		slug := path[slugStart+len("/sections/"):]
+		if slash := strings.Index(slug, "/"); slash >= 0 {
+			slug = slug[:slash]
+		}
 		ctx.Params = gin.Params{{Key: "slug", Value: slug}}
 	}
 	handler(ctx)
@@ -197,6 +252,221 @@ func TestGetSectionBySlugNotFound(t *testing.T) {
 	rec := performWaterSectionGET(t, handler.Get, "/api/water/sections/not-exist-slug")
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("expected 404, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestUpdateWaterSectionByAdmin(t *testing.T) {
+	db := newWaterSectionTestDB(t)
+	if err := models.EnsureWaterSections(db); err != nil {
+		t.Fatalf("ensure: %v", err)
+	}
+	admin := newWaterSectionRoleUser(t, db, "admin_edit_section", models.RoleAdmin)
+	handler := NewWaterSectionHandler(db)
+
+	body := `{
+		"title":"选课与课程经验",
+		"subtitle":"选课、考试、老师、学习资料",
+		"description":"这里用于交流课程学习相关内容",
+		"icon_key":"menu_book",
+		"color_hex":"#2DBE72",
+		"publish_action_text":"提一个问题",
+		"empty_title":"还没有课程学习内容",
+		"empty_description":"可以分享选课、考试、老师评价或学习资料。",
+		"starter_questions":["这门课难不难？","老师给分怎么样？"],
+		"notice_text":"",
+		"default_sort":"all",
+		"reason":"优化版块展示文案"
+	}`
+	rec := performWaterSectionPATCH(t, handler.Update, "/api/water/sections/course_study", admin.ID, body)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var resp struct {
+		Section waterSectionResponse `json:"section"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.Section.Title != "选课与课程经验" || resp.Section.DefaultSort != "all" {
+		t.Fatalf("section not updated: %+v", resp.Section)
+	}
+	if len(resp.Section.StarterQuestions) != 2 || resp.Section.StarterQuestions[0] != "这门课难不难？" {
+		t.Fatalf("starter_questions not updated: %+v", resp.Section.StarterQuestions)
+	}
+}
+
+func TestUpdateWaterSectionBySuperAdminAnySection(t *testing.T) {
+	db := newWaterSectionTestDB(t)
+	if err := models.EnsureWaterSections(db); err != nil {
+		t.Fatalf("ensure: %v", err)
+	}
+	superAdmin := newWaterSectionRoleUser(t, db, "super_edit_section", models.RoleSuperAdmin)
+	handler := NewWaterSectionHandler(db)
+
+	rec := performWaterSectionPATCH(t, handler.Update, "/api/water/sections/campus_life", superAdmin.ID, `{"title":"校园生活新版"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var section models.WaterSection
+	if err := db.Where("slug = ?", "campus_life").First(&section).Error; err != nil {
+		t.Fatalf("find section: %v", err)
+	}
+	if section.Title != "校园生活新版" {
+		t.Fatalf("expected title updated, got %q", section.Title)
+	}
+}
+
+func TestUpdateWaterSectionByEditableModerator(t *testing.T) {
+	db := newWaterSectionTestDB(t)
+	if err := models.EnsureWaterSections(db); err != nil {
+		t.Fatalf("ensure: %v", err)
+	}
+	var section models.WaterSection
+	db.Where("slug = ?", "course_study").First(&section)
+	modUser := newWaterSectionRoleUser(t, db, "mod_can_edit_section", models.RoleUser)
+	addWaterSectionModerator(t, db, section.ID, modUser.ID, true)
+	handler := NewWaterSectionHandler(db)
+
+	rec := performWaterSectionPATCH(t, handler.Update, "/api/water/sections/course_study", modUser.ID, `{"subtitle":"新版课程副标题"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	db.First(&section, section.ID)
+	if section.Subtitle != "新版课程副标题" {
+		t.Fatalf("expected subtitle updated, got %q", section.Subtitle)
+	}
+}
+
+func TestUpdateWaterSectionForbiddenWithoutEditPermission(t *testing.T) {
+	db := newWaterSectionTestDB(t)
+	if err := models.EnsureWaterSections(db); err != nil {
+		t.Fatalf("ensure: %v", err)
+	}
+	var section models.WaterSection
+	db.Where("slug = ?", "course_study").First(&section)
+	modUser := newWaterSectionRoleUser(t, db, "mod_no_edit_section", models.RoleUser)
+	addWaterSectionModerator(t, db, section.ID, modUser.ID, false)
+	handler := NewWaterSectionHandler(db)
+
+	rec := performWaterSectionPATCH(t, handler.Update, "/api/water/sections/course_study", modUser.ID, `{"title":"不应成功"}`)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestUpdateWaterSectionModeratorCannotEditOtherSection(t *testing.T) {
+	db := newWaterSectionTestDB(t)
+	if err := models.EnsureWaterSections(db); err != nil {
+		t.Fatalf("ensure: %v", err)
+	}
+	var course models.WaterSection
+	db.Where("slug = ?", "course_study").First(&course)
+	modUser := newWaterSectionRoleUser(t, db, "mod_other_section", models.RoleUser)
+	addWaterSectionModerator(t, db, course.ID, modUser.ID, true)
+	handler := NewWaterSectionHandler(db)
+
+	rec := performWaterSectionPATCH(t, handler.Update, "/api/water/sections/campus_life", modUser.ID, `{"title":"不应成功"}`)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestUpdateWaterSectionForbiddenForRegularUser(t *testing.T) {
+	db := newWaterSectionTestDB(t)
+	if err := models.EnsureWaterSections(db); err != nil {
+		t.Fatalf("ensure: %v", err)
+	}
+	user := newWaterSectionRoleUser(t, db, "plain_edit_section", models.RoleUser)
+	handler := NewWaterSectionHandler(db)
+
+	rec := performWaterSectionPATCH(t, handler.Update, "/api/water/sections/course_study", user.ID, `{"title":"不应成功"}`)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestUpdateWaterSectionValidation(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+	}{
+		{name: "empty title", body: `{"title":""}`},
+		{name: "invalid color", body: `{"color_hex":"2DBE72"}`},
+		{name: "too many starter questions", body: `{"starter_questions":["1","2","3","4","5","6","7","8","9","10","11"]}`},
+		{name: "invalid default sort", body: `{"default_sort":"popular"}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			db := newWaterSectionTestDB(t)
+			if err := models.EnsureWaterSections(db); err != nil {
+				t.Fatalf("ensure: %v", err)
+			}
+			admin := newWaterSectionRoleUser(t, db, "admin_"+strings.ReplaceAll(tc.name, " ", "_"), models.RoleAdmin)
+			handler := NewWaterSectionHandler(db)
+			rec := performWaterSectionPATCH(t, handler.Update, "/api/water/sections/course_study", admin.ID, tc.body)
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("expected 400, got %d body=%s", rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
+
+func TestUpdateWaterSectionWritesModerationLog(t *testing.T) {
+	db := newWaterSectionTestDB(t)
+	if err := models.EnsureWaterSections(db); err != nil {
+		t.Fatalf("ensure: %v", err)
+	}
+	admin := newWaterSectionRoleUser(t, db, "admin_log_section", models.RoleAdmin)
+	handler := NewWaterSectionHandler(db)
+
+	rec := performWaterSectionPATCH(t, handler.Update, "/api/water/sections/course_study", admin.ID, `{"title":"日志测试标题","reason":"测试日志"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var section models.WaterSection
+	db.Where("slug = ?", "course_study").First(&section)
+	var log models.WaterModerationLog
+	if err := db.Where("section_id = ? AND action = ?", section.ID, models.ModActionEditSection).First(&log).Error; err != nil {
+		t.Fatalf("find log: %v", err)
+	}
+	if log.TargetType != "section" || log.TargetID != section.ID || log.Reason != "测试日志" {
+		t.Fatalf("unexpected log: %+v", log)
+	}
+	if !strings.Contains(log.Snapshot, `"before"`) || !strings.Contains(log.Snapshot, `"after"`) {
+		t.Fatalf("snapshot should include before/after, got %s", log.Snapshot)
+	}
+}
+
+func TestUpdateWaterSectionIgnoresStructuralFields(t *testing.T) {
+	db := newWaterSectionTestDB(t)
+	if err := models.EnsureWaterSections(db); err != nil {
+		t.Fatalf("ensure: %v", err)
+	}
+	admin := newWaterSectionRoleUser(t, db, "admin_struct_section", models.RoleAdmin)
+	var before models.WaterSection
+	db.Where("slug = ?", "course_study").First(&before)
+	handler := NewWaterSectionHandler(db)
+
+	body := `{
+		"title":"结构字段测试",
+		"slug":"changed_slug",
+		"status":"disabled",
+		"sort_order":999,
+		"sensitive_level":"strict"
+	}`
+	rec := performWaterSectionPATCH(t, handler.Update, "/api/water/sections/course_study", admin.ID, body)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var after models.WaterSection
+	if err := db.First(&after, before.ID).Error; err != nil {
+		t.Fatalf("find section: %v", err)
+	}
+	if after.Slug != before.Slug || after.Status != before.Status || after.SortOrder != before.SortOrder || after.SensitiveLevel != before.SensitiveLevel {
+		t.Fatalf("structural fields changed: before=%+v after=%+v", before, after)
+	}
+	if after.Title != "结构字段测试" {
+		t.Fatalf("allowed field should update, got %q", after.Title)
 	}
 }
 

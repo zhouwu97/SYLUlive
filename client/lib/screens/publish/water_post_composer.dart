@@ -96,6 +96,15 @@ class _WaterPostComposerState extends State<WaterPostComposer>
 
   String get _pageTitle => _isEditing ? '编辑水帖' : '发布水帖';
 
+  String _userFacingPostError(String? message) {
+    final text = message ?? (_isEditing ? '更新失败' : '发布失败');
+    if (text.contains('禁言')) {
+      final action = _isEditing ? '编辑' : '发布';
+      return '$text\n如认为禁言有误，可在通知中查看处理原因，并联系版块管理员申诉。解除后可继续$action。';
+    }
+    return text;
+  }
+
   WaterPostCategory get _selectedCategory =>
       waterCategoryOf(_selectedPostType) ?? waterCategoryOf('campus_life')!;
 
@@ -286,7 +295,7 @@ class _WaterPostComposerState extends State<WaterPostComposer>
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(result.errorMessage ?? '发布失败'),
+            content: Text(_userFacingPostError(result.errorMessage)),
             backgroundColor: Colors.red,
           ),
         );
@@ -310,9 +319,7 @@ class _WaterPostComposerState extends State<WaterPostComposer>
     final provider = context.read<WaterSectionProvider>();
     final sections = provider.sections.isNotEmpty
         ? provider.activeSections
-        : kWaterPostCategories
-            .map(WaterSection.fromLegacyCategory)
-            .toList();
+        : kWaterPostCategories.map(WaterSection.fromLegacyCategory).toList();
     final selected = await showModalBottomSheet<String>(
       context: context,
       useSafeArea: true,
@@ -340,10 +347,8 @@ class _WaterPostComposerState extends State<WaterPostComposer>
             }
             final sec = sections[index - 1];
             final isSelected = sec.slug == _selectedPostType;
-            final color =
-                colorHexToColor(sec.colorHex, fallback: Colors.teal);
-            final icon =
-                iconKeyToIconData(sec.iconKey, fallbackSlug: sec.slug);
+            final color = colorHexToColor(sec.colorHex, fallback: Colors.teal);
+            final icon = iconKeyToIconData(sec.iconKey, fallbackSlug: sec.slug);
             return InkWell(
               borderRadius: BorderRadius.circular(10),
               onTap: () => Navigator.of(context).pop(sec.slug),
@@ -417,11 +422,9 @@ class _WaterPostComposerState extends State<WaterPostComposer>
 
   Widget _buildCategorySelector(bool isDark) {
     final section = _selectedSection;
-    final color = section.colorHex.isNotEmpty
-        ? colorHexToColor(section.colorHex)
-        : _teal;
-    final icon =
-        iconKeyToIconData(section.iconKey, fallbackSlug: section.slug);
+    final color =
+        section.colorHex.isNotEmpty ? colorHexToColor(section.colorHex) : _teal;
+    final icon = iconKeyToIconData(section.iconKey, fallbackSlug: section.slug);
     final tags = section.enabledTags;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
@@ -431,8 +434,7 @@ class _WaterPostComposerState extends State<WaterPostComposer>
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           decoration: BoxDecoration(
-            color:
-                isDark ? Colors.white.withValues(alpha: 0.06) : _softTeal,
+            color: isDark ? Colors.white.withValues(alpha: 0.06) : _softTeal,
             borderRadius: BorderRadius.circular(14),
           ),
           child: Column(
@@ -456,8 +458,7 @@ class _WaterPostComposerState extends State<WaterPostComposer>
                     style: TextStyle(
                       fontSize: 17,
                       fontWeight: FontWeight.w700,
-                      color:
-                          isDark ? Colors.white : const Color(0xFF20232A),
+                      color: isDark ? Colors.white : const Color(0xFF20232A),
                     ),
                   ),
                   const SizedBox(width: 6),
@@ -477,8 +478,8 @@ class _WaterPostComposerState extends State<WaterPostComposer>
                     final selected = _selectedTagId == tag.id;
                     return GestureDetector(
                       onTap: () {
-                        setState(() => _selectedTagId =
-                            selected ? null : tag.id);
+                        setState(
+                            () => _selectedTagId = selected ? null : tag.id);
                       },
                       child: Container(
                         padding: const EdgeInsets.symmetric(
@@ -489,8 +490,7 @@ class _WaterPostComposerState extends State<WaterPostComposer>
                               : color.withValues(alpha: 0.08),
                           borderRadius: BorderRadius.circular(999),
                           border: selected
-                              ? Border.all(
-                                  color: color.withValues(alpha: 0.4))
+                              ? Border.all(color: color.withValues(alpha: 0.4))
                               : null,
                         ),
                         child: Text(
@@ -528,9 +528,31 @@ class _WaterPostComposerState extends State<WaterPostComposer>
                         style: TextStyle(
                           fontSize: 11.5,
                           height: 1.3,
+                          color:
+                              isDark ? Colors.white60 : const Color(0xFF7B818C),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+              if (section.isSensitive) ...[
+                const SizedBox(height: 8),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.privacy_tip_outlined,
+                        size: 14, color: Colors.orange.shade600),
+                    const SizedBox(width: 5),
+                    Expanded(
+                      child: Text(
+                        '该版块内容更容易触发管理审核，请避免泄露隐私、攻击他人或发布无法核实的信息。',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          height: 1.3,
                           color: isDark
-                              ? Colors.white60
-                              : const Color(0xFF7B818C),
+                              ? Colors.orange.shade200
+                              : Colors.orange.shade700,
                         ),
                       ),
                     ),

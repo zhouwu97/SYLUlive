@@ -37,6 +37,7 @@ func newModTestDB(t *testing.T) *gorm.DB {
 		&models.WaterSectionPin{},
 		&models.WaterSectionMute{},
 		&models.WaterModerationLog{},
+		&models.Notification{},
 	); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
@@ -349,6 +350,12 @@ func TestModModeratorDeletePost(t *testing.T) {
 	if log.ID == 0 {
 		t.Fatal("delete log not found")
 	}
+
+	var notification models.Notification
+	db.Where("user_id = ? AND type = ? AND post_id = ?", author.ID, "water_moderation", post.ID).First(&notification)
+	if notification.ID == 0 {
+		t.Fatal("delete notification not found")
+	}
 }
 
 // 8. moderator cannot delete admin post
@@ -443,6 +450,12 @@ func TestModAdminRestoreDeletedPost(t *testing.T) {
 	}
 	if log.TargetUserID == nil || *log.TargetUserID != author.ID {
 		t.Fatalf("expected target user %d, got %v", author.ID, log.TargetUserID)
+	}
+
+	var notification models.Notification
+	db.Where("user_id = ? AND type = ? AND post_id = ?", author.ID, "water_moderation", post.ID).First(&notification)
+	if notification.ID == 0 {
+		t.Fatal("restore notification not found")
 	}
 }
 
@@ -679,6 +692,14 @@ func TestModUnmuteThenCanPost(t *testing.T) {
 
 	if services.NewWaterPermissionService(db).IsMuted(section.ID, target.ID) {
 		t.Fatal("user should be unmuted")
+	}
+
+	var count int64
+	db.Model(&models.Notification{}).
+		Where("user_id = ? AND type = ?", target.ID, "water_moderation").
+		Count(&count)
+	if count != 2 {
+		t.Fatalf("expected mute and unmute notifications, got %d", count)
 	}
 }
 

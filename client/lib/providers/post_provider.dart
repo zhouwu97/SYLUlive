@@ -47,37 +47,37 @@ class PinPostResult {
 }
 
 @visibleForTesting
-  Map<String, dynamic> buildPostListParams({
-    required int boardId,
-    String? type,
-    int? tagId,
-    required String sort,
-    required int page,
-    required int loadedCount,
-    String? sessionId,
-    int limit = 20,
-  }) {
-    final params = <String, dynamic>{
-      'board': boardId,
-      'type': type,
-      'sort': sort,
-      'limit': limit,
-    };
-    if (tagId != null) {
-      params['tag_id'] = tagId;
-    }
-    final usesSnapshot = sessionId != null && (sort == 'all' || sort == 'hot');
-    if (usesSnapshot) {
-      params.addAll({
-        'scene': 'loadmore',
-        'session_id': sessionId,
-        'offset': loadedCount,
-      });
-    } else {
-      params['page'] = page;
-    }
-    return params;
+Map<String, dynamic> buildPostListParams({
+  required int boardId,
+  String? type,
+  int? tagId,
+  required String sort,
+  required int page,
+  required int loadedCount,
+  String? sessionId,
+  int limit = 20,
+}) {
+  final params = <String, dynamic>{
+    'board': boardId,
+    'type': type,
+    'sort': sort,
+    'limit': limit,
+  };
+  if (tagId != null) {
+    params['tag_id'] = tagId;
   }
+  final usesSnapshot = sessionId != null && (sort == 'all' || sort == 'hot');
+  if (usesSnapshot) {
+    params.addAll({
+      'scene': 'loadmore',
+      'session_id': sessionId,
+      'offset': loadedCount,
+    });
+  } else {
+    params['page'] = page;
+  }
+  return params;
+}
 
 class PostProvider extends ChangeNotifier {
   final Dio _dio;
@@ -132,7 +132,8 @@ class PostProvider extends ChangeNotifier {
 
   int requestVersionFor(int boardId,
           {String sort = 'time', String? type, int? tagId}) =>
-      _ensureBoard(boardId, sort: sort, type: type, tagId: tagId).requestVersion;
+      _ensureBoard(boardId, sort: sort, type: type, tagId: tagId)
+          .requestVersion;
 
   int revisionFor(int boardId,
           {String sort = 'time', String? type, int? tagId}) =>
@@ -299,9 +300,9 @@ class PostProvider extends ChangeNotifier {
 
     if (_inflightRequests.containsKey(key)) return _inflightRequests[key]!;
 
-    final future =
-        _loadPostsInternal(boardId: boardId, type: type, tagId: tagId, sort: sort)
-            .whenComplete(() {
+    final future = _loadPostsInternal(
+            boardId: boardId, type: type, tagId: tagId, sort: sort)
+        .whenComplete(() {
       _inflightRequests.remove(key);
     });
     _inflightRequests[key] = future;
@@ -318,7 +319,8 @@ class PostProvider extends ChangeNotifier {
 
     // 首次加载走 SWR
     if (!board.hasCacheLoaded) {
-      await _loadCachedThenRefresh(boardId, type: type, tagId: tagId, sort: sort);
+      await _loadCachedThenRefresh(boardId,
+          type: type, tagId: tagId, sort: sort);
       return;
     }
 
@@ -785,6 +787,15 @@ class PostProvider extends ChangeNotifier {
       futures.add(refresh(boardId: 1, sort: 'featured'));
     }
     await Future.wait(futures);
+  }
+
+  Future<void> refreshWaterSectionFeeds(String sectionSlug) async {
+    if (sectionSlug.trim().isEmpty) return;
+    await Future.wait([
+      refresh(boardId: 1, type: sectionSlug, sort: 'all'),
+      refresh(boardId: 1, type: sectionSlug, sort: 'time'),
+      refresh(boardId: 1, type: sectionSlug, sort: 'featured'),
+    ]);
   }
 
   Future<bool> likePost(int postId) async {

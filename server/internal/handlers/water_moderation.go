@@ -77,6 +77,17 @@ func (h *WaterModerationHandler) writeLog(sectionID uint, operatorID uint, actio
 	}
 }
 
+func validateModerationReason(reason string, actionName string) (string, string) {
+	trimmed := strings.TrimSpace(reason)
+	if trimmed == "" {
+		return "", fmt.Sprintf("请填写%s原因", actionName)
+	}
+	if len([]rune(trimmed)) < 2 {
+		return "", fmt.Sprintf("%s原因至少 2 个字", actionName)
+	}
+	return trimmed, ""
+}
+
 // ── 版块置顶 ──
 
 type pinSectionInput struct {
@@ -156,6 +167,11 @@ func (h *WaterModerationHandler) PinPost(c *gin.Context) {
 	reason := strings.TrimSpace(input.Reason)
 	if reason == "" {
 		reason = "版块置顶"
+	} else if validReason, msg := validateModerationReason(reason, "置顶"); msg != "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": msg})
+		return
+	} else {
+		reason = validReason
 	}
 
 	// 查找已有记录（可能复用的 inactive）
@@ -321,11 +337,15 @@ func (h *WaterModerationHandler) DeletePost(c *gin.Context) {
 	}
 
 	var input moderateDeleteInput
-	if err := c.ShouldBindJSON(&input); err != nil || strings.TrimSpace(input.Reason) == "" {
+	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "请填写删除原因"})
 		return
 	}
-	reason := strings.TrimSpace(input.Reason)
+	reason, reasonMsg := validateModerationReason(input.Reason, "删除")
+	if reasonMsg != "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": reasonMsg})
+		return
+	}
 
 	// 受保护用户检查
 	if protected, reason := h.permSvc.IsUserProtectedFromModerator(section.ID, operator, post.AuthorID); protected {
@@ -382,11 +402,15 @@ func (h *WaterModerationHandler) MuteUser(c *gin.Context) {
 	}
 
 	var input muteUserInput
-	if err := c.ShouldBindJSON(&input); err != nil || strings.TrimSpace(input.Reason) == "" {
+	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "请填写禁言原因"})
 		return
 	}
-	reason := strings.TrimSpace(input.Reason)
+	reason, reasonMsg := validateModerationReason(input.Reason, "禁言")
+	if reasonMsg != "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": reasonMsg})
+		return
+	}
 
 	now := time.Now()
 	var until *time.Time
@@ -539,8 +563,10 @@ func (h *WaterModerationHandler) ListMutes(c *gin.Context) {
 	}
 
 	var mutes []models.WaterSectionMute
+	now := time.Now()
 	h.db.
-		Where("section_id = ? AND status = ?", section.ID, models.MuteStatusActive).
+		Where("section_id = ? AND status = ? AND (until IS NULL OR until > ?)",
+			section.ID, models.MuteStatusActive, now).
 		Preload("User").
 		Order("created_at DESC").
 		Find(&mutes)

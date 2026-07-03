@@ -141,6 +141,8 @@ class WaterModerationLog {
         return '取消置顶';
       case 'delete_post':
         return '删除帖子';
+      case 'restore_post':
+        return '恢复帖子';
       case 'mute_user':
         return '禁言用户';
       case 'unmute_user':

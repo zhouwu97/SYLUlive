@@ -160,6 +160,8 @@ func execModAction(t *testing.T, handler *WaterModerationHandler, method, path, 
 		handler.UnpinPost(c)
 	case method == http.MethodDelete && strings.Contains(path, "/moderate"):
 		handler.DeletePost(c)
+	case method == http.MethodPost && strings.Contains(path, "/restore"):
+		handler.RestorePost(c)
 	case method == http.MethodPost && strings.Contains(path, "/mute"):
 		handler.MuteUser(c)
 	case method == http.MethodDelete && strings.Contains(path, "/mute") && !strings.Contains(path, "/moderate"):
@@ -408,6 +410,130 @@ func TestModAdminDeleteAnySectionPost(t *testing.T) {
 	rec := execModAction(t, handler, http.MethodDelete, path, body, admin.ID, admin.Role)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestModAdminRestoreDeletedPost(t *testing.T) {
+	db := newModTestDB(t)
+	section := modTestSection(t, db, "course_study")
+	admin := newModTestUser(t, db, models.RoleAdmin)
+	author := newModTestUser(t, db, models.RoleUser)
+	post := modTestPost(t, db, author.ID, section)
+	if err := db.Model(&post).Update("status", models.PostStatusDeleted).Error; err != nil {
+		t.Fatalf("mark deleted: %v", err)
+	}
+
+	handler := NewWaterModerationHandler(db)
+	path := fmt.Sprintf("/api/water/sections/%s/posts/%d/restore", section.Slug, post.ID)
+	rec := execModAction(t, handler, http.MethodPost, path, `{"reason":"误删恢复"}`, admin.ID, admin.Role)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	var reloaded models.Post
+	db.First(&reloaded, post.ID)
+	if reloaded.Status != models.PostStatusNormal {
+		t.Fatalf("expected normal, got %s", reloaded.Status)
+	}
+
+	var log models.WaterModerationLog
+	db.Where("action = ? AND target_id = ?", models.ModActionRestorePost, post.ID).First(&log)
+	if log.ID == 0 {
+		t.Fatal("restore log not found")
+	}
+	if log.TargetUserID == nil || *log.TargetUserID != author.ID {
+		t.Fatalf("expected target user %d, got %v", author.ID, log.TargetUserID)
+	}
+}
+
+func TestModSuperAdminRestoreDeletedPost(t *testing.T) {
+	db := newModTestDB(t)
+	section := modTestSection(t, db, "course_study")
+	superAdmin := newModTestUser(t, db, models.RoleSuperAdmin)
+	author := newModTestUser(t, db, models.RoleUser)
+	post := modTestPost(t, db, author.ID, section)
+	if err := db.Model(&post).Update("status", models.PostStatusDeleted).Error; err != nil {
+		t.Fatalf("mark deleted: %v", err)
+	}
+
+	handler := NewWaterModerationHandler(db)
+	path := fmt.Sprintf("/api/water/sections/%s/posts/%d/restore", section.Slug, post.ID)
+	rec := execModAction(t, handler, http.MethodPost, path, `{}`, superAdmin.ID, superAdmin.Role)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestModModeratorCannotRestoreDeletedPost(t *testing.T) {
+	db := newModTestDB(t)
+	section := modTestSection(t, db, "course_study")
+	modUser := newModTestUser(t, db, models.RoleUser)
+	author := newModTestUser(t, db, models.RoleUser)
+	post := modTestPost(t, db, author.ID, section)
+	if err := db.Model(&post).Update("status", models.PostStatusDeleted).Error; err != nil {
+		t.Fatalf("mark deleted: %v", err)
+	}
+	makeModerator(t, db, section.ID, modUser.ID, "moderator", map[string]bool{
+		"can_pin_post": true, "can_delete_post": true, "can_mute_user": true,
+	})
+
+	handler := NewWaterModerationHandler(db)
+	path := fmt.Sprintf("/api/water/sections/%s/posts/%d/restore", section.Slug, post.ID)
+	rec := execModAction(t, handler, http.MethodPost, path, `{"reason":"误删恢复"}`, modUser.ID, modUser.Role)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestModUserCannotRestoreDeletedPost(t *testing.T) {
+	db := newModTestDB(t)
+	section := modTestSection(t, db, "course_study")
+	user := newModTestUser(t, db, models.RoleUser)
+	author := newModTestUser(t, db, models.RoleUser)
+	post := modTestPost(t, db, author.ID, section)
+	if err := db.Model(&post).Update("status", models.PostStatusDeleted).Error; err != nil {
+		t.Fatalf("mark deleted: %v", err)
+	}
+
+	handler := NewWaterModerationHandler(db)
+	path := fmt.Sprintf("/api/water/sections/%s/posts/%d/restore", section.Slug, post.ID)
+	rec := execModAction(t, handler, http.MethodPost, path, `{"reason":"误删恢复"}`, user.ID, user.Role)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestModRestoreNormalPostReturnsBadRequest(t *testing.T) {
+	db := newModTestDB(t)
+	section := modTestSection(t, db, "course_study")
+	admin := newModTestUser(t, db, models.RoleAdmin)
+	author := newModTestUser(t, db, models.RoleUser)
+	post := modTestPost(t, db, author.ID, section)
+
+	handler := NewWaterModerationHandler(db)
+	path := fmt.Sprintf("/api/water/sections/%s/posts/%d/restore", section.Slug, post.ID)
+	rec := execModAction(t, handler, http.MethodPost, path, `{"reason":"误删恢复"}`, admin.ID, admin.Role)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestModRestoreRejectsOtherSectionPost(t *testing.T) {
+	db := newModTestDB(t)
+	courseSection := modTestSection(t, db, "course_study")
+	campusSection := modTestSection(t, db, "campus_life")
+	admin := newModTestUser(t, db, models.RoleAdmin)
+	author := newModTestUser(t, db, models.RoleUser)
+	post := modTestPost(t, db, author.ID, courseSection)
+	if err := db.Model(&post).Update("status", models.PostStatusDeleted).Error; err != nil {
+		t.Fatalf("mark deleted: %v", err)
+	}
+
+	handler := NewWaterModerationHandler(db)
+	path := fmt.Sprintf("/api/water/sections/%s/posts/%d/restore", campusSection.Slug, post.ID)
+	rec := execModAction(t, handler, http.MethodPost, path, `{"reason":"误删恢复"}`, admin.ID, admin.Role)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d body=%s", rec.Code, rec.Body.String())
 	}
 }
 

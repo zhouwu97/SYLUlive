@@ -100,6 +100,12 @@ func main() {
 
 		&models.WaterSectionModerator{},
 
+		&models.WaterSectionPin{},
+
+		&models.WaterSectionMute{},
+
+		&models.WaterModerationLog{},
+
 		&models.PostImage{},
 		&models.FeaturedApplication{},
 		&models.CollaborationApplication{},
@@ -276,6 +282,7 @@ func main() {
 
 	waterSectionHandler := handlers.NewWaterSectionHandler(db)
 	waterModeratorHandler := handlers.NewWaterModeratorHandler(db)
+	waterModerationHandler := handlers.NewWaterModerationHandler(db)
 
 	replyHandler := handlers.NewReplyHandler(db, cfg.JPushAppKey, cfg.JPushMasterSecret)
 
@@ -676,6 +683,19 @@ func main() {
 		adminWater.POST("", waterModeratorHandler.AssignModerator)
 		adminWater.PATCH("/:moderator_id", waterModeratorHandler.UpdateModerator)
 		adminWater.DELETE("/:moderator_id", waterModeratorHandler.RevokeModerator)
+	}
+
+	// 水帖版块内容管理接口（登录后，权限由 handler 内部判断）
+	waterMod := r.Group("/api/water/sections/:slug")
+	waterMod.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
+	{
+		waterMod.POST("/posts/:post_id/pin", waterModerationHandler.PinPost)
+		waterMod.DELETE("/posts/:post_id/pin", waterModerationHandler.UnpinPost)
+		waterMod.DELETE("/posts/:post_id/moderate", waterModerationHandler.DeletePost)
+		waterMod.POST("/users/:user_id/mute", waterModerationHandler.MuteUser)
+		waterMod.DELETE("/users/:user_id/mute", waterModerationHandler.UnmuteUser)
+		waterMod.GET("/mutes", waterModerationHandler.ListMutes)
+		waterMod.GET("/moderation/logs", waterModerationHandler.ListLogs)
 	}
 
 	r.POST("/api/collaboration-applications/:id/approve", middleware.AuthMiddleware(db, cfg.JWTSecret), postHandler.ApproveCollaborationApplication)

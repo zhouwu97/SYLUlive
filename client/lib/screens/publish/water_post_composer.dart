@@ -7,8 +7,10 @@ import 'package:flutter/services.dart';
 import '../../config/privileged_accounts.dart';
 import '../../config/water_post_taxonomy.dart';
 import '../../models/post.dart';
+import '../../models/water_section.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/post_provider.dart';
+import '../../providers/water_section_provider.dart';
 import 'widgets/publish_image_grid.dart';
 import 'widgets/publish_image_picker.dart';
 import 'widgets/water_post_bottom_bar.dart';
@@ -46,6 +48,7 @@ class _WaterPostComposerState extends State<WaterPostComposer>
   bool _isLoading = false;
   bool _titleNeedsAttention = false;
   String _selectedPostType = 'campus_life';
+  int? _selectedTagId;
   final List<XFile> _selectedImages = [];
   final List<PostImage> _existingImages = [];
 
@@ -96,6 +99,14 @@ class _WaterPostComposerState extends State<WaterPostComposer>
   WaterPostCategory get _selectedCategory =>
       waterCategoryOf(_selectedPostType) ?? waterCategoryOf('campus_life')!;
 
+  WaterSection get _selectedSection {
+    final provider = context.read<WaterSectionProvider>();
+    final fromProvider = provider.getBySlug(_selectedPostType);
+    if (fromProvider != null) return fromProvider;
+    final legacy = _selectedCategory;
+    return WaterSection.fromLegacyCategory(legacy);
+  }
+
   // ---------------------------------------------------------------------------
   // 生命周期
   // ---------------------------------------------------------------------------
@@ -120,6 +131,7 @@ class _WaterPostComposerState extends State<WaterPostComposer>
       _selectedPostType = isValidWaterPostCategory(post.postType)
           ? post.postType
           : 'campus_life';
+      _selectedTagId = post.waterTagId;
     } else {
       _selectedPostType = isValidWaterPostCategory(widget.initialPostType)
           ? widget.initialPostType!
@@ -127,6 +139,11 @@ class _WaterPostComposerState extends State<WaterPostComposer>
     }
     _titleController.addListener(_onTitleChanged);
     _contentController.addListener(_onContentChanged);
+    // 加载版块列表供标签选择
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final provider = context.read<WaterSectionProvider>();
+      if (provider.sections.isEmpty) provider.loadSections();
+    });
   }
 
   @override
@@ -247,6 +264,7 @@ class _WaterPostComposerState extends State<WaterPostComposer>
               content: content,
               title: title,
               postType: _selectedPostType,
+              waterTagId: _selectedTagId,
               price: 0,
               contact: '',
               fileIds: mergedFileIds,
@@ -256,6 +274,7 @@ class _WaterPostComposerState extends State<WaterPostComposer>
               content: content,
               title: title,
               postType: _selectedPostType,
+              waterTagId: _selectedTagId,
               price: null,
               contact: null,
               fileIds: mergedFileIds.isNotEmpty ? mergedFileIds : null,
@@ -288,6 +307,12 @@ class _WaterPostComposerState extends State<WaterPostComposer>
   // ---------------------------------------------------------------------------
 
   Future<void> _showCategorySheet() async {
+    final provider = context.read<WaterSectionProvider>();
+    final sections = provider.sections.isNotEmpty
+        ? provider.activeSections
+        : kWaterPostCategories
+            .map(WaterSection.fromLegacyCategory)
+            .toList();
     final selected = await showModalBottomSheet<String>(
       context: context,
       useSafeArea: true,
@@ -297,14 +322,14 @@ class _WaterPostComposerState extends State<WaterPostComposer>
         return ListView.separated(
           shrinkWrap: true,
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 18),
-          itemCount: kWaterPostCategories.length + 1,
+          itemCount: sections.length + 1,
           separatorBuilder: (_, __) => const SizedBox(height: 4),
           itemBuilder: (context, index) {
             if (index == 0) {
               return Padding(
                 padding: const EdgeInsets.only(bottom: 8),
                 child: Text(
-                  '选择分类',
+                  '选择版块',
                   style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.w700,
@@ -313,11 +338,15 @@ class _WaterPostComposerState extends State<WaterPostComposer>
                 ),
               );
             }
-            final category = kWaterPostCategories[index - 1];
-            final selected = category.value == _selectedPostType;
+            final sec = sections[index - 1];
+            final isSelected = sec.slug == _selectedPostType;
+            final color =
+                colorHexToColor(sec.colorHex, fallback: Colors.teal);
+            final icon =
+                iconKeyToIconData(sec.iconKey, fallbackSlug: sec.slug);
             return InkWell(
               borderRadius: BorderRadius.circular(10),
-              onTap: () => Navigator.of(context).pop(category.value),
+              onTap: () => Navigator.of(context).pop(sec.slug),
               child: Padding(
                 padding:
                     const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
@@ -327,14 +356,10 @@ class _WaterPostComposerState extends State<WaterPostComposer>
                       width: 30,
                       height: 30,
                       decoration: BoxDecoration(
-                        color: category.color.withValues(alpha: 0.12),
+                        color: color.withValues(alpha: 0.12),
                         shape: BoxShape.circle,
                       ),
-                      child: Icon(
-                        category.icon,
-                        size: 17,
-                        color: category.color,
-                      ),
+                      child: Icon(icon, size: 17, color: color),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
@@ -342,7 +367,7 @@ class _WaterPostComposerState extends State<WaterPostComposer>
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            category.label,
+                            sec.title,
                             style: TextStyle(
                               fontSize: 14,
                               fontWeight: FontWeight.w600,
@@ -353,7 +378,9 @@ class _WaterPostComposerState extends State<WaterPostComposer>
                           ),
                           const SizedBox(height: 3),
                           Text(
-                            category.hint,
+                            sec.subtitle.isNotEmpty
+                                ? sec.subtitle
+                                : sec.description,
                             style: TextStyle(
                               fontSize: 12,
                               color: isDark
@@ -364,7 +391,7 @@ class _WaterPostComposerState extends State<WaterPostComposer>
                         ],
                       ),
                     ),
-                    if (selected)
+                    if (isSelected)
                       Icon(
                         Icons.check_rounded,
                         size: 20,
@@ -380,51 +407,136 @@ class _WaterPostComposerState extends State<WaterPostComposer>
     );
 
     if (selected != null && mounted) {
-      setState(() => _selectedPostType = selected);
+      // 切换版块时清空标签
+      setState(() {
+        _selectedPostType = selected;
+        _selectedTagId = null;
+      });
     }
   }
 
   Widget _buildCategorySelector(bool isDark) {
-    final category = _selectedCategory;
+    final section = _selectedSection;
+    final color = section.colorHex.isNotEmpty
+        ? colorHexToColor(section.colorHex)
+        : _teal;
+    final icon =
+        iconKeyToIconData(section.iconKey, fallbackSlug: section.slug);
+    final tags = section.enabledTags;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
       child: InkWell(
         borderRadius: BorderRadius.circular(14),
         onTap: _showCategorySheet,
         child: Container(
-          height: 56,
-          padding: const EdgeInsets.symmetric(horizontal: 14),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           decoration: BoxDecoration(
-            color: isDark ? Colors.white.withValues(alpha: 0.06) : _softTeal,
+            color:
+                isDark ? Colors.white.withValues(alpha: 0.06) : _softTeal,
             borderRadius: BorderRadius.circular(14),
           ),
-          child: Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                '分类',
-                style: TextStyle(
-                  fontSize: 17,
-                  fontWeight: FontWeight.w700,
-                  color: isDark ? Colors.white : _teal,
+              Row(
+                children: [
+                  Text(
+                    '版块',
+                    style: TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w700,
+                      color: isDark ? Colors.white : _teal,
+                    ),
+                  ),
+                  const Spacer(),
+                  Icon(icon, size: 22, color: color),
+                  const SizedBox(width: 8),
+                  Text(
+                    section.title,
+                    style: TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w700,
+                      color:
+                          isDark ? Colors.white : const Color(0xFF20232A),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  const Icon(
+                    Icons.chevron_right_rounded,
+                    size: 22,
+                    color: _teal,
+                  ),
+                ],
+              ),
+              if (tags.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: tags.map((tag) {
+                    final selected = _selectedTagId == tag.id;
+                    return GestureDetector(
+                      onTap: () {
+                        setState(() => _selectedTagId =
+                            selected ? null : tag.id);
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: selected
+                              ? color.withValues(alpha: 0.2)
+                              : color.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(999),
+                          border: selected
+                              ? Border.all(
+                                  color: color.withValues(alpha: 0.4))
+                              : null,
+                        ),
+                        child: Text(
+                          tag.name,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight:
+                                selected ? FontWeight.w800 : FontWeight.w500,
+                            color: selected
+                                ? color
+                                : (isDark
+                                    ? Colors.white60
+                                    : const Color(0xFF667085)),
+                          ),
+                        ),
+                      ),
+                    );
+                  }).toList(),
                 ),
-              ),
-              const Spacer(),
-              Icon(category.icon, size: 22, color: _teal),
-              const SizedBox(width: 8),
-              Text(
-                category.label,
-                style: TextStyle(
-                  fontSize: 17,
-                  fontWeight: FontWeight.w700,
-                  color: isDark ? Colors.white : const Color(0xFF20232A),
+              ],
+              if (section.noticeText.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.info_outline_rounded,
+                        size: 14,
+                        color: section.isSensitive
+                            ? Colors.orange.shade600
+                            : color),
+                    const SizedBox(width: 5),
+                    Expanded(
+                      child: Text(
+                        section.noticeText,
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          height: 1.3,
+                          color: isDark
+                              ? Colors.white60
+                              : const Color(0xFF7B818C),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-              const SizedBox(width: 6),
-              const Icon(
-                Icons.chevron_right_rounded,
-                size: 22,
-                color: _teal,
-              ),
+              ],
             ],
           ),
         ),

@@ -13,7 +13,7 @@ import 'erke_score_screen.dart';
 import 'physical_test_screen.dart';
 import 'lottery_screen.dart';
 import 'dart:ui';
-import 'yuketang_class_screen.dart';
+
 import 'exam_schedule_screen.dart';
 
 class ToolboxScreen extends StatefulWidget {
@@ -158,20 +158,7 @@ class _ToolboxScreenState extends State<ToolboxScreen> {
                                 ),
                                 useCustomBackground: useCustomBackground,
                               ),
-                              _buildToolCard(
-                                context,
-                                icon: Icons.school,
-                                color: const Color(0xFF5B8DEF),
-                                title: '雨课堂',
-                                subtitle: '测验与课件',
-                                onTap: () => Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => const YuketangClassScreen(),
-                                  ),
-                                ),
-                                useCustomBackground: useCustomBackground,
-                              ),
+
                               _buildToolCard(
                                 context,
                                 icon: Icons.fitness_center,

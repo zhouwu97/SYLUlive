@@ -7,6 +7,7 @@ import '../models/water_moderation.dart';
 import '../models/water_section.dart';
 import '../providers/water_moderator_provider.dart';
 import '../providers/water_moderation_provider.dart';
+import '../providers/water_section_provider.dart';
 
 /// 版块管理页。
 /// 按当前用户权限展示任免、禁言列表和操作日志。
@@ -18,6 +19,16 @@ class WaterSectionManageScreen extends StatefulWidget {
   @override
   State<WaterSectionManageScreen> createState() =>
       _WaterSectionManageScreenState();
+}
+
+class _ManageTabItem {
+  final String label;
+  final Widget child;
+
+  const _ManageTabItem({
+    required this.label,
+    required this.child,
+  });
 }
 
 class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
@@ -52,7 +63,10 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
   }
 
   Future<void> _refreshAll() async {
+    final sectionProvider = context.read<WaterSectionProvider>();
     final moderatorProvider = context.read<WaterModeratorProvider>();
+    await sectionProvider.refreshSection(widget.section.slug);
+    if (!mounted) return;
     await moderatorProvider.loadMyPermission(
       widget.section.slug,
       forceRefresh: true,
@@ -76,6 +90,10 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final section = context.watch<WaterSectionProvider>().getBySlug(
+              widget.section.slug,
+            ) ??
+        widget.section;
     final background =
         isDark ? const Color(0xFF0D1117) : const Color(0xFFF7F8FA);
 
@@ -86,11 +104,11 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
         elevation: 0,
         surfaceTintColor: Colors.transparent,
         title: Text(
-          '管理 · ${widget.section.title}',
+          '管理 · ${section.title}',
           style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
         ),
       ),
-      body: _buildContent(isDark),
+      body: _buildContent(isDark, section),
     );
   }
 
@@ -130,7 +148,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
     );
   }
 
-  Widget _buildContent(bool isDark) {
+  Widget _buildContent(bool isDark, WaterSection section) {
     final perm = context
         .watch<WaterModeratorProvider>()
         .permissionOf(widget.section.slug);
@@ -138,27 +156,60 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
       return _buildErrorView(isDark);
     }
 
-    return RefreshIndicator(
-      onRefresh: () async => _refreshAll(),
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 40),
+    final tabs = <_ManageTabItem>[
+      if (perm.canEditSection || perm.isGlobalAdmin)
+        _ManageTabItem(
+          label: '展示',
+          child: _buildDisplaySettings(section, isDark),
+        ),
+      if (perm.canManageTags || perm.isGlobalAdmin)
+        _ManageTabItem(
+          label: '标签',
+          child: _buildTagManagement(section, isDark),
+        ),
+      if (perm.canManageModerators)
+        _ManageTabItem(
+          label: '版主',
+          child: _buildModeratorManagement(isDark),
+        ),
+      if (perm.canMuteUser)
+        _ManageTabItem(
+          label: '禁言',
+          child: _buildMutesSection(isDark),
+        ),
+      _ManageTabItem(
+        label: '日志',
+        child: _buildLogsSection(isDark),
+      ),
+    ];
+
+    return DefaultTabController(
+      length: tabs.length,
+      child: Column(
         children: [
-          _buildSectionInfoCard(isDark),
-          if (perm.canManageModerators) ...[
-            const SizedBox(height: 16),
-            _buildModeratorListHeader(isDark),
-            const SizedBox(height: 8),
-            if (_moderators.isEmpty)
-              _buildEmptyModerators(isDark)
-            else
-              ..._moderators.map((m) => _buildModeratorCard(m, isDark)),
-          ],
-          if (perm.canMuteUser) ...[
-            const SizedBox(height: 24),
-            _buildMutesSection(isDark),
-          ],
-          const SizedBox(height: 24),
-          _buildLogsSection(isDark),
+          Material(
+            color: isDark ? const Color(0xFF0D1117) : Colors.white,
+            child: TabBar(
+              isScrollable: true,
+              tabAlignment: TabAlignment.start,
+              tabs: tabs.map((tab) => Tab(text: tab.label)).toList(),
+            ),
+          ),
+          Expanded(
+            child: TabBarView(
+              children: tabs
+                  .map(
+                    (tab) => RefreshIndicator(
+                      onRefresh: () async => _refreshAll(),
+                      child: ListView(
+                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 40),
+                        children: [tab.child],
+                      ),
+                    ),
+                  )
+                  .toList(),
+            ),
+          ),
         ],
       ),
     );
@@ -166,9 +217,9 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
 
   // ── 版块信息卡 ──
 
-  Widget _buildSectionInfoCard(bool isDark) {
-    final color = widget.section.colorHex.isNotEmpty
-        ? colorHexToColor(widget.section.colorHex)
+  Widget _buildSectionInfoCard(WaterSection section, bool isDark) {
+    final color = section.colorHex.isNotEmpty
+        ? colorHexToColor(section.colorHex)
         : Theme.of(context).colorScheme.primary;
     return Container(
       width: double.infinity,
@@ -188,15 +239,14 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
           Row(
             children: [
               Icon(
-                iconKeyToIconData(widget.section.iconKey,
-                    fallbackSlug: widget.section.slug),
+                iconKeyToIconData(section.iconKey, fallbackSlug: section.slug),
                 size: 22,
                 color: color,
               ),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  widget.section.title,
+                  section.title,
                   style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w800,
@@ -207,12 +257,315 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
           ),
           const SizedBox(height: 10),
           Text(
-            widget.section.subtitle.isNotEmpty
-                ? widget.section.subtitle
-                : widget.section.description,
+            section.subtitle.isNotEmpty
+                ? section.subtitle
+                : section.description,
             style: TextStyle(
                 fontSize: 12.5,
                 color: isDark ? Colors.white54 : const Color(0xFF7B818C)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDisplaySettings(WaterSection section, bool isDark) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSectionInfoCard(section, isDark),
+        const SizedBox(height: 12),
+        _buildInfoRow(isDark, '说明', section.description),
+        _buildInfoRow(isDark, '发帖按钮', section.publishActionText),
+        _buildInfoRow(isDark, '空状态标题', section.emptyTitle),
+        _buildInfoRow(isDark, '空状态描述', section.emptyDescription),
+        _buildInfoRow(isDark, '发布提醒', section.noticeText),
+        _buildInfoRow(isDark, '默认排序', _sortLabel(section.defaultSort)),
+        if (section.starterQuestions.isNotEmpty)
+          _buildInfoRow(isDark, '引导问题', section.starterQuestions.join(' / ')),
+        const SizedBox(height: 16),
+        SizedBox(
+          width: double.infinity,
+          height: 46,
+          child: FilledButton.icon(
+            onPressed: () => _showDisplaySettingsSheet(section),
+            icon: const Icon(Icons.tune_outlined, size: 18),
+            label: const Text('编辑展示设置'),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildInfoRow(bool isDark, String label, String value) {
+    if (value.trim().isEmpty) return const SizedBox.shrink();
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: _cardDecoration(isDark),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: isDark ? Colors.white38 : const Color(0xFF9CA3AF),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 13,
+              color: isDark ? Colors.white70 : const Color(0xFF374151),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTagManagement(WaterSection section, bool isDark) {
+    final tags = [...section.tags]
+      ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text(
+              '标签管理',
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w800,
+                color: isDark ? Colors.white : const Color(0xFF20232A),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              '${tags.length}',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: isDark ? Colors.white38 : const Color(0xFF9CA3AF),
+              ),
+            ),
+            const Spacer(),
+            TextButton.icon(
+              onPressed: () => _showTagFormSheet(section),
+              icon: const Icon(Icons.add_circle_outline, size: 18),
+              label: const Text('新增标签'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        if (tags.isEmpty)
+          _buildEmptyList(isDark, '暂无标签')
+        else
+          ...tags.map((tag) => _buildTagCard(section, tag, isDark)),
+      ],
+    );
+  }
+
+  Widget _buildTagCard(WaterSection section, WaterSectionTag tag, bool isDark) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: _cardDecoration(isDark),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  tag.name,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                    color: isDark ? Colors.white : const Color(0xFF20232A),
+                  ),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: tag.isEnabled
+                      ? const Color(0xFF16A34A).withValues(alpha: 0.12)
+                      : const Color(0xFF9CA3AF).withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  tag.isEnabled ? '启用' : '停用',
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w700,
+                    color: tag.isEnabled
+                        ? const Color(0xFF16A34A)
+                        : const Color(0xFF6B7280),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '${tag.slug} · 排序 ${tag.sortOrder}${tag.isDefault ? ' · 默认' : ''}',
+            style: TextStyle(
+              fontSize: 11,
+              color: isDark ? Colors.white38 : const Color(0xFF9CA3AF),
+            ),
+          ),
+          if (tag.description.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              tag.description,
+              style: TextStyle(
+                fontSize: 12,
+                color: isDark ? Colors.white54 : const Color(0xFF7B818C),
+              ),
+            ),
+          ],
+          const SizedBox(height: 10),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              OutlinedButton.icon(
+                onPressed: () => _showTagFormSheet(section, existing: tag),
+                icon: const Icon(Icons.edit_outlined, size: 16),
+                label: const Text('编辑', style: TextStyle(fontSize: 12)),
+              ),
+              const SizedBox(width: 8),
+              TextButton.icon(
+                onPressed: () => _confirmTagStatus(section, tag),
+                icon: Icon(
+                  tag.isEnabled
+                      ? Icons.visibility_off_outlined
+                      : Icons.visibility_outlined,
+                  size: 16,
+                ),
+                label: Text(
+                  tag.isEnabled ? '停用' : '启用',
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildModeratorManagement(bool isDark) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildModeratorListHeader(isDark),
+        const SizedBox(height: 8),
+        if (_moderators.isEmpty)
+          _buildEmptyModerators(isDark)
+        else
+          ..._moderators.map((m) => _buildModeratorCard(m, isDark)),
+      ],
+    );
+  }
+
+  String _sortLabel(String value) {
+    switch (value) {
+      case 'all':
+      case 'recommend':
+        return '默认排序';
+      case 'time':
+      case 'latest':
+        return '最新发布';
+      case 'featured':
+        return '精华内容';
+      case 'following':
+        return '关注的人';
+      default:
+        return value;
+    }
+  }
+
+  void _showDisplaySettingsSheet(WaterSection section) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: isDark ? const Color(0xFF171B24) : Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (_) => _SectionDisplayFormSheet(section: section),
+    );
+  }
+
+  void _showTagFormSheet(WaterSection section, {WaterSectionTag? existing}) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: isDark ? const Color(0xFF171B24) : Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (_) => _TagFormSheet(
+        sectionSlug: section.slug,
+        existing: existing,
+      ),
+    );
+  }
+
+  void _confirmTagStatus(WaterSection section, WaterSectionTag tag) {
+    final willEnable = !tag.isEnabled;
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(willEnable ? '启用标签' : '停用标签'),
+        content: Text(
+          willEnable
+              ? '确认重新启用「${tag.name}」标签吗？'
+              : '停用后旧帖仍保留该标签，但新发帖不能再选择它。确认停用「${tag.name}」吗？',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              final provider = context.read<WaterSectionProvider>();
+              final ok = willEnable
+                  ? await provider.enableTag(
+                      sectionSlug: section.slug,
+                      tagId: tag.id,
+                      reason: '启用标签',
+                    )
+                  : await provider.disableTag(
+                      sectionSlug: section.slug,
+                      tagId: tag.id,
+                      reason: '停用标签',
+                    );
+              if (!mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    ok
+                        ? (willEnable ? '标签已启用' : '标签已停用')
+                        : provider.error ?? '操作失败',
+                  ),
+                ),
+              );
+              if (ok) _loadLogs();
+            },
+            child: Text(willEnable ? '确认启用' : '确认停用'),
           ),
         ],
       ),
@@ -767,7 +1120,465 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
 
 // ── 版主表单 BottomSheet ──
 
-// ── 版主表单 BottomSheet ──
+class _SectionDisplayFormSheet extends StatefulWidget {
+  final WaterSection section;
+
+  const _SectionDisplayFormSheet({required this.section});
+
+  @override
+  State<_SectionDisplayFormSheet> createState() =>
+      _SectionDisplayFormSheetState();
+}
+
+class _SectionDisplayFormSheetState extends State<_SectionDisplayFormSheet> {
+  late final TextEditingController _titleController;
+  late final TextEditingController _subtitleController;
+  late final TextEditingController _descriptionController;
+  late final TextEditingController _iconKeyController;
+  late final TextEditingController _colorHexController;
+  late final TextEditingController _publishActionController;
+  late final TextEditingController _emptyTitleController;
+  late final TextEditingController _emptyDescriptionController;
+  late final TextEditingController _noticeTextController;
+  late final TextEditingController _starterQuestionsController;
+  late final TextEditingController _reasonController;
+  late String _defaultSort;
+  bool _isSubmitting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final section = widget.section;
+    _titleController = TextEditingController(text: section.title);
+    _subtitleController = TextEditingController(text: section.subtitle);
+    _descriptionController = TextEditingController(text: section.description);
+    _iconKeyController = TextEditingController(text: section.iconKey);
+    _colorHexController = TextEditingController(text: section.colorHex);
+    _publishActionController =
+        TextEditingController(text: section.publishActionText);
+    _emptyTitleController = TextEditingController(text: section.emptyTitle);
+    _emptyDescriptionController =
+        TextEditingController(text: section.emptyDescription);
+    _noticeTextController = TextEditingController(text: section.noticeText);
+    _starterQuestionsController =
+        TextEditingController(text: section.starterQuestions.join('\n'));
+    _reasonController = TextEditingController(text: '编辑版块展示');
+    _defaultSort = _normalizeSort(section.defaultSort);
+  }
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    _subtitleController.dispose();
+    _descriptionController.dispose();
+    _iconKeyController.dispose();
+    _colorHexController.dispose();
+    _publishActionController.dispose();
+    _emptyTitleController.dispose();
+    _emptyDescriptionController.dispose();
+    _noticeTextController.dispose();
+    _starterQuestionsController.dispose();
+    _reasonController.dispose();
+    super.dispose();
+  }
+
+  String _normalizeSort(String sort) {
+    switch (sort) {
+      case 'recommend':
+        return 'all';
+      case 'latest':
+        return 'time';
+      case 'all':
+      case 'time':
+      case 'featured':
+      case 'following':
+        return sort;
+      default:
+        return 'all';
+    }
+  }
+
+  Future<void> _submit() async {
+    final title = _titleController.text.trim();
+    final colorHex = _colorHexController.text.trim();
+    final questions = _starterQuestionsController.text
+        .split('\n')
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
+    if (title.isEmpty) {
+      _showSnack('标题不能为空');
+      return;
+    }
+    if (colorHex.isNotEmpty &&
+        !RegExp(r'^#[0-9A-Fa-f]{6}$').hasMatch(colorHex)) {
+      _showSnack('颜色必须为空或符合 #RRGGBB');
+      return;
+    }
+    if (questions.length > 10) {
+      _showSnack('引导问题最多 10 条');
+      return;
+    }
+    setState(() => _isSubmitting = true);
+    final provider = context.read<WaterSectionProvider>();
+    final ok = await provider.updateSectionDisplay(
+      slug: widget.section.slug,
+      fields: {
+        'title': title,
+        'subtitle': _subtitleController.text.trim(),
+        'description': _descriptionController.text.trim(),
+        'icon_key': _iconKeyController.text.trim(),
+        'color_hex': colorHex,
+        'publish_action_text': _publishActionController.text.trim(),
+        'empty_title': _emptyTitleController.text.trim(),
+        'empty_description': _emptyDescriptionController.text.trim(),
+        'notice_text': _noticeTextController.text.trim(),
+        'starter_questions': questions,
+        'default_sort': _defaultSort,
+        'reason': _reasonController.text.trim().isEmpty
+            ? '编辑版块展示'
+            : _reasonController.text.trim(),
+      },
+    );
+    if (!mounted) return;
+    setState(() => _isSubmitting = false);
+    if (ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('已保存版块展示设置')),
+      );
+      Navigator.pop(context);
+    } else {
+      _showSnack(provider.error ?? '保存失败');
+    }
+  }
+
+  void _showSnack(String message) {
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        20,
+        20,
+        20,
+        20 + MediaQuery.of(context).viewInsets.bottom,
+      ),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildSheetHandle(isDark),
+            const SizedBox(height: 16),
+            _buildSheetTitle('展示设置', isDark),
+            const SizedBox(height: 16),
+            _buildTextField(_titleController, '标题', isDark),
+            _buildTextField(_subtitleController, '副标题', isDark),
+            _buildTextField(_descriptionController, '说明', isDark, maxLines: 3),
+            Row(
+              children: [
+                Expanded(
+                    child:
+                        _buildTextField(_iconKeyController, '图标 Key', isDark)),
+                const SizedBox(width: 10),
+                Expanded(
+                    child: _buildTextField(
+                        _colorHexController, '颜色 #RRGGBB', isDark)),
+              ],
+            ),
+            _buildTextField(_publishActionController, '发帖按钮文案', isDark),
+            _buildTextField(_emptyTitleController, '空状态标题', isDark),
+            _buildTextField(_emptyDescriptionController, '空状态描述', isDark,
+                maxLines: 2),
+            _buildTextField(_noticeTextController, '发布提醒', isDark, maxLines: 3),
+            _buildTextField(_starterQuestionsController, '引导问题（每行一条）', isDark,
+                maxLines: 5),
+            DropdownButtonFormField<String>(
+              initialValue: _defaultSort,
+              decoration: _inputDecoration('默认排序', isDark),
+              items: const [
+                DropdownMenuItem(value: 'all', child: Text('默认排序')),
+                DropdownMenuItem(value: 'time', child: Text('最新发布')),
+                DropdownMenuItem(value: 'featured', child: Text('精华内容')),
+                DropdownMenuItem(value: 'following', child: Text('关注的人')),
+              ],
+              onChanged: (value) {
+                if (value != null) setState(() => _defaultSort = value);
+              },
+            ),
+            const SizedBox(height: 12),
+            _buildTextField(_reasonController, '保存原因', isDark),
+            const SizedBox(height: 18),
+            _buildSubmitButton(
+              label: '保存展示设置',
+              isSubmitting: _isSubmitting,
+              onPressed: _submit,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TagFormSheet extends StatefulWidget {
+  final String sectionSlug;
+  final WaterSectionTag? existing;
+
+  const _TagFormSheet({
+    required this.sectionSlug,
+    this.existing,
+  });
+
+  @override
+  State<_TagFormSheet> createState() => _TagFormSheetState();
+}
+
+class _TagFormSheetState extends State<_TagFormSheet> {
+  late final TextEditingController _slugController;
+  late final TextEditingController _nameController;
+  late final TextEditingController _descriptionController;
+  late final TextEditingController _sortOrderController;
+  late final TextEditingController _reasonController;
+  bool _isDefault = false;
+  bool _isSubmitting = false;
+
+  bool get _isEditing => widget.existing != null;
+
+  @override
+  void initState() {
+    super.initState();
+    final tag = widget.existing;
+    _slugController = TextEditingController(text: tag?.slug ?? '');
+    _nameController = TextEditingController(text: tag?.name ?? '');
+    _descriptionController =
+        TextEditingController(text: tag?.description ?? '');
+    _sortOrderController =
+        TextEditingController(text: (tag?.sortOrder ?? 0).toString());
+    _reasonController =
+        TextEditingController(text: _isEditing ? '修改标签' : '新增标签');
+    _isDefault = tag?.isDefault ?? false;
+  }
+
+  @override
+  void dispose() {
+    _slugController.dispose();
+    _nameController.dispose();
+    _descriptionController.dispose();
+    _sortOrderController.dispose();
+    _reasonController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    final slug = _slugController.text.trim();
+    final name = _nameController.text.trim();
+    final sortOrder = int.tryParse(_sortOrderController.text.trim()) ?? 0;
+    if (!_isEditing && !RegExp(r'^[a-z0-9_-]{1,64}$').hasMatch(slug)) {
+      _showSnack('标签标识只允许小写英文、数字、下划线、短横线');
+      return;
+    }
+    if (name.isEmpty) {
+      _showSnack('标签名称不能为空');
+      return;
+    }
+    if (name.runes.length > 40) {
+      _showSnack('标签名称最多 40 字');
+      return;
+    }
+    if (_descriptionController.text.trim().runes.length > 200) {
+      _showSnack('标签描述最多 200 字');
+      return;
+    }
+
+    setState(() => _isSubmitting = true);
+    final provider = context.read<WaterSectionProvider>();
+    final reason = _reasonController.text.trim();
+    final ok = _isEditing
+        ? await provider.updateTag(
+            sectionSlug: widget.sectionSlug,
+            tagId: widget.existing!.id,
+            fields: {
+              'name': name,
+              'description': _descriptionController.text.trim(),
+              'sort_order': sortOrder,
+              'is_default': _isDefault,
+              if (reason.isNotEmpty) 'reason': reason,
+            },
+          )
+        : await provider.createTag(
+            sectionSlug: widget.sectionSlug,
+            fields: {
+              'slug': slug,
+              'name': name,
+              'description': _descriptionController.text.trim(),
+              'sort_order': sortOrder,
+              'is_default': _isDefault,
+              if (reason.isNotEmpty) 'reason': reason,
+            },
+          );
+    if (!mounted) return;
+    setState(() => _isSubmitting = false);
+    if (ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(_isEditing ? '标签已保存' : '标签已新增')),
+      );
+      Navigator.pop(context);
+    } else {
+      _showSnack(provider.error ?? '操作失败');
+    }
+  }
+
+  void _showSnack(String message) {
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        20,
+        20,
+        20,
+        20 + MediaQuery.of(context).viewInsets.bottom,
+      ),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildSheetHandle(isDark),
+            const SizedBox(height: 16),
+            _buildSheetTitle(_isEditing ? '编辑标签' : '新增标签', isDark),
+            const SizedBox(height: 16),
+            _buildTextField(_slugController, '标签标识', isDark,
+                enabled: !_isEditing),
+            _buildTextField(_nameController, '标签名称', isDark),
+            _buildTextField(_descriptionController, '标签描述', isDark,
+                maxLines: 3),
+            _buildTextField(_sortOrderController, '排序值', isDark,
+                keyboardType: TextInputType.number),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text(
+                '默认标签',
+                style: TextStyle(
+                  fontSize: 13.5,
+                  color: isDark ? Colors.white : const Color(0xFF20232A),
+                ),
+              ),
+              value: _isDefault,
+              onChanged: (value) => setState(() => _isDefault = value),
+            ),
+            _buildTextField(_reasonController, '操作原因', isDark),
+            const SizedBox(height: 18),
+            _buildSubmitButton(
+              label: _isEditing ? '保存标签' : '新增标签',
+              isSubmitting: _isSubmitting,
+              onPressed: _submit,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+Widget _buildSheetHandle(bool isDark) {
+  return Center(
+    child: Container(
+      width: 36,
+      height: 4,
+      decoration: BoxDecoration(
+        color: isDark
+            ? Colors.white.withValues(alpha: 0.18)
+            : const Color(0xFFE5E7EB),
+        borderRadius: BorderRadius.circular(999),
+      ),
+    ),
+  );
+}
+
+Widget _buildSheetTitle(String title, bool isDark) {
+  return Text(
+    title,
+    style: TextStyle(
+      fontSize: 18,
+      fontWeight: FontWeight.w800,
+      color: isDark ? Colors.white : const Color(0xFF20232A),
+    ),
+  );
+}
+
+InputDecoration _inputDecoration(String label, bool isDark) {
+  return InputDecoration(
+    labelText: label,
+    border: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(12),
+    ),
+    filled: true,
+    fillColor:
+        isDark ? Colors.white.withValues(alpha: 0.06) : const Color(0xFFF9FAFB),
+  );
+}
+
+Widget _buildTextField(
+  TextEditingController controller,
+  String label,
+  bool isDark, {
+  int maxLines = 1,
+  bool enabled = true,
+  TextInputType? keyboardType,
+}) {
+  return Padding(
+    padding: const EdgeInsets.only(bottom: 12),
+    child: TextField(
+      controller: controller,
+      maxLines: maxLines,
+      enabled: enabled,
+      keyboardType: keyboardType,
+      decoration: _inputDecoration(label, isDark),
+    ),
+  );
+}
+
+Widget _buildSubmitButton({
+  required String label,
+  required bool isSubmitting,
+  required VoidCallback onPressed,
+}) {
+  return SizedBox(
+    width: double.infinity,
+    height: 48,
+    child: FilledButton(
+      onPressed: isSubmitting ? null : onPressed,
+      style: FilledButton.styleFrom(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+        ),
+      ),
+      child: isSubmitting
+          ? const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: Colors.white,
+              ),
+            )
+          : Text(
+              label,
+              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+            ),
+    ),
+  );
+}
 
 class _ModeratorFormSheet extends StatefulWidget {
   final String sectionSlug;

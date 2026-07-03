@@ -692,6 +692,7 @@ func main() {
 	waterMod := r.Group("/api/water/sections/:slug")
 	waterMod.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
 	{
+		waterMod.PATCH("", waterSectionHandler.Update)
 		waterMod.POST("/posts/:post_id/pin", waterModerationHandler.PinPost)
 		waterMod.DELETE("/posts/:post_id/pin", waterModerationHandler.UnpinPost)
 		waterMod.DELETE("/posts/:post_id/moderate", waterModerationHandler.DeletePost)

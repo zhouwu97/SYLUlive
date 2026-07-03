@@ -317,8 +317,8 @@ class HomeServiceDrawer extends StatelessWidget {
                         const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                     decoration: BoxDecoration(
                       color: isDark
-                          ? Colors.white.withValues(alpha: 0.08)
-                          : const Color(0xFFEFF6FF),
+                          ? Colors.white.withValues(alpha: 0.06)
+                          : const Color(0xFFF4F6F8),
                       borderRadius: BorderRadius.circular(999),
                     ),
                     child: Text(
@@ -327,7 +327,7 @@ class HomeServiceDrawer extends StatelessWidget {
                         fontSize: 10.5,
                         fontWeight: FontWeight.w800,
                         color:
-                            isDark ? Colors.white70 : const Color(0xFF2563EB),
+                            isDark ? Colors.white70 : const Color(0xFF6B7280),
                       ),
                     ),
                   ),
@@ -387,7 +387,8 @@ class HomeServiceDrawer extends StatelessWidget {
                       height: 20,
                       child: CircularProgressIndicator(
                         strokeWidth: 2,
-                        color: isDark ? Colors.white54 : const Color(0xFF9CA3AF),
+                        color:
+                            isDark ? Colors.white54 : const Color(0xFF9CA3AF),
                       ),
                     ),
                   ),
@@ -612,15 +613,18 @@ class _WaterCategoryMiniItem extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(14),
         child: Container(
           height: 74,
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
-            color: color.withValues(alpha: isDark ? 0.13 : 0.07),
-            borderRadius: BorderRadius.circular(16),
+            color:
+                isDark ? Colors.white.withValues(alpha: 0.045) : Colors.white,
+            borderRadius: BorderRadius.circular(14),
             border: Border.all(
-              color: color.withValues(alpha: isDark ? 0.18 : 0.10),
+              color: isDark
+                  ? Colors.white.withValues(alpha: 0.07)
+                  : const Color(0xFFEDEFF3),
             ),
           ),
           child: Row(

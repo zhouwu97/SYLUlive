@@ -68,6 +68,7 @@ class Post {
   final String postType;
   final double price;
   final String contact;
+  final int? waterTagId;
   final String status;
   final int viewCount;
   final int replyCount;
@@ -97,6 +98,7 @@ class Post {
     this.postType = '',
     this.price = 0,
     this.contact = '',
+    this.waterTagId,
     this.status = 'normal',
     this.viewCount = 0,
     this.replyCount = 0,
@@ -128,6 +130,9 @@ class Post {
       postType: json['post_type'] ?? '',
       price: (json['price'] ?? 0).toDouble(),
       contact: json['contact'] ?? '',
+      waterTagId: json['water_tag_id'] != null
+          ? (json['water_tag_id'] as num).toInt()
+          : null,
       status: json['status'] ?? 'normal',
       viewCount: json['view_count'] ?? 0,
       replyCount: json['reply_count'] ?? 0,
@@ -170,6 +175,7 @@ class Post {
     String? postType,
     double? price,
     String? contact,
+    int? waterTagId,
     String? status,
     int? viewCount,
     int? replyCount,
@@ -201,6 +207,7 @@ class Post {
       postType: postType ?? this.postType,
       price: price ?? this.price,
       contact: contact ?? this.contact,
+      waterTagId: waterTagId ?? this.waterTagId,
       status: status ?? this.status,
       viewCount: viewCount ?? this.viewCount,
       replyCount: replyCount ?? this.replyCount,

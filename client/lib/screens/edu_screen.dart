@@ -18,6 +18,7 @@ class EduScreen extends StatefulWidget {
 class _EduScreenState extends State<EduScreen> {
   final _studentIdController = TextEditingController();
   final _passwordController = TextEditingController();
+  static const Duration _courseFetchTimeout = Duration(seconds: 25);
 
   @override
   void initState() {
@@ -56,10 +57,16 @@ class _EduScreenState extends State<EduScreen> {
           }
 
           return ListView(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 24),
             children: [
+              // 状态信息卡
               Card(
-                margin: const EdgeInsets.all(16),
+                elevation: 0,
                 color: isDark ? Colors.grey[850] : Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  side: BorderSide(color: isDark ? Colors.transparent : Colors.grey.withValues(alpha: 0.2)),
+                ),
                 child: Padding(
                   padding: const EdgeInsets.all(16),
                   child: Column(
@@ -68,112 +75,210 @@ class _EduScreenState extends State<EduScreen> {
                       Row(
                         children: [
                           Icon(
-                            eduProvider.isBound
-                                ? Icons.check_circle
-                                : Icons.warning,
-                            color: eduProvider.isBound
-                                ? Colors.green
-                                : Colors.orange,
-                            size: 32,
+                            eduProvider.isBound ? Icons.check_circle : Icons.warning,
+                            color: eduProvider.isBound ? Colors.green : Colors.orange,
+                            size: 36,
                           ),
                           const SizedBox(width: 12),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                eduProvider.isBound ? '已绑定教务账号' : '未绑定教务账号',
-                                style: const TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              if (eduProvider.isBound)
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
                                 Text(
-                                  '学号: ${eduProvider.studentId}',
-                                  style: TextStyle(color: Colors.grey[600]),
+                                  eduProvider.isBound ? '已绑定教务账号' : '未绑定教务账号',
+                                  style: const TextStyle(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                 ),
-                            ],
+                                if (eduProvider.isBound)
+                                  Text(
+                                    '学号: ${eduProvider.studentId}',
+                                    style: TextStyle(
+                                      fontSize: 15,
+                                      color: isDark ? Colors.grey[400] : Colors.grey[600],
+                                    ),
+                                  ),
+                              ],
+                            ),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 16),
-                      if (eduProvider.isBound)
-                        Text(
-                          '年级: ${eduProvider.grade.isNotEmpty ? eduProvider.grade : "未知"} | '
-                          '学院: ${eduProvider.college.isNotEmpty ? eduProvider.college : "未知"} | '
-                          '专业: ${eduProvider.major.isNotEmpty ? eduProvider.major : "未知"}',
-                          style: TextStyle(color: Colors.grey[600]),
-                        ),
-                      const SizedBox(height: 16),
                       if (eduProvider.isBound) ...[
-                        // Main actions — Wrap to avoid overflow
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: [
-                            OutlinedButton.icon(
-                              onPressed: () =>
-                                  _showCourseDialog(context, eduProvider),
-                              icon: const Icon(Icons.schedule),
-                              label: const Text('课表'),
-                            ),
-                            OutlinedButton.icon(
-                              onPressed: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => const EduGradeScreen(),
-                                  ),
-                                );
-                              },
-                              icon: const Icon(Icons.grade),
-                              label: const Text('成绩'),
-                            ),
-                            OutlinedButton.icon(
-                              onPressed: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => const EvaluationScreen(),
-                                  ),
-                                );
-                              },
-                              icon: const Icon(Icons.rate_review_outlined),
-                              label: const Text('教学评价'),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        // Unbind as a low-profile text action
-                        TextButton.icon(
-                          onPressed: () =>
-                              _showUnbindDialog(context, eduProvider),
-                          icon: const Icon(Icons.link_off, size: 16),
-                          label: const Text('解绑教务账号',
-                              style: TextStyle(fontSize: 12)),
-                          style: TextButton.styleFrom(
-                            foregroundColor: Colors.red.withValues(alpha: 0.7),
+                        const SizedBox(height: 12),
+                        Text(
+                          '${eduProvider.grade.isNotEmpty ? eduProvider.grade : "未知"}级 · ${eduProvider.college.isNotEmpty ? eduProvider.college : "未知"}',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: isDark ? Colors.grey[300] : Colors.grey[800],
                           ),
                         ),
-                      ] else
+                        const SizedBox(height: 4),
+                        Text(
+                          eduProvider.major.isNotEmpty ? eduProvider.major : "未知",
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: isDark ? Colors.grey[400] : Colors.grey[600],
+                          ),
+                        ),
+                      ] else ...[
+                        const SizedBox(height: 16),
                         ElevatedButton.icon(
-                          onPressed: () =>
-                              _showBindDialog(context, eduProvider),
+                          onPressed: () => _showBindDialog(context, eduProvider),
                           icon: const Icon(Icons.link),
                           label: const Text('绑定教务'),
+                          style: ElevatedButton.styleFrom(
+                            minimumSize: const Size(double.infinity, 44),
+                          ),
                         ),
+                      ],
                     ],
                   ),
                 ),
               ),
-              const ListTile(
-                leading: Icon(Icons.info_outline),
-                title: Text('功能说明'),
-                subtitle: Text('绑定教务账号后，可以查看课表、成绩和教学评价'),
+
+              if (eduProvider.isBound) ...[
+                const SizedBox(height: 24),
+                const Padding(
+                  padding: EdgeInsets.only(left: 4, bottom: 12),
+                  child: Text(
+                    '教务功能',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildActionCard(
+                        context: context,
+                        icon: Icons.schedule,
+                        iconColor: Colors.blue,
+                        title: '课表',
+                        onTap: () => _showCourseDialog(context, eduProvider),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _buildActionCard(
+                        context: context,
+                        icon: Icons.star,
+                        iconColor: Colors.orange,
+                        title: '成绩',
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const EduGradeScreen(),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _buildActionCard(
+                        context: context,
+                        icon: Icons.rate_review,
+                        iconColor: Colors.purple,
+                        title: '教学评价',
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const EvaluationScreen(),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+
+              const SizedBox(height: 24),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  color: isDark ? Colors.grey[900] : Colors.grey[100],
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.info_outline,
+                      size: 16,
+                      color: isDark ? Colors.grey[400] : Colors.grey[600],
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        '绑定教务账号后，可以查看课表、成绩和教学评价',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: isDark ? Colors.grey[400] : Colors.grey[600],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
+
+              if (eduProvider.isBound) ...[
+                const SizedBox(height: 32),
+                Center(
+                  child: TextButton.icon(
+                    onPressed: () => _showUnbindDialog(context, eduProvider),
+                    icon: const Icon(Icons.link_off, size: 16),
+                    label: const Text('解绑教务账号', style: TextStyle(fontSize: 14)),
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.red.withValues(alpha: 0.8),
+                    ),
+                  ),
+                ),
+              ],
             ],
           );
         },
+      ),
+    );
+  }
+
+  Widget _buildActionCard({
+    required BuildContext context,
+    required IconData icon,
+    required Color iconColor,
+    required String title,
+    required VoidCallback onTap,
+  }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Material(
+      color: isDark ? Colors.grey[850] : Colors.white,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          height: 80,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: isDark ? Colors.transparent : Colors.grey.withValues(alpha: 0.1)),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 24, color: iconColor),
+              const SizedBox(height: 8),
+              Text(
+                title,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: isDark ? Colors.grey[300] : Colors.grey[800],
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -376,26 +481,52 @@ class _EduScreenState extends State<EduScreen> {
                   : () async {
                       setDialogState(() => isFetching = true);
                       final scaffoldMessenger = ScaffoldMessenger.of(context);
-                      final result = await eduProvider.getCourses(
-                        selectedYear,
-                        selectedSemester,
-                      );
-                      if (context.mounted) {
-                        Navigator.pop(context); // 请求结束后关闭对话框
-                        if (result != null &&
-                            result.success &&
-                            result.data != null) {
-                          _showCoursesResult(
-                            context,
-                            result.data!,
-                            selectedYear,
-                            selectedSemester,
-                            eduProvider,
-                          );
-                        } else {
+                      try {
+                        final result = await eduProvider
+                            .getCourses(selectedYear, selectedSemester)
+                            .timeout(_courseFetchTimeout);
+                        if (context.mounted) {
+                          Navigator.pop(context); // 请求结束后关闭对话框
+                          if (result != null &&
+                              result.success &&
+                              result.data != null) {
+                            _showCoursesResult(
+                              context,
+                              result.data!,
+                              selectedYear,
+                              selectedSemester,
+                              eduProvider,
+                            );
+                          } else {
+                            scaffoldMessenger.showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  result?.errorMessage ??
+                                      '获取课表失败，请稍后重试或重新绑定教务账号',
+                                ),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          }
+                        }
+                      } on TimeoutException {
+                        if (context.mounted) {
+                          Navigator.pop(context);
                           scaffoldMessenger.showSnackBar(
                             SnackBar(
-                              content: Text(result?.errorMessage ?? '获取课表失败'),
+                              content: Text(
+                                '获取课表超过 ${_courseFetchTimeout.inSeconds} 秒，请稍后重试',
+                              ),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                        }
+                      } catch (e) {
+                        if (context.mounted) {
+                          Navigator.pop(context);
+                          scaffoldMessenger.showSnackBar(
+                            SnackBar(
+                              content: Text('获取课表异常：$e'),
                               backgroundColor: Colors.red,
                             ),
                           );
@@ -512,6 +643,7 @@ class _EduScreenState extends State<EduScreen> {
                           duration: Duration(seconds: 4),
                         ),
                       );
+                      Navigator.of(navContext).maybePop();
                     } catch (e) {
                       messenger.showSnackBar(
                         SnackBar(

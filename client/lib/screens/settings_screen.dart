@@ -485,9 +485,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
               icon: const Icon(Icons.system_update, size: 18),
               label: const Text('检查更新'),
               style: OutlinedButton.styleFrom(
-                foregroundColor: isDark ? Colors.white70 : Colors.grey[700],
+                backgroundColor: isDark
+                    ? Colors.green.withValues(alpha: 0.15)
+                    : Colors.green.shade50,
+                foregroundColor:
+                    isDark ? Colors.green.shade300 : Colors.green.shade700,
                 side: BorderSide(
-                  color: isDark ? Colors.white24 : Colors.grey[300]!,
+                  color: isDark
+                      ? Colors.green.withValues(alpha: 0.3)
+                      : Colors.green.shade200,
                 ),
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 shape: RoundedRectangleBorder(

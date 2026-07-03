@@ -85,13 +85,13 @@ const List<WaterPostCategory> kWaterPostCategories = [
   ),
   WaterPostCategory(
     value: 'campus_news',
-    label: '校园消息',
-    hint: '校内安排、通知讨论、身边消息',
-    actionHint: '分享你看到的校园消息，方便大家及时了解',
-    emptyTitle: '还没有「校园消息」相关帖子',
-    emptyDescription: '可以讨论校内安排、活动通知、楼宇变化或身边消息。',
-    icon: Icons.campaign_outlined,
-    color: Color(0xFF56CCF2),
+    label: '避雷专区',
+    hint: '校园避坑、风险提醒、真实体验反馈',
+    actionHint: '分享避坑提醒时请描述事实，避免挂人、造谣或曝光隐私',
+    emptyTitle: '还没有「避雷专区」相关帖子',
+    emptyDescription: '可以发布校园避坑、消费提醒、流程坑点或真实体验反馈，请注意避免挂人和隐私曝光。',
+    icon: Icons.report_problem_outlined,
+    color: Color(0xFFEF4444),
   ),
 ];
 
@@ -110,4 +110,87 @@ String waterCategoryLabelOf(String? value) {
 bool isValidWaterPostCategory(String? value) {
   if (value == null || value.isEmpty) return false;
   return kWaterPostCategories.any((item) => item.value == value);
+}
+
+extension WaterPostCategoryUiCopy on WaterPostCategory {
+  List<String> get quickTags {
+    switch (value) {
+      case 'freshman_help':
+        return ['宿舍', '报到流程', '军训', '校园卡', '新生群'];
+      case 'course_study':
+        return ['选课', '考试', '老师', '学习资料', '绩点'];
+      case 'competition':
+        return ['组队', '通知', '经验', '避坑', '获奖'];
+      case 'campus_life':
+        return ['食堂', '宿舍', '日常', '校园卡', '随手拍'];
+      case 'complaint':
+        return ['吐槽', '情绪', '树洞', '避雷', '建议'];
+      case 'experience':
+        return ['攻略', '总结', '流程', '避坑', '长期有用'];
+      case 'campus_news':
+        return ['风险提醒', '消费避坑', '流程坑点', '真实反馈'];
+      default:
+        return ['提问', '经验', '求助', '交流'];
+    }
+  }
+
+  List<String> get starterQuestions {
+    switch (value) {
+      case 'freshman_help':
+        return ['宿舍怎么分？', '新生群在哪？', '军训要带什么？', '校园卡怎么用？', '报到流程是什么？'];
+      case 'course_study':
+        return ['这门课难不难？', '老师给分怎么样？', '考试怎么复习？', '选课有什么建议？', '学习资料去哪找？'];
+      case 'competition':
+        return ['这个比赛值不值得报？', '怎么找队友？', '往年难度怎么样？', '学校认不认？', '需要准备什么？'];
+      case 'campus_life':
+        return ['食堂哪家好吃？', '宿舍生活怎么样？', '校园卡怎么补办？', '学校附近有什么推荐？'];
+      case 'complaint':
+        return ['想吐槽一件事', '有没有人也遇到过？', '这件事合理吗？', '该怎么处理比较好？'];
+      case 'experience':
+        return ['流程攻略', '避坑总结', '工具推荐', '办事经验', '长期有用的信息'];
+      case 'campus_news':
+        return ['消费避坑', '校园风险提醒', '流程坑点', '真实体验反馈'];
+      default:
+        return ['提一个问题', '分享经验', '求助同学', '补充信息'];
+    }
+  }
+
+  String get publishActionText {
+    switch (value) {
+      case 'freshman_help':
+      case 'course_study':
+        return '提一个问题';
+      case 'competition':
+        return '发布信息';
+      case 'complaint':
+        return '说说看';
+      case 'experience':
+        return '分享经验';
+      case 'campus_news':
+        return '发布提醒';
+      default:
+        return '发布帖子';
+    }
+  }
+
+  String get emptyLeadText {
+    switch (value) {
+      case 'freshman_help':
+        return '还没人提问，先把新生最关心的问题问出来。';
+      case 'course_study':
+        return '还没有课程经验，可以先分享选课、考试或老师评价。';
+      case 'competition':
+        return '还没有竞赛信息，可以发布通知、组队或经验总结。';
+      case 'campus_life':
+        return '还没有校园生活内容，可以分享日常、食堂、宿舍或校园见闻。';
+      case 'complaint':
+        return '还没有树洞内容，可以聊聊校园日常和情绪感受。';
+      case 'experience':
+        return '还没有经验沉淀，可以发布攻略、流程或避坑总结。';
+      case 'campus_news':
+        return '还没有避雷内容，可以发布风险提醒或真实体验反馈。';
+      default:
+        return emptyDescription;
+    }
+  }
 }

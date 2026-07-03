@@ -302,15 +302,16 @@ func TestGetUnread_BoundaryMillisecondDiff(t *testing.T) {
 	db := newAnnouncementTestDB(t)
 	handler := NewAnnouncementHandler(db)
 
-	// User registered slightly after announcement — still should see it (>=)
-	userTime := time.Now().Add(1 * time.Millisecond)
+	// User registered slightly after announcement, so the announcement is not visible.
+	baseTime := time.Now()
+	userTime := baseTime.Add(1 * time.Millisecond)
 	user := createTestUser(t, db, 8, userTime)
 	createTestAnnouncement(t, db, models.Announcement{
 		ID:        8,
 		Title:     "slightly before",
 		Content:   "content",
 		CreatedBy: 1,
-		CreatedAt: time.Now(),
+		CreatedAt: baseTime,
 	})
 
 	gin.SetMode(gin.TestMode)
@@ -633,19 +634,19 @@ func TestAdminList_ShowsAll(t *testing.T) {
 	future := time.Now().Add(24 * time.Hour)
 
 	createTestAnnouncement(t, db, models.Announcement{
-		ID:        20, Title: "published", Content: "p", Status: "published", CreatedBy: 1,
+		ID: 20, Title: "published", Content: "p", Status: "published", CreatedBy: 1,
 	})
 	createTestAnnouncement(t, db, models.Announcement{
-		ID:        21, Title: "draft", Content: "d", Status: "draft", CreatedBy: 1,
+		ID: 21, Title: "draft", Content: "d", Status: "draft", CreatedBy: 1,
 	})
 	createTestAnnouncement(t, db, models.Announcement{
-		ID:        22, Title: "archived", Content: "a", Status: "archived", CreatedBy: 1,
+		ID: 22, Title: "archived", Content: "a", Status: "archived", CreatedBy: 1,
 	})
 	createTestAnnouncement(t, db, models.Announcement{
-		ID:        23, Title: "expired", Content: "e", CreatedBy: 1, ExpiresAt: &expired, CreatedAt: time.Now().Add(-7 * 24 * time.Hour),
+		ID: 23, Title: "expired", Content: "e", CreatedBy: 1, ExpiresAt: &expired, CreatedAt: time.Now().Add(-7 * 24 * time.Hour),
 	})
 	createTestAnnouncement(t, db, models.Announcement{
-		ID:        24, Title: "future", Content: "f", CreatedBy: 1, PublishAt: &future,
+		ID: 24, Title: "future", Content: "f", CreatedBy: 1, PublishAt: &future,
 	})
 
 	gin.SetMode(gin.TestMode)
@@ -670,13 +671,13 @@ func TestGetUnread_PriorityOrder(t *testing.T) {
 	user := createTestUser(t, db, 16, time.Now().Add(-30*24*time.Hour))
 	// Create announcements with different priorities (created in reverse priority order)
 	createTestAnnouncement(t, db, models.Announcement{
-		ID:        25, Title: "normal", Content: "n", Priority: "normal", CreatedBy: 1, CreatedAt: time.Now(),
+		ID: 25, Title: "normal", Content: "n", Priority: "normal", CreatedBy: 1, CreatedAt: time.Now(),
 	})
 	createTestAnnouncement(t, db, models.Announcement{
-		ID:        26, Title: "important", Content: "i", Priority: "important", CreatedBy: 1, CreatedAt: time.Now().Add(-1 * time.Hour),
+		ID: 26, Title: "important", Content: "i", Priority: "important", CreatedBy: 1, CreatedAt: time.Now().Add(-1 * time.Hour),
 	})
 	createTestAnnouncement(t, db, models.Announcement{
-		ID:        27, Title: "urgent", Content: "u", Priority: "urgent", CreatedBy: 1, CreatedAt: time.Now().Add(-2 * time.Hour),
+		ID: 27, Title: "urgent", Content: "u", Priority: "urgent", CreatedBy: 1, CreatedAt: time.Now().Add(-2 * time.Hour),
 	})
 
 	gin.SetMode(gin.TestMode)

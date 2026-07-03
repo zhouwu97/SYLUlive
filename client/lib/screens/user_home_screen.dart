@@ -11,10 +11,12 @@ import '../models/post.dart';
 import '../providers/social_provider.dart';
 import '../providers/post_provider.dart';
 import '../widgets/post_card.dart';
+import '../widgets/market_post_card.dart';
 import '../widgets/cached_avatar.dart';
 import 'social_list_screen.dart';
 import 'image_viewer_screen.dart';
 import 'chat_detail_screen.dart';
+import 'post_detail_screen.dart';
 
 class UserHomeScreen extends StatefulWidget {
   final int? userId;
@@ -30,12 +32,22 @@ class _UserHomeScreenState extends State<UserHomeScreen>
   final ScrollController _scrollController = ScrollController();
   User? _user;
   List<Post> _posts = [];
+  List<Post> _marketPosts = [];
+  int _marketTotal = 0;
+  int _marketSoldCount = 0;
+  int _currentTabIndex = 0;
   bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    _tabController.addListener(() {
+      if (!mounted) return;
+      if (_currentTabIndex != _tabController.index) {
+        setState(() => _currentTabIndex = _tabController.index);
+      }
+    });
     if (widget.userId == null) {
       _user = context.read<AuthProvider>().user;
     }
@@ -52,16 +64,27 @@ class _UserHomeScreenState extends State<UserHomeScreen>
       final provider = context.read<SocialProvider>();
       final user = await provider.getUserProfile(targetId);
       final posts = await provider.getUserPosts(targetId);
+      final marketResult = await provider.getUserMarketPosts(targetId);
       if (mounted) {
         setState(() {
           _user = user;
           _posts = posts;
+          _marketPosts = marketResult.items;
+          _marketTotal = marketResult.total;
+          _marketSoldCount = marketResult.sold;
         });
       }
     }
     if (mounted) {
       setState(() => _isLoading = false);
     }
+  }
+
+  String get _marketTabText {
+    if (_currentTabIndex == 1) {
+      return '售出 $_marketSoldCount单';
+    }
+    return '商品 $_marketTotal';
   }
 
   @override
@@ -95,8 +118,6 @@ class _UserHomeScreenState extends State<UserHomeScreen>
 
     // 标签栏和内容区共用的面板色
     final panelColor = isDark ? const Color(0xFF1A1B1E) : Colors.white;
-
-    final screenWidth = MediaQuery.sizeOf(context).width;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -227,8 +248,8 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                     unselectedLabelColor:
                         isDark ? Colors.white60 : Colors.black54,
                     tabs: [
-                      Tab(text: '帖子 '),
-                      const Tab(text: '智能体 0'),
+                      Tab(text: '帖子 ${_posts.length}'),
+                      Tab(text: _marketTabText),
                     ],
                   ),
                   Expanded(
@@ -249,7 +270,9 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                                       );
                                     },
                                   ),
-                        const Center(child: Text('暂无智能体')),
+                        _buildMarketPostsList(
+                          padding: const EdgeInsets.all(16),
+                        ),
                       ],
                     ),
                   ),
@@ -393,7 +416,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                       ),
                       tabs: [
                         Tab(text: '帖子 ${_posts.length}'),
-                        const Tab(text: '智能体 0'),
+                        Tab(text: _marketTabText),
                       ],
                     ),
                   ),
@@ -418,11 +441,51 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                             );
                           },
                         ),
-              const Center(child: Text('暂无智能体')),
+              _buildMarketPostsList(
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 24),
+              ),
             ],
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildMarketPostsList({required EdgeInsets padding}) {
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_marketPosts.isEmpty) {
+      return const Center(child: Text('暂无上架商品'));
+    }
+
+    return ListView.builder(
+      padding: padding,
+      itemCount: _marketPosts.length,
+      itemBuilder: (context, index) {
+        final post = _marketPosts[index];
+        return MarketPostCard(
+          post: post,
+          compact: false,
+          onAuthorTap: (_) {},
+          onTap: () async {
+            await Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => PostDetailScreen(
+                  postId: post.id,
+                  isMarket: true,
+                  initialPost: post,
+                ),
+              ),
+            );
+            if (mounted) {
+              await _loadData();
+            }
+          },
+        );
+      },
     );
   }
 

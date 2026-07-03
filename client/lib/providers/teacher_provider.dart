@@ -24,6 +24,16 @@ class TeacherProvider extends ChangeNotifier {
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
 
+  List<int> get starCounts {
+    final counts = [0, 0, 0, 0, 0];
+    for (var r in _ratings) {
+      if (r.star >= 1 && r.star <= 5) {
+        counts[r.star - 1]++;
+      }
+    }
+    return counts;
+  }
+
   TeacherProvider(this._dio);
 
   /// 获取教师列表（支持搜索）

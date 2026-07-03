@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
 
 import '../config/water_post_taxonomy.dart';
 
@@ -164,7 +163,6 @@ class WaterSection {
 }
 
 /// iconKey -> IconData 映射；后端未配置时按 slug 兜底
-@visibleForTesting
 IconData iconKeyToIconData(String iconKey, {String fallbackSlug = ''}) {
   switch (iconKey) {
     case 'school':
@@ -205,7 +203,6 @@ IconData iconKeyToIconData(String iconKey, {String fallbackSlug = ''}) {
 }
 
 /// colorHex -> Color；解析失败走 fallback
-@visibleForTesting
 Color colorHexToColor(String colorHex, {Color fallback = const Color(0xFF6E7681)}) {
   if (colorHex.isEmpty) return fallback;
   var hex = colorHex;

@@ -599,6 +599,67 @@ func (h *PostHandler) Update(c *gin.Context) {
 	c.JSON(http.StatusOK, post)
 }
 
+type UpdatePostStatusInput struct {
+	Status models.PostStatus `json:"status" binding:"required"`
+}
+
+// UpdateStatus 更新集市帖状态。成交状态只保留记录，不等同删除发布。
+func (h *PostHandler) UpdateStatus(c *gin.Context) {
+	userIDAny, _ := c.Get("user_id")
+	userID := userIDAny.(uint)
+
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的帖子ID"})
+		return
+	}
+
+	var input UpdatePostStatusInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if input.Status != models.PostStatusNormal &&
+		input.Status != models.PostStatusSold &&
+		input.Status != models.PostStatusClosed {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的帖子状态"})
+		return
+	}
+
+	var post models.Post
+	if err := h.db.First(&post, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "帖子不存在"})
+		return
+	}
+	if post.AuthorID != userID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "只能修改自己的发布"})
+		return
+	}
+	if post.BoardID != models.BoardMarket {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "只有集市发布可以修改状态"})
+		return
+	}
+	if input.Status == models.PostStatusSold && post.PostType != "sell" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "只有出售商品可以标记已售出"})
+		return
+	}
+
+	if err := h.db.Model(&post).Update("status", input.Status).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新状态失败"})
+		return
+	}
+	if err := h.db.
+		Preload("Author").
+		Preload("Images").
+		Preload("Images.File").
+		First(&post, id).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "重新获取帖子失败"})
+		return
+	}
+
+	c.JSON(http.StatusOK, post)
+}
+
 // Delete 删除帖子
 func (h *PostHandler) Delete(c *gin.Context) {
 	userID, _ := c.Get("user_id")

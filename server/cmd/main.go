@@ -623,6 +623,7 @@ func main() {
 		userOptional.GET("/:id/followers", userHandler.GetFollowers)
 		userOptional.GET("/:id/posts/count", userHandler.GetUserPostCount)
 		userOptional.GET("/:id/posts", userHandler.GetUserPosts)
+		userOptional.GET("/:id/market-posts", userHandler.GetUserMarketPosts)
 	}
 
 	r.GET("/api/notifications", middleware.AuthMiddleware(db, cfg.JWTSecret), notificationHandler.GetNotifications)
@@ -671,6 +672,8 @@ func main() {
 		postsAuth.POST("", postHandler.Create)
 
 		postsAuth.PUT("/:id", postHandler.Update)
+
+		postsAuth.PATCH("/:id/status", postHandler.UpdateStatus)
 
 		postsAuth.DELETE("/:id", postHandler.Delete)
 

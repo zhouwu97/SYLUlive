@@ -13,6 +13,7 @@ import '../utils/app_motion.dart';
 import '../utils/app_feedback.dart';
 import '../utils/responsive_util.dart';
 import '../utils/screen_swipe.dart';
+import '../utils/search_focus_gate.dart';
 
 import '../models/announcement.dart' as model;
 import '../models/post.dart';
@@ -109,6 +110,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   int _feedRevealSerial = 0;
   bool _feedRevealActive = false;
   final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
   Timer? _autoRefreshTimer;
   List<model.Announcement> _announcements = [];
   bool _wasLoggedIn = false;
@@ -222,6 +224,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     }
 
     _searchController.dispose();
+    _searchFocusNode.dispose();
     _feedSwitchController
       ..removeListener(_handleFeedSettleTick)
       ..dispose();
@@ -282,6 +285,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     final query = raw.trim();
     if (query.isEmpty) return;
 
+    _searchFocusNode.unfocus();
     _searchController.clear();
     if (mounted) {
       setState(() {
@@ -295,6 +299,13 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       MaterialPageRoute(
         builder: (_) => SearchResultsScreen(query: query, boardId: 1),
       ),
+    );
+  }
+
+  bool _exitSearchInputMode() {
+    return consumeSearchInputExit(
+      hasFocus: _searchFocusNode.hasFocus,
+      unfocus: _searchFocusNode.unfocus,
     );
   }
 
@@ -1383,6 +1394,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
           child: CustomScrollView(
             key: PageStorageKey<String>('home-feed-scroll-$mode'),
             controller: _feedScrollControllers[mode],
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
             physics: const AlwaysScrollableScrollPhysics(
               parent: BouncingScrollPhysics(),
             ),
@@ -1454,6 +1466,9 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                             post: post,
                             onAuthorTap: _openUserInSplit,
                             onTap: () {
+                              if (_exitSearchInputMode()) {
+                                return;
+                              }
                               if (ResponsiveUtil.useDesktopShell(context)) {
                                 _openPostInSplit(post);
                               } else {
@@ -1514,6 +1529,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
           : const Color(0xFFEEF0F5),
       child: TextField(
         controller: _searchController,
+        focusNode: _searchFocusNode,
         onChanged: _onSearchChanged,
         onSubmitted: _runSearch,
         textInputAction: TextInputAction.search,

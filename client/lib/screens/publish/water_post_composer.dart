@@ -1,19 +1,21 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter/services.dart';
 import '../../config/privileged_accounts.dart';
 import '../../config/water_post_taxonomy.dart';
 import '../../models/post.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/post_provider.dart';
-import 'widgets/publish_bottom_bar.dart';
 import 'widgets/publish_image_grid.dart';
 import 'widgets/publish_image_picker.dart';
+import 'widgets/water_post_bottom_bar.dart';
 
-/// Full-screen water-post composer (boardId == 1).
+/// 水帖发布/编辑页（boardId == 1）。
 ///
-/// Uses a full-screen editor layout: title at top, content filling remaining
-/// space, images below content.
+/// 采用全屏编辑布局：顶部标题，中间正文自适应填充，底部保留图片和发布工具栏。
 class WaterPostComposer extends StatefulWidget {
   final Post? editingPost;
   final String? initialPostType;
@@ -25,19 +27,30 @@ class WaterPostComposer extends StatefulWidget {
 }
 
 class _WaterPostComposerState extends State<WaterPostComposer>
-    with PublishImagePickerMixin {
+    with SingleTickerProviderStateMixin, PublishImagePickerMixin {
   static const _maxImages = 9;
+  static const _maxContentLength = 2000;
+  static const Color _teal = Color(0xFF12B8A6);
+  static const Color _softTeal = Color(0xFFEAFBF8);
+  static const Color _hintLight = Color(0xFFA7ABB2);
+  static const Color _dividerLight = Color(0xFFE1E4E8);
+  static const Color _titleWarning = Color(0xFFE5484D);
+  static const double _titleFontSize = 18.5;
+  static const double _contentFontSize = 14.5;
 
   final _formKey = GlobalKey<FormState>();
   final _titleController = TextEditingController();
   final _contentController = TextEditingController();
+  final _titleFocusNode = FocusNode();
+  late final AnimationController _titleWarningController;
   bool _isLoading = false;
+  bool _titleNeedsAttention = false;
   String _selectedPostType = 'campus_life';
   final List<XFile> _selectedImages = [];
   final List<PostImage> _existingImages = [];
 
   // ---------------------------------------------------------------------------
-  // PublishImagePickerMixin abstract impl
+  // PublishImagePickerMixin 抽象成员实现
   // ---------------------------------------------------------------------------
 
   @override
@@ -58,7 +71,7 @@ class _WaterPostComposerState extends State<WaterPostComposer>
       setState(() => _existingImages.removeAt(index));
 
   // ---------------------------------------------------------------------------
-  // Helpers
+  // 辅助状态
   // ---------------------------------------------------------------------------
 
   bool get _isEditing => widget.editingPost != null;
@@ -78,18 +91,27 @@ class _WaterPostComposerState extends State<WaterPostComposer>
 
   bool get _hasImages => _totalImageCount > 0 || canAddMoreImages;
 
-  String get _pageTitle => _isEditing ? '编辑帖子' : '发布水帖';
+  String get _pageTitle => _isEditing ? '编辑水帖' : '发布水帖';
 
   WaterPostCategory get _selectedCategory =>
       waterCategoryOf(_selectedPostType) ?? waterCategoryOf('campus_life')!;
 
   // ---------------------------------------------------------------------------
-  // Lifecycle
+  // 生命周期
   // ---------------------------------------------------------------------------
 
   @override
   void initState() {
     super.initState();
+    _titleWarningController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 420),
+    )..addStatusListener((status) {
+        if (status == AnimationStatus.completed && mounted) {
+          setState(() => _titleNeedsAttention = false);
+          _titleWarningController.reset();
+        }
+      });
     final post = widget.editingPost;
     if (post != null) {
       _titleController.text = post.title;
@@ -103,42 +125,78 @@ class _WaterPostComposerState extends State<WaterPostComposer>
           ? widget.initialPostType!
           : 'campus_life';
     }
+    _titleController.addListener(_onTitleChanged);
     _contentController.addListener(_onContentChanged);
   }
 
   @override
   void dispose() {
+    _titleController.removeListener(_onTitleChanged);
     _contentController.removeListener(_onContentChanged);
+    _titleWarningController.dispose();
+    _titleFocusNode.dispose();
     _titleController.dispose();
     _contentController.dispose();
     super.dispose();
   }
 
+  void _onTitleChanged() {
+    if (!_titleNeedsAttention || _titleController.text.trim().isEmpty) {
+      return;
+    }
+    _titleWarningController.stop();
+    _titleWarningController.reset();
+    setState(() => _titleNeedsAttention = false);
+  }
+
   void _onContentChanged() => setState(() {});
 
   // ---------------------------------------------------------------------------
-  // Validation
+  // 校验
   // ---------------------------------------------------------------------------
 
   bool _validate() {
-    if (!_formKey.currentState!.validate()) return false;
+    final title = _titleController.text.trim();
     final content = _contentController.text.trim();
+    final isFormValid = _formKey.currentState!.validate();
+    if (title.isEmpty) {
+      _showTitleRequiredHint();
+      return false;
+    }
     if (content.isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('请输入内容'),
+            content: Text('写点内容再发布吧'),
             backgroundColor: Colors.red,
           ),
         );
       }
       return false;
     }
-    return true;
+    if (content.length > _maxContentLength) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('正文最多 2000 字'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return false;
+    }
+    return isFormValid;
+  }
+
+  void _showTitleRequiredHint() {
+    if (!mounted) return;
+    _titleFocusNode.requestFocus();
+    setState(() => _titleNeedsAttention = true);
+    _titleWarningController.forward(from: 0);
   }
 
   // ---------------------------------------------------------------------------
-  // Submit
+  // 提交
   // ---------------------------------------------------------------------------
 
   Future<void> _submit() async {
@@ -196,7 +254,7 @@ class _WaterPostComposerState extends State<WaterPostComposer>
           : await postProvider.createPost(
               boardId: 1,
               content: content,
-              title: title.isNotEmpty ? title : null,
+              title: title,
               postType: _selectedPostType,
               price: null,
               contact: null,
@@ -226,7 +284,7 @@ class _WaterPostComposerState extends State<WaterPostComposer>
   }
 
   // ---------------------------------------------------------------------------
-  // Build
+  // 界面构建
   // ---------------------------------------------------------------------------
 
   Future<void> _showCategorySheet() async {
@@ -329,50 +387,43 @@ class _WaterPostComposerState extends State<WaterPostComposer>
   Widget _buildCategorySelector(bool isDark) {
     final category = _selectedCategory;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
       child: InkWell(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(14),
         onTap: _showCategorySheet,
         child: Container(
-          height: 48,
-          padding: const EdgeInsets.symmetric(horizontal: 13),
+          height: 56,
+          padding: const EdgeInsets.symmetric(horizontal: 14),
           decoration: BoxDecoration(
-            color: isDark
-                ? Colors.white.withValues(alpha: 0.06)
-                : const Color(0xFFF7F8FA),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: isDark
-                  ? Colors.white.withValues(alpha: 0.08)
-                  : const Color(0xFFEDEFF3),
-            ),
+            color: isDark ? Colors.white.withValues(alpha: 0.06) : _softTeal,
+            borderRadius: BorderRadius.circular(14),
           ),
           child: Row(
             children: [
               Text(
                 '分类',
                 style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: isDark ? Colors.white70 : const Color(0xFF343842),
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700,
+                  color: isDark ? Colors.white : _teal,
                 ),
               ),
               const Spacer(),
-              Icon(category.icon, size: 17, color: category.color),
-              const SizedBox(width: 6),
+              Icon(category.icon, size: 22, color: _teal),
+              const SizedBox(width: 8),
               Text(
                 category.label,
                 style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700,
                   color: isDark ? Colors.white : const Color(0xFF20232A),
                 ),
               ),
-              const SizedBox(width: 4),
-              Icon(
+              const SizedBox(width: 6),
+              const Icon(
                 Icons.chevron_right_rounded,
-                size: 18,
-                color: isDark ? Colors.white38 : const Color(0xFF9AA0A6),
+                size: 22,
+                color: _teal,
               ),
             ],
           ),
@@ -386,14 +437,27 @@ class _WaterPostComposerState extends State<WaterPostComposer>
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor:
-          isDark ? const Color(0xFF0D1117) : const Color(0xFFFEFEFE),
+      backgroundColor: isDark ? const Color(0xFF0D1117) : Colors.white,
       resizeToAvoidBottomInset: true,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        title: Text(_pageTitle),
-        leading: const BackButton(),
+        toolbarHeight: 58,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_rounded),
+          color: _teal,
+          iconSize: 28,
+          onPressed: () => Navigator.of(context).maybePop(),
+        ),
+        title: Text(
+          _pageTitle,
+          style: TextStyle(
+            color: isDark ? Colors.white : Colors.black,
+            fontSize: 18,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        centerTitle: true,
       ),
       bottomNavigationBar: _buildBottomArea(isDark),
       body: SafeArea(
@@ -404,60 +468,86 @@ class _WaterPostComposerState extends State<WaterPostComposer>
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               _buildCategorySelector(isDark),
-
-              // ---- title: lightweight, no border ----
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                child: TextFormField(
-                  controller: _titleController,
-                  decoration: const InputDecoration(
-                    hintText: '添加标题（选填）',
-                    hintStyle: TextStyle(
-                      color: Colors.grey,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w400,
+              AnimatedBuilder(
+                animation: _titleWarningController,
+                builder: (context, child) {
+                  final offset = _titleNeedsAttention
+                      ? math.sin(_titleWarningController.value * math.pi * 6) *
+                          6
+                      : 0.0;
+                  return Transform.translate(
+                    offset: Offset(offset, 0),
+                    child: child,
+                  );
+                },
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 18, 16, 0),
+                  child: TextFormField(
+                    controller: _titleController,
+                    focusNode: _titleFocusNode,
+                    decoration: InputDecoration(
+                      hintText: '添加标题',
+                      hintStyle: TextStyle(
+                        color:
+                            _titleNeedsAttention ? _titleWarning : _hintLight,
+                        fontSize: _titleFontSize,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: InputBorder.none,
+                      contentPadding: const EdgeInsets.symmetric(vertical: 8),
                     ),
-                    border: InputBorder.none,
-                    enabledBorder: InputBorder.none,
-                    focusedBorder: InputBorder.none,
-                    contentPadding: EdgeInsets.symmetric(vertical: 8),
+                    style: TextStyle(
+                      fontSize: _titleFontSize,
+                      fontWeight: FontWeight.w700,
+                      color: isDark ? Colors.white : Colors.black87,
+                    ),
+                    maxLines: 1,
                   ),
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w500,
-                  ),
-                  maxLines: 1,
                 ),
               ),
-              const Divider(height: 1),
-
-              // ---- content: fills all remaining space ----
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 16),
+                child: Divider(height: 1, color: _dividerLight),
+              ),
               Expanded(
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: TextFormField(
                     controller: _contentController,
+                    inputFormatters: [
+                      LengthLimitingTextInputFormatter(_maxContentLength),
+                    ],
                     decoration: const InputDecoration(
-                      hintText: '分享校园生活、提问或记录此刻…',
-                      hintStyle: TextStyle(color: Colors.grey, fontSize: 15),
+                      hintText: '分享校园生活、提问或记录此时此刻···',
+                      hintStyle: TextStyle(
+                        color: _hintLight,
+                        fontSize: _contentFontSize,
+                        fontWeight: FontWeight.w500,
+                      ),
                       border: InputBorder.none,
                       enabledBorder: InputBorder.none,
                       focusedBorder: InputBorder.none,
-                      contentPadding: EdgeInsets.only(top: 12),
+                      contentPadding: EdgeInsets.only(top: 28),
+                      errorStyle: TextStyle(fontSize: 13),
                     ),
-                    style: const TextStyle(fontSize: 15, height: 1.6),
+                    style: TextStyle(
+                      fontSize: _contentFontSize,
+                      height: 1.55,
+                      color: isDark
+                          ? Colors.white.withValues(alpha: 0.82)
+                          : const Color(0xFF333333),
+                    ),
                     expands: true,
                     maxLines: null,
                     textAlignVertical: TextAlignVertical.top,
-                    validator: (v) => (v ?? '').trim().isEmpty ? '请输入内容' : null,
                   ),
                 ),
               ),
-
-              // ---- images (below content, only when present) ----
               if (_hasImages)
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 20),
                   child: PublishImageGrid(
                     existingImages: _existingImages,
                     selectedImages: _selectedImages,
@@ -475,52 +565,15 @@ class _WaterPostComposerState extends State<WaterPostComposer>
     );
   }
 
-  // ---------------------------------------------------------------------------
-  // Bottom area: status row + full-width publish button
-  // ---------------------------------------------------------------------------
-
   Widget _buildBottomArea(bool isDark) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // status row
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF0D1117) : const Color(0xFFFEFEFE),
-            border: Border(
-              top: BorderSide(
-                color: Colors.black.withValues(alpha: 0.05),
-              ),
-            ),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                '图片 $_totalImageCount/$_maxImages',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey.withValues(alpha: 0.7),
-                ),
-              ),
-              Text(
-                '$_charCount 字',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey.withValues(alpha: 0.7),
-                ),
-              ),
-            ],
-          ),
-        ),
-        // full-width publish button
-        PublishBottomBar(
-          isLoading: _isLoading,
-          onPressed: _isLoading ? null : _submit,
-          label: _isEditing ? '保存修改' : '发布',
-        ),
-      ],
+    return WaterPostBottomBar(
+      isLoading: _isLoading,
+      imageCount: _totalImageCount,
+      maxImages: _maxImages,
+      charCount: _charCount,
+      maxContentLength: _maxContentLength,
+      publishLabel: _isEditing ? '保存修改' : '发布',
+      onPublish: _isLoading ? null : _submit,
     );
   }
 }

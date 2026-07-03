@@ -13,6 +13,7 @@ import 'dashed_outline.dart';
 /// 空图片状态下仍展示添加入口，水帖页会将其渲染成单个虚线上传卡片。
 class PublishImageGrid extends StatelessWidget {
   static const Color _teal = Color(0xFF12B8A6);
+  static const Color _marketAccent = Color(0xFF4F5AF7);
 
   final List<PostImage> existingImages;
   final List<XFile> selectedImages;
@@ -21,6 +22,8 @@ class PublishImageGrid extends StatelessWidget {
   final void Function(int index) onRemoveNewImage;
   final void Function(int index) onRemoveExistingImage;
   final bool compact;
+  final bool singleSlot;
+  final String addLabel;
 
   const PublishImageGrid({
     super.key,
@@ -31,6 +34,8 @@ class PublishImageGrid extends StatelessWidget {
     required this.onRemoveNewImage,
     required this.onRemoveExistingImage,
     this.compact = false,
+    this.singleSlot = false,
+    this.addLabel = '添加照片',
   });
 
   int get totalImages => existingImages.length + selectedImages.length;
@@ -41,6 +46,10 @@ class PublishImageGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    if (singleSlot) {
+      return _buildSingleSlot(context, isDark);
+    }
 
     if (totalImages == 0) {
       final tileSize = compact ? 132.0 : 148.0;
@@ -152,6 +161,205 @@ class PublishImageGrid extends StatelessWidget {
     );
   }
 
+  Widget _buildSingleSlot(BuildContext context, bool isDark) {
+    final existing = existingImages.isNotEmpty ? existingImages.first : null;
+    final selected = existing == null && selectedImages.isNotEmpty
+        ? selectedImages.first
+        : null;
+    final hasImage = existing != null || selected != null;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final availableWidth = constraints.maxWidth.isFinite
+            ? constraints.maxWidth.clamp(0.0, 590.0)
+            : 590.0;
+        final widthCap = availableWidth <= 430 ? 320.0 : 590.0;
+        final frameWidth = availableWidth.clamp(0.0, widthCap);
+        final height = (frameWidth / 2.0).clamp(150.0, 186.0);
+
+        return Align(
+          alignment: Alignment.centerLeft,
+          child: SizedBox(
+            width: frameWidth,
+            height: height,
+            child: GestureDetector(
+              onTap: hasImage ? null : onAddImage,
+              child: DashedOutline(
+                color: hasImage
+                    ? Colors.transparent
+                    : isDark
+                        ? _marketAccent.withValues(alpha: 0.42)
+                        : _marketAccent.withValues(alpha: 0.28),
+                radius: 18,
+                strokeWidth: 1.1,
+                dashLength: 6,
+                gapLength: 4,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  curve: Curves.easeOutCubic,
+                  decoration: BoxDecoration(
+                    color: isDark
+                        ? _marketAccent.withValues(alpha: 0.08)
+                        : const Color(0xFFF8F8FF),
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(
+                      color: hasImage
+                          ? Colors.transparent
+                          : _marketAccent.withValues(
+                              alpha: isDark ? 0.10 : 0.06,
+                            ),
+                    ),
+                    boxShadow: [
+                      if (!isDark)
+                        BoxShadow(
+                          color: _marketAccent.withValues(alpha: 0.07),
+                          blurRadius: 18,
+                          offset: const Offset(0, 8),
+                        ),
+                    ],
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: hasImage
+                      ? _buildSinglePreview(
+                          context: context,
+                          existing: existing,
+                          selected: selected,
+                        )
+                      : _buildSingleAddContent(isDark),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildSinglePreview({
+    required BuildContext context,
+    required PostImage? existing,
+    required XFile? selected,
+  }) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        if (existing != null)
+          CachedNetworkImage(
+            imageUrl: ApiConstants.fullUrl(existing.url),
+            fit: BoxFit.cover,
+            errorWidget: (_, __, ___) => _buildBrokenImage(),
+          )
+        else
+          Image.file(
+            File(selected!.path),
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => _buildBrokenImage(),
+          ),
+        Positioned(
+          top: 10,
+          left: 10,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color:
+                  Theme.of(context).colorScheme.primary.withValues(alpha: 0.88),
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: const Text(
+              '封面',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ),
+        Positioned(
+          top: 8,
+          right: 8,
+          child: GestureDetector(
+            onTap: () => existing != null
+                ? onRemoveExistingImage(0)
+                : onRemoveNewImage(0),
+            child: Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.48),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.close_rounded,
+                color: Colors.white,
+                size: 17,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSingleAddContent(bool isDark) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 52,
+            height: 52,
+            decoration: BoxDecoration(
+              color: isDark
+                  ? _marketAccent.withValues(alpha: 0.16)
+                  : _marketAccent.withValues(alpha: 0.08),
+              shape: BoxShape.circle,
+              boxShadow: [
+                if (!isDark)
+                  BoxShadow(
+                    color: _marketAccent.withValues(alpha: 0.10),
+                    blurRadius: 14,
+                    offset: const Offset(0, 7),
+                  ),
+              ],
+            ),
+            child: const Icon(
+              Icons.photo_camera_rounded,
+              size: 29,
+              color: _marketAccent,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            addLabel,
+            style: const TextStyle(
+              fontSize: 16,
+              color: _marketAccent,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 5),
+          Text(
+            '首张默认为封面',
+            style: TextStyle(
+              fontSize: 12,
+              color: isDark
+                  ? Colors.white.withValues(alpha: 0.56)
+                  : const Color(0xFF7C8292),
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBrokenImage() {
+    return Container(
+      color: Colors.grey[300],
+      child: const Icon(Icons.broken_image),
+    );
+  }
+
   Widget _buildAddCell(bool isDark) {
     return GestureDetector(
       onTap: onAddImage,
@@ -176,9 +384,9 @@ class PublishImageGrid extends StatelessWidget {
                 color: _teal,
               ),
               const SizedBox(height: 8),
-              const Text(
-                '添加照片',
-                style: TextStyle(
+              Text(
+                addLabel,
+                style: const TextStyle(
                   fontSize: 14,
                   color: _teal,
                   fontWeight: FontWeight.w600,

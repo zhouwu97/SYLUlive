@@ -137,15 +137,12 @@ class _WaterPostComposerState extends State<WaterPostComposer>
       _titleController.text = post.title;
       _contentController.text = post.content;
       _existingImages.addAll(post.images);
-      _selectedPostType = isValidWaterPostCategory(post.postType)
-          ? post.postType
-          : 'campus_life';
       _selectedTagId = post.waterTagId;
-    } else {
-      _selectedPostType = isValidWaterPostCategory(widget.initialPostType)
-          ? widget.initialPostType!
-          : 'campus_life';
     }
+    final rawPostType = post?.postType ?? widget.initialPostType;
+    _selectedPostType = rawPostType != null && rawPostType.trim().isNotEmpty
+        ? rawPostType.trim()
+        : 'campus_life';
     _titleController.addListener(_onTitleChanged);
     _contentController.addListener(_onContentChanged);
     // 加载版块列表供标签选择

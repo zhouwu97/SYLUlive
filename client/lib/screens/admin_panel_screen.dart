@@ -208,7 +208,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
           ),
         ],
       ),
-    );
+    ));
   }
 
   Widget _buildPendingSection(bool isDark) {

@@ -85,13 +85,13 @@ const List<WaterPostCategory> kWaterPostCategories = [
   ),
   WaterPostCategory(
     value: 'campus_news',
-    label: '校园消息',
-    hint: '校内安排、通知讨论、身边消息',
-    actionHint: '分享你看到的校园消息，方便大家及时了解',
-    emptyTitle: '还没有「校园消息」相关帖子',
-    emptyDescription: '可以讨论校内安排、活动通知、楼宇变化或身边消息。',
-    icon: Icons.campaign_outlined,
-    color: Color(0xFF56CCF2),
+    label: '避雷专区',
+    hint: '校园避坑、风险提醒、真实体验反馈',
+    actionHint: '分享避坑提醒时请描述事实，避免挂人、造谣或曝光隐私',
+    emptyTitle: '还没有「避雷专区」相关帖子',
+    emptyDescription: '可以发布校园避坑、消费提醒、流程坑点或真实体验反馈，请注意避免挂人和隐私曝光。',
+    icon: Icons.report_problem_outlined,
+    color: Color(0xFFEF4444),
   ),
 ];
 

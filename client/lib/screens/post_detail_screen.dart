@@ -1235,15 +1235,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
-  WaterPostCategory get _resolvedWaterCategory {
-    return waterCategoryOf(_post?.postType) ?? waterCategoryOf('campus_life')!;
-  }
-
   Future<void> _openWaterCategoryFromDetail() async {
+    final sectionSlug = _post?.postType ?? '';
+    if (sectionSlug.isEmpty) return;
     await Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) =>
-            WaterCategoryFeedRoute.fromLegacyCategory(_resolvedWaterCategory),
+        builder: (_) => WaterCategoryFeedRoute(sectionSlug: sectionSlug),
       ),
     );
   }
@@ -1456,7 +1453,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   Widget _buildWaterAppBarCategoryChip(bool isDark) {
-    final category = _resolvedWaterCategory;
+    final sectionSlug = _post?.postType ?? '';
+    final sectionProvider = context.watch<WaterSectionProvider?>();
+    final section = sectionSlug.isNotEmpty
+        ? sectionProvider?.getBySlug(sectionSlug)
+        : null;
+    final label = section?.title ?? waterCategoryOf(sectionSlug)?.label ?? '水帖';
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: _openWaterCategoryFromDetail,
@@ -1464,18 +1466,20 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            category.label,
+            label,
             style: TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.w600,
-              color: isDark ? Colors.white.withValues(alpha: 0.8) : Colors.black87,
+              color:
+                  isDark ? Colors.white.withValues(alpha: 0.8) : Colors.black87,
             ),
           ),
           const SizedBox(width: 2),
           Icon(
             Icons.chevron_right,
             size: 16,
-            color: isDark ? Colors.white.withValues(alpha: 0.5) : Colors.black54,
+            color:
+                isDark ? Colors.white.withValues(alpha: 0.5) : Colors.black54,
           ),
         ],
       ),

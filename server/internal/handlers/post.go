@@ -115,6 +115,21 @@ func validateWaterTagBelongsToSection(db *gorm.DB, tagID uint, sectionID uint) e
 	return err
 }
 
+func applyPostTypeFilter(query *gorm.DB, requestedBoardID *models.BoardID, postType string) *gorm.DB {
+	if postType == "" {
+		return query
+	}
+	if requestedBoardID != nil &&
+		*requestedBoardID == models.BoardShuitie &&
+		postType == "campus_life" {
+		return query.Where(
+			"(post_type = ? OR post_type IS NULL OR post_type = '')",
+			postType,
+		)
+	}
+	return query.Where("post_type = ?", postType)
+}
+
 // GetList 获取帖子列表
 func (h *PostHandler) GetList(c *gin.Context) {
 	boardIDStr := c.Query("board")
@@ -214,9 +229,7 @@ func (h *PostHandler) GetList(c *gin.Context) {
 		}
 	}
 
-	if postType != "" {
-		query = query.Where("post_type = ?", postType)
-	}
+	query = applyPostTypeFilter(query, requestedBoardID, postType)
 	if requestedBoardID != nil && *requestedBoardID == models.BoardShuitie && postType != "" {
 		if sectionID, err := validateWaterSectionActive(h.db, postType); err == nil {
 			waterSectionFeedID = sectionID
@@ -369,9 +382,7 @@ func (h *PostHandler) GetList(c *gin.Context) {
 				snapshotQuery = snapshotQuery.Where("board_id = ?", boardID)
 			}
 		}
-		if postType != "" {
-			snapshotQuery = snapshotQuery.Where("post_type = ?", postType)
-		}
+		snapshotQuery = applyPostTypeFilter(snapshotQuery, requestedBoardID, postType)
 		if tagIDProvided {
 			snapshotQuery = snapshotQuery.Where("water_tag_id = ?", tagID)
 		}

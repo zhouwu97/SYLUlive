@@ -7,9 +7,11 @@ import '../models/water_section.dart';
 import '../providers/auth_provider.dart';
 import '../providers/post_provider.dart';
 import '../providers/water_section_provider.dart';
+import '../providers/water_moderator_provider.dart';
 import '../widgets/post_card.dart';
 import 'create_post_screen.dart';
 import 'post_detail_screen.dart';
+import 'water_section_manage_screen.dart';
 
 class WaterCategoryFeedScreen extends StatefulWidget {
   final WaterPostCategory category;
@@ -69,7 +71,9 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
     if (provider.sections.isEmpty && !provider.isLoading) {
       provider.loadSections();
     }
+    // 拉取当前用户对该版块的权限（判断是否显示管理按钮）
     final slug = widget.section?.slug ?? widget.category.value;
+    context.read<WaterModeratorProvider>().loadMyPermission(slug);
     final fresh =
         provider.getBySlug(slug) ?? widget.section ?? _sectionFromCategory();
     if (!mounted) return;
@@ -150,6 +154,37 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
     }
   }
 
+  void _openManageScreen() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => WaterSectionManageScreen(section: _activeSection),
+      ),
+    );
+  }
+
+  Widget _buildManageAction(bool isDark) {
+    final slug = _activeSection.slug;
+    final perm =
+        context.watch<WaterModeratorProvider>().permissionOf(slug);
+    if (!perm.canManageModeratorsEntry) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(right: 4),
+      child: TextButton.icon(
+        onPressed: _openManageScreen,
+        icon: Icon(Icons.admin_panel_settings_rounded, size: 16,
+            color: Theme.of(context).colorScheme.primary),
+        label: Text(
+          '管理',
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+            color: Theme.of(context).colorScheme.primary,
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _openPost(Post post) async {
     final changed = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
@@ -192,6 +227,8 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
           ),
         ),
         actions: [
+          // 管理员 / 超管可以看到管理入口
+          _buildManageAction(isDark),
           Padding(
             padding: const EdgeInsets.only(right: 8),
             child: TextButton(

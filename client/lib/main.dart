@@ -23,6 +23,7 @@ import 'providers/canteen_provider.dart';
 
 import 'providers/social_provider.dart';
 import 'providers/water_section_provider.dart';
+import 'providers/water_moderator_provider.dart';
 import 'models/user.dart';
 import 'screens/chat_detail_screen.dart';
 import 'screens/post_detail_screen.dart';
@@ -940,6 +941,7 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => CanteenProvider(dio)),
         ChangeNotifierProvider(create: (_) => SocialProvider(dio)),
         ChangeNotifierProvider(create: (_) => WaterSectionProvider(dio)),
+        ChangeNotifierProvider(create: (_) => WaterModeratorProvider(dio)),
       ],
       child: const _WidgetDeepLinkHandler(child: _AppContent()),
     );

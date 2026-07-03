@@ -397,7 +397,9 @@ func (h *PostHandler) GetList(c *gin.Context) {
 		if sort == "hot" {
 			snapshotQuery = snapshotQuery.Limit(500)
 		}
-		snapshotQuery.Pluck("id", &allIDs)
+		if err := snapshotQuery.Pluck("posts.id", &allIDs).Error; err != nil {
+			log.Printf("[DB_ERROR] GetList snapshot Pluck failed: %v", err)
+		}
 
 		sessionID = fmt.Sprintf("%d", time.Now().UnixNano())
 		ActiveSnapshots.Store(sessionID, Snapshot{

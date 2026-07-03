@@ -809,6 +809,139 @@ func TestGetListWithTagIdFilter(t *testing.T) {
 	}
 }
 
+func TestGetListCampusLifeIncludesLegacyEmptyPostType(t *testing.T) {
+	db := newWaterSectionTestDB(t)
+	if err := models.EnsureWaterSections(db); err != nil {
+		t.Fatalf("ensure: %v", err)
+	}
+	user := newWaterTestUser(t, db, false)
+	campusPost := models.Post{
+		Title:    "campus",
+		Content:  "campus content",
+		BoardID:  models.BoardShuitie,
+		AuthorID: user.ID,
+		PostType: "campus_life",
+		Status:   models.PostStatusNormal,
+	}
+	legacyPost := models.Post{
+		Title:    "legacy",
+		Content:  "legacy content",
+		BoardID:  models.BoardShuitie,
+		AuthorID: user.ID,
+		Status:   models.PostStatusNormal,
+	}
+	coursePost := models.Post{
+		Title:    "course",
+		Content:  "course content",
+		BoardID:  models.BoardShuitie,
+		AuthorID: user.ID,
+		PostType: "course_study",
+		Status:   models.PostStatusNormal,
+	}
+	for _, post := range []*models.Post{&campusPost, &legacyPost, &coursePost} {
+		if err := db.Create(post).Error; err != nil {
+			t.Fatalf("create post: %v", err)
+		}
+	}
+
+	handler := NewPostHandler(db, "", "")
+	rec := performPostListGET(t, handler.GetList,
+		"/api/posts?board=1&type=campus_life&sort=time&page=1&limit=10")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Posts []models.Post `json:"posts"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	gotIDs := map[uint]bool{}
+	for _, post := range body.Posts {
+		gotIDs[post.ID] = true
+	}
+	if len(body.Posts) != 2 || !gotIDs[campusPost.ID] || !gotIDs[legacyPost.ID] {
+		t.Fatalf("expected campus and legacy posts, got: %s", rec.Body.String())
+	}
+
+	courseRec := performPostListGET(t, handler.GetList,
+		"/api/posts?board=1&type=course_study&sort=time&page=1&limit=10")
+	if courseRec.Code != http.StatusOK {
+		t.Fatalf("course status=%d body=%s", courseRec.Code, courseRec.Body.String())
+	}
+	var courseBody struct {
+		Posts []models.Post `json:"posts"`
+	}
+	if err := json.Unmarshal(courseRec.Body.Bytes(), &courseBody); err != nil {
+		t.Fatalf("decode course: %v", err)
+	}
+	if len(courseBody.Posts) != 1 || courseBody.Posts[0].ID != coursePost.ID {
+		t.Fatalf("expected only course post, got: %s", courseRec.Body.String())
+	}
+}
+
+func TestGetListCampusLifeSnapshotIncludesLegacyEmptyPostType(t *testing.T) {
+	db := newWaterSectionTestDB(t)
+	if err := models.EnsureWaterSections(db); err != nil {
+		t.Fatalf("ensure: %v", err)
+	}
+	user := newWaterTestUser(t, db, false)
+	campusPost := models.Post{
+		Title:    "campus snapshot",
+		Content:  "campus content",
+		BoardID:  models.BoardShuitie,
+		AuthorID: user.ID,
+		PostType: "campus_life",
+		Status:   models.PostStatusNormal,
+	}
+	legacyPost := models.Post{
+		Title:    "legacy snapshot",
+		Content:  "legacy content",
+		BoardID:  models.BoardShuitie,
+		AuthorID: user.ID,
+		Status:   models.PostStatusNormal,
+	}
+	coursePost := models.Post{
+		Title:    "course snapshot",
+		Content:  "course content",
+		BoardID:  models.BoardShuitie,
+		AuthorID: user.ID,
+		PostType: "course_study",
+		Status:   models.PostStatusNormal,
+	}
+	for _, post := range []*models.Post{&campusPost, &legacyPost, &coursePost} {
+		if err := db.Create(post).Error; err != nil {
+			t.Fatalf("create post: %v", err)
+		}
+	}
+
+	rec := performPostListGET(t, NewPostHandler(db, "", "").GetList,
+		"/api/posts?board=1&type=campus_life&sort=hot&scene=refresh&page=1&limit=10")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Total     int           `json:"total"`
+		SessionID string        `json:"session_id"`
+		Posts     []models.Post `json:"posts"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	gotIDs := map[uint]bool{}
+	for _, post := range body.Posts {
+		gotIDs[post.ID] = true
+	}
+	if body.Total != 2 ||
+		body.SessionID == "" ||
+		len(body.Posts) != 2 ||
+		!gotIDs[campusPost.ID] ||
+		!gotIDs[legacyPost.ID] {
+		t.Fatalf("expected snapshot posts to include campus and legacy, got: %s", rec.Body.String())
+	}
+	ActiveSnapshots.Delete(body.SessionID)
+}
+
 // 6. 发水帖 board=1 post_type=course_study water_tag_id=<course_study 的 tag> 成功。
 func TestCreateWaterPostWithValidTag(t *testing.T) {
 	db := newWaterSectionTestDB(t)

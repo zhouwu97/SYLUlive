@@ -188,6 +188,13 @@ class PostProvider extends ChangeNotifier {
     board.currentSort = sort;
     final requestVersion = ++board.requestVersion;
 
+    if (board.posts.isEmpty) {
+      board.isLoading = true;
+      board.error = null;
+      board.revision++;
+      notifyListeners();
+    }
+
     // 第一步：极速上屏 — 读本地缓存（关注信息流不使用缓存）
     if (_enableCache && sort != 'following') {
       try {
@@ -280,6 +287,7 @@ class PostProvider extends ChangeNotifier {
     }
 
     board.hasLoaded = true;
+    board.isLoading = false;
     if (succeeded) {
       board.lastSuccessfulRefreshAt = DateTime.now();
     }

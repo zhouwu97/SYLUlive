@@ -30,6 +30,7 @@ dependencies:
   file_picker: ^8.1.7
   flutter_markdown: ^0.7.6
   webview_flutter: ^4.13.0
+  flutter_inappwebview: ^6.1.5
   flutter_local_notifications: 17.2.4
   timezone: 0.9.4
   share_plus: 10.1.4
@@ -45,7 +46,7 @@ dependencies:
   html: ^0.15.6
   fast_gbk: ^1.0.0
   asn1lib: ^1.6.5
-  flutter_inappwebview: ^6.1.5
+
   add_2_calendar: 3.0.1
   flutter_staggered_grid_view: ^0.7.0
   gal: ^2.3.2
@@ -69,8 +70,7 @@ flutter:
     - assets/images/xiaoli.jpg
     - assets/images/yuanshen.jpg
     - assets/data/
-    - assets/scripts/
-    - assets/yongzhiyunkao/
+
   fonts:
     - family: NotoSansCJKsc
       fonts:

@@ -22,14 +22,14 @@ import '../widgets/cached_avatar.dart';
 import '../config/api_constants.dart';
 import '../config/privileged_accounts.dart';
 import 'edu_screen.dart';
-import 'exam_extract_screen.dart';
+
 import 'login_screen.dart';
 import 'my_content_screen.dart';
 import 'chat_list_screen.dart';
 import 'admin_panel_screen.dart';
 import 'super_admin_screen.dart';
 import 'admin_members_screen.dart';
-import 'oneclass_orders_screen.dart';
+
 import 'notifications_screen.dart';
 import 'settings_screen.dart';
 import 'feedback_screen.dart';
@@ -654,23 +654,7 @@ class _ProfileScreenState extends State<ProfileScreen>
               );
             },
           ),
-          if (PrivilegedAccounts.canViewOneClassOrders(user?.studentId))
-            _buildAdminEntry(
-              context: context,
-              isDark: isDark,
-              icon: Icons.receipt_long,
-              iconColor: Colors.teal,
-              title: 'OneClass 订单',
-              subtitle: '查看 OneClass 支付、机器授权与签发状态',
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => const OneClassOrdersScreen(),
-                  ),
-                );
-              },
-            ),
+
         ];
 
         return _buildSectionLayout(context, '管理员', items, isDark);
@@ -958,27 +942,7 @@ class _ProfileScreenState extends State<ProfileScreen>
           ),
         ),
       ),
-      _buildSettingsRow(
-        child: _buildSettingsTile(
-          icon: Icons.auto_stories,
-          iconColor: const Color(0xFF667EEA),
-          title: '导入融智云考题库',
-          subtitle: '提取练习题，导出 Markdown',
-          isDark: isDark,
-          onTap: () {
-            if (!authProvider.isLoggedIn) {
-              ScaffoldMessenger.of(
-                context,
-              ).showSnackBar(const SnackBar(content: Text('请先登录')));
-              return;
-            }
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const ExamExtractScreen()),
-            );
-          },
-        ),
-      ),
+
     ];
     return _buildSectionLayout(context, '教务', items, isDark);
   }

@@ -23,8 +23,7 @@ type Config struct {
 	JPushMasterSecret      string // 极光推送 MasterSecret
 	SuperAdminID           string // 超级管理员账号
 	SuperAdminPass         string // 超级管理员密码
-	DeepSeekAPIKey         string // DeepSeek API 密钥
-	DeepSeekBaseURL        string // DeepSeek API 基础路径
+
 	EduServiceToken        string // Python 教务服务共享密钥
 	JWCSyncEnabled         bool   // 校园资讯同步开关
 	JWCSyncIntervalMinutes int    // 校园资讯同步间隔(分钟)
@@ -127,11 +126,7 @@ func Load() *Config {
 		}
 	}
 
-	deepSeekAPIKey := os.Getenv("DEEPSEEK_API_KEY")
-	deepSeekBaseURL := os.Getenv("DEEPSEEK_BASE_URL")
-	if deepSeekBaseURL == "" {
-		deepSeekBaseURL = "https://api.deepseek.com/v1"
-	}
+
 
 	// 生产环境 + 启用校园资讯同步时，必须配置服务间 Token
 	if os.Getenv("GIN_MODE") == "release" && jwcSyncEnabled {
@@ -155,8 +150,7 @@ func Load() *Config {
 		JPushMasterSecret:      jpushMasterSecret,
 		SuperAdminID:           superAdminID,
 		SuperAdminPass:         superAdminPass,
-		DeepSeekAPIKey:         deepSeekAPIKey,
-		DeepSeekBaseURL:        deepSeekBaseURL,
+
 		EduServiceToken:        eduServiceToken,
 		JWCSyncEnabled:         jwcSyncEnabled,
 		JWCSyncIntervalMinutes: jwcSyncIntervalMinutes,

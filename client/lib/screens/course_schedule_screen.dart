@@ -131,6 +131,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
   CourseBackgroundKeepAliveStatus _backgroundKeepAliveStatus =
       const CourseBackgroundKeepAliveStatus.unsupported();
   bool _backgroundKeepAliveBusy = false;
+  static const Duration _courseFetchTimeout = Duration(seconds: 25);
 
   // 左右滑动切周
   late PageController _weekPageController;
@@ -187,31 +188,23 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     if (sc.isLoading) return;
     _didLoad = true;
 
-    // 优先读手机本地缓存
-    final hasCache = sc.courses.isNotEmpty || await sc.hasCachedCourses();
+    // 首次进课表页只读本机缓存。没有缓存时直接给导入提示，避免教务网络异常时长时间卡在加载中。
+    final hasCache = sc.courses.isNotEmpty ||
+        await sc.loadCachedCoursesIfAvailable().timeout(
+              const Duration(seconds: 2),
+              onTimeout: () => false,
+            );
 
-    if (hasCache) {
-      // 有缓存 → 立即展示，后台静默更新
-      if (mounted)
-        setState(() {
-          _hasCache = true;
-          _initializing = false;
-        });
-      sc.loadCourses().then((_) {
-        _syncCourseReminders(sc);
-        _silentSync(sc);
-      });
-      return;
-    }
-
-    // 无缓存 → 从服务器拉取
-    await sc.loadCourses(forceRefresh: true);
     await _syncCourseReminders(sc);
     if (mounted) {
       setState(() {
-        _hasCache = sc.courses.isNotEmpty;
+        _hasCache = hasCache || sc.courses.isNotEmpty;
         _initializing = false;
       });
+    }
+
+    if (hasCache) {
+      _silentSync(sc);
     }
   }
 
@@ -970,10 +963,12 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                           context,
                         ).showSnackBar(const SnackBar(content: Text('绑定成功')));
                         _didLoad = false;
-                        sc.loadCourses(
-                          forceRefresh: true,
-                          isManualRefresh: true,
-                        );
+                        if (mounted) {
+                          setState(() {
+                            _initializing = false;
+                            _hasCache = sc.courses.isNotEmpty;
+                          });
+                        }
                       } else if (context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(content: Text(edu.errorMessage ?? '绑定失败')),
@@ -1057,16 +1052,14 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       final sc = context.read<CourseScheduleProvider>();
       if (mounted)
         setState(() {
-          _initializing = true;
-          _isFetchingCourses = true;
+          _initializing = sc.courses.isEmpty;
         });
-      await sc.loadCourses(forceRefresh: false);
+      await sc.loadCachedCoursesIfAvailable();
       await _syncCourseReminders(sc);
       if (mounted)
         setState(() {
           _hasCache = sc.courses.isNotEmpty;
           _initializing = false;
-          _isFetchingCourses = false;
         });
     }
   }
@@ -1115,18 +1108,15 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                     final sc = context.read<CourseScheduleProvider>();
                     if (mounted)
                       setState(() {
-                        _didLoad = false;
-                        _hasCache = false;
-                        _initializing = true;
-                        _isFetchingCourses = true;
+                        _didLoad = true;
+                        _initializing = sc.courses.isEmpty;
                       });
-                    await sc.loadCourses(forceRefresh: false);
+                    await sc.loadCachedCoursesIfAvailable();
                     await _syncCourseReminders(sc);
                     if (mounted)
                       setState(() {
                         _hasCache = sc.courses.isNotEmpty;
                         _initializing = false;
-                        _isFetchingCourses = false;
                       });
                   }
                 },
@@ -1248,7 +1238,9 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     );
 
     try {
-      final result = await edu.getCourses(sc.selectedYear, sc.selectedSemester);
+      final result = await edu
+          .getCourses(sc.selectedYear, sc.selectedSemester)
+          .timeout(_courseFetchTimeout);
       if (!mounted) return;
 
       if (result == null || !result.success) {
@@ -1258,7 +1250,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
           context,
           title: '获取课表失败',
           message:
-              '可能是由于网络不稳定或教务系统维护中。\n详细原因：$errorMsg\n\n如果提示登录失效，后台正在尝试为您重新登录，请稍后再试。',
+              '这次没有拿到课表，页面会继续保留当前数据。\n\n可能原因：\n1. 教务系统临时不可用或网络波动。\n2. 教务登录状态过期，需要重新绑定。\n3. 当前学期暂时没有课表数据。\n\n详细原因：$errorMsg',
         );
         return;
       }
@@ -1266,7 +1258,11 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       final courses = result.data ?? const <Map<String, dynamic>>[];
       if (courses.isEmpty) {
         Navigator.pop(context); // 关闭加载弹窗
-        messenger.showSnackBar(const SnackBar(content: Text('教务系统暂无可导入课程')));
+        AppFeedback.showErrorDialog(
+          context,
+          title: '没有可导入的课程',
+          message: '教务系统返回了空课表。请确认选择的是当前学期；如果学期正确，可能是学校暂未开放该学期课表。',
+        );
         return;
       }
 
@@ -1382,10 +1378,24 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       Future.delayed(const Duration(milliseconds: 1500), () {
         if (mounted) Navigator.pop(context);
       });
+    } on TimeoutException {
+      if (mounted) {
+        Navigator.pop(context);
+        AppFeedback.showErrorDialog(
+          context,
+          title: '获取课表超时',
+          message:
+              '已经等待 ${_courseFetchTimeout.inSeconds} 秒，教务系统仍未返回结果。\n\n你可以稍后重试，或先检查教务账号是否仍然有效；当前页面不会继续卡在加载中。',
+        );
+      }
     } catch (e) {
       if (mounted) {
         Navigator.pop(context);
-        messenger.showSnackBar(const SnackBar(content: Text('导入过程出现异常，请重试')));
+        AppFeedback.showErrorDialog(
+          context,
+          title: '导入过程异常',
+          message: '课表导入被中断，当前页面数据未被覆盖。\n\n详细原因：$e',
+        );
       }
     } finally {
       if (mounted) {

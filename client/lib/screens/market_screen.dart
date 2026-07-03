@@ -46,7 +46,7 @@ class _MarketScreenState extends State<MarketScreen> {
           ? _marketPostTypes
           : widget.onlyPostTypes!;
 
-  List<String> get _filterTypes => ['all', ..._allowedTypes];
+  int get _activeFilterCount => _typeFilter == 'all' ? 0 : 1;
 
   @override
   void initState() {
@@ -274,23 +274,31 @@ class _MarketScreenState extends State<MarketScreen> {
   }
 
   void _showFilterBottomSheet() {
-    var tempType = _typeFilter;
+    var draftType = _typeFilter;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    const primary = Color(0xFFFF6B35);
+    final options = <MapEntry<String, String>>[
+      const MapEntry('all', '全部'),
+      ..._allowedTypes.map((type) => MapEntry(type, _typeLabel(type))),
+    ];
+
     showModalBottomSheet(
       context: context,
-      backgroundColor: Colors.transparent,
       isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withValues(alpha: 0.36),
       builder: (context) {
-        final isDark = Theme.of(context).brightness == Brightness.dark;
         return StatefulBuilder(
           builder: (context, setSheetState) {
             return SafeArea(
               top: false,
               child: Container(
-                padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
+                margin: const EdgeInsets.only(top: 80),
+                padding: const EdgeInsets.fromLTRB(20, 10, 20, 18),
                 decoration: BoxDecoration(
-                  color: isDark ? const Color(0xFF171A22) : Colors.white,
+                  color: isDark ? const Color(0xFF11141B) : Colors.white,
                   borderRadius:
-                      const BorderRadius.vertical(top: Radius.circular(24)),
+                      const BorderRadius.vertical(top: Radius.circular(28)),
                 ),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -303,98 +311,140 @@ class _MarketScreenState extends State<MarketScreen> {
                         Text(
                           '筛选',
                           style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w900,
+                            fontSize: 20,
+                            fontWeight: FontWeight.w800,
                             color:
-                                isDark ? Colors.white : const Color(0xFF111827),
+                                isDark ? Colors.white : const Color(0xFF101828),
                           ),
                         ),
                         const Spacer(),
                         IconButton(
-                          icon: const Icon(Icons.close_rounded),
+                          visualDensity: VisualDensity.compact,
                           onPressed: () => Navigator.pop(context),
+                          icon: Icon(
+                            Icons.close_rounded,
+                            color: isDark
+                                ? Colors.white70
+                                : const Color(0xFF475467),
+                          ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 16),
                     Text(
                       '商品类型',
                       style: TextStyle(
                         fontSize: 14,
-                        fontWeight: FontWeight.w800,
+                        fontWeight: FontWeight.w700,
                         color:
                             isDark ? Colors.white70 : const Color(0xFF344054),
                       ),
                     ),
                     const SizedBox(height: 12),
-                    Wrap(
-                      spacing: 10,
-                      runSpacing: 10,
-                      children: _filterTypes.map((type) {
-                        final selected = tempType == type;
-                        return InkWell(
-                          borderRadius: BorderRadius.circular(14),
-                          onTap: () {
-                            setSheetState(() => tempType = type);
-                          },
-                          child: Container(
-                            constraints: const BoxConstraints(minWidth: 92),
-                            height: 44,
-                            padding: const EdgeInsets.symmetric(horizontal: 18),
-                            alignment: Alignment.center,
-                            decoration: BoxDecoration(
-                              color: selected
-                                  ? const Color(0xFFFFEFE8)
-                                  : (isDark
-                                      ? const Color(0xFF242833)
-                                      : const Color(0xFFF4F6FA)),
-                              borderRadius: BorderRadius.circular(14),
-                              border: Border.all(
-                                color: selected
-                                    ? const Color(0xFFFF7A45)
-                                    : Colors.transparent,
+                    LayoutBuilder(
+                      builder: (context, constraints) {
+                        final itemWidth = (constraints.maxWidth - 12) / 2;
+                        return Wrap(
+                          spacing: 12,
+                          runSpacing: 12,
+                          children: options.map((entry) {
+                            final selected = draftType == entry.key;
+                            return SizedBox(
+                              width: itemWidth,
+                              height: 44,
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(14),
+                                onTap: () {
+                                  setSheetState(() => draftType = entry.key);
+                                },
+                                child: AnimatedContainer(
+                                  duration: const Duration(milliseconds: 160),
+                                  alignment: Alignment.center,
+                                  decoration: BoxDecoration(
+                                    color: selected
+                                        ? primary.withValues(alpha: 0.12)
+                                        : (isDark
+                                            ? Colors.white
+                                                .withValues(alpha: 0.06)
+                                            : const Color(0xFFF2F4F7)),
+                                    borderRadius: BorderRadius.circular(14),
+                                    border: Border.all(
+                                      color: selected
+                                          ? primary
+                                          : Colors.transparent,
+                                    ),
+                                  ),
+                                  child: Text(
+                                    entry.value,
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w700,
+                                      color: selected
+                                          ? primary
+                                          : (isDark
+                                              ? Colors.white70
+                                              : const Color(0xFF344054)),
+                                    ),
+                                  ),
+                                ),
                               ),
-                            ),
-                            child: Text(
-                              _typeLabel(type),
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w800,
-                                color: selected
-                                    ? const Color(0xFFFF6A2A)
-                                    : (isDark
-                                        ? Colors.white70
-                                        : const Color(0xFF344054)),
-                              ),
-                            ),
-                          ),
+                            );
+                          }).toList(),
                         );
-                      }).toList(),
+                      },
                     ),
                     const SizedBox(height: 24),
                     Row(
                       children: [
                         Expanded(
-                          child: _buildSheetActionButton(
-                            label: '清空选择',
-                            backgroundColor: const Color(0xFFFFF3EC),
-                            foregroundColor: const Color(0xFFFF6A2A),
-                            onTap: () {
-                              _changeTypeFilter('all');
-                              Navigator.pop(context);
-                            },
+                          child: SizedBox(
+                            height: 48,
+                            child: TextButton(
+                              onPressed: draftType == 'all'
+                                  ? null
+                                  : () {
+                                      setSheetState(() => draftType = 'all');
+                                    },
+                              style: TextButton.styleFrom(
+                                backgroundColor: isDark
+                                    ? Colors.white.withValues(alpha: 0.06)
+                                    : const Color(0xFFFFF2EC),
+                                foregroundColor: primary,
+                                disabledForegroundColor:
+                                    primary.withValues(alpha: 0.35),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                              ),
+                              child: const Text(
+                                '清空',
+                                style: TextStyle(fontWeight: FontWeight.w700),
+                              ),
+                            ),
                           ),
                         ),
                         const SizedBox(width: 12),
                         Expanded(
-                          child: _buildSheetActionButton(
-                            label: '确定',
-                            backgroundColor: const Color(0xFFFF6A2A),
-                            foregroundColor: Colors.white,
-                            onTap: () {
-                              _changeTypeFilter(tempType);
-                              Navigator.pop(context);
-                            },
+                          child: SizedBox(
+                            height: 48,
+                            child: ElevatedButton(
+                              onPressed: () {
+                                _changeTypeFilter(draftType);
+                                Navigator.pop(context);
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: primary,
+                                foregroundColor: Colors.white,
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                              ),
+                              child: const Text(
+                                '完成',
+                                style: TextStyle(fontWeight: FontWeight.w800),
+                              ),
+                            ),
                           ),
                         ),
                       ],
@@ -416,32 +466,6 @@ class _MarketScreenState extends State<MarketScreen> {
       decoration: BoxDecoration(
         color: isDark ? Colors.white24 : const Color(0xFFD0D5DD),
         borderRadius: BorderRadius.circular(999),
-      ),
-    );
-  }
-
-  Widget _buildSheetActionButton({
-    required String label,
-    required Color backgroundColor,
-    required Color foregroundColor,
-    required VoidCallback onTap,
-  }) {
-    return SizedBox(
-      height: 46,
-      child: FilledButton(
-        style: FilledButton.styleFrom(
-          backgroundColor: backgroundColor,
-          foregroundColor: foregroundColor,
-          elevation: 0,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-        ),
-        onPressed: onTap,
-        child: Text(
-          label,
-          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
-        ),
       ),
     );
   }
@@ -481,9 +505,9 @@ class _MarketScreenState extends State<MarketScreen> {
           Consumer<PostProvider>(
             builder: (context, postProvider, child) {
               final allPosts = postProvider.postsFor(2, sort: _sortType);
-              final marketPosts = _searchQuery.isNotEmpty
-                  ? _applyLocalTypeFilter(_searchResults)
-                  : _buildMarketPosts(allPosts);
+              final marketPosts = _buildMarketPosts(
+                _searchQuery.isNotEmpty ? _searchResults : allPosts,
+              );
 
               if (postProvider.isLoadingFor(2, sort: _sortType) &&
                   allPosts.isEmpty) {
@@ -732,7 +756,7 @@ class _MarketScreenState extends State<MarketScreen> {
   Widget _buildToolbarRow(bool isDark, int count) {
     final sectionTitle =
         _searchQuery.isNotEmpty ? '搜索结果' : (widget.titleOverride ?? '最新商品');
-    final hasFilter = _typeFilter != 'all';
+    final hasFilter = _activeFilterCount > 0;
 
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -781,7 +805,7 @@ class _MarketScreenState extends State<MarketScreen> {
             const SizedBox(width: 8),
             _buildToolbarButton(
               isDark: isDark,
-              label: hasFilter ? '筛选 1' : '筛选',
+              label: hasFilter ? _typeLabel(_typeFilter) : '筛选',
               icon: Icons.tune_rounded,
               highlighted: hasFilter,
               onTap: _showFilterBottomSheet,
@@ -819,7 +843,7 @@ class _MarketScreenState extends State<MarketScreen> {
                     fontSize: 13,
                     fontWeight: FontWeight.w700,
                     color: highlighted
-                        ? const Color(0xFFFF6A2A)
+                        ? const Color(0xFFFF6B35)
                         : (isDark ? Colors.white70 : const Color(0xFF344054)),
                   ),
                 ),
@@ -828,7 +852,7 @@ class _MarketScreenState extends State<MarketScreen> {
                   icon,
                   size: 17,
                   color: highlighted
-                      ? const Color(0xFFFF6A2A)
+                      ? const Color(0xFFFF6B35)
                       : (isDark ? Colors.white60 : const Color(0xFF667085)),
                 ),
               ],

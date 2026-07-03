@@ -36,6 +36,28 @@ import 'feedback_screen.dart';
 import 'user_home_screen.dart';
 import 'social_list_screen.dart';
 
+@visibleForTesting
+({
+  String privateSubtitle,
+  bool showPrivateBadge,
+  String? notificationSubtitle,
+  bool showNotificationBadge,
+}) profileMessageEntryState({
+  required int unreadMessageCount,
+  required int unreadNotificationCount,
+}) {
+  final showPrivateBadge = unreadMessageCount > 0;
+  final showNotificationBadge = unreadNotificationCount > 0;
+  return (
+    privateSubtitle:
+        showPrivateBadge ? '$unreadMessageCount条新私信' : '查看私信',
+    showPrivateBadge: showPrivateBadge,
+    notificationSubtitle:
+        showNotificationBadge ? '$unreadNotificationCount条新通知' : null,
+    showNotificationBadge: showNotificationBadge,
+  );
+}
+
 class ProfileScreen extends StatefulWidget {
   final bool isActive;
 
@@ -824,17 +846,18 @@ class _ProfileScreenState extends State<ProfileScreen>
     final unreadMessageCount = messageProvider.hasLoadedConversations
         ? messageProvider.unreadMessageCount
         : _unreadMessageCount;
-    final totalUnreadCount = _unreadReplyCount + unreadMessageCount;
+    final messageEntryState = profileMessageEntryState(
+      unreadMessageCount: unreadMessageCount,
+      unreadNotificationCount: _unreadReplyCount,
+    );
     final items = [
       _buildSettingsRow(
         child: _buildSettingsTile(
           icon: Icons.chat_outlined,
           iconColor: const Color(0xFF10B981),
           title: '私信',
-          subtitle: totalUnreadCount > 0
-              ? '共$totalUnreadCount条未读，含$unreadMessageCount条私信'
-              : '查看私信与系统通知',
-          trailing: totalUnreadCount > 0
+          subtitle: messageEntryState.privateSubtitle,
+          trailing: messageEntryState.showPrivateBadge
               ? Container(
                   width: 8,
                   height: 8,
@@ -861,8 +884,8 @@ class _ProfileScreenState extends State<ProfileScreen>
           icon: Icons.notifications_active_outlined,
           iconColor: Colors.orange,
           title: '通知',
-          subtitle: _unreadReplyCount > 0 ? '$_unreadReplyCount条新通知' : null,
-          trailing: _unreadReplyCount > 0
+          subtitle: messageEntryState.notificationSubtitle,
+          trailing: messageEntryState.showNotificationBadge
               ? Container(
                   width: 8,
                   height: 8,

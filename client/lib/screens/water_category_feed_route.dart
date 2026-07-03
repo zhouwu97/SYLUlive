@@ -22,7 +22,9 @@ class WaterCategoryFeedRoute extends StatelessWidget {
             'Must provide at least one of: legacyCategory, section, sectionSlug');
 
   WaterCategoryFeedRoute.fromLegacyCategory(WaterPostCategory category)
-      : this(key: ValueKey('legacy_${category.value}'), legacyCategory: category);
+      : this(
+            key: ValueKey('legacy_${category.value}'),
+            legacyCategory: category);
 
   WaterCategoryFeedRoute.fromSection(WaterSection section)
       : this(key: ValueKey('section_${section.slug}'), section: section);
@@ -37,8 +39,7 @@ class WaterCategoryFeedRoute extends StatelessWidget {
     } else {
       // Only sectionSlug provided — lookup from provider
       final provider = context.read<WaterSectionProvider>();
-      resolved =
-          provider.getBySlugOrFallback(sectionSlug!);
+      resolved = provider.getBySlugOrFallback(sectionSlug!);
     }
 
     return ChangeNotifierProvider(
@@ -47,7 +48,10 @@ class WaterCategoryFeedRoute extends StatelessWidget {
         enableCache: false,
       ),
       child: WaterCategoryFeedScreen(
-        category: legacyCategory ?? waterCategoryOf(resolved.slug) ?? kWaterPostCategories[0],
+        key: ValueKey('water-feed-${resolved.slug}'),
+        category: legacyCategory ??
+            waterCategoryOf(resolved.slug) ??
+            kWaterPostCategories[0],
         section: resolved,
       ),
     );

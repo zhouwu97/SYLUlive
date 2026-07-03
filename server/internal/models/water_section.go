@@ -95,6 +95,92 @@ type WaterSectionModerator struct {
 
 func (WaterSectionModerator) TableName() string { return "water_section_moderators" }
 
+// WaterSectionPinStatus
+const (
+	PinStatusActive   = "active"
+	PinStatusInactive = "inactive"
+)
+
+// WaterSectionPin 版块内局部置顶，不影响首页全局置顶
+type WaterSectionPin struct {
+	ID        uint `gorm:"primaryKey" json:"id"`
+	SectionID uint `gorm:"index;not null" json:"section_id"`
+	PostID    uint `gorm:"index;not null" json:"post_id"`
+
+	PinnedBy    uint       `gorm:"index;not null" json:"pinned_by"`
+	Weight      int        `gorm:"not null;default:0" json:"weight"`
+	Reason      string     `gorm:"size:500" json:"reason"`
+	PinnedUntil *time.Time `gorm:"index" json:"pinned_until"`
+	Status      string     `gorm:"size:32;index;not null;default:'active'" json:"status"`
+
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+
+	// 关联
+	Section WaterSection `gorm:"foreignKey:SectionID" json:"section,omitempty"`
+	Post    Post         `gorm:"foreignKey:PostID" json:"post,omitempty"`
+}
+
+func (WaterSectionPin) TableName() string { return "water_section_pins" }
+
+// WaterSectionMuteStatus
+const (
+	MuteStatusActive = "active"
+	MuteStatusLifted = "lifted"
+)
+
+// WaterSectionMute 版块内禁言
+type WaterSectionMute struct {
+	ID        uint `gorm:"primaryKey" json:"id"`
+	SectionID uint `gorm:"index;not null" json:"section_id"`
+	UserID    uint `gorm:"index;not null" json:"user_id"`
+
+	MutedBy uint   `gorm:"index;not null" json:"muted_by"`
+	Reason  string `gorm:"size:500" json:"reason"`
+	Until   *time.Time `gorm:"index" json:"until"`
+	Status  string `gorm:"size:32;index;not null;default:'active'" json:"status"`
+
+	LiftedBy   *uint      `gorm:"index" json:"lifted_by"`
+	LiftedAt   *time.Time `json:"lifted_at"`
+	LiftReason string     `gorm:"size:500" json:"lift_reason"`
+
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+
+	Section WaterSection `gorm:"foreignKey:SectionID" json:"section,omitempty"`
+	User    User         `gorm:"foreignKey:UserID" json:"user,omitempty"`
+}
+
+func (WaterSectionMute) TableName() string { return "water_section_mutes" }
+
+// WaterModerationLog 水帖版块管理日志
+type WaterModerationLog struct {
+	ID        uint `gorm:"primaryKey" json:"id"`
+	SectionID uint `gorm:"index;not null" json:"section_id"`
+
+	OperatorID  uint   `gorm:"index;not null" json:"operator_id"`
+	TargetType  string `gorm:"size:32;index;not null" json:"target_type"`
+	TargetID    uint   `gorm:"index;not null" json:"target_id"`
+	TargetUserID *uint `gorm:"index" json:"target_user_id"`
+
+	Action   string `gorm:"size:64;index;not null" json:"action"`
+	Reason   string `gorm:"size:500" json:"reason"`
+	Snapshot string `gorm:"type:text" json:"snapshot"`
+
+	CreatedAt time.Time `json:"created_at"`
+}
+
+func (WaterModerationLog) TableName() string { return "water_moderation_logs" }
+
+// ModerationAction 枚举
+const (
+	ModActionPinPost    = "pin_post"
+	ModActionUnpinPost  = "unpin_post"
+	ModActionDeletePost = "delete_post"
+	ModActionMuteUser   = "mute_user"
+	ModActionUnmuteUser = "unmute_user"
+)
+
 // waterSectionSeedEntry seed 表条目
 type waterSectionSeedEntry struct {
 	Slug              string

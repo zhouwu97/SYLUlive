@@ -187,15 +187,15 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       _isLoading = false;
     }
     _loadPost();
-    _loadWaterSectionPermission();
+    _loadWaterSectionPermission(forceRefresh: true);
   }
 
-  void _loadWaterSectionPermission() {
+  Future<void> _loadWaterSectionPermission({bool forceRefresh = false}) async {
     final post = _post ?? widget.initialPost;
     if (post == null || post.boardId != 1 || post.postType.isEmpty) return;
-    context
+    await context
         .read<WaterModeratorProvider>()
-        .loadMyPermission(post.postType);
+        .loadMyPermission(post.postType, forceRefresh: forceRefresh);
   }
 
   @override
@@ -248,6 +248,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       if (mounted) {
         context.read<PostProvider>().updatePostInCache(_post!);
       }
+      await _loadWaterSectionPermission(forceRefresh: true);
       if (widget.targetReplyId != null && !_hasScrolledToTarget) {
         _prepareTargetReplyAndScroll();
       }
@@ -658,7 +659,23 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     if (daysResult == null) return;
     final reason = await _askReason(title: '置顶原因', hint: '为什么置顶这篇帖子');
     if (reason == null) return;
+    if (reason.length < 2) {
+      if (mounted) {
+        AppFeedback.showSnackBar(context, '置顶原因至少 2 个字', isError: true);
+      }
+      return;
+    }
 
+    if (!mounted) return;
+    final confirmed = await AppFeedback.confirmDanger(
+      context,
+      title: '版块置顶',
+      message: '该帖子会在当前版块内优先展示 $daysResult 天。确认继续吗？',
+      confirmText: '确认置顶',
+    );
+    if (!confirmed) return;
+
+    if (!mounted) return;
     final provider = context.read<WaterModerationProvider>();
     final ok = await provider.pinPost(
       sectionSlug: sectionSlug,
@@ -672,8 +689,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       setState(() => _post = _post?.copyWith(
             waterSectionPinned: true,
           ));
+      await context.read<PostProvider>().refreshWaterSectionFeeds(sectionSlug);
+      if (mounted) await _loadPost();
     } else {
-      AppFeedback.showSnackBar(context, provider.error ?? '置顶失败', isError: true);
+      AppFeedback.showSnackBar(context, provider.error ?? '置顶失败',
+          isError: true);
     }
   }
 
@@ -683,6 +703,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final sectionSlug = post.postType;
     if (sectionSlug.isEmpty) return;
 
+    if (!mounted) return;
     final confirmed = await AppFeedback.confirmDanger(
       context,
       title: '取消版块置顶',
@@ -691,6 +712,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
     if (!confirmed) return;
 
+    if (!mounted) return;
     final provider = context.read<WaterModerationProvider>();
     final ok = await provider.unpinPost(
       sectionSlug: sectionSlug,
@@ -702,8 +724,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       setState(() => _post = _post?.copyWith(
             waterSectionPinned: false,
           ));
+      await context.read<PostProvider>().refreshWaterSectionFeeds(sectionSlug);
+      if (mounted) await _loadPost();
     } else {
-      AppFeedback.showSnackBar(context, provider.error ?? '取消置顶失败', isError: true);
+      AppFeedback.showSnackBar(context, provider.error ?? '取消置顶失败',
+          isError: true);
     }
   }
 
@@ -715,8 +740,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final sectionSlug = post.postType;
     if (sectionSlug.isEmpty) return;
 
-    final reason = await _askReason(
-        title: '删除原因', hint: '请填写删除原因（至少 2 个字）');
+    final reason = await _askReason(title: '删除原因', hint: '请填写删除原因（至少 2 个字）');
     if (reason == null || reason.length < 2) {
       if (mounted) {
         AppFeedback.showSnackBar(context, '删除原因至少 2 个字', isError: true);
@@ -724,6 +748,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       return;
     }
 
+    if (!mounted) return;
     final confirmed = await AppFeedback.confirmDanger(
       context,
       title: '版主删除',
@@ -732,6 +757,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
     if (!confirmed) return;
 
+    if (!mounted) return;
     final provider = context.read<WaterModerationProvider>();
     final ok = await provider.deletePostByModerator(
       sectionSlug: sectionSlug,
@@ -741,9 +767,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     if (!mounted) return;
     if (ok) {
       AppFeedback.showSnackBar(context, '帖子已删除');
+      await context.read<PostProvider>().refreshWaterSectionFeeds(sectionSlug);
+      if (!mounted) return;
       Navigator.pop(context, true);
     } else {
-      AppFeedback.showSnackBar(context, provider.error ?? '删除失败', isError: true);
+      AppFeedback.showSnackBar(context, provider.error ?? '删除失败',
+          isError: true);
     }
   }
 
@@ -777,15 +806,16 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       return;
     }
 
+    if (!mounted) return;
     final confirmed = await AppFeedback.confirmDanger(
       context,
       title: '禁言作者',
-      message:
-          '禁言仅在该版块生效。被禁言期间该用户暂时不能在本版块发帖或编辑内容。确认禁言 ${daysResult} 天吗？',
+      message: '禁言仅在该版块生效。被禁言期间该用户暂时不能在本版块发帖或编辑内容。确认禁言 $daysResult 天吗？',
       confirmText: '确认禁言',
     );
     if (!confirmed) return;
 
+    if (!mounted) return;
     final provider = context.read<WaterModerationProvider>();
     final ok = await provider.muteUser(
       sectionSlug: sectionSlug,
@@ -796,8 +826,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     if (!mounted) return;
     if (ok) {
       AppFeedback.showSnackBar(context, '已禁言该用户。如需隐藏内容请另行删除帖子');
+      await context.read<WaterModerationProvider>().loadMutes(sectionSlug);
     } else {
-      AppFeedback.showSnackBar(context, provider.error ?? '禁言失败', isError: true);
+      AppFeedback.showSnackBar(context, provider.error ?? '禁言失败',
+          isError: true);
     }
   }
 
@@ -1294,11 +1326,15 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               // 仅水帖版块显示版主操作，集市不显示
               final isWaterPost = _post?.boardId == 1;
               final perm = (isWaterPost && sectionSlug.isNotEmpty)
-                  ? context.read<WaterModeratorProvider>().permissionOf(sectionSlug)
+                  ? context
+                      .read<WaterModeratorProvider>()
+                      .permissionOf(sectionSlug)
                   : null;
 
               // ── 版块管理操作（版主/管理员可见）──
-              if (_post?.boardId == 1 && sectionSlug.isNotEmpty && perm != null &&
+              if (_post?.boardId == 1 &&
+                  sectionSlug.isNotEmpty &&
+                  perm != null &&
                   (perm.isGlobalAdmin || perm.isModerator)) {
                 if (perm.canPinPost) {
                   if (_post?.waterSectionPinned == true) {
@@ -1322,8 +1358,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 }
                 if (perm.canMuteUser && _post?.authorId != null) {
                   // 不显示禁言自己的入口
-                  final currentUserId =
-                      context.read<AuthProvider>().user?.id;
+                  final currentUserId = context.read<AuthProvider>().user?.id;
                   if (currentUserId != _post!.authorId) {
                     items.add(const PopupMenuItem(
                       value: 'mute_author',
@@ -3196,7 +3231,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     required Reply? anchorReply,
   }) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -3451,7 +3486,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   Widget _buildSheetChildrenList(BuildContext sheetContext, Reply parentReply, bool isDark) {
     final children = _collectThreadChildren(parentReply.id);
-    
+
     if (children.isEmpty) {
       return const SliverToBoxAdapter(
         child: SizedBox(height: 100),

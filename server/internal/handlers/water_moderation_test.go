@@ -174,6 +174,16 @@ func execModAction(t *testing.T, handler *WaterModerationHandler, method, path, 
 	return rec
 }
 
+func execPostListRequest(t *testing.T, handler *PostHandler, path string) *httptest.ResponseRecorder {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodGet, path, nil)
+	handler.GetList(c)
+	return rec
+}
+
 // ── 测试 ──
 
 // 1. admin pin course_study post
@@ -687,6 +697,213 @@ func TestModAdminMuteWithinLimit(t *testing.T) {
 	rec := execModAction(t, handler, http.MethodPost, path, body, admin.ID, admin.Role)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("expected 201, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestModDeleteReasonTooShort(t *testing.T) {
+	db := newModTestDB(t)
+	section := modTestSection(t, db, "course_study")
+	admin := newModTestUser(t, db, models.RoleAdmin)
+	author := newModTestUser(t, db, models.RoleUser)
+	post := modTestPost(t, db, author.ID, section)
+
+	handler := NewWaterModerationHandler(db)
+	path := fmt.Sprintf("/api/water/sections/%s/posts/%d/moderate", section.Slug, post.ID)
+	rec := execModAction(t, handler, http.MethodDelete, path, `{"reason":"a"}`, admin.ID, admin.Role)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for short reason, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestModMuteReasonTooShort(t *testing.T) {
+	db := newModTestDB(t)
+	section := modTestSection(t, db, "course_study")
+	admin := newModTestUser(t, db, models.RoleAdmin)
+	target := newModTestUser(t, db, models.RoleUser)
+
+	handler := NewWaterModerationHandler(db)
+	path := fmt.Sprintf("/api/water/sections/%s/users/%d/mute", section.Slug, target.ID)
+	rec := execModAction(t, handler, http.MethodPost, path, `{"reason":"a"}`, admin.ID, admin.Role)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for short reason, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestModUnpinWithoutActivePinIsIdempotentAndDoesNotWriteLog(t *testing.T) {
+	db := newModTestDB(t)
+	section := modTestSection(t, db, "course_study")
+	admin := newModTestUser(t, db, models.RoleAdmin)
+	author := newModTestUser(t, db, models.RoleUser)
+	post := modTestPost(t, db, author.ID, section)
+
+	handler := NewWaterModerationHandler(db)
+	path := fmt.Sprintf("/api/water/sections/%s/posts/%d/pin", section.Slug, post.ID)
+	rec := execModAction(t, handler, http.MethodDelete, path, `{}`, admin.ID, admin.Role)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var count int64
+	db.Model(&models.WaterModerationLog{}).
+		Where("action = ? AND target_id = ?", models.ModActionUnpinPost, post.ID).
+		Count(&count)
+	if count != 0 {
+		t.Fatalf("idempotent unpin should not write log, got %d", count)
+	}
+}
+
+func TestModUnmuteWithoutActiveMuteIsIdempotentAndDoesNotWriteLog(t *testing.T) {
+	db := newModTestDB(t)
+	section := modTestSection(t, db, "course_study")
+	admin := newModTestUser(t, db, models.RoleAdmin)
+	target := newModTestUser(t, db, models.RoleUser)
+
+	handler := NewWaterModerationHandler(db)
+	path := fmt.Sprintf("/api/water/sections/%s/users/%d/mute", section.Slug, target.ID)
+	rec := execModAction(t, handler, http.MethodDelete, path, `{}`, admin.ID, admin.Role)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var count int64
+	db.Model(&models.WaterModerationLog{}).
+		Where("action = ? AND target_id = ?", models.ModActionUnmuteUser, target.ID).
+		Count(&count)
+	if count != 0 {
+		t.Fatalf("idempotent unmute should not write log, got %d", count)
+	}
+}
+
+func TestModExpiredMuteDoesNotBlockAndIsHiddenFromActiveList(t *testing.T) {
+	db := newModTestDB(t)
+	section := modTestSection(t, db, "course_study")
+	admin := newModTestUser(t, db, models.RoleAdmin)
+	target := newModTestUser(t, db, models.RoleUser)
+	expiredAt := time.Now().Add(-1 * time.Hour)
+
+	if err := db.Create(&models.WaterSectionMute{
+		SectionID: section.ID,
+		UserID:    target.ID,
+		MutedBy:   admin.ID,
+		Reason:    "过期测试",
+		Until:     &expiredAt,
+		Status:    models.MuteStatusActive,
+	}).Error; err != nil {
+		t.Fatalf("create expired mute: %v", err)
+	}
+
+	if services.NewWaterPermissionService(db).IsMuted(section.ID, target.ID) {
+		t.Fatal("expired mute should not block posting")
+	}
+
+	handler := NewWaterModerationHandler(db)
+	path := fmt.Sprintf("/api/water/sections/%s/mutes", section.Slug)
+	rec := execModAction(t, handler, http.MethodGet, path, "", admin.ID, admin.Role)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Mutes []models.WaterSectionMute `json:"mutes"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode mutes: %v", err)
+	}
+	if len(body.Mutes) != 0 {
+		t.Fatalf("expired active mute should be hidden from active list, got %d", len(body.Mutes))
+	}
+}
+
+func TestModExpiredPinDoesNotCountTowardLimit(t *testing.T) {
+	db := newModTestDB(t)
+	section := modTestSection(t, db, "course_study")
+	admin := newModTestUser(t, db, models.RoleAdmin)
+	author := newModTestUser(t, db, models.RoleUser)
+	expiredAt := time.Now().Add(-1 * time.Hour)
+	for i := 0; i < 3; i++ {
+		post := modTestPost(t, db, author.ID, section)
+		if err := db.Create(&models.WaterSectionPin{
+			SectionID:   section.ID,
+			PostID:      post.ID,
+			PinnedBy:    admin.ID,
+			Weight:      50,
+			Reason:      "过期置顶",
+			PinnedUntil: &expiredAt,
+			Status:      models.PinStatusActive,
+		}).Error; err != nil {
+			t.Fatalf("create expired pin: %v", err)
+		}
+	}
+
+	handler := NewWaterModerationHandler(db)
+	post := modTestPost(t, db, author.ID, section)
+	path := fmt.Sprintf("/api/water/sections/%s/posts/%d/pin", section.Slug, post.ID)
+	rec := execModAction(t, handler, http.MethodPost, path, `{"reason":"新的置顶"}`, admin.ID, admin.Role)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expired pins should not count toward limit, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestModSectionPinStateAndOrderOnlyUseActivePins(t *testing.T) {
+	db := newModTestDB(t)
+	section := modTestSection(t, db, "course_study")
+	admin := newModTestUser(t, db, models.RoleAdmin)
+	author := newModTestUser(t, db, models.RoleUser)
+	oldPost := modTestPost(t, db, author.ID, section)
+	newPost := modTestPost(t, db, author.ID, section)
+	pastCreated := time.Now().Add(-2 * time.Hour)
+	if err := db.Model(&oldPost).Update("created_at", pastCreated).Error; err != nil {
+		t.Fatalf("update old post time: %v", err)
+	}
+
+	if err := db.Create(&models.WaterSectionPin{
+		SectionID: section.ID,
+		PostID:    oldPost.ID,
+		PinnedBy:  admin.ID,
+		Weight:    80,
+		Reason:    "有效置顶",
+		Status:    models.PinStatusActive,
+	}).Error; err != nil {
+		t.Fatalf("create active pin: %v", err)
+	}
+
+	postHandler := NewPostHandler(db, "", "")
+	path := fmt.Sprintf("/api/posts?board=1&type=%s&sort=time&page=1&limit=10", section.Slug)
+	rec := execPostListRequest(t, postHandler, path)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Posts []models.Post `json:"posts"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode posts: %v", err)
+	}
+	if len(body.Posts) < 2 {
+		t.Fatalf("expected posts, got %d", len(body.Posts))
+	}
+	if body.Posts[0].ID != oldPost.ID || !body.Posts[0].WaterSectionPinned {
+		t.Fatalf("active section pin should be first and marked, first=%d marked=%v", body.Posts[0].ID, body.Posts[0].WaterSectionPinned)
+	}
+
+	expiredAt := time.Now().Add(-1 * time.Hour)
+	if err := db.Model(&models.WaterSectionPin{}).
+		Where("post_id = ?", oldPost.ID).
+		Update("pinned_until", expiredAt).Error; err != nil {
+		t.Fatalf("expire pin: %v", err)
+	}
+	rec = execPostListRequest(t, postHandler, path)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 after expire, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	body = struct {
+		Posts []models.Post `json:"posts"`
+	}{}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode posts after expire: %v", err)
+	}
+	if len(body.Posts) < 2 {
+		t.Fatalf("expected posts after expire, got %d", len(body.Posts))
+	}
+	if body.Posts[0].ID != newPost.ID || body.Posts[0].WaterSectionPinned {
+		t.Fatalf("expired section pin should not affect order/state, first=%d marked=%v", body.Posts[0].ID, body.Posts[0].WaterSectionPinned)
 	}
 }
 

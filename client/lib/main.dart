@@ -942,8 +942,16 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => CanteenProvider(dio)),
         ChangeNotifierProvider(create: (_) => SocialProvider(dio)),
         ChangeNotifierProvider(create: (_) => WaterSectionProvider(dio)),
-        ChangeNotifierProvider(create: (_) => WaterModeratorProvider(dio)),
-        ChangeNotifierProvider(create: (_) => WaterModerationProvider(dio)),
+        ChangeNotifierProxyProvider<AuthProvider, WaterModeratorProvider>(
+          create: (_) => WaterModeratorProvider(dio),
+          update: (_, auth, provider) =>
+              provider!..syncSessionUser(auth.user?.id),
+        ),
+        ChangeNotifierProxyProvider<AuthProvider, WaterModerationProvider>(
+          create: (_) => WaterModerationProvider(dio),
+          update: (_, auth, provider) =>
+              provider!..syncSessionUser(auth.user?.id),
+        ),
       ],
       child: const _WidgetDeepLinkHandler(child: _AppContent()),
     );

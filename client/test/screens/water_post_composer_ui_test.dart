@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:shenliyuan/models/user.dart';
 import 'package:shenliyuan/providers/auth_provider.dart';
 import 'package:shenliyuan/providers/post_provider.dart';
+import 'package:shenliyuan/providers/water_section_provider.dart';
 import 'package:shenliyuan/screens/publish/water_post_composer.dart';
 
 class FakeAuthProvider extends Fake
@@ -32,6 +33,7 @@ class FakePostProvider extends Fake
     required String content,
     String? title,
     String? postType,
+    int? waterTagId,
     double? price,
     String? contact,
     List<int>? fileIds,
@@ -55,6 +57,9 @@ Widget buildComposerTestApp(FakePostProvider postProvider) {
       ChangeNotifierProvider<PostProvider>.value(
         value: postProvider,
       ),
+      ChangeNotifierProvider<WaterSectionProvider>(
+        create: (_) => WaterSectionProvider(null),
+      ),
     ],
     child: MaterialApp(
       theme: ThemeData(
@@ -75,7 +80,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('发布水帖'), findsOneWidget);
-    expect(find.text('分类'), findsOneWidget);
+    expect(find.text('版块'), findsOneWidget);
     expect(find.text('校园生活'), findsOneWidget);
     expect(find.text('今天想分享什么？'), findsNothing);
     expect(find.text('添加标题'), findsOneWidget);
@@ -104,7 +109,7 @@ void main() {
     final titleHint = tester.widget<Text>(find.text('添加标题'));
     final contentHint = tester.widget<Text>(find.text('分享校园生活、提问或记录此时此刻···'));
     final pageTitle = tester.widget<Text>(find.text('发布水帖'));
-    final categoryTitle = tester.widget<Text>(find.text('分类'));
+    final categoryTitle = tester.widget<Text>(find.text('版块'));
     final selectedCategory = tester.widget<Text>(find.text('校园生活'));
 
     expect(pageTitle.style?.color, Colors.black);

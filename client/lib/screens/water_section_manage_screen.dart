@@ -21,9 +21,6 @@ class WaterSectionManageScreen extends StatefulWidget {
 }
 
 class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
-  bool _isLoading = true;
-  String? _error;
-
   @override
   void initState() {
     super.initState();
@@ -40,7 +37,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
           .read<WaterModeratorProvider>()
           .loadModerators(widget.section.slug);
     } catch (e) {
-      _error = e.toString();
+      // silently ignore — 403 etc means user has no access
     } finally {
       if (mounted) setState(() {});
     }

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"shenliyuan/internal/models"
+	"shenliyuan/internal/services"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -476,6 +477,15 @@ func (h *PostHandler) Create(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": secErr.Error()})
 			return
 		}
+		// 禁言检查：admin/super_admin 可绕过
+		role, _ := c.Get("role")
+		if role != "admin" && role != "super_admin" {
+			permSvc := services.NewWaterPermissionService(h.db)
+			if permSvc.IsMuted(sectionID, userID.(uint)) {
+				c.JSON(http.StatusForbidden, gin.H{"error": "你已被该版块禁言，暂时无法发布内容"})
+				return
+			}
+		}
 		if input.WaterTagID != nil && *input.WaterTagID != 0 {
 			if tagErr := validateWaterTagBelongsToSection(h.db, *input.WaterTagID, sectionID); tagErr != nil {
 				c.JSON(http.StatusBadRequest, gin.H{"error": tagErr.Error()})
@@ -658,6 +668,15 @@ func (h *PostHandler) Update(c *gin.Context) {
 		if secErr != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": secErr.Error()})
 			return
+		}
+		// 禁言检查：admin/super_admin 可绕过
+		role, _ := c.Get("role")
+		if role != "admin" && role != "super_admin" {
+			permSvc := services.NewWaterPermissionService(h.db)
+			if permSvc.IsMuted(sectionID, userID.(uint)) {
+				c.JSON(http.StatusForbidden, gin.H{"error": "你已被该版块禁言，暂时无法编辑内容"})
+				return
+			}
 		}
 		// 计算编辑后最终标签 ID，重新校验是否属于新版块
 		finalTagID := post.WaterTagID

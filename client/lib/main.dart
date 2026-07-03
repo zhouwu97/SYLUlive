@@ -22,6 +22,9 @@ import 'providers/teacher_provider.dart';
 import 'providers/canteen_provider.dart';
 
 import 'providers/social_provider.dart';
+import 'providers/water_section_provider.dart';
+import 'providers/water_moderator_provider.dart';
+import 'providers/water_moderation_provider.dart';
 import 'models/user.dart';
 import 'screens/chat_detail_screen.dart';
 import 'screens/post_detail_screen.dart';
@@ -49,6 +52,75 @@ String _hashError(
 ) {
   final bytes = utf8.encode('$level$source$type$summary$detail');
   return md5.convert(bytes).toString();
+}
+
+class _FlutterErrorLogInfo {
+  final String level;
+  final String source;
+  final String type;
+  final String summary;
+  final String detail;
+
+  const _FlutterErrorLogInfo({
+    required this.level,
+    required this.source,
+    required this.type,
+    required this.summary,
+    required this.detail,
+  });
+}
+
+_FlutterErrorLogInfo _classifyFlutterError(FlutterErrorDetails details) {
+  final exceptionText = details.exceptionAsString();
+  final fullString = details.toString();
+
+  final overflowMatch = RegExp(
+    r'A RenderFlex overflowed by ([\d.]+) pixels on the (bottom|top|left|right)',
+  ).firstMatch(exceptionText);
+
+  if (overflowMatch != null) {
+    final pixels = overflowMatch.group(1) ?? '?';
+    final edge = overflowMatch.group(2) ?? '边缘';
+    final edgeLabel = switch (edge) {
+      'bottom' => '底部',
+      'top' => '顶部',
+      'left' => '左侧',
+      'right' => '右侧',
+      _ => edge,
+    };
+
+    final fileMatch = RegExp(
+      r'file:///([^\n]+?):(\d+):(\d+)',
+    ).firstMatch(fullString);
+
+    final location = fileMatch == null
+        ? '未识别到具体文件'
+        : '${fileMatch.group(1)}:${fileMatch.group(2)}';
+
+    return _FlutterErrorLogInfo(
+      level: 'warning',
+      source: '界面',
+      type: '布局溢出',
+      summary: '页面组件尺寸不足，内容向$edgeLabel溢出 ${pixels}px',
+      detail: [
+        '问题说明：某个 Column / Row 中的内容超过了父组件可用空间。',
+        '影响范围：通常不会导致 App 崩溃，但会造成界面被挤出、黄黑条或日志刷屏。',
+        '定位位置：$location',
+        '修复建议：检查固定高度、padding、图标尺寸、文字字号；优先使用 Flexible / Expanded / FittedBox 让内容自适应。',
+        '',
+        '原始 Flutter 错误：',
+        fullString,
+      ].join('\n'),
+    );
+  }
+
+  return _FlutterErrorLogInfo(
+    level: 'error',
+    source: 'Flutter',
+    type: details.exception.runtimeType.toString(),
+    summary: exceptionText,
+    detail: fullString,
+  );
 }
 
 final Map<String, int> _dedupTimes = {};
@@ -122,19 +194,19 @@ Future<void> main() async {
           return;
         }
 
-        final fullString = details.toString();
+        final info = _classifyFlutterError(details);
         _safeRecord(
-          level: 'error',
-          source: 'Flutter',
-          type: details.exception.runtimeType.toString(),
-          summary: exceptionText,
-          detail: fullString,
+          level: info.level,
+          source: info.source,
+          type: info.type,
+          summary: info.summary,
+          detail: info.detail,
           dedupKey: _hashError(
-            'error',
-            'Flutter',
-            details.exception.runtimeType.toString(),
-            exceptionText,
-            fullString,
+            info.level,
+            info.source,
+            info.type,
+            info.summary,
+            info.detail,
           ),
           dedupMs: 2000,
         );
@@ -938,6 +1010,17 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => MajorProvider(dio)),
         ChangeNotifierProvider(create: (_) => CanteenProvider(dio)),
         ChangeNotifierProvider(create: (_) => SocialProvider(dio)),
+        ChangeNotifierProvider(create: (_) => WaterSectionProvider(dio)),
+        ChangeNotifierProxyProvider<AuthProvider, WaterModeratorProvider>(
+          create: (_) => WaterModeratorProvider(dio),
+          update: (_, auth, provider) =>
+              provider!..syncSessionUser(auth.user?.id),
+        ),
+        ChangeNotifierProxyProvider<AuthProvider, WaterModerationProvider>(
+          create: (_) => WaterModerationProvider(dio),
+          update: (_, auth, provider) =>
+              provider!..syncSessionUser(auth.user?.id),
+        ),
       ],
       child: const _WidgetDeepLinkHandler(child: _AppContent()),
     );

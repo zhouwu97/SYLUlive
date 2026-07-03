@@ -22,19 +22,41 @@ import '../widgets/cached_avatar.dart';
 import '../config/api_constants.dart';
 import '../config/privileged_accounts.dart';
 import 'edu_screen.dart';
-import 'exam_extract_screen.dart';
+
 import 'login_screen.dart';
 import 'my_content_screen.dart';
 import 'chat_list_screen.dart';
 import 'admin_panel_screen.dart';
 import 'super_admin_screen.dart';
 import 'admin_members_screen.dart';
-import 'oneclass_orders_screen.dart';
+
 import 'notifications_screen.dart';
 import 'settings_screen.dart';
 import 'feedback_screen.dart';
 import 'user_home_screen.dart';
 import 'social_list_screen.dart';
+
+@visibleForTesting
+({
+  String privateSubtitle,
+  bool showPrivateBadge,
+  String? notificationSubtitle,
+  bool showNotificationBadge,
+}) profileMessageEntryState({
+  required int unreadMessageCount,
+  required int unreadNotificationCount,
+}) {
+  final showPrivateBadge = unreadMessageCount > 0;
+  final showNotificationBadge = unreadNotificationCount > 0;
+  return (
+    privateSubtitle:
+        showPrivateBadge ? '$unreadMessageCount条新私信' : '查看私信',
+    showPrivateBadge: showPrivateBadge,
+    notificationSubtitle:
+        showNotificationBadge ? '$unreadNotificationCount条新通知' : null,
+    showNotificationBadge: showNotificationBadge,
+  );
+}
 
 class ProfileScreen extends StatefulWidget {
   final bool isActive;
@@ -654,23 +676,7 @@ class _ProfileScreenState extends State<ProfileScreen>
               );
             },
           ),
-          if (PrivilegedAccounts.canViewOneClassOrders(user?.studentId))
-            _buildAdminEntry(
-              context: context,
-              isDark: isDark,
-              icon: Icons.receipt_long,
-              iconColor: Colors.teal,
-              title: 'OneClass 订单',
-              subtitle: '查看 OneClass 支付、机器授权与签发状态',
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => const OneClassOrdersScreen(),
-                  ),
-                );
-              },
-            ),
+
         ];
 
         return _buildSectionLayout(context, '管理员', items, isDark);
@@ -840,17 +846,18 @@ class _ProfileScreenState extends State<ProfileScreen>
     final unreadMessageCount = messageProvider.hasLoadedConversations
         ? messageProvider.unreadMessageCount
         : _unreadMessageCount;
-    final totalUnreadCount = _unreadReplyCount + unreadMessageCount;
+    final messageEntryState = profileMessageEntryState(
+      unreadMessageCount: unreadMessageCount,
+      unreadNotificationCount: _unreadReplyCount,
+    );
     final items = [
       _buildSettingsRow(
         child: _buildSettingsTile(
           icon: Icons.chat_outlined,
           iconColor: const Color(0xFF10B981),
           title: '私信',
-          subtitle: totalUnreadCount > 0
-              ? '共$totalUnreadCount条未读，含$unreadMessageCount条私信'
-              : '查看私信与系统通知',
-          trailing: totalUnreadCount > 0
+          subtitle: messageEntryState.privateSubtitle,
+          trailing: messageEntryState.showPrivateBadge
               ? Container(
                   width: 8,
                   height: 8,
@@ -877,8 +884,8 @@ class _ProfileScreenState extends State<ProfileScreen>
           icon: Icons.notifications_active_outlined,
           iconColor: Colors.orange,
           title: '通知',
-          subtitle: _unreadReplyCount > 0 ? '$_unreadReplyCount条新通知' : null,
-          trailing: _unreadReplyCount > 0
+          subtitle: messageEntryState.notificationSubtitle,
+          trailing: messageEntryState.showNotificationBadge
               ? Container(
                   width: 8,
                   height: 8,
@@ -958,27 +965,7 @@ class _ProfileScreenState extends State<ProfileScreen>
           ),
         ),
       ),
-      _buildSettingsRow(
-        child: _buildSettingsTile(
-          icon: Icons.auto_stories,
-          iconColor: const Color(0xFF667EEA),
-          title: '导入融智云考题库',
-          subtitle: '提取练习题，导出 Markdown',
-          isDark: isDark,
-          onTap: () {
-            if (!authProvider.isLoggedIn) {
-              ScaffoldMessenger.of(
-                context,
-              ).showSnackBar(const SnackBar(content: Text('请先登录')));
-              return;
-            }
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const ExamExtractScreen()),
-            );
-          },
-        ),
-      ),
+
     ];
     return _buildSectionLayout(context, '教务', items, isDark);
   }

@@ -107,7 +107,6 @@ func (h *CheckInHandler) DoCheckIn(c *gin.Context) {
 
 	// 同步更新 users 表的主状态
 	if err := tx.Model(&user).Updates(map[string]interface{}{
-		"credits":            gorm.Expr("credits + ?", 3),
 		"exp":                gorm.Expr("exp + ?", expEarned),
 		"last_check_in_date": todayStr,
 	}).Error; err != nil {
@@ -124,8 +123,7 @@ func (h *CheckInHandler) DoCheckIn(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"success":        true,
-		"message":        fmt.Sprintf("签到成功！积分+3，经验+%d", expEarned),
-		"credits_earned": 3,
+		"message":        fmt.Sprintf("签到成功！经验+%d", expEarned),
 		"streak_days":    streak,
 		"exp_earned":     expEarned,
 	})

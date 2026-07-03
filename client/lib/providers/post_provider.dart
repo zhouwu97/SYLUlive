@@ -50,6 +50,7 @@ class PinPostResult {
 Map<String, dynamic> buildPostListParams({
   required int boardId,
   String? type,
+  int? tagId,
   required String sort,
   required int page,
   required int loadedCount,
@@ -62,6 +63,9 @@ Map<String, dynamic> buildPostListParams({
     'sort': sort,
     'limit': limit,
   };
+  if (tagId != null) {
+    params['tag_id'] = tagId;
+  }
   final usesSnapshot = sessionId != null && (sort == 'all' || sort == 'hot');
   if (usesSnapshot) {
     params.addAll({
@@ -86,16 +90,17 @@ class PostProvider extends ChangeNotifier {
   PostProvider(this._dio, {bool enableCache = true})
       : _enableCache = enableCache;
 
-  String _stateKey(int boardId, String sort, String? type) {
-    return '$boardId|$sort|${type ?? ''}';
+  String _stateKey(int boardId, String sort, String? type, {int? tagId}) {
+    return '$boardId|$sort|${type ?? ''}|${tagId ?? ''}';
   }
 
   String _postsEndpoint(String sort) {
     return sort == 'featured' ? '/posts/featured' : '/posts';
   }
 
-  _BoardState _ensureBoard(int boardId, {String sort = 'time', String? type}) {
-    final key = _stateKey(boardId, sort, type);
+  _BoardState _ensureBoard(int boardId,
+      {String sort = 'time', String? type, int? tagId}) {
+    final key = _stateKey(boardId, sort, type, tagId: tagId);
     return _boards.putIfAbsent(key, () {
       final state = _BoardState();
       state.currentSort = sort;
@@ -112,27 +117,36 @@ class PostProvider extends ChangeNotifier {
 
   _BoardState get _board => _ensureBoard(_activeBoardId);
 
-  List<Post> postsFor(int boardId, {String sort = 'time', String? type}) =>
-      _ensureBoard(boardId, sort: sort, type: type).posts;
-  bool isLoadingFor(int boardId, {String sort = 'time', String? type}) =>
-      _ensureBoard(boardId, sort: sort, type: type).isLoading;
-  bool hasLoadedFor(int boardId, {String sort = 'time', String? type}) =>
-      _ensureBoard(boardId, sort: sort, type: type).hasLoaded;
-  bool hasMoreFor(int boardId, {String sort = 'time', String? type}) =>
-      _ensureBoard(boardId, sort: sort, type: type).hasMore;
+  List<Post> postsFor(int boardId,
+          {String sort = 'time', String? type, int? tagId}) =>
+      _ensureBoard(boardId, sort: sort, type: type, tagId: tagId).posts;
+  bool isLoadingFor(int boardId,
+          {String sort = 'time', String? type, int? tagId}) =>
+      _ensureBoard(boardId, sort: sort, type: type, tagId: tagId).isLoading;
+  bool hasLoadedFor(int boardId,
+          {String sort = 'time', String? type, int? tagId}) =>
+      _ensureBoard(boardId, sort: sort, type: type, tagId: tagId).hasLoaded;
+  bool hasMoreFor(int boardId,
+          {String sort = 'time', String? type, int? tagId}) =>
+      _ensureBoard(boardId, sort: sort, type: type, tagId: tagId).hasMore;
 
-  int requestVersionFor(int boardId, {String sort = 'time', String? type}) =>
-      _ensureBoard(boardId, sort: sort, type: type).requestVersion;
+  int requestVersionFor(int boardId,
+          {String sort = 'time', String? type, int? tagId}) =>
+      _ensureBoard(boardId, sort: sort, type: type, tagId: tagId)
+          .requestVersion;
 
-  int revisionFor(int boardId, {String sort = 'time', String? type}) =>
-      _ensureBoard(boardId, sort: sort, type: type).revision;
+  int revisionFor(int boardId,
+          {String sort = 'time', String? type, int? tagId}) =>
+      _ensureBoard(boardId, sort: sort, type: type, tagId: tagId).revision;
 
   DateTime? lastSuccessfulRefreshAtFor(
     int boardId, {
     String sort = 'time',
     String? type,
+    int? tagId,
   }) =>
-      _ensureBoard(boardId, sort: sort, type: type).lastSuccessfulRefreshAt;
+      _ensureBoard(boardId, sort: sort, type: type, tagId: tagId)
+          .lastSuccessfulRefreshAt;
 
   /// 清除关注信息流缓存，在登录/退出/切换账号/关注/取消关注后调用
   void invalidateFollowingFeed() {
@@ -165,13 +179,21 @@ class PostProvider extends ChangeNotifier {
   Future<void> _loadCachedThenRefresh(
     int boardId, {
     String? type,
+    int? tagId,
     String sort = 'time',
   }) async {
-    final board = _ensureBoard(boardId, sort: sort, type: type);
+    final board = _ensureBoard(boardId, sort: sort, type: type, tagId: tagId);
     if (board.hasCacheLoaded) return;
     board.hasCacheLoaded = true;
     board.currentSort = sort;
     final requestVersion = ++board.requestVersion;
+
+    if (board.posts.isEmpty) {
+      board.isLoading = true;
+      board.error = null;
+      board.revision++;
+      notifyListeners();
+    }
 
     // 第一步：极速上屏 — 读本地缓存（关注信息流不使用缓存）
     if (_enableCache && sort != 'following') {
@@ -201,6 +223,9 @@ class PostProvider extends ChangeNotifier {
         'limit': 20,
         'scene': 'refresh',
       };
+      if (tagId != null) {
+        params['tag_id'] = tagId;
+      }
 
       final response = await _dio.get(
         _postsEndpoint(sort),
@@ -262,6 +287,7 @@ class PostProvider extends ChangeNotifier {
     }
 
     board.hasLoaded = true;
+    board.isLoading = false;
     if (succeeded) {
       board.lastSuccessfulRefreshAt = DateTime.now();
     }
@@ -273,15 +299,17 @@ class PostProvider extends ChangeNotifier {
   Future<void> loadPosts({
     int boardId = 1,
     String? type,
+    int? tagId,
     String sort = 'time',
   }) {
-    final board = _ensureBoard(boardId, sort: sort, type: type);
+    final board = _ensureBoard(boardId, sort: sort, type: type, tagId: tagId);
     final page = board.currentPage;
-    final key = 'load_${boardId}_${sort}_${type}_${page}';
+    final key = 'load_${boardId}_${sort}_${type}_${tagId}_${page}';
 
     if (_inflightRequests.containsKey(key)) return _inflightRequests[key]!;
 
-    final future = _loadPostsInternal(boardId: boardId, type: type, sort: sort)
+    final future = _loadPostsInternal(
+            boardId: boardId, type: type, tagId: tagId, sort: sort)
         .whenComplete(() {
       _inflightRequests.remove(key);
     });
@@ -292,18 +320,20 @@ class PostProvider extends ChangeNotifier {
   Future<void> _loadPostsInternal({
     int boardId = 1,
     String? type,
+    int? tagId,
     String sort = 'time',
   }) async {
-    final board = _ensureBoard(boardId, sort: sort, type: type);
+    final board = _ensureBoard(boardId, sort: sort, type: type, tagId: tagId);
 
     // 首次加载走 SWR
     if (!board.hasCacheLoaded) {
-      await _loadCachedThenRefresh(boardId, type: type, sort: sort);
+      await _loadCachedThenRefresh(boardId,
+          type: type, tagId: tagId, sort: sort);
       return;
     }
 
     if (board.hasLoaded && board.currentSort != sort) {
-      await refresh(boardId: boardId, type: type, sort: sort);
+      await refresh(boardId: boardId, type: type, tagId: tagId, sort: sort);
       return;
     }
 
@@ -320,6 +350,7 @@ class PostProvider extends ChangeNotifier {
       final params = buildPostListParams(
         boardId: boardId,
         type: type,
+        tagId: tagId,
         sort: sort,
         page: board.currentPage,
         loadedCount: board.posts.length,
@@ -380,14 +411,16 @@ class PostProvider extends ChangeNotifier {
   Future<void> refresh({
     int boardId = 1,
     String? type,
+    int? tagId,
     String sort = 'time',
   }) {
-    final key = 'refresh_${boardId}_${sort}_${type}';
+    final key = 'refresh_${boardId}_${sort}_${type}_${tagId}';
 
     if (_inflightRequests.containsKey(key)) return _inflightRequests[key]!;
 
-    final future = _refreshInternal(boardId: boardId, type: type, sort: sort)
-        .whenComplete(() {
+    final future =
+        _refreshInternal(boardId: boardId, type: type, tagId: tagId, sort: sort)
+            .whenComplete(() {
       _inflightRequests.remove(key);
     });
     _inflightRequests[key] = future;
@@ -397,9 +430,10 @@ class PostProvider extends ChangeNotifier {
   Future<void> _refreshInternal({
     int boardId = 1,
     String? type,
+    int? tagId,
     String sort = 'time',
   }) async {
-    final board = _ensureBoard(boardId, sort: sort, type: type);
+    final board = _ensureBoard(boardId, sort: sort, type: type, tagId: tagId);
     final requestVersion = ++board.requestVersion;
     board.currentSort = sort;
     board.currentPage = 1;
@@ -423,6 +457,9 @@ class PostProvider extends ChangeNotifier {
         'limit': 20,
         'scene': 'refresh',
       };
+      if (tagId != null) {
+        params['tag_id'] = tagId;
+      }
 
       final response = await _dio.get(
         _postsEndpoint(sort),
@@ -506,6 +543,7 @@ class PostProvider extends ChangeNotifier {
     required String content,
     String? title,
     String? postType,
+    int? waterTagId,
     double? price,
     String? contact,
     List<int>? fileIds,
@@ -516,6 +554,7 @@ class PostProvider extends ChangeNotifier {
         'content': content,
         if (title != null && title.isNotEmpty) 'title': title,
         if (postType != null) 'post_type': postType,
+        if (waterTagId != null && waterTagId > 0) 'water_tag_id': waterTagId,
         if (price != null) 'price': price,
         if (contact != null && contact.isNotEmpty) 'contact': contact,
         if (fileIds != null && fileIds.isNotEmpty)
@@ -544,6 +583,7 @@ class PostProvider extends ChangeNotifier {
     required String content,
     String? title,
     String? postType,
+    int? waterTagId,
     double? price,
     String? contact,
     List<int>? fileIds,
@@ -556,6 +596,7 @@ class PostProvider extends ChangeNotifier {
         'post_type': postType ?? '',
         'price': price ?? 0,
         'contact': contact ?? '',
+        if (waterTagId != null && waterTagId > 0) 'water_tag_id': waterTagId,
         'file_ids': fileIds?.join(',') ?? '',
       });
 
@@ -576,6 +617,29 @@ class PostProvider extends ChangeNotifier {
     } catch (e) {
       return CreatePostResult(success: false, errorMessage: '更新帖子失败: $e');
     }
+  }
+
+  Future<Post?> updatePostStatus({
+    required int postId,
+    required String status,
+  }) async {
+    try {
+      final response = await _dio.patch(
+        '/posts/$postId/status',
+        data: {'status': status},
+      );
+      if (response.statusCode == 200 && response.data != null) {
+        final updated = Post.fromJson(response.data as Map<String, dynamic>);
+        _replacePostInBoards(updated);
+        notifyListeners();
+        return updated;
+      }
+    } on DioException catch (e) {
+      debugPrint('更新帖子状态失败: ${AppFeedback.dioErrorMessage(e)}');
+    } catch (e) {
+      debugPrint('更新帖子状态失败: $e');
+    }
+    return null;
   }
 
   Future<int?> uploadImage(String filePath) async {
@@ -731,6 +795,15 @@ class PostProvider extends ChangeNotifier {
       futures.add(refresh(boardId: 1, sort: 'featured'));
     }
     await Future.wait(futures);
+  }
+
+  Future<void> refreshWaterSectionFeeds(String sectionSlug) async {
+    if (sectionSlug.trim().isEmpty) return;
+    await Future.wait([
+      refresh(boardId: 1, type: sectionSlug, sort: 'all'),
+      refresh(boardId: 1, type: sectionSlug, sort: 'time'),
+      refresh(boardId: 1, type: sectionSlug, sort: 'featured'),
+    ]);
   }
 
   Future<bool> likePost(int postId) async {

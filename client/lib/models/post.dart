@@ -68,6 +68,7 @@ class Post {
   final String postType;
   final double price;
   final String contact;
+  final int? waterTagId;
   final String status;
   final int viewCount;
   final int replyCount;
@@ -83,6 +84,8 @@ class Post {
   final DateTime? featuredAt;
   final int featuredBy;
   final String featuredReason;
+  final bool waterSectionPinned;
+  final int? waterSectionPinId;
   final List<PostImage> images;
   final User? author;
   final DateTime createdAt;
@@ -97,6 +100,7 @@ class Post {
     this.postType = '',
     this.price = 0,
     this.contact = '',
+    this.waterTagId,
     this.status = 'normal',
     this.viewCount = 0,
     this.replyCount = 0,
@@ -112,6 +116,8 @@ class Post {
     this.featuredAt,
     this.featuredBy = 0,
     this.featuredReason = '',
+    this.waterSectionPinned = false,
+    this.waterSectionPinId,
     this.images = const [],
     this.author,
     required this.createdAt,
@@ -128,6 +134,9 @@ class Post {
       postType: json['post_type'] ?? '',
       price: (json['price'] ?? 0).toDouble(),
       contact: json['contact'] ?? '',
+      waterTagId: json['water_tag_id'] != null
+          ? (json['water_tag_id'] as num).toInt()
+          : null,
       status: json['status'] ?? 'normal',
       viewCount: json['view_count'] ?? 0,
       replyCount: json['reply_count'] ?? 0,
@@ -143,6 +152,10 @@ class Post {
       featuredAt: DateTime.tryParse(json['featured_at'] ?? ''),
       featuredBy: json['featured_by'] ?? 0,
       featuredReason: json['featured_reason'] ?? '',
+      waterSectionPinned: json['water_section_pinned'] == true,
+      waterSectionPinId: json['water_section_pin_id'] != null
+          ? (json['water_section_pin_id'] as num).toInt()
+          : null,
       images: (json['images'] as List<dynamic>?)
               ?.map((e) => PostImage.fromJson(e))
               .toList() ??
@@ -170,6 +183,7 @@ class Post {
     String? postType,
     double? price,
     String? contact,
+    int? waterTagId,
     String? status,
     int? viewCount,
     int? replyCount,
@@ -187,6 +201,8 @@ class Post {
     DateTime? featuredAt,
     int? featuredBy,
     String? featuredReason,
+    bool? waterSectionPinned,
+    int? waterSectionPinId,
     List<PostImage>? images,
     User? author,
     DateTime? createdAt,
@@ -201,6 +217,7 @@ class Post {
       postType: postType ?? this.postType,
       price: price ?? this.price,
       contact: contact ?? this.contact,
+      waterTagId: waterTagId ?? this.waterTagId,
       status: status ?? this.status,
       viewCount: viewCount ?? this.viewCount,
       replyCount: replyCount ?? this.replyCount,
@@ -216,6 +233,8 @@ class Post {
       featuredAt: featuredAt ?? this.featuredAt,
       featuredBy: featuredBy ?? this.featuredBy,
       featuredReason: featuredReason ?? this.featuredReason,
+      waterSectionPinned: waterSectionPinned ?? this.waterSectionPinned,
+      waterSectionPinId: waterSectionPinId ?? this.waterSectionPinId,
       images: images ?? this.images,
       author: author ?? this.author,
       createdAt: createdAt ?? this.createdAt,

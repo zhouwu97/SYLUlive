@@ -94,6 +94,18 @@ func main() {
 
 		&models.Post{},
 
+		&models.WaterSection{},
+
+		&models.WaterSectionTag{},
+
+		&models.WaterSectionModerator{},
+
+		&models.WaterSectionPin{},
+
+		&models.WaterSectionMute{},
+
+		&models.WaterModerationLog{},
+
 		&models.PostImage{},
 		&models.FeaturedApplication{},
 		&models.CollaborationApplication{},
@@ -155,24 +167,13 @@ func main() {
 		&models.LotteryEvent{},
 
 		&models.LotteryParticipant{},
-		&models.CachedQuestion{},
-		&models.AiUsageLog{},
+
 		&models.SystemConfig{},
 		&models.Canteen{},
 		&models.CanteenRating{},
 		&models.CanteenRatingVote{},
 		&models.UserFollow{},
-		// 融智云考助手独立业务表
-		&models.YunkaoAiProvider{},
-		&models.YunkaoAiModel{},
-		&models.YunkaoWallet{},
-		&models.YunkaoRechargeOrder{},
-		&models.YunkaoUsageLog{},
-		&models.YunkaoQuestionCache{},
-		&models.YunkaoWrongReport{},
-		&models.YunkaoPayOrder{},
-		&models.OneClassPayOrder{},
-		&models.OneClassUpdate{},
+
 		// 校园资讯
 		&models.CampusArticle{},
 		&models.JWCSyncState{},
@@ -196,10 +197,16 @@ func main() {
 	if err := models.EnsureCompetitionCategories(db); err != nil {
 		log.Fatal("竞赛分类种子初始化失败:", err)
 	}
+	if err := models.EnsureWaterSections(db); err != nil {
+		log.Fatal("水帖版块种子初始化失败:", err)
+	}
 	if err := ensureFeatureCollaborationIndexes(db); err != nil {
 		log.Fatal("精华共同创作索引迁移失败:", err)
 	}
 	if isPostgres {
+		if err := ensurePostMarketTagsColumn(db); err != nil {
+			log.Fatal("商品交易选项字段迁移失败:", err)
+		}
 		if err := ensurePostPinColumns(db); err != nil {
 			log.Fatal("帖子置顶字段迁移失败:", err)
 		}
@@ -209,7 +216,7 @@ func main() {
 	db.Exec(`UPDATE announcements SET status = 'published' WHERE status = ''`)
 	db.Exec(`UPDATE announcements SET display_mode = 'center' WHERE display_mode = ''`)
 	db.Exec(`UPDATE announcements SET priority = 'normal' WHERE priority = ''`)
-	db.Exec(`UPDATE posts SET post_type = 'campus_life' WHERE board_id = 1 AND (post_type IS NULL OR post_type = '')`)
+	db.Exec(`UPDATE posts SET post_type = 'campus_life' WHERE board_id = ? AND (post_type IS NULL OR post_type = '')`, int(models.BoardShuitie))
 
 	// 启动时自动修复可能不同步的评论数和点赞数
 	log.Println("正在同步数据(评论数、帖子点赞、用户总获赞)...")
@@ -222,8 +229,7 @@ func main() {
 
 	ensureSystemSuperAdmin(db, cfg.SuperAdminID, cfg.SuperAdminPass)
 
-	// 确保雨课堂 JS 注入脚本存在
-	ensureInjectScript(db)
+
 
 	r := gin.Default()
 
@@ -265,6 +271,10 @@ func main() {
 	searchHandler := handlers.NewSearchHandler(db, postHandler)
 	competitionHandler := handlers.NewCompetitionHandler(db)
 
+	waterSectionHandler := handlers.NewWaterSectionHandler(db)
+	waterModeratorHandler := handlers.NewWaterModeratorHandler(db)
+	waterModerationHandler := handlers.NewWaterModerationHandler(db)
+
 	replyHandler := handlers.NewReplyHandler(db, cfg.JPushAppKey, cfg.JPushMasterSecret)
 
 	likeHandler := handlers.NewLikeHandler(db)
@@ -285,11 +295,7 @@ func main() {
 
 	eduHandler := handlers.NewEduHandler(db)
 
-	examHandler := handlers.NewExamHandler()
 
-	tutorialHandler := handlers.NewTutorialHandler(db)
-	aiSolveHandler := handlers.NewAiSolveHandler(db, cfg.DeepSeekAPIKey, cfg.DeepSeekBaseURL)
-	configHandler := handlers.NewConfigHandler(db)
 
 	teacherHandler := handlers.NewTeacherHandler(db)
 
@@ -307,17 +313,7 @@ func main() {
 
 	lotteryHandler := handlers.NewLotteryHandler(db)
 
-	vipHandler := handlers.NewVipHandler(db, cfg.JPushAppKey, cfg.JPushMasterSecret)
 
-	// 融智云考助手独立业务处理器
-	yunkaoSolveHandler := handlers.NewYunkaoSolveHandler(db)
-	yunkaoWalletHandler := handlers.NewYunkaoWalletHandler(db)
-	yunkaoAdminHandler := handlers.NewYunkaoAdminHandler(db)
-	yunkaoPayHandler := handlers.NewYunkaoPayHandler(db)
-	oneClassPayHandler := handlers.NewOneClassPayHandler(db)
-
-	// 初始化融智云考助手默认提供商和模型
-	yunkaoAdminHandler.SeedDefaultProviders()
 
 	// 初始化教务服务配置
 
@@ -442,113 +438,7 @@ func main() {
 
 	}
 
-	// 公共配置路由，无需 JWT 鉴权
-	publicGroup := r.Group("/api/v1/config")
-	{
-		publicGroup.GET("/inject-script", configHandler.GetInjectScript)
-	}
 
-	// AI 答题路由
-	ai := r.Group("/api/v1/question")
-	ai.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
-	{
-		ai.POST("/solve", aiSolveHandler.Solve)
-		ai.POST("/mark_wrong", aiSolveHandler.MarkWrong)
-		ai.POST("/confirm_cache", aiSolveHandler.ConfirmCache)
-	}
-
-	// ============ 融智云考助手独立业务路由 ============
-
-	// 普通用户路由
-	yunkao := r.Group("/api/yunkao")
-	yunkao.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
-	{
-		yunkao.GET("/models", yunkaoSolveHandler.GetModels)
-		yunkao.GET("/wallet", yunkaoWalletHandler.GetWallet)
-		yunkao.GET("/wallet/logs", yunkaoWalletHandler.GetWalletLogs)
-		yunkao.POST("/solve", yunkaoSolveHandler.Solve)
-		yunkao.POST("/report-wrong", yunkaoSolveHandler.ReportWrong)
-		yunkao.POST("/rewrite", yunkaoSolveHandler.Rewrite)
-	}
-
-	// 管理员路由 (admin 和 super_admin)
-	yunkaoAdmin := r.Group("/api/yunkao/admin")
-	yunkaoAdmin.Use(middleware.AuthMiddleware(db, cfg.JWTSecret), middleware.AdminMiddleware())
-	{
-		// 提供商管理
-		yunkaoAdmin.GET("/providers", yunkaoAdminHandler.GetProviders)
-		yunkaoAdmin.POST("/providers", yunkaoAdminHandler.CreateProvider)
-		yunkaoAdmin.PUT("/providers/:id", yunkaoAdminHandler.UpdateProvider)
-		yunkaoAdmin.DELETE("/providers/:id", yunkaoAdminHandler.DeleteProvider)
-		yunkaoAdmin.GET("/providers/:id/remote-models", yunkaoAdminHandler.FetchProviderModels)
-
-		// 模型管理
-		yunkaoAdmin.GET("/models", yunkaoAdminHandler.GetModels)
-		yunkaoAdmin.POST("/models", yunkaoAdminHandler.CreateModel)
-		yunkaoAdmin.PUT("/models/:id", yunkaoAdminHandler.UpdateModel)
-		yunkaoAdmin.DELETE("/models/:id", yunkaoAdminHandler.DeleteModel)
-
-		// 用户钱包管理
-		yunkaoAdmin.GET("/wallets", yunkaoAdminHandler.GetUserWallets)
-		yunkaoAdmin.POST("/wallet/recharge", yunkaoAdminHandler.RechargeWallet)
-		yunkaoAdmin.POST("/wallet/deduct", yunkaoAdminHandler.DeductWallet)
-
-		// 错题审核
-		yunkaoAdmin.GET("/reports", yunkaoAdminHandler.GetWrongReports)
-		yunkaoAdmin.POST("/reports/:id/review", yunkaoAdminHandler.ReviewWrongReport)
-
-		// 使用日志
-		yunkaoAdmin.GET("/usage-logs", yunkaoAdminHandler.GetUsageLogs)
-
-		// 统计概览
-		yunkaoAdmin.GET("/stats", yunkaoAdminHandler.GetAdminStats)
-	}
-
-	// 支付路由（不需要 auth 的回调接口）
-	r.Any("/api/yunkao/pay/notify", yunkaoPayHandler.PayNotify)
-	r.Any("/api/yunkao/pay/vmq_notify", yunkaoPayHandler.VmqNotify)
-	r.GET("/api/yunkao/pay/recharge-page", yunkaoPayHandler.RechargePage)
-	r.GET("/api/yunkao/pay/checkout", yunkaoPayHandler.CheckoutPage)
-	r.GET("/api/yunkao/pay/status", yunkaoPayHandler.PayStatus)
-	r.GET("/api/yunkao/pay/start", yunkaoPayHandler.StartPayment)
-	r.GET("/api/yunkao/pay/qrcode", yunkaoPayHandler.PaymentQRCode)
-
-	// OneClass 公开购买路由（仅易支付）
-	r.Any("/api/oneclass/pay/notify", oneClassPayHandler.PayNotify)
-	r.GET("/api/oneclass/pay/buy", oneClassPayHandler.BuyPage)
-	r.POST("/api/oneclass/pay/create", middleware.AuthMiddleware(db, cfg.JWTSecret), oneClassPayHandler.CreateOrder)
-	r.POST("/api/oneclass/pay/sync", middleware.AuthMiddleware(db, cfg.JWTSecret), oneClassPayHandler.SyncLicense)
-	r.GET("/api/oneclass/pay/checkout", oneClassPayHandler.CheckoutPage)
-	r.GET("/api/oneclass/pay/status", oneClassPayHandler.PayStatus)
-	r.GET("/api/oneclass/pay/start", oneClassPayHandler.StartPayment)
-	r.GET("/api/oneclass/pay/qrcode", oneClassPayHandler.PaymentQRCode)
-	r.GET("/api/oneclass/client/version", oneClassPayHandler.ClientVersion)
-
-	oneClassAdmin := r.Group("/api/oneclass/admin")
-	oneClassAdmin.Use(middleware.AuthMiddleware(db, cfg.JWTSecret), middleware.AdminMiddleware())
-	{
-		oneClassAdmin.GET("/orders", oneClassPayHandler.AdminGetOrders)
-		oneClassAdmin.GET("/updates", oneClassPayHandler.AdminListUpdates)
-		oneClassAdmin.POST("/updates", oneClassPayHandler.AdminCreateUpdate)
-		oneClassAdmin.PUT("/updates/:id", oneClassPayHandler.AdminUpdateUpdate)
-	}
-
-	// 支付路由（需要 auth）
-	yunkaoPay := r.Group("/api/yunkao/pay")
-	yunkaoPay.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
-	{
-		yunkaoPay.POST("/create", yunkaoPayHandler.CreatePayOrder)
-		yunkaoPay.GET("/orders", yunkaoPayHandler.GetPayOrders)
-	}
-
-	// 管理员支付管理
-	yunkaoAdminPay := r.Group("/api/yunkao/admin/pay")
-	yunkaoAdminPay.Use(middleware.AuthMiddleware(db, cfg.JWTSecret), middleware.AdminMiddleware())
-	{
-		yunkaoAdminPay.GET("/orders", yunkaoPayHandler.AdminGetPayOrders)
-		yunkaoAdminPay.GET("/config", yunkaoPayHandler.GetPayConfig)
-		yunkaoAdminPay.PUT("/config", yunkaoPayHandler.UpdatePayConfig)
-	}
 
 	// 用户路由
 
@@ -623,6 +513,7 @@ func main() {
 		userOptional.GET("/:id/followers", userHandler.GetFollowers)
 		userOptional.GET("/:id/posts/count", userHandler.GetUserPostCount)
 		userOptional.GET("/:id/posts", userHandler.GetUserPosts)
+		userOptional.GET("/:id/market-posts", userHandler.GetUserMarketPosts)
 	}
 
 	r.GET("/api/notifications", middleware.AuthMiddleware(db, cfg.JWTSecret), notificationHandler.GetNotifications)
@@ -650,6 +541,39 @@ func main() {
 
 	r.GET("/api/search", middleware.OptionalAuthMiddleware(db, cfg.JWTSecret), searchHandler.Search)
 
+	// 水帖版块读取接口（公开）
+	r.GET("/api/water/sections", waterSectionHandler.List)
+	r.GET("/api/water/sections/:slug", waterSectionHandler.Get)
+	r.GET("/api/water/sections/:slug/my-permission", middleware.AuthMiddleware(db, cfg.JWTSecret), waterModeratorHandler.MyPermission)
+
+	// 水帖版主管理接口（仅 admin/super_admin）
+	adminWater := r.Group("/api/admin/water/sections/:slug/moderators")
+	adminWater.Use(middleware.AuthMiddleware(db, cfg.JWTSecret), middleware.AdminMiddleware())
+	{
+		adminWater.GET("", waterModeratorHandler.GetModerators)
+		adminWater.POST("", waterModeratorHandler.AssignModerator)
+		adminWater.PATCH("/:moderator_id", waterModeratorHandler.UpdateModerator)
+		adminWater.DELETE("/:moderator_id", waterModeratorHandler.RevokeModerator)
+	}
+
+	// 水帖版块内容管理接口（登录后，权限由 handler 内部判断）
+	waterMod := r.Group("/api/water/sections/:slug")
+	waterMod.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
+	{
+		waterMod.PATCH("", waterSectionHandler.Update)
+		waterMod.POST("/tags", waterSectionHandler.CreateTag)
+		waterMod.PATCH("/tags/:tag_id/status", waterSectionHandler.UpdateTagStatus)
+		waterMod.PATCH("/tags/:tag_id", waterSectionHandler.UpdateTag)
+		waterMod.POST("/posts/:post_id/pin", waterModerationHandler.PinPost)
+		waterMod.DELETE("/posts/:post_id/pin", waterModerationHandler.UnpinPost)
+		waterMod.DELETE("/posts/:post_id/moderate", waterModerationHandler.DeletePost)
+		waterMod.POST("/posts/:post_id/restore", waterModerationHandler.RestorePost)
+		waterMod.POST("/users/:user_id/mute", waterModerationHandler.MuteUser)
+		waterMod.DELETE("/users/:user_id/mute", waterModerationHandler.UnmuteUser)
+		waterMod.GET("/mutes", waterModerationHandler.ListMutes)
+		waterMod.GET("/moderation/logs", waterModerationHandler.ListLogs)
+	}
+
 	r.POST("/api/collaboration-applications/:id/approve", middleware.AuthMiddleware(db, cfg.JWTSecret), postHandler.ApproveCollaborationApplication)
 	r.POST("/api/collaboration-applications/:id/reject", middleware.AuthMiddleware(db, cfg.JWTSecret), postHandler.RejectCollaborationApplication)
 	r.POST("/api/revision-proposals/:id/approve", middleware.AuthMiddleware(db, cfg.JWTSecret), postHandler.ApproveRevisionProposal)
@@ -671,6 +595,8 @@ func main() {
 		postsAuth.POST("", postHandler.Create)
 
 		postsAuth.PUT("/:id", postHandler.Update)
+
+		postsAuth.PATCH("/:id/status", postHandler.UpdateStatus)
 
 		postsAuth.DELETE("/:id", postHandler.Delete)
 
@@ -961,9 +887,7 @@ func main() {
 		superAdmin.DELETE("/lottery/participants/:event_id/:user_id", superAdminHandler.KickLotteryParticipant)
 
 		superAdmin.PUT("/users/:id/role", superAdminHandler.UpdateUserRole)
-
 		superAdmin.PUT("/users/:id/credit", superAdminHandler.UpdateUserCredit)
-		superAdmin.POST("/users/:id/ai_balance/recharge", superAdminHandler.RechargeAiBalance)
 
 		superAdmin.POST("/users/:id/reset_password", superAdminHandler.ResetUserPassword)
 
@@ -975,27 +899,14 @@ func main() {
 
 		superAdmin.POST("/admin_logs/revoke_exp", superAdminHandler.RevokeAdminExp)
 
-		superAdmin.GET("/ai_config", superAdminHandler.GetAiConfig)
 
-		superAdmin.PUT("/ai_config", superAdminHandler.UpdateAiConfig)
 
 		superAdmin.GET("/invitations/pending", invitationHandler.GetApprovalList)
 
 		superAdmin.POST("/invitations/:id/approve", invitationHandler.Approve)
-
-		// VIP 管理路由（超级管理员）
-		superAdmin.POST("/vip/grant", vipHandler.GrantVip)
-		superAdmin.DELETE("/vip/:user_id", vipHandler.RevokeVip)
-		superAdmin.POST("/vip/push_update", vipHandler.PushUpdateToVip)
-
 	}
 
-	// VIP 状态查询路由（普通用户，需登录）
-	r.GET("/api/vip/status", middleware.AuthMiddleware(db, cfg.JWTSecret), vipHandler.CheckVip)
 
-	// 题库提取路由
-
-	r.POST("/api/exam/extract", middleware.AuthMiddleware(db, cfg.JWTSecret), examHandler.Extract)
 
 	// 二课查询路由
 
@@ -1007,6 +918,7 @@ func main() {
 
 	// 教程页面路由（公开读，管理员写）
 
+	tutorialHandler := handlers.NewTutorialHandler(db)
 	r.GET("/api/tutorial/:key", tutorialHandler.Get)
 
 	r.PUT("/api/tutorial/:key", middleware.AuthMiddleware(db, cfg.JWTSecret), middleware.AdminMiddleware(), tutorialHandler.Update)
@@ -1333,318 +1245,7 @@ func ensurePostPinColumns(db *gorm.DB) error {
 	return nil
 }
 
-// 注意：每次重启服务均会重置该配置，如需永久修改请直接更改此处硬编码
-// ensureInjectScript 确保数据库里有一份基础的拦截脚本
-func ensureInjectScript(db *gorm.DB) {
-	jsCode := `(function() {
-    if (window.__aiExamData !== undefined) return;
-    window.__aiExamData = null;
-    window.__aiSnapshotBackedUp = false;
-
-    window.AiHelper = {
-        parseRange: function(str) {
-            let indices = new Set();
-            let parts = str.split(/[,，\s]+/);
-            parts.forEach(part => {
-                if (!part) return;
-                if (part.includes('-') || part.includes('~')) {
-                    let bounds = part.split(/[-~]/);
-                    let start = parseInt(bounds[0], 10);
-                    let end = parseInt(bounds[1], 10);
-                    if (!isNaN(start) && !isNaN(end)) {
-                        for(let i = Math.min(start, end); i <= Math.max(start, end); i++) indices.add(i);
-                    }
-                } else {
-                    let num = parseInt(part, 10);
-                    if (!isNaN(num)) indices.add(num);
-                }
-            });
-            return Array.from(indices).sort((a,b)=>a-b);
-        },
-        
-        _extractProblems: function() {
-            if (!window.__aiExamData) return [];
-            let rawObj = JSON.parse(window.__aiExamData);
-            let problems = [];
-            let recurse = (o, depth) => {
-                if (depth > 20 || !o) return;
-                
-                if (Array.isArray(o)) {
-                    // 兼容旧版：经典课后作业的连续题目数组
-                    if (o.length > 0 && typeof o[0] === 'object' && o[0] !== null && (o[0].options !== undefined || o[0].problem_id !== undefined || o[0].content !== undefined)) {
-                        // 避免误判 options 内部的数组
-                        if (o[0].key !== undefined && o[0].value !== undefined) {
-                            o.forEach(v => recurse(v, depth+1));
-                        } else {
-                            problems.push(...o);
-                            return; 
-                        }
-                    } else {
-                        o.forEach(v => recurse(v, depth+1));
-                    }
-                } else if (typeof o === 'object') {
-                    // 兼容新版直播课：深埋在幻灯片里的 problem 对象
-                    if ('problem' in o && typeof o.problem === 'object' && o.problem !== null && ('problemId' in o.problem || 'problem_id' in o.problem || 'body' in o.problem)) {
-                        problems.push(o.problem);
-                        return; 
-                    }
-                    // 游离的单题对象
-                    if ('problem_id' in o || 'problemId' in o) {
-                        problems.push(o);
-                        return;
-                    }
-                    if (('body' in o && 'id' in o) || ('content' in o && 'id' in o) || ('title' in o && 'id' in o)) {
-                        if ('options' in o || 'ProblemType' in o || 'problemType' in o || 'type' in o || 'user_answer' in o || 'answer' in o || 'score' in o) {
-                            problems.push(o);
-                            return;
-                        }
-                    }
-                    for (let k in o) recurse(o[k], depth+1);
-                }
-            };
-            recurse(rawObj, 0);
-            
-            // 去重
-            let uniqueProblems = [];
-            let seen = new Set();
-            problems.forEach(p => {
-                let id = p.problem_id || p.problemId || JSON.stringify(p);
-                if (!seen.has(id)) {
-                    seen.add(id);
-                    uniqueProblems.push(p);
-                }
-            });
-            return uniqueProblems;
-        },
-        
-        getTotalQuestions: function() {
-            return this._extractProblems().length;
-        },
-        
-        sliceExamData: function(rangeStr) {
-            let problems = this._extractProblems();
-            if (problems.length === 0) return null;
-            
-            let indices = this.parseRange(rangeStr);
-            let sliced = [];
-            
-            for (let i = 0; i < problems.length; i++) {
-                let globalIndex = i + 1;
-                if (indices.length === 0 || indices.includes(globalIndex)) {
-                    let copy = Object.assign({}, problems[i]);
-                    copy.__originalIndex = globalIndex;
-                    sliced.push(copy);
-                }
-            }
-            return JSON.stringify(sliced);
-        },
-        
-        doAutoAnswer: function(answerStr, mode) {
-            let isLiveClass = window.location.pathname.includes('/lesson/fullscreen/');
-            if (isLiveClass && window.__activeLiveProblem) {
-                let problem = window.__activeLiveProblem;
-                let result = [];
-                let matches = answerStr.match(/[A-F]/g);
-                if (matches) {
-                    result = Array.from(new Set(matches));
-                } else {
-                    result = [answerStr];
-                }
-                
-                let pType = 1;
-                if (window.__aiExamData) {
-                    let typeMatch = window.__aiExamData.match(new RegExp('"problem_id":"?' + problem.prob + '"?.*?"problemType":(\\\\d+)'));
-                    if (typeMatch) pType = parseInt(typeMatch[1]);
-                }
-                
-                fetch('/api/v3/lesson/problem/answer', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': 'Bearer ' + localStorage.getItem('Authorization'),
-                        'xtbz': 'ykt',
-                        'X-Client': 'h5'
-                    },
-                    body: JSON.stringify({
-                        problemId: problem.prob,
-                        problemType: pType,
-                        dt: Date.now(),
-                        result: result
-                    })
-                }).then(res => res.json()).then(data => {
-                    if (data.code === 0) {
-                        alert('✅ 混合双擎: API极速提交成功！(免疫前端变化)');
-                    } else if (data.code === 4) {
-                        fetch('/api/v3/lesson/problem/retry', {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                                'Authorization': 'Bearer ' + localStorage.getItem('Authorization'),
-                                'xtbz': 'ykt',
-                                'X-Client': 'h5'
-                            },
-                            body: JSON.stringify({
-                                problems: [{
-                                    problemId: problem.prob,
-                                    problemType: pType,
-                                    dt: problem.dt + 2000,
-                                    result: result
-                                }]
-                            })
-                        }).then(r=>r.json()).then(d => {
-                            if (d.code === 0) alert('🚀 混合双擎: 超时补救提交成功！(利用协议漏洞)');
-                            else alert('❌ 提交失败: ' + d.msg);
-                        });
-                    } else {
-                        alert('❌ 提交失败: ' + data.msg);
-                    }
-                });
-                
-                // 直播课专属的视觉反馈渲染（因为直播课 DOM 按钮通常只有 A B C D 字母）
-                if (matches) {
-                    let optionLabels = document.querySelectorAll('.option-item, .el-radio, .el-checkbox, .live-option-btn, span, div'); 
-                    optionLabels.forEach(label => {
-                        let text = label.innerText.trim().toUpperCase();
-                        // 如果按钮文本恰好是单个字母，且在答案字母中
-                        if (text.length === 1 && /^[A-F]$/.test(text) && result.includes(text)) {
-                            label.click();
-                            label.style.border = "4px solid #4CAF50";
-                            label.style.backgroundColor = "rgba(76, 175, 80, 0.2)";
-                        }
-                    });
-                }
-                
-                let submitBtn = document.querySelector('.submit-btn, .btn-submit, .live-submit-btn');
-                if(submitBtn) setTimeout(() => submitBtn.click(), 1500);
-                
-                return; // 直播课处理完毕，直接返回
-            }
-
-            if (mode === 'full') {
-                 // 课后作业的物理 DOM 渲染（通过选项文字模糊匹配，无视乱序）
-                 let lines = answerStr.split('\\n');
-                 let optionLabels = document.querySelectorAll('.option-item, .el-radio, .el-checkbox, .live-option-btn'); 
-                 
-                 lines.forEach(line => {
-                     // 1. 尝试匹配完整的选项文字
-                     let cleanAnswer = line.replace(/^(?:\\d+|[A-Z])[\\.\\:、\\s]+/, '').trim();
-                     let letterMatch = line.match(/^(?:\\d+[\\.\\:、\\s]*)?([A-F])/);
-                     let letter = letterMatch ? letterMatch[1] : null;
-                     
-                     if (!cleanAnswer && !letter) return;
-                     
-                     optionLabels.forEach(label => {
-                         let labelText = label.innerText.trim();
-                         let cleanLabel = labelText.replace(/^(?:\\d+|[A-Z])[\\.\\:、\\s]+/, '').trim();
-                         let labelLetterMatch = labelText.match(/^[0-9]*[\\.\\:、\\s]*([A-F])/);
-                         let labelLetter = labelLetterMatch ? labelLetterMatch[1] : null;
-                         
-                         let matched = false;
-                         if (cleanAnswer && cleanLabel && (cleanLabel.includes(cleanAnswer) || cleanAnswer.includes(cleanLabel))) {
-                             matched = true;
-                         } else if (letter && letter === labelLetter) {
-                             matched = true;
-                         } else if (letter && labelText === letter) {
-                             matched = true;
-                         }
-                         
-                         if(matched) {
-                             label.click(); 
-                             label.style.border = "2px solid #4CAF50";
-                         }
-                     });
-                 });
-                 
-                 let submitBtn = document.querySelector('.submit-btn, .btn-submit, .live-submit-btn');
-                 if(submitBtn) setTimeout(() => submitBtn.click(), 1500);
-            }
-        }
-    };
-
-    window.__activeLiveProblem = null;
-    const originalWebSocket = window.WebSocket;
-    class MyWebSocket extends originalWebSocket {
-        constructor(url, protocols) {
-            super(url, protocols);
-            this.addEventListener('message', (evt) => {
-                try {
-                    let msg = JSON.parse(evt.data);
-                    if (msg.op === 'unlockproblem') {
-                        window.__activeLiveProblem = msg.problem;
-                        if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
-                            window.flutter_inappwebview.callHandler('YuketangLiveProblem', msg.problem.prob);
-                        }
-                    }
-                } catch(e) {}
-            });
-        }
-    }
-    window.WebSocket = MyWebSocket;
-
-    function handleIntercept(jsonStr) {
-        window.__aiExamData = jsonStr;
-        if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
-            window.flutter_inappwebview.callHandler('YuketangIntercepted', '');
-            if (!window.__aiSnapshotBackedUp) {
-                window.flutter_inappwebview.callHandler('YuketangBackup', jsonStr);
-                window.__aiSnapshotBackedUp = true;
-            }
-        }
-    }
-
-    const originalFetch = window.fetch;
-    window.fetch = async function(...args) {
-        const url = typeof args[0] === 'string' ? args[0] : args[0].url;
-        const response = await originalFetch.apply(this, args);
-        const clone = response.clone(); 
-        clone.json().then(data => {
-            let jsonStr = JSON.stringify(data);
-            let isProb = jsonStr.includes('"options"') || jsonStr.includes('"problem_id"') || jsonStr.includes('"problemId"') || jsonStr.includes('"ProblemType"') || jsonStr.includes('"problemType"');
-            let isGenericProb = (jsonStr.includes('"body"') || jsonStr.includes('"content"')) && url && (url.includes('exam') || url.includes('exercise') || url.includes('test') || url.includes('homework') || url.includes('problem'));
-            if (isProb || isGenericProb) handleIntercept(jsonStr);
-        }).catch(e => {});
-        return response;
-    };
-
-    const originalXHR = window.XMLHttpRequest;
-    function newXHR() {
-        const xhr = new originalXHR();
-        const originalOpen = xhr.open;
-        xhr.open = function(method, url, ...args) {
-            this._url = url;
-            return originalOpen.apply(this, [method, url, ...args]);
-        };
-        xhr.addEventListener('load', function() {
-            try {
-                let jsonStr = '';
-                if (xhr.responseType === 'json') {
-                    jsonStr = JSON.stringify(xhr.response);
-                } else {
-                    jsonStr = xhr.responseText;
-                }
-                if (!jsonStr) return;
-                let isProb = jsonStr.includes('"options"') || jsonStr.includes('"problem_id"') || jsonStr.includes('"problemId"') || jsonStr.includes('"ProblemType"') || jsonStr.includes('"problemType"');
-                let isGenericProb = (jsonStr.includes('"body"') || jsonStr.includes('"content"')) && xhr._url && (xhr._url.includes('exam') || xhr._url.includes('exercise') || xhr._url.includes('test') || xhr._url.includes('homework') || xhr._url.includes('problem'));
-                if (isProb || isGenericProb) handleIntercept(jsonStr);
-            } catch(e) {
-                console.error('XHR intercept error:', e);
-            }
-        });
-        return xhr;
-    }
-    window.XMLHttpRequest = newXHR;
-})();`
-
-	var config models.SystemConfig
-	if err := db.Where("config_key = ?", "yuketang_inject_js").First(&config).Error; err != nil {
-		db.Create(&models.SystemConfig{
-			ConfigKey:   "yuketang_inject_js",
-			ConfigValue: jsCode,
-			Description: "雨课堂默认题目拦截脚本",
-		})
-	} else {
-		// 总是更新代码以防本地修改
-		config.ConfigValue = jsCode
-		db.Save(&config)
-	}
+func ensurePostMarketTagsColumn(db *gorm.DB) error {
+	return db.Exec(`ALTER TABLE posts ADD COLUMN IF NOT EXISTS market_tags VARCHAR(200) NOT NULL DEFAULT ''`).Error
 }
+

@@ -104,9 +104,12 @@ class _DiagnosticLogScreenState extends State<DiagnosticLogScreen> {
         'Session: ${log.sessionId} | PID: ${log.pid} | '
         'Elapsed: ${log.elapsedRealtime}',
       );
-      final formatTime = (int ms) => DateFormat(
-        'MM-dd HH:mm:ss',
-      ).format(DateTime.fromMillisecondsSinceEpoch(ms));
+      String formatTime(int ms) {
+        return DateFormat(
+          'MM-dd HH:mm:ss',
+        ).format(DateTime.fromMillisecondsSinceEpoch(ms));
+      }
+
       sb.writeln(
         'FirstSeen: ${formatTime(log.firstSeenAt)} | '
         'LastSeen: ${formatTime(log.lastSeenAt)} | '
@@ -145,9 +148,8 @@ class _DiagnosticLogScreenState extends State<DiagnosticLogScreen> {
     }
 
     return Scaffold(
-      backgroundColor: isDark
-          ? const Color(0xFF111318)
-          : const Color(0xFFF5F6F8),
+      backgroundColor:
+          isDark ? const Color(0xFF111318) : const Color(0xFFF5F6F8),
       appBar: AppBar(
         title: const Text('诊断日志'),
         elevation: 0,
@@ -196,9 +198,9 @@ class _DiagnosticLogScreenState extends State<DiagnosticLogScreen> {
               children: [
                 _buildFilterChip('全部', 'all'),
                 const SizedBox(width: 8),
-                _buildFilterChip('警告', 'warning'),
+                _buildFilterChip('需关注', 'warning'),
                 const SizedBox(width: 8),
-                _buildFilterChip('错误', 'error'),
+                _buildFilterChip('崩溃错误', 'error'),
               ],
             ),
           ),
@@ -206,13 +208,13 @@ class _DiagnosticLogScreenState extends State<DiagnosticLogScreen> {
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
                 : filteredLogs.isEmpty
-                ? const Center(child: Text('暂无日志记录'))
-                : ListView.builder(
-                    itemCount: filteredLogs.length,
-                    itemBuilder: (context, index) {
-                      return _LogEntryCard(entry: filteredLogs[index]);
-                    },
-                  ),
+                    ? const Center(child: Text('暂无日志记录'))
+                    : ListView.builder(
+                        itemCount: filteredLogs.length,
+                        itemBuilder: (context, index) {
+                          return _LogEntryCard(entry: filteredLogs[index]);
+                        },
+                      ),
           ),
         ],
       ),
@@ -276,9 +278,12 @@ class _LogEntryCardState extends State<_LogEntryCard> {
       'Session: ${log.sessionId} | PID: ${log.pid} | '
       'Elapsed: ${log.elapsedRealtime}',
     );
-    final formatTime = (int ms) => DateFormat(
-      'MM-dd HH:mm:ss',
-    ).format(DateTime.fromMillisecondsSinceEpoch(ms));
+    String formatTime(int ms) {
+      return DateFormat(
+        'MM-dd HH:mm:ss',
+      ).format(DateTime.fromMillisecondsSinceEpoch(ms));
+    }
+
     sb.writeln(
       'FirstSeen: ${formatTime(log.firstSeenAt)} | '
       'LastSeen: ${formatTime(log.lastSeenAt)} | '
@@ -398,7 +403,7 @@ class _LogEntryCardState extends State<_LogEntryCard> {
                   decoration: BoxDecoration(
                     color: isDark
                         ? Colors.black26
-                        : Colors.black.withOpacity(0.04),
+                        : Colors.black.withValues(alpha: 0.04),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Column(
@@ -422,6 +427,25 @@ class _LogEntryCardState extends State<_LogEntryCard> {
                           ),
                         ),
                       const SizedBox(height: 4),
+                      if (entry.source == '界面' && entry.type == '布局溢出') ...[
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(10),
+                          margin: const EdgeInsets.only(bottom: 8),
+                          decoration: BoxDecoration(
+                            color: Colors.orange.withValues(alpha: 0.08),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: Colors.orange.withValues(alpha: 0.18),
+                            ),
+                          ),
+                          child: const Text(
+                            '这是界面布局溢出：一般是固定高度太小、padding 太大、文字或图标挤不下。'
+                            '优先检查日志里给出的文件和行号，不是服务器错误。',
+                            style: TextStyle(fontSize: 12.5, height: 1.35),
+                          ),
+                        ),
+                      ],
                       SelectableText(
                         entry.detail.isEmpty ? '无详细信息' : entry.detail,
                         style: const TextStyle(

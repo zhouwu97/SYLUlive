@@ -138,15 +138,28 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
         title: Text(
           widget.category.label,
           style: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w700,
+            fontSize: 17,
+            fontWeight: FontWeight.w800,
           ),
         ),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: TextButton(
+              onPressed: _openComposer,
+              style: TextButton.styleFrom(
+                foregroundColor: widget.category.color,
+                textStyle: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              child: Text(widget.category.publishActionText),
+            ),
+          ),
+        ],
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _openComposer,
-        child: const Icon(Icons.edit_rounded),
-      ),
+      floatingActionButton: null,
       body: RefreshIndicator(
         onRefresh: _refresh,
         child: NotificationListener<ScrollNotification>(
@@ -254,7 +267,7 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
           SliverToBoxAdapter(child: _buildEmptyState(isDark))
         else ...[
           SliverPadding(
-            padding: const EdgeInsets.fromLTRB(12, 12, 12, 96),
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 96),
             sliver: SliverList.separated(
               itemCount: posts.length,
               separatorBuilder: (_, __) => const SizedBox(height: 0),
@@ -298,71 +311,106 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
   Widget _buildHeader(bool isDark) {
     final category = widget.category;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 10, 14, 8),
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
       child: Container(
-        padding: const EdgeInsets.fromLTRB(14, 13, 14, 13),
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
         decoration: BoxDecoration(
-          color: isDark
-              ? Color.alphaBlend(
-                  category.color.withValues(alpha: 0.12),
-                  const Color(0xFF171B24),
-                )
-              : Color.alphaBlend(
-                  category.color.withValues(alpha: 0.04),
-                  Colors.white,
-                ),
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(
-            color: isDark
-                ? category.color.withValues(alpha: 0.18)
-                : category.color.withValues(alpha: 0.10),
+          borderRadius: BorderRadius.circular(22),
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: isDark
+                ? [
+                    Color.alphaBlend(
+                      category.color.withValues(alpha: 0.22),
+                      const Color(0xFF171B24),
+                    ),
+                    const Color(0xFF171B24),
+                  ]
+                : [
+                    category.color.withValues(alpha: 0.12),
+                    Colors.white,
+                  ],
           ),
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              width: 34,
-              height: 34,
-              decoration: BoxDecoration(
-                color: category.color.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(category.icon, color: category.color, size: 20),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    category.label,
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                      color: isDark ? Colors.white : const Color(0xFF16181D),
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    category.hint,
-                    style: TextStyle(
-                      fontSize: 12,
-                      height: 1.28,
-                      color: isDark ? Colors.white60 : const Color(0xFF6D7480),
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    category.actionHint,
-                    style: TextStyle(
-                      fontSize: 11,
-                      height: 1.3,
-                      color: isDark ? Colors.white38 : const Color(0xFF8A919D),
-                    ),
+          border: Border.all(
+            color: category.color.withValues(alpha: isDark ? 0.22 : 0.15),
+          ),
+          boxShadow: isDark
+              ? null
+              : [
+                  BoxShadow(
+                    color: category.color.withValues(alpha: 0.08),
+                    blurRadius: 18,
+                    offset: const Offset(0, 8),
                   ),
                 ],
-              ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: category.color.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Icon(category.icon, color: category.color, size: 24),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        category.label,
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w900,
+                          color:
+                              isDark ? Colors.white : const Color(0xFF16181D),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        category.hint,
+                        style: TextStyle(
+                          fontSize: 13,
+                          height: 1.35,
+                          color:
+                              isDark ? Colors.white60 : const Color(0xFF6D7480),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: category.quickTags.map((tag) {
+                return Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color:
+                        category.color.withValues(alpha: isDark ? 0.16 : 0.10),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    '#$tag',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: category.color,
+                    ),
+                  ),
+                );
+              }).toList(),
             ),
           ],
         ),
@@ -373,12 +421,12 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
   Widget _buildTabs(bool isDark) {
     return Container(
       color: isDark ? const Color(0xFF0D1117) : const Color(0xFFF7F8FA),
-      padding: const EdgeInsets.fromLTRB(14, 0, 14, 6),
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
       child: Container(
-        height: 40,
+        height: 42,
         decoration: BoxDecoration(
           color: isDark ? const Color(0xFF171B24) : Colors.white,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(18),
           border: Border.all(
             color: isDark
                 ? Colors.white.withValues(alpha: 0.08)
@@ -388,9 +436,7 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
         child: Row(
           children: [
             for (var i = 0; i < _tabs.length; i++)
-              Expanded(
-                child: _buildTabButton(isDark, i),
-              ),
+              Expanded(child: _buildTabButton(isDark, i)),
           ],
         ),
       ),
@@ -399,32 +445,32 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
 
   Widget _buildTabButton(bool isDark, int index) {
     final selected = _currentTabIndex == index;
-    final primary = Theme.of(context).colorScheme.primary;
+    final categoryColor = widget.category.color;
     final foreground = selected
-        ? primary
+        ? categoryColor
         : isDark
             ? Colors.white60
-            : const Color(0xFF626A75);
+            : const Color(0xFF667085);
 
     return Padding(
       padding: const EdgeInsets.all(4),
       child: InkWell(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(13),
         onTap: () => _changeSort(index),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 180),
           alignment: Alignment.center,
           decoration: BoxDecoration(
             color: selected
-                ? primary.withValues(alpha: isDark ? 0.20 : 0.12)
+                ? categoryColor.withValues(alpha: isDark ? 0.18 : 0.10)
                 : Colors.transparent,
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(13),
           ),
           child: Text(
             _tabs[index].label,
             style: TextStyle(
               fontSize: 13,
-              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+              fontWeight: selected ? FontWeight.w800 : FontWeight.w500,
               color: foreground,
             ),
           ),
@@ -436,83 +482,63 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
   Widget _buildEmptyState(bool isDark) {
     final category = widget.category;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 84, 20, 0),
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.fromLTRB(18, 20, 18, 18),
-        decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF171B24) : Colors.white,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(
-            color: isDark
-                ? Colors.white.withValues(alpha: 0.08)
-                : const Color(0xFFEDEFF3),
-          ),
-        ),
-        child: Column(
-          children: [
-            Icon(category.icon, size: 38, color: category.color),
-            const SizedBox(height: 14),
-            Text(
-              category.emptyTitle,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 15.5,
-                fontWeight: FontWeight.w700,
-                color: isDark ? Colors.white : const Color(0xFF20232A),
-              ),
-            ),
-            const SizedBox(height: 7),
-            Text(
-              category.emptyDescription,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 12,
-                height: 1.42,
-                color: isDark ? Colors.white54 : const Color(0xFF7B818C),
-              ),
-            ),
-            const SizedBox(height: 16),
-            SizedBox(
-              height: 36,
-              child: FilledButton.icon(
-                onPressed: _openComposer,
-                icon: const Icon(Icons.edit_rounded, size: 17),
-                label: const Text(
-                  '发布第一条',
-                  style: TextStyle(fontSize: 13),
-                ),
-              ),
-            ),
-          ],
-        ),
+      padding: const EdgeInsets.fromLTRB(16, 26, 16, 0),
+      child: Column(
+        children: [
+          _buildPrimaryEmptyCard(isDark, category),
+          const SizedBox(height: 12),
+          _buildStarterQuestionCard(isDark, category),
+        ],
       ),
     );
   }
 
-  Widget _buildFollowingPlaceholder(bool isDark) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 28),
+  Widget _buildPrimaryEmptyCard(bool isDark, WaterPostCategory category) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(20, 24, 20, 20),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF171B24) : Colors.white,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(
+          color: isDark
+              ? Colors.white.withValues(alpha: 0.08)
+              : const Color(0xFFEDEFF3),
+        ),
+        boxShadow: isDark
+            ? null
+            : [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.04),
+                  blurRadius: 18,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+      ),
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            Icons.lock_outline_rounded,
-            size: 42,
-            color: isDark ? Colors.white38 : const Color(0xFF9AA0A6),
+          Container(
+            width: 58,
+            height: 58,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: category.color.withValues(alpha: 0.12),
+            ),
+            child: Icon(category.icon, size: 30, color: category.color),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 15),
           Text(
-            '登录后查看关注内容',
+            '还没有「${category.label}」相关帖子',
+            textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: 17,
-              fontWeight: FontWeight.w700,
+              fontWeight: FontWeight.w800,
               color: isDark ? Colors.white : const Color(0xFF20232A),
             ),
           ),
           const SizedBox(height: 8),
           Text(
-            '关注 tab 会显示你关注用户在「${widget.category.label}」中的帖子。',
+            category.emptyLeadText,
             textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: 13,
@@ -520,7 +546,281 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
               color: isDark ? Colors.white54 : const Color(0xFF7B818C),
             ),
           ),
+          const SizedBox(height: 18),
+          Row(
+            children: [
+              Expanded(
+                child: SizedBox(
+                  height: 40,
+                  child: FilledButton.icon(
+                    onPressed: _openComposer,
+                    icon: const Icon(Icons.edit_rounded, size: 17),
+                    label: Text(
+                      category.publishActionText,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: category.color,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: SizedBox(
+                  height: 40,
+                  child: OutlinedButton.icon(
+                    onPressed: _showPostTips,
+                    icon: const Icon(Icons.lightbulb_outline_rounded, size: 17),
+                    label: const Text(
+                      '发帖建议',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: category.color,
+                      side: BorderSide(
+                        color: category.color.withValues(alpha: 0.30),
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildStarterQuestionCard(bool isDark, WaterPostCategory category) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(16, 15, 16, 16),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF171B24) : Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: isDark
+              ? Colors.white.withValues(alpha: 0.08)
+              : const Color(0xFFEDEFF3),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '常见方向',
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w800,
+              color: isDark ? Colors.white : const Color(0xFF20232A),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '不知道发什么，可以从这些开始',
+            style: TextStyle(
+              fontSize: 12,
+              color: isDark ? Colors.white54 : const Color(0xFF7B818C),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: category.starterQuestions.map((question) {
+              return Container(
+                constraints: const BoxConstraints(maxWidth: 190),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                decoration: BoxDecoration(
+                  color: category.color.withValues(alpha: isDark ? 0.14 : 0.08),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  question,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: category.color,
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showPostTips() {
+    final category = widget.category;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: isDark ? const Color(0xFF171B24) : Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 36,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: isDark
+                          ? Colors.white.withValues(alpha: 0.18)
+                          : const Color(0xFFE5E7EB),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Text(
+                  '可以发什么？',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                    color: isDark ? Colors.white : const Color(0xFF20232A),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                for (final question in category.starterQuestions) ...[
+                  Row(
+                    children: [
+                      Container(
+                        width: 7,
+                        height: 7,
+                        decoration: BoxDecoration(
+                          color: category.color,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          question,
+                          style: TextStyle(
+                            fontSize: 14,
+                            height: 1.4,
+                            color: isDark
+                                ? Colors.white70
+                                : const Color(0xFF374151),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                ],
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  height: 42,
+                  child: FilledButton(
+                    onPressed: () {
+                      Navigator.of(context).pop();
+                      _openComposer();
+                    },
+                    style: FilledButton.styleFrom(
+                      backgroundColor: category.color,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                    child: Text(
+                      category.publishActionText,
+                      style: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildFollowingPlaceholder(bool isDark) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 40, 16, 0),
+      child: Align(
+        alignment: Alignment.topCenter,
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF171B24) : Colors.white,
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(
+              color: isDark
+                  ? Colors.white.withValues(alpha: 0.08)
+                  : const Color(0xFFEDEFF3),
+            ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 58,
+                height: 58,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: widget.category.color.withValues(alpha: 0.12),
+                ),
+                child: Icon(
+                  Icons.lock_outline_rounded,
+                  size: 30,
+                  color: widget.category.color,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                '登录后查看关注内容',
+                style: TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w800,
+                  color: isDark ? Colors.white : const Color(0xFF20232A),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '关注你感兴趣的同学后，这里会显示他们在「${widget.category.label}」里的帖子。',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 13,
+                  height: 1.45,
+                  color: isDark ? Colors.white54 : const Color(0xFF7B818C),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -533,10 +833,10 @@ class _WaterCategoryTabHeader extends SliverPersistentHeaderDelegate {
   _WaterCategoryTabHeader({required this.isDark, required this.child});
 
   @override
-  double get minExtent => 46;
+  double get minExtent => 50;
 
   @override
-  double get maxExtent => 46;
+  double get maxExtent => 50;
 
   @override
   Widget build(

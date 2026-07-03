@@ -291,13 +291,37 @@ class HomeServiceDrawer extends StatelessWidget {
         Row(
           children: [
             Expanded(
-              child: Text(
-                '水帖分类',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w800,
-                  color: isDark ? Colors.white : const Color(0xFF111827),
-                ),
+              child: Row(
+                children: [
+                  Text(
+                    '水帖分类',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                      color: isDark ? Colors.white : const Color(0xFF111827),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: isDark
+                          ? Colors.white.withValues(alpha: 0.08)
+                          : const Color(0xFFEFF6FF),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      '${kWaterPostCategories.length}个',
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w800,
+                        color:
+                            isDark ? Colors.white70 : const Color(0xFF2563EB),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
             InkWell(
@@ -346,9 +370,9 @@ class HomeServiceDrawer extends StatelessWidget {
           ),
           child: LayoutBuilder(
             builder: (context, constraints) {
-              final itemWidth = (constraints.maxWidth - 16) / 3;
+              final itemWidth = (constraints.maxWidth - 10) / 2;
               return Wrap(
-                spacing: 8,
+                spacing: 10,
                 runSpacing: 10,
                 children: kWaterPostCategories.map((category) {
                   return SizedBox(
@@ -546,13 +570,16 @@ class _WaterCategoryMiniItem extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(16),
         child: Container(
-          height: 68,
-          padding: const EdgeInsets.symmetric(horizontal: 4),
+          height: 74,
+          padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
+            color: category.color.withValues(alpha: isDark ? 0.13 : 0.07),
             borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: category.color.withValues(alpha: isDark ? 0.18 : 0.10),
+            ),
           ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
+          child: Row(
             children: [
               Container(
                 width: 34,
@@ -567,16 +594,37 @@ class _WaterCategoryMiniItem extends StatelessWidget {
                   color: category.color,
                 ),
               ),
-              const SizedBox(height: 6),
-              Text(
-                category.label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 11.5,
-                  height: 1.1,
-                  fontWeight: FontWeight.w700,
-                  color: isDark ? Colors.white70 : const Color(0xFF374151),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      category.label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        height: 1.1,
+                        fontWeight: FontWeight.w800,
+                        color: isDark ? Colors.white : const Color(0xFF111827),
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      category.hint,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        height: 1.1,
+                        fontWeight: FontWeight.w500,
+                        color:
+                            isDark ? Colors.white54 : const Color(0xFF6B7280),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],

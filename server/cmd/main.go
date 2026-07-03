@@ -98,6 +98,8 @@ func main() {
 
 		&models.WaterSectionTag{},
 
+		&models.WaterSectionModerator{},
+
 		&models.PostImage{},
 		&models.FeaturedApplication{},
 		&models.CollaborationApplication{},
@@ -273,6 +275,7 @@ func main() {
 	competitionHandler := handlers.NewCompetitionHandler(db)
 
 	waterSectionHandler := handlers.NewWaterSectionHandler(db)
+	waterModeratorHandler := handlers.NewWaterModeratorHandler(db)
 
 	replyHandler := handlers.NewReplyHandler(db, cfg.JPushAppKey, cfg.JPushMasterSecret)
 
@@ -663,6 +666,17 @@ func main() {
 	// 水帖版块读取接口（公开）
 	r.GET("/api/water/sections", waterSectionHandler.List)
 	r.GET("/api/water/sections/:slug", waterSectionHandler.Get)
+	r.GET("/api/water/sections/:slug/my-permission", middleware.AuthMiddleware(db, cfg.JWTSecret), waterModeratorHandler.MyPermission)
+
+	// 水帖版主管理接口（仅 admin/super_admin）
+	adminWater := r.Group("/api/admin/water/sections/:slug/moderators")
+	adminWater.Use(middleware.AuthMiddleware(db, cfg.JWTSecret), middleware.AdminMiddleware())
+	{
+		adminWater.GET("", waterModeratorHandler.GetModerators)
+		adminWater.POST("", waterModeratorHandler.AssignModerator)
+		adminWater.PATCH("/:moderator_id", waterModeratorHandler.UpdateModerator)
+		adminWater.DELETE("/:moderator_id", waterModeratorHandler.RevokeModerator)
+	}
 
 	r.POST("/api/collaboration-applications/:id/approve", middleware.AuthMiddleware(db, cfg.JWTSecret), postHandler.ApproveCollaborationApplication)
 	r.POST("/api/collaboration-applications/:id/reject", middleware.AuthMiddleware(db, cfg.JWTSecret), postHandler.RejectCollaborationApplication)

@@ -50,6 +50,51 @@ type WaterSectionTag struct {
 
 func (WaterSectionTag) TableName() string { return "water_section_tags" }
 
+// WaterSectionModeratorRole 版块管理角色
+const (
+	ModeratorRoleOwner     = "owner"
+	ModeratorRoleModerator = "moderator"
+)
+
+// WaterSectionModeratorStatus
+const (
+	ModeratorStatusActive  = "active"
+	ModeratorStatusRevoked = "revoked"
+)
+
+// WaterSectionModerator 版块局部权限（不是 user.role，是用户在某个版块下的管理身份）
+type WaterSectionModerator struct {
+	ID        uint `gorm:"primaryKey" json:"id"`
+	SectionID uint `gorm:"index;not null" json:"section_id"`
+	UserID    uint `gorm:"index;not null" json:"user_id"`
+
+	Role string `gorm:"size:32;not null;default:'moderator'" json:"role"`
+
+	CanEditSection bool `gorm:"not null;default:false" json:"can_edit_section"`
+	CanManageTags  bool `gorm:"not null;default:false" json:"can_manage_tags"`
+	CanPinPost     bool `gorm:"not null;default:false" json:"can_pin_post"`
+	CanDeletePost  bool `gorm:"not null;default:false" json:"can_delete_post"`
+	CanMuteUser    bool `gorm:"not null;default:false" json:"can_mute_user"`
+
+	Status string `gorm:"size:32;index;not null;default:'active'" json:"status"`
+
+	AssignedBy    uint   `gorm:"index;not null" json:"assigned_by"`
+	AssignReason  string `gorm:"size:500" json:"assign_reason"`
+
+	RevokedBy     *uint      `gorm:"index" json:"revoked_by"`
+	RevokedAt     *time.Time `json:"revoked_at"`
+	RevokeReason  string     `gorm:"size:500" json:"revoke_reason"`
+
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+
+	// 关联（可选，按需 Preload）
+	Section WaterSection `gorm:"foreignKey:SectionID" json:"section,omitempty"`
+	User    User         `gorm:"foreignKey:UserID" json:"user,omitempty"`
+}
+
+func (WaterSectionModerator) TableName() string { return "water_section_moderators" }
+
 // waterSectionSeedEntry seed 表条目
 type waterSectionSeedEntry struct {
 	Slug              string

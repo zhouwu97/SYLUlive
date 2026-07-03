@@ -25,39 +25,43 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   }
 
   Future<void> _loadReplies() async {
-    if (mounted)
+    if (mounted) {
       setState(() {
         _isLoading = true;
         _errorMessage = null;
       });
+    }
 
     try {
       final auth = context.read<AuthProvider>();
       final response = await auth.dio.get('/notifications');
       if (response.statusCode == 200) {
         final list = List<Map<String, dynamic>>.from(response.data as List);
-        if (mounted)
+        if (mounted) {
           setState(() {
             _notifications = list;
             _isLoading = false;
           });
+        }
         // 不阻塞 UI，后台标记为已读
         try {
           await auth.dio.post('/notifications/read');
         } catch (_) {}
       } else {
-        if (mounted)
+        if (mounted) {
           setState(() {
             _errorMessage = '获取失败: ${response.statusCode}';
             _isLoading = false;
           });
+        }
       }
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         setState(() {
           _errorMessage = '暂无网络或后端接口未部署\n详细信息: $e';
           _isLoading = false;
         });
+      }
     }
   }
 
@@ -80,33 +84,35 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _errorMessage != null
-          ? _buildErrorView(isDark)
-          : _notifications.isEmpty
-          ? _buildEmptyView(isDark)
-          : RefreshIndicator(
-              onRefresh: _loadReplies,
-              child: ListView.separated(
-                physics: const AlwaysScrollableScrollPhysics(
-                  parent: BouncingScrollPhysics(),
-                ),
-                padding: const EdgeInsets.all(16),
-                itemCount: _notifications.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 8),
-                itemBuilder: (context, index) {
-                  final notification = _notifications[index];
-                  return _buildNotificationCard(notification, isDark);
-                },
-              ),
-            ),
+              ? _buildErrorView(isDark)
+              : _notifications.isEmpty
+                  ? _buildEmptyView(isDark)
+                  : RefreshIndicator(
+                      onRefresh: _loadReplies,
+                      child: ListView.separated(
+                        physics: const AlwaysScrollableScrollPhysics(
+                          parent: BouncingScrollPhysics(),
+                        ),
+                        padding: const EdgeInsets.all(16),
+                        itemCount: _notifications.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 8),
+                        itemBuilder: (context, index) {
+                          final notification = _notifications[index];
+                          return _buildNotificationCard(notification, isDark);
+                        },
+                      ),
+                    ),
     );
   }
 
-  Widget _buildNotificationCard(Map<String, dynamic> notification, bool isDark) {
+  Widget _buildNotificationCard(
+      Map<String, dynamic> notification, bool isDark) {
     final type = notification['type'] as String?;
     final postId = notification['post_id'] as int?;
     final relatedId = notification['related_id'] as int?;
     final content = notification['content']?.toString() ?? '';
-    final createdAt = DateTime.tryParse(notification['created_at'] ?? '') ?? DateTime.now();
+    final createdAt =
+        DateTime.tryParse(notification['created_at'] ?? '') ?? DateTime.now();
     final fromUser = notification['from_user'] as Map<String, dynamic>?;
 
     String actionText = '';
@@ -118,6 +124,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       actionText = '精华申请通知';
     } else if (type == 'market_post') {
       actionText = '集市上新';
+    } else if (type == 'water_moderation') {
+      actionText = '水帖管理通知';
     }
 
     return InkWell(
@@ -154,8 +162,15 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             else
               CircleAvatar(
                 radius: 20,
-                backgroundColor: Theme.of(context).primaryColor.withValues(alpha: 0.1),
-                child: Icon(Icons.notifications, color: Theme.of(context).primaryColor, size: 20),
+                backgroundColor:
+                    Theme.of(context).primaryColor.withValues(alpha: 0.1),
+                child: Icon(
+                  type == 'water_moderation'
+                      ? Icons.admin_panel_settings_outlined
+                      : Icons.notifications,
+                  color: Theme.of(context).primaryColor,
+                  size: 20,
+                ),
               ),
             const SizedBox(width: 12),
             Expanded(

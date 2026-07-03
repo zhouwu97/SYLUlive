@@ -215,6 +215,9 @@ func main() {
 		log.Fatal("精华共同创作索引迁移失败:", err)
 	}
 	if isPostgres {
+		if err := ensurePostMarketTagsColumn(db); err != nil {
+			log.Fatal("商品交易选项字段迁移失败:", err)
+		}
 		if err := ensurePostPinColumns(db); err != nil {
 			log.Fatal("帖子置顶字段迁移失败:", err)
 		}
@@ -1381,6 +1384,10 @@ func ensurePostPinColumns(db *gorm.DB) error {
 		}
 	}
 	return nil
+}
+
+func ensurePostMarketTagsColumn(db *gorm.DB) error {
+	return db.Exec(`ALTER TABLE posts ADD COLUMN IF NOT EXISTS market_tags VARCHAR(200) NOT NULL DEFAULT ''`).Error
 }
 
 // 注意：每次重启服务均会重置该配置，如需永久修改请直接更改此处硬编码

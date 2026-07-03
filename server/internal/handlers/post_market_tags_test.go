@@ -1,0 +1,280 @@
+package handlers
+
+import (
+	"bytes"
+	"encoding/json"
+	"mime/multipart"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"strconv"
+	"strings"
+	"testing"
+
+	"github.com/gin-gonic/gin"
+	"github.com/glebarez/sqlite"
+	"gorm.io/gorm"
+
+	"shenliyuan/internal/models"
+)
+
+func TestCreateMarketPostStoresAllowedTagsFromMultipartForm(t *testing.T) {
+	db := newMarketTagsTestDB(t)
+	user := createMarketTagsTestUser(t, db, "20260003")
+
+	body, contentType := buildMultipartFields(t, map[string]string{
+		"board_id":    "2",
+		"title":       "显示器",
+		"content":     "成色很好，无坏点",
+		"post_type":   "sell",
+		"price":       "99",
+		"contact":     "站内私信",
+		"market_tags": "自提,乱传,急出",
+	})
+
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Set("user_id", user.ID)
+	context.Request = httptest.NewRequest(http.MethodPost, "/api/posts", body)
+	context.Request.Header.Set("Content-Type", contentType)
+
+	NewPostHandler(db, "", "").Create(context)
+
+	if recorder.Code != http.StatusCreated {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+
+	var responsePost models.Post
+	if err := json.Unmarshal(recorder.Body.Bytes(), &responsePost); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if responsePost.MarketTags != "自提,急出" {
+		t.Fatalf("response market tags=%q, want 自提,急出", responsePost.MarketTags)
+	}
+
+	var saved models.Post
+	if err := db.First(&saved, responsePost.ID).Error; err != nil {
+		t.Fatalf("load saved post: %v", err)
+	}
+	if saved.MarketTags != "自提,急出" {
+		t.Fatalf("saved market tags=%q, want 自提,急出", saved.MarketTags)
+	}
+	if saved.Content != "成色很好，无坏点" {
+		t.Fatalf("content should not include tags, got %q", saved.Content)
+	}
+}
+
+func TestCreateMarketPostStoresAllowedTagsOutsideContent(t *testing.T) {
+	db := newMarketTagsTestDB(t)
+	user := createMarketTagsTestUser(t, db, "20260001")
+
+	form := url.Values{}
+	form.Set("board_id", "2")
+	form.Set("title", "显示器")
+	form.Set("content", "成色很好，无坏点")
+	form.Set("post_type", "sell")
+	form.Set("price", "99")
+	form.Set("market_tags", "自提,乱传,急出")
+
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Set("user_id", user.ID)
+	context.Request = httptest.NewRequest(
+		http.MethodPost,
+		"/api/posts",
+		strings.NewReader(form.Encode()),
+	)
+	context.Request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	NewPostHandler(db, "", "").Create(context)
+
+	if recorder.Code != http.StatusCreated {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+
+	var body models.Post
+	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body.Content != "成色很好，无坏点" {
+		t.Fatalf("content should not include tags, got %q", body.Content)
+	}
+	if body.MarketTags != "自提,急出" {
+		t.Fatalf("unexpected market tags: %q", body.MarketTags)
+	}
+}
+
+func TestUpdateMarketPostCanReplaceAndClearTags(t *testing.T) {
+	db := newMarketTagsTestDB(t)
+	user := createMarketTagsTestUser(t, db, "20260002")
+	post := createMarketTagsTestPost(t, db, user.ID, "自提")
+
+	handler := NewPostHandler(db, "", "")
+	body := updateMarketTags(t, handler, user.ID, post.ID, "可小刀,乱传,急出")
+	if body.MarketTags != "可小刀,急出" {
+		t.Fatalf("unexpected replaced market tags: %q", body.MarketTags)
+	}
+
+	body = updateMarketTags(t, handler, user.ID, post.ID, "")
+	if body.MarketTags != "" {
+		t.Fatalf("expected market tags to be cleared, got %q", body.MarketTags)
+	}
+}
+
+func TestUpdateMarketPostStoresTagsFromMultipartForm(t *testing.T) {
+	db := newMarketTagsTestDB(t)
+	user := createMarketTagsTestUser(t, db, "20260004")
+	post := createMarketTagsTestPost(t, db, user.ID, "可小刀")
+
+	body, contentType := buildMultipartFields(t, map[string]string{
+		"title":       "显示器",
+		"content":     "成色很好，无坏点",
+		"post_type":   "sell",
+		"price":       "88",
+		"contact":     "站内私信",
+		"market_tags": "自提,乱传,急出",
+	})
+
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Set("user_id", user.ID)
+	context.Set("role", "user")
+	context.Params = gin.Params{{Key: "id", Value: strconv.FormatUint(uint64(post.ID), 10)}}
+	context.Request = httptest.NewRequest(
+		http.MethodPut,
+		"/api/posts/"+strconv.FormatUint(uint64(post.ID), 10),
+		body,
+	)
+	context.Request.Header.Set("Content-Type", contentType)
+
+	NewPostHandler(db, "", "").Update(context)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+
+	var responsePost models.Post
+	if err := json.Unmarshal(recorder.Body.Bytes(), &responsePost); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if responsePost.MarketTags != "自提,急出" {
+		t.Fatalf("response market tags=%q, want 自提,急出", responsePost.MarketTags)
+	}
+
+	var saved models.Post
+	if err := db.First(&saved, post.ID).Error; err != nil {
+		t.Fatalf("load saved post: %v", err)
+	}
+	if saved.MarketTags != "自提,急出" {
+		t.Fatalf("saved market tags=%q, want 自提,急出", saved.MarketTags)
+	}
+}
+
+func newMarketTagsTestDB(t *testing.T) *gorm.DB {
+	t.Helper()
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	if err := db.AutoMigrate(
+		&models.User{},
+		&models.Post{},
+		&models.PostImage{},
+	); err != nil {
+		t.Fatalf("migrate database: %v", err)
+	}
+	return db
+}
+
+func createMarketTagsTestUser(t *testing.T, db *gorm.DB, studentID string) models.User {
+	t.Helper()
+	user := models.User{
+		StudentID:    studentID,
+		PasswordHash: "x",
+		Nickname:     "卖家",
+		EduBound:     true,
+	}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	return user
+}
+
+func createMarketTagsTestPost(t *testing.T, db *gorm.DB, userID uint, tags string) models.Post {
+	t.Helper()
+	post := models.Post{
+		Title:      "显示器",
+		Content:    "成色很好",
+		BoardID:    models.BoardMarket,
+		AuthorID:   userID,
+		PostType:   "sell",
+		Price:      99,
+		MarketTags: tags,
+		Status:     models.PostStatusNormal,
+	}
+	if err := db.Create(&post).Error; err != nil {
+		t.Fatalf("create post: %v", err)
+	}
+	return post
+}
+
+func updateMarketTags(
+	t *testing.T,
+	handler *PostHandler,
+	userID uint,
+	postID uint,
+	tags string,
+) models.Post {
+	t.Helper()
+
+	form := url.Values{}
+	form.Set("title", "显示器")
+	form.Set("content", "成色很好，无坏点")
+	form.Set("post_type", "sell")
+	form.Set("price", "88")
+	form.Set("contact", "站内私信")
+	form.Set("market_tags", tags)
+
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Set("user_id", userID)
+	context.Set("role", "user")
+	context.Params = gin.Params{{Key: "id", Value: strconv.FormatUint(uint64(postID), 10)}}
+	context.Request = httptest.NewRequest(
+		http.MethodPut,
+		"/api/posts/"+strconv.FormatUint(uint64(postID), 10),
+		strings.NewReader(form.Encode()),
+	)
+	context.Request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	handler.Update(context)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+
+	var body models.Post
+	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	return body
+}
+
+func buildMultipartFields(t *testing.T, fields map[string]string) (*bytes.Buffer, string) {
+	t.Helper()
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	for key, value := range fields {
+		if err := writer.WriteField(key, value); err != nil {
+			t.Fatalf("write multipart field %s: %v", key, err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close multipart writer: %v", err)
+	}
+	return &body, writer.FormDataContentType()
+}

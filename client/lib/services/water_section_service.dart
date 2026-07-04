@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import '../models/water_section.dart';
 import '../models/water_section_level_title.dart';
+import '../models/water_section_my_level.dart';
 
 /// 水帖版块读取服务。失败抛异常，由 Provider 决定 fallback。
 class WaterSectionService {
@@ -110,6 +111,16 @@ class WaterSectionService {
     throw Exception('获取关注版块失败 (${response.statusCode})');
   }
 
+  Future<WaterSectionMyLevel> fetchMyLevel(String sectionSlug) async {
+    final response = await _dio.get('/water/sections/$sectionSlug/my-level');
+    if (response.statusCode == 200 && response.data != null) {
+      return WaterSectionMyLevel.fromJson(
+        response.data as Map<String, dynamic>,
+      );
+    }
+    throw Exception('获取版块等级失败 (${response.statusCode})');
+  }
+
   Future<WaterSectionTag> updateTagStatus({
     required String sectionSlug,
     required int tagId,
@@ -142,7 +153,8 @@ class WaterSectionService {
       final data = response.data;
       final list = data['titles'] as List<dynamic>? ?? const [];
       return list
-          .map((e) => WaterSectionLevelTitle.fromJson(e as Map<String, dynamic>))
+          .map(
+              (e) => WaterSectionLevelTitle.fromJson(e as Map<String, dynamic>))
           .toList();
     }
     throw Exception('获取版块称号失败 (${response.statusCode})');
@@ -160,7 +172,8 @@ class WaterSectionService {
     if (response.statusCode == 200 && response.data != null) {
       final list = response.data['titles'] as List<dynamic>? ?? const [];
       return list
-          .map((e) => WaterSectionLevelTitle.fromJson(e as Map<String, dynamic>))
+          .map(
+              (e) => WaterSectionLevelTitle.fromJson(e as Map<String, dynamic>))
           .toList();
     }
     throw Exception('更新版块称号失败 (${response.statusCode})');

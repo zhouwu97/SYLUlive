@@ -28,6 +28,7 @@ class WaterSectionProvider extends ChangeNotifier {
   String? get error => _error;
   bool get usingFallback => _usingFallback;
   DateTime? get lastLoadedAt => _lastLoadedAt;
+  WaterSectionService? get service => _service;
 
   /// active 状态版块（接口数据或 fallback）
   List<WaterSection> get activeSections =>
@@ -186,6 +187,18 @@ class WaterSectionProvider extends ChangeNotifier {
         reason: reason,
       );
       await _refreshSectionAfterMutation(sectionSlug);
+    });
+  }
+
+  Future<bool> toggleFollow(String slug, bool follow) async {
+    if (_service == null) return false;
+    return _save(() async {
+      if (follow) {
+        await _service!.followSection(slug);
+      } else {
+        await _service!.unfollowSection(slug);
+      }
+      await _refreshSectionAfterMutation(slug);
     });
   }
 

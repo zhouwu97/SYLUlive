@@ -32,6 +32,53 @@ class WaterSectionAuthorMeta {
   }
 }
 
+// 经验奖励结果：发帖/回复成功后用于展示本次获得的全站与版块经验。
+class ExpAward {
+  final String scope;
+  final int exp;
+  final String action;
+  final int levelBefore;
+  final int levelAfter;
+  final bool levelUp;
+  final int? sectionId;
+  final String sectionSlug;
+  final String sectionTitle;
+  final String titleBefore;
+  final String titleAfter;
+
+  const ExpAward({
+    required this.scope,
+    required this.exp,
+    required this.action,
+    this.levelBefore = 1,
+    this.levelAfter = 1,
+    this.levelUp = false,
+    this.sectionId,
+    this.sectionSlug = '',
+    this.sectionTitle = '',
+    this.titleBefore = '',
+    this.titleAfter = '',
+  });
+
+  factory ExpAward.fromJson(Map<String, dynamic> json) {
+    return ExpAward(
+      scope: json['scope'] ?? '',
+      exp: (json['exp'] as num?)?.toInt() ?? 0,
+      action: json['action'] ?? '',
+      levelBefore: (json['level_before'] as num?)?.toInt() ?? 1,
+      levelAfter: (json['level_after'] as num?)?.toInt() ?? 1,
+      levelUp: json['level_up'] == true,
+      sectionId: json['section_id'] != null
+          ? (json['section_id'] as num).toInt()
+          : null,
+      sectionSlug: json['section_slug'] ?? '',
+      sectionTitle: json['section_title'] ?? '',
+      titleBefore: json['title_before'] ?? '',
+      titleAfter: json['title_after'] ?? '',
+    );
+  }
+}
+
 // 帖子图片模型
 class PostImage {
   final int id;
@@ -121,8 +168,10 @@ class Post {
   final int? waterSectionPinId;
   final bool waterSectionFeatured;
   final int? waterSectionFeaturedId;
+  final bool homeFeaturedPending;
   final WaterSectionAuthorMeta? waterSectionAuthorMeta;
-  final int? expEarned;  // 发帖/评论成功时服务端返回的本次经验值，null=无奖励
+  final int? expEarned; // 发帖/评论成功时服务端返回的本次经验值，null=无奖励
+  final List<ExpAward> expAwards;
   final List<PostImage> images;
   final User? author;
   final DateTime createdAt;
@@ -158,8 +207,10 @@ class Post {
     this.waterSectionPinId,
     this.waterSectionFeatured = false,
     this.waterSectionFeaturedId,
+    this.homeFeaturedPending = false,
     this.waterSectionAuthorMeta,
     this.expEarned,
+    this.expAwards = const [],
     this.images = const [],
     this.author,
     required this.createdAt,
@@ -203,12 +254,17 @@ class Post {
       waterSectionFeaturedId: json['water_section_featured_id'] != null
           ? (json['water_section_featured_id'] as num).toInt()
           : null,
+      homeFeaturedPending: json['home_featured_pending'] == true,
       waterSectionAuthorMeta: json['water_section_author_meta'] != null
           ? WaterSectionAuthorMeta.fromJson(json['water_section_author_meta'])
           : null,
       expEarned: json['exp_earned'] != null
           ? (json['exp_earned'] as num).toInt()
           : null,
+      expAwards: (json['exp_awards'] as List<dynamic>?)
+              ?.map((e) => ExpAward.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          const [],
       images: (json['images'] as List<dynamic>?)
               ?.map((e) => PostImage.fromJson(e))
               .toList() ??
@@ -286,6 +342,10 @@ class Post {
     int? waterSectionPinId,
     bool? waterSectionFeatured,
     int? waterSectionFeaturedId,
+    bool? homeFeaturedPending,
+    WaterSectionAuthorMeta? waterSectionAuthorMeta,
+    int? expEarned,
+    List<ExpAward>? expAwards,
     List<PostImage>? images,
     User? author,
     DateTime? createdAt,
@@ -320,7 +380,13 @@ class Post {
       waterSectionPinned: waterSectionPinned ?? this.waterSectionPinned,
       waterSectionPinId: waterSectionPinId ?? this.waterSectionPinId,
       waterSectionFeatured: waterSectionFeatured ?? this.waterSectionFeatured,
-      waterSectionFeaturedId: waterSectionFeaturedId ?? this.waterSectionFeaturedId,
+      waterSectionFeaturedId:
+          waterSectionFeaturedId ?? this.waterSectionFeaturedId,
+      homeFeaturedPending: homeFeaturedPending ?? this.homeFeaturedPending,
+      waterSectionAuthorMeta:
+          waterSectionAuthorMeta ?? this.waterSectionAuthorMeta,
+      expEarned: expEarned ?? this.expEarned,
+      expAwards: expAwards ?? this.expAwards,
       images: images ?? this.images,
       author: author ?? this.author,
       createdAt: createdAt ?? this.createdAt,

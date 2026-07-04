@@ -100,8 +100,9 @@ class PostProvider extends ChangeNotifier {
     return '$boardId|$sort|${type ?? ''}|${tagId ?? ''}';
   }
 
-  String _postsEndpoint(String sort) {
-    return sort == 'featured' ? '/posts/featured' : '/posts';
+  String _postsEndpoint(String sort, {String? type}) {
+    final hasSectionType = type != null && type.trim().isNotEmpty;
+    return sort == 'featured' && !hasSectionType ? '/posts/featured' : '/posts';
   }
 
   _BoardState _ensureBoard(int boardId,
@@ -268,7 +269,7 @@ class PostProvider extends ChangeNotifier {
       }
 
       final response = await _dio.get(
-        _postsEndpoint(sort),
+        _postsEndpoint(sort, type: type),
         queryParameters: params,
       );
       if (requestVersion != board.requestVersion) return;
@@ -398,7 +399,7 @@ class PostProvider extends ChangeNotifier {
       );
 
       final response = await _dio.get(
-        _postsEndpoint(sort),
+        _postsEndpoint(sort, type: type),
         queryParameters: params,
       );
       if (requestVersion != board.requestVersion) return;
@@ -502,7 +503,7 @@ class PostProvider extends ChangeNotifier {
       }
 
       final response = await _dio.get(
-        _postsEndpoint(sort),
+        _postsEndpoint(sort, type: type),
         queryParameters: params,
       );
       if (requestVersion != board.requestVersion) return;

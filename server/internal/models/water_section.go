@@ -16,6 +16,7 @@ type WaterSection struct {
 	Description          string    `gorm:"size:1000" json:"description"`
 	IconKey              string    `gorm:"size:64" json:"icon_key"`
 	ColorHex             string    `gorm:"size:20" json:"color_hex"`
+	CoverURL             string    `gorm:"size:500" json:"cover_url"` // 版块背景图，版主可在管理台设置
 	PublishActionText    string    `gorm:"size:40" json:"publish_action_text"`
 	EmptyTitle           string    `gorm:"size:100" json:"empty_title"`
 	EmptyDescription     string    `gorm:"size:300" json:"empty_description"`

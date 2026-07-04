@@ -27,6 +27,36 @@ func CalculateWaterSectionLevel(exp int) int {
 	return 1
 }
 
+// WaterSectionLevelMinExp 返回某个版块等级的最低经验。
+func WaterSectionLevelMinExp(level int) int {
+	switch level {
+	case 8:
+		return 800
+	case 7:
+		return 560
+	case 6:
+		return 360
+	case 5:
+		return 220
+	case 4:
+		return 120
+	case 3:
+		return 60
+	case 2:
+		return 20
+	default:
+		return 0
+	}
+}
+
+// NextWaterSectionLevelExp 返回下一级所需总经验；满级返回 0。
+func NextWaterSectionLevelExp(level int) int {
+	if level >= 8 {
+		return 0
+	}
+	return WaterSectionLevelMinExp(level + 1)
+}
+
 // defaultWaterSectionLevelTitles 默认版块等级称号。
 // 不能被外部修改；版主自定义覆盖存储在 WaterSectionLevelTitle 表。
 var defaultWaterSectionLevelTitles = map[int]string{

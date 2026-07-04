@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
@@ -42,24 +43,39 @@ type waterSectionTagResponse struct {
 
 // waterSectionResponse 版块响应体
 type waterSectionResponse struct {
-	ID                uint                      `json:"id"`
-	Slug              string                    `json:"slug"`
-	Title             string                    `json:"title"`
-	Subtitle          string                    `json:"subtitle"`
-	Description       string                    `json:"description"`
-	IconKey           string                    `json:"icon_key"`
-	ColorHex          string                    `json:"color_hex"`
-	PublishActionText string                    `json:"publish_action_text"`
-	EmptyTitle        string                    `json:"empty_title"`
-	EmptyDescription  string                    `json:"empty_description"`
-	StarterQuestions  []string                  `json:"starter_questions"`
-	NoticeText        string                    `json:"notice_text"`
-	SensitiveLevel    string                    `json:"sensitive_level"`
-	DefaultSort       string                    `json:"default_sort"`
-	SortOrder         int                       `json:"sort_order"`
-	Status            string                    `json:"status"`
-	IsFollowed        bool                      `json:"is_followed"`
-	Tags              []waterSectionTagResponse `json:"tags"`
+	ID                uint                       `json:"id"`
+	Slug              string                     `json:"slug"`
+	Title             string                     `json:"title"`
+	Subtitle          string                     `json:"subtitle"`
+	Description       string                     `json:"description"`
+	IconKey           string                     `json:"icon_key"`
+	ColorHex          string                     `json:"color_hex"`
+	CoverURL          string                     `json:"cover_url"` // 版块背景图
+	PublishActionText string                     `json:"publish_action_text"`
+	EmptyTitle        string                     `json:"empty_title"`
+	EmptyDescription  string                     `json:"empty_description"`
+	StarterQuestions  []string                   `json:"starter_questions"`
+	NoticeText        string                     `json:"notice_text"`
+	SensitiveLevel    string                     `json:"sensitive_level"`
+	DefaultSort       string                     `json:"default_sort"`
+	SortOrder         int                        `json:"sort_order"`
+	Status            string                     `json:"status"`
+	IsFollowed        bool                       `json:"is_followed"`
+	PostCount         int64                      `json:"post_count"`
+	FollowerCount     int64                      `json:"follower_count"`
+	MyLevel           *waterSectionMyLevelBrief  `json:"my_level,omitempty"`
+	Tags              []waterSectionTagResponse  `json:"tags"`
+}
+
+// waterSectionMyLevelBrief 版块列表中返回的当前用户本版等级简要信息
+type waterSectionMyLevelBrief struct {
+	Level           int     `json:"level"`
+	Title           string  `json:"title"`
+	Exp             int     `json:"exp"`
+	CurrentLevelExp int     `json:"current_level_exp"`
+	NextLevelExp    int     `json:"next_level_exp"`
+	ExpToNext       int     `json:"exp_to_next"`
+	Progress        float64 `json:"progress"`
 }
 
 type updateWaterSectionRequest struct {
@@ -68,6 +84,7 @@ type updateWaterSectionRequest struct {
 	Description       *string   `json:"description"`
 	IconKey           *string   `json:"icon_key"`
 	ColorHex          *string   `json:"color_hex"`
+	CoverURL          *string   `json:"cover_url"` // 版块背景图 URL（图片上传后的路径）
 	PublishActionText *string   `json:"publish_action_text"`
 	EmptyTitle        *string   `json:"empty_title"`
 	EmptyDescription  *string   `json:"empty_description"`
@@ -105,6 +122,7 @@ type waterSectionEditSnapshot struct {
 	Description       string   `json:"description"`
 	IconKey           string   `json:"icon_key"`
 	ColorHex          string   `json:"color_hex"`
+	CoverURL          string   `json:"cover_url"`
 	PublishActionText string   `json:"publish_action_text"`
 	EmptyTitle        string   `json:"empty_title"`
 	EmptyDescription  string   `json:"empty_description"`
@@ -150,6 +168,7 @@ func toSectionResponse(section models.WaterSection) waterSectionResponse {
 		Description:       section.Description,
 		IconKey:           section.IconKey,
 		ColorHex:          section.ColorHex,
+		CoverURL:          section.CoverURL,
 		PublishActionText: section.PublishActionText,
 		EmptyTitle:        section.EmptyTitle,
 		EmptyDescription:  section.EmptyDescription,
@@ -184,6 +203,7 @@ func waterSectionSnapshot(section models.WaterSection) waterSectionEditSnapshot 
 		Description:       section.Description,
 		IconKey:           section.IconKey,
 		ColorHex:          section.ColorHex,
+		CoverURL:          section.CoverURL,
 		PublishActionText: section.PublishActionText,
 		EmptyTitle:        section.EmptyTitle,
 		EmptyDescription:  section.EmptyDescription,
@@ -381,6 +401,187 @@ func (h *WaterSectionHandler) fillIsFollowed(c *gin.Context, resps []waterSectio
 	return resps
 }
 
+// fillSectionStats 批量填充版块的帖子数和关注人数
+func (h *WaterSectionHandler) fillSectionStats(resps []waterSectionResponse) []waterSectionResponse {
+	if len(resps) == 0 {
+		return resps
+	}
+
+	sectionIDs := make([]uint, len(resps))
+	slugs := make([]string, len(resps))
+	for i, r := range resps {
+		sectionIDs[i] = r.ID
+		slugs[i] = r.Slug
+	}
+
+	// 批量查询关注人数
+	type followerCountResult struct {
+		SectionID uint  `gorm:"column:section_id"`
+		Count     int64 `gorm:"column:count"`
+	}
+	var followerCounts []followerCountResult
+	h.db.Model(&models.WaterSectionFollow{}).
+		Select("section_id, COUNT(*) as count").
+		Where("section_id IN ?", sectionIDs).
+		Group("section_id").
+		Scan(&followerCounts)
+
+	followerMap := make(map[uint]int64)
+	for _, fc := range followerCounts {
+		followerMap[fc.SectionID] = fc.Count
+	}
+
+	// 批量查询帖子数（按 type 匹配 section slug，board_id=1 为水帖版块）
+	type postCountResult struct {
+		Type  string `gorm:"column:type"`
+		Count int64  `gorm:"column:count"`
+	}
+	var postCounts []postCountResult
+	h.db.Model(&models.Post{}).
+		Select("type, COUNT(*) as count").
+		Where("board_id = ? AND type IN ? AND status = ?", 1, slugs, "active").
+		Group("type").
+		Scan(&postCounts)
+
+	postCountMap := make(map[string]int64)
+	for _, pc := range postCounts {
+		postCountMap[pc.Type] = pc.Count
+	}
+
+	for i := range resps {
+		resps[i].FollowerCount = followerMap[resps[i].ID]
+		resps[i].PostCount = postCountMap[resps[i].Slug]
+	}
+	return resps
+}
+
+// buildMyLevelBrief 构建当前用户在版块的等级简要信息
+func (h *WaterSectionHandler) buildMyLevelBrief(sectionID uint, userID uint) *waterSectionMyLevelBrief {
+	var stat models.WaterSectionUserStat
+	err := h.db.Where("user_id = ? AND section_id = ?", userID, sectionID).First(&stat).Error
+	if err != nil && err != gorm.ErrRecordNotFound {
+		return nil
+	}
+
+	exp := 0
+	if err == nil {
+		exp = stat.Exp
+	}
+
+	level := services.CalculateWaterSectionLevel(exp)
+	title := services.GetWaterSectionLevelTitle(h.db, sectionID, level)
+	currentMin := services.WaterSectionLevelMinExp(level)
+	nextExp := services.NextWaterSectionLevelExp(level)
+
+	expToNext := 0
+	progress := 0.0
+	if nextExp > 0 {
+		requiredExp := nextExp - currentMin
+		progressExp := exp - currentMin
+		if progressExp < 0 {
+			progressExp = 0
+		}
+		if progressExp > requiredExp {
+			progressExp = requiredExp
+		}
+		expToNext = requiredExp - progressExp
+		if requiredExp > 0 {
+			progress = float64(progressExp) / float64(requiredExp)
+		} else {
+			progress = 1.0
+		}
+	} else {
+		// 满级
+		progress = 1.0
+	}
+
+	return &waterSectionMyLevelBrief{
+		Level:           level,
+		Title:           title,
+		Exp:             exp,
+		CurrentLevelExp: currentMin,
+		NextLevelExp:    nextExp,
+		ExpToNext:       expToNext,
+		Progress:        progress,
+	}
+}
+
+// fillMyLevel 批量填充当前用户在各版块的等级信息
+func (h *WaterSectionHandler) fillMyLevel(c *gin.Context, resps []waterSectionResponse) []waterSectionResponse {
+	userIDVal, exists := c.Get("user_id")
+	if !exists {
+		return resps
+	}
+	uid, ok := userIDVal.(uint)
+	if !ok || uid == 0 {
+		return resps
+	}
+
+	sectionIDs := make([]uint, len(resps))
+	for i, r := range resps {
+		sectionIDs[i] = r.ID
+	}
+	if len(sectionIDs) == 0 {
+		return resps
+	}
+
+	// 批量查询用户在各版块的统计
+	var stats []models.WaterSectionUserStat
+	h.db.Where("user_id = ? AND section_id IN ?", uid, sectionIDs).Find(&stats)
+
+	statMap := make(map[uint]models.WaterSectionUserStat)
+	for _, s := range stats {
+		statMap[s.SectionID] = s
+	}
+
+	for i := range resps {
+		sectionID := resps[i].ID
+		stat, hasStat := statMap[sectionID]
+
+		exp := 0
+		if hasStat {
+			exp = stat.Exp
+		}
+
+		level := services.CalculateWaterSectionLevel(exp)
+		title := services.GetWaterSectionLevelTitle(h.db, sectionID, level)
+		currentMin := services.WaterSectionLevelMinExp(level)
+		nextExp := services.NextWaterSectionLevelExp(level)
+
+		expToNext := 0
+		progress := 0.0
+		if nextExp > 0 {
+			requiredExp := nextExp - currentMin
+			progressExp := exp - currentMin
+			if progressExp < 0 {
+				progressExp = 0
+			}
+			if progressExp > requiredExp {
+				progressExp = requiredExp
+			}
+			expToNext = requiredExp - progressExp
+			if requiredExp > 0 {
+				progress = float64(progressExp) / float64(requiredExp)
+			} else {
+				progress = 1.0
+			}
+		} else {
+			progress = 1.0
+		}
+
+		resps[i].MyLevel = &waterSectionMyLevelBrief{
+			Level:           level,
+			Title:           title,
+			Exp:             exp,
+			CurrentLevelExp: currentMin,
+			NextLevelExp:    nextExp,
+			ExpToNext:       expToNext,
+			Progress:        progress,
+		}
+	}
+	return resps
+}
+
 // List GET /api/water/sections
 // 返回所有 active 版块，按 sort_order 升序；每个版块只带 enabled 标签。
 func (h *WaterSectionHandler) List(c *gin.Context) {
@@ -398,6 +599,8 @@ func (h *WaterSectionHandler) List(c *gin.Context) {
 		resp = append(resp, toSectionResponse(section))
 	}
 	resp = h.fillIsFollowed(c, resp)
+	resp = h.fillSectionStats(resp)
+	resp = h.fillMyLevel(c, resp)
 	c.JSON(http.StatusOK, gin.H{"sections": resp})
 }
 
@@ -424,6 +627,8 @@ func (h *WaterSectionHandler) Get(c *gin.Context) {
 	}
 	resp := toSectionResponse(section)
 	respArr := h.fillIsFollowed(c, []waterSectionResponse{resp})
+	respArr = h.fillSectionStats(respArr)
+	respArr = h.fillMyLevel(c, respArr)
 	c.JSON(http.StatusOK, gin.H{"section": respArr[0]})
 }
 
@@ -513,6 +718,15 @@ func (h *WaterSectionHandler) Update(c *gin.Context) {
 			return
 		}
 		section.ColorHex = colorHex
+		changed = true
+	}
+	if req.CoverURL != nil {
+		coverURL := strings.TrimSpace(*req.CoverURL)
+		if msg := validateMaxLen(coverURL, 500, "背景图地址"); msg != "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": msg})
+			return
+		}
+		section.CoverURL = coverURL
 		changed = true
 	}
 	if req.PublishActionText != nil {
@@ -892,6 +1106,111 @@ type waterSectionLevelTitleResponse struct {
 	Title    string `json:"title"`
 	Custom   bool   `json:"custom"` // false 表示当前返回的是默认称号
 	Position int    `json:"position,omitempty"`
+}
+
+type waterSectionMyLevelResponse struct {
+	SectionID          uint   `json:"section_id"`
+	SectionSlug        string `json:"section_slug"`
+	SectionTitle       string `json:"section_title"`
+	Level              int    `json:"level"`
+	Title              string `json:"title"`
+	Exp                int    `json:"exp"`
+	CurrentLevelMinExp int    `json:"current_level_min_exp"`
+	NextLevelExp       int    `json:"next_level_exp"`
+	ProgressExp        int    `json:"progress_exp"`
+	RequiredExp        int    `json:"required_exp"`
+	PostCount          int    `json:"post_count"`
+	ReplyCount         int    `json:"reply_count"`
+	TodayPostAwarded   bool   `json:"today_post_awarded"`
+	TodayReplyAwarded  bool   `json:"today_reply_awarded"`
+	PostDailyExp       int    `json:"post_daily_exp"`
+	ReplyDailyExp      int    `json:"reply_daily_exp"`
+}
+
+// GetMyLevel GET /api/water/sections/:slug/my-level
+// 返回当前登录用户在该版块的等级、经验进度以及今日奖励领取状态。
+func (h *WaterSectionHandler) GetMyLevel(c *gin.Context) {
+	operator, ok := h.currentUserOr401(c)
+	if !ok {
+		return
+	}
+	section, ok := h.getActiveSectionOr404(c)
+	if !ok {
+		return
+	}
+
+	var stat models.WaterSectionUserStat
+	err := h.db.Where("user_id = ? AND section_id = ?", operator.ID, section.ID).First(&stat).Error
+	if err != nil && err != gorm.ErrRecordNotFound {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取版块等级失败"})
+		return
+	}
+	exp := 0
+	postCount := 0
+	replyCount := 0
+	if err == nil {
+		exp = stat.Exp
+		postCount = stat.PostCount
+		replyCount = stat.ReplyCount
+	}
+
+	level := services.CalculateWaterSectionLevel(exp)
+	title := services.GetWaterSectionLevelTitle(h.db, section.ID, level)
+	currentMin := services.WaterSectionLevelMinExp(level)
+	nextExp := services.NextWaterSectionLevelExp(level)
+	requiredExp := 0
+	progressExp := 0
+	if nextExp > 0 {
+		requiredExp = nextExp - currentMin
+		progressExp = exp - currentMin
+		if progressExp < 0 {
+			progressExp = 0
+		}
+		if progressExp > requiredExp {
+			progressExp = requiredExp
+		}
+	}
+
+	now := time.Now()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
+	var logs []models.WaterSectionExpLog
+	if err := h.db.
+		Where("user_id = ? AND section_id = ? AND date = ? AND action IN ?",
+			operator.ID, section.ID, today,
+			[]string{models.WaterSectionExpActionPostDaily, models.WaterSectionExpActionReplyDaily}).
+		Find(&logs).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取今日奖励状态失败"})
+		return
+	}
+	todayPostAwarded := false
+	todayReplyAwarded := false
+	for _, log := range logs {
+		switch log.Action {
+		case models.WaterSectionExpActionPostDaily:
+			todayPostAwarded = true
+		case models.WaterSectionExpActionReplyDaily:
+			todayReplyAwarded = true
+		}
+	}
+
+	c.JSON(http.StatusOK, waterSectionMyLevelResponse{
+		SectionID:          section.ID,
+		SectionSlug:        section.Slug,
+		SectionTitle:       section.Title,
+		Level:              level,
+		Title:              title,
+		Exp:                exp,
+		CurrentLevelMinExp: currentMin,
+		NextLevelExp:       nextExp,
+		ProgressExp:        progressExp,
+		RequiredExp:        requiredExp,
+		PostCount:          postCount,
+		ReplyCount:         replyCount,
+		TodayPostAwarded:   todayPostAwarded,
+		TodayReplyAwarded:  todayReplyAwarded,
+		PostDailyExp:       services.GlobalExpPostDaily,
+		ReplyDailyExp:      services.GlobalExpReplyDaily,
+	})
 }
 
 // GetLevelTitles GET /api/water/sections/:slug/level-titles

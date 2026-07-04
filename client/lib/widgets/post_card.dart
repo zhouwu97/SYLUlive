@@ -143,7 +143,8 @@ class _PostCardState extends State<PostCard>
                             ],
                             if (widget.post.waterSectionAuthorMeta != null) ...[
                               const SizedBox(width: 4),
-                              _buildSectionLevelBadge(widget.post.waterSectionAuthorMeta!),
+                              _buildSectionLevelBadge(
+                                  widget.post.waterSectionAuthorMeta!),
                             ],
                           ],
                         ),
@@ -750,7 +751,7 @@ class _PostCardState extends State<PostCard>
         borderRadius: BorderRadius.circular(4),
       ),
       child: Text(
-        '${meta.title}',
+        meta.title,
         style: const TextStyle(
           fontSize: 8,
           height: 1.15,

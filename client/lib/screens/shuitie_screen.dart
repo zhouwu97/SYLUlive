@@ -25,6 +25,7 @@ import '../providers/water_section_provider.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/home_service_drawer.dart';
 import '../widgets/home_tab_reveal.dart';
+import '../widgets/pinned_post_summary_bar.dart';
 import '../widgets/post_card.dart';
 import 'announcement_screen.dart';
 import 'chat_list_screen.dart';
@@ -1365,6 +1366,14 @@ class _ShuitieScreenState extends State<ShuitieScreen>
         final feedHasMore = data.hasMore;
         final visiblePosts = _resolveVisiblePosts(posts, mode);
 
+        final pinnedPosts = visiblePosts
+            .where((post) => post.isActivePinned)
+            .toList();
+
+        final normalPosts = visiblePosts
+            .where((post) => !post.isActivePinned)
+            .toList();
+
         return NotificationListener<ScrollNotification>(
           onNotification: (notification) {
             final canLoadMore =
@@ -1413,7 +1422,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                     child: CircularProgressIndicator(),
                   ),
                 )
-              else if (visiblePosts.isEmpty)
+              else if (pinnedPosts.isEmpty && normalPosts.isEmpty)
                 SliverFillRemaining(
                   child: mode == 'following'
                       ? _buildFollowingEmptyState(isDark)
@@ -1426,10 +1435,34 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                           onRetry: _refresh,
                         ),
                 )
-              else
+              else ...[
+                if (pinnedPosts.isNotEmpty)
+                  SliverToBoxAdapter(
+                    child: PinnedPostSummaryBar(
+                      posts: pinnedPosts,
+                      isDark: isDark,
+                      label: '置顶',
+                      onOpenPost: (post) {
+                        if (ResponsiveUtil.useDesktopShell(context)) {
+                          _openPostInSplit(post);
+                        } else {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => PostDetailScreen(
+                                postId: post.id,
+                                isMarket: false,
+                                initialPost: post,
+                              ),
+                            ),
+                          );
+                        }
+                      },
+                    ),
+                  ),
                 SliverList(
                   delegate: SliverChildBuilderDelegate((context, index) {
-                    final post = visiblePosts[index];
+                    final post = normalPosts[index];
                     final isSelected = _selectedPost?.id == post.id &&
                         _selectedUserId == null &&
                         ResponsiveUtil.useDesktopShell(context);
@@ -1479,8 +1512,9 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                         ),
                       ),
                     );
-                  }, childCount: visiblePosts.length),
+                  }, childCount: normalPosts.length),
                 ),
+              ],
               if (isFeedLoading && posts.isNotEmpty)
                 const SliverToBoxAdapter(
                   child: Padding(

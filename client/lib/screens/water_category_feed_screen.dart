@@ -8,6 +8,7 @@ import '../providers/auth_provider.dart';
 import '../providers/post_provider.dart';
 import '../providers/water_section_provider.dart';
 import '../providers/water_moderator_provider.dart';
+import '../widgets/pinned_post_summary_bar.dart';
 import '../widgets/post_card.dart';
 import 'create_post_screen.dart';
 import 'post_detail_screen.dart';
@@ -394,6 +395,14 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
     final showLoginPlaceholder =
         _isFollowing && !context.read<AuthProvider>().isLoggedIn;
 
+    final pinnedPosts = posts.where((post) {
+      return post.waterSectionPinned || post.isActivePinned;
+    }).toList();
+
+    final normalPosts = posts.where((post) {
+      return !post.waterSectionPinned && !post.isActivePinned;
+    }).toList();
+
     return CustomScrollView(
       controller: _scrollController,
       physics: const AlwaysScrollableScrollPhysics(
@@ -420,19 +429,28 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
             hasScrollBody: false,
             child: _buildLoadingState(isDark),
           )
-        else if (posts.isEmpty)
+        else if (pinnedPosts.isEmpty && normalPosts.isEmpty)
           SliverFillRemaining(
             hasScrollBody: false,
             child: _buildEmptyState(isDark),
           )
         else ...[
+          if (pinnedPosts.isNotEmpty)
+            SliverToBoxAdapter(
+              child: PinnedPostSummaryBar(
+                posts: pinnedPosts,
+                isDark: isDark,
+                label: '置顶',
+                onOpenPost: _openPost,
+              ),
+            ),
           SliverPadding(
             padding: const EdgeInsets.fromLTRB(12, 10, 12, 96),
             sliver: SliverList.separated(
-              itemCount: posts.length,
+              itemCount: normalPosts.length,
               separatorBuilder: (_, __) => const SizedBox(height: 0),
               itemBuilder: (context, index) {
-                final post = posts[index];
+                final post = normalPosts[index];
                 return PostCard(
                   post: post,
                   showCategoryBadge: false,

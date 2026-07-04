@@ -577,4 +577,40 @@ void main() {
     expect(post.waterSectionFeatured, isTrue);
     expect(post.waterSectionFeaturedId, 200);
   });
+
+  test('post parses exp awards and home featured pending state', () {
+    final post = Post.fromJson({
+      'id': 1,
+      'content': 'content',
+      'board_id': 1,
+      'author_id': 1,
+      'home_featured_pending': true,
+      'exp_awards': [
+        {
+          'scope': 'global',
+          'exp': 10,
+          'action': 'post_daily',
+          'level_before': 2,
+          'level_after': 2,
+        },
+        {
+          'scope': 'water_section',
+          'exp': 10,
+          'action': 'post_daily',
+          'level_before': 2,
+          'level_after': 3,
+          'level_up': true,
+          'section_title': '校园生活',
+          'title_after': '常驻同学',
+        },
+      ],
+      'created_at': '2026-06-14T08:00:00Z',
+    });
+
+    expect(post.homeFeaturedPending, isTrue);
+    expect(post.expAwards, hasLength(2));
+    expect(post.expAwards.last.scope, 'water_section');
+    expect(post.expAwards.last.levelUp, isTrue);
+    expect(post.expAwards.last.titleAfter, '常驻同学');
+  });
 }

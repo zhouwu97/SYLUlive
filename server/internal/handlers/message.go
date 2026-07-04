@@ -353,6 +353,13 @@ func (h *MessageHandler) Send(c *gin.Context) {
 		// 内部错误不阻断主流程，按"允许"处理但记日志
 		log.Printf("[PM_LIMIT] canSendMessage unexpected error current=%d target=%d err=%v", currentUserID, targetID, canErr)
 	} else if !allow {
+		if reason == "level_too_low" {
+			c.JSON(http.StatusForbidden, gin.H{
+				"error": "你的等级不足3级，无法发起私信，快去水帖版块升级吧",
+				"code":  "message_requires_level_3",
+			})
+			return
+		}
 		c.JSON(http.StatusForbidden, gin.H{
 			"error": "对方未关注你或回复你之前，只能发送 1 条消息，请等待对方回应。",
 			"code":  "message_requires_reply_or_follow",
@@ -456,6 +463,17 @@ func (h *MessageHandler) canSendMessage(currentUserID, targetID uint) (allow boo
 		FirstContactUsed: false,
 		TargetFollowsMe: false,
 		TargetReplied:   false,
+	}
+
+	// 0. 等级限制 (系统账号相互发、与系统账号发豁免)
+	if currentUserID != 1 && targetID != 1 {
+		var currentUser models.User
+		if err := h.db.Select("exp").First(&currentUser, currentUserID).Error; err == nil {
+			if services.CalculateUserLevel(currentUser.Exp) < 3 {
+				state.CanSend = false
+				return false, "level_too_low", state, nil
+			}
+		}
 	}
 
 	// 1. target 关注 current？

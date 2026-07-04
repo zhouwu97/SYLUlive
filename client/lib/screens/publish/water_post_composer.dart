@@ -288,16 +288,7 @@ class _WaterPostComposerState extends State<WaterPostComposer>
 
       if (!mounted) return;
       if (result.success) {
-        final earned = result.post?.expEarned;
-        if (earned != null && earned > 0) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('今日首发 +$earned 经验'),
-              duration: const Duration(seconds: 2),
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
-        }
+        _showSubmitSuccessFeedback(result.post);
         if (!mounted) return;
         Navigator.of(context).pop(true);
       } else {
@@ -317,6 +308,70 @@ class _WaterPostComposerState extends State<WaterPostComposer>
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  ExpAward? _firstAwardWhere(
+    List<ExpAward> awards,
+    bool Function(ExpAward award) test,
+  ) {
+    for (final award in awards) {
+      if (test(award)) return award;
+    }
+    return null;
+  }
+
+  void _showSubmitSuccessFeedback(Post? post) {
+    final awards = post?.expAwards ?? const <ExpAward>[];
+    final globalAward = _firstAwardWhere(awards, (a) => a.scope == 'global');
+    final sectionAward =
+        _firstAwardWhere(awards, (a) => a.scope == 'water_section');
+    final lines = <String>[_isEditing ? '保存成功' : '发布成功'];
+
+    final expParts = <String>[];
+    if (globalAward != null && globalAward.exp > 0) {
+      expParts.add('全站经验 +${globalAward.exp}');
+    }
+    if (sectionAward != null && sectionAward.exp > 0) {
+      final sectionName = sectionAward.sectionTitle.isNotEmpty
+          ? sectionAward.sectionTitle
+          : _selectedSection.title;
+      expParts.add('$sectionName经验 +${sectionAward.exp}');
+    }
+    if (expParts.isNotEmpty) {
+      lines.add(expParts.join(' · '));
+    }
+    if (sectionAward != null && sectionAward.levelUp) {
+      final sectionName = sectionAward.sectionTitle.isNotEmpty
+          ? sectionAward.sectionTitle
+          : _selectedSection.title;
+      final title = sectionAward.titleAfter.isNotEmpty
+          ? '「${sectionAward.titleAfter}」'
+          : '';
+      lines.add('$sectionName升级到 Lv.${sectionAward.levelAfter}$title');
+    } else if (globalAward != null && globalAward.levelUp) {
+      lines.add('全站等级升级到 Lv.${globalAward.levelAfter}');
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 3),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              lines.first,
+              style: const TextStyle(fontWeight: FontWeight.w800),
+            ),
+            for (final line in lines.skip(1)) ...[
+              const SizedBox(height: 2),
+              Text(line),
+            ],
+          ],
+        ),
+      ),
+    );
   }
 
   // ---------------------------------------------------------------------------

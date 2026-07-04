@@ -137,6 +137,7 @@ class PostCacheService {
       'water_section_pin_id': post.waterSectionPinId,
       'water_section_featured': post.waterSectionFeatured,
       'water_section_featured_id': post.waterSectionFeaturedId,
+      'home_featured_pending': post.homeFeaturedPending,
       'water_section_author_meta': post.waterSectionAuthorMeta != null
           ? {
               'section_id': post.waterSectionAuthorMeta!.sectionId,

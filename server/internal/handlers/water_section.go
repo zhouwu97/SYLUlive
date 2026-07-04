@@ -49,8 +49,13 @@ type waterSectionResponse struct {
 	Subtitle          string                     `json:"subtitle"`
 	Description       string                     `json:"description"`
 	IconKey           string                     `json:"icon_key"`
+	AvatarURL         string                     `json:"avatar_url"`
 	ColorHex          string                     `json:"color_hex"`
-	CoverURL          string                     `json:"cover_url"` // 版块背景图
+	CoverURL          string                     `json:"cover_url"` // 版块背景图（兼容）
+	CoverPortraitURL  string                     `json:"cover_portrait_url"` // 手机版块背景 3:4
+	CoverLandscapeURL string                     `json:"cover_landscape_url"`// 横向封面 16:9
+	CoverSquareURL    string                     `json:"cover_square_url"`   // 方形入口 1:1
+	CoverBlurColor    string                     `json:"cover_blur_color"`   // 加载前底色
 	PublishActionText string                     `json:"publish_action_text"`
 	EmptyTitle        string                     `json:"empty_title"`
 	EmptyDescription  string                     `json:"empty_description"`
@@ -83,8 +88,13 @@ type updateWaterSectionRequest struct {
 	Subtitle          *string   `json:"subtitle"`
 	Description       *string   `json:"description"`
 	IconKey           *string   `json:"icon_key"`
+	AvatarURL         *string   `json:"avatar_url"`
 	ColorHex          *string   `json:"color_hex"`
-	CoverURL          *string   `json:"cover_url"` // 版块背景图 URL（图片上传后的路径）
+	CoverURL          *string   `json:"cover_url"` // 兼容旧字段
+	CoverPortraitURL  *string   `json:"cover_portrait_url"`
+	CoverLandscapeURL *string   `json:"cover_landscape_url"`
+	CoverSquareURL    *string   `json:"cover_square_url"`
+	CoverBlurColor    *string   `json:"cover_blur_color"`
 	PublishActionText *string   `json:"publish_action_text"`
 	EmptyTitle        *string   `json:"empty_title"`
 	EmptyDescription  *string   `json:"empty_description"`
@@ -121,8 +131,13 @@ type waterSectionEditSnapshot struct {
 	Subtitle          string   `json:"subtitle"`
 	Description       string   `json:"description"`
 	IconKey           string   `json:"icon_key"`
+	AvatarURL         string   `json:"avatar_url"`
 	ColorHex          string   `json:"color_hex"`
 	CoverURL          string   `json:"cover_url"`
+	CoverPortraitURL  string   `json:"cover_portrait_url"`
+	CoverLandscapeURL string   `json:"cover_landscape_url"`
+	CoverSquareURL    string   `json:"cover_square_url"`
+	CoverBlurColor    string   `json:"cover_blur_color"`
 	PublishActionText string   `json:"publish_action_text"`
 	EmptyTitle        string   `json:"empty_title"`
 	EmptyDescription  string   `json:"empty_description"`
@@ -167,8 +182,13 @@ func toSectionResponse(section models.WaterSection) waterSectionResponse {
 		Subtitle:          section.Subtitle,
 		Description:       section.Description,
 		IconKey:           section.IconKey,
+		AvatarURL:         section.AvatarURL,
 		ColorHex:          section.ColorHex,
 		CoverURL:          section.CoverURL,
+		CoverPortraitURL:  section.CoverPortraitURL,
+		CoverLandscapeURL: section.CoverLandscapeURL,
+		CoverSquareURL:    section.CoverSquareURL,
+		CoverBlurColor:    section.CoverBlurColor,
 		PublishActionText: section.PublishActionText,
 		EmptyTitle:        section.EmptyTitle,
 		EmptyDescription:  section.EmptyDescription,
@@ -202,8 +222,13 @@ func waterSectionSnapshot(section models.WaterSection) waterSectionEditSnapshot 
 		Subtitle:          section.Subtitle,
 		Description:       section.Description,
 		IconKey:           section.IconKey,
+		AvatarURL:         section.AvatarURL,
 		ColorHex:          section.ColorHex,
 		CoverURL:          section.CoverURL,
+		CoverPortraitURL:  section.CoverPortraitURL,
+		CoverLandscapeURL: section.CoverLandscapeURL,
+		CoverSquareURL:    section.CoverSquareURL,
+		CoverBlurColor:    section.CoverBlurColor,
 		PublishActionText: section.PublishActionText,
 		EmptyTitle:        section.EmptyTitle,
 		EmptyDescription:  section.EmptyDescription,
@@ -711,6 +736,15 @@ func (h *WaterSectionHandler) Update(c *gin.Context) {
 		section.IconKey = iconKey
 		changed = true
 	}
+	if req.AvatarURL != nil {
+		avatarURL := strings.TrimSpace(*req.AvatarURL)
+		if msg := validateMaxLen(avatarURL, 500, "头像地址"); msg != "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": msg})
+			return
+		}
+		section.AvatarURL = avatarURL
+		changed = true
+	}
 	if req.ColorHex != nil {
 		colorHex := strings.TrimSpace(*req.ColorHex)
 		if colorHex != "" && !waterSectionColorPattern.MatchString(colorHex) {
@@ -727,6 +761,42 @@ func (h *WaterSectionHandler) Update(c *gin.Context) {
 			return
 		}
 		section.CoverURL = coverURL
+		changed = true
+	}
+	if req.CoverPortraitURL != nil {
+		coverPortraitURL := strings.TrimSpace(*req.CoverPortraitURL)
+		if msg := validateMaxLen(coverPortraitURL, 500, "竖屏背景图地址"); msg != "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": msg})
+			return
+		}
+		section.CoverPortraitURL = coverPortraitURL
+		changed = true
+	}
+	if req.CoverLandscapeURL != nil {
+		coverLandscapeURL := strings.TrimSpace(*req.CoverLandscapeURL)
+		if msg := validateMaxLen(coverLandscapeURL, 500, "横版封面地址"); msg != "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": msg})
+			return
+		}
+		section.CoverLandscapeURL = coverLandscapeURL
+		changed = true
+	}
+	if req.CoverSquareURL != nil {
+		coverSquareURL := strings.TrimSpace(*req.CoverSquareURL)
+		if msg := validateMaxLen(coverSquareURL, 500, "方形封面地址"); msg != "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": msg})
+			return
+		}
+		section.CoverSquareURL = coverSquareURL
+		changed = true
+	}
+	if req.CoverBlurColor != nil {
+		coverBlurColor := strings.TrimSpace(*req.CoverBlurColor)
+		if coverBlurColor != "" && !waterSectionColorPattern.MatchString(coverBlurColor) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "占位颜色必须为空或符合 #RRGGBB"})
+			return
+		}
+		section.CoverBlurColor = coverBlurColor
 		changed = true
 	}
 	if req.PublishActionText != nil {

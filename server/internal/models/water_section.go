@@ -15,8 +15,13 @@ type WaterSection struct {
 	Subtitle             string    `gorm:"size:200" json:"subtitle"`
 	Description          string    `gorm:"size:1000" json:"description"`
 	IconKey              string    `gorm:"size:64" json:"icon_key"`
+	AvatarURL            string    `gorm:"size:500" json:"avatar_url"`
 	ColorHex             string    `gorm:"size:20" json:"color_hex"`
-	CoverURL             string    `gorm:"size:500" json:"cover_url"` // 版块背景图，版主可在管理台设置
+	CoverURL             string    `gorm:"size:500" json:"cover_url"` // 兼容旧字段
+	CoverPortraitURL     string    `gorm:"size:500" json:"cover_portrait_url"` // 手机版块背景 3:4
+	CoverLandscapeURL    string    `gorm:"size:500" json:"cover_landscape_url"`// 横向封面 16:9
+	CoverSquareURL       string    `gorm:"size:500" json:"cover_square_url"`   // 方形入口 1:1
+	CoverBlurColor       string    `gorm:"size:20" json:"cover_blur_color"`    // 可选，加载前底色
 	PublishActionText    string    `gorm:"size:40" json:"publish_action_text"`
 	EmptyTitle           string    `gorm:"size:100" json:"empty_title"`
 	EmptyDescription     string    `gorm:"size:300" json:"empty_description"`

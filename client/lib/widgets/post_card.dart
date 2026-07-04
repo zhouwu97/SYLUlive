@@ -74,7 +74,7 @@ class _PostCardState extends State<PostCard>
             : 4;
 
     return GlassContainer(
-      margin: EdgeInsets.only(bottom: isDesktop ? 16 : 12),
+      margin: EdgeInsets.only(bottom: isDesktop ? 14 : 8),
       borderRadius: isDesktop ? 16 : 12,
       blur: 8,
       opacity: 1,
@@ -91,6 +91,7 @@ class _PostCardState extends State<PostCard>
             Row(
               children: [
                 GestureDetector(
+                  behavior: HitTestBehavior.opaque,
                   onTap: widget.disableAuthorNavigation
                       ? null
                       : () => _openAuthor(context),

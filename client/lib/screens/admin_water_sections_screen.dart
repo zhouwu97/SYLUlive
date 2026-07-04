@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/water_section_provider.dart';
 import '../models/water_section.dart';
+import '../widgets/water_section/section_avatar.dart';
 import 'water_section_manage_screen.dart';
 
 class AdminWaterSectionsScreen extends StatefulWidget {
@@ -45,12 +46,12 @@ class _AdminWaterSectionsScreenState extends State<AdminWaterSectionsScreen> {
                   color: isDark ? Colors.grey[850] : Colors.white,
                   child: ListTile(
                     contentPadding: const EdgeInsets.all(16),
-                    leading: CircleAvatar(
-                      backgroundColor: Theme.of(context).primaryColor.withOpacity(0.1),
-                      child: Icon(
-                        iconKeyToIconData(section.iconKey, fallbackSlug: section.slug),
-                        color: Theme.of(context).primaryColor,
-                      ),
+                    leading: SectionAvatar(
+                      section: section,
+                      size: 40,
+                      radius: 20,
+                      isDark: isDark,
+                      showBorder: true,
                     ),
                     title: Text(
                       section.title,

@@ -7,10 +7,12 @@ import 'package:flutter/services.dart';
 import '../../config/privileged_accounts.dart';
 import '../../config/water_post_taxonomy.dart';
 import '../../models/post.dart';
+import '../../models/user.dart';
 import '../../models/water_section.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/post_provider.dart';
 import '../../providers/water_section_provider.dart';
+import '../../widgets/water_section/section_avatar.dart';
 import 'widgets/publish_image_grid.dart';
 import 'widgets/publish_image_picker.dart';
 import 'widgets/water_post_bottom_bar.dart';
@@ -411,7 +413,6 @@ class _WaterPostComposerState extends State<WaterPostComposer>
             final sec = sections[index - 1];
             final isSelected = sec.slug == _selectedPostType;
             final color = colorHexToColor(sec.colorHex, fallback: Colors.teal);
-            final icon = iconKeyToIconData(sec.iconKey, fallbackSlug: sec.slug);
             return InkWell(
               borderRadius: BorderRadius.circular(10),
               onTap: () => Navigator.of(context).pop(sec.slug),
@@ -420,14 +421,15 @@ class _WaterPostComposerState extends State<WaterPostComposer>
                     const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
                 child: Row(
                   children: [
-                    Container(
-                      width: 30,
-                      height: 30,
-                      decoration: BoxDecoration(
-                        color: color.withValues(alpha: 0.12),
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(icon, size: 17, color: color),
+                    SectionAvatar(
+                      section: sec,
+                      size: 30,
+                      radius: 30, // make it circular
+                      accentColor: color,
+                      isDark: isDark,
+                      showBorder: true,
+                      borderColor: color.withValues(alpha: 0.15),
+                      borderWidth: 1,
                     ),
                     const SizedBox(width: 12),
                     Expanded(
@@ -514,7 +516,16 @@ class _WaterPostComposerState extends State<WaterPostComposer>
                     ),
                   ),
                   const Spacer(),
-                  Icon(icon, size: 22, color: color),
+                  SectionAvatar(
+                    section: section,
+                    size: 24,
+                    radius: 8,
+                    accentColor: color,
+                    isDark: isDark,
+                    showBorder: true,
+                    borderColor: color.withValues(alpha: 0.15),
+                    borderWidth: 1,
+                  ),
                   const SizedBox(width: 8),
                   Text(
                     section.title,

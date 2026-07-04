@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../config/water_post_taxonomy.dart';
 import '../models/announcement.dart' as model;
 import '../models/water_section.dart';
+import '../utils/responsive_util.dart';
+import 'water_section/section_avatar.dart';
 
 /// 校园服务抽屉 —— 纯展示组件，所有数据和回调由外部提供。
 class HomeServiceDrawer extends StatelessWidget {
@@ -629,18 +631,13 @@ class _WaterCategoryMiniItem extends StatelessWidget {
           ),
           child: Row(
             children: [
-              Container(
-                width: 34,
-                height: 34,
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: isDark ? 0.18 : 0.11),
-                  borderRadius: BorderRadius.circular(13),
-                ),
-                child: Icon(
-                  icon,
-                  size: 18,
-                  color: color,
-                ),
+              SectionAvatar(
+                section: section,
+                size: 34,
+                radius: 13,
+                accentColor: color,
+                isDark: isDark,
+                showBorder: false, // 服务抽屉不需要明显描边
               ),
               const SizedBox(width: 8),
               Expanded(

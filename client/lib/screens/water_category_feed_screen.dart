@@ -17,6 +17,8 @@ import '../widgets/water_section/section_tab_bar.dart';
 import 'create_post_screen.dart';
 import 'post_detail_screen.dart';
 import 'water_section_manage_screen.dart';
+import 'login_screen.dart';
+import 'chat_list_screen.dart';
 
 class WaterCategoryFeedScreen extends StatefulWidget {
   final WaterPostCategory category;
@@ -32,8 +34,6 @@ class WaterCategoryFeedScreen extends StatefulWidget {
   State<WaterCategoryFeedScreen> createState() =>
       _WaterCategoryFeedScreenState();
 }
-
-
 
 class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
   ScrollController? _sheetScrollController;
@@ -177,8 +177,9 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
   }
 
   Future<void> _changeTag(int? tagId) async {
-    if (tagId == _selectedTagId) return;
-    setState(() => _selectedTagId = tagId);
+    final newTagId = (tagId == _selectedTagId) ? null : tagId;
+    if (newTagId == _selectedTagId) return;
+    setState(() => _selectedTagId = newTagId);
     await _load();
   }
 
@@ -227,21 +228,103 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
   Widget _buildManageAction(bool isDark) {
     final slug = _activeSection.slug;
     final perm = context.watch<WaterModeratorProvider>().permissionOf(slug);
-    if (!perm.isGlobalAdmin && !perm.isModerator) {
+    if (!perm.isGlobalAdmin && !perm.canEditSection) {
       return const SizedBox.shrink();
     }
+    return GestureDetector(
+      onTap: _openManageScreen,
+      child: Container(
+        margin: const EdgeInsets.only(right: 8),
+        width: 36,
+        height: 36,
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.18),
+          shape: BoxShape.circle,
+        ),
+        child: const Icon(
+          Icons.tune_rounded,
+          size: 18,
+          color: Colors.white,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNoticeBar(WaterSection section, bool isDark) {
+    final text = section.noticeText.trim();
+    if (text.isEmpty) return const SizedBox.shrink();
+
+    // Use the first non-empty line as the title
+    final title = text
+        .split('\n')
+        .map((e) => e.trim())
+        .firstWhere((e) => e.isNotEmpty, orElse: () => '版主公告');
+
     return Padding(
-      padding: const EdgeInsets.only(right: 4),
-      child: TextButton.icon(
-        onPressed: _openManageScreen,
-        icon: Icon(Icons.admin_panel_settings_rounded,
-            size: 16, color: Theme.of(context).colorScheme.primary),
-        label: Text(
-          '管理',
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w700,
-            color: Theme.of(context).colorScheme.primary,
+      padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(999),
+        onTap: () {
+          showDialog(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              title: const Text('版主公告',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              content: SingleChildScrollView(
+                  child: Text(text, style: const TextStyle(fontSize: 14))),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('知道了'),
+                ),
+              ],
+            ),
+          );
+        },
+        child: Container(
+          height: 44,
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF1F1C14) : const Color(0xFFFFFBEB),
+            borderRadius: BorderRadius.circular(999),
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(7),
+                  color: isDark ? const Color(0xFF332A12) : const Color(0xFFFFEDBA),
+                ),
+                child: Text(
+                  '公告',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: isDark ? const Color(0xFFFFD45E) : const Color(0xFFB37B00),
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: isDark ? const Color(0xFFFFEAB3) : const Color(0xFF8A5F00),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 4),
+              Icon(
+                Icons.chevron_right_rounded,
+                size: 20,
+                color: isDark ? Colors.white38 : const Color(0xFFCC9933),
+              ),
+            ],
           ),
         ),
       ),
@@ -332,6 +415,13 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
 
               // ── Layer 3: 可拖拽圆角内容板 ──
               _buildContentSheet(section, categoryColor, isDark),
+
+              // ── Layer 4: 悬浮按钮组 ──
+              Positioned(
+                right: 20,
+                bottom: 24 + MediaQuery.paddingOf(context).bottom,
+                child: _buildFloatingActions(categoryColor, isDark),
+              ),
             ],
           ),
         ),
@@ -348,7 +438,7 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
           _buildBackButton(),
           const Spacer(),
           _buildManageAction(isDark),
-          _buildPublishAction(categoryColor),
+          _buildMessageAction(),
         ],
       ),
     );
@@ -365,15 +455,19 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
   Widget _buildContentSheet(
       WaterSection section, Color categoryColor, bool isDark) {
     // sheet 用略亮的暗色当作 elevated surface，与 background 0xFF0D1117 区分
-    final sheetColor =
-        isDark ? const Color(0xFF171B24) : Colors.white;
+    final sheetColor = isDark ? const Color(0xFF171B24) : Colors.white;
+
+    final hasCover = section.mobileCoverUrl.isNotEmpty;
+    final initialChildSize = 0.66;
+    final minChildSize = hasCover ? 0.24 : 0.66;
+    final snapSizes = hasCover ? const [0.24, 0.66, 0.94] : const [0.66, 0.94];
 
     return DraggableScrollableSheet(
-      initialChildSize: 0.66,
-      minChildSize: 0.24,
+      initialChildSize: initialChildSize,
+      minChildSize: minChildSize,
       maxChildSize: 0.94,
       snap: true,
-      snapSizes: const [0.24, 0.66, 0.94],
+      snapSizes: snapSizes,
       builder: (context, scrollController) {
         // 存储 scrollController 供 _changeSort 滚动到顶部使用
         _sheetScrollController = scrollController;
@@ -452,7 +546,7 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
     );
   }
 
-  /// sheet 内部：RefreshIndicator + CustomScrollView + slivers
+  /// sheet 内部：CustomScrollView + slivers
   Widget _buildSheetContent(
     ScrollController scrollController,
     bool isDark,
@@ -471,9 +565,7 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
       return !post.waterSectionPinned && !post.isActivePinned;
     }).toList();
 
-    return RefreshIndicator(
-      onRefresh: _refresh,
-      child: NotificationListener<ScrollNotification>(
+    return NotificationListener<ScrollNotification>(
         onNotification: (notification) {
           if (notification.metrics.pixels >=
               notification.metrics.maxScrollExtent - 360) {
@@ -507,8 +599,7 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
               pinned: true,
               delegate: _SheetPinnedHeaderDelegate(
                 height: 68,
-                child: _buildSheetPinnedHeader(
-                    isDark, categoryColor, section),
+                child: _buildSheetPinnedHeader(isDark, categoryColor, section),
               ),
             ),
 
@@ -520,12 +611,18 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
                 hasScrollBody: false,
                 child: _buildLoadingState(isDark),
               )
-            else if (pinnedPosts.isEmpty && normalPosts.isEmpty)
+            else if (pinnedPosts.isEmpty &&
+                normalPosts.isEmpty &&
+                section.noticeText.trim().isEmpty)
               SliverFillRemaining(
                 hasScrollBody: false,
                 child: _buildEmptyState(isDark),
               )
             else ...[
+              if (section.noticeText.trim().isNotEmpty)
+                SliverToBoxAdapter(
+                  child: _buildNoticeBar(section, isDark),
+                ),
               if (pinnedPosts.isNotEmpty)
                 SliverToBoxAdapter(
                   child: PinnedPostSummaryBar(
@@ -536,7 +633,7 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
                   ),
                 ),
               SliverPadding(
-                padding: const EdgeInsets.fromLTRB(12, 10, 12, 96),
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 128),
                 sliver: SliverList.separated(
                   itemCount: normalPosts.length,
                   separatorBuilder: (_, __) => const SizedBox(height: 0),
@@ -554,22 +651,21 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
               if (isLoading)
                 const SliverToBoxAdapter(
                   child: Padding(
-                    padding: EdgeInsets.only(bottom: 96),
+                    padding: EdgeInsets.only(bottom: 128),
                     child: Center(child: CircularProgressIndicator()),
                   ),
                 )
               else if (!hasMore)
                 SliverToBoxAdapter(
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(0, 0, 0, 96),
+                    padding: const EdgeInsets.fromLTRB(0, 0, 0, 128),
                     child: Center(
                       child: Text(
                         '已经到底了',
                         style: TextStyle(
                           fontSize: 12,
-                          color: isDark
-                              ? Colors.white38
-                              : const Color(0xFF9AA0A6),
+                          color:
+                              isDark ? Colors.white38 : const Color(0xFF9AA0A6),
                         ),
                       ),
                     ),
@@ -578,8 +674,7 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
             ],
           ],
         ),
-      ),
-    );
+      );
   }
 
   /// sheet 吸顶头部：小横条 + 单行筛选栏
@@ -650,29 +745,64 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
     );
   }
 
-  Widget _buildPublishAction(Color categoryColor) {
-    final section = _activeSection;
-    final label = section.publishActionText.isNotEmpty
-        ? section.publishActionText
-        : widget.category.publishActionText;
-    return Padding(
-      padding: const EdgeInsets.only(right: 8),
-      child: TextButton(
-        onPressed: _openComposer,
-        style: TextButton.styleFrom(
-          foregroundColor: Colors.white,
-          backgroundColor: categoryColor.withValues(alpha: 0.85),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
-          textStyle: const TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w700,
-          ),
+  Widget _buildMessageAction() {
+    return GestureDetector(
+      onTap: () {
+        final auth = context.read<AuthProvider>();
+        if (!auth.isLoggedIn) {
+          Navigator.push(
+            context,
+            PageRouteBuilder(
+              opaque: false,
+              pageBuilder: (_, __, ___) => const LoginScreen(),
+            ),
+          );
+          return;
+        }
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const ChatListScreen()),
+        );
+      },
+      child: Container(
+        margin: const EdgeInsets.only(right: 8),
+        width: 36,
+        height: 36,
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.18),
+          shape: BoxShape.circle,
         ),
-        child: Text(label),
+        child: const Icon(
+          Icons.mail_outline_rounded,
+          size: 18,
+          color: Colors.white,
+        ),
       ),
+    );
+  }
+
+  Widget _buildFloatingActions(Color categoryColor, bool isDark) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        FloatingActionButton.small(
+          heroTag: null,
+          onPressed: _refresh,
+          backgroundColor: isDark ? const Color(0xFF2C2F36) : Colors.white,
+          foregroundColor: isDark ? Colors.white70 : Colors.black54,
+          elevation: 4,
+          child: const Icon(Icons.refresh_rounded, size: 20),
+        ),
+        const SizedBox(height: 12),
+        FloatingActionButton(
+          heroTag: null,
+          onPressed: _openComposer,
+          backgroundColor: categoryColor,
+          foregroundColor: Colors.white,
+          elevation: 4,
+          child: const Icon(Icons.add_rounded, size: 28),
+        ),
+      ],
     );
   }
 

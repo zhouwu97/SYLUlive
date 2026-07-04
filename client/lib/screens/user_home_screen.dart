@@ -17,6 +17,7 @@ import 'social_list_screen.dart';
 import 'image_viewer_screen.dart';
 import 'chat_detail_screen.dart';
 import 'post_detail_screen.dart';
+import '../widgets/level_progress_pill.dart';
 
 class UserHomeScreen extends StatefulWidget {
   final int? userId;
@@ -708,56 +709,14 @@ class _UserHomeScreenState extends State<UserHomeScreen>
           ],
         ),
 
-        // 等级进度 + 积分半透明条
+        // 等级进度胶囊
         const SizedBox(height: 14),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.14),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
-          ),
-          child: Row(
-            children: [
-              Text(
-                user.levelLabel,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(4),
-                  child: LinearProgressIndicator(
-                    value: user.levelProgress,
-                    minHeight: 6,
-                    backgroundColor: Colors.white24,
-                    valueColor: AlwaysStoppedAnimation<Color>(
-                      Color(user.levelColorValue),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Text(
-                '${user.exp}/${user.expToNextLevel}',
-                style: const TextStyle(color: Colors.white70, fontSize: 11),
-              ),
-              const SizedBox(width: 14),
-              const Icon(Icons.monetization_on, color: Colors.amber, size: 16),
-              const SizedBox(width: 4),
-              Text(
-                '${user.credits}',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
+        LevelProgressPill(
+          levelLabel: user.levelLabel,
+          expText: '${user.exp}/${user.expToNextLevel}',
+          progress: user.levelProgress,
+          accentColor: Color(user.levelColorValue),
+          darkOnImage: true,
         ),
       ],
     );

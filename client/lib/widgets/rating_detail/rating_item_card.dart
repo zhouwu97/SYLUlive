@@ -19,7 +19,6 @@ class RatingItemCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final primaryColor = Theme.of(context).colorScheme.primary;
 
     final item = InkWell(
       onLongPress: onLongPress,
@@ -33,7 +32,8 @@ class RatingItemCard extends StatelessWidget {
               children: [
                 CircleAvatar(
                   radius: 15,
-                  backgroundColor: isDark ? Colors.white12 : Colors.grey.shade200,
+                  backgroundColor:
+                      isDark ? Colors.white12 : Colors.grey.shade200,
                   child: Text(
                     userName.isNotEmpty ? userName[0] : '?',
                     style: TextStyle(
@@ -82,7 +82,7 @@ class RatingItemCard extends StatelessWidget {
         ),
       ),
     );
-    
+
     // Add a divider below the item
     return Column(
       children: [

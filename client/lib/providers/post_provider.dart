@@ -157,15 +157,16 @@ class PostProvider extends ChangeNotifier {
 
   /// 清除关注信息流缓存，在登录/退出/切换账号/关注/取消关注后调用
   void invalidateFollowingFeed() {
-    final key = _stateKey(1, 'following', null);
-    final state = _boards[key];
+    final keys = _boards.keys.where((key) {
+      final parts = key.split('|');
+      return parts.length >= 2 && parts[1] == 'following';
+    }).toList();
 
-    // 让尚未结束的旧请求失效
-    if (state != null) {
-      state.requestVersion++;
+    for (final key in keys) {
+      _boards[key]?.requestVersion++;
+      _boards.remove(key);
     }
 
-    _boards.remove(key);
     notifyListeners();
   }
 

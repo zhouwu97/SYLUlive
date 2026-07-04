@@ -119,6 +119,32 @@ void main() {
     expect(provider.postsFor(1, sort: 'hot').single.id, 1);
   });
 
+  test('section featured feeds use the post list endpoint', () async {
+    final dio = Dio();
+    final requests = <RequestOptions>[];
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          requests.add(options);
+          handler.resolve(_response(options, requests.length));
+        },
+      ),
+    );
+    final provider = PostProvider(dio, enableCache: false);
+
+    await provider.refresh(
+      boardId: 1,
+      sort: 'featured',
+      type: 'course_study',
+    );
+    await provider.refresh(boardId: 1, sort: 'featured');
+
+    expect(requests[0].path, '/posts');
+    expect(requests[0].queryParameters['type'], 'course_study');
+    expect(requests[1].path, '/posts/featured');
+    expect(requests[1].queryParameters['type'], isNull);
+  });
+
   test('cached first load refreshes latest page without since anchor',
       () async {
     final oldAuthor = User(
@@ -384,7 +410,8 @@ void main() {
       'created_at': '2026-06-14T08:00:00Z',
     });
 
-    expect(post.isActivePinned, isFalse); // Section pin does not make it globally active pinned
+    expect(post.isActivePinned,
+        isFalse); // Section pin does not make it globally active pinned
     expect(post.waterSectionPinned, isTrue);
     expect(post.waterSectionPinId, 100);
     expect(post.isFeatured, isFalse);

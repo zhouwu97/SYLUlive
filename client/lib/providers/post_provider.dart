@@ -173,11 +173,19 @@ class PostProvider extends ChangeNotifier {
   Future<void> _savePostsToCache(
     int boardId,
     String sort,
-    List<Post> posts,
-  ) async {
+    List<Post> posts, {
+    String? type,
+    int? tagId,
+  }) async {
     if (!_enableCache || sort == 'following') return;
     try {
-      await PostCacheService.savePosts(boardId, posts, sort: sort);
+      await PostCacheService.savePosts(
+        boardId,
+        posts,
+        sort: sort,
+        type: type,
+        tagId: tagId,
+      );
     } catch (e) {
       debugPrint('保存帖子缓存失败(board=$boardId, sort=$sort): $e');
     }
@@ -209,7 +217,7 @@ class PostProvider extends ChangeNotifier {
         continue;
       }
       board.revision++;
-      _savePostsToCache(boardId, sort, board.posts);
+      _savePostsToCache(boardId, sort, board.posts, type: type, tagId: tagId);
       touched = true;
     }
     if (touched) {
@@ -240,7 +248,12 @@ class PostProvider extends ChangeNotifier {
     // 第一步：极速上屏 — 读本地缓存（关注信息流不使用缓存）
     if (_enableCache && sort != 'following') {
       try {
-        final cached = await PostCacheService.loadPosts(boardId, sort: sort);
+        final cached = await PostCacheService.loadPosts(
+          boardId,
+          sort: sort,
+          type: type,
+          tagId: tagId,
+        );
         if (requestVersion != board.requestVersion) return;
         if (cached.isNotEmpty) {
           board.posts = cached;
@@ -286,7 +299,13 @@ class PostProvider extends ChangeNotifier {
 
         if (sort != 'time') {
           board.posts = newPosts;
-          await _savePostsToCache(boardId, sort, board.posts);
+          await _savePostsToCache(
+            boardId,
+            sort,
+            board.posts,
+            type: type,
+            tagId: tagId,
+          );
         } else if (newPosts.isNotEmpty) {
           // 第四步：增量合并 — 更新已有帖子，插入新帖子
           bool changed = false;
@@ -312,7 +331,13 @@ class PostProvider extends ChangeNotifier {
 
           if (changed) {
             // 写回缓存
-            await _savePostsToCache(boardId, sort, board.posts);
+            await _savePostsToCache(
+              boardId,
+              sort,
+              board.posts,
+              type: type,
+              tagId: tagId,
+            );
           }
         }
 
@@ -518,7 +543,13 @@ class PostProvider extends ChangeNotifier {
         // 我们必须完全覆写当前列表，绝不能执行在原地更新旧帖的合并逻辑，
         // 否则将导致已存在的帖子依然呆在旧的索引位置，造成视觉上排序无效。
         board.posts = newPosts;
-        await _savePostsToCache(boardId, sort, board.posts);
+        await _savePostsToCache(
+          boardId,
+          sort,
+          board.posts,
+          type: type,
+          tagId: tagId,
+        );
 
         final total = (response.data['total'] as num?)?.toInt();
         board.hasMore =
@@ -890,13 +921,18 @@ class PostProvider extends ChangeNotifier {
       final keyParts = entry.key.split('|');
       final boardId = int.tryParse(keyParts.first) ?? 0;
       final sort = keyParts.length > 1 ? keyParts[1] : 'time';
+      final type =
+          keyParts.length > 2 && keyParts[2].isNotEmpty ? keyParts[2] : null;
+      final tagId = keyParts.length > 3 && keyParts[3].isNotEmpty
+          ? int.tryParse(keyParts[3])
+          : null;
       final board = entry.value;
       final index = board.posts.indexWhere((p) => p.id == updated.id);
       if (index >= 0) {
         board.posts[index] = updated;
         board.revision++;
         // 同步持久化到本地缓存，防止杀后台后数据(如浏览量)倒退
-        _savePostsToCache(boardId, sort, board.posts);
+        _savePostsToCache(boardId, sort, board.posts, type: type, tagId: tagId);
       }
     }
   }

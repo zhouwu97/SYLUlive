@@ -348,6 +348,107 @@ void main() {
     expect(loaded.single.featuredBy, 2);
   });
 
+  test('post cache isolates water section and tag feeds', () async {
+    await PostCacheService.savePosts(
+      77,
+      [
+        Post(
+          id: 1,
+          content: 'course',
+          boardId: 77,
+          authorId: 1,
+          postType: 'course_study',
+          createdAt: DateTime.utc(2026, 6, 14, 8),
+        ),
+      ],
+      sort: 'all',
+      type: 'course_study',
+    );
+    await PostCacheService.savePosts(
+      77,
+      [
+        Post(
+          id: 2,
+          content: 'campus',
+          boardId: 77,
+          authorId: 1,
+          postType: 'campus_life',
+          waterTagId: 3,
+          createdAt: DateTime.utc(2026, 6, 14, 9),
+        ),
+      ],
+      sort: 'all',
+      type: 'campus_life',
+      tagId: 3,
+    );
+
+    final course = await PostCacheService.loadPosts(
+      77,
+      sort: 'all',
+      type: 'course_study',
+    );
+    final campus = await PostCacheService.loadPosts(
+      77,
+      sort: 'all',
+      type: 'campus_life',
+      tagId: 3,
+    );
+    final unrelated = await PostCacheService.loadPosts(
+      77,
+      sort: 'all',
+      type: 'campus_life',
+    );
+
+    expect(course.single.id, 1);
+    expect(campus.single.id, 2);
+    expect(unrelated, isEmpty);
+  });
+
+  test('post cache preserves water section metadata', () async {
+    await PostCacheService.savePosts(
+      78,
+      [
+        Post(
+          id: 9,
+          content: 'water metadata',
+          boardId: 78,
+          authorId: 1,
+          postType: 'course_study',
+          waterSectionPinned: true,
+          waterSectionPinId: 100,
+          waterSectionFeatured: true,
+          waterSectionFeaturedId: 200,
+          waterSectionAuthorMeta: WaterSectionAuthorMeta(
+            sectionId: 5,
+            sectionSlug: 'course_study',
+            sectionTitle: '课程学习',
+            level: 3,
+            exp: 66,
+            title: '常驻同学',
+          ),
+          createdAt: DateTime.utc(2026, 6, 14, 8),
+        ),
+      ],
+      sort: 'all',
+      type: 'course_study',
+    );
+
+    final loaded = await PostCacheService.loadPosts(
+      78,
+      sort: 'all',
+      type: 'course_study',
+    );
+    final post = loaded.single;
+
+    expect(post.waterSectionPinned, isTrue);
+    expect(post.waterSectionPinId, 100);
+    expect(post.waterSectionFeatured, isTrue);
+    expect(post.waterSectionFeaturedId, 200);
+    expect(post.waterSectionAuthorMeta?.sectionSlug, 'course_study');
+    expect(post.waterSectionAuthorMeta?.level, 3);
+    expect(post.waterSectionAuthorMeta?.title, '常驻同学');
+  });
+
   test('pin and unpin replace matching posts in local feeds', () async {
     final dio = Dio();
     dio.interceptors.add(

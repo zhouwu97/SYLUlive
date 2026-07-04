@@ -102,7 +102,12 @@ func main() {
 
 		&models.WaterSectionPin{},
 
-		&models.WaterSectionFeaturedPost{},
+&models.WaterSectionFeaturedPost{},
+
+		// 水帖版块等级 / 经验 / 称号
+		&models.WaterSectionUserStat{},
+		&models.WaterSectionExpLog{},
+		&models.WaterSectionLevelTitle{},
 
 		&models.WaterSectionMute{},
 

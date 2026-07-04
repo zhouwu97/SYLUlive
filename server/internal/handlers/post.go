@@ -200,6 +200,7 @@ func (h *PostHandler) GetList(c *gin.Context) {
 					h.fillLikes(c, posts)
 					h.fillWaterSectionPinState(posts, now)
 					h.fillWaterSectionFeaturedState(posts)
+					h.fillWaterSectionAuthorMeta(posts)
 					if posts == nil {
 						posts = []models.Post{}
 					}
@@ -454,6 +455,7 @@ func (h *PostHandler) GetList(c *gin.Context) {
 	h.fillLikes(c, posts)
 	h.fillWaterSectionPinState(posts, now)
 	h.fillWaterSectionFeaturedState(posts)
+	h.fillWaterSectionAuthorMeta(posts)
 	if posts == nil {
 		posts = []models.Post{}
 	}
@@ -628,6 +630,137 @@ func (h *PostHandler) fillWaterSectionFeaturedState(posts []models.Post) {
 		if fID, ok := featuredIDByPostAndSection[key]; ok {
 			posts[i].WaterSectionFeatured = true
 			posts[i].WaterSectionFeaturedID = &fID
+		}
+	}
+}
+
+// fillWaterSectionAuthorMeta 为水帖帖子的作者填充当前帖子所属版块内的等级与称号。
+// 仅当 board_id=BoardShuitie 且 post_type 有效时填充；其余帖子保持 WaterSectionAuthorMeta 为 nil。
+func (h *PostHandler) fillWaterSectionAuthorMeta(posts []models.Post) {
+	if len(posts) == 0 {
+		return
+	}
+
+	type userSectionKey struct {
+		UserID    uint
+		SectionID uint
+	}
+
+	postTypeSet := map[string]struct{}{}
+	authorSectionSet := map[userSectionKey]struct{}{}
+	requireFill := false
+	for _, p := range posts {
+		if p.BoardID != models.BoardShuitie || p.PostType == "" {
+			continue
+		}
+		requireFill = true
+		postTypeSet[p.PostType] = struct{}{}
+		authorSectionSet[userSectionKey{UserID: p.AuthorID, SectionID: 0}] = struct{}{} // 占位
+	}
+	if !requireFill {
+		return
+	}
+
+	// 第一阶段：拉取所有涉及到的 WaterSection（slug → section）
+	slugList := make([]string, 0, len(postTypeSet))
+	for slug := range postTypeSet {
+		slugList = append(slugList, slug)
+	}
+	var sections []models.WaterSection
+	if err := h.db.Where("slug IN ?", slugList).Find(&sections).Error; err != nil {
+		return
+	}
+	sectionBySlug := map[string]models.WaterSection{}
+	sectionIDSet := map[uint]struct{}{}
+	for _, s := range sections {
+		sectionBySlug[s.Slug] = s
+		sectionIDSet[s.ID] = struct{}{}
+	}
+	if len(sectionIDSet) == 0 {
+		return
+	}
+
+	// 第二阶段：组装实际的 (author, section) 二元组
+	authorSectionSet = map[userSectionKey]struct{}{}
+	for _, p := range posts {
+		if p.BoardID != models.BoardShuitie || p.PostType == "" {
+			continue
+		}
+		sec, ok := sectionBySlug[p.PostType]
+		if !ok {
+			continue
+		}
+		authorSectionSet[userSectionKey{UserID: p.AuthorID, SectionID: sec.ID}] = struct{}{}
+	}
+	if len(authorSectionSet) == 0 {
+		return
+	}
+
+	// 第三阶段：批量查 WaterSectionUserStat
+	userIDs := make([]uint, 0, len(authorSectionSet))
+	sectionIDs := make([]uint, 0, len(sectionIDSet))
+	seenUsers := map[uint]struct{}{}
+	for k := range authorSectionSet {
+		if _, ok := seenUsers[k.UserID]; !ok {
+			seenUsers[k.UserID] = struct{}{}
+			userIDs = append(userIDs, k.UserID)
+		}
+	}
+	for id := range sectionIDSet {
+		sectionIDs = append(sectionIDs, id)
+	}
+
+	var stats []models.WaterSectionUserStat
+	if err := h.db.
+		Where("user_id IN ? AND section_id IN ?", userIDs, sectionIDs).
+		Find(&stats).Error; err != nil {
+		return
+	}
+	statByUserSection := map[userSectionKey]models.WaterSectionUserStat{}
+	for _, s := range stats {
+		statByUserSection[userSectionKey{UserID: s.UserID, SectionID: s.SectionID}] = s
+	}
+
+	// 第四阶段：批量查 WaterSectionLevelTitle（自定义称号），避免 N+1
+	// 既然 section 范围有限，按段查询每个 section 的全部 1-8 称号。
+	customTitles := map[userSectionKey]string{} // (section, level) → title
+	{
+		var titles []models.WaterSectionLevelTitle
+		if err := h.db.Where("section_id IN ?", sectionIDs).Find(&titles).Error; err == nil {
+			for _, t := range titles {
+				customTitles[userSectionKey{UserID: t.SectionID, SectionID: uint(t.Level)}] = t.Title
+			}
+		}
+	}
+
+	// 第五阶段：按帖子回填
+	for i := range posts {
+		p := &posts[i]
+		if p.BoardID != models.BoardShuitie || p.PostType == "" {
+			continue
+		}
+		sec, ok := sectionBySlug[p.PostType]
+		if !ok {
+			continue
+		}
+		key := userSectionKey{UserID: p.AuthorID, SectionID: sec.ID}
+		level := 1
+		exp := 0
+		if stat, found := statByUserSection[key]; found {
+			exp = stat.Exp
+			level = services.CalculateWaterSectionLevel(exp)
+		}
+		title := services.DefaultWaterSectionLevelTitle(level)
+		if custom, ok := customTitles[userSectionKey{UserID: sec.ID, SectionID: uint(level)}]; ok && custom != "" {
+			title = custom
+		}
+		p.WaterSectionAuthorMeta = &models.WaterSectionAuthorMeta{
+			SectionID:    sec.ID,
+			SectionSlug:  sec.Slug,
+			SectionTitle: sec.Title,
+			Level:        level,
+			Exp:          exp,
+			Title:        title,
 		}
 	}
 }
@@ -820,6 +953,7 @@ func (h *PostHandler) GetOne(c *gin.Context) {
 	responsePosts := []models.Post{post}
 	h.fillWaterSectionPinState(responsePosts, time.Now())
 	h.fillWaterSectionFeaturedState(responsePosts)
+	h.fillWaterSectionAuthorMeta(responsePosts)
 	post = responsePosts[0]
 	c.JSON(http.StatusOK, post)
 }

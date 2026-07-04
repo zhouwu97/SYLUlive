@@ -74,7 +74,9 @@ class _RatingInputSheetState extends State<_RatingInputSheet> {
         left: 20,
         right: 20,
         top: 20,
-        bottom: viewInsets.bottom > 0 ? viewInsets.bottom + 16 : MediaQuery.of(context).padding.bottom + 16,
+        bottom: viewInsets.bottom > 0
+            ? viewInsets.bottom + 16
+            : MediaQuery.of(context).padding.bottom + 16,
       ),
       child: SingleChildScrollView(
         physics: const ClampingScrollPhysics(),
@@ -133,8 +135,10 @@ class _RatingInputSheetState extends State<_RatingInputSheet> {
                   borderSide: BorderSide.none,
                 ),
                 filled: true,
-                fillColor: isDark ? const Color(0x33FFFFFF) : const Color(0x0A000000),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                fillColor:
+                    isDark ? const Color(0x33FFFFFF) : const Color(0x0A000000),
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
               ),
               style: TextStyle(
                 fontSize: 15,
@@ -150,24 +154,27 @@ class _RatingInputSheetState extends State<_RatingInputSheet> {
                     ? null
                     : () async {
                         setState(() => _isSubmitting = true);
-                        final success = await widget.onSubmit(_star, _commentCtrl.text.trim());
-                        if (mounted) {
-                          setState(() => _isSubmitting = false);
-                          if (success) Navigator.pop(context);
-                        }
+                        final success = await widget.onSubmit(
+                            _star, _commentCtrl.text.trim());
+                        if (!context.mounted) return;
+                        setState(() => _isSubmitting = false);
+                        if (success) Navigator.pop(context);
                       },
                 style: ElevatedButton.styleFrom(
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
                 ),
                 child: _isSubmitting
                     ? const SizedBox(
                         width: 20,
                         height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white),
                       )
                     : const Text(
                         '提交评价',
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                        style: TextStyle(
+                            fontSize: 16, fontWeight: FontWeight.bold),
                       ),
               ),
             ),

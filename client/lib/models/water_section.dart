@@ -70,6 +70,7 @@ class WaterSection {
   final String defaultSort;
   final int sortOrder;
   final String status;
+  final bool isFollowed;
   final List<WaterSectionTag> tags;
 
   const WaterSection({
@@ -89,6 +90,7 @@ class WaterSection {
     this.defaultSort = 'recommend',
     this.sortOrder = 0,
     this.status = 'active',
+    this.isFollowed = false,
     this.tags = const [],
   });
 
@@ -98,11 +100,7 @@ class WaterSection {
         .map((e) => WaterSectionTag.fromJson(e as Map<String, dynamic>))
         .toList()
       ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
-    final sq = json['starter_questions'];
-    List<String> starterQuestions = const [];
-    if (sq is List) {
-      starterQuestions = sq.map((e) => e.toString()).toList();
-    }
+
     return WaterSection(
       id: json['id'] ?? 0,
       slug: json['slug'] ?? '',
@@ -114,12 +112,16 @@ class WaterSection {
       publishActionText: json['publish_action_text'] ?? '发布帖子',
       emptyTitle: json['empty_title'] ?? '',
       emptyDescription: json['empty_description'] ?? '',
-      starterQuestions: starterQuestions,
+      starterQuestions: (json['starter_questions'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          const [],
       noticeText: json['notice_text'] ?? '',
       sensitiveLevel: json['sensitive_level'] ?? 'normal',
       defaultSort: json['default_sort'] ?? 'recommend',
       sortOrder: json['sort_order'] ?? 0,
       status: json['status'] ?? 'active',
+      isFollowed: json['is_followed'] == true,
       tags: tags,
     );
   }

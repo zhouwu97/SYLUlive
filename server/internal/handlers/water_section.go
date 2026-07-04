@@ -57,6 +57,7 @@ type waterSectionResponse struct {
 	DefaultSort       string                    `json:"default_sort"`
 	SortOrder         int                       `json:"sort_order"`
 	Status            string                    `json:"status"`
+	IsFollowed        bool                      `json:"is_followed"`
 	Tags              []waterSectionTagResponse `json:"tags"`
 }
 
@@ -346,6 +347,39 @@ func (h *WaterSectionHandler) tagValueExists(sectionID uint, column string, valu
 	return count > 0, nil
 }
 
+func (h *WaterSectionHandler) fillIsFollowed(c *gin.Context, resps []waterSectionResponse) []waterSectionResponse {
+	userIDVal, exists := c.Get("user_id")
+	if !exists {
+		return resps
+	}
+	uid, ok := userIDVal.(uint)
+	if !ok || uid == 0 {
+		// 可能是 float64 等类型，如果类型断言失败，尝试直接转换
+		return resps
+	}
+
+	sectionIDs := make([]uint, len(resps))
+	for i, r := range resps {
+		sectionIDs[i] = r.ID
+	}
+	if len(sectionIDs) == 0 {
+		return resps
+	}
+
+	var follows []models.WaterSectionFollow
+	h.db.Where("user_id = ? AND section_id IN ?", uid, sectionIDs).Find(&follows)
+	
+	followMap := make(map[uint]bool)
+	for _, f := range follows {
+		followMap[f.SectionID] = true
+	}
+
+	for i := range resps {
+		resps[i].IsFollowed = followMap[resps[i].ID]
+	}
+	return resps
+}
+
 // List GET /api/water/sections
 // 返回所有 active 版块，按 sort_order 升序；每个版块只带 enabled 标签。
 func (h *WaterSectionHandler) List(c *gin.Context) {
@@ -362,6 +396,7 @@ func (h *WaterSectionHandler) List(c *gin.Context) {
 	for _, section := range sections {
 		resp = append(resp, toSectionResponse(section))
 	}
+	resp = h.fillIsFollowed(c, resp)
 	c.JSON(http.StatusOK, gin.H{"sections": resp})
 }
 
@@ -386,7 +421,9 @@ func (h *WaterSectionHandler) Get(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取版块失败"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"section": toSectionResponse(section)})
+	resp := toSectionResponse(section)
+	respArr := h.fillIsFollowed(c, []waterSectionResponse{resp})
+	c.JSON(http.StatusOK, gin.H{"section": respArr[0]})
 }
 
 // Update PATCH /api/water/sections/:slug
@@ -776,4 +813,74 @@ func (h *WaterSectionHandler) UpdateTagStatus(c *gin.Context) {
 	snapshot, _ := json.Marshal(gin.H{"before": before, "after": after})
 	h.writeTagLog(section.ID, operator.ID, action, tag.ID, reason, string(snapshot))
 	c.JSON(http.StatusOK, gin.H{"tag": tag})
+}
+
+// Follow POST /api/water/sections/:slug/follow
+// 关注版块
+func (h *WaterSectionHandler) Follow(c *gin.Context) {
+	operator, ok := h.currentUserOr401(c)
+	if !ok {
+		return
+	}
+	section, ok := h.getActiveSectionOr404(c)
+	if !ok {
+		return
+	}
+
+	follow := models.WaterSectionFollow{
+		UserID:    operator.ID,
+		SectionID: section.ID,
+	}
+
+	err := h.db.Where(models.WaterSectionFollow{UserID: operator.ID, SectionID: section.ID}).FirstOrCreate(&follow).Error
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "关注失败"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "关注成功"})
+}
+
+// Unfollow DELETE /api/water/sections/:slug/follow
+// 取消关注版块
+func (h *WaterSectionHandler) Unfollow(c *gin.Context) {
+	operator, ok := h.currentUserOr401(c)
+	if !ok {
+		return
+	}
+	section, ok := h.getActiveSectionOr404(c)
+	if !ok {
+		return
+	}
+
+	err := h.db.Where("user_id = ? AND section_id = ?", operator.ID, section.ID).Delete(&models.WaterSectionFollow{}).Error
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "取消关注失败"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "取消关注成功"})
+}
+
+// GetFollowedSections GET /api/water/sections/followed
+// 获取关注的版块列表
+func (h *WaterSectionHandler) GetFollowedSections(c *gin.Context) {
+	operator, ok := h.currentUserOr401(c)
+	if !ok {
+		return
+	}
+
+	var follows []models.WaterSectionFollow
+	if err := h.db.Where("user_id = ?", operator.ID).Preload("Section").Preload("Section.Tags", "is_enabled = ?", true).Find(&follows).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取关注列表失败"})
+		return
+	}
+
+	resp := make([]waterSectionResponse, 0, len(follows))
+	for _, f := range follows {
+		if f.Section != nil && f.Section.Status == "active" {
+			r := toSectionResponse(*f.Section)
+			r.IsFollowed = true
+			resp = append(resp, r)
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{"sections": resp})
 }

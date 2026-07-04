@@ -10,6 +10,7 @@ import 'package:provider/provider.dart';
 
 import '../config/api_constants.dart';
 import '../models/conversation.dart';
+import '../models/message_send_state.dart';
 import '../models/user.dart';
 import '../providers/auth_provider.dart';
 import '../providers/message_provider.dart';
@@ -52,6 +53,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   double _lastKeyboardInset = 0;
   DateTime _lastMessageActivity = DateTime.now();
   final Map<int, GlobalKey> _messageKeys = {};
+  MessageSendState? _sendState;
   static const MethodChannel _privateMessageNotificationsChannel =
       MethodChannel('shenliyuan/private_message_notifications');
 
@@ -122,6 +124,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
         });
       }
     }
+    unawaited(_refreshSendState());
     _startPolling();
   }
 
@@ -261,11 +264,14 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     final message = await provider.sendMessage(widget.targetUser.id, content);
     if (!mounted) return;
     if (message == null) {
+      // 服务端可能给出 message_requires_reply_or_follow 拒绝；用统一文案进行提示并刷新状态
+      final err = provider.messageError ?? '发送失败，请稍后再试';
       AppFeedback.showSnackBar(
         context,
-        provider.messageError ?? '发送失败，请稍后重试',
+        err,
         isError: true,
       );
+      unawaited(_refreshSendState());
       return;
     }
 
@@ -273,8 +279,26 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     _syncCurrentConversationToPlatform(_conversationId).ignore();
     _lastMessageActivity = DateTime.now();
     _textController.clear();
+    // 发送成功后，陌生人限制可能再次触发，刷新发送状态用于决定是否锁定输入
+    unawaited(_refreshSendState());
     _startPolling();
     _scrollToBottom(stable: true);
+  }
+
+  /// 拉取陌生人限制状态。失败时按"允许发送"宽松处理避免阻塞 UI。
+  Future<void> _refreshSendState() async {
+    if (!mounted) return;
+    final provider = context.read<MessageProvider>();
+    MessageSendState? next;
+    try {
+      next = await provider.getSendState(widget.targetUser.id);
+    } catch (e) {
+      debugPrint('拉取 send-state 失败: $e');
+    }
+    if (!mounted) return;
+    setState(() {
+      _sendState = next;
+    });
   }
 
   void _saveDraft() {
@@ -873,62 +897,115 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   }
 
   Widget _buildInputBar(MessageProvider provider) {
+    final blocked = _sendState?.isBlocked ?? false;
+    final levelBlocked = _sendState?.isLevelBlocked ?? false;
+    final sending = provider.sending;
     return SafeArea(
       top: false,
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(12, 8, 10, 8),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          border: Border(
-            top: BorderSide(color: Colors.black.withValues(alpha: 0.06)),
-          ),
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            Expanded(
-              child: TextField(
-                controller: _textController,
-                onTap: _scrollToBottom,
-                style: const TextStyle(color: Color(0xFF111827)),
-                minLines: 1,
-                maxLines: 5,
-                textInputAction: TextInputAction.newline,
-                decoration: InputDecoration(
-                  hintText: '发送消息',
-                  isDense: true,
-                  filled: true,
-                  fillColor: const Color(0xFFF1F0F6),
-                  hintStyle: TextStyle(
-                    color: Colors.black.withValues(alpha: 0.46),
-                  ),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(20),
-                    borderSide: BorderSide.none,
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 10,
-                  ),
-                ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (blocked) _buildPMLockedBanner(),
+          Container(
+            padding: const EdgeInsets.fromLTRB(12, 8, 10, 8),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border(
+                top: BorderSide(color: Colors.black.withValues(alpha: 0.06)),
               ),
             ),
-            const SizedBox(width: 8),
-            IconButton.filled(
-              onPressed: provider.sending ? null : _sendMessage,
-              icon: provider.sending
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _textController,
+                    onTap: _scrollToBottom,
+                    enabled: !blocked,
+                    readOnly: blocked,
+                    style: TextStyle(
+                      color: blocked
+                          ? Colors.black.withValues(alpha: 0.35)
+                          : const Color(0xFF111827),
+                    ),
+                    minLines: 1,
+                    maxLines: 5,
+                    textInputAction: TextInputAction.newline,
+                    decoration: InputDecoration(
+                      hintText: blocked
+                          ? (levelBlocked ? '你的等级不足3级' : '等待对方回复后可继续发送')
+                          : '发送消息',
+                      isDense: true,
+                      filled: true,
+                      fillColor: blocked
+                          ? const Color(0xFFE5E7EB)
+                          : const Color(0xFFF1F0F6),
+                      hintStyle: TextStyle(
+                        color: Colors.black.withValues(
+                          alpha: blocked ? 0.4 : 0.46,
+                        ),
                       ),
-                    )
-                  : const Icon(Icons.send_rounded),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(20),
+                        borderSide: BorderSide.none,
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 10,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton.filled(
+                  onPressed: (sending || blocked) ? null : _sendMessage,
+                  icon: sending
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(Icons.send_rounded),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPMLockedBanner() {
+    final levelBlocked = _sendState?.isLevelBlocked ?? false;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+      color: const Color(0xFFFFF7E6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Icons.lock_outline,
+            size: 14,
+            color: Colors.orange.shade700,
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              levelBlocked
+                  ? '你的等级不足3级，无法发起私信，快去水帖版块升级吧！'
+                  : '对方未关注你。对方回复前，你只能发送 1 条消息。',
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.orange.shade800,
+                height: 1.3,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

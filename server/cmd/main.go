@@ -564,6 +564,7 @@ func main() {
 	{
 		// 注意: /followed 必须在 /:slug 之前以防冲突
 		waterFollow.GET("/followed", waterSectionHandler.GetFollowedSections)
+		waterFollow.GET("/:slug/my-level", waterSectionHandler.GetMyLevel)
 		waterFollow.POST("/:slug/follow", waterSectionHandler.Follow)
 		waterFollow.DELETE("/:slug/follow", waterSectionHandler.Unfollow)
 		waterFollow.GET("/:slug/my-permission", waterModeratorHandler.MyPermission)

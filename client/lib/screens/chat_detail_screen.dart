@@ -898,7 +898,6 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
 
   Widget _buildInputBar(MessageProvider provider) {
     final blocked = _sendState?.isBlocked ?? false;
-    final levelBlocked = _sendState?.isLevelBlocked ?? false;
     final sending = provider.sending;
     return SafeArea(
       top: false,
@@ -932,9 +931,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
                     maxLines: 5,
                     textInputAction: TextInputAction.newline,
                     decoration: InputDecoration(
-                      hintText: blocked
-                          ? (levelBlocked ? '你的等级不足3级' : '等待对方回复后可继续发送')
-                          : '发送消息',
+                      hintText: blocked ? '等待对方回复后可继续发送' : '发送消息',
                       isDense: true,
                       filled: true,
                       fillColor: blocked
@@ -979,7 +976,6 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   }
 
   Widget _buildPMLockedBanner() {
-    final levelBlocked = _sendState?.isLevelBlocked ?? false;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
@@ -995,9 +991,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
           const SizedBox(width: 6),
           Expanded(
             child: Text(
-              levelBlocked
-                  ? '你的等级不足3级，无法发起私信，快去水帖版块升级吧！'
-                  : '对方未关注你。对方回复前，你只能发送 1 条消息。',
+              '对方未关注你。对方回复前，你只能发送 1 条消息。',
               style: TextStyle(
                 fontSize: 12,
                 color: Colors.orange.shade800,

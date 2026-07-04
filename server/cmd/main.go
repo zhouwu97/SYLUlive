@@ -796,6 +796,7 @@ func main() {
 	{
 
 		admin.GET("/candidates", invitationHandler.GetCandidates)
+		admin.GET("/candidates/stats", invitationHandler.GetCandidatesStats)
 
 		admin.GET("/members", invitationHandler.GetMembers)
 

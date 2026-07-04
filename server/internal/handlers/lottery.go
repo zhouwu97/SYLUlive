@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"shenliyuan/internal/models"
+	"shenliyuan/internal/services"
 	"shenliyuan/internal/tasks"
 
 	"github.com/gin-gonic/gin"
@@ -79,8 +80,8 @@ func (h *LotteryHandler) Join(c *gin.Context) {
 		return
 	}
 
-	// 计算权重：基础权重1 + (经验值/10)
-	weight := 1 + (user.Exp / 10)
+	// 计算权重：按等级计算
+	weight := services.CalculateLotteryWeightByLevel(user.Exp)
 
 	participant := models.LotteryParticipant{
 		LotteryID: event.ID,

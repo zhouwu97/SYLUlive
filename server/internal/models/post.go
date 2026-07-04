@@ -59,6 +59,13 @@ type Post struct {
 	WaterSectionPinID  *uint       `gorm:"-" json:"water_section_pin_id,omitempty"`
 	WaterSectionFeatured   bool        `gorm:"-" json:"water_section_featured"`
 	WaterSectionFeaturedID *uint       `gorm:"-" json:"water_section_featured_id,omitempty"`
+
+	// 统一经验返回字段
+	ExpEarned int        `gorm:"-" json:"exp_earned,omitempty"`
+	// ExpAwards 发帖/评论成功后本次下发的经验奖励，前端用于弹出"+10经验"提示。
+	// 旧客户端会忽略此字段；新增为空时不输出。
+	ExpAwards []ExpAward `gorm:"-" json:"exp_awards,omitempty"`
+	WaterSectionAuthorMeta     *WaterSectionAuthorMeta `gorm:"-" json:"water_section_author_meta,omitempty"`
 	Images             []PostImage `gorm:"foreignKey:PostID" json:"images"`
 	Author             User        `gorm:"foreignKey:AuthorID" json:"author"`
 	CreatedAt          time.Time   `json:"created_at"`

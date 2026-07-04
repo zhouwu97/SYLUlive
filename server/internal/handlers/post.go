@@ -714,26 +714,34 @@ func (h *PostHandler) Create(c *gin.Context) {
 		return
 	}
 
-	// 尝试增加每日首发经验
-	now := time.Now()
-	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
-	expErr := h.db.Transaction(func(tx *gorm.DB) error {
-		expLog := models.ExpLog{
-			UserID:    userID.(uint),
-			Action:    "post_daily",
-			Date:      today,
-			ExpEarned: 5,
+	// 发放每日首发经验 (全局 + 版块)
+	awards := make([]models.ExpAward, 0, 2)
+	awarded, globalAward, expErr := services.AwardDailyGlobalExp(h.db, userID.(uint), services.GlobalActionPostDaily, services.GlobalExpPostDaily, "post", post.ID)
+	if expErr != nil {
+		log.Printf("[EXP_AWARD] global post_daily failed user=%v post_id=%d err=%v", userID, post.ID, expErr)
+	} else if awarded && globalAward != nil {
+		awards = append(awards, *globalAward)
+	}
+
+	if post.BoardID == models.BoardShuitie && post.PostType != "" {
+		var section models.WaterSection
+		if secErr := h.db.Where("slug = ?", post.PostType).First(&section).Error; secErr == nil && section.ID != 0 {
+			secAwarded, secAward, secErr := services.AwardDailySectionExp(h.db, userID.(uint), section.ID, section.Slug, section.Title, services.GlobalActionPostDaily, services.GlobalExpPostDaily, "post", post.ID)
+			if secErr != nil {
+				log.Printf("[EXP_AWARD] section post_daily failed user=%v section=%d post_id=%d err=%v", userID, section.ID, post.ID, secErr)
+			} else if secAwarded && secAward != nil {
+				awards = append(awards, *secAward)
+			}
 		}
-		if err := tx.Create(&expLog).Error; err != nil {
-			return err // 违反唯一约束等，直接回滚
+	}
+
+	if len(awards) > 0 {
+		post.ExpAwards = awards
+		for _, award := range awards {
+			if award.Scope == "global" {
+				post.ExpEarned = award.Exp
+			}
 		}
-		if err := tx.Model(&models.User{}).Where("id = ?", userID.(uint)).UpdateColumn("exp", gorm.Expr("exp + ?", 5)).Error; err != nil {
-			return err
-		}
-		return nil
-	})
-	if expErr == nil {
-		log.Printf("用户 %v 获得每日首发经验 5 点", userID)
 	}
 
 	// 处理图片 - 从 multipart form 读取 file_ids

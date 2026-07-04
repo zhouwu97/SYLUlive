@@ -9,12 +9,14 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 
 	"shenliyuan/internal/models"
+	"shenliyuan/internal/services"
 )
 
 // newWaterSectionTestDB 构造 in-memory DB，迁移 water 与 post 相关表。
@@ -35,12 +37,34 @@ func newWaterSectionTestDB(t *testing.T) *gorm.DB {
 		&models.WaterSectionModerator{},
 		&models.WaterSectionPin{},
 		&models.WaterSectionMute{},
+		&models.WaterSectionUserStat{},
+		&models.WaterSectionExpLog{},
 		&models.WaterSectionLevelTitle{},
 		&models.WaterModerationLog{},
+		&models.ExpLog{},
+		&models.FeaturedApplication{},
 	); err != nil {
 		t.Fatalf("migrate database: %v", err)
 	}
 	return db
+}
+
+func performWaterSectionAuthGET(t *testing.T, handler gin.HandlerFunc, path string, userID uint) *httptest.ResponseRecorder {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(rec)
+	ctx.Request = httptest.NewRequest(http.MethodGet, path, nil)
+	ctx.Set("user_id", userID)
+	if slugStart := strings.Index(path, "/sections/"); slugStart >= 0 {
+		slug := path[slugStart+len("/sections/"):]
+		if slash := strings.Index(slug, "/"); slash >= 0 {
+			slug = slug[:slash]
+		}
+		ctx.Params = gin.Params{{Key: "slug", Value: slug}}
+	}
+	handler(ctx)
+	return rec
 }
 
 func newWaterTestUser(t *testing.T, db *gorm.DB, eduBound bool) models.User {
@@ -1144,6 +1168,68 @@ func TestUpdateLevelTitlesResetToDefault(t *testing.T) {
 		if item.Title == "" {
 			t.Fatalf("level %d default title should not be empty", level)
 		}
+	}
+}
+
+func TestGetMyLevelReturnsProgressAndTodayAwards(t *testing.T) {
+	db := newWaterSectionTestDB(t)
+	if err := models.EnsureWaterSections(db); err != nil {
+		t.Fatalf("ensure: %v", err)
+	}
+	user := newWaterTestUser(t, db, false)
+	var section models.WaterSection
+	if err := db.Where("slug = ?", "campus_life").First(&section).Error; err != nil {
+		t.Fatalf("find section: %v", err)
+	}
+	if err := db.Create(&models.WaterSectionUserStat{
+		UserID:     user.ID,
+		SectionID:  section.ID,
+		Exp:        65,
+		PostCount:  2,
+		ReplyCount: 3,
+	}).Error; err != nil {
+		t.Fatalf("create stat: %v", err)
+	}
+	today := time.Now()
+	today = time.Date(today.Year(), today.Month(), today.Day(), 0, 0, 0, 0, time.Local)
+	if err := db.Create(&models.WaterSectionExpLog{
+		UserID:    user.ID,
+		SectionID: section.ID,
+		Action:    models.WaterSectionExpActionPostDaily,
+		Date:      today,
+		ExpEarned: services.GlobalExpPostDaily,
+		RefType:   "post",
+		RefID:     1,
+	}).Error; err != nil {
+		t.Fatalf("create exp log: %v", err)
+	}
+
+	handler := NewWaterSectionHandler(db)
+	rec := performWaterSectionAuthGET(t, handler.GetMyLevel, "/api/water/sections/campus_life/my-level", user.ID)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Level             int    `json:"level"`
+		Title             string `json:"title"`
+		Exp               int    `json:"exp"`
+		NextLevelExp      int    `json:"next_level_exp"`
+		ProgressExp       int    `json:"progress_exp"`
+		RequiredExp       int    `json:"required_exp"`
+		TodayPostAwarded  bool   `json:"today_post_awarded"`
+		TodayReplyAwarded bool   `json:"today_reply_awarded"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body.Level != 3 || body.Title != services.DefaultWaterSectionLevelTitle(3) {
+		t.Fatalf("unexpected level title: level=%d title=%s", body.Level, body.Title)
+	}
+	if body.Exp != 65 || body.NextLevelExp != 120 || body.ProgressExp != 5 || body.RequiredExp != 60 {
+		t.Fatalf("unexpected progress: %+v", body)
+	}
+	if !body.TodayPostAwarded || body.TodayReplyAwarded {
+		t.Fatalf("unexpected daily award status: %+v", body)
 	}
 }
 

@@ -1289,13 +1289,26 @@ class _ShuitieScreenState extends State<ShuitieScreen>
             ),
             const SizedBox(height: 8),
             Text(
-              '关注的同学发布帖子后，会显示在这里',
+              '关注的版块发布帖子后，会显示在这里',
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 14,
                 color: isDark
                     ? Colors.white.withValues(alpha: 0.4)
                     : Colors.grey[400],
+              ),
+            ),
+            const SizedBox(height: 24),
+            OutlinedButton.icon(
+              onPressed: () {
+                _openHomeServicePanel();
+              },
+              icon: const Icon(Icons.explore_outlined, size: 18),
+              label: const Text('探索版块'),
+              style: OutlinedButton.styleFrom(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
             ),
           ],

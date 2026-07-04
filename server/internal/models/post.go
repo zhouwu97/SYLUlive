@@ -78,6 +78,9 @@ type FeaturedApplication struct {
 	ID            uint       `gorm:"primaryKey" json:"id"`
 	PostID        uint       `gorm:"not null;index" json:"post_id"`
 	ApplicantID   uint       `gorm:"not null;index" json:"applicant_id"`
+	Source        string     `gorm:"size:32;default:'user'" json:"source"`
+	SectionID     *uint      `gorm:"index" json:"section_id"`
+	SectionFeaturedID *uint  `gorm:"index" json:"section_featured_id"`
 	Reason        string     `gorm:"size:1000" json:"reason"`
 	Status        string     `gorm:"size:20;default:'pending';index" json:"status"`
 	ReviewerID    uint       `gorm:"index" json:"reviewer_id"`

@@ -289,21 +289,22 @@ func (h *PostHandler) GetList(c *gin.Context) {
 		}
 	}
 
-	// 关注信息流：仅显示当前用户关注的人发布的帖子
+	// 关注信息：仅展示当前用户关注的版块内的帖子（水帖）
 	if sort == "following" {
 		rawUserID, exists := c.Get("user_id")
 		userID, ok := rawUserID.(uint)
 		if !exists || !ok || userID == 0 {
 			c.JSON(http.StatusUnauthorized, gin.H{
-				"error": "登录后才能查看关注动态",
+				"error": "请先登录查看关注动态",
 			})
 			return
 		}
 		followingSubQuery := h.db.
-			Model(&models.UserFollow{}).
-			Select("following_id").
-			Where("follower_id = ?", userID)
-		query = query.Where("author_id IN (?)", followingSubQuery)
+			Model(&models.WaterSectionFollow{}).
+			Joins("JOIN water_sections ON water_sections.id = water_section_follows.section_id").
+			Select("water_sections.slug").
+			Where("water_section_follows.user_id = ?", userID)
+		query = query.Where("posts.board_id = ? AND posts.post_type IN (?)", models.BoardShuitie, followingSubQuery)
 	}
 
 	if searchQuery != "" {

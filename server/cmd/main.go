@@ -102,6 +102,8 @@ func main() {
 
 		&models.WaterSectionPin{},
 
+		&models.WaterSectionFeaturedPost{},
+
 		&models.WaterSectionMute{},
 
 		&models.WaterModerationLog{},

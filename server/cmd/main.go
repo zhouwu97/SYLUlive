@@ -549,10 +549,24 @@ func main() {
 
 	r.GET("/api/search", middleware.OptionalAuthMiddleware(db, cfg.JWTSecret), searchHandler.Search)
 
-	// 水帖版块读取接口（公开）
-	r.GET("/api/water/sections", waterSectionHandler.List)
-	r.GET("/api/water/sections/:slug", waterSectionHandler.Get)
-	r.GET("/api/water/sections/:slug/my-permission", middleware.AuthMiddleware(db, cfg.JWTSecret), waterModeratorHandler.MyPermission)
+	// 水帖版块读取接口（公开，可选鉴权）
+	waterPublic := r.Group("/api/water/sections")
+	waterPublic.Use(middleware.OptionalAuthMiddleware(db, cfg.JWTSecret))
+	{
+		waterPublic.GET("", waterSectionHandler.List)
+		waterPublic.GET("/:slug", waterSectionHandler.Get)
+	}
+
+	// 水帖版块关注相关（需要登录）
+	waterFollow := r.Group("/api/water/sections")
+	waterFollow.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
+	{
+		// 注意: /followed 必须在 /:slug 之前以防冲突
+		waterFollow.GET("/followed", waterSectionHandler.GetFollowedSections)
+		waterFollow.POST("/:slug/follow", waterSectionHandler.Follow)
+		waterFollow.DELETE("/:slug/follow", waterSectionHandler.Unfollow)
+		waterFollow.GET("/:slug/my-permission", waterModeratorHandler.MyPermission)
+	}
 
 	// 水帖版主管理接口（仅 admin/super_admin）
 	adminWater := r.Group("/api/admin/water/sections/:slug/moderators")

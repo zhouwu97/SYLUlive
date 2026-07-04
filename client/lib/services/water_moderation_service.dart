@@ -41,6 +41,26 @@ class WaterModerationService {
     await _dio.delete('${_base(sectionSlug)}/posts/$postId/pin');
   }
 
+  // ── 加精 ──
+
+  Future<void> featurePost({
+    required String sectionSlug,
+    required int postId,
+    required String reason,
+  }) async {
+    await _dio.post(
+      '${_base(sectionSlug)}/posts/$postId/feature',
+      data: {'reason': reason},
+    );
+  }
+
+  Future<void> unfeaturePost({
+    required String sectionSlug,
+    required int postId,
+  }) async {
+    await _dio.delete('${_base(sectionSlug)}/posts/$postId/feature');
+  }
+
   // ── 删帖 ──
 
   Future<void> deletePostByModerator({

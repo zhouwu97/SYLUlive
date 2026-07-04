@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -883,4 +884,194 @@ func (h *WaterSectionHandler) GetFollowedSections(c *gin.Context) {
 		}
 	}
 	c.JSON(http.StatusOK, gin.H{"sections": resp})
+}
+
+// waterSectionLevelTitleResponse 版块等级称号响应体
+type waterSectionLevelTitleResponse struct {
+	Level    int    `json:"level"`
+	Title    string `json:"title"`
+	Custom   bool   `json:"custom"` // false 表示当前返回的是默认称号
+	Position int    `json:"position,omitempty"`
+}
+
+// GetLevelTitles GET /api/water/sections/:slug/level-titles
+// 公开端点。返回当前版块 Lv.1-Lv.8 的称号列表，自定义缺失时使用默认值。
+func (h *WaterSectionHandler) GetLevelTitles(c *gin.Context) {
+	section, ok := h.getActiveSectionOr404(c)
+	if !ok {
+		return
+	}
+
+	var customs []models.WaterSectionLevelTitle
+	if err := h.db.Where("section_id = ?", section.ID).Order("level ASC").Find(&customs).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取称号失败"})
+		return
+	}
+	customByLevel := make(map[int]models.WaterSectionLevelTitle, len(customs))
+	for _, t := range customs {
+		customByLevel[t.Level] = t
+	}
+
+	out := make([]waterSectionLevelTitleResponse, 0, 8)
+	for level := 1; level <= 8; level++ {
+		if custom, ok := customByLevel[level]; ok && strings.TrimSpace(custom.Title) != "" {
+			out = append(out, waterSectionLevelTitleResponse{
+				Level: level, Title: custom.Title, Custom: true, Position: int(custom.ID),
+			})
+		} else {
+			out = append(out, waterSectionLevelTitleResponse{
+				Level: level, Title: services.DefaultWaterSectionLevelTitle(level), Custom: false,
+			})
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"section_id":   section.ID,
+		"section_slug": section.Slug,
+		"titles":       out,
+	})
+}
+
+// waterSectionLevelTitleInput 称号编辑请求体
+type waterSectionLevelTitleInput struct {
+	Level int    `json:"level"`
+	Title string `json:"title"`
+}
+
+// UpdateLevelTitles PATCH /api/water/sections/:slug/level-titles
+// 编辑版块 Lv.1-Lv.8 的称号。
+//
+// 权限：admin / super_admin / 本版块版主 (CanEditSection=true)
+// 校验：
+//   - level 必须为 1-8
+//   - title 非空
+//   - 中文不超过 8 个字符（其它字符不超过 16 个字符）
+//   - body 内同 level 唯一
+//
+// body: {"titles": [{"level":1,"title":"初来乍到"}, ...]}
+func (h *WaterSectionHandler) UpdateLevelTitles(c *gin.Context) {
+	operator, ok := h.currentUserOr401(c)
+	if !ok {
+		return
+	}
+	section, ok := h.getActiveSectionOr404(c)
+	if !ok {
+		return
+	}
+
+	if !h.permSvc.CanEditSection(section.ID, operator) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "没有编辑版块的权限"})
+		return
+	}
+
+	var body struct {
+		Titles []waterSectionLevelTitleInput `json:"titles" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if len(body.Titles) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "至少提供一条称号"})
+		return
+	}
+
+	seenLevels := make(map[int]struct{}, len(body.Titles))
+	for _, in := range body.Titles {
+		if in.Level < 1 || in.Level > 8 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("等级 %d 不在 1-8 范围内", in.Level)})
+			return
+		}
+		title := strings.TrimSpace(in.Title)
+		if title == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("等级 %d 的称号不能为空", in.Level)})
+			return
+		}
+		// 中文字符最多 8 个，其它字符放宽到 16 个 rune
+		rCount := utf8.RuneCountInString(title)
+		if rCount > 16 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("等级 %d 的称号长度超限（最多 16 个字符）", in.Level)})
+			return
+		}
+		// 中文占比判断：若包含中文，则中文部分最多 8 个字符
+		chineseCount := 0
+		for _, r := range title {
+			if r >= 0x4E00 && r <= 0x9FFF {
+				chineseCount++
+			}
+		}
+		if chineseCount > 0 && chineseCount > 8 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("等级 %d 的中文称号最多 8 个字", in.Level)})
+			return
+		}
+		if _, dup := seenLevels[in.Level]; dup {
+			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("等级 %d 重复输入", in.Level)})
+			return
+		}
+		seenLevels[in.Level] = struct{}{}
+	}
+
+	// 在事务内逐条 upsert：删除当前不在 patch 中的旧记录，再批量写入
+	err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("section_id = ?", section.ID).Delete(&models.WaterSectionLevelTitle{}).Error; err != nil {
+			return err
+		}
+		rows := make([]models.WaterSectionLevelTitle, 0, len(body.Titles))
+		for _, in := range body.Titles {
+			rows = append(rows, models.WaterSectionLevelTitle{
+				SectionID: section.ID,
+				Level:     in.Level,
+				Title:     strings.TrimSpace(in.Title),
+			})
+		}
+		if err := tx.Create(&rows).Error; err != nil {
+			return err
+		}
+
+		// 写一条管理日志，便于追溯
+		snapshot, _ := json.MarshalIndent(body.Titles, "", "  ")
+		if err := tx.Create(&models.WaterModerationLog{
+			SectionID:  section.ID,
+			OperatorID: operator.ID,
+			Action:     models.ModActionEditSection,
+			TargetType: "section",
+			TargetID:   section.ID,
+			Reason:     "update_level_titles",
+			Snapshot:   string(snapshot),
+		}).Error; err != nil {
+			fmt.Printf("[WaterSection] write level titles log failed: %v\n", err)
+		}
+		return nil
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存称号失败"})
+		return
+	}
+
+	// 返回最新结果，便于前端刷新
+	var customs []models.WaterSectionLevelTitle
+	if err := h.db.Where("section_id = ?", section.ID).Order("level ASC").Find(&customs).Error; err != nil {
+		c.JSON(http.StatusOK, gin.H{"updated": true})
+		return
+	}
+	customByLevel := make(map[int]models.WaterSectionLevelTitle, len(customs))
+	for _, t := range customs {
+		customByLevel[t.Level] = t
+	}
+	out := make([]waterSectionLevelTitleResponse, 0, 8)
+	for level := 1; level <= 8; level++ {
+		if custom, ok := customByLevel[level]; ok && strings.TrimSpace(custom.Title) != "" {
+			out = append(out, waterSectionLevelTitleResponse{
+				Level: level, Title: custom.Title, Custom: true, Position: int(custom.ID),
+			})
+		} else {
+			out = append(out, waterSectionLevelTitleResponse{
+				Level: level, Title: services.DefaultWaterSectionLevelTitle(level), Custom: false,
+			})
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"section_id":   section.ID,
+		"section_slug": section.Slug,
+		"titles":       out,
+	})
 }

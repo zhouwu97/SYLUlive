@@ -555,6 +555,7 @@ func main() {
 	{
 		waterPublic.GET("", waterSectionHandler.List)
 		waterPublic.GET("/:slug", waterSectionHandler.Get)
+		waterPublic.GET("/:slug/level-titles", waterSectionHandler.GetLevelTitles)
 	}
 
 	// 水帖版块关注相关（需要登录）
@@ -583,6 +584,7 @@ func main() {
 	waterMod.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
 	{
 		waterMod.PATCH("", waterSectionHandler.Update)
+		waterMod.PATCH("/level-titles", waterSectionHandler.UpdateLevelTitles)
 		waterMod.POST("/tags", waterSectionHandler.CreateTag)
 		waterMod.PATCH("/tags/:tag_id/status", waterSectionHandler.UpdateTagStatus)
 		waterMod.PATCH("/tags/:tag_id", waterSectionHandler.UpdateTag)

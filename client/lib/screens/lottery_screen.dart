@@ -639,7 +639,6 @@ class _LotteryScreenState extends State<LotteryScreen> {
 
   Widget _buildJoinedCard(bool isDark) {
     const success = Color(0xFF42B36F);
-    final bonusWeight = (_myWeight - 1).clamp(0, 1 << 30);
 
     return Container(
       width: double.infinity,
@@ -681,7 +680,7 @@ class _LotteryScreenState extends State<LotteryScreen> {
                 ),
                 const SizedBox(height: 3),
                 Text(
-                  '基础 1 · 经验加成 $bonusWeight',
+                  '当前等级权重：$_myWeight 份，开奖前按最新等级重算',
                   style: TextStyle(
                     fontSize: 12,
                     color: isDark ? Colors.white60 : const Color(0xFF718079),
@@ -741,7 +740,7 @@ class _LotteryScreenState extends State<LotteryScreen> {
           const SizedBox(height: 13),
           _buildRuleRow(
             Icons.trending_up_rounded,
-            '基础权重 1，经验每 10 点增加 1 权重',
+            '用户等级就是抽奖权重，Lv.几就是几份权重',
             primary,
             textColor,
           ),

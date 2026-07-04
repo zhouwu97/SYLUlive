@@ -205,7 +205,7 @@ class _PostCardState extends State<PostCard>
                     _buildPinnedBadge(isDesktop),
                     const SizedBox(width: 6),
                   ],
-                  if (widget.post.isFeatured) ...[
+                  if (widget.post.isFeatured || widget.post.waterSectionFeatured) ...[
                     _buildFeaturedBadge(isDesktop),
                     const SizedBox(width: 6),
                   ],

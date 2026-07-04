@@ -65,9 +65,6 @@ class SectionFilterHeader extends StatelessWidget {
       ));
     }
 
-    // 筛选按钮
-    items.add(_buildFilterButton());
-
     return SizedBox(
       height: height,
       child: ListView.separated(
@@ -125,64 +122,6 @@ class SectionFilterHeader extends StatelessWidget {
         color: isDark
             ? Colors.white.withValues(alpha: 0.12)
             : const Color(0xFFE5E7EB),
-      ),
-    );
-  }
-
-  Widget _buildFilterButton() {
-    final isDefaultSort = currentSort == 'all';
-    return PopupMenuButton<String>(
-      tooltip: '排序方式',
-      position: PopupMenuPosition.under,
-      offset: const Offset(0, 4),
-      color: isDark ? const Color(0xFF171B24) : Colors.white,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      itemBuilder: (context) => sortOptions
-          .map((o) => PopupMenuItem<String>(
-                value: o.sort,
-                child: Row(
-                  children: [
-                    Icon(
-                      currentSort == o.sort
-                          ? Icons.check_circle_rounded
-                          : Icons.circle_outlined,
-                      size: 15,
-                      color: currentSort == o.sort ? accentColor : null,
-                    ),
-                    const SizedBox(width: 8),
-                    Text(o.label),
-                  ],
-                ),
-              ))
-          .toList(),
-      onSelected: onSortChanged,
-      child: Container(
-        width: 32,
-        height: 32,
-        decoration: BoxDecoration(
-          color: accentColor.withValues(alpha: isDark ? 0.14 : 0.08),
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Stack(
-          children: [
-            Center(
-              child: Icon(Icons.tune_rounded, size: 16, color: accentColor),
-            ),
-            if (!isDefaultSort)
-              Positioned(
-                top: 6,
-                right: 6,
-                child: Container(
-                  width: 5,
-                  height: 5,
-                  decoration: BoxDecoration(
-                    color: accentColor,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-              ),
-          ],
-        ),
       ),
     );
   }

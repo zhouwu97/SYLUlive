@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 
 import '../../config/api_constants.dart';
 import '../../models/water_section.dart';
+import '../level_progress_pill.dart';
+import 'section_avatar.dart';
 import 'section_channel_card.dart';
 
 /// 版块沉浸式头图，作为 Stack 底层使用。
@@ -29,7 +31,7 @@ class SectionHeroHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final hasCover = section.coverUrl.isNotEmpty;
+    final hasCover = section.mobileCoverUrl.isNotEmpty;
     final backgroundColor =
         isDark ? const Color(0xFF0D1117) : const Color(0xFFF7F8FA);
     // Hero 自身高度固定为屏幕高度的 72%，而不是 fit:expand 撑满整屏。
@@ -47,7 +49,7 @@ class SectionHeroHeader extends StatelessWidget {
           // ── 背景层 ──
           if (hasCover)
             CachedNetworkImage(
-              imageUrl: ApiConstants.fullUrl(section.coverUrl),
+              imageUrl: ApiConstants.fullUrl(section.mobileCoverUrl),
               fit: BoxFit.cover,
               placeholder: (_, __) =>
                   Container(color: accentColor.withValues(alpha: 0.3)),
@@ -112,8 +114,6 @@ class SectionHeroHeader extends StatelessWidget {
     final textColor =
         (hasCover || isDark) ? Colors.white : const Color(0xFF151922);
     final mutedColor = textColor.withValues(alpha: 0.65);
-    final icon =
-        iconKeyToIconData(section.iconKey, fallbackSlug: section.slug);
     final title = section.title.isNotEmpty ? section.title : section.slug;
     final subtitle = section.subtitle.isNotEmpty ? section.subtitle : '';
 
@@ -121,18 +121,15 @@ class SectionHeroHeader extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // ── 图标 ──
-        Container(
-          width: 48,
-          height: 48,
-          decoration: BoxDecoration(
-            color: accentColor.withValues(alpha: isDark ? 0.24 : 0.16),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color: accentColor.withValues(alpha: 0.25),
-              width: 1.5,
-            ),
-          ),
-          child: Icon(icon, size: 26, color: accentColor),
+        SectionAvatar(
+          section: section,
+          size: 52,
+          radius: 16,
+          accentColor: accentColor,
+          showBorder: true,
+          borderColor: Colors.white.withValues(alpha: 0.45),
+          borderWidth: 1.5,
+          isDark: hasCover || isDark,
         ),
         const SizedBox(height: 8),
 
@@ -194,110 +191,15 @@ class SectionHeroHeader extends StatelessWidget {
   Widget _buildLevelCard(bool isDark, bool hasCover) {
     final myLevel = section.myLevel;
 
-    final cardColor = hasCover
-        ? Colors.black.withValues(alpha: 0.35)
-        : (isDark
-            ? Colors.white.withValues(alpha: 0.06)
-            : Colors.white.withValues(alpha: 0.85));
-
-    final cardBorder = accentColor.withValues(alpha: 0.15);
-    final textColor = hasCover || isDark
-        ? Colors.white
-        : const Color(0xFF151922);
-    final mutedTextColor = hasCover
-        ? Colors.white70
-        : (isDark ? Colors.white60 : const Color(0xFF60646C));
-    final hintColor = hasCover
-        ? Colors.white60
-        : (isDark ? Colors.white38 : const Color(0xFF9AA0A6));
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: cardColor,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: cardBorder, width: 1),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.workspace_premium_rounded,
-                  size: 14, color: accentColor),
-              const SizedBox(width: 4),
-              Text(
-                '本版 Lv.${myLevel?.level ?? 1}',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w800,
-                  color: textColor,
-                ),
-              ),
-              if (myLevel != null && myLevel.title.isNotEmpty) ...[
-                Text(
-                  ' · ${myLevel.title}',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: mutedTextColor,
-                  ),
-                ),
-              ],
-            ],
-          ),
-          if (myLevel != null && !myLevel.isMaxLevel) ...[
-            const SizedBox(height: 6),
-            Row(
-              children: [
-                Expanded(
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(999),
-                    child: LinearProgressIndicator(
-                      value: myLevel.progress.clamp(0.0, 1.0),
-                      minHeight: 5,
-                      backgroundColor: accentColor.withValues(alpha: 0.15),
-                      valueColor: AlwaysStoppedAnimation(accentColor),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  '${myLevel.exp}/${myLevel.nextLevelExp}',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: mutedTextColor,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 2),
-            Text(
-              '再获得 ${myLevel.expToNext} 经验升级',
-              style: TextStyle(fontSize: 10.5, color: hintColor),
-            ),
-          ] else if (myLevel != null && myLevel.isMaxLevel) ...[
-            const SizedBox(height: 4),
-            Text(
-              '已满级',
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: mutedTextColor,
-              ),
-            ),
-          ] else if (!isLoggedIn) ...[
-            const SizedBox(height: 4),
-            Text(
-              '登录后查看本版等级',
-              style: TextStyle(fontSize: 11, color: hintColor),
-            ),
-          ],
-        ],
-      ),
+    return LevelProgressPill(
+      levelLabel: '本版 Lv.${myLevel?.level ?? 1}',
+      title: myLevel?.title,
+      expText: myLevel != null ? '${myLevel.exp}/${myLevel.nextLevelExp}' : '',
+      progress: myLevel?.progress ?? 0.0,
+      accentColor: accentColor,
+      darkOnImage: hasCover,
+      isMaxLevel: myLevel?.isMaxLevel ?? false,
+      isLoggedIn: isLoggedIn,
     );
   }
 

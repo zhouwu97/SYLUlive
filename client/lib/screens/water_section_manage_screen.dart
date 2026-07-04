@@ -1395,9 +1395,14 @@ class _SectionDisplayFormSheetState extends State<_SectionDisplayFormSheet> {
   late final TextEditingController _starterQuestionsController;
   late final TextEditingController _reasonController;
   late String _defaultSort;
-  String? _coverUrl; // 背景图 URL
+  String? _coverUrl; // 背景图 URL (Legacy)
+  String? _coverPortraitUrl; // 手机版块背景 3:4
+  String? _coverLandscapeUrl; // 横向封面 16:9
+  String? _coverSquareUrl; // 方形入口 1:1
+  String? _avatarUrl; // 版块头像 1:1
   bool _isSubmitting = false;
   bool _isUploadingCover = false;
+  bool _isUploadingAvatar = false;
 
   @override
   void initState() {
@@ -1419,6 +1424,10 @@ class _SectionDisplayFormSheetState extends State<_SectionDisplayFormSheet> {
     _reasonController = TextEditingController(text: '编辑版块展示');
     _defaultSort = _normalizeSort(section.defaultSort);
     _coverUrl = section.coverUrl.isNotEmpty ? section.coverUrl : null;
+    _coverPortraitUrl = section.coverPortraitUrl.isNotEmpty ? section.coverPortraitUrl : null;
+    _coverLandscapeUrl = section.coverLandscapeUrl.isNotEmpty ? section.coverLandscapeUrl : null;
+    _coverSquareUrl = section.coverSquareUrl.isNotEmpty ? section.coverSquareUrl : null;
+    _avatarUrl = section.avatarUrl.isNotEmpty ? section.avatarUrl : null;
   }
 
   @override
@@ -1453,77 +1462,166 @@ class _SectionDisplayFormSheetState extends State<_SectionDisplayFormSheet> {
     }
   }
 
-  Future<void> _pickAndUploadCover() async {
-    final picker = ImagePicker();
-    final picked = await picker.pickImage(source: ImageSource.gallery);
-    if (picked == null) return;
-
+  Future<String?> _cropAndUpload(String sourcePath, String title, CropAspectRatio preset) async {
     final cropped = await ImageCropper().cropImage(
-      sourcePath: picked.path,
+      sourcePath: sourcePath,
       maxWidth: 1920,
       maxHeight: 1920,
       compressQuality: 85,
       uiSettings: [
         AndroidUiSettings(
-          toolbarTitle: '调整版块背景',
+          toolbarTitle: title,
           toolbarColor: Colors.black,
           toolbarWidgetColor: Colors.white,
           statusBarColor: Colors.black,
           backgroundColor: Colors.black,
-          lockAspectRatio: false,
+          lockAspectRatio: true,
         ),
         IOSUiSettings(
-          title: '调整版块背景',
-          aspectRatioLockEnabled: false,
-          resetAspectRatioEnabled: true,
+          title: title,
+          aspectRatioLockEnabled: true,
+          resetAspectRatioEnabled: false,
         ),
       ],
+      aspectRatio: preset,
     );
 
-    if (cropped == null) return;
+    if (cropped == null) return null;
+    final croppedBytes = await cropped.readAsBytes();
+    final croppedName = 'section_cover_${DateTime.now().millisecondsSinceEpoch}.jpg';
+    final auth = context.read<AuthProvider>();
+    final formData = FormData.fromMap({
+      'file': MultipartFile.fromBytes(
+        croppedBytes,
+        filename: croppedName,
+        contentType: DioMediaType('image', 'jpeg'),
+      ),
+    });
+    final uploadRes = await auth.dio.post('/upload', data: formData);
+    if (uploadRes.statusCode == 200 && uploadRes.data['url'] != null) {
+      return uploadRes.data['url'] as String;
+    }
+    return null;
+  }
+
+  Future<void> _pickAndUploadCover() async {
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(source: ImageSource.gallery);
+    if (picked == null) return;
     if (!mounted) return;
 
     setState(() => _isUploadingCover = true);
     try {
-      final croppedBytes = await cropped.readAsBytes();
-      final croppedName = 'section_cover_${DateTime.now().millisecondsSinceEpoch}.jpg';
-      final auth = context.read<AuthProvider>();
-      final formData = FormData.fromMap({
-        'file': MultipartFile.fromBytes(
-          croppedBytes,
-          filename: croppedName,
-          contentType: DioMediaType('image', 'jpeg'),
-        ),
-      });
-      final uploadRes = await auth.dio.post('/upload', data: formData);
-      if (uploadRes.statusCode == 200 && uploadRes.data['url'] != null) {
-        final url = uploadRes.data['url'] as String;
-        if (mounted) {
-          setState(() => _coverUrl = url);
-          _showSnack('背景图已上传，保存后生效');
-        }
-      } else {
-        if (mounted) _showSnack('上传失败');
+      final sourcePath = picked.path;
+      // 1. Portrait 3:4
+      final portraitUrl = await _cropAndUpload(sourcePath, '裁剪手机版块背景 (3:4)', const CropAspectRatio(ratioX: 3, ratioY: 4));
+      if (portraitUrl == null) throw Exception('取消或失败');
+      
+      // 2. Landscape 16:9
+      final landscapeUrl = await _cropAndUpload(sourcePath, '裁剪横向封面 (16:9)', const CropAspectRatio(ratioX: 16, ratioY: 9));
+      if (landscapeUrl == null) throw Exception('取消或失败');
+
+      // 3. Square 1:1
+      final squareUrl = await _cropAndUpload(sourcePath, '裁剪方形封面 (1:1)', const CropAspectRatio(ratioX: 1, ratioY: 1));
+      if (squareUrl == null) throw Exception('取消或失败');
+
+      if (mounted) {
+        setState(() {
+          _coverPortraitUrl = portraitUrl;
+          _coverLandscapeUrl = landscapeUrl;
+          _coverSquareUrl = squareUrl;
+          _coverUrl = portraitUrl; // fallback compatibility
+        });
+        _showSnack('三组封面图已上传，保存后生效');
       }
     } catch (e) {
-      if (mounted) _showSnack('上传失败: $e');
+      if (mounted) _showSnack('上传中断或失败: $e');
     } finally {
       if (mounted) setState(() => _isUploadingCover = false);
     }
   }
 
-  void _clearCover() {
-    setState(() => _coverUrl = null);
-    _showSnack('背景图已清除，保存后生效');
+  Future<void> _pickAndUploadAvatar() async {
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(source: ImageSource.gallery);
+    if (picked == null) return;
+    if (!mounted) return;
+
+    setState(() => _isUploadingAvatar = true);
+    try {
+      final avatarUrl = await _cropAndUpload(picked.path, '裁剪版块头像 (1:1)', const CropAspectRatio(ratioX: 1, ratioY: 1));
+      if (avatarUrl == null) throw Exception('取消或失败');
+      
+      if (mounted) {
+        setState(() {
+          _avatarUrl = avatarUrl;
+        });
+        _showSnack('头像已上传，保存后生效');
+      }
+    } catch (e) {
+      if (mounted) _showSnack('上传中断或失败: $e');
+    } finally {
+      if (mounted) setState(() => _isUploadingAvatar = false);
+    }
   }
 
-  Widget _buildCoverImagePreview(bool isDark) {
-    final hasCover = _coverUrl != null && _coverUrl!.isNotEmpty;
+  void _clearAvatar() {
+    setState(() {
+      _avatarUrl = null;
+    });
+    _showSnack('头像已清除，保存后生效');
+  }
+
+  void _clearCover() {
+    setState(() {
+      _coverUrl = null;
+      _coverPortraitUrl = null;
+      _coverLandscapeUrl = null;
+      _coverSquareUrl = null;
+    });
+    _showSnack('封面图已清除，保存后生效');
+  }
+
+  Widget _buildSinglePreview(String title, String? url, double ratio, bool isDark) {
+    final hasCover = url != null && url.isNotEmpty;
+    return Column(
+      children: [
+        Text(title, style: TextStyle(fontSize: 12, color: isDark ? Colors.white70 : Colors.black54)),
+        const SizedBox(height: 6),
+        AspectRatio(
+          aspectRatio: ratio,
+          child: Container(
+            decoration: BoxDecoration(
+              color: isDark ? Colors.white.withValues(alpha: 0.06) : const Color(0xFFF3F4F6),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: isDark ? Colors.white.withValues(alpha: 0.12) : const Color(0xFFE5E7EB),
+              ),
+            ),
+            child: hasCover
+                ? ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: CachedNetworkImage(
+                      imageUrl: ApiConstants.fullUrl(url!),
+                      fit: BoxFit.cover,
+                    ),
+                  )
+                : Center(
+                    child: Icon(Icons.image_outlined, size: 24, color: isDark ? Colors.white24 : Colors.grey[400]),
+                  ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAvatarImagePreview(bool isDark) {
+    final hasAvatar = _avatarUrl != null && _avatarUrl!.isNotEmpty;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          '版块背景图',
+          '版块头像 (1:1)',
           style: TextStyle(
             fontSize: 13,
             fontWeight: FontWeight.w600,
@@ -1531,58 +1629,67 @@ class _SectionDisplayFormSheetState extends State<_SectionDisplayFormSheet> {
           ),
         ),
         const SizedBox(height: 8),
-        Container(
-          width: double.infinity,
-          height: 120,
-          decoration: BoxDecoration(
-            color: isDark
-                ? Colors.white.withValues(alpha: 0.06)
-                : const Color(0xFFF3F4F6),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: isDark
-                  ? Colors.white.withValues(alpha: 0.12)
-                  : const Color(0xFFE5E7EB),
+        Row(
+          children: [
+            SizedBox(
+              width: 64,
+              height: 64,
+              child: _buildSinglePreview('', _avatarUrl, 1, isDark),
             ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: _isUploadingAvatar ? null : _pickAndUploadAvatar,
+                    icon: _isUploadingAvatar
+                        ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Icon(Icons.cloud_upload_outlined, size: 16),
+                    label: Text(_isUploadingAvatar ? '上传中...' : '上传并裁剪头像'),
+                  ),
+                  if (hasAvatar) ...[
+                    const SizedBox(height: 6),
+                    OutlinedButton.icon(
+                      onPressed: _clearAvatar,
+                      icon: const Icon(Icons.delete_outline, size: 16),
+                      label: const Text('清除'),
+                      style: OutlinedButton.styleFrom(foregroundColor: Colors.red),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+      ],
+    );
+  }
+
+  Widget _buildCoverImagePreview(bool isDark) {
+    final hasAnyCover = _coverPortraitUrl != null && _coverPortraitUrl!.isNotEmpty;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '版块背景图 (需裁剪3个比例)',
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: isDark ? Colors.white70 : const Color(0xFF374151),
           ),
-          child: hasCover
-              ? ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: CachedNetworkImage(
-                    imageUrl: ApiConstants.fullUrl(_coverUrl!),
-                    fit: BoxFit.cover,
-                    placeholder: (_, __) => Center(
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                    errorWidget: (_, __, ___) => Center(
-                      child: Icon(
-                        Icons.broken_image_outlined,
-                        size: 32,
-                        color: isDark ? Colors.white38 : Colors.grey,
-                      ),
-                    ),
-                  ),
-                )
-              : Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.landscape_outlined,
-                        size: 32,
-                        color: isDark ? Colors.white24 : Colors.grey[400],
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        '暂无背景图，将使用渐变底色',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: isDark ? Colors.white38 : Colors.grey[600],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Expanded(flex: 30, child: _buildSinglePreview('手机版 3:4', _coverPortraitUrl, 3/4, isDark)),
+            const SizedBox(width: 8),
+            Expanded(flex: 40, child: _buildSinglePreview('横向 16:9', _coverLandscapeUrl, 16/9, isDark)),
+            const SizedBox(width: 8),
+            Expanded(flex: 30, child: _buildSinglePreview('方形 1:1', _coverSquareUrl, 1, isDark)),
+          ],
         ),
         const SizedBox(height: 10),
         Row(
@@ -1596,16 +1703,16 @@ class _SectionDisplayFormSheetState extends State<_SectionDisplayFormSheet> {
                         height: 14,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : Icon(Icons.cloud_upload_outlined, size: 16),
-                label: Text(_isUploadingCover ? '上传中...' : '上传背景图'),
+                    : const Icon(Icons.cloud_upload_outlined, size: 16),
+                label: Text(_isUploadingCover ? '上传中...' : '上传并裁剪背景图'),
               ),
             ),
-            if (hasCover) ...[
+            if (hasAnyCover) ...[
               const SizedBox(width: 10),
               OutlinedButton.icon(
                 onPressed: _clearCover,
-                icon: Icon(Icons.delete_outline, size: 16),
-                label: Text('清除'),
+                icon: const Icon(Icons.delete_outline, size: 16),
+                label: const Text('清除'),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: Colors.red,
                 ),
@@ -1649,6 +1756,10 @@ class _SectionDisplayFormSheetState extends State<_SectionDisplayFormSheet> {
         'icon_key': _iconKeyController.text.trim(),
         'color_hex': colorHex,
         'cover_url': _coverUrl ?? '',
+        'cover_portrait_url': _coverPortraitUrl ?? '',
+        'cover_landscape_url': _coverLandscapeUrl ?? '',
+        'cover_square_url': _coverSquareUrl ?? '',
+        'avatar_url': _avatarUrl ?? '',
         'publish_action_text': _publishActionController.text.trim(),
         'empty_title': _emptyTitleController.text.trim(),
         'empty_description': _emptyDescriptionController.text.trim(),
@@ -1696,7 +1807,7 @@ class _SectionDisplayFormSheetState extends State<_SectionDisplayFormSheet> {
             const SizedBox(height: 16),
             _buildSheetTitle('展示设置', isDark),
             const SizedBox(height: 16),
-            // 背景图预览和上传
+            _buildAvatarImagePreview(isDark),
             _buildCoverImagePreview(isDark),
             const SizedBox(height: 16),
             _buildTextField(_titleController, '标题', isDark),

@@ -199,6 +199,7 @@ func (h *PostHandler) GetList(c *gin.Context) {
 					// 直接返回，不再走正常查询
 					h.fillLikes(c, posts)
 					h.fillWaterSectionPinState(posts, now)
+					h.fillWaterSectionFeaturedState(posts)
 					if posts == nil {
 						posts = []models.Post{}
 					}
@@ -361,6 +362,14 @@ func (h *PostHandler) GetList(c *gin.Context) {
 			query = query.Order("posts.price DESC").Order("posts.created_at DESC")
 		case "following":
 			query = query.Order("posts.created_at DESC")
+		case "featured":
+			if postType != "" && waterSectionFeedID > 0 {
+				query = query.Joins("JOIN water_section_featured_posts ON water_section_featured_posts.post_id = posts.id").
+					Where("water_section_featured_posts.section_id = ? AND water_section_featured_posts.status = ?", waterSectionFeedID, models.SectionFeaturedStatusActive).
+					Order("water_section_featured_posts.created_at DESC")
+			} else {
+				query = query.Where("posts.is_featured = ?", true).Order("posts.created_at DESC")
+			}
 		default:
 			if searchQuery == "" {
 				query = applyWaterSectionPinOrder(query, waterSectionFeedID, now)
@@ -444,6 +453,7 @@ func (h *PostHandler) GetList(c *gin.Context) {
 
 	h.fillLikes(c, posts)
 	h.fillWaterSectionPinState(posts, now)
+	h.fillWaterSectionFeaturedState(posts)
 	if posts == nil {
 		posts = []models.Post{}
 	}
@@ -557,6 +567,67 @@ func (h *PostHandler) fillWaterSectionPinState(posts []models.Post, now time.Tim
 		if pinID, ok := pinIDByPostAndSection[key]; ok {
 			posts[i].WaterSectionPinned = true
 			posts[i].WaterSectionPinID = &pinID
+		}
+	}
+}
+
+func (h *PostHandler) fillWaterSectionFeaturedState(posts []models.Post) {
+	if len(posts) == 0 {
+		return
+	}
+
+	postIDs := make([]uint, 0, len(posts))
+	slugs := map[string]struct{}{}
+	for _, post := range posts {
+		if post.BoardID != models.BoardShuitie || post.PostType == "" {
+			continue
+		}
+		postIDs = append(postIDs, post.ID)
+		slugs[post.PostType] = struct{}{}
+	}
+	if len(postIDs) == 0 {
+		return
+	}
+
+	slugList := make([]string, 0, len(slugs))
+	for slug := range slugs {
+		slugList = append(slugList, slug)
+	}
+	var sections []models.WaterSection
+	if err := h.db.Where("slug IN ?", slugList).Find(&sections).Error; err != nil {
+		return
+	}
+	sectionIDBySlug := map[string]uint{}
+	sectionIDs := make([]uint, 0, len(sections))
+	for _, section := range sections {
+		sectionIDBySlug[section.Slug] = section.ID
+		sectionIDs = append(sectionIDs, section.ID)
+	}
+	if len(sectionIDs) == 0 {
+		return
+	}
+
+	var featureds []models.WaterSectionFeaturedPost
+	if err := h.db.
+		Where("post_id IN ? AND section_id IN ? AND status = ?",
+			postIDs, sectionIDs, models.SectionFeaturedStatusActive).
+		Find(&featureds).Error; err != nil {
+		return
+	}
+	featuredIDByPostAndSection := map[string]uint{}
+	for _, f := range featureds {
+		key := fmt.Sprintf("%d:%d", f.PostID, f.SectionID)
+		featuredIDByPostAndSection[key] = f.ID
+	}
+	for i := range posts {
+		sectionID := sectionIDBySlug[posts[i].PostType]
+		if sectionID == 0 {
+			continue
+		}
+		key := fmt.Sprintf("%d:%d", posts[i].ID, sectionID)
+		if fID, ok := featuredIDByPostAndSection[key]; ok {
+			posts[i].WaterSectionFeatured = true
+			posts[i].WaterSectionFeaturedID = &fID
 		}
 	}
 }
@@ -740,6 +811,7 @@ func (h *PostHandler) GetOne(c *gin.Context) {
 
 	responsePosts := []models.Post{post}
 	h.fillWaterSectionPinState(responsePosts, time.Now())
+	h.fillWaterSectionFeaturedState(responsePosts)
 	post = responsePosts[0]
 	c.JSON(http.StatusOK, post)
 }

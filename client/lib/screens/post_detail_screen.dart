@@ -734,6 +734,88 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
   }
 
+  // ── 版块精华 ──
+
+  Future<void> _sectionFeaturePost() async {
+    final post = _post;
+    if (post == null) return;
+    final sectionSlug = post.postType;
+    if (sectionSlug.isEmpty) return;
+
+    final reason = await _askReason(title: '加精原因', hint: '为什么设为精华');
+    if (reason == null) return;
+    if (reason.length < 2) {
+      if (mounted) {
+        AppFeedback.showSnackBar(context, '原因至少 2 个字', isError: true);
+      }
+      return;
+    }
+
+    if (!mounted) return;
+    final confirmed = await AppFeedback.confirmDanger(
+      context,
+      title: '版块精华',
+      message: '设为精华后将在版块的精华区展示，并会自动提交首页精华审核。确认继续吗？',
+      confirmText: '设为精华',
+    );
+    if (!confirmed) return;
+
+    if (!mounted) return;
+    final provider = context.read<WaterModerationProvider>();
+    final ok = await provider.featurePost(
+      sectionSlug: sectionSlug,
+      postId: post.id,
+      reason: reason,
+    );
+    if (!mounted) return;
+    if (ok) {
+      AppFeedback.showSnackBar(context, '已设为版块精华');
+      setState(() => _post = _post?.copyWith(
+            waterSectionFeatured: true,
+          ));
+      await context.read<PostProvider>().refreshWaterSectionFeeds(sectionSlug);
+      if (mounted) await _loadPost();
+    } else {
+      AppFeedback.showSnackBar(context, provider.error ?? '设为精华失败',
+          isError: true);
+    }
+  }
+
+  Future<void> _sectionUnfeaturePost() async {
+    final post = _post;
+    if (post == null) return;
+    final sectionSlug = post.postType;
+    if (sectionSlug.isEmpty) return;
+
+    if (!mounted) return;
+    final confirmed = await AppFeedback.confirmDanger(
+      context,
+      title: '取消版块精华',
+      message: '确定要取消该帖子的版块精华吗？',
+      confirmText: '取消精华',
+    );
+    if (!confirmed) return;
+
+    if (!mounted) return;
+    final provider = context.read<WaterModerationProvider>();
+    final ok = await provider.unfeaturePost(
+      sectionSlug: sectionSlug,
+      postId: post.id,
+    );
+    if (!mounted) return;
+    if (ok) {
+      AppFeedback.showSnackBar(context, '已取消版块精华');
+      setState(() => _post = _post?.copyWith(
+            waterSectionFeatured: false,
+          ));
+      await context.read<PostProvider>().refreshWaterSectionFeeds(sectionSlug);
+      if (mounted) await _loadPost();
+    } else {
+      AppFeedback.showSnackBar(context, provider.error ?? '取消精华失败',
+          isError: true);
+    }
+  }
+
   // ── 版主删除 ──
 
   Future<void> _moderateDeletePost() async {
@@ -1345,6 +1427,17 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     items.add(const PopupMenuItem(
                       value: 'section_pin',
                       child: Text('设为版块置顶'),
+                    ));
+                  }
+                  if (_post?.waterSectionFeatured == true) {
+                    items.add(const PopupMenuItem(
+                      value: 'section_unfeature',
+                      child: Text('取消版块精华'),
+                    ));
+                  } else {
+                    items.add(const PopupMenuItem(
+                      value: 'section_feature',
+                      child: Text('设为版块精华'),
                     ));
                   }
                 }

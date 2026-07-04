@@ -197,9 +197,11 @@ func (WaterModerationLog) TableName() string { return "water_moderation_logs" }
 
 // ModerationAction 枚举
 const (
-	ModActionPinPost     = "pin_post"
-	ModActionUnpinPost   = "unpin_post"
-	ModActionDeletePost  = "delete_post"
+	ModActionPinPost       = "pin_post"
+	ModActionUnpinPost     = "unpin_post"
+	ModActionFeaturePost   = "feature_post"
+	ModActionUnfeaturePost = "unfeature_post"
+	ModActionDeletePost    = "delete_post"
 	ModActionRestorePost = "restore_post"
 	ModActionMuteUser    = "mute_user"
 	ModActionUnmuteUser  = "unmute_user"

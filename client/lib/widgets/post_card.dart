@@ -205,8 +205,11 @@ class _PostCardState extends State<PostCard>
                     _buildPinnedBadge(isDesktop),
                     const SizedBox(width: 6),
                   ],
-                  if (widget.post.isFeatured || widget.post.waterSectionFeatured) ...[
-                    _buildFeaturedBadge(isDesktop),
+                  if (widget.post.isFeatured) ...[
+                    _buildFeaturedBadge(isDesktop, label: '精华'),
+                    const SizedBox(width: 6),
+                  ] else if (widget.post.waterSectionFeatured) ...[
+                    _buildFeaturedBadge(isDesktop, label: '版块精华'),
                     const SizedBox(width: 6),
                   ],
                   Expanded(
@@ -458,7 +461,7 @@ class _PostCardState extends State<PostCard>
     );
   }
 
-  Widget _buildFeaturedBadge(bool isDesktop) {
+  Widget _buildFeaturedBadge(bool isDesktop, {String label = '精华'}) {
     return Container(
       padding: EdgeInsets.symmetric(
         horizontal: isDesktop ? 7 : 6,
@@ -481,7 +484,7 @@ class _PostCardState extends State<PostCard>
           ),
           const SizedBox(width: 3),
           Text(
-            '精华',
+            label,
             style: TextStyle(
               fontSize: isDesktop ? 11 : 10,
               fontWeight: FontWeight.w700,

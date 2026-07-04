@@ -89,6 +89,8 @@ class Post {
   final String featuredReason;
   final bool waterSectionPinned;
   final int? waterSectionPinId;
+  final bool waterSectionFeatured;
+  final int? waterSectionFeaturedId;
   final List<PostImage> images;
   final User? author;
   final DateTime createdAt;
@@ -122,6 +124,8 @@ class Post {
     this.featuredReason = '',
     this.waterSectionPinned = false,
     this.waterSectionPinId,
+    this.waterSectionFeatured = false,
+    this.waterSectionFeaturedId,
     this.images = const [],
     this.author,
     required this.createdAt,
@@ -160,6 +164,10 @@ class Post {
       waterSectionPinned: json['water_section_pinned'] == true,
       waterSectionPinId: json['water_section_pin_id'] != null
           ? (json['water_section_pin_id'] as num).toInt()
+          : null,
+      waterSectionFeatured: json['water_section_featured'] == true,
+      waterSectionFeaturedId: json['water_section_featured_id'] != null
+          ? (json['water_section_featured_id'] as num).toInt()
           : null,
       images: (json['images'] as List<dynamic>?)
               ?.map((e) => PostImage.fromJson(e))
@@ -236,6 +244,8 @@ class Post {
     String? featuredReason,
     bool? waterSectionPinned,
     int? waterSectionPinId,
+    bool? waterSectionFeatured,
+    int? waterSectionFeaturedId,
     List<PostImage>? images,
     User? author,
     DateTime? createdAt,
@@ -269,6 +279,8 @@ class Post {
       featuredReason: featuredReason ?? this.featuredReason,
       waterSectionPinned: waterSectionPinned ?? this.waterSectionPinned,
       waterSectionPinId: waterSectionPinId ?? this.waterSectionPinId,
+      waterSectionFeatured: waterSectionFeatured ?? this.waterSectionFeatured,
+      waterSectionFeaturedId: waterSectionFeaturedId ?? this.waterSectionFeaturedId,
       images: images ?? this.images,
       author: author ?? this.author,
       createdAt: createdAt ?? this.createdAt,

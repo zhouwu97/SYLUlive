@@ -2096,6 +2096,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                         const SizedBox(width: 6),
                         _buildLevelBadge(p.author!, isDark),
                       ],
+                      if (p.waterSectionAuthorMeta != null) ...[
+                        const SizedBox(width: 6),
+                        _buildSectionLevelBadge(p.waterSectionAuthorMeta!),
+                      ],
                     ],
                   ),
                   const SizedBox(height: 4),
@@ -2779,6 +2783,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                       if (p.author != null) ...[
                         const SizedBox(width: 6),
                         _buildLevelBadge(p.author!, isDark),
+                      ],
+                      if (p.waterSectionAuthorMeta != null) ...[
+                        const SizedBox(width: 6),
+                        _buildSectionLevelBadge(p.waterSectionAuthorMeta!),
                       ],
                     ],
                   ),
@@ -4182,6 +4190,24 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           fontSize: 10,
           fontWeight: FontWeight.w700,
           color: Color(user.levelColorValue),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSectionLevelBadge(WaterSectionAuthorMeta meta) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+      decoration: BoxDecoration(
+        color: const Color(0xFF6B8EFF).withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        meta.title,
+        style: const TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+          color: Color(0xFF6B8EFF),
         ),
       ),
     );

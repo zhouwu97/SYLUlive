@@ -2,6 +2,36 @@ import 'dart:convert';
 
 import 'user.dart';
 
+// 水帖版块内作者称号及等级
+class WaterSectionAuthorMeta {
+  final int sectionId;
+  final String sectionSlug;
+  final String sectionTitle;
+  final int level;
+  final int exp;
+  final String title;
+
+  WaterSectionAuthorMeta({
+    required this.sectionId,
+    required this.sectionSlug,
+    required this.sectionTitle,
+    required this.level,
+    required this.exp,
+    required this.title,
+  });
+
+  factory WaterSectionAuthorMeta.fromJson(Map<String, dynamic> json) {
+    return WaterSectionAuthorMeta(
+      sectionId: json['section_id'] ?? 0,
+      sectionSlug: json['section_slug'] ?? '',
+      sectionTitle: json['section_title'] ?? '',
+      level: json['level'] ?? 1,
+      exp: json['exp'] ?? 0,
+      title: json['title'] ?? '',
+    );
+  }
+}
+
 // 帖子图片模型
 class PostImage {
   final int id;
@@ -91,6 +121,7 @@ class Post {
   final int? waterSectionPinId;
   final bool waterSectionFeatured;
   final int? waterSectionFeaturedId;
+  final WaterSectionAuthorMeta? waterSectionAuthorMeta;
   final List<PostImage> images;
   final User? author;
   final DateTime createdAt;
@@ -126,6 +157,7 @@ class Post {
     this.waterSectionPinId,
     this.waterSectionFeatured = false,
     this.waterSectionFeaturedId,
+    this.waterSectionAuthorMeta,
     this.images = const [],
     this.author,
     required this.createdAt,
@@ -168,6 +200,9 @@ class Post {
       waterSectionFeatured: json['water_section_featured'] == true,
       waterSectionFeaturedId: json['water_section_featured_id'] != null
           ? (json['water_section_featured_id'] as num).toInt()
+          : null,
+      waterSectionAuthorMeta: json['water_section_author_meta'] != null
+          ? WaterSectionAuthorMeta.fromJson(json['water_section_author_meta'])
           : null,
       images: (json['images'] as List<dynamic>?)
               ?.map((e) => PostImage.fromJson(e))

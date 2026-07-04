@@ -26,8 +26,6 @@ class MessageSendState {
 
   /// 拒绝时使用的统一文案
   static const blockedReason = 'message_requires_reply_or_follow';
-  static const levelBlockedReason = 'level_too_low';
 
   bool get isBlocked => !canSend;
-  bool get isLevelBlocked => !canSend && reason == levelBlockedReason;
 }

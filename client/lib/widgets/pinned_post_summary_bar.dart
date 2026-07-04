@@ -27,7 +27,7 @@ class PinnedPostSummaryBar extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 6, 12, 10),
       child: InkWell(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(999),
         onTap: () {
           if (posts.length == 1) {
             onOpenPost(first);
@@ -36,11 +36,11 @@ class PinnedPostSummaryBar extends StatelessWidget {
           }
         },
         child: Container(
-          height: 56,
+          height: 44,
           padding: const EdgeInsets.symmetric(horizontal: 14),
           decoration: BoxDecoration(
             color: isDark ? const Color(0xFF171B24) : Colors.white,
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(999),
             border: Border.all(
               color: isDark
                   ? Colors.white.withValues(alpha: 0.08)

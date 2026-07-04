@@ -96,8 +96,13 @@ class WaterSection {
   final String subtitle;
   final String description;
   final String iconKey;
+  final String avatarUrl;
   final String colorHex;
-  final String coverUrl; // 版块背景图，版主可在管理后台设置
+  final String coverUrl; // 兼容旧版块背景图
+  final String coverPortraitUrl; // 手机版块背景 3:4
+  final String coverLandscapeUrl; // 横向封面 16:9
+  final String coverSquareUrl; // 方形入口 1:1
+  final String coverBlurColor; // 加载前底色
   final String publishActionText;
   final String emptyTitle;
   final String emptyDescription;
@@ -120,8 +125,13 @@ class WaterSection {
     this.subtitle = '',
     this.description = '',
     this.iconKey = '',
+    this.avatarUrl = '',
     this.colorHex = '',
     this.coverUrl = '',
+    this.coverPortraitUrl = '',
+    this.coverLandscapeUrl = '',
+    this.coverSquareUrl = '',
+    this.coverBlurColor = '',
     this.publishActionText = '发布帖子',
     this.emptyTitle = '',
     this.emptyDescription = '',
@@ -154,8 +164,13 @@ class WaterSection {
       subtitle: json['subtitle'] ?? '',
       description: json['description'] ?? '',
       iconKey: json['icon_key'] ?? '',
+      avatarUrl: json['avatar_url'] ?? '',
       colorHex: json['color_hex'] ?? '',
       coverUrl: json['cover_url'] ?? '',
+      coverPortraitUrl: json['cover_portrait_url'] ?? '',
+      coverLandscapeUrl: json['cover_landscape_url'] ?? '',
+      coverSquareUrl: json['cover_square_url'] ?? '',
+      coverBlurColor: json['cover_blur_color'] ?? '',
       publishActionText: json['publish_action_text'] ?? '发布帖子',
       emptyTitle: json['empty_title'] ?? '',
       emptyDescription: json['empty_description'] ?? '',
@@ -184,8 +199,13 @@ class WaterSection {
       'subtitle': subtitle,
       'description': description,
       'icon_key': iconKey,
+      'avatar_url': avatarUrl,
       'color_hex': colorHex,
       'cover_url': coverUrl,
+      'cover_portrait_url': coverPortraitUrl,
+      'cover_landscape_url': coverLandscapeUrl,
+      'cover_square_url': coverSquareUrl,
+      'cover_blur_color': coverBlurColor,
       'publish_action_text': publishActionText,
       'empty_title': emptyTitle,
       'empty_description': emptyDescription,
@@ -203,6 +223,15 @@ class WaterSection {
   bool get isSensitive =>
       sensitiveLevel == 'caution' || sensitiveLevel == 'strict';
 
+  String get mobileCoverUrl =>
+      coverPortraitUrl.isNotEmpty ? coverPortraitUrl : coverUrl;
+
+  String get landscapeCoverUrl =>
+      coverLandscapeUrl.isNotEmpty ? coverLandscapeUrl : mobileCoverUrl;
+
+  String get squareCoverUrl =>
+      coverSquareUrl.isNotEmpty ? coverSquareUrl : mobileCoverUrl;
+
   /// 将旧客户端硬编码分类转成 fallback WaterSection（接口失败时使用）
   factory WaterSection.fromLegacyCategory(WaterPostCategory category) {
     return WaterSection(
@@ -212,9 +241,14 @@ class WaterSection {
       subtitle: category.hint,
       description: category.hint,
       iconKey: '',
+      avatarUrl: '',
       colorHex:
           '#${category.color.toARGB32().toRadixString(16).padLeft(8, '0').substring(2)}',
       coverUrl: '',
+      coverPortraitUrl: '',
+      coverLandscapeUrl: '',
+      coverSquareUrl: '',
+      coverBlurColor: '',
       publishActionText: category.publishActionText,
       emptyTitle: category.emptyTitle,
       emptyDescription: category.emptyDescription,

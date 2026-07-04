@@ -998,6 +998,13 @@ class _ShuitieScreenState extends State<ShuitieScreen>
 
   void _openUserInSplit(int userId) {
     if (!mounted) return;
+    if (MediaQuery.of(context).size.width <= 600) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => UserHomeScreen(userId: userId)),
+      );
+      return;
+    }
     setState(() {
       _selectedPost = null;
       _selectedUserId = userId;

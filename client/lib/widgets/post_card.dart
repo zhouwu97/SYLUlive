@@ -141,6 +141,10 @@ class _PostCardState extends State<PostCard>
                               const SizedBox(width: 4),
                               _buildLevelBadge(widget.post.author!),
                             ],
+                            if (widget.post.waterSectionAuthorMeta != null) ...[
+                              const SizedBox(width: 4),
+                              _buildSectionLevelBadge(widget.post.waterSectionAuthorMeta!),
+                            ],
                           ],
                         ),
                       ),
@@ -730,6 +734,28 @@ class _PostCardState extends State<PostCard>
           height: 1.15,
           fontWeight: FontWeight.w700,
           color: Color(user.levelColorValue),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSectionLevelBadge(WaterSectionAuthorMeta meta) {
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: 4,
+        vertical: 0.5,
+      ),
+      decoration: BoxDecoration(
+        color: const Color(0xFF6B8EFF).withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        '${meta.title}',
+        style: const TextStyle(
+          fontSize: 8,
+          height: 1.15,
+          fontWeight: FontWeight.w700,
+          color: Color(0xFF6B8EFF),
         ),
       ),
     );

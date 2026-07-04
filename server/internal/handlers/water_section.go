@@ -369,7 +369,7 @@ func (h *WaterSectionHandler) fillIsFollowed(c *gin.Context, resps []waterSectio
 
 	var follows []models.WaterSectionFollow
 	h.db.Where("user_id = ? AND section_id IN ?", uid, sectionIDs).Find(&follows)
-	
+
 	followMap := make(map[uint]bool)
 	for _, f := range follows {
 		followMap[f.SectionID] = true
@@ -935,6 +935,7 @@ func (h *WaterSectionHandler) GetLevelTitles(c *gin.Context) {
 type waterSectionLevelTitleInput struct {
 	Level int    `json:"level"`
 	Title string `json:"title"`
+	Reset bool   `json:"reset"`
 }
 
 // UpdateLevelTitles PATCH /api/water/sections/:slug/level-titles
@@ -943,11 +944,11 @@ type waterSectionLevelTitleInput struct {
 // 权限：admin / super_admin / 本版块版主 (CanEditSection=true)
 // 校验：
 //   - level 必须为 1-8
-//   - title 非空
+//   - title 为空或 reset=true 表示恢复默认称号
 //   - 中文不超过 8 个字符（其它字符不超过 16 个字符）
 //   - body 内同 level 唯一
 //
-// body: {"titles": [{"level":1,"title":"初来乍到"}, ...]}
+// body: {"titles": [{"level":1,"title":"初来乍到"}, {"level":2,"reset":true}, ...]}
 func (h *WaterSectionHandler) UpdateLevelTitles(c *gin.Context) {
 	operator, ok := h.currentUserOr401(c)
 	if !ok {
@@ -981,10 +982,15 @@ func (h *WaterSectionHandler) UpdateLevelTitles(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("等级 %d 不在 1-8 范围内", in.Level)})
 			return
 		}
-		title := strings.TrimSpace(in.Title)
-		if title == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("等级 %d 的称号不能为空", in.Level)})
+		if _, dup := seenLevels[in.Level]; dup {
+			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("等级 %d 重复输入", in.Level)})
 			return
+		}
+		seenLevels[in.Level] = struct{}{}
+
+		title := strings.TrimSpace(in.Title)
+		if in.Reset || title == "" {
+			continue
 		}
 		// 中文字符最多 8 个，其它字符放宽到 16 个 rune
 		rCount := utf8.RuneCountInString(title)
@@ -1003,28 +1009,38 @@ func (h *WaterSectionHandler) UpdateLevelTitles(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("等级 %d 的中文称号最多 8 个字", in.Level)})
 			return
 		}
-		if _, dup := seenLevels[in.Level]; dup {
-			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("等级 %d 重复输入", in.Level)})
-			return
-		}
-		seenLevels[in.Level] = struct{}{}
 	}
 
-	// 在事务内逐条 upsert：删除当前不在 patch 中的旧记录，再批量写入
+	// 在事务内逐条 upsert；空标题/reset 表示删除该等级自定义记录，读取时回落默认称号。
 	err := h.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("section_id = ?", section.ID).Delete(&models.WaterSectionLevelTitle{}).Error; err != nil {
-			return err
-		}
-		rows := make([]models.WaterSectionLevelTitle, 0, len(body.Titles))
 		for _, in := range body.Titles {
-			rows = append(rows, models.WaterSectionLevelTitle{
+			title := strings.TrimSpace(in.Title)
+			if in.Reset || title == "" {
+				if err := tx.Where("section_id = ? AND level = ?", section.ID, in.Level).Delete(&models.WaterSectionLevelTitle{}).Error; err != nil {
+					return err
+				}
+				continue
+			}
+
+			var existing models.WaterSectionLevelTitle
+			err := tx.Where("section_id = ? AND level = ?", section.ID, in.Level).First(&existing).Error
+			if err == nil {
+				if err := tx.Model(&existing).Update("title", title).Error; err != nil {
+					return err
+				}
+				continue
+			}
+			if err != gorm.ErrRecordNotFound {
+				return err
+			}
+			row := models.WaterSectionLevelTitle{
 				SectionID: section.ID,
 				Level:     in.Level,
-				Title:     strings.TrimSpace(in.Title),
-			})
-		}
-		if err := tx.Create(&rows).Error; err != nil {
-			return err
+				Title:     title,
+			}
+			if err := tx.Create(&row).Error; err != nil {
+				return err
+			}
 		}
 
 		// 写一条管理日志，便于追溯

@@ -9,7 +9,6 @@ import '../models/water_section_level_title.dart';
 import '../providers/water_moderator_provider.dart';
 import '../providers/water_moderation_provider.dart';
 import '../providers/water_section_provider.dart';
-import '../services/water_section_service.dart';
 
 /// 版块管理页。
 /// 按当前用户权限展示任免、禁言列表和操作日志。
@@ -1198,7 +1197,8 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
       setState(() {
         _levelTitles = titles;
         for (int i = 0; i < titles.length && i < 8; i++) {
-          _levelTitleControllers[i].text = titles[i].title;
+          _levelTitleControllers[i].text =
+              titles[i].custom ? titles[i].title : '';
         }
       });
     } catch (e) {
@@ -1212,9 +1212,9 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
     setState(() => _savingLevelTitles = true);
     try {
       final input = List.generate(8, (i) {
-        String title = _levelTitleControllers[i].text.trim();
-        if (title.isEmpty && _levelTitles != null && i < _levelTitles!.length) {
-          title = _levelTitles![i].title;
+        final title = _levelTitleControllers[i].text.trim();
+        if (title.isEmpty) {
+          return {'level': i + 1, 'reset': true};
         }
         return {'level': i + 1, 'title': title};
       });
@@ -1224,10 +1224,12 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
       );
       if (!mounted) return;
       await _loadLevelTitles();
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('等级称号已保存')),
       );
     } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('保存失败: $e')),
       );
@@ -1321,6 +1323,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
       ],
     );
   }
+
   Widget _buildEmptyList(bool isDark, String text) {
     return Container(
       width: double.infinity,

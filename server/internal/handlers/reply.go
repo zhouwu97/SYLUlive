@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"shenliyuan/internal/models"
+	"shenliyuan/internal/services"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -128,26 +129,35 @@ func (h *ReplyHandler) Create(c *gin.Context) {
 		return
 	}
 
-	// 尝试增加每日首回经验
-	now := time.Now()
-	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
-	expErr := h.db.Transaction(func(tx *gorm.DB) error {
-		expLog := models.ExpLog{
-			UserID:    userID.(uint),
-			Action:    "reply_daily",
-			Date:      today,
-			ExpEarned: 3,
+	// 尝试增加每日首评经验：全局 +3，若被评论帖子属于水帖版块则再 +3 版块经验
+	awards := make([]models.ExpAward, 0, 2)
+	awarded, globalAward, expErr := services.AwardDailyGlobalExp(h.db, userID.(uint), services.GlobalActionReplyDaily, services.GlobalExpReplyDaily, "reply", reply.ID)
+	if expErr != nil {
+		// 经验失败不影响评论成功，仅记日志
+		log.Printf("[EXP_AWARD] global reply_daily failed user=%v reply_id=%d err=%v", userID, reply.ID, expErr)
+	} else if awarded && globalAward != nil {
+		awards = append(awards, *globalAward)
+	}
+
+	if post.BoardID == models.BoardShuitie && post.PostType != "" {
+		var section models.WaterSection
+		if secErr := h.db.Where("slug = ?", post.PostType).First(&section).Error; secErr == nil && section.ID != 0 {
+			secAwarded, secAward, secErr := services.AwardDailySectionExp(h.db, userID.(uint), section.ID, section.Slug, section.Title, services.GlobalActionReplyDaily, services.GlobalExpReplyDaily, "reply", reply.ID)
+			if secErr != nil {
+				log.Printf("[EXP_AWARD] section reply_daily failed user=%v section=%d reply_id=%d err=%v", userID, section.ID, reply.ID, secErr)
+			} else if secAwarded && secAward != nil {
+				awards = append(awards, *secAward)
+			}
 		}
-		if err := tx.Create(&expLog).Error; err != nil {
-			return err // 违反唯一约束等，直接回滚
+	}
+
+	if len(awards) > 0 {
+		reply.ExpAwards = awards
+		for _, award := range awards {
+			if award.Scope == "global" {
+				reply.ExpEarned = award.Exp
+			}
 		}
-		if err := tx.Model(&models.User{}).Where("id = ?", userID.(uint)).UpdateColumn("exp", gorm.Expr("exp + ?", 3)).Error; err != nil {
-			return err
-		}
-		return nil
-	})
-	if expErr == nil {
-		// 这里虽然用 log，但在实际业务中这代表加分成功
 	}
 
 	// 处理图片

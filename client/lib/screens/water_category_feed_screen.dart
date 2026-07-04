@@ -590,8 +590,13 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
           return;
         }
         final provider = context.read<WaterSectionProvider>();
+        final postProvider = context.read<PostProvider>();
         try {
           await provider.toggleFollow(section.slug, !isFollowed);
+          postProvider.invalidateFollowingFeed();
+          if (mounted && _isFollowing) {
+            await _refresh();
+          }
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(content: Text(!isFollowed ? '已关注' : '已取消关注')),

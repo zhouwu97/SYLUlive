@@ -145,6 +145,64 @@ void main() {
     expect(requests[1].queryParameters['type'], isNull);
   });
 
+  test('invalidateFollowingFeed clears every following feed state', () async {
+    final dio = Dio();
+    var requestCount = 0;
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          requestCount++;
+          handler.resolve(_response(options, requestCount));
+        },
+      ),
+    );
+    final provider = PostProvider(dio, enableCache: false);
+
+    await provider.refresh(boardId: 1, sort: 'following');
+    await provider.refresh(
+      boardId: 1,
+      sort: 'following',
+      type: 'course_study',
+    );
+    await provider.refresh(
+      boardId: 1,
+      sort: 'following',
+      type: 'campus_life',
+      tagId: 3,
+    );
+    await provider.refresh(boardId: 1, sort: 'all', type: 'course_study');
+
+    provider.invalidateFollowingFeed();
+
+    expect(provider.postsFor(1, sort: 'following'), isEmpty);
+    expect(
+      provider.postsFor(1, sort: 'following', type: 'course_study'),
+      isEmpty,
+    );
+    expect(
+      provider.postsFor(
+        1,
+        sort: 'following',
+        type: 'campus_life',
+        tagId: 3,
+      ),
+      isEmpty,
+    );
+    expect(provider.hasLoadedFor(1, sort: 'following'), isFalse);
+    expect(
+      provider.hasLoadedFor(1, sort: 'following', type: 'course_study'),
+      isFalse,
+    );
+    expect(
+      provider.postsFor(1, sort: 'all', type: 'course_study').single.id,
+      4,
+    );
+    expect(
+      provider.hasLoadedFor(1, sort: 'all', type: 'course_study'),
+      isTrue,
+    );
+  });
+
   test('cached first load refreshes latest page without since anchor',
       () async {
     final oldAuthor = User(

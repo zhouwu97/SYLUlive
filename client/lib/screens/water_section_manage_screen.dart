@@ -41,6 +41,14 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
   bool _savingLevelTitles = false;
 
   @override
+  void dispose() {
+    for (final c in _levelTitleControllers) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1175,7 +1183,8 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(provider.error ?? '恢复帖子失败')),
-    );
+      );
+    }
   }
 
   // ── 等级称号管理 ──────────────────────────────────────────────────────────
@@ -1215,9 +1224,13 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
       );
       if (!mounted) return;
       await _loadLevelTitles();
-      _showSnack('等级称号已保存');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('等级称号已保存')),
+      );
     } catch (e) {
-      _showSnack('保存失败: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('保存失败: $e')),
+      );
     } finally {
       if (mounted) setState(() => _savingLevelTitles = false);
     }
@@ -1308,8 +1321,6 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
       ],
     );
   }
-}
-
   Widget _buildEmptyList(bool isDark, String text) {
     return Container(
       width: double.infinity,
@@ -1412,9 +1423,6 @@ class _SectionDisplayFormSheetState extends State<_SectionDisplayFormSheet> {
     _noticeTextController.dispose();
     _starterQuestionsController.dispose();
     _reasonController.dispose();
-    for (final c in _levelTitleControllers) {
-      c.dispose();
-    }
     super.dispose();
   }
 

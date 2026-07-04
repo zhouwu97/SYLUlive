@@ -12,6 +12,7 @@ class Reply {
   final int likeCount;
   final bool isLiked;
   final int? expEarned; // 服务器返回的本次经验值
+  final List<ExpAward> expAwards;
   final List<ReplyImage> images;
   final User? author;
   final DateTime createdAt;
@@ -26,6 +27,7 @@ class Reply {
     this.likeCount = 0,
     this.isLiked = false,
     this.expEarned,
+    this.expAwards = const [],
     this.images = const [],
     this.author,
     required this.createdAt,
@@ -44,8 +46,11 @@ class Reply {
       expEarned: json['exp_earned'] != null
           ? (json['exp_earned'] as num).toInt()
           : null,
-      images:
-          (json['images'] as List<dynamic>?)
+      expAwards: (json['exp_awards'] as List<dynamic>?)
+              ?.map((e) => ExpAward.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          const [],
+      images: (json['images'] as List<dynamic>?)
               ?.map((e) => ReplyImage.fromJson(e))
               .toList() ??
           [],

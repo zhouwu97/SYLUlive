@@ -419,7 +419,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         if (parentId != null) 'parent_reply_id': parentId.toString(),
         if (replyToUserId != null) 'reply_to_user_id': replyToUserId.toString(),
       });
-      await _dio.post('/posts/${widget.postId}/replies', data: formData);
+      final createResponse =
+          await _dio.post('/posts/${widget.postId}/replies', data: formData);
+      final createdReply = createResponse.data is Map<String, dynamic>
+          ? Reply.fromJson(createResponse.data as Map<String, dynamic>)
+          : null;
+      if (mounted) {
+        _showReplyRewardFeedback(createdReply);
+      }
       // 静默刷新获取真实 ID
       final repliesResponse = await _dio.get('/posts/${widget.postId}/replies');
       if (mounted && repliesResponse.data is List) {
@@ -449,6 +456,71 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     } finally {
       if (mounted) setState(() => _isSending = false);
     }
+  }
+
+  ExpAward? _firstAwardWhere(
+    List<ExpAward> awards,
+    bool Function(ExpAward award) test,
+  ) {
+    for (final award in awards) {
+      if (test(award)) return award;
+    }
+    return null;
+  }
+
+  void _showReplyRewardFeedback(Reply? reply) {
+    final awards = reply?.expAwards ?? const <ExpAward>[];
+    if (awards.isEmpty) return;
+    final globalAward = _firstAwardWhere(awards, (a) => a.scope == 'global');
+    final sectionAward =
+        _firstAwardWhere(awards, (a) => a.scope == 'water_section');
+    final lines = <String>['回复成功'];
+    final expParts = <String>[];
+
+    if (globalAward != null && globalAward.exp > 0) {
+      expParts.add('全站经验 +${globalAward.exp}');
+    }
+    if (sectionAward != null && sectionAward.exp > 0) {
+      final sectionName = sectionAward.sectionTitle.isNotEmpty
+          ? sectionAward.sectionTitle
+          : waterCategoryLabelOf(_post?.postType ?? '');
+      expParts.add('$sectionName经验 +${sectionAward.exp}');
+    }
+    if (expParts.isNotEmpty) {
+      lines.add(expParts.join(' · '));
+    }
+    if (sectionAward != null && sectionAward.levelUp) {
+      final sectionName = sectionAward.sectionTitle.isNotEmpty
+          ? sectionAward.sectionTitle
+          : waterCategoryLabelOf(_post?.postType ?? '');
+      final title = sectionAward.titleAfter.isNotEmpty
+          ? '「${sectionAward.titleAfter}」'
+          : '';
+      lines.add('$sectionName升级到 Lv.${sectionAward.levelAfter}$title');
+    } else if (globalAward != null && globalAward.levelUp) {
+      lines.add('全站等级升级到 Lv.${globalAward.levelAfter}');
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 3),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              lines.first,
+              style: const TextStyle(fontWeight: FontWeight.w800),
+            ),
+            for (final line in lines.skip(1)) ...[
+              const SizedBox(height: 2),
+              Text(line),
+            ],
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _deletePost() async {
@@ -769,9 +841,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
     if (!mounted) return;
     if (ok) {
-      AppFeedback.showSnackBar(context, '已设为版块精华');
+      AppFeedback.showSnackBar(context, '已入版块精华 · 首页推荐待审核');
       setState(() => _post = _post?.copyWith(
             waterSectionFeatured: true,
+            homeFeaturedPending: true,
           ));
       await context.read<PostProvider>().refreshWaterSectionFeeds(sectionSlug);
       if (mounted) await _loadPost();

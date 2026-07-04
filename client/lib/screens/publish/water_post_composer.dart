@@ -288,6 +288,17 @@ class _WaterPostComposerState extends State<WaterPostComposer>
 
       if (!mounted) return;
       if (result.success) {
+        final earned = result.post?.expEarned;
+        if (earned != null && earned > 0) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('今日首发 +$earned 经验'),
+              duration: const Duration(seconds: 2),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+        if (!mounted) return;
         Navigator.of(context).pop(true);
       } else {
         ScaffoldMessenger.of(context).showSnackBar(

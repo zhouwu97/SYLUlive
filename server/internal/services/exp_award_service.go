@@ -22,25 +22,6 @@ const (
 	GlobalActionReplyDaily = "reply_daily"
 )
 
-// ExpAward 一条经验奖励结果，用于接口返回给前端展示提示。
-type ExpAward struct {
-	Scope       string `json:"scope"`             // "global" / "water_section"
-	Exp         int    `json:"exp"`               // 本次发放的经验
-	Action      string `json:"action"`            // post_daily / reply_daily
-	LevelBefore int    `json:"level_before"`      // 发放前等级
-	LevelAfter  int    `json:"level_after"`       // 发放后等级
-	LevelUp     bool   `json:"level_up"`          // 是否升级
-	// 仅当 scope=water_section
-	SectionID         uint   `json:"section_id,omitempty"`
-	SectionSlug       string `json:"section_slug,omitempty"`
-	SectionTitle      string `json:"section_title,omitempty"`
-	TitleBefore       string `json:"title_before,omitempty"`
-	TitleAfter        string `json:"title_after,omitempty"`
-	// 仅当 scope=global
-	UserLevelTitleBefore string `json:"user_level_title_before,omitempty"`
-	UserLevelTitleAfter  string `json:"user_level_title_after,omitempty"`
-}
-
 // AwardDailyGlobalExp 发放每日全局经验。
 // 唯一约束冲突视为"今天已发"，返回 (false, nil)。
 // 其它错误日志并返回，但调用方不应让主流程失败。
@@ -49,7 +30,7 @@ type ExpAward struct {
 //   awarded: 本次是否成功发放（true 表示今天首次发放到 global exp）
 //   result:  ExpAward 详情（仅当 awarded=true 时有意义）
 //   err:     非 ErrRecordNotFound 的错误
-func AwardDailyGlobalExp(db *gorm.DB, userID uint, action string, exp int, refType string, refID uint) (bool, *ExpAward, error) {
+func AwardDailyGlobalExp(db *gorm.DB, userID uint, action string, exp int, refType string, refID uint) (bool, *models.ExpAward, error) {
 	now := time.Now()
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
 
@@ -101,7 +82,7 @@ func AwardDailyGlobalExp(db *gorm.DB, userID uint, action string, exp int, refTy
 	var afterUser models.User
 	if err := db.Select("exp").First(&afterUser, userID).Error; err != nil {
 		// 失败则不报等级信息
-		return true, &ExpAward{
+		return true, &models.ExpAward{
 			Scope:       "global",
 			Exp:         exp,
 			Action:      action,
@@ -110,21 +91,19 @@ func AwardDailyGlobalExp(db *gorm.DB, userID uint, action string, exp int, refTy
 		}, nil
 	}
 	levelAfter := CalculateUserLevel(afterUser.Exp)
-	return true, &ExpAward{
-		Scope:               "global",
-		Exp:                 exp,
-		Action:              action,
-		LevelBefore:         levelBefore,
-		LevelAfter:          levelAfter,
-		LevelUp:             levelAfter > levelBefore,
-		UserLevelTitleBefore: userLevelTitle(levelBefore),
-		UserLevelTitleAfter:  userLevelTitle(levelAfter),
+	return true, &models.ExpAward{
+		Scope:       "global",
+		Exp:         exp,
+		Action:      action,
+		LevelBefore: levelBefore,
+		LevelAfter:  levelAfter,
+		LevelUp:     levelAfter > levelBefore,
 	}, nil
 }
 
 // AwardDailySectionExp 发放每日版块经验（仅适用于水帖版块）。
 // 唯一约束冲突视为今天已发，返回 (false, nil)。
-func AwardDailySectionExp(db *gorm.DB, userID uint, sectionID uint, sectionSlug string, sectionTitle string, action string, exp int, refType string, refID uint) (bool, *ExpAward, error) {
+func AwardDailySectionExp(db *gorm.DB, userID uint, sectionID uint, sectionSlug string, sectionTitle string, action string, exp int, refType string, refID uint) (bool, *models.ExpAward, error) {
 	now := time.Now()
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
 
@@ -211,18 +190,18 @@ func AwardDailySectionExp(db *gorm.DB, userID uint, sectionID uint, sectionSlug 
 	}
 
 	levelAfter, titleAfter := getSectionLevelInfo(db, userID, sectionID)
-	return true, &ExpAward{
+	return true, &models.ExpAward{
 		Scope:        "water_section",
 		Exp:          exp,
 		Action:       action,
 		LevelBefore:  levelBefore,
 		LevelAfter:   levelAfter,
 		LevelUp:      levelAfter > levelBefore,
-		SectionID:         sectionID,
-		SectionSlug:       sectionSlug,
-		SectionTitle:      sectionTitle,
-		TitleBefore:       titleBefore,
-		TitleAfter:        titleAfter,
+		SectionID:    sectionID,
+		SectionSlug:  sectionSlug,
+		SectionTitle: sectionTitle,
+		TitleBefore:  titleBefore,
+		TitleAfter:   titleAfter,
 	}, nil
 }
 
@@ -251,27 +230,4 @@ func getWaterSectionLevelTitle(db *gorm.DB, sectionID uint, level int) string {
 	return DefaultWaterSectionLevelTitle(level)
 }
 
-// userLevelTitle 全站等级展示用称号（前端目前只关注 Lv.x 数字，
-// 这里返回一个简短中文以便后端日志/接口可选使用，前端已有自己的 levelLabel）。
-func userLevelTitle(level int) string {
-	switch level {
-	case 1:
-		return "Lv.1"
-	case 2:
-		return "Lv.2"
-	case 3:
-		return "Lv.3"
-	case 4:
-		return "Lv.4"
-	case 5:
-		return "Lv.5"
-	case 6:
-		return "Lv.6"
-	case 7:
-		return "Lv.7"
-	case 8:
-		return "Lv.8"
-	default:
-		return ""
-	}
-}
+// userLevelTitle 已不再使用；保留位给后续需要全站等级展示文案的扩展。

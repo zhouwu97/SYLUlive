@@ -39,37 +39,38 @@ type Post struct {
 	Contact    string  `gorm:"size:500" json:"contact"`     // 联系方式
 	MarketTags string  `gorm:"size:200" json:"market_tags"` // 商品交易选项，逗号分隔
 	// WaterTagID 水帖版块内标签 ID，仅在 board_id = BoardShuitie 时使用；旧帖子与旧客户端可不传。
-	WaterTagID         *uint       `gorm:"index" json:"water_tag_id"`
-	Status             PostStatus  `gorm:"default:normal;index" json:"status"` // 状态
-	ViewCount          int         `gorm:"default:0" json:"view_count"`        // 观看次数
-	ReplyCount         int         `gorm:"default:0" json:"reply_count"`       // 回复数量
-	LikeCount          int         `gorm:"default:0" json:"like_count"`        // 点赞数量
-	IsLiked            bool        `gorm:"-" json:"is_liked"`                  // 当前用户是否已赞
-	IsPinned           bool        `gorm:"default:false;index" json:"is_pinned"`
-	PinnedAt           *time.Time  `gorm:"index" json:"pinned_at"`
-	PinnedUntil        *time.Time  `gorm:"index" json:"pinned_until"`
-	PinnedBy           uint        `gorm:"index" json:"pinned_by"`
-	PinnedWeight       int         `gorm:"default:0;index" json:"pinned_weight"`
-	PinnedReason       string      `gorm:"size:500" json:"pinned_reason"`
-	IsFeatured         bool        `gorm:"default:false;index" json:"is_featured"`
-	FeaturedAt         *time.Time  `json:"featured_at"`
-	FeaturedBy         uint        `gorm:"index" json:"featured_by"`
-	FeaturedReason     string      `gorm:"size:500" json:"featured_reason"`
-	WaterSectionPinned bool        `gorm:"-" json:"water_section_pinned"`
-	WaterSectionPinID  *uint       `gorm:"-" json:"water_section_pin_id,omitempty"`
-	WaterSectionFeatured   bool        `gorm:"-" json:"water_section_featured"`
-	WaterSectionFeaturedID *uint       `gorm:"-" json:"water_section_featured_id,omitempty"`
+	WaterTagID             *uint      `gorm:"index" json:"water_tag_id"`
+	Status                 PostStatus `gorm:"default:normal;index" json:"status"` // 状态
+	ViewCount              int        `gorm:"default:0" json:"view_count"`        // 观看次数
+	ReplyCount             int        `gorm:"default:0" json:"reply_count"`       // 回复数量
+	LikeCount              int        `gorm:"default:0" json:"like_count"`        // 点赞数量
+	IsLiked                bool       `gorm:"-" json:"is_liked"`                  // 当前用户是否已赞
+	IsPinned               bool       `gorm:"default:false;index" json:"is_pinned"`
+	PinnedAt               *time.Time `gorm:"index" json:"pinned_at"`
+	PinnedUntil            *time.Time `gorm:"index" json:"pinned_until"`
+	PinnedBy               uint       `gorm:"index" json:"pinned_by"`
+	PinnedWeight           int        `gorm:"default:0;index" json:"pinned_weight"`
+	PinnedReason           string     `gorm:"size:500" json:"pinned_reason"`
+	IsFeatured             bool       `gorm:"default:false;index" json:"is_featured"`
+	FeaturedAt             *time.Time `json:"featured_at"`
+	FeaturedBy             uint       `gorm:"index" json:"featured_by"`
+	FeaturedReason         string     `gorm:"size:500" json:"featured_reason"`
+	WaterSectionPinned     bool       `gorm:"-" json:"water_section_pinned"`
+	WaterSectionPinID      *uint      `gorm:"-" json:"water_section_pin_id,omitempty"`
+	WaterSectionFeatured   bool       `gorm:"-" json:"water_section_featured"`
+	WaterSectionFeaturedID *uint      `gorm:"-" json:"water_section_featured_id,omitempty"`
+	HomeFeaturedPending    bool       `gorm:"-" json:"home_featured_pending,omitempty"`
 
 	// 统一经验返回字段
-	ExpEarned int        `gorm:"-" json:"exp_earned,omitempty"`
+	ExpEarned int `gorm:"-" json:"exp_earned,omitempty"`
 	// ExpAwards 发帖/评论成功后本次下发的经验奖励，前端用于弹出"+10经验"提示。
 	// 旧客户端会忽略此字段；新增为空时不输出。
-	ExpAwards []ExpAward `gorm:"-" json:"exp_awards,omitempty"`
-	WaterSectionAuthorMeta     *WaterSectionAuthorMeta `gorm:"-" json:"water_section_author_meta,omitempty"`
-	Images             []PostImage `gorm:"foreignKey:PostID" json:"images"`
-	Author             User        `gorm:"foreignKey:AuthorID" json:"author"`
-	CreatedAt          time.Time   `json:"created_at"`
-	UpdatedAt          time.Time   `json:"updated_at"`
+	ExpAwards              []ExpAward              `gorm:"-" json:"exp_awards,omitempty"`
+	WaterSectionAuthorMeta *WaterSectionAuthorMeta `gorm:"-" json:"water_section_author_meta,omitempty"`
+	Images                 []PostImage             `gorm:"foreignKey:PostID" json:"images"`
+	Author                 User                    `gorm:"foreignKey:AuthorID" json:"author"`
+	CreatedAt              time.Time               `json:"created_at"`
+	UpdatedAt              time.Time               `json:"updated_at"`
 }
 
 // PostImage 帖子图片关联
@@ -82,23 +83,23 @@ type PostImage struct {
 }
 
 type FeaturedApplication struct {
-	ID            uint       `gorm:"primaryKey" json:"id"`
-	PostID        uint       `gorm:"not null;index" json:"post_id"`
-	ApplicantID   uint       `gorm:"not null;index" json:"applicant_id"`
-	Source        string     `gorm:"size:32;default:'user'" json:"source"`
-	SectionID     *uint      `gorm:"index" json:"section_id"`
-	SectionFeaturedID *uint  `gorm:"index" json:"section_featured_id"`
-	Reason        string     `gorm:"size:1000" json:"reason"`
-	Status        string     `gorm:"size:20;default:'pending';index" json:"status"`
-	ReviewerID    uint       `gorm:"index" json:"reviewer_id"`
-	ReviewReason  string     `gorm:"size:1000" json:"review_reason"`
-	IsMalicious   bool       `gorm:"default:false" json:"is_malicious"`
-	PenaltyPoints int        `gorm:"default:0" json:"penalty_points"`
-	CreatedAt     time.Time  `json:"created_at"`
-	ReviewedAt    *time.Time `json:"reviewed_at"`
-	Post          Post       `gorm:"foreignKey:PostID" json:"post,omitempty"`
-	Applicant     User       `gorm:"foreignKey:ApplicantID" json:"applicant,omitempty"`
-	Reviewer      User       `gorm:"foreignKey:ReviewerID" json:"reviewer,omitempty"`
+	ID                uint       `gorm:"primaryKey" json:"id"`
+	PostID            uint       `gorm:"not null;index" json:"post_id"`
+	ApplicantID       uint       `gorm:"not null;index" json:"applicant_id"`
+	Source            string     `gorm:"size:32;default:'user'" json:"source"`
+	SectionID         *uint      `gorm:"index" json:"section_id"`
+	SectionFeaturedID *uint      `gorm:"index" json:"section_featured_id"`
+	Reason            string     `gorm:"size:1000" json:"reason"`
+	Status            string     `gorm:"size:20;default:'pending';index" json:"status"`
+	ReviewerID        uint       `gorm:"index" json:"reviewer_id"`
+	ReviewReason      string     `gorm:"size:1000" json:"review_reason"`
+	IsMalicious       bool       `gorm:"default:false" json:"is_malicious"`
+	PenaltyPoints     int        `gorm:"default:0" json:"penalty_points"`
+	CreatedAt         time.Time  `json:"created_at"`
+	ReviewedAt        *time.Time `json:"reviewed_at"`
+	Post              Post       `gorm:"foreignKey:PostID" json:"post,omitempty"`
+	Applicant         User       `gorm:"foreignKey:ApplicantID" json:"applicant,omitempty"`
+	Reviewer          User       `gorm:"foreignKey:ReviewerID" json:"reviewer,omitempty"`
 }
 
 func (FeaturedApplication) TableName() string { return "featured_applications" }

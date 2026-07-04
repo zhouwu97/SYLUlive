@@ -622,6 +622,16 @@ func (h *PostHandler) fillWaterSectionFeaturedState(posts []models.Post) {
 		key := fmt.Sprintf("%d:%d", f.PostID, f.SectionID)
 		featuredIDByPostAndSection[key] = f.ID
 	}
+	var pendingApps []models.FeaturedApplication
+	if err := h.db.
+		Where("post_id IN ? AND status = ?", postIDs, "pending").
+		Find(&pendingApps).Error; err != nil {
+		return
+	}
+	pendingByPost := map[uint]struct{}{}
+	for _, app := range pendingApps {
+		pendingByPost[app.PostID] = struct{}{}
+	}
 	for i := range posts {
 		sectionID := sectionIDBySlug[posts[i].PostType]
 		if sectionID == 0 {
@@ -631,6 +641,9 @@ func (h *PostHandler) fillWaterSectionFeaturedState(posts []models.Post) {
 		if fID, ok := featuredIDByPostAndSection[key]; ok {
 			posts[i].WaterSectionFeatured = true
 			posts[i].WaterSectionFeaturedID = &fID
+		}
+		if _, ok := pendingByPost[posts[i].ID]; ok {
+			posts[i].HomeFeaturedPending = true
 		}
 	}
 }

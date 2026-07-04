@@ -32,36 +32,45 @@ class SectionHeroHeader extends StatelessWidget {
     final hasCover = section.coverUrl.isNotEmpty;
     final backgroundColor =
         isDark ? const Color(0xFF0D1117) : const Color(0xFFF7F8FA);
+    // Hero 自身高度固定为屏幕高度的 72%，而不是 fit:expand 撑满整屏。
+    // 这样默认 sheet(initialChildSize=0.66) 时只有顶部约 34% 可见，
+    // 刚好压到等级卡/关注下面，不露大面积空背景；下拉 sheet 到 0.24
+    // 才完整展示背景与频道卡。
+    final heroHeight = MediaQuery.sizeOf(context).height * 0.72;
 
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        // ── 背景层 ──
-        if (hasCover)
-          CachedNetworkImage(
-            imageUrl: ApiConstants.fullUrl(section.coverUrl),
-            fit: BoxFit.cover,
-            placeholder: (_, __) =>
-                Container(color: accentColor.withValues(alpha: 0.3)),
-            errorWidget: (_, __, ___) =>
-                _buildGradientBg(accentColor, backgroundColor),
-          )
-        else
-          _buildGradientBg(accentColor, backgroundColor),
+    return SizedBox(
+      height: heroHeight,
+      width: double.infinity,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          // ── 背景层 ──
+          if (hasCover)
+            CachedNetworkImage(
+              imageUrl: ApiConstants.fullUrl(section.coverUrl),
+              fit: BoxFit.cover,
+              placeholder: (_, __) =>
+                  Container(color: accentColor.withValues(alpha: 0.3)),
+              errorWidget: (_, __, ___) =>
+                  _buildGradientBg(accentColor, backgroundColor),
+            )
+          else
+            _buildGradientBg(accentColor, backgroundColor),
 
-        // ── 遮罩 ──
-        if (hasCover) _buildScrim(backgroundColor),
+          // ── 遮罩 ──
+          if (hasCover) _buildScrim(backgroundColor),
 
-        // ── 内容层 ──
-        SafeArea(
-          bottom: false,
-          child: Padding(
-            // top 52 给操作栏留空间
-            padding: const EdgeInsets.fromLTRB(18, 52, 18, 0),
-            child: _buildContent(isDark, hasCover, context),
+          // ── 内容层 ──
+          SafeArea(
+            bottom: false,
+            child: Padding(
+              // top 52 给操作栏留空间
+              padding: const EdgeInsets.fromLTRB(18, 52, 18, 0),
+              child: _buildContent(isDark, hasCover, context),
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 

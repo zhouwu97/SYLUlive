@@ -5,9 +5,11 @@ import 'package:provider/provider.dart';
 import '../models/water_moderator.dart';
 import '../models/water_moderation.dart';
 import '../models/water_section.dart';
+import '../models/water_section_level_title.dart';
 import '../providers/water_moderator_provider.dart';
 import '../providers/water_moderation_provider.dart';
 import '../providers/water_section_provider.dart';
+import '../services/water_section_service.dart';
 
 /// 版块管理页。
 /// 按当前用户权限展示任免、禁言列表和操作日志。
@@ -32,6 +34,12 @@ class _ManageTabItem {
 }
 
 class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
+  // 等级称号管理状态
+  List<WaterSectionLevelTitle>? _levelTitles;
+  final List<TextEditingController> _levelTitleControllers =
+      List.generate(8, (_) => TextEditingController());
+  bool _savingLevelTitles = false;
+
   @override
   void initState() {
     super.initState();
@@ -81,6 +89,9 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
     }
     if (perm.isGlobalAdmin || perm.isModerator) {
       await _loadLogs();
+    }
+    if (perm.canEditSection || perm.isGlobalAdmin) {
+      await _loadLevelTitles();
     }
   }
 
@@ -161,6 +172,11 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
         _ManageTabItem(
           label: '展示',
           child: _buildDisplaySettings(section, isDark),
+        ),
+      if (perm.canEditSection || perm.isGlobalAdmin)
+        _ManageTabItem(
+          label: '等级称号',
+          child: _buildLevelTitleManagement(section, isDark),
         ),
       if (perm.canManageTags || perm.isGlobalAdmin)
         _ManageTabItem(
@@ -1159,9 +1175,140 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(provider.error ?? '恢复帖子失败')),
-      );
+    );
+  }
+
+  // ── 等级称号管理 ──────────────────────────────────────────────────────────
+
+  Future<void> _loadLevelTitles() async {
+    final svc = context.read<WaterSectionProvider>().service;
+    if (svc == null) return;
+    try {
+      final titles = await svc.fetchLevelTitles(widget.section.slug);
+      if (!mounted) return;
+      setState(() {
+        _levelTitles = titles;
+        for (int i = 0; i < titles.length && i < 8; i++) {
+          _levelTitleControllers[i].text = titles[i].title;
+        }
+      });
+    } catch (e) {
+      debugPrint('加载等级称号失败: $e');
     }
   }
+
+  Future<void> _saveLevelTitles() async {
+    final svc = context.read<WaterSectionProvider>().service;
+    if (svc == null) return;
+    setState(() => _savingLevelTitles = true);
+    try {
+      final input = List.generate(8, (i) {
+        String title = _levelTitleControllers[i].text.trim();
+        if (title.isEmpty && _levelTitles != null && i < _levelTitles!.length) {
+          title = _levelTitles![i].title;
+        }
+        return {'level': i + 1, 'title': title};
+      });
+      await svc.updateLevelTitles(
+        sectionSlug: widget.section.slug,
+        titles: input,
+      );
+      if (!mounted) return;
+      await _loadLevelTitles();
+      _showSnack('等级称号已保存');
+    } catch (e) {
+      _showSnack('保存失败: $e');
+    } finally {
+      if (mounted) setState(() => _savingLevelTitles = false);
+    }
+  }
+
+  Widget _buildLevelTitleManagement(WaterSection section, bool isDark) {
+    if (_levelTitles == null) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(40),
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 12),
+        Text(
+          '自定义版块 Lv.1 – Lv.8 的称号，留空则沿用默认称号',
+          style: TextStyle(
+            fontSize: 13,
+            color: isDark ? Colors.white70 : Colors.black54,
+          ),
+        ),
+        const SizedBox(height: 16),
+        ...List.generate(8, (i) {
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                SizedBox(
+                  width: 40,
+                  child: Text(
+                    'Lv.${i + 1}',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14,
+                      color: isDark ? Colors.white : const Color(0xFF20232A),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: TextField(
+                    controller: _levelTitleControllers[i],
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: isDark ? Colors.white : const Color(0xFF20232A),
+                    ),
+                    decoration: InputDecoration(
+                      hintText: _levelTitles != null && i < _levelTitles!.length
+                          ? _levelTitles![i].title
+                          : '',
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 10,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(
+                          color: isDark ? Colors.white24 : Colors.black12,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }),
+        const SizedBox(height: 16),
+        SizedBox(
+          width: double.infinity,
+          height: 44,
+          child: ElevatedButton(
+            onPressed: _savingLevelTitles ? null : _saveLevelTitles,
+            child: _savingLevelTitles
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Text('保存'),
+          ),
+        ),
+      ],
+    );
+  }
+}
 
   Widget _buildEmptyList(bool isDark, String text) {
     return Container(
@@ -1265,6 +1412,9 @@ class _SectionDisplayFormSheetState extends State<_SectionDisplayFormSheet> {
     _noticeTextController.dispose();
     _starterQuestionsController.dispose();
     _reasonController.dispose();
+    for (final c in _levelTitleControllers) {
+      c.dispose();
+    }
     super.dispose();
   }
 

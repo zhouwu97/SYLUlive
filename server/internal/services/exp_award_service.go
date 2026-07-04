@@ -27,9 +27,10 @@ const (
 // 其它错误日志并返回，但调用方不应让主流程失败。
 //
 // 返回值：
-//   awarded: 本次是否成功发放（true 表示今天首次发放到 global exp）
-//   result:  ExpAward 详情（仅当 awarded=true 时有意义）
-//   err:     非 ErrRecordNotFound 的错误
+//
+//	awarded: 本次是否成功发放（true 表示今天首次发放到 global exp）
+//	result:  ExpAward 详情（仅当 awarded=true 时有意义）
+//	err:     非 ErrRecordNotFound 的错误
 func AwardDailyGlobalExp(db *gorm.DB, userID uint, action string, exp int, refType string, refID uint) (bool, *models.ExpAward, error) {
 	now := time.Now()
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
@@ -217,12 +218,12 @@ func getSectionLevelInfo(db *gorm.DB, userID uint, sectionID uint) (int, string)
 		return 1, DefaultWaterSectionLevelTitle(1)
 	}
 	level := CalculateWaterSectionLevel(stat.Exp)
-	title := getWaterSectionLevelTitle(db, sectionID, level)
+	title := GetWaterSectionLevelTitle(db, sectionID, level)
 	return level, title
 }
 
-// getWaterSectionLevelTitle 优先返回版主自定义称号，找不到则用默认称号。
-func getWaterSectionLevelTitle(db *gorm.DB, sectionID uint, level int) string {
+// GetWaterSectionLevelTitle 优先返回版主自定义称号，找不到则用默认称号。
+func GetWaterSectionLevelTitle(db *gorm.DB, sectionID uint, level int) string {
 	var custom models.WaterSectionLevelTitle
 	if err := db.Where("section_id = ? AND level = ?", sectionID, level).First(&custom).Error; err == nil && custom.Title != "" {
 		return custom.Title

@@ -570,7 +570,56 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
               const SizedBox(width: 10),
               _buildSmallMeta('$tagCount 个标签', isDark),
             ],
+            const SizedBox(width: 10),
+            _buildFollowButton(section, categoryColor, isDark),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFollowButton(WaterSection section, Color color, bool isDark) {
+    final isFollowed = section.isFollowed;
+    final isLoggedIn = context.read<AuthProvider>().isLoggedIn;
+    return GestureDetector(
+      onTap: () async {
+        if (!isLoggedIn) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('请先登录')),
+          );
+          return;
+        }
+        final provider = context.read<WaterSectionProvider>();
+        try {
+          await provider.toggleFollow(section.slug, !isFollowed);
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(!isFollowed ? '已关注' : '已取消关注')),
+            );
+          }
+        } catch (e) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('操作失败：$e')),
+            );
+          }
+        }
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+        decoration: BoxDecoration(
+          color: isFollowed
+              ? (isDark ? Colors.white10 : const Color(0xFFF4F6F8))
+              : color,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Text(
+          isFollowed ? '已关注' : '关注',
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: isFollowed ? _mutedText(isDark) : Colors.white,
+          ),
         ),
       ),
     );

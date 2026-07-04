@@ -1,11 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:provider/provider.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:image_cropper/image_cropper.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
+import '../config/api_constants.dart';
 import '../models/water_moderator.dart';
 import '../models/water_moderation.dart';
 import '../models/water_section.dart';
 import '../models/water_section_level_title.dart';
+import '../providers/auth_provider.dart';
 import '../providers/water_moderator_provider.dart';
 import '../providers/water_moderation_provider.dart';
 import '../providers/water_section_provider.dart';
@@ -1390,7 +1395,9 @@ class _SectionDisplayFormSheetState extends State<_SectionDisplayFormSheet> {
   late final TextEditingController _starterQuestionsController;
   late final TextEditingController _reasonController;
   late String _defaultSort;
+  String? _coverUrl; // 背景图 URL
   bool _isSubmitting = false;
+  bool _isUploadingCover = false;
 
   @override
   void initState() {
@@ -1411,6 +1418,7 @@ class _SectionDisplayFormSheetState extends State<_SectionDisplayFormSheet> {
         TextEditingController(text: section.starterQuestions.join('\n'));
     _reasonController = TextEditingController(text: '编辑版块展示');
     _defaultSort = _normalizeSort(section.defaultSort);
+    _coverUrl = section.coverUrl.isNotEmpty ? section.coverUrl : null;
   }
 
   @override
@@ -1445,6 +1453,170 @@ class _SectionDisplayFormSheetState extends State<_SectionDisplayFormSheet> {
     }
   }
 
+  Future<void> _pickAndUploadCover() async {
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(source: ImageSource.gallery);
+    if (picked == null) return;
+
+    final cropped = await ImageCropper().cropImage(
+      sourcePath: picked.path,
+      maxWidth: 1920,
+      maxHeight: 1920,
+      compressQuality: 85,
+      uiSettings: [
+        AndroidUiSettings(
+          toolbarTitle: '调整版块背景',
+          toolbarColor: Colors.black,
+          toolbarWidgetColor: Colors.white,
+          statusBarColor: Colors.black,
+          backgroundColor: Colors.black,
+          lockAspectRatio: false,
+        ),
+        IOSUiSettings(
+          title: '调整版块背景',
+          aspectRatioLockEnabled: false,
+          resetAspectRatioEnabled: true,
+        ),
+      ],
+    );
+
+    if (cropped == null) return;
+    if (!mounted) return;
+
+    setState(() => _isUploadingCover = true);
+    try {
+      final croppedBytes = await cropped.readAsBytes();
+      final croppedName = 'section_cover_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final auth = context.read<AuthProvider>();
+      final formData = FormData.fromMap({
+        'file': MultipartFile.fromBytes(
+          croppedBytes,
+          filename: croppedName,
+          contentType: DioMediaType('image', 'jpeg'),
+        ),
+      });
+      final uploadRes = await auth.dio.post('/upload', data: formData);
+      if (uploadRes.statusCode == 200 && uploadRes.data['url'] != null) {
+        final url = uploadRes.data['url'] as String;
+        if (mounted) {
+          setState(() => _coverUrl = url);
+          _showSnack('背景图已上传，保存后生效');
+        }
+      } else {
+        if (mounted) _showSnack('上传失败');
+      }
+    } catch (e) {
+      if (mounted) _showSnack('上传失败: $e');
+    } finally {
+      if (mounted) setState(() => _isUploadingCover = false);
+    }
+  }
+
+  void _clearCover() {
+    setState(() => _coverUrl = null);
+    _showSnack('背景图已清除，保存后生效');
+  }
+
+  Widget _buildCoverImagePreview(bool isDark) {
+    final hasCover = _coverUrl != null && _coverUrl!.isNotEmpty;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '版块背景图',
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: isDark ? Colors.white70 : const Color(0xFF374151),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Container(
+          width: double.infinity,
+          height: 120,
+          decoration: BoxDecoration(
+            color: isDark
+                ? Colors.white.withValues(alpha: 0.06)
+                : const Color(0xFFF3F4F6),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: isDark
+                  ? Colors.white.withValues(alpha: 0.12)
+                  : const Color(0xFFE5E7EB),
+            ),
+          ),
+          child: hasCover
+              ? ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: CachedNetworkImage(
+                    imageUrl: ApiConstants.fullUrl(_coverUrl!),
+                    fit: BoxFit.cover,
+                    placeholder: (_, __) => Center(
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                    errorWidget: (_, __, ___) => Center(
+                      child: Icon(
+                        Icons.broken_image_outlined,
+                        size: 32,
+                        color: isDark ? Colors.white38 : Colors.grey,
+                      ),
+                    ),
+                  ),
+                )
+              : Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.landscape_outlined,
+                        size: 32,
+                        color: isDark ? Colors.white24 : Colors.grey[400],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        '暂无背景图，将使用渐变底色',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: isDark ? Colors.white38 : Colors.grey[600],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _isUploadingCover ? null : _pickAndUploadCover,
+                icon: _isUploadingCover
+                    ? SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Icon(Icons.cloud_upload_outlined, size: 16),
+                label: Text(_isUploadingCover ? '上传中...' : '上传背景图'),
+              ),
+            ),
+            if (hasCover) ...[
+              const SizedBox(width: 10),
+              OutlinedButton.icon(
+                onPressed: _clearCover,
+                icon: Icon(Icons.delete_outline, size: 16),
+                label: Text('清除'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.red,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ],
+    );
+  }
+
   Future<void> _submit() async {
     final title = _titleController.text.trim();
     final colorHex = _colorHexController.text.trim();
@@ -1476,6 +1648,7 @@ class _SectionDisplayFormSheetState extends State<_SectionDisplayFormSheet> {
         'description': _descriptionController.text.trim(),
         'icon_key': _iconKeyController.text.trim(),
         'color_hex': colorHex,
+        'cover_url': _coverUrl ?? '',
         'publish_action_text': _publishActionController.text.trim(),
         'empty_title': _emptyTitleController.text.trim(),
         'empty_description': _emptyDescriptionController.text.trim(),
@@ -1522,6 +1695,9 @@ class _SectionDisplayFormSheetState extends State<_SectionDisplayFormSheet> {
             _buildSheetHandle(isDark),
             const SizedBox(height: 16),
             _buildSheetTitle('展示设置', isDark),
+            const SizedBox(height: 16),
+            // 背景图预览和上传
+            _buildCoverImagePreview(isDark),
             const SizedBox(height: 16),
             _buildTextField(_titleController, '标题', isDark),
             _buildTextField(_subtitleController, '副标题', isDark),

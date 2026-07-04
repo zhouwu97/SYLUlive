@@ -160,8 +160,9 @@ class PublishImageGrid extends StatelessWidget {
               ),
             ),
           ],
-        );
-      },
+        ),
+      );
+    },
     );
   }
 

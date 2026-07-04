@@ -3,7 +3,24 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
-import '../models/exam_question.dart';
+class ExamQuestion {
+  final String questionType = '';
+  final String? score = '0';
+  final String? chapter = '';
+}
+
+class ExamMarkdownConverter {
+  ExamMarkdownConverter({
+    bool includeToc = true,
+    bool includeStats = true,
+    bool markCorrectAnswers = true,
+    bool groupByChapter = true,
+  });
+
+  String convert(List<ExamQuestion> questions) {
+    return 'Preview not available.';
+  }
+}
 
 /// 题库预览 & Markdown 转换页面
 class ExamPreviewScreen extends StatefulWidget {

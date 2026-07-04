@@ -252,6 +252,11 @@ class _PostCardState extends State<PostCard>
               const SizedBox(height: 6),
               _buildWaterInlineTag(context, isDark),
             ],
+            if (widget.post.boardId == 1 &&
+                widget.post.waterSectionFeatured) ...[
+              const SizedBox(height: 6),
+              _buildSectionFeaturedStatus(isDark),
+            ],
             if ((widget.showPrice && widget.post.price > 0) ||
                 widget.showWarning) ...[
               const SizedBox(height: 8),
@@ -320,6 +325,58 @@ class _PostCardState extends State<PostCard>
             color: isDark ? Colors.white60 : const Color(0xFF60646C),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildSectionFeaturedStatus(bool isDark) {
+    return Wrap(
+      spacing: 6,
+      runSpacing: 6,
+      children: [
+        _buildStatusPill(
+          icon: Icons.workspace_premium_rounded,
+          label: '已入版块精华',
+          color: const Color(0xFFD97706),
+          isDark: isDark,
+        ),
+        if (widget.post.homeFeaturedPending)
+          _buildStatusPill(
+            icon: Icons.pending_actions_rounded,
+            label: '首页推荐待审核',
+            color: const Color(0xFF2563EB),
+            isDark: isDark,
+          ),
+      ],
+    );
+  }
+
+  Widget _buildStatusPill({
+    required IconData icon,
+    required String label,
+    required Color color,
+    required bool isDark,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: isDark ? 0.18 : 0.10),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: color),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: color,
+            ),
+          ),
+        ],
       ),
     );
   }

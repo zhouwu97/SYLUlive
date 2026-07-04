@@ -57,6 +57,8 @@ type Post struct {
 	FeaturedReason     string      `gorm:"size:500" json:"featured_reason"`
 	WaterSectionPinned bool        `gorm:"-" json:"water_section_pinned"`
 	WaterSectionPinID  *uint       `gorm:"-" json:"water_section_pin_id,omitempty"`
+	WaterSectionFeatured   bool        `gorm:"-" json:"water_section_featured"`
+	WaterSectionFeaturedID *uint       `gorm:"-" json:"water_section_featured_id,omitempty"`
 	Images             []PostImage `gorm:"foreignKey:PostID" json:"images"`
 	Author             User        `gorm:"foreignKey:AuthorID" json:"author"`
 	CreatedAt          time.Time   `json:"created_at"`

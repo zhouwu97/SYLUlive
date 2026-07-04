@@ -123,6 +123,29 @@ type WaterSectionPin struct {
 
 func (WaterSectionPin) TableName() string { return "water_section_pins" }
 
+// WaterSectionFeaturedStatus
+const (
+	SectionFeaturedStatusActive   = "active"
+	SectionFeaturedStatusInactive = "inactive"
+)
+
+// WaterSectionFeaturedPost 版块精华帖
+type WaterSectionFeaturedPost struct {
+	ID         uint      `gorm:"primaryKey" json:"id"`
+	SectionID  uint      `gorm:"index;not null" json:"section_id"`
+	PostID     uint      `gorm:"index;not null" json:"post_id"`
+	FeaturedBy uint      `gorm:"index;not null" json:"featured_by"`
+	Reason     string    `gorm:"size:500" json:"reason"`
+	Status     string    `gorm:"size:32;index;not null;default:'active'" json:"status"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
+
+	Section WaterSection `gorm:"foreignKey:SectionID" json:"section,omitempty"`
+	Post    Post         `gorm:"foreignKey:PostID" json:"post,omitempty"`
+}
+
+func (WaterSectionFeaturedPost) TableName() string { return "water_section_featured_posts" }
+
 // WaterSectionMuteStatus
 const (
 	MuteStatusActive = "active"

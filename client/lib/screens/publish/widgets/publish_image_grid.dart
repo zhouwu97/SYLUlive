@@ -21,6 +21,7 @@ class PublishImageGrid extends StatelessWidget {
   final VoidCallback onAddImage;
   final void Function(int index) onRemoveNewImage;
   final void Function(int index) onRemoveExistingImage;
+  final void Function(int index)? onPreviewImage;
   final bool compact;
   final bool singleSlot;
   final String addLabel;
@@ -33,6 +34,7 @@ class PublishImageGrid extends StatelessWidget {
     required this.onAddImage,
     required this.onRemoveNewImage,
     required this.onRemoveExistingImage,
+    this.onPreviewImage,
     this.compact = false,
     this.singleSlot = false,
     this.addLabel = '添加照片',
@@ -87,10 +89,12 @@ class PublishImageGrid extends StatelessWidget {
         final isExisting = index < existingImages.length;
         final isFirst = index == 0;
 
-        return Stack(
-          fit: StackFit.expand,
-          children: [
-            ClipRRect(
+        return GestureDetector(
+          onTap: onPreviewImage == null ? null : () => onPreviewImage!(index),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              ClipRRect(
               borderRadius: BorderRadius.circular(_radius),
               child: isExisting
                   ? CachedNetworkImage(
@@ -183,7 +187,9 @@ class PublishImageGrid extends StatelessWidget {
             width: frameWidth,
             height: height,
             child: GestureDetector(
-              onTap: hasImage ? null : onAddImage,
+              onTap: hasImage
+                  ? (onPreviewImage == null ? null : () => onPreviewImage!(0))
+                  : onAddImage,
               child: DashedOutline(
                 color: hasImage
                     ? Colors.transparent

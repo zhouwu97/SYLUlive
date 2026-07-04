@@ -355,33 +355,43 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
   }
 
   /// DraggableScrollableSheet：圆角白板 + 排序/标签/帖子列表
+  ///
+  /// 状态语义：
+  /// - 默认 [initialChildSize=0.66]：内容板盖上来，顶部约在屏幕 34% 处，
+  ///   刚好压到 Hero 的等级卡/关注下面，不露大面积空背景。
+  /// - 下拉 [minChildSize=0.24]：内容板收起到底部一小截，完整展示上方
+  ///   版块背景和 Hero 头部内容（含频道卡）。
+  /// - 上拉 [maxChildSize=0.94]：内容板展开到接近全屏，分类栏吸顶刷帖子。
   Widget _buildContentSheet(
       WaterSection section, Color categoryColor, bool isDark) {
+    // sheet 用略亮的暗色当作 elevated surface，与 background 0xFF0D1117 区分
     final sheetColor =
-        isDark ? const Color(0xFF0D1117) : Colors.white;
+        isDark ? const Color(0xFF171B24) : Colors.white;
 
     return DraggableScrollableSheet(
-      initialChildSize: 0.54,
-      minChildSize: 0.46,
+      initialChildSize: 0.66,
+      minChildSize: 0.24,
       maxChildSize: 0.94,
       snap: true,
-      snapSizes: const [0.54, 0.94],
+      snapSizes: const [0.24, 0.66, 0.94],
       builder: (context, scrollController) {
         // 存储 scrollController 供 _changeSort 滚动到顶部使用
         _sheetScrollController = scrollController;
 
         return Container(
+          // 关键：clipBehavior 让内部 pinned header 的纯色背景
+          // 被裁剪在外层圆角内，避免覆盖圆角造成“上方是方的”视觉问题
+          clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
             color: sheetColor,
-            borderRadius: const BorderRadius.only(
-              topLeft: Radius.circular(28),
-              topRight: Radius.circular(28),
+            borderRadius: const BorderRadius.vertical(
+              top: Radius.circular(32),
             ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.06),
-                blurRadius: 18,
-                offset: const Offset(0, -4),
+                color: Colors.black.withValues(alpha: 0.10),
+                blurRadius: 24,
+                offset: const Offset(0, -6),
               ),
             ],
           ),
@@ -573,10 +583,14 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
   }
 
   /// sheet 吸顶头部：小横条 + 单行筛选栏
+  ///
+  /// 注意：颜色必须与 sheetColor 保持一致（dark: 0xFF171B24），否则
+  /// 吸顶时白色块会与 sheet 圆角形成色差，看起来像两块拼接。
+  /// 圆角由外层 Container 的 clipBehavior 负责，这里用纯色填充即可。
   Widget _buildSheetPinnedHeader(
       bool isDark, Color categoryColor, WaterSection section) {
     return Container(
-      color: isDark ? const Color(0xFF0D1117) : Colors.white,
+      color: isDark ? const Color(0xFF171B24) : Colors.white,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [

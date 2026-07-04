@@ -368,4 +368,27 @@ void main() {
     expect(seenSorts, containsAll(['all', 'time']));
     expect(seenSorts, isNot(contains('following')));
   });
+
+  test('post section pin and featured state are parsed correctly', () {
+    final post = Post.fromJson({
+      'id': 1,
+      'content': 'content',
+      'board_id': 1,
+      'author_id': 1,
+      'is_pinned': false,
+      'water_section_pinned': true,
+      'water_section_pin_id': 100,
+      'is_featured': false,
+      'water_section_featured': true,
+      'water_section_featured_id': 200,
+      'created_at': '2026-06-14T08:00:00Z',
+    });
+
+    expect(post.isActivePinned, isFalse); // Section pin does not make it globally active pinned
+    expect(post.waterSectionPinned, isTrue);
+    expect(post.waterSectionPinId, 100);
+    expect(post.isFeatured, isFalse);
+    expect(post.waterSectionFeatured, isTrue);
+    expect(post.waterSectionFeaturedId, 200);
+  });
 }

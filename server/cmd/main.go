@@ -108,6 +108,7 @@ func main() {
 		&models.WaterSectionUserStat{},
 		&models.WaterSectionExpLog{},
 		&models.WaterSectionLevelTitle{},
+		&models.WaterSectionFollow{},
 
 		&models.WaterSectionMute{},
 

@@ -35,6 +35,7 @@ func newWaterSectionTestDB(t *testing.T) *gorm.DB {
 		&models.WaterSectionModerator{},
 		&models.WaterSectionPin{},
 		&models.WaterSectionMute{},
+		&models.WaterSectionLevelTitle{},
 		&models.WaterModerationLog{},
 	); err != nil {
 		t.Fatalf("migrate database: %v", err)
@@ -98,6 +99,9 @@ func performWaterSectionGET(t *testing.T, handler gin.HandlerFunc, path string) 
 	ctx.Request = httptest.NewRequest(http.MethodGet, path, nil)
 	if slugStart := strings.Index(path, "/sections/"); slugStart >= 0 {
 		slug := path[slugStart+len("/sections/"):]
+		if slash := strings.Index(slug, "/"); slash >= 0 {
+			slug = slug[:slash]
+		}
 		ctx.Params = gin.Params{{Key: "slug", Value: slug}}
 	}
 	handler(ctx)
@@ -1058,6 +1062,88 @@ func TestCreateWaterPostWithoutWaterTag(t *testing.T) {
 	}
 	if post.PostType != "course_study" {
 		t.Fatalf("expected post_type=course_study, got %s", post.PostType)
+	}
+}
+
+func TestUpdateLevelTitlesResetToDefault(t *testing.T) {
+	db := newWaterSectionTestDB(t)
+	if err := models.EnsureWaterSections(db); err != nil {
+		t.Fatalf("ensure: %v", err)
+	}
+	admin := newWaterSectionRoleUser(t, db, "admin_level_titles", models.RoleAdmin)
+	handler := NewWaterSectionHandler(db)
+
+	create := performWaterSectionPATCH(
+		t,
+		handler.UpdateLevelTitles,
+		"/api/water/sections/course_study/level-titles",
+		admin.ID,
+		`{"titles":[{"level":2,"title":"课程熟手"},{"level":3,"title":"资料达人"}]}`,
+	)
+	if create.Code != http.StatusOK {
+		t.Fatalf("expected create 200, got %d body=%s", create.Code, create.Body.String())
+	}
+
+	reset := performWaterSectionPATCH(
+		t,
+		handler.UpdateLevelTitles,
+		"/api/water/sections/course_study/level-titles",
+		admin.ID,
+		`{"titles":[{"level":2,"title":""},{"level":3,"reset":true}]}`,
+	)
+	if reset.Code != http.StatusOK {
+		t.Fatalf("expected reset 200, got %d body=%s", reset.Code, reset.Body.String())
+	}
+
+	var section models.WaterSection
+	if err := db.Where("slug = ?", "course_study").First(&section).Error; err != nil {
+		t.Fatalf("find section: %v", err)
+	}
+	var customCount int64
+	if err := db.Model(&models.WaterSectionLevelTitle{}).
+		Where("section_id = ? AND level IN ?", section.ID, []int{2, 3}).
+		Count(&customCount).Error; err != nil {
+		t.Fatalf("count custom titles: %v", err)
+	}
+	if customCount != 0 {
+		t.Fatalf("expected reset to delete custom titles, got %d", customCount)
+	}
+
+	get := performWaterSectionGET(t, handler.GetLevelTitles, "/api/water/sections/course_study/level-titles")
+	if get.Code != http.StatusOK {
+		t.Fatalf("expected get 200, got %d body=%s", get.Code, get.Body.String())
+	}
+	var body struct {
+		Titles []struct {
+			Level  int    `json:"level"`
+			Title  string `json:"title"`
+			Custom bool   `json:"custom"`
+		} `json:"titles"`
+	}
+	if err := json.Unmarshal(get.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode titles: %v", err)
+	}
+	titlesByLevel := map[int]struct {
+		Title  string
+		Custom bool
+	}{}
+	for _, item := range body.Titles {
+		titlesByLevel[item.Level] = struct {
+			Title  string
+			Custom bool
+		}{Title: item.Title, Custom: item.Custom}
+	}
+	for _, level := range []int{2, 3} {
+		item, ok := titlesByLevel[level]
+		if !ok {
+			t.Fatalf("missing level %d", level)
+		}
+		if item.Custom {
+			t.Fatalf("level %d should fall back to default, got custom title %q", level, item.Title)
+		}
+		if item.Title == "" {
+			t.Fatalf("level %d default title should not be empty", level)
+		}
 	}
 }
 

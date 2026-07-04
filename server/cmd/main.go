@@ -679,6 +679,8 @@ func main() {
 
 		messages.GET("/conversations/:id", messageHandler.GetMessages)
 
+		messages.GET("/:user_id/send-state", messageHandler.GetSendState)
+
 		messages.POST("/:user_id", messageHandler.Send)
 
 		messages.POST("/conversations/:id/read", messageHandler.MarkRead)

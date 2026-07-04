@@ -122,6 +122,7 @@ class Post {
   final bool waterSectionFeatured;
   final int? waterSectionFeaturedId;
   final WaterSectionAuthorMeta? waterSectionAuthorMeta;
+  final int? expEarned;  // 发帖/评论成功时服务端返回的本次经验值，null=无奖励
   final List<PostImage> images;
   final User? author;
   final DateTime createdAt;
@@ -158,6 +159,7 @@ class Post {
     this.waterSectionFeatured = false,
     this.waterSectionFeaturedId,
     this.waterSectionAuthorMeta,
+    this.expEarned,
     this.images = const [],
     this.author,
     required this.createdAt,
@@ -203,6 +205,9 @@ class Post {
           : null,
       waterSectionAuthorMeta: json['water_section_author_meta'] != null
           ? WaterSectionAuthorMeta.fromJson(json['water_section_author_meta'])
+          : null,
+      expEarned: json['exp_earned'] != null
+          ? (json['exp_earned'] as num).toInt()
           : null,
       images: (json['images'] as List<dynamic>?)
               ?.map((e) => PostImage.fromJson(e))

@@ -36,7 +36,7 @@ class CampusServiceGrid extends StatelessWidget {
       CampusServiceItem(
         title: '校园地图',
         icon: Icons.map_rounded,
-        color: const Color(0xFF0EA5E9), // 青蓝色
+        color: CampusTheme.cyan,
         onTap: onMapTap,
       ),
       CampusServiceItem(
@@ -63,7 +63,7 @@ class CampusServiceGrid extends StatelessWidget {
           '常用校园功能',
           style: TextStyle(
             fontSize: 12,
-            color: isDark ? Colors.white54 : CampusTheme.subText,
+            color: CampusTheme.subText,
           ),
         ),
         const SizedBox(height: 12),

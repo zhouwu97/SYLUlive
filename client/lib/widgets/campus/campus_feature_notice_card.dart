@@ -41,7 +41,7 @@ class CampusFeatureNoticeCard extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(20),
         child: ConstrainedBox(
-          constraints: const BoxConstraints(minHeight: 106),
+          constraints: const BoxConstraints(minHeight: 112),
           child: Container(
             width: double.infinity,
             padding: const EdgeInsets.fromLTRB(16, 13, 16, 13),

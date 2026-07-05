@@ -247,7 +247,7 @@ class _ProfileScreenState extends State<ProfileScreen>
 
   Widget _buildDefaultBackground(bool isDark) {
     return ColoredBox(
-      color: isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
+      color: isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight,
     );
   }
 

@@ -5,6 +5,7 @@ import 'package:dio/dio.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
+import '../providers/theme_provider.dart';
 import '../config/api_constants.dart';
 import '../config/water_post_taxonomy.dart';
 import '../models/post.dart';
@@ -1353,7 +1354,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       child: Scaffold(
         backgroundColor: transparentMode
             ? Colors.transparent
-            : (isDark ? const Color(0xFF131720) : const Color(0xFFF6F7F9)),
+            : (isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight),
         appBar: transparentMode
             ? AppBar(
                 backgroundColor: Colors.transparent,
@@ -1822,7 +1823,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 : Container(
                     color: isDark
                         ? const Color(0xFF131720)
-                        : const Color(0xFFF4F6FB),
+                        : kCleanWarmBackgroundLight,
                     child: Center(
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -2581,7 +2582,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       return Container(
         padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
         decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF131720) : const Color(0xFFF6F7F9),
+          color: isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight,
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.06),

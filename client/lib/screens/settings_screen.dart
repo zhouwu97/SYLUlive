@@ -483,7 +483,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             width: double.infinity,
             child: OutlinedButton.icon(
               onPressed: () =>
-                  UpdateChecker.check(context, showNoUpdateToast: true),
+                  UpdateChecker.check(context, showNoUpdateToast: true, manual: true),
               icon: const Icon(Icons.system_update, size: 18),
               label: const Text('检查更新'),
               style: OutlinedButton.styleFrom(

@@ -4,18 +4,38 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class UpdateChecker {
-  /// 检查更新的核心方法
-  /// [showNoUpdateToast] 设为 true 时，如果已经是最新版，可以给用户一个 Toast 提示（适合在“关于”页手动检查更新）
+  static const String _ignoredUpdateVersionKey = 'ignored_update_version';
+  static bool _dialogShowing = false;
+
+  static Future<String?> _getIgnoredVersion() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_ignoredUpdateVersionKey);
+  }
+
+  static Future<void> _ignoreVersion(String version) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_ignoredUpdateVersionKey, version);
+  }
+
+  static Future<void> _clearIgnoredVersionIfChanged(String remoteVersion) async {
+    final prefs = await SharedPreferences.getInstance();
+    final ignored = prefs.getString(_ignoredUpdateVersionKey);
+    if (ignored != null && ignored != remoteVersion) {
+      await prefs.remove(_ignoredUpdateVersionKey);
+    }
+  }
+
   static Future<void> check(
     BuildContext context, {
     bool showNoUpdateToast = false,
+    bool manual = false,
   }) async {
     try {
       final dio = Dio();
       final timestamp = DateTime.now().millisecondsSinceEpoch;
-      // 请求 Gitee 的 Latest Release 接口，附带时间戳防止 CDN 缓存
       final response = await dio.get(
         'https://gitee.com/api/v5/repos/chunhezi/SYLUlive/releases/latest?t=$timestamp',
         options: Options(
@@ -41,28 +61,37 @@ class UpdateChecker {
 
         if (remoteVersion.isEmpty) return;
 
-        // 获取本地版本号
         final packageInfo = await PackageInfo.fromPlatform();
         final String localVersion = packageInfo.version;
 
-        // 对比版本号
         if (_hasNewVersion(localVersion, remoteVersion)) {
-          // 检查是否包含强制更新标记
           final bool isForceUpdate = releaseNotes.contains('[force_update]');
-
-          // 在 UI 上展示时，把标记字符串抹掉，避免用户看着奇怪
           final String displayNotes = releaseNotes
               .replaceAll('[force_update]', '')
               .trim();
 
+          if (!isForceUpdate && !manual) {
+            final ignoredVersion = await _getIgnoredVersion();
+            if (ignoredVersion == remoteVersion) {
+              debugPrint('已忽略当前版本 $remoteVersion，自动检查不弹窗');
+              return;
+            }
+          }
+
+          await _clearIgnoredVersionIfChanged(remoteVersion);
+
           if (!context.mounted) return;
-          _showUpdateDialog(
+          if (_dialogShowing) return;
+
+          _dialogShowing = true;
+          await _showUpdateDialog(
             context,
             remoteVersion,
             displayNotes,
             downloadUrl,
             isForceUpdate,
           );
+          _dialogShowing = false;
         } else {
           if (showNoUpdateToast && context.mounted) {
             ScaffoldMessenger.of(
@@ -73,13 +102,10 @@ class UpdateChecker {
       }
     } catch (e) {
       debugPrint("检查更新失败: $e");
-      // 静默处理，不打扰用户正常使用
     }
   }
 
-  /// 简单的版本号比对逻辑 (假设格式为 v1.2.0 或 1.2.0)
   static bool _hasNewVersion(String local, String remote) {
-    // 移除可能带有的 'v' 前缀
     String cleanLocal = local.replaceAll(RegExp(r'[^0-9.]'), '');
     String cleanRemote = remote.replaceAll(RegExp(r'[^0-9.]'), '');
 
@@ -100,131 +126,274 @@ class UpdateChecker {
     return false;
   }
 
-  /// 弹出更新对话框
-  static void _showUpdateDialog(
+  static Future<void> _openDownloadUrl(
+    BuildContext context,
+    String downloadUrl,
+  ) async {
+    if (downloadUrl.isEmpty) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("下载链接为空，请稍后再试")),
+        );
+      }
+      return;
+    }
+    final Uri url = Uri.parse(downloadUrl);
+    try {
+      bool launched = await launchUrl(
+        url,
+        mode: LaunchMode.externalApplication,
+      );
+      if (!launched) {
+        launched = await launchUrl(
+          url,
+          mode: LaunchMode.platformDefault,
+        );
+      }
+      if (!launched && context.mounted) {
+        throw Exception("Could not launch url");
+      }
+    } catch (e) {
+      debugPrint("唤起浏览器失败: $e");
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("唤起浏览器失败，已复制下载链接到剪贴板，请手动打开浏览器下载"),
+            duration: Duration(seconds: 4),
+          ),
+        );
+        await Clipboard.setData(ClipboardData(text: downloadUrl));
+      }
+    }
+  }
+
+  static Future<void> _showUpdateDialog(
     BuildContext context,
     String newVersion,
     String releaseNotes,
     String downloadUrl,
     bool isForceUpdate,
-  ) {
-    showDialog(
+  ) async {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final primaryColor = Theme.of(context).colorScheme.primary;
+    final bgColor = isDark ? const Color(0xFF1E2226) : Colors.white;
+    final borderColor = isDark 
+        ? Colors.white.withValues(alpha: 0.08) 
+        : const Color(0xFFECE4DA);
+
+    await showDialog(
       context: context,
-      // 如果是强制更新，点击背景不允许关闭
       barrierDismissible: !isForceUpdate,
       builder: (BuildContext context) {
         return PopScope(
-          // 如果是强制更新，拦截物理返回键
           canPop: !isForceUpdate,
-          child: AlertDialog(
-            title: Text("发现新版本 $newVersion"),
-            content: SingleChildScrollView(
-              child: MarkdownBody(
-                data: releaseNotes,
-                selectable: true,
-                styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context))
-                    .copyWith(
-                      p: TextStyle(
-                        fontSize: 14,
-                        height: 1.55,
-                        color: Theme.of(context).brightness == Brightness.dark
-                            ? Colors.white70
-                            : const Color(0xFF1F2937),
-                      ),
-                      tableHead: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        color: Theme.of(context).brightness == Brightness.dark
-                            ? Colors.white
-                            : const Color(0xFF111827),
-                      ),
-                      tableBody: TextStyle(
-                        fontSize: 14,
-                        height: 1.55,
-                        color: Theme.of(context).brightness == Brightness.dark
-                            ? Colors.white70
-                            : const Color(0xFF111827),
-                      ),
-                      tableHeadAlign: TextAlign.left,
-                      tablePadding: EdgeInsets.zero,
-                      tableBorder: TableBorder(
-                        top: BorderSide(
-                          color: Theme.of(
-                            context,
-                          ).dividerColor.withValues(alpha: 0.85),
-                          width: 0.8,
+          child: Dialog(
+            insetPadding: const EdgeInsets.symmetric(horizontal: 22, vertical: 24),
+            backgroundColor: Colors.transparent,
+            child: Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: bgColor,
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(color: borderColor),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: primaryColor.withValues(alpha: 0.1),
+                          shape: BoxShape.circle,
                         ),
-                        bottom: BorderSide(
-                          color: Theme.of(
-                            context,
-                          ).dividerColor.withValues(alpha: 0.85),
-                          width: 0.8,
-                        ),
-                        horizontalInside: BorderSide(
-                          color: Theme.of(
-                            context,
-                          ).dividerColor.withValues(alpha: 0.55),
-                          width: 0.8,
+                        child: Icon(Icons.system_update_rounded, color: primaryColor, size: 28),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              "发现新版本 $newVersion",
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              "优化体验、修复问题，建议更新",
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: isDark ? Colors.white60 : Colors.black54,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      tableColumnWidth: const FlexColumnWidth(),
-                      tableCellsPadding: const EdgeInsets.symmetric(
-                        horizontal: 4,
-                        vertical: 12,
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  if (isForceUpdate) ...[
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF59E0B).withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(8),
                       ),
-                      tableCellsDecoration: const BoxDecoration(),
-                      blockSpacing: 10,
+                      child: Row(
+                        children: [
+                          Icon(Icons.info_outline, size: 16, color: const Color(0xFFF59E0B)),
+                          const SizedBox(width: 8),
+                          const Expanded(
+                            child: Text(
+                              "该版本为必要更新，请更新后继续使用",
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: Color(0xFFF59E0B),
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
+                    const SizedBox(height: 12),
+                  ],
+                  Container(
+                    constraints: BoxConstraints(
+                      maxHeight: MediaQuery.of(context).size.height * 0.38,
+                    ),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: isDark ? Colors.white.withValues(alpha: 0.04) : const Color(0xFFFFFAF4),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: borderColor),
+                    ),
+                    child: SingleChildScrollView(
+                      child: MarkdownBody(
+                        data: releaseNotes,
+                        selectable: true,
+                        styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context))
+                            .copyWith(
+                          p: TextStyle(
+                            fontSize: 14,
+                            height: 1.55,
+                            color: isDark ? Colors.white70 : const Color(0xFF1F2937),
+                          ),
+                          tableHead: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: isDark ? Colors.white : const Color(0xFF111827),
+                          ),
+                          tableBody: TextStyle(
+                            fontSize: 14,
+                            height: 1.55,
+                            color: isDark ? Colors.white70 : const Color(0xFF111827),
+                          ),
+                          tableHeadAlign: TextAlign.left,
+                          tablePadding: EdgeInsets.zero,
+                          tableBorder: TableBorder(
+                            top: BorderSide(
+                              color: Theme.of(context).dividerColor.withValues(alpha: 0.85),
+                              width: 0.8,
+                            ),
+                            bottom: BorderSide(
+                              color: Theme.of(context).dividerColor.withValues(alpha: 0.85),
+                              width: 0.8,
+                            ),
+                            horizontalInside: BorderSide(
+                              color: Theme.of(context).dividerColor.withValues(alpha: 0.55),
+                              width: 0.8,
+                            ),
+                          ),
+                          tableColumnWidth: const FlexColumnWidth(),
+                          tableCellsPadding: const EdgeInsets.symmetric(
+                            horizontal: 4,
+                            vertical: 12,
+                          ),
+                          tableCellsDecoration: const BoxDecoration(),
+                          blockSpacing: 10,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  if (isForceUpdate)
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      onPressed: () => _openDownloadUrl(context, downloadUrl),
+                      child: const Text("立即更新", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                    )
+                  else
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextButton(
+                                style: TextButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(vertical: 14),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                ),
+                                onPressed: () {
+                                  Navigator.of(context).pop();
+                                },
+                                child: Text("稍后再说", style: TextStyle(color: isDark ? Colors.white70 : Colors.black54)),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: ElevatedButton(
+                                style: ElevatedButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(vertical: 14),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                ),
+                                onPressed: () async {
+                                  await _openDownloadUrl(context, downloadUrl);
+                                  if (context.mounted) {
+                                    Navigator.of(context).pop();
+                                  }
+                                },
+                                child: const Text("立即更新", style: TextStyle(fontWeight: FontWeight.bold)),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        TextButton(
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          onPressed: () async {
+                            await _ignoreVersion(newVersion);
+                            if (context.mounted) {
+                              Navigator.of(context).pop();
+                            }
+                          },
+                          child: Text("忽略当前版本", style: TextStyle(fontSize: 13, color: isDark ? Colors.white38 : Colors.black38)),
+                        ),
+                      ],
+                    ),
+                ],
               ),
             ),
-            actions: <Widget>[
-              // 非强制更新才显示“暂不更新”按钮
-              if (!isForceUpdate)
-                TextButton(
-                  child: const Text("暂不更新"),
-                  onPressed: () {
-                    Navigator.of(context).pop();
-                  },
-                ),
-              ElevatedButton(
-                child: const Text("立即更新"),
-                onPressed: () async {
-                  final Uri url = Uri.parse(downloadUrl);
-                  try {
-                    bool launched = await launchUrl(
-                      url,
-                      mode: LaunchMode.externalApplication,
-                    );
-                    if (!launched) {
-                      launched = await launchUrl(
-                        url,
-                        mode: LaunchMode.platformDefault,
-                      );
-                    }
-                    if (!launched && context.mounted) {
-                      throw Exception("Could not launch url");
-                    }
-                  } catch (e) {
-                    debugPrint("唤起浏览器失败: $e");
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text("唤起浏览器失败，已复制下载链接到剪贴板，请手动打开浏览器下载"),
-                          duration: Duration(seconds: 4),
-                        ),
-                      );
-                      // 复制到剪贴板
-                      await Clipboard.setData(ClipboardData(text: downloadUrl));
-                    }
-                  }
-
-                  // 如果不是强更，点击下载后关掉弹窗；如果是强更，弹窗就一直赖着不走
-                  if (!isForceUpdate && context.mounted) {
-                    Navigator.of(context).pop();
-                  }
-                },
-              ),
-            ],
           ),
         );
       },

@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../config/water_post_taxonomy.dart';
 import '../models/announcement.dart' as model;
 import '../models/water_section.dart';
+import '../providers/theme_provider.dart';
 import '../utils/responsive_util.dart';
 import 'water_section/section_avatar.dart';
 
@@ -53,10 +55,19 @@ class HomeServiceDrawer extends StatelessWidget {
     final screenWidth = MediaQuery.sizeOf(context).width;
     final drawerWidth = (screenWidth * 0.8).clamp(0.0, 360.0);
 
+    final themeProvider = context.watch<ThemeProvider>();
+    final isCustomMode = !themeProvider.isCleanBackgroundMode;
+
+    final drawerBg = isDark
+        ? const Color(0xFF151A24)
+        : isCustomMode
+            ? kCleanWarmBackgroundLight.withValues(alpha: 0.96)
+            : kCleanWarmBackgroundLight;
+
     return Container(
       width: drawerWidth,
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF151A24) : const Color(0xFFFFFFFF),
+        color: drawerBg,
         borderRadius: const BorderRadius.only(
           topRight: Radius.circular(28),
           bottomRight: Radius.circular(28),
@@ -141,12 +152,12 @@ class HomeServiceDrawer extends StatelessWidget {
       decoration: BoxDecoration(
         color: isDark
             ? Colors.white.withValues(alpha: 0.06)
-            : const Color(0xFFF7F9FC),
+            : Colors.white,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
           color: isDark
               ? Colors.white.withValues(alpha: 0.08)
-              : const Color(0xFFE9EDF5),
+              : kCleanWarmCardBorderLight,
         ),
       ),
       child: Row(
@@ -201,12 +212,12 @@ class HomeServiceDrawer extends StatelessWidget {
           decoration: BoxDecoration(
             color: isDark
                 ? Colors.white.withValues(alpha: 0.06)
-                : const Color(0xFFF7F9FC),
+                : Colors.white,
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
               color: isDark
                   ? Colors.white.withValues(alpha: 0.08)
-                  : const Color(0xFFE9EDF5),
+                  : kCleanWarmCardBorderLight,
             ),
           ),
           child: Column(
@@ -372,12 +383,12 @@ class HomeServiceDrawer extends StatelessWidget {
           decoration: BoxDecoration(
             color: isDark
                 ? Colors.white.withValues(alpha: 0.045)
-                : const Color(0xFFF9FAFB),
+                : Colors.white,
             borderRadius: BorderRadius.circular(20),
             border: Border.all(
               color: isDark
                   ? Colors.white.withValues(alpha: 0.07)
-                  : const Color(0xFFEDF1F7),
+                  : kCleanWarmCardBorderLight,
             ),
           ),
           child: waterSectionsLoading
@@ -455,12 +466,12 @@ class HomeServiceDrawer extends StatelessWidget {
           decoration: BoxDecoration(
             color: isDark
                 ? Colors.white.withValues(alpha: 0.045)
-                : const Color(0xFFF9FAFB),
+                : Colors.white,
             borderRadius: BorderRadius.circular(20),
             border: Border.all(
               color: isDark
                   ? Colors.white.withValues(alpha: 0.07)
-                  : const Color(0xFFEDF1F7),
+                  : kCleanWarmCardBorderLight,
             ),
           ),
           child: Column(
@@ -626,7 +637,7 @@ class _WaterCategoryMiniItem extends StatelessWidget {
             border: Border.all(
               color: isDark
                   ? Colors.white.withValues(alpha: 0.07)
-                  : const Color(0xFFEDEFF3),
+                  : kCleanWarmCardBorderLight,
             ),
           ),
           child: Row(

@@ -712,12 +712,15 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     await _ensureCheckinStatusLoaded();
     if (!mounted) return;
 
+    final themeProvider = context.read<ThemeProvider>();
+    final isCustomMode = !themeProvider.isCleanBackgroundMode;
+
     await showGeneralDialog(
       context: context,
       useRootNavigator: true,
       barrierDismissible: true,
       barrierLabel: '关闭校园服务',
-      barrierColor: Colors.black.withValues(alpha: 0.35),
+      barrierColor: Colors.black.withValues(alpha: isCustomMode ? 0.22 : 0.28),
       transitionDuration: const Duration(milliseconds: 230),
       pageBuilder: (dialogContext, __, ___) {
         final width = MediaQuery.sizeOf(dialogContext).width;
@@ -917,7 +920,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     return Scaffold(
       backgroundColor: showCustomBackground
           ? Colors.transparent
-          : (isDark ? const Color(0xFF101219) : const Color(0xFFF7F8FC)),
+          : (isDark ? const Color(0xFF101219) : kCleanWarmBackgroundLight),
       extendBodyBehindAppBar: true,
       body: Stack(
         children: [

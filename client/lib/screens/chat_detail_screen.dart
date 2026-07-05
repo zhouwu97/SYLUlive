@@ -428,6 +428,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     final provider = context.watch<MessageProvider>();
     final currentUser = context.watch<AuthProvider>().user;
     final currentUserId = currentUser?.id ?? 0;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     final body = _buildConversationBody(provider, currentUserId, currentUser);
     if (widget.embedded) {
@@ -448,8 +449,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
       extendBodyBehindAppBar: true,
       appBar: AppBar(
         title: _buildTitle(),
-        backgroundColor: Colors.white.withValues(alpha: 0.30),
-        foregroundColor: const Color(0xFF111827),
+        backgroundColor: isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight,
+        foregroundColor: isDark ? Colors.white : const Color(0xFF111827),
         surfaceTintColor: Colors.transparent,
         elevation: 0,
       ),
@@ -515,18 +516,19 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
   }
 
   Widget _buildEmbeddedHeader() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final divider = Colors.black.withValues(alpha: 0.08);
     return Container(
       height: 58,
       padding: const EdgeInsets.symmetric(horizontal: 18),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.46),
+        color: isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight,
         border: Border(bottom: BorderSide(color: divider)),
       ),
       child: Align(
         alignment: Alignment.centerLeft,
         child: DefaultTextStyle.merge(
-          style: const TextStyle(color: Color(0xFF111827)),
+          style: TextStyle(color: isDark ? Colors.white : const Color(0xFF111827)),
           child: _buildTitle(),
         ),
       ),
@@ -698,7 +700,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
         bgPath == null ||
         bgPath.isEmpty) {
       return ColoredBox(
-        color: isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
+        color: isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight,
       );
     }
 
@@ -730,7 +732,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen>
     required ImageProvider imageProvider,
     required bool fillScreen,
   }) {
-    const fallbackColor = Color(0xFFF4F6FB);
+    const fallbackColor = kCleanWarmBackgroundLight;
     if (fillScreen) {
       return Image(
         image: imageProvider,

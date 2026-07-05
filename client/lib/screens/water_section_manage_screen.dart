@@ -1404,6 +1404,22 @@ class _SectionDisplayFormSheetState extends State<_SectionDisplayFormSheet> {
   bool _isUploadingCover = false;
   bool _isUploadingAvatar = false;
 
+  static const List<String> _presetColors = [
+    '#10B981', // Emerald
+    '#3B82F6', // Blue
+    '#6366F1', // Indigo
+    '#8B5CF6', // Violet
+    '#EC4899', // Pink
+    '#EF4444', // Red
+    '#F97316', // Orange
+    '#EAB308', // Yellow
+    '#14B8A6', // Teal
+    '#06B6D4', // Cyan
+    '#84CC16', // Lime
+    '#64748B', // Slate
+    '#7ED321', // Original Custom Green
+  ];
+
   @override
   void initState() {
     super.initState();
@@ -1584,33 +1600,37 @@ class _SectionDisplayFormSheetState extends State<_SectionDisplayFormSheet> {
 
   Widget _buildSinglePreview(String title, String? url, double ratio, bool isDark) {
     final hasCover = url != null && url.isNotEmpty;
+    final imageBox = AspectRatio(
+      aspectRatio: ratio,
+      child: Container(
+        decoration: BoxDecoration(
+          color: isDark ? Colors.white.withValues(alpha: 0.06) : const Color(0xFFF3F4F6),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: isDark ? Colors.white.withValues(alpha: 0.12) : const Color(0xFFE5E7EB),
+          ),
+        ),
+        child: hasCover
+            ? ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: CachedNetworkImage(
+                  imageUrl: ApiConstants.fullUrl(url!),
+                  fit: BoxFit.cover,
+                ),
+              )
+            : Center(
+                child: Icon(Icons.image_outlined, size: 24, color: isDark ? Colors.white24 : Colors.grey[400]),
+              ),
+      ),
+    );
+
+    if (title.isEmpty) return imageBox;
+
     return Column(
       children: [
         Text(title, style: TextStyle(fontSize: 12, color: isDark ? Colors.white70 : Colors.black54)),
         const SizedBox(height: 6),
-        AspectRatio(
-          aspectRatio: ratio,
-          child: Container(
-            decoration: BoxDecoration(
-              color: isDark ? Colors.white.withValues(alpha: 0.06) : const Color(0xFFF3F4F6),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                color: isDark ? Colors.white.withValues(alpha: 0.12) : const Color(0xFFE5E7EB),
-              ),
-            ),
-            child: hasCover
-                ? ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: CachedNetworkImage(
-                      imageUrl: ApiConstants.fullUrl(url!),
-                      fit: BoxFit.cover,
-                    ),
-                  )
-                : Center(
-                    child: Icon(Icons.image_outlined, size: 24, color: isDark ? Colors.white24 : Colors.grey[400]),
-                  ),
-          ),
-        ),
+        imageBox,
       ],
     );
   }
@@ -1724,6 +1744,70 @@ class _SectionDisplayFormSheetState extends State<_SectionDisplayFormSheet> {
     );
   }
 
+  Widget _buildColorPalette(bool isDark) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '主题颜色',
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: isDark ? Colors.white70 : const Color(0xFF374151),
+          ),
+        ),
+        const SizedBox(height: 10),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: _presetColors.map((hex) {
+              final color = Color(int.parse(hex.substring(1), radix: 16) + 0xFF000000);
+              final isSelected = _colorHexController.text.toUpperCase() == hex.toUpperCase();
+              return GestureDetector(
+                onTap: () {
+                  setState(() {
+                    _colorHexController.text = hex;
+                  });
+                },
+                child: Container(
+                  margin: const EdgeInsets.only(right: 12),
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: color,
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: isSelected
+                          ? (isDark ? Colors.white : Colors.black)
+                          : Colors.transparent,
+                      width: 2,
+                    ),
+                    boxShadow: [
+                      if (isSelected)
+                        BoxShadow(
+                          color: color.withValues(alpha: 0.4),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                    ],
+                  ),
+                  child: isSelected
+                      ? Icon(
+                          Icons.check,
+                          size: 16,
+                          color: color.computeLuminance() > 0.5 ? Colors.black : Colors.white,
+                        )
+                      : null,
+                ),
+              );
+            }).toList(),
+          ),
+        ),
+        const SizedBox(height: 16),
+      ],
+    );
+  }
+
   Future<void> _submit() async {
     final title = _titleController.text.trim();
     final colorHex = _colorHexController.text.trim();
@@ -1813,17 +1897,8 @@ class _SectionDisplayFormSheetState extends State<_SectionDisplayFormSheet> {
             _buildTextField(_titleController, '标题', isDark),
             _buildTextField(_subtitleController, '副标题', isDark),
             _buildTextField(_descriptionController, '说明', isDark, maxLines: 3),
-            Row(
-              children: [
-                Expanded(
-                    child:
-                        _buildTextField(_iconKeyController, '图标 Key', isDark)),
-                const SizedBox(width: 10),
-                Expanded(
-                    child: _buildTextField(
-                        _colorHexController, '颜色 #RRGGBB', isDark)),
-              ],
-            ),
+            _buildTextField(_iconKeyController, '图标 Key', isDark),
+            _buildColorPalette(isDark),
             _buildTextField(_publishActionController, '发帖按钮文案', isDark),
             _buildTextField(_emptyTitleController, '空状态标题', isDark),
             _buildTextField(_emptyDescriptionController, '空状态描述', isDark,

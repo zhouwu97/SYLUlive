@@ -4,6 +4,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/edu_provider.dart';
+import '../providers/theme_provider.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path_provider/path_provider.dart';
@@ -813,7 +814,7 @@ class _ExamScheduleScreenState extends State<ExamScheduleScreen> {
     return Scaffold(
       backgroundColor: isDark
           ? const Color(0xFF131720)
-          : const Color(0xFFF4F6FB),
+          : kCleanWarmBackgroundLight,
       appBar: AppBar(
         title: DropdownButtonHideUnderline(
           child: DropdownButton<String>(

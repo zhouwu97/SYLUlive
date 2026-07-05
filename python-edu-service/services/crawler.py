@@ -765,8 +765,8 @@ def parse_academic_situation_html(html: str) -> dict:
     return {
         "success": True,
         "source": "academic_situation",
-        "all_gpa": _find_float(plain_text, r"当前所有课程平均学分绩点（?GPA）?\s*[:：]?\s*([0-9.]+)"),
-        "degree_gpa": _find_float(plain_text, r"当前学位课程平均学分绩点（?GPA）?\s*[:：]?\s*([0-9.]+)"),
+        "all_gpa": _extract_gpa_value(plain_text, "当前所有课程平均学分绩点"),
+        "degree_gpa": _extract_gpa_value(plain_text, "当前学位课程平均学分绩点"),
         "total_courses": _find_int(total_part, r"计划总课程(?:为)?\s*(\d+)\s*门"),
         "passed_courses": _find_int(total_part, r"通过\s*(\d+)\s*门"),
         "failed_courses": _find_int(total_part, r"未通过\s*(\d+)\s*门"),
@@ -811,6 +811,42 @@ def _find_float(text: str, pattern: str) -> Optional[float]:
     match = re.search(pattern, text)
     if not match:
         return None
+    try:
+        return float(match.group(1))
+    except (TypeError, ValueError):
+        return None
+
+
+def _extract_gpa_value(text: str, label: str) -> Optional[float]:
+    """
+    从官方学业情况文本中提取 GPA。
+    兼容：
+    当前所有课程平均学分绩点（GPA）：2.61728
+    当前所有课程平均学分绩点 （GPA） ： 2.61728
+    当前所有课程平均学分绩点 GPA : 2.61728
+    """
+    if not text:
+        return None
+
+    # 先用宽松正则：label 后面允许任意空白、括号、GPA、冒号，再取第一个数字
+    pattern = (
+        re.escape(label)
+        + r"\s*[\(（]?\s*GPA\s*[\)）]?\s*[:：]?\s*([0-9]+(?:\.[0-9]+)?)"
+    )
+    value = _find_float(text, pattern)
+    if value is not None:
+        return value
+
+    # fallback：定位 label 后，在后面一小段文本里找第一个浮点数
+    index = text.find(label)
+    if index < 0:
+        return None
+
+    window = text[index:index + 120]
+    match = re.search(r"([0-9]+(?:\.[0-9]+)?)", window)
+    if not match:
+        return None
+
     try:
         return float(match.group(1))
     except (TypeError, ValueError):

@@ -47,3 +47,34 @@ def test_parse_academic_situation_summary_and_retake_passed():
     assert course["effective_passed"] is True
     assert course["effective_grade"] == "68.9"
     assert course["is_degree"] is True
+
+
+def test_gpa_parsing_continuous_text():
+    html = "当前所有课程平均学分绩点（GPA）：2.61728 当前学位课程平均学分绩点（GPA）：1.96826"
+    parsed = parse_academic_situation_html(html)
+    assert parsed["all_gpa"] == 2.61728
+    assert parsed["degree_gpa"] == 1.96826
+
+
+def test_gpa_parsing_with_spaces():
+    html = "当前所有课程平均学分绩点 （GPA） ： 2.61728 当前学位课程平均学分绩点 （GPA） ： 1.96826"
+    parsed = parse_academic_situation_html(html)
+    assert parsed["all_gpa"] == 2.61728
+    assert parsed["degree_gpa"] == 1.96826
+
+
+def test_gpa_parsing_with_html_tags():
+    html = """
+    <div>
+      当前所有课程平均学分绩点
+      <!-- 当前所有课程平均学分绩点 -->
+      <font>（GPA）：</font>
+      <font style="color:red;">2.61728</font>
+      当前学位课程平均学分绩点
+      <font>（GPA）：</font>
+      <font style="color:red;">1.96826</font>
+    </div>
+    """
+    parsed = parse_academic_situation_html(html)
+    assert parsed["all_gpa"] == 2.61728
+    assert parsed["degree_gpa"] == 1.96826

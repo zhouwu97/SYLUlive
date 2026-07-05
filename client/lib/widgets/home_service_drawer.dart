@@ -150,9 +150,7 @@ class HomeServiceDrawer extends StatelessWidget {
     return Container(
       height: 50,
       decoration: BoxDecoration(
-        color: isDark
-            ? Colors.white.withValues(alpha: 0.06)
-            : Colors.white,
+        color: isDark ? Colors.white.withValues(alpha: 0.06) : Colors.white,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
           color: isDark
@@ -210,9 +208,7 @@ class HomeServiceDrawer extends StatelessWidget {
           width: double.infinity,
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: isDark
-                ? Colors.white.withValues(alpha: 0.06)
-                : Colors.white,
+            color: isDark ? Colors.white.withValues(alpha: 0.06) : Colors.white,
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
               color: isDark
@@ -381,9 +377,8 @@ class HomeServiceDrawer extends StatelessWidget {
           width: double.infinity,
           padding: const EdgeInsets.fromLTRB(10, 12, 10, 12),
           decoration: BoxDecoration(
-            color: isDark
-                ? Colors.white.withValues(alpha: 0.045)
-                : Colors.white,
+            color:
+                isDark ? Colors.white.withValues(alpha: 0.045) : Colors.white,
             borderRadius: BorderRadius.circular(20),
             border: Border.all(
               color: isDark
@@ -409,10 +404,11 @@ class HomeServiceDrawer extends StatelessWidget {
               : LayoutBuilder(
                   builder: (context, constraints) {
                     final itemWidth = (constraints.maxWidth - 10) / 2;
+                    final displaySections = sections.take(4).toList();
                     return Wrap(
                       spacing: 10,
                       runSpacing: 10,
-                      children: sections.map((section) {
+                      children: displaySections.map((section) {
                         return SizedBox(
                           width: itemWidth,
                           child: _WaterCategoryMiniItem(
@@ -464,9 +460,8 @@ class HomeServiceDrawer extends StatelessWidget {
         const SizedBox(height: 10),
         Container(
           decoration: BoxDecoration(
-            color: isDark
-                ? Colors.white.withValues(alpha: 0.045)
-                : Colors.white,
+            color:
+                isDark ? Colors.white.withValues(alpha: 0.045) : Colors.white,
             borderRadius: BorderRadius.circular(20),
             border: Border.all(
               color: isDark

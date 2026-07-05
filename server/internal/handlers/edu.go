@@ -32,7 +32,7 @@ const (
 var (
 	Error302          = errors.New("post redirect disabled")
 	ErrorLapse        = errors.New("cookie已失效")
-	ErrorCourseNoOpen = errors.New("当前学期课表暂未开放")
+	ErrorCourseNoOpen = errors.New("当前学期课表暂未排课")
 	ErrorGradesNoOpen = errors.New("当前学期暂无成绩")
 )
 

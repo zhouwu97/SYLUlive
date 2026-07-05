@@ -120,15 +120,15 @@ extension WaterPostCategoryUiCopy on WaterPostCategory {
       case 'course_study':
         return ['选课', '考试', '老师', '学习资料', '绩点'];
       case 'competition':
-        return ['组队', '通知', '经验', '避坑', '获奖'];
+        return ['通知', '组队', '经验'];
       case 'campus_life':
-        return ['食堂', '宿舍', '日常', '校园卡', '随手拍'];
+        return ['日常', '宿舍', '食堂', '校园见闻', '其他'];
       case 'complaint':
-        return ['吐槽', '情绪', '树洞', '避雷', '建议'];
+        return ['情绪', '吐槽', '人际', '学业压力', '生活压力'];
       case 'experience':
         return ['攻略', '总结', '流程', '避坑', '长期有用'];
       case 'campus_news':
-        return ['风险提醒', '消费避坑', '流程坑点', '真实反馈'];
+        return ['风险提醒', '二手避坑', '商家', '宿舍', '其他'];
       default:
         return ['提问', '经验', '求助', '交流'];
     }

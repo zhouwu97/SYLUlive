@@ -102,7 +102,7 @@ func main() {
 
 		&models.WaterSectionPin{},
 
-&models.WaterSectionFeaturedPost{},
+		&models.WaterSectionFeaturedPost{},
 
 		// 水帖版块等级 / 经验 / 称号
 		&models.WaterSectionUserStat{},
@@ -237,8 +237,6 @@ func main() {
 
 	ensureSystemSuperAdmin(db, cfg.SuperAdminID, cfg.SuperAdminPass)
 
-
-
 	r := gin.Default()
 
 	// CORS中间件
@@ -303,8 +301,6 @@ func main() {
 
 	eduHandler := handlers.NewEduHandler(db)
 
-
-
 	teacherHandler := handlers.NewTeacherHandler(db)
 
 	majorHandler := handlers.NewMajorHandler(db)
@@ -320,8 +316,6 @@ func main() {
 	erkeHandler := handlers.NewErkeHandler(db)
 
 	lotteryHandler := handlers.NewLotteryHandler(db)
-
-
 
 	// 初始化教务服务配置
 
@@ -445,8 +439,6 @@ func main() {
 		auth.POST("/change_password", middleware.AuthMiddleware(db, cfg.JWTSecret), authHandler.ChangePassword)
 
 	}
-
-
 
 	// 用户路由
 
@@ -898,6 +890,8 @@ func main() {
 
 		edu.POST("/grades/detail", middleware.AuthMiddleware(db, cfg.JWTSecret), eduHandler.GetGradeDetail)
 
+		edu.POST("/academic-situation", middleware.AuthMiddleware(db, cfg.JWTSecret), eduHandler.GetAcademicSituation)
+
 		edu.POST("/pre_verify", eduHandler.PreVerify) // 注册前验证教务账号
 
 	}
@@ -929,14 +923,10 @@ func main() {
 
 		superAdmin.POST("/admin_logs/revoke_exp", superAdminHandler.RevokeAdminExp)
 
-
-
 		superAdmin.GET("/invitations/pending", invitationHandler.GetApprovalList)
 
 		superAdmin.POST("/invitations/:id/approve", invitationHandler.Approve)
 	}
-
-
 
 	// 二课查询路由
 
@@ -1278,4 +1268,3 @@ func ensurePostPinColumns(db *gorm.DB) error {
 func ensurePostMarketTagsColumn(db *gorm.DB) error {
 	return db.Exec(`ALTER TABLE posts ADD COLUMN IF NOT EXISTS market_tags VARCHAR(200) NOT NULL DEFAULT ''`).Error
 }
-

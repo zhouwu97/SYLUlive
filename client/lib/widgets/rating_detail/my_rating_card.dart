@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'ranking_tokens.dart';
 
 class MyRatingCard extends StatelessWidget {
   final int currentStar;
@@ -6,6 +7,7 @@ class MyRatingCard extends StatelessWidget {
   final VoidCallback onEdit;
   final VoidCallback onDelete;
   final bool isDeleting;
+  final Color? accentOverride;
 
   const MyRatingCard({
     super.key,
@@ -14,22 +16,21 @@ class MyRatingCard extends StatelessWidget {
     required this.onEdit,
     required this.onDelete,
     this.isDeleting = false,
+    this.accentOverride,
   });
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final primaryColor = Theme.of(context).colorScheme.primary;
+    final accent = accentOverride ?? RankingTokens.teacherAccent(isDark);
 
     return Container(
-      margin: EdgeInsets.zero,
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+      padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1B1E28) : Colors.white,
-        borderRadius: BorderRadius.circular(12),
+        color: RankingTokens.cardBg(isDark),
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(
-          color: isDark ? primaryColor.withValues(alpha: 0.2) : primaryColor.withValues(alpha: 0.15),
-          width: 1,
+          color: accent.withValues(alpha: isDark ? 0.18 : 0.14),
         ),
       ),
       child: Column(
@@ -40,9 +41,9 @@ class MyRatingCard extends StatelessWidget {
               Text(
                 '我的评价',
                 style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.bold,
-                  color: isDark ? Colors.white : Colors.black87,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: RankingTokens.titleColor(isDark),
                 ),
               ),
               const Spacer(),
@@ -54,21 +55,19 @@ class MyRatingCard extends StatelessWidget {
                 )
               else
                 PopupMenuButton<String>(
-                  icon: Icon(Icons.more_horiz, color: isDark ? Colors.white54 : Colors.black54, size: 20),
+                  icon: Icon(
+                    Icons.more_horiz,
+                    color: RankingTokens.subColor(isDark),
+                    size: 18,
+                  ),
                   padding: EdgeInsets.zero,
                   onSelected: (value) {
                     if (value == 'edit') onEdit();
                     if (value == 'delete') onDelete();
                   },
                   itemBuilder: (_) => const [
-                    PopupMenuItem(
-                      value: 'edit',
-                      child: Text('修改评价'),
-                    ),
-                    PopupMenuItem(
-                      value: 'delete',
-                      child: Text('删除评价'),
-                    ),
+                    PopupMenuItem(value: 'edit', child: Text('修改评价')),
+                    PopupMenuItem(value: 'delete', child: Text('删除评价')),
                   ],
                 ),
             ],
@@ -78,42 +77,43 @@ class MyRatingCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               CircleAvatar(
-                radius: 14,
-                backgroundColor: isDark ? primaryColor.withValues(alpha: 0.2) : primaryColor.withValues(alpha: 0.1),
+                radius: 12,
+                backgroundColor:
+                    isDark ? accent.withValues(alpha: 0.18) : accent.withValues(alpha: 0.08),
                 child: Text(
                   '我',
                   style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                    color: isDark ? Colors.white : primaryColor,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    color: accent,
                   ),
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 6),
               Text(
                 '我',
                 style: TextStyle(
-                  fontSize: 13,
+                  fontSize: 12,
                   fontWeight: FontWeight.w600,
-                  color: isDark ? Colors.white70 : Colors.black87,
+                  color: RankingTokens.titleColor(isDark),
                 ),
               ),
               const SizedBox(width: 8),
               Text(
                 '★' * currentStar + '☆' * (5 - currentStar),
                 style: const TextStyle(
-                  fontSize: 14,
+                  fontSize: 13,
                   color: Colors.amber,
-                  letterSpacing: 1.5,
+                  letterSpacing: 1.0,
                 ),
               ),
-              const SizedBox(width: 6),
+              const SizedBox(width: 4),
               Text(
                 '${currentStar.toDouble()}',
                 style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                  color: isDark ? Colors.white70 : Colors.black87,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: RankingTokens.titleColor(isDark),
                 ),
               ),
             ],
@@ -123,9 +123,9 @@ class MyRatingCard extends StatelessWidget {
             Text(
               currentComment!.trim(),
               style: TextStyle(
-                fontSize: 14,
-                height: 1.45,
-                color: isDark ? Colors.grey.shade300 : Colors.grey.shade700,
+                fontSize: 13,
+                height: 1.4,
+                color: RankingTokens.subColor(isDark),
               ),
             ),
           ],

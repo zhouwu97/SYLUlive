@@ -36,10 +36,9 @@ class _MarketPublishFormState extends State<MarketPublishForm>
     with SingleTickerProviderStateMixin, PublishImagePickerMixin {
   static const _maxImages = 9;
   static const _maxDescriptionLength = 500;
-  static const _marketAccent = Color(0xFF4F5AF7);
-  static const _marketPageBg = Color(0xFFF7F8FC);
-  static const _marketMutedText = Color(0xFF858B9D);
-  static const _priceGreen = Color(0xFF20B26B);
+  static const _marketAccent = Color(0xFFFF7A45);
+  static const _marketPageBg = Color(0xFFFFFAF4);
+  static const _marketMutedText = Color(0xFF747B82);
   static const _marketFormFontSize = 17.0;
 
   final _formKey = GlobalKey<FormState>();
@@ -416,7 +415,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
     final colorScheme = Theme.of(context).colorScheme;
 
     return Scaffold(
-      backgroundColor: isDark ? const Color(0xFF06080D) : _marketPageBg,
+      backgroundColor: isDark ? const Color(0xFF111315) : _marketPageBg,
       extendBodyBehindAppBar: true,
       resizeToAvoidBottomInset: true,
       appBar: AppBar(
@@ -428,7 +427,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
         centerTitle: true,
         title: Text(_pageTitle),
         titleTextStyle: TextStyle(
-          color: isDark ? Colors.white : const Color(0xFF10121B),
+          color: isDark ? Colors.white : const Color(0xFF1F2328),
           fontSize: 20,
           fontWeight: FontWeight.w800,
         ),
@@ -438,21 +437,11 @@ class _MarketPublishFormState extends State<MarketPublishForm>
         isLoading: _isLoading,
         onPressed: _isLoading ? null : _submit,
         label: _bottomBarLabel,
+        accent: _marketAccent,
       ),
       body: DecoratedBox(
         decoration: BoxDecoration(
-          gradient: isDark
-              ? null
-              : LinearGradient(
-                  begin: Alignment.topRight,
-                  end: Alignment.bottomLeft,
-                  colors: [
-                    _marketAccent.withValues(alpha: 0.08),
-                    _marketPageBg,
-                    _marketPageBg,
-                  ],
-                  stops: const [0, 0.24, 1],
-                ),
+          color: isDark ? const Color(0xFF111315) : _marketPageBg,
         ),
         child: SafeArea(
           bottom: false,
@@ -599,6 +588,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
           onRemoveExistingImage: onExistingImageRemoved,
           addLabel: '添加图片',
           compact: true,
+          accent: _marketAccent,
         ),
       ],
     );
@@ -754,8 +744,8 @@ class _MarketPublishFormState extends State<MarketPublishForm>
               ),
               filled: true,
               fillColor: isDark
-                  ? Colors.white.withValues(alpha: 0.05)
-                  : const Color(0xFFF7F8FC),
+                  ? Colors.white.withValues(alpha: 0.06)
+                  : const Color(0xFFF8F7F5),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(13),
                 borderSide: BorderSide.none,
@@ -800,10 +790,16 @@ class _MarketPublishFormState extends State<MarketPublishForm>
 
   Widget _buildDescriptionChip(String label, IconData icon) {
     final selected = _selectedMarketTags.contains(label);
-    final textColor = selected ? _marketAccent : const Color(0xFF6F7585);
+    final textColor = selected ? _marketAccent : const Color(0xFF747B82);
     final iconColor = selected
-        ? _marketAccent.withValues(alpha: 0.62)
+        ? _marketAccent.withValues(alpha: 0.7)
         : const Color(0xFF9AA0AE);
+    final bgColor = selected
+        ? _marketAccent.withValues(alpha: 0.06)
+        : const Color(0xFFF7F7F8);
+    final borderColor = selected
+        ? _marketAccent.withValues(alpha: 0.24)
+        : const Color(0xFFE8E7E6);
 
     return InkWell(
       borderRadius: BorderRadius.circular(999),
@@ -813,15 +809,9 @@ class _MarketPublishFormState extends State<MarketPublishForm>
         curve: Curves.easeOutCubic,
         padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
         decoration: BoxDecoration(
-          color: selected
-              ? _marketAccent.withValues(alpha: 0.04)
-              : const Color(0xFFF7F8FB),
+          color: bgColor,
           borderRadius: BorderRadius.circular(999),
-          border: Border.all(
-            color: selected
-                ? _marketAccent.withValues(alpha: 0.24)
-                : const Color(0xFFE4E7F0),
-          ),
+          border: Border.all(color: borderColor),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -984,7 +974,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
     final quietBorderColor = colorScheme.outlineVariant.withValues(alpha: 0.2);
     final activeBorderColor = needsAttention
         ? colorScheme.error.withValues(alpha: 0.75)
-        : colorScheme.primary.withValues(alpha: 0.35);
+        : _marketAccent.withValues(alpha: 0.38);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1136,7 +1126,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
       prefixStyle: TextStyle(
         fontSize: _marketFormFontSize,
         fontWeight: FontWeight.w800,
-        color: prefixText == '¥ ' ? _priceGreen : colorScheme.onSurfaceVariant,
+        color: prefixText == '¥ ' ? _marketAccent : colorScheme.onSurfaceVariant,
       ),
     );
   }
@@ -1170,7 +1160,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
       ),
       prefixStyle: TextStyle(
         fontSize: prefixText == '¥ ' ? 22 : 15,
-        color: prefixText == '¥ ' ? _priceGreen : colorScheme.onSurfaceVariant,
+        color: prefixText == '¥ ' ? _marketAccent : colorScheme.onSurfaceVariant,
         fontWeight: FontWeight.w800,
       ),
       suffixIcon: suffixIcon == null
@@ -1235,7 +1225,7 @@ class _PricePrefixSymbol extends StatelessWidget {
           child: Text(
             '¥',
             style: TextStyle(
-              color: _MarketPublishFormState._priceGreen,
+              color: _MarketPublishFormState._marketAccent,
               fontSize: fontSize,
               fontWeight: FontWeight.w800,
               height: 1.0,

@@ -282,7 +282,7 @@ class _TeacherRatingScreenState extends State<TeacherRatingScreen>
   }
 
   Widget _gradient(bool d) => ColoredBox(
-        color: d ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
+        color: d ? const Color(0xFF131720) : kCleanWarmBackgroundLight,
       );
 
   Widget _buildWarningBanner(bool isDark) {

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'ranking_tokens.dart';
 
 class RatingItemCard extends StatelessWidget {
   final String userName;
@@ -22,8 +23,8 @@ class RatingItemCard extends StatelessWidget {
 
     final item = InkWell(
       onLongPress: onLongPress,
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(0, 8, 0, 8),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -31,14 +32,14 @@ class RatingItemCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 CircleAvatar(
-                  radius: 15,
+                  radius: 14,
                   backgroundColor:
                       isDark ? Colors.white12 : Colors.grey.shade200,
                   child: Text(
                     userName.isNotEmpty ? userName[0] : '?',
                     style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
                       color: isDark ? Colors.white70 : Colors.black54,
                     ),
                   ),
@@ -48,32 +49,32 @@ class RatingItemCard extends StatelessWidget {
                   child: Text(
                     userName,
                     style: TextStyle(
-                      fontSize: 14,
+                      fontSize: 13,
                       fontWeight: FontWeight.w600,
-                      color: isDark ? Colors.white70 : Colors.black87,
+                      color: RankingTokens.titleColor(isDark),
                     ),
                   ),
                 ),
                 Text(
                   '★' * star + '☆' * (5 - star),
                   style: const TextStyle(
-                    fontSize: 13,
+                    fontSize: 12,
                     color: Colors.amber,
-                    letterSpacing: 1.5,
+                    letterSpacing: 1.0,
                   ),
                 ),
               ],
             ),
             if (comment.trim().isNotEmpty) ...[
-              const SizedBox(height: 5),
+              const SizedBox(height: 4),
               Padding(
-                padding: const EdgeInsets.only(left: 38),
+                padding: const EdgeInsets.only(left: 36),
                 child: Text(
                   comment.trim(),
                   style: TextStyle(
-                    fontSize: 13.5,
-                    height: 1.5,
-                    color: isDark ? Colors.grey.shade300 : Colors.grey.shade800,
+                    fontSize: 13,
+                    height: 1.45,
+                    color: RankingTokens.subColor(isDark),
                   ),
                 ),
               ),
@@ -83,15 +84,14 @@ class RatingItemCard extends StatelessWidget {
       ),
     );
 
-    // Add a divider below the item
     return Column(
       children: [
         item,
         Divider(
           height: 1,
           thickness: 1,
-          indent: 46,
-          color: isDark ? Colors.white10 : Colors.black.withValues(alpha: 0.05),
+          indent: 44,
+          color: isDark ? Colors.white10 : Colors.black.withValues(alpha: 0.04),
         ),
       ],
     );

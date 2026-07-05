@@ -78,8 +78,15 @@ class _ChatListScreenState extends State<ChatListScreen>
       return _buildWideLayout(provider, currentUserId);
     }
 
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Scaffold(
-      appBar: AppBar(title: const Text('私信')),
+      backgroundColor: isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight,
+      appBar: AppBar(
+        title: const Text('私信'),
+        backgroundColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
+      ),
       body: RefreshIndicator(
         onRefresh: () => provider.loadConversations(),
         child: _buildConversationList(provider, currentUserId),
@@ -149,7 +156,7 @@ class _ChatListScreenState extends State<ChatListScreen>
         bgPath == null ||
         bgPath.isEmpty) {
       return ColoredBox(
-        color: isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
+        color: isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight,
       );
     }
 
@@ -182,7 +189,7 @@ class _ChatListScreenState extends State<ChatListScreen>
     required ImageProvider imageProvider,
     required bool fillScreen,
   }) {
-    const fallbackColor = Color(0xFFF4F6FB);
+    const fallbackColor = kCleanWarmBackgroundLight;
     if (fillScreen) {
       return Image(
         image: imageProvider,

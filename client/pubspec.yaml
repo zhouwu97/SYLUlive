@@ -1,7 +1,7 @@
 name: shenliyuan
 description: 沈理校园 - 校园互助社交应用
 publish_to: 'none'
-version: 1.5.29+1529
+version: 1.6.0+1600
 
 environment:
   sdk: '>=3.0.0 <4.0.0'

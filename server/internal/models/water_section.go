@@ -294,8 +294,6 @@ func defaultWaterSections() []waterSectionSeedEntry {
 				{Slug: "notice", Name: "通知", SortOrder: 10},
 				{Slug: "team", Name: "组队", SortOrder: 20},
 				{Slug: "experience", Name: "经验", SortOrder: 30},
-				{Slug: "algorithm", Name: "算法", SortOrder: 40},
-				{Slug: "modeling", Name: "数模", SortOrder: 50},
 			},
 		},
 		{
@@ -308,11 +306,11 @@ func defaultWaterSections() []waterSectionSeedEntry {
 			StarterQuestions: []string{"食堂哪家强？", "宿舍怎么样？", "校园卡丢了怎么办？", "校园里有什么好去处？", "随手拍分享什么？"},
 			SensitiveLevel:   "normal", DefaultSort: "recommend", SortOrder: 40,
 			Tags: []waterSectionTagSeed{
-				{Slug: "canteen", Name: "食堂", SortOrder: 10},
+				{Slug: "daily", Name: "日常", SortOrder: 10},
 				{Slug: "dormitory", Name: "宿舍", SortOrder: 20},
-				{Slug: "daily", Name: "日常", SortOrder: 30},
-				{Slug: "campus_card", Name: "校园卡", SortOrder: 40},
-				{Slug: "snapshot", Name: "随手拍", SortOrder: 50},
+				{Slug: "canteen", Name: "食堂", SortOrder: 30},
+				{Slug: "campus_view", Name: "校园见闻", SortOrder: 40},
+				{Slug: "other", Name: "其他", SortOrder: 50},
 			},
 		},
 		{

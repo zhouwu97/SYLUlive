@@ -1,122 +1,101 @@
 import 'package:flutter/material.dart';
 
 import '../../models/water_section.dart';
-import 'section_tab_bar.dart';
 
-/// 单行横向滑动筛选栏：推荐 / 最新 / 精华 / 关注 | 全部 / 标签 | 筛选按钮
-///
-/// 不再分两行展示排序和标签，所有 chip 在同一行横向滑动。
+/// 分类页顶部单行标签栏（推荐/最新/精华 + 细分标签）
 class SectionFilterHeader extends StatelessWidget {
-  final List<SectionSortOption> sortOptions;
-  final String currentSort;
+  final String currentFilterKey;
   final WaterSection section;
-  final int? selectedTagId;
   final Color accentColor;
   final bool isDark;
-  final ValueChanged<String> onSortChanged;
-  final ValueChanged<int?> onTagChanged;
+  final ValueChanged<String> onFilterChanged;
 
   const SectionFilterHeader({
     super.key,
-    required this.sortOptions,
-    required this.currentSort,
+    required this.currentFilterKey,
     required this.section,
-    required this.selectedTagId,
     required this.accentColor,
     required this.isDark,
-    required this.onSortChanged,
-    required this.onTagChanged,
+    required this.onFilterChanged,
   });
 
-  static const double height = 42;
+  static const double height = 44;
 
   @override
   Widget build(BuildContext context) {
-    final tags = section.enabledTags;
     final items = <Widget>[];
 
-    // 排序选项
-    for (final option in sortOptions) {
-      final selected = option.sort == currentSort;
-      items.add(_buildChip(
-        label: option.label,
-        selected: selected,
-        isSort: true,
-        onTap: () => onSortChanged(option.sort),
-      ));
-    }
+    // 前三个固定标签
+    items.add(
+        _buildTextTab(label: '推荐', filterKey: 'mode:recommend', isFixed: true));
+    items.add(const SizedBox(width: 10));
+    items.add(
+        _buildTextTab(label: '最新', filterKey: 'mode:latest', isFixed: true));
+    items.add(const SizedBox(width: 10));
+    items.add(
+        _buildTextTab(label: '精华', filterKey: 'mode:featured', isFixed: true));
 
-    // 分隔符
-    if (tags.isNotEmpty) {
-      items.add(_buildDivider());
-    }
-
-    // 标签
-    for (final tag in tags) {
-      items.add(_buildChip(
-        label: tag.name,
-        selected: selectedTagId == tag.id,
-        onTap: () => onTagChanged(tag.id),
-      ));
+    // 版块自定义标签
+    if (section.enabledTags.isNotEmpty) {
+      for (int i = 0; i < section.enabledTags.length; i++) {
+        final tag = section.enabledTags[i];
+        items.add(_buildTextTab(
+            label: tag.name, filterKey: 'tag:${tag.id}', isFixed: false));
+        if (i < section.enabledTags.length - 1) {
+          items.add(const SizedBox(width: 10));
+        }
+      }
     }
 
     return SizedBox(
       height: height,
-      child: ListView.separated(
+      child: ListView(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 16),
-        itemCount: items.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 6),
-        itemBuilder: (_, index) => items[index],
+        children: items,
       ),
     );
   }
 
-  Widget _buildChip({
+  Widget _buildTextTab({
     required String label,
-    required bool selected,
-    required VoidCallback onTap,
-    bool isSort = false,
+    required String filterKey,
+    required bool isFixed,
   }) {
+    final selected = filterKey == currentFilterKey;
+
     return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 160),
-        padding: EdgeInsets.symmetric(
-          horizontal: isSort ? 14 : 12,
-          vertical: 4,
-        ),
-        decoration: BoxDecoration(
-          color: selected
-              ? accentColor.withValues(alpha: isDark ? 0.20 : 0.12)
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Center(
+      onTap: () => onFilterChanged(filterKey),
+      behavior: HitTestBehavior.opaque,
+      child: Center(
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: BoxDecoration(
+            color: selected
+                ? accentColor.withValues(alpha: 0.1)
+                : (isDark
+                    ? Colors.white.withValues(alpha: 0.05)
+                    : const Color(0xFFF3F4F6)),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: selected
+                  ? accentColor.withValues(alpha: 0.2)
+                  : Colors.transparent,
+              width: 1,
+            ),
+          ),
           child: Text(
             label,
             style: TextStyle(
-              fontSize: isSort ? 14 : 12.5,
-              fontWeight: selected ? FontWeight.w800 : FontWeight.w500,
+              fontSize: 13.5,
+              fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
               color: selected
                   ? accentColor
-                  : (isDark ? Colors.white54 : const Color(0xFF667085)),
+                  : (isDark ? Colors.white70 : const Color(0xFF4B5563)),
             ),
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _buildDivider() {
-    return Center(
-      child: Container(
-        width: 1,
-        height: 18,
-        margin: const EdgeInsets.symmetric(horizontal: 2),
-        color: isDark
-            ? Colors.white.withValues(alpha: 0.12)
-            : const Color(0xFFE5E7EB),
       ),
     );
   }

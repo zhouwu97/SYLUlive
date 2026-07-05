@@ -765,8 +765,20 @@ def parse_academic_situation_html(html: str) -> dict:
     return {
         "success": True,
         "source": "academic_situation",
-        "all_gpa": _extract_gpa_value(plain_text, "当前所有课程平均学分绩点"),
-        "degree_gpa": _extract_gpa_value(plain_text, "当前学位课程平均学分绩点"),
+        "all_gpa": _extract_gpa_value_any(plain_text, [
+            "当前所有课程平均学分绩点",
+            "所有课程平均学分绩点",
+            "当前所有课程GPA",
+        ]),
+        "degree_gpa": _extract_gpa_value_any(plain_text, [
+            "当前学位课程平均学分绩点",
+            "当前学位课平均学分绩点",
+            "学位课程平均学分绩点",
+            "学位课平均学分绩点",
+            "当前学位课程GPA",
+            "当前学位课GPA",
+            "学位课GPA",
+        ]),
         "total_courses": _find_int(total_part, r"计划总课程(?:为)?\s*(\d+)\s*门"),
         "passed_courses": _find_int(total_part, r"通过\s*(\d+)\s*门"),
         "failed_courses": _find_int(total_part, r"未通过\s*(\d+)\s*门"),
@@ -815,6 +827,34 @@ def _find_float(text: str, pattern: str) -> Optional[float]:
         return float(match.group(1))
     except (TypeError, ValueError):
         return None
+
+
+def _compact_text(value: str) -> str:
+    return re.sub(r"\s+", "", value or "")
+
+
+def _extract_gpa_value_any(text: str, labels: List[str]) -> Optional[float]:
+    for label in labels:
+        value = _extract_gpa_value(text, label)
+        if value is not None:
+            return value
+
+    compact = _compact_text(text)
+    for label in labels:
+        compact_label = _compact_text(label)
+        index = compact.find(compact_label)
+        if index < 0:
+            continue
+
+        window = compact[index:index + 100]
+        match = re.search(r"([0-9]+(?:\.[0-9]+)?)", window)
+        if match:
+            try:
+                return float(match.group(1))
+            except (TypeError, ValueError):
+                pass
+
+    return None
 
 
 def _extract_gpa_value(text: str, label: str) -> Optional[float]:

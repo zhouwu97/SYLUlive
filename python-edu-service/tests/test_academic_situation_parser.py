@@ -78,3 +78,17 @@ def test_gpa_parsing_with_html_tags():
     parsed = parse_academic_situation_html(html)
     assert parsed["all_gpa"] == 2.61728
     assert parsed["degree_gpa"] == 1.96826
+
+
+def test_parse_academic_situation_degree_gpa_with_split_text():
+    html = """
+    <div>
+      当前所有课程平均学分绩点 <font>（GPA）：</font><font>2.61728</font>
+      当前学位课 <span>程平均学分绩点</span> <font>（GPA）：</font><font>1.96826</font>
+      计划总课程 101 门 通过 51 门 未通过 1 门 未修 43 门 在读 6 门
+      计划学位课程为 15 门 通过 7 门 未通过 1 门 未修 6 门 在读 1 门
+    </div>
+    """
+    result = parse_academic_situation_html(html)
+    assert result["all_gpa"] == 2.61728
+    assert result["degree_gpa"] == 1.96826

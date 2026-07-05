@@ -27,54 +27,43 @@ class CampusServiceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: isDark ? CampusTheme.darkCard : Colors.white,
-      borderRadius: BorderRadius.circular(18),
-      child: InkWell(
-        onTap: service.onTap,
-        borderRadius: BorderRadius.circular(18),
-        child: Container(
-          height: 78,
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(
-              color: isDark ? Colors.white.withValues(alpha: 0.04) : CampusTheme.softBorder.withValues(alpha: 0.5),
+    return InkWell(
+      onTap: service.onTap,
+      child: Container(
+        height: 86,
+        padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                color: service.color.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Icon(
+                service.icon,
+                color: service.color,
+                size: 20,
+              ),
             ),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                width: 34,
-                height: 34,
-                decoration: BoxDecoration(
-                  color: service.color.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(13),
-                ),
-                child: Icon(
-                  service.icon,
-                  color: service.color,
-                  size: 18,
+            const SizedBox(height: 6),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                service.title,
+                maxLines: 1,
+                style: TextStyle(
+                  fontSize: 12,
+                  height: 1.0,
+                  fontWeight: FontWeight.w700,
+                  color: isDark ? Colors.white : CampusTheme.text,
                 ),
               ),
-              const SizedBox(height: 3),
-              FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Text(
-                  service.title,
-                  maxLines: 1,
-                  style: TextStyle(
-                    fontSize: 11.5,
-                    height: 1.0,
-                    fontWeight: FontWeight.w700,
-                    color: isDark ? Colors.white : CampusTheme.text,
-                  ),
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

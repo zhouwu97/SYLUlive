@@ -39,8 +39,7 @@ class WaterCategoryFeedScreen extends StatefulWidget {
 
 class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
   ScrollController? _sheetScrollController;
-  String _currentSort = 'all';
-  int? _selectedTagId;
+  String _selectedFilterKey = 'mode:recommend';
   WaterSection? _resolvedSection;
   bool _sectionReady = false;
   bool _sortTouched = false;
@@ -53,7 +52,10 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
   @override
   void initState() {
     super.initState();
-    _currentSort = _defaultSortFor(widget.section ?? _sectionFromCategory());
+    final ds = _defaultSortFor(widget.section ?? _sectionFromCategory());
+    if (ds == 'time') _selectedFilterKey = 'mode:latest';
+    else if (ds == 'featured') _selectedFilterKey = 'mode:featured';
+    else _selectedFilterKey = 'mode:recommend';
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _bootstrap();
     });
@@ -94,11 +96,16 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
       _resolvedSection = fresh;
       _sectionReady = true;
       if (updateSortFromFreshSection && !_sortTouched) {
-        _currentSort = _defaultSortFor(fresh);
+        final ds = _defaultSortFor(fresh);
+        if (ds == 'time') _selectedFilterKey = 'mode:latest';
+        else if (ds == 'featured') _selectedFilterKey = 'mode:featured';
+        else _selectedFilterKey = 'mode:recommend';
       }
-      if (_selectedTagId != null &&
-          !fresh.enabledTags.any((tag) => tag.id == _selectedTagId)) {
-        _selectedTagId = null;
+      if (_selectedFilterKey.startsWith('tag:')) {
+        final tid = int.tryParse(_selectedFilterKey.substring(4));
+        if (tid != null && !fresh.enabledTags.any((t) => t.id == tid)) {
+          _selectedFilterKey = 'mode:recommend';
+        }
       }
     });
   }
@@ -109,11 +116,19 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
   String _defaultSortFor(WaterSection section) =>
       defaultSortForSection(section);
 
+  MapEntry<String, int?> _resolveFilterKey(String key) {
+    if (key == 'mode:latest') return const MapEntry('time', null);
+    if (key == 'mode:featured') return const MapEntry('featured', null);
+    if (key.startsWith('tag:')) return MapEntry('all', int.tryParse(key.substring(4)));
+    return const MapEntry('all', null);
+  }
+
   Future<void> _load() async {
     final serial = ++_loadSerial;
     final section = _activeSection;
-    final sort = _currentSort;
-    final tagId = _selectedTagId;
+    final st = _resolveFilterKey(_selectedFilterKey);
+    final sort = st.key;
+    final tagId = st.value;
     await context.read<PostProvider>().loadPosts(
           boardId: 1,
           sort: sort,
@@ -153,9 +168,9 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
         _loadMyLevel(),
         context.read<PostProvider>().refresh(
               boardId: 1,
-              sort: _currentSort,
+              sort: _resolveFilterKey(_selectedFilterKey).key,
               type: section.slug,
-              tagId: _selectedTagId,
+              tagId: _resolveFilterKey(_selectedFilterKey).value,
             ),
       ]);
     } finally {
@@ -167,16 +182,16 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
     final section = _activeSection;
     return context.read<PostProvider>().loadPosts(
           boardId: 1,
-          sort: _currentSort,
-          type: section.slug,
-          tagId: _selectedTagId,
+          sort: _resolveFilterKey(_selectedFilterKey).key,
+              type: section.slug,
+              tagId: _resolveFilterKey(_selectedFilterKey).value,
         );
   }
 
-  Future<void> _changeSort(String sort) async {
-    if (sort == _currentSort) return;
+  Future<void> _changeFilter(String key) async {
+    if (key == _selectedFilterKey) return;
     setState(() {
-      _currentSort = sort;
+      _selectedFilterKey = key;
       _sortTouched = true;
     });
     if (_sheetScrollController?.hasClients == true) {
@@ -186,13 +201,6 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
         curve: Curves.easeOut,
       );
     }
-    await _load();
-  }
-
-  Future<void> _changeTag(int? tagId) async {
-    final newTagId = (tagId == _selectedTagId) ? null : tagId;
-    if (newTagId == _selectedTagId) return;
-    setState(() => _selectedTagId = newTagId);
     await _load();
   }
 
@@ -227,10 +235,12 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
     if (fresh != null) {
       setState(() {
         _resolvedSection = fresh;
-        if (_selectedTagId != null &&
-            !fresh.enabledTags.any((tag) => tag.id == _selectedTagId)) {
-          _selectedTagId = null;
-        }
+        if (_selectedFilterKey.startsWith('tag:')) {
+            final tid = int.tryParse(_selectedFilterKey.substring(4));
+            if (tid != null && !fresh.enabledTags.any((t) => t.id == tid)) {
+              _selectedFilterKey = 'mode:recommend';
+            }
+          }
       });
     }
     await context
@@ -376,7 +386,7 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
     });
 
     try {
-      await provider.toggleFollow(section.slug, section.isFollowed);
+      await provider.toggleFollow(section.slug, !isFollowed);
       postProvider.invalidateFollowingFeed();
       await _resolveSection();
       if (mounted) {
@@ -385,7 +395,7 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
       }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(section.isFollowed ? '已关注' : '已取消关注')),
+          SnackBar(content: Text(!isFollowed ? '已关注' : '已取消关注')),
         );
       }
     } catch (e) {
@@ -521,33 +531,33 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
             selector: (context, provider) => (
               posts: provider.postsFor(
                 1,
-                sort: _currentSort,
-                type: section.slug,
-                tagId: _selectedTagId,
+                sort: _resolveFilterKey(_selectedFilterKey).key,
+              type: section.slug,
+              tagId: _resolveFilterKey(_selectedFilterKey).value,
               ),
               isLoading: provider.isLoadingFor(
                 1,
-                sort: _currentSort,
-                type: section.slug,
-                tagId: _selectedTagId,
+                sort: _resolveFilterKey(_selectedFilterKey).key,
+              type: section.slug,
+              tagId: _resolveFilterKey(_selectedFilterKey).value,
               ),
               hasLoaded: provider.hasLoadedFor(
                 1,
-                sort: _currentSort,
-                type: section.slug,
-                tagId: _selectedTagId,
+                sort: _resolveFilterKey(_selectedFilterKey).key,
+              type: section.slug,
+              tagId: _resolveFilterKey(_selectedFilterKey).value,
               ),
               hasMore: provider.hasMoreFor(
                 1,
-                sort: _currentSort,
-                type: section.slug,
-                tagId: _selectedTagId,
+                sort: _resolveFilterKey(_selectedFilterKey).key,
+              type: section.slug,
+              tagId: _resolveFilterKey(_selectedFilterKey).value,
               ),
               revision: provider.revisionFor(
                 1,
-                sort: _currentSort,
-                type: section.slug,
-                tagId: _selectedTagId,
+                sort: _resolveFilterKey(_selectedFilterKey).key,
+              type: section.slug,
+              tagId: _resolveFilterKey(_selectedFilterKey).value,
               ),
             ),
             builder: (context, data, _) => _buildSheetContent(
@@ -600,15 +610,15 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
             final provider = context.read<PostProvider>();
             final isLoadingNow = provider.isLoadingFor(
               1,
-              sort: _currentSort,
+              sort: _resolveFilterKey(_selectedFilterKey).key,
               type: section.slug,
-              tagId: _selectedTagId,
+              tagId: _resolveFilterKey(_selectedFilterKey).value,
             );
             final hasMoreNow = provider.hasMoreFor(
               1,
-              sort: _currentSort,
+              sort: _resolveFilterKey(_selectedFilterKey).key,
               type: section.slug,
-              tagId: _selectedTagId,
+              tagId: _resolveFilterKey(_selectedFilterKey).value,
             );
             if (!isLoadingNow && hasMoreNow) {
               _loadMore();
@@ -617,6 +627,7 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
           return false;
         },
         child: CustomScrollView(
+          key: PageStorageKey('water_category_${section.slug}_${_selectedFilterKey}'),
           controller: scrollController,
           physics: const ClampingScrollPhysics(),
           slivers: [
@@ -624,7 +635,7 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
             SliverPersistentHeader(
               pinned: true,
               delegate: _SheetPinnedHeaderDelegate(
-                height: 68,
+                height: 70,
                 child: _buildSheetPinnedHeader(isDark, categoryColor, section),
               ),
             ),
@@ -739,14 +750,11 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
           ),
           const SizedBox(height: 10),
           SectionFilterHeader(
-            sortOptions: kSectionFeedSortOptions,
-            currentSort: _currentSort,
+            currentFilterKey: _selectedFilterKey,
             section: section,
-            selectedTagId: _selectedTagId,
             accentColor: categoryColor,
             isDark: isDark,
-            onSortChanged: _changeSort,
-            onTagChanged: _changeTag,
+            onFilterChanged: _changeFilter,
           ),
           // 底部分隔线
           Container(

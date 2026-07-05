@@ -79,7 +79,7 @@ class _CampusCalendarScreenState extends State<CampusCalendarScreen>
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final primaryColor = Theme.of(context).primaryColor;
-    final bgColor = isDark ? const Color(0xFF101219) : Colors.white;
+    final bgColor = isDark ? const Color(0xFF111315) : const Color(0xFFFAF8F4);
 
     return Scaffold(
       backgroundColor: bgColor,

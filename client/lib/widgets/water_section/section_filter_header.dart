@@ -51,12 +51,7 @@ class SectionFilterHeader extends StatelessWidget {
       items.add(_buildDivider());
     }
 
-    // 全部 + 标签
-    items.add(_buildChip(
-      label: '全部',
-      selected: selectedTagId == null,
-      onTap: () => onTagChanged(null),
-    ));
+    // 标签
     for (final tag in tags) {
       items.add(_buildChip(
         label: tag.name,

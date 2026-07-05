@@ -42,18 +42,12 @@ class WaterCategoryFeedRoute extends StatelessWidget {
       resolved = provider.getBySlugOrFallback(sectionSlug!);
     }
 
-    return ChangeNotifierProvider(
-      create: (context) => PostProvider(
-        context.read<AuthProvider>().dio,
-        enableCache: false,
-      ),
-      child: WaterCategoryFeedScreen(
-        key: ValueKey('water-feed-${resolved.slug}'),
-        category: legacyCategory ??
-            waterCategoryOf(resolved.slug) ??
-            kWaterPostCategories[0],
-        section: resolved,
-      ),
+    return WaterCategoryFeedScreen(
+      key: ValueKey('water-feed-${resolved.slug}'),
+      category: legacyCategory ??
+          waterCategoryOf(resolved.slug) ??
+          kWaterPostCategories[0],
+      section: resolved,
     );
   }
 }

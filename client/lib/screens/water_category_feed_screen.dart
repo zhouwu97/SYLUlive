@@ -19,6 +19,8 @@ import 'post_detail_screen.dart';
 import 'water_section_manage_screen.dart';
 import 'login_screen.dart';
 import 'chat_list_screen.dart';
+import '../widgets/water_section/section_floating_dock.dart';
+import '../widgets/water_section/section_floating_dock.dart';
 
 class WaterCategoryFeedScreen extends StatefulWidget {
   final WaterPostCategory category;
@@ -44,6 +46,9 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
   bool _sortTouched = false;
   int _loadSerial = 0;
   WaterSectionMyLevel? _myLevel;
+  bool _isRefreshing = false;
+  bool _isCompact = false;
+  bool? _optimisticIsFollowed;
 
   @override
   void initState() {
@@ -137,17 +142,25 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
     }
   }
 
-  Future<void> _refresh() {
-    final section = _activeSection;
-    return Future.wait([
-      _loadMyLevel(),
-      context.read<PostProvider>().refresh(
-            boardId: 1,
-            sort: _currentSort,
-            type: section.slug,
-            tagId: _selectedTagId,
-          ),
-    ]).then((_) {});
+  Future<void> _refresh() async {
+    if (_isRefreshing) return;
+
+    setState(() => _isRefreshing = true);
+
+    try {
+      final section = _activeSection;
+      await Future.wait([
+        _loadMyLevel(),
+        context.read<PostProvider>().refresh(
+              boardId: 1,
+              sort: _currentSort,
+              type: section.slug,
+              tagId: _selectedTagId,
+            ),
+      ]);
+    } finally {
+      if (mounted) setState(() => _isRefreshing = false);
+    }
   }
 
   Future<void> _loadMore() {
@@ -356,20 +369,31 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
     }
     final provider = context.read<WaterSectionProvider>();
     final postProvider = context.read<PostProvider>();
+
+    // 乐观更新
+    setState(() {
+      _optimisticIsFollowed = !isFollowed;
+    });
+
     try {
-      await provider.toggleFollow(section.slug, !isFollowed);
+      await provider.toggleFollow(section.slug, section.isFollowed);
       postProvider.invalidateFollowingFeed();
       await _resolveSection();
       if (mounted) {
+        setState(() => _optimisticIsFollowed = null);
         await _refresh();
       }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(!isFollowed ? '已关注' : '已取消关注')),
+          SnackBar(content: Text(section.isFollowed ? '已关注' : '已取消关注')),
         );
       }
     } catch (e) {
+      // 失败回滚
       if (mounted) {
+        setState(() {
+          _optimisticIsFollowed = null;
+        });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('操作失败：$e')),
         );
@@ -397,8 +421,9 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
               SectionHeroHeader(
                 section: section,
                 accentColor: categoryColor,
-                isFollowing: section.isFollowed,
+                isFollowing: _optimisticIsFollowed ?? section.isFollowed,
                 isLoggedIn: context.read<AuthProvider>().isLoggedIn,
+                myLevel: _myLevel,
                 onToggleFollow: _toggleFollowSection,
               ),
 
@@ -457,17 +482,12 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
     // sheet 用略亮的暗色当作 elevated surface，与 background 0xFF0D1117 区分
     final sheetColor = isDark ? const Color(0xFF171B24) : Colors.white;
 
-    final hasCover = section.mobileCoverUrl.isNotEmpty;
-    final initialChildSize = 0.66;
-    final minChildSize = hasCover ? 0.24 : 0.66;
-    final snapSizes = hasCover ? const [0.24, 0.66, 0.94] : const [0.66, 0.94];
-
     return DraggableScrollableSheet(
-      initialChildSize: initialChildSize,
-      minChildSize: minChildSize,
+      initialChildSize: 0.66,
+      minChildSize: 0.30,
       maxChildSize: 0.94,
       snap: true,
-      snapSizes: snapSizes,
+      snapSizes: const [0.30, 0.66, 0.94],
       builder: (context, scrollController) {
         // 存储 scrollController 供 _changeSort 滚动到顶部使用
         _sheetScrollController = scrollController;
@@ -567,6 +587,14 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
 
     return NotificationListener<ScrollNotification>(
         onNotification: (notification) {
+          final offset = notification.metrics.pixels;
+          final isCompact = offset > 80;
+          if (_isCompact != isCompact) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) setState(() => _isCompact = isCompact);
+            });
+          }
+
           if (notification.metrics.pixels >=
               notification.metrics.maxScrollExtent - 360) {
             final provider = context.read<PostProvider>();
@@ -590,9 +618,7 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
         },
         child: CustomScrollView(
           controller: scrollController,
-          physics: const AlwaysScrollableScrollPhysics(
-            parent: BouncingScrollPhysics(),
-          ),
+          physics: const ClampingScrollPhysics(),
           slivers: [
             // 吸顶：小横条 + 排序/标签单行筛选
             SliverPersistentHeader(
@@ -633,7 +659,7 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
                   ),
                 ),
               SliverPadding(
-                padding: const EdgeInsets.fromLTRB(12, 10, 12, 128),
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 148),
                 sliver: SliverList.separated(
                   itemCount: normalPosts.length,
                   separatorBuilder: (_, __) => const SizedBox(height: 0),
@@ -651,14 +677,14 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
               if (isLoading)
                 const SliverToBoxAdapter(
                   child: Padding(
-                    padding: EdgeInsets.only(bottom: 128),
+                    padding: EdgeInsets.only(bottom: 148),
                     child: Center(child: CircularProgressIndicator()),
                   ),
                 )
               else if (!hasMore)
                 SliverToBoxAdapter(
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(0, 0, 0, 128),
+                    padding: const EdgeInsets.fromLTRB(0, 0, 0, 148),
                     child: Center(
                       child: Text(
                         '已经到底了',
@@ -691,14 +717,23 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
         children: [
           const SizedBox(height: 10),
           Center(
-            child: Container(
-              width: 38,
-              height: 5,
-              decoration: BoxDecoration(
-                color: isDark
-                    ? Colors.white.withValues(alpha: 0.18)
-                    : const Color(0xFFD9DDE5),
-                borderRadius: BorderRadius.circular(999),
+            child: GestureDetector(
+              onTap: () {
+                _sheetScrollController?.animateTo(
+                  0.30,
+                  duration: const Duration(milliseconds: 260),
+                  curve: Curves.easeOutCubic,
+                );
+              },
+              child: Container(
+                width: 38,
+                height: 5,
+                decoration: BoxDecoration(
+                  color: isDark
+                      ? Colors.white.withValues(alpha: 0.18)
+                      : const Color(0xFFD9DDE5),
+                  borderRadius: BorderRadius.circular(999),
+                ),
               ),
             ),
           ),
@@ -782,27 +817,13 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
   }
 
   Widget _buildFloatingActions(Color categoryColor, bool isDark) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        FloatingActionButton.small(
-          heroTag: null,
-          onPressed: _refresh,
-          backgroundColor: isDark ? const Color(0xFF2C2F36) : Colors.white,
-          foregroundColor: isDark ? Colors.white70 : Colors.black54,
-          elevation: 4,
-          child: const Icon(Icons.refresh_rounded, size: 20),
-        ),
-        const SizedBox(height: 12),
-        FloatingActionButton(
-          heroTag: null,
-          onPressed: _openComposer,
-          backgroundColor: categoryColor,
-          foregroundColor: Colors.white,
-          elevation: 4,
-          child: const Icon(Icons.add_rounded, size: 28),
-        ),
-      ],
+    return SectionFloatingDock(
+      accentColor: categoryColor,
+      isDark: isDark,
+      isRefreshing: _isRefreshing,
+      compact: _isCompact,
+      onRefresh: _refresh,
+      onCompose: _openComposer,
     );
   }
 

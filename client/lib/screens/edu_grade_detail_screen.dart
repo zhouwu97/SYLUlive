@@ -3,6 +3,8 @@ import 'package:provider/provider.dart';
 import '../models/edu_grade.dart';
 import '../providers/edu_provider.dart';
 
+enum _TagTone { neutral, danger }
+
 /// Full-screen course grade detail page.
 ///
 /// Replaces [GradeDetailSheet] — pushed via [Navigator.push] instead
@@ -29,6 +31,94 @@ class _EduGradeDetailScreenState extends State<EduGradeDetailScreen> {
   bool _isLoadingDetail = false;
 
   EduGrade get grade => widget.grade;
+
+  // --- Helper Colors ---
+  Color _pageBg(bool isDark) =>
+      isDark ? const Color(0xFF111315) : const Color(0xFFFFFAF4);
+  Color _cardColor(bool isDark) =>
+      isDark ? const Color(0xFF1E2226) : Colors.white;
+  Color _accentColor(bool isDark) =>
+      isDark ? const Color(0xFF7ED6C5) : const Color(0xFF147C72);
+  Color _dangerColor(bool isDark) =>
+      isDark ? const Color(0xFFFF8A80) : const Color(0xFFE54848);
+  Color _borderColor(bool isDark) =>
+      isDark ? Colors.white.withValues(alpha: 0.08) : const Color(0xFFE2EFEA);
+  Color _titleColor(bool isDark) =>
+      isDark ? Colors.white : const Color(0xFF1F2328);
+  Color _subColor(bool isDark) =>
+      isDark ? Colors.grey.shade400 : const Color(0xFF747B82);
+
+  BoxDecoration _cardDecoration(bool isDark, {bool softGreen = false}) {
+    return BoxDecoration(
+      color: isDark ? _cardColor(isDark) : null,
+      gradient: !isDark && softGreen
+          ? const LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                Colors.white,
+                Color(0xFFF1FBF7),
+              ],
+            )
+          : (!isDark
+              ? const LinearGradient(colors: [Colors.white, Colors.white])
+              : null),
+      borderRadius: BorderRadius.circular(20),
+      border: Border.all(color: _borderColor(isDark)),
+      boxShadow: isDark
+          ? null
+          : [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.025),
+                blurRadius: 12,
+                offset: const Offset(0, 5),
+              ),
+            ],
+    );
+  }
+
+  Color _gradeColor(BuildContext context, EduGrade g) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    if (g.isPassed == false) return _dangerColor(isDark);
+    return _titleColor(isDark);
+  }
+
+  Widget _tag(BuildContext context, String label, _TagTone tone) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    late final Color bg;
+    late final Color fg;
+
+    switch (tone) {
+      case _TagTone.danger:
+        bg = isDark ? const Color(0xFF4A2525) : const Color(0xFFFFECEC);
+        fg = isDark ? const Color(0xFFFFB4B4) : const Color(0xFFD63C3C);
+        break;
+      case _TagTone.neutral:
+        bg = isDark
+            ? _accentColor(isDark).withValues(alpha: 0.12)
+            : const Color(0xFFEAF6F3);
+        fg = _accentColor(isDark);
+        break;
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 12,
+          height: 1.1,
+          fontWeight: FontWeight.w600,
+          color: fg,
+        ),
+      ),
+    );
+  }
 
   @override
   void initState() {
@@ -88,9 +178,10 @@ class _EduGradeDetailScreenState extends State<EduGradeDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final pageBg = _pageBg(isDark);
 
     return Scaffold(
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      backgroundColor: pageBg,
       appBar: AppBar(
         leading: const BackButton(),
         title: Text(
@@ -100,11 +191,12 @@ class _EduGradeDetailScreenState extends State<EduGradeDetailScreen> {
           overflow: TextOverflow.ellipsis,
         ),
         centerTitle: true,
-        backgroundColor: Colors.transparent,
+        backgroundColor: pageBg,
+        surfaceTintColor: Colors.transparent,
         elevation: 0,
       ),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 28),
         children: [
           _buildScoreHero(context, isDark),
           const SizedBox(height: 14),
@@ -127,13 +219,13 @@ class _EduGradeDetailScreenState extends State<EduGradeDetailScreen> {
               height: 18,
               child: CircularProgressIndicator(
                 strokeWidth: 2,
-                color: Theme.of(context).colorScheme.primary,
+                color: _accentColor(isDark),
               ),
             ),
             const SizedBox(width: 10),
             Text(
               '正在获取成绩构成',
-              style: TextStyle(fontSize: 13, color: Colors.grey[500]),
+              style: TextStyle(fontSize: 13, color: _subColor(isDark)),
             ),
           ],
         ),
@@ -146,17 +238,19 @@ class _EduGradeDetailScreenState extends State<EduGradeDetailScreen> {
         width: double.infinity,
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: isDark ? Colors.grey[850] : Colors.grey[100],
+          color: isDark
+              ? Colors.white.withValues(alpha: 0.05)
+              : const Color(0xFFF1FBF7),
           borderRadius: BorderRadius.circular(8),
         ),
         child: Row(
           children: [
-            Icon(Icons.info_outline, size: 16, color: Colors.grey[500]),
+            Icon(Icons.info_outline, size: 16, color: _subColor(isDark)),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
                 _detailError ?? '暂未获取到成绩构成',
-                style: TextStyle(fontSize: 13, color: Colors.grey[500]),
+                style: TextStyle(fontSize: 13, color: _subColor(isDark)),
               ),
             ),
           ],
@@ -173,52 +267,27 @@ class _EduGradeDetailScreenState extends State<EduGradeDetailScreen> {
     );
   }
 
-  Color _gradeColor(BuildContext context, EduGrade g) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final t = g.displayGrade.trim();
-    if (g.isPassed == false) return Colors.red;
-    if (t == '优秀') return Colors.green;
-    return isDark ? Colors.white : Colors.black87;
-  }
-
-  Widget _tag(BuildContext context, String label, bool isDark) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          fontSize: 12,
-          color: Theme.of(context).colorScheme.primary,
-        ),
-      ),
-    );
-  }
-
   Widget _componentHeader(BuildContext context) {
-    return const Padding(
-      padding: EdgeInsets.symmetric(vertical: 6),
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
         children: [
           Expanded(
             flex: 3,
-            child: Text('成绩分项',
-                style: TextStyle(fontSize: 12, color: Colors.grey)),
+            child: Text('项目',
+                style: TextStyle(fontSize: 12, color: _subColor(isDark))),
           ),
           Expanded(
             flex: 2,
-            child:
-                Text('比例', style: TextStyle(fontSize: 12, color: Colors.grey)),
+            child: Text('占比', textAlign: TextAlign.center, style: TextStyle(fontSize: 12, color: _subColor(isDark))),
           ),
           Expanded(
             flex: 2,
             child: Text(
-              '成绩',
+              '得分',
               textAlign: TextAlign.right,
-              style: TextStyle(fontSize: 12, color: Colors.grey),
+              style: TextStyle(fontSize: 12, color: _subColor(isDark)),
             ),
           ),
         ],
@@ -227,18 +296,23 @@ class _EduGradeDetailScreenState extends State<EduGradeDetailScreen> {
   }
 
   Widget _componentRow(BuildContext context, GradeComponent component) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final isTotal = component.name.contains('总');
+
+    final scoreValue = double.tryParse(component.score.trim());
+    final isFailing = scoreValue != null && scoreValue < 60;
 
     return Container(
       padding: EdgeInsets.symmetric(
-        vertical: isTotal ? 10 : 8,
+        vertical: isTotal ? 10 : 9,
         horizontal: isTotal ? 10 : 0,
       ),
       margin: EdgeInsets.only(top: isTotal ? 6 : 0),
       decoration: isTotal
           ? BoxDecoration(
-              color:
-                  Theme.of(context).colorScheme.primary.withValues(alpha: 0.06),
+              color: isDark
+                  ? _accentColor(isDark).withValues(alpha: 0.12)
+                  : const Color(0xFFEAF6F3),
               borderRadius: BorderRadius.circular(12),
             )
           : null,
@@ -254,6 +328,7 @@ class _EduGradeDetailScreenState extends State<EduGradeDetailScreen> {
                   style: TextStyle(
                     fontSize: isTotal ? 15 : 14,
                     fontWeight: isTotal ? FontWeight.w700 : FontWeight.w500,
+                    color: _titleColor(isDark),
                   ),
                 ),
               ),
@@ -261,9 +336,10 @@ class _EduGradeDetailScreenState extends State<EduGradeDetailScreen> {
                 flex: 2,
                 child: Text(
                   component.weight ?? '',
+                  textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 14,
-                    color: isTotal ? Colors.transparent : Colors.grey[600],
+                    color: isTotal ? Colors.transparent : _subColor(isDark),
                   ),
                 ),
               ),
@@ -283,7 +359,9 @@ class _EduGradeDetailScreenState extends State<EduGradeDetailScreen> {
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w600,
-                            color: Theme.of(context).colorScheme.primary,
+                            color: isFailing
+                                ? _dangerColor(isDark)
+                                : _accentColor(isDark),
                           ),
                         ),
                         const SizedBox(height: 3),
@@ -292,7 +370,9 @@ class _EduGradeDetailScreenState extends State<EduGradeDetailScreen> {
                           style: TextStyle(
                             fontSize: 15,
                             fontWeight: FontWeight.w800,
-                            color: Theme.of(context).colorScheme.primary,
+                            color: isFailing
+                                ? _dangerColor(isDark)
+                                : _accentColor(isDark),
                           ),
                         ),
                       ],
@@ -305,8 +385,10 @@ class _EduGradeDetailScreenState extends State<EduGradeDetailScreen> {
                         fontSize: isTotal ? 16 : 14,
                         fontWeight: isTotal ? FontWeight.w800 : FontWeight.w600,
                         color: isTotal
-                            ? Theme.of(context).colorScheme.primary
-                            : null,
+                            ? (isFailing
+                                ? _dangerColor(isDark)
+                                : _accentColor(isDark))
+                            : _titleColor(isDark),
                       ),
                     );
                   }
@@ -314,15 +396,19 @@ class _EduGradeDetailScreenState extends State<EduGradeDetailScreen> {
               ),
             ],
           ),
-          if (!isTotal) _weightBar(context, component),
+          if (!isTotal) _weightBar(context, component, isDark),
         ],
       ),
     );
   }
 
-  Widget _weightBar(BuildContext context, GradeComponent component) {
+  Widget _weightBar(
+      BuildContext context, GradeComponent component, bool isDark) {
     final weight = _parseWeightPercent(component.weight);
     if (weight == null) return const SizedBox.shrink();
+
+    final scoreValue = double.tryParse(component.score.trim());
+    final isFailing = scoreValue != null && scoreValue < 60;
 
     return Padding(
       padding: const EdgeInsets.only(top: 6),
@@ -330,11 +416,14 @@ class _EduGradeDetailScreenState extends State<EduGradeDetailScreen> {
         borderRadius: BorderRadius.circular(999),
         child: LinearProgressIndicator(
           value: weight / 100,
-          minHeight: 4,
-          backgroundColor:
-              Theme.of(context).colorScheme.primary.withValues(alpha: 0.08),
+          minHeight: 5,
+          backgroundColor: isDark
+              ? Colors.white.withValues(alpha: 0.1)
+              : const Color(0xFFE9F1EF),
           valueColor: AlwaysStoppedAnimation<Color>(
-            Theme.of(context).colorScheme.primary.withValues(alpha: 0.35),
+            isFailing
+                ? _dangerColor(isDark).withValues(alpha: 0.55)
+                : _accentColor(isDark).withValues(alpha: 0.45),
           ),
         ),
       ),
@@ -354,22 +443,17 @@ class _EduGradeDetailScreenState extends State<EduGradeDetailScreen> {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
-      decoration: BoxDecoration(
-        color: isDark ? Colors.grey[900] : Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: isDark ? Colors.grey.shade800 : Colors.grey.shade200,
-        ),
-      ),
+      decoration: _cardDecoration(isDark, softGreen: grade.isPassed != false),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             grade.name,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.w700,
               height: 1.25,
+              color: _titleColor(isDark),
             ),
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
@@ -384,7 +468,7 @@ class _EduGradeDetailScreenState extends State<EduGradeDetailScreen> {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontSize: _isNumericText(grade.displayGrade) ? 52 : 50,
+                    fontSize: isDisplayGradeNumeric ? 52 : 50,
                     height: 1,
                     fontWeight: FontWeight.w800,
                     color: _gradeColor(context, grade),
@@ -405,7 +489,7 @@ class _EduGradeDetailScreenState extends State<EduGradeDetailScreen> {
                               fontSize: 20,
                               height: 1.1,
                               fontWeight: FontWeight.w800,
-                              color: Theme.of(context).colorScheme.primary,
+                              color: _accentColor(isDark),
                             ),
                           ),
                           const SizedBox(height: 3),
@@ -414,7 +498,7 @@ class _EduGradeDetailScreenState extends State<EduGradeDetailScreen> {
                             style: TextStyle(
                               fontSize: 12,
                               height: 1,
-                              color: Colors.grey[500],
+                              color: _subColor(isDark),
                               fontWeight: FontWeight.w500,
                             ),
                           ),
@@ -424,7 +508,7 @@ class _EduGradeDetailScreenState extends State<EduGradeDetailScreen> {
                         '总评',
                         style: TextStyle(
                           fontSize: 13,
-                          color: Colors.grey[500],
+                          color: _subColor(isDark),
                           fontWeight: FontWeight.w500,
                         ),
                       ),
@@ -437,7 +521,7 @@ class _EduGradeDetailScreenState extends State<EduGradeDetailScreen> {
               subtitleItems.join(' · '),
               style: TextStyle(
                 fontSize: 13,
-                color: Colors.grey[600],
+                color: _subColor(isDark),
               ),
             ),
           ],
@@ -446,11 +530,16 @@ class _EduGradeDetailScreenState extends State<EduGradeDetailScreen> {
             spacing: 8,
             runSpacing: 8,
             children: [
-              _tag(context, grade.isDegree ? '学位课' : '非学位课', isDark),
+              _tag(
+                  context,
+                  grade.isDegree ? '学位课' : '非学位课',
+                  _TagTone.neutral),
               if (grade.examType != null)
-                _tag(context, grade.examType!, isDark),
+                _tag(context, grade.examType!, _TagTone.neutral),
               if (grade.assessmentMethod != null)
-                _tag(context, grade.assessmentMethod!, isDark),
+                _tag(context, grade.assessmentMethod!, _TagTone.neutral),
+              if (grade.isPassed == false)
+                _tag(context, '未通过', _TagTone.danger),
             ],
           ),
         ],
@@ -462,29 +551,36 @@ class _EduGradeDetailScreenState extends State<EduGradeDetailScreen> {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
-      decoration: BoxDecoration(
-        color: isDark ? Colors.grey[900] : Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: isDark ? Colors.grey.shade800 : Colors.grey.shade200,
-        ),
-      ),
+      decoration: _cardDecoration(isDark),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              const Expanded(
+              Expanded(
                 child: Text(
                   '成绩构成',
-                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+                  style: TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                    color: _titleColor(isDark),
+                  ),
                 ),
               ),
-              IconButton(
-                icon: const Icon(Icons.refresh, size: 18),
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(),
-                onPressed: () => _loadDetail(forceRefresh: true),
+              Material(
+                color: _accentColor(isDark)
+                    .withValues(alpha: isDark ? 0.14 : 0.10),
+                borderRadius: BorderRadius.circular(999),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(999),
+                  onTap: () => _loadDetail(forceRefresh: true),
+                  child: SizedBox(
+                    width: 34,
+                    height: 34,
+                    child: Icon(Icons.refresh_rounded,
+                        size: 18, color: _accentColor(isDark)),
+                  ),
+                ),
               ),
             ],
           ),
@@ -515,21 +611,21 @@ class _EduGradeDetailScreenState extends State<EduGradeDetailScreen> {
     ];
 
     return Container(
-      decoration: BoxDecoration(
-        color: isDark ? Colors.grey[900] : Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: isDark ? Colors.grey.shade800 : Colors.grey.shade200,
-        ),
-      ),
+      decoration: _cardDecoration(isDark),
       child: Theme(
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
           tilePadding: const EdgeInsets.symmetric(horizontal: 16),
           childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
-          title: const Text(
+          iconColor: _accentColor(isDark),
+          collapsedIconColor: _accentColor(isDark),
+          title: Text(
             '课程信息',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              color: _titleColor(isDark),
+            ),
           ),
           subtitle: Text(
             [
@@ -539,7 +635,7 @@ class _EduGradeDetailScreenState extends State<EduGradeDetailScreen> {
             ].join(' · '),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+            style: TextStyle(fontSize: 12, color: _subColor(isDark)),
           ),
           children: rows,
         ),
@@ -548,13 +644,27 @@ class _EduGradeDetailScreenState extends State<EduGradeDetailScreen> {
   }
 
   Widget _infoRow(BuildContext context, String label, String value) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
+      padding: const EdgeInsets.symmetric(vertical: 7),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: TextStyle(fontSize: 14, color: Colors.grey[600])),
-          Text(value, style: const TextStyle(fontSize: 14)),
+          Text(
+            label,
+            style: TextStyle(fontSize: 14, color: _subColor(isDark)),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Text(
+              value,
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: _titleColor(isDark),
+              ),
+            ),
+          ),
         ],
       ),
     );

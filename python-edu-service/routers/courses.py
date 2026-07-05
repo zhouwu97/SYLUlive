@@ -127,7 +127,11 @@ async def sync_courses(
 
         # 删除旧自定义数据（如果有）
         await db.execute(
-            delete(CourseCustom).where(CourseCustom.user_id == input.user_id)
+            delete(CourseCustom).where(
+                CourseCustom.user_id == input.user_id,
+                CourseCustom.year == input.year,
+                CourseCustom.semester == input.semester
+            )
         )
 
         # 存储原始数据
@@ -181,6 +185,8 @@ async def sync_courses(
                 start_section=start_section,
                 end_section=end_section,
                 weeks=json.dumps(weeks),
+                year=input.year,
+                semester=input.semester,
                 original_name=name,
                 original_location=location,
                 teacher=teacher
@@ -206,11 +212,17 @@ async def sync_courses(
 @router.get("/local", response_model=LocalCoursesResponse)
 async def get_local_courses(
     user_id: str,
+    year: str,
+    semester: int,
     db: AsyncSession = Depends(get_db)
 ):
     """获取本地已美化课表"""
     result = await db.execute(
-        select(CourseCustom).where(CourseCustom.user_id == user_id)
+        select(CourseCustom).where(
+            CourseCustom.user_id == user_id,
+            CourseCustom.year == year,
+            CourseCustom.semester == semester
+        )
     )
     courses = result.scalars().all()
 
@@ -232,6 +244,8 @@ async def get_local_courses(
             start_section=c.start_section,
             end_section=c.end_section,
             weeks=json.loads(c.weeks) if c.weeks else [],
+            year=c.year,
+            semester=c.semester,
             original_name=c.original_name,
             teacher=c.teacher
         ))
@@ -285,6 +299,8 @@ async def update_course(
         start_section=course.start_section,
         end_section=course.end_section,
         weeks=json.loads(course.weeks) if course.weeks else [],
+        year=course.year,
+        semester=course.semester,
         original_name=course.original_name,
         original_location=course.original_location,
         teacher=course.teacher
@@ -314,6 +330,8 @@ async def delete_course(
 @router.post("/customize/{course_code}")
 async def customize_course(
     course_code: str,
+    year: str,
+    semester: int,
     input: CourseCustomInput,
     db: AsyncSession = Depends(get_db)
 ):
@@ -321,6 +339,8 @@ async def customize_course(
     result = await db.execute(
         select(CourseCustom).where(
             CourseCustom.user_id == input.user_id,
+            CourseCustom.year == year,
+            CourseCustom.semester == semester,
             CourseCustom.course_code == course_code
         )
     )
@@ -331,6 +351,8 @@ async def customize_course(
         course = CourseCustom(
             user_id=input.user_id,
             course_code=course_code,
+            year=year,
+            semester=semester,
             custom_name=input.custom_name,
             color=input.color,
             location_custom=input.location_custom,
@@ -364,7 +386,7 @@ async def customize_course(
 
 @router.post("/manual")
 async def add_manual_course(
-    input: CourseCustomInput,
+    input: ManualCourseInput,
     db: AsyncSession = Depends(get_db)
 ):
     """手动添加课程（不从教务抓取，直接写入本地）"""
@@ -387,9 +409,11 @@ async def add_manual_course(
         start_section=input.start_section,
         end_section=input.end_section,
         weeks=json.dumps(input.weeks),
+        year=input.year,
+        semester=input.semester,
         original_name=input.custom_name,
         original_location=input.location_custom,
-        teacher=None
+        teacher=input.teacher
     )
     db.add(course)
     await db.commit()

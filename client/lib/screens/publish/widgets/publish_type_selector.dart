@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 
 /// 集市发布类型选择器。
 class PublishTypeSelector extends StatelessWidget {
-  static const _accent = Color(0xFF4F5AF7);
+  static const _accent = Color(0xFFFF7A45);
 
   final String currentType;
   final List<String>? allowedTypes;

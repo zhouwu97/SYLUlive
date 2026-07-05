@@ -284,7 +284,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
         ],
       );
     }
-    return ColoredBox(color: isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB));
+    return ColoredBox(color: isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight);
   }
 }
 

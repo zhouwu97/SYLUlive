@@ -464,7 +464,7 @@ func (h *WaterSectionHandler) fillSectionStats(resps []waterSectionResponse) []w
 	var postCounts []postCountResult
 	h.db.Model(&models.Post{}).
 		Select("type, COUNT(*) as count").
-		Where("board_id = ? AND type IN ? AND status = ?", 1, slugs, "active").
+		Where("board_id = ? AND type IN ? AND status = ?", 1, slugs, "normal").
 		Group("type").
 		Scan(&postCounts)
 

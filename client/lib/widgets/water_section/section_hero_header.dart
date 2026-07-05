@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../config/api_constants.dart';
 import '../../models/water_section.dart';
+import '../../models/water_section_my_level.dart';
 import '../level_progress_pill.dart';
 import 'section_avatar.dart';
 import 'section_channel_card.dart';
@@ -17,6 +18,7 @@ class SectionHeroHeader extends StatelessWidget {
   final Color accentColor;
   final bool isFollowing;
   final bool isLoggedIn;
+  final WaterSectionMyLevel? myLevel;
   final VoidCallback onToggleFollow;
 
   const SectionHeroHeader({
@@ -25,6 +27,7 @@ class SectionHeroHeader extends StatelessWidget {
     required this.accentColor,
     required this.isFollowing,
     required this.isLoggedIn,
+    this.myLevel,
     required this.onToggleFollow,
   });
 
@@ -189,16 +192,39 @@ class SectionHeroHeader extends StatelessWidget {
 
   /// 等级卡：只展示本版等级 + 经验进度（不展示账号等级）
   Widget _buildLevelCard(bool isDark, bool hasCover) {
-    final myLevel = section.myLevel;
+    int level = 1;
+    String? title;
+    String expText = '';
+    double progress = 0.0;
+    bool isMaxLevel = false;
+
+    if (!isFollowing) {
+      level = 0;
+      title = '未关注';
+      expText = '关注后积攒经验';
+      progress = 0.0;
+    } else if (myLevel != null) {
+      level = myLevel!.level;
+      title = myLevel!.title;
+      expText = '${myLevel!.exp}/${myLevel!.nextLevelExp}';
+      progress = myLevel!.progressRatio;
+      isMaxLevel = myLevel!.isMaxLevel;
+    } else if (section.myLevel != null) {
+      level = section.myLevel!.level;
+      title = section.myLevel!.title;
+      expText = '${section.myLevel!.exp}/${section.myLevel!.nextLevelExp}';
+      progress = section.myLevel!.progress;
+      isMaxLevel = section.myLevel!.isMaxLevel;
+    }
 
     return LevelProgressPill(
-      levelLabel: '本版 Lv.${myLevel?.level ?? 1}',
-      title: myLevel?.title,
-      expText: myLevel != null ? '${myLevel.exp}/${myLevel.nextLevelExp}' : '',
-      progress: myLevel?.progress ?? 0.0,
+      levelLabel: '本版 Lv.$level',
+      title: title,
+      expText: expText,
+      progress: progress,
       accentColor: accentColor,
       darkOnImage: hasCover,
-      isMaxLevel: myLevel?.isMaxLevel ?? false,
+      isMaxLevel: isMaxLevel,
       isLoggedIn: isLoggedIn,
     );
   }

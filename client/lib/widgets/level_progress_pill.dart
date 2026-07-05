@@ -27,7 +27,7 @@ class LevelProgressPill extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     final pillBgColor = darkOnImage
-        ? Colors.black.withValues(alpha: 0.35)
+        ? Colors.black.withValues(alpha: 0.15)
         : (isDark
             ? Colors.white.withValues(alpha: 0.06)
             : Colors.white.withValues(alpha: 0.85));
@@ -48,7 +48,7 @@ class LevelProgressPill extends StatelessWidget {
         border: Border.all(color: pillBorderColor, width: 1),
       ),
       child: Row(
-        mainAxisSize: MainAxisSize.min,
+        mainAxisSize: MainAxisSize.max,
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Icon(Icons.workspace_premium_rounded, size: 14, color: accentColor),
@@ -90,8 +90,7 @@ class LevelProgressPill extends StatelessWidget {
               ),
             ),
           ] else if (expText.isNotEmpty) ...[
-            SizedBox(
-              width: 50,
+            Expanded(
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(999),
                 child: LinearProgressIndicator(

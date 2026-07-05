@@ -206,12 +206,12 @@ class _CampusScreenState extends State<CampusScreen>
                       index: 0,
                       child: CampusHeader(semester: _currentSemesterText()),
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 10),
                     HomeTabRevealItem(
                       index: 1,
                       child: _buildLatestCard(isDark),
                     ),
-                    const SizedBox(height: 18),
+                    const SizedBox(height: 12),
                     HomeTabRevealItem(
                       index: 2,
                       child: CampusServiceGrid(
@@ -223,7 +223,7 @@ class _CampusScreenState extends State<CampusScreen>
                             _openPage(const CampusCalendarScreen()),
                       ),
                     ),
-                    const SizedBox(height: 18),
+                    const SizedBox(height: 12),
                     HomeTabRevealItem(
                       index: 3,
                       child: CampusNewsSectionHeader(
@@ -232,7 +232,7 @@ class _CampusScreenState extends State<CampusScreen>
                             _openPage(const CompetitionCenterScreen()),
                       ),
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 6),
                   ]),
                 ),
               ),
@@ -390,7 +390,7 @@ class _LatestCardSkeleton extends StatelessWidget {
     final shimmerColor = isDark ? Colors.white10 : CampusTheme.softBorder;
 
     return ConstrainedBox(
-      constraints: const BoxConstraints(minHeight: 106),
+      constraints: const BoxConstraints(minHeight: 112),
       child: Container(
         width: double.infinity,
         clipBehavior: Clip.antiAlias,

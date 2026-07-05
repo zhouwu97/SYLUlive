@@ -10,6 +10,7 @@ import 'package:image_picker/image_picker.dart';
 import '../providers/auth_provider.dart';
 import '../providers/canteen_provider.dart';
 import '../config/api_constants.dart';
+import '../widgets/rating_detail/ranking_tokens.dart';
 
 class CanteenDetailScreen extends StatefulWidget {
   final int canteenId;
@@ -54,6 +55,8 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final accent = RankingTokens.canteenAccent(isDark);
     if (_isLoading) {
       return const Scaffold(
         body: Center(child: CircularProgressIndicator()),
@@ -75,8 +78,8 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
         statusBarIconBrightness: Brightness.light,
       ),
       child: Scaffold(
-        backgroundColor: const Color(0xFFF6F7FB),
-        bottomNavigationBar: _buildFloatingRatingComposer(),
+        backgroundColor: RankingTokens.pageBg(isDark),
+        bottomNavigationBar: _buildFloatingRatingComposer(isDark, accent),
         body: CustomScrollView(
           slivers: [
             SliverToBoxAdapter(child: _buildHeroSection()),
@@ -84,20 +87,20 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
               child: Column(
                 children: [
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-                    child: _buildInfoCard(),
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                    child: _buildInfoCard(isDark, accent),
                   ),
-                  const SizedBox(height: 16),
-                  _buildReviewHeader(reviews.length),
+                  const SizedBox(height: 12),
+                  _buildReviewHeader(reviews.length, isDark, accent),
                 ],
               ),
             ),
             if (reviews.isEmpty)
-              SliverToBoxAdapter(child: _buildEmptyReviews())
+              SliverToBoxAdapter(child: _buildEmptyReviews(isDark))
             else
               SliverList(
                 delegate: SliverChildBuilderDelegate(
-                  (context, index) => _buildReviewItem(reviews[index]),
+                  (context, index) => _buildReviewItem(reviews[index], isDark, accent),
                   childCount: reviews.length,
                 ),
               ),
@@ -226,24 +229,14 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
     );
   }
 
-  Widget _buildInfoCard() {
+  Widget _buildInfoCard(bool isDark, Color accent) {
     final name = _canteenData?['canteen']?['name']?.toString() ?? '';
     final rating = (_canteenData?['average_star'] as num?)?.toDouble() ?? 0;
     final count = (_canteenData?['rating_count'] as num?)?.toInt() ?? 0;
 
     return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(22),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.06),
-            blurRadius: 18,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
+      padding: const EdgeInsets.all(16),
+      decoration: RankingTokens.cardDecoration(isDark),
       child: Row(
         children: [
           Expanded(
@@ -252,22 +245,22 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
               children: [
                 Text(
                   name,
-                  style: const TextStyle(
-                    fontSize: 24,
+                  style: TextStyle(
+                    fontSize: 22,
                     fontWeight: FontWeight.w800,
-                    color: Color(0xFF151821),
+                    color: RankingTokens.titleColor(isDark),
                   ),
                 ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 8),
                 Row(
                   children: [
-                    _stars(rating, 20),
+                    _stars(rating, 18),
                     const SizedBox(width: 8),
                     Text(
                       '$count 人评价',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 13,
-                        color: Color(0xFF7A8190),
+                        color: RankingTokens.subColor(isDark),
                       ),
                     ),
                   ],
@@ -276,30 +269,29 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
             ),
           ),
           Container(
-            width: 76,
+            width: 68,
             padding: const EdgeInsets.symmetric(vertical: 10),
-            margin: const EdgeInsets.only(left: 12),
             decoration: BoxDecoration(
-              color: const Color(0xFFFFF4D8),
-              borderRadius: BorderRadius.circular(16),
+              color: accent.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(14),
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
                   rating.toStringAsFixed(1),
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 24,
                     fontWeight: FontWeight.w800,
-                    color: Color(0xFFFFA800),
+                    color: accent,
                   ),
                 ),
                 const SizedBox(height: 2),
-                const Text(
+                Text(
                   '综合评分',
                   style: TextStyle(
-                    fontSize: 11,
-                    color: Color(0xFF9B7A22),
+                    fontSize: 10,
+                    color: RankingTokens.subColor(isDark),
                   ),
                 ),
               ],
@@ -310,21 +302,17 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
     );
   }
 
-  Widget _buildFloatingRatingComposer() {
+  Widget _buildFloatingRatingComposer(bool isDark, Color accent) {
     final bottom = MediaQuery.of(context).padding.bottom;
     final hasRating = _canteenData?['my_rating'] != null;
 
     return Container(
-      padding: EdgeInsets.fromLTRB(16, 10, 16, bottom + 10),
+      padding: EdgeInsets.fromLTRB(16, 8, 16, bottom + 8),
       decoration: BoxDecoration(
-        color: Colors.white,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.08),
-            blurRadius: 16,
-            offset: const Offset(0, -4),
-          ),
-        ],
+        color: RankingTokens.cardBg(isDark),
+        border: Border(
+          top: BorderSide(color: RankingTokens.borderColor(isDark)),
+        ),
       ),
       child: Row(
         children: [
@@ -335,19 +323,18 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
                 borderRadius: BorderRadius.circular(999),
                 onTap: _showRatingSheet,
                 child: Container(
-                  height: 42,
+                  height: 44,
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFF6F7FB),
-                    borderRadius: BorderRadius.circular(999),
-                    border: Border.all(color: const Color(0xFFE6E8EF)),
+                    color: RankingTokens.pageBg(isDark),
+                    borderRadius: BorderRadius.circular(16),
                   ),
                   alignment: Alignment.centerLeft,
                   child: Text(
                     hasRating ? '修改我的评价...' : '说说你的真实体验...',
-                    style: const TextStyle(
-                      fontSize: 14,
-                      color: Color(0xFF9AA0AA),
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: RankingTokens.subColor(isDark),
                     ),
                   ),
                 ),
@@ -358,12 +345,13 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
           FilledButton(
             onPressed: _showRatingSheet,
             style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFFFFA800),
+              backgroundColor: accent,
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(horizontal: 16),
-              minimumSize: const Size(74, 42),
+              minimumSize: const Size(74, 44),
+              elevation: 0,
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(999),
+                borderRadius: BorderRadius.circular(14),
               ),
             ),
             child: const Text(
@@ -376,40 +364,40 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
     );
   }
 
-  Widget _buildReviewHeader(int count) {
+  Widget _buildReviewHeader(int count, bool isDark, Color accent) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              const Text(
+              Text(
                 '用户评价',
                 style: TextStyle(
-                  fontSize: 18,
+                  fontSize: 17,
                   fontWeight: FontWeight.w800,
-                  color: Color(0xFF151821),
+                  color: RankingTokens.titleColor(isDark),
                 ),
               ),
               const SizedBox(width: 8),
-              _buildCountBadge('$count 条'),
+              _buildCountBadge('$count 条', isDark),
               const Spacer(),
-              _buildSortChip('best', '综合'),
+              _buildSortChip('best', '综合', isDark, accent),
               const SizedBox(width: 8),
-              _buildSortChip('latest', '最新'),
+              _buildSortChip('latest', '最新', isDark, accent),
             ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 8),
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(
               children: [
-                _buildFilterChip('all', '全部'),
+                _buildFilterChip('all', '全部', isDark, accent),
                 const SizedBox(width: 8),
-                _buildFilterChip('high', '高分'),
+                _buildFilterChip('high', '高分', isDark, accent),
                 const SizedBox(width: 8),
-                _buildFilterChip('low', '低分'),
+                _buildFilterChip('low', '低分', isDark, accent),
               ],
             ),
           ),
@@ -418,24 +406,26 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
     );
   }
 
-  Widget _buildCountBadge(String label) {
+  Widget _buildCountBadge(String label, bool isDark) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: const Color(0xFFF0F2F7),
+        color: isDark
+            ? Colors.white.withValues(alpha: 0.06)
+            : const Color(0xFFF0F2F7),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
         label,
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 12,
-          color: Color(0xFF7A8190),
+          color: RankingTokens.subColor(isDark),
         ),
       ),
     );
   }
 
-  Widget _buildSortChip(String value, String label) {
+  Widget _buildSortChip(String value, String label, bool isDark, Color accent) {
     final selected = _reviewSort == value;
     return GestureDetector(
       onTap: () async {
@@ -447,10 +437,10 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
         duration: const Duration(milliseconds: 160),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
-          color: selected ? const Color(0xFFFFA800) : Colors.white,
+          color: selected ? accent : RankingTokens.cardBg(isDark),
           borderRadius: BorderRadius.circular(999),
           border: Border.all(
-            color: selected ? const Color(0xFFFFA800) : const Color(0xFFE6E8EF),
+            color: selected ? accent : RankingTokens.borderColor(isDark),
           ),
         ),
         child: Text(
@@ -458,14 +448,16 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
           style: TextStyle(
             fontSize: 12,
             fontWeight: FontWeight.w700,
-            color: selected ? Colors.white : const Color(0xFF606775),
+            color: selected
+                ? Colors.white
+                : RankingTokens.subColor(isDark),
           ),
         ),
       ),
     );
   }
 
-  Widget _buildFilterChip(String value, String label) {
+  Widget _buildFilterChip(String value, String label, bool isDark, Color accent) {
     final selected = _reviewFilter == value;
     return GestureDetector(
       onTap: () async {
@@ -475,27 +467,31 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
       },
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 160),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
-          color: selected ? const Color(0xFFFFF4D8) : Colors.white,
+          color: selected
+              ? accent.withValues(alpha: 0.1)
+              : RankingTokens.cardBg(isDark),
           borderRadius: BorderRadius.circular(999),
           border: Border.all(
-            color: selected ? const Color(0xFFFFD27A) : const Color(0xFFE6E8EF),
+            color: selected
+                ? accent.withValues(alpha: 0.3)
+                : RankingTokens.borderColor(isDark),
           ),
         ),
         child: Text(
           label,
           style: TextStyle(
-            fontSize: 13,
+            fontSize: 12,
             fontWeight: FontWeight.w700,
-            color: selected ? const Color(0xFFFFA800) : const Color(0xFF606775),
+            color: selected ? accent : RankingTokens.subColor(isDark),
           ),
         ),
       ),
     );
   }
 
-  Widget _buildReviewItem(Map<String, dynamic> review) {
+  Widget _buildReviewItem(Map<String, dynamic> review, bool isDark, Color accent) {
     final id = (review['id'] as num?)?.toInt() ?? 0;
     final userId = (review['user_id'] as num?)?.toInt() ?? 0;
     final currentUserId = context.read<AuthProvider>().user?.id;
@@ -511,60 +507,49 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
 
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFEDEFF5)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.025),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
+      decoration: RankingTokens.cardDecoration(isDark),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              _stars(rating, 15),
+              _stars(rating, 14),
               const SizedBox(width: 8),
               Text(
                 '${rating.toStringAsFixed(1)}分',
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w800,
-                  color: Color(0xFFFFA800),
+                  color: RankingTokens.canteenAccent(isDark),
                 ),
               ),
             ],
           ),
           if (content.trim().isNotEmpty) ...[
-            const SizedBox(height: 10),
+            const SizedBox(height: 8),
             Text(
               content,
-              style: const TextStyle(
-                fontSize: 15,
-                height: 1.55,
+              style: TextStyle(
+                fontSize: 14,
+                height: 1.5,
                 fontWeight: FontWeight.w500,
-                color: Color(0xFF252A33),
+                color: RankingTokens.titleColor(isDark),
               ),
             ),
           ] else ...[
-            const SizedBox(height: 10),
-            const Text(
+            const SizedBox(height: 8),
+            Text(
               '这位同学没有留下文字评价',
               style: TextStyle(
-                fontSize: 14,
-                color: Color(0xFFA0A6B2),
+                fontSize: 13,
+                color: RankingTokens.subColor(isDark),
               ),
             ),
           ],
           if (imgList.isNotEmpty)
             Padding(
-              padding: const EdgeInsets.only(top: 10),
+              padding: const EdgeInsets.only(top: 8),
               child: Wrap(
                 spacing: 8,
                 runSpacing: 8,
@@ -589,7 +574,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
                     .toList(),
               ),
             ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 12),
           Row(
             children: [
               _buildSmallAvatar(avatar),
@@ -599,9 +584,9 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
                   _reviewAuthorText(nickname, review['created_at']),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 12,
-                    color: Color(0xFF8A92A3),
+                    color: RankingTokens.subColor(isDark),
                     fontWeight: FontWeight.w500,
                   ),
                 ),
@@ -611,19 +596,23 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
                   icon: Icons.thumb_up_alt_rounded,
                   count: helpfulCount,
                   selected: myVote == 'up',
+                  isDark: isDark,
+                  accent: accent,
                   onTap: _isVoting
                       ? null
-                      : () => _voteRating(id, myVote == 'up' ? 'none' : 'up'),
+                      : () => _voteRating(id, myVote == 'up' ? 'none' : 'up', isDark),
                 ),
                 const SizedBox(width: 8),
                 _buildVoteButton(
                   icon: Icons.thumb_down_alt_rounded,
                   count: unhelpfulCount,
                   selected: myVote == 'down',
+                  isDark: isDark,
+                  accent: accent,
                   onTap: _isVoting
                       ? null
                       : () =>
-                          _voteRating(id, myVote == 'down' ? 'none' : 'down'),
+                          _voteRating(id, myVote == 'down' ? 'none' : 'down', isDark),
                 ),
               ],
             ],
@@ -655,6 +644,8 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
     required int count,
     required bool selected,
     required VoidCallback? onTap,
+    required bool isDark,
+    required Color accent,
   }) {
     return InkWell(
       borderRadius: BorderRadius.circular(999),
@@ -662,10 +653,10 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
         decoration: BoxDecoration(
-          color: selected ? const Color(0xFFFFF4D8) : const Color(0xFFF6F7FB),
+          color: selected ? RankingTokens.canteenAccentSoft(isDark) : RankingTokens.pageBg(isDark),
           borderRadius: BorderRadius.circular(999),
           border: Border.all(
-            color: selected ? const Color(0xFFFFD27A) : const Color(0xFFE8EAF0),
+            color: selected ? RankingTokens.canteenAccent(isDark).withValues(alpha: 0.3) : RankingTokens.borderColor(isDark),
           ),
         ),
         child: Row(
@@ -674,7 +665,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
               icon,
               size: 14,
               color:
-                  selected ? const Color(0xFFFFA800) : const Color(0xFF8A92A3),
+                  selected ? RankingTokens.canteenAccent(isDark) : RankingTokens.subColor(isDark),
             ),
             const SizedBox(width: 4),
             Text(
@@ -683,8 +674,8 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
                 fontSize: 12,
                 fontWeight: FontWeight.w700,
                 color: selected
-                    ? const Color(0xFFFFA800)
-                    : const Color(0xFF8A92A3),
+                    ? RankingTokens.canteenAccent(isDark)
+                    : RankingTokens.subColor(isDark),
               ),
             ),
           ],
@@ -693,38 +684,34 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
     );
   }
 
-  Widget _buildEmptyReviews() {
+  Widget _buildEmptyReviews(bool isDark) {
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 28),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFEDEFF5)),
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+      decoration: RankingTokens.cardDecoration(isDark),
       child: Column(
         children: [
-          const Icon(
+          Icon(
             Icons.rate_review_rounded,
-            size: 30,
-            color: Color(0xFFB5BCCB),
+            size: 28,
+            color: RankingTokens.subColor(isDark),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 8),
           Text(
             _emptyReviewTitle(),
-            style: const TextStyle(
-              fontSize: 15,
+            style: TextStyle(
+              fontSize: 14,
               fontWeight: FontWeight.w800,
-              color: Color(0xFF252A33),
+              color: RankingTokens.titleColor(isDark),
             ),
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 4),
           Text(
             _emptyReviewSubtitle(),
             textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontSize: 13,
-              color: Color(0xFF8A92A3),
+            style: TextStyle(
+              fontSize: 12,
+              color: RankingTokens.subColor(isDark),
             ),
           ),
         ],
@@ -784,7 +771,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
     }
   }
 
-  Future<void> _voteRating(int ratingId, String vote) async {
+  Future<void> _voteRating(int ratingId, String vote, bool isDark) async {
     if (_isVoting) return;
     if (!context.read<AuthProvider>().isLoggedIn) {
       ScaffoldMessenger.of(context)
@@ -880,6 +867,8 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
       );
 
   Future<void> _showRatingSheet() async {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final accent = RankingTokens.canteenAccent(isDark);
     final auth = context.read<AuthProvider>();
     if (!auth.isLoggedIn) {
       ScaffoldMessenger.of(context)
@@ -930,9 +919,9 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
                 ),
                 child: Container(
                   padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
-                  decoration: const BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.vertical(
+                  decoration: BoxDecoration(
+                    color: RankingTokens.cardBg(isDark),
+                    borderRadius: const BorderRadius.vertical(
                       top: Radius.circular(24),
                     ),
                   ),
@@ -947,7 +936,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
                             width: 36,
                             height: 4,
                             decoration: BoxDecoration(
-                              color: const Color(0xFFE0E3EA),
+                              color: RankingTokens.borderColor(isDark),
                               borderRadius: BorderRadius.circular(999),
                             ),
                           ),
@@ -955,18 +944,18 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
                         const SizedBox(height: 18),
                         Text(
                           myRating == null ? '写评价' : '修改评价',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 20,
                             fontWeight: FontWeight.w800,
-                            color: Color(0xFF151821),
+                            color: RankingTokens.titleColor(isDark),
                           ),
                         ),
                         const SizedBox(height: 6),
-                        const Text(
+                        Text(
                           '给这个食堂打个分，顺便说说真实体验',
                           style: TextStyle(
                             fontSize: 13,
-                            color: Color(0xFF8A92A3),
+                            color: RankingTokens.subColor(isDark),
                           ),
                         ),
                         const SizedBox(height: 18),
@@ -988,7 +977,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
                                 selected
                                     ? Icons.star_rounded
                                     : Icons.star_border_rounded,
-                                color: const Color(0xFFFFA800),
+                                color: accent,
                                 size: 34,
                               ),
                             );
@@ -1003,8 +992,9 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
                           enabled: !isSubmitting,
                           decoration: InputDecoration(
                             hintText: '比如味道、价格、排队情况、推荐窗口...',
+                            hintStyle: TextStyle(color: RankingTokens.subColor(isDark)),
                             filled: true,
-                            fillColor: const Color(0xFFF6F7FB),
+                            fillColor: RankingTokens.pageBg(isDark),
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(18),
                               borderSide: BorderSide.none,
@@ -1021,7 +1011,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
                                 ? null
                                 : submitRating,
                             style: FilledButton.styleFrom(
-                              backgroundColor: const Color(0xFFFFA800),
+                              backgroundColor: accent,
                               foregroundColor: Colors.white,
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(16),
@@ -1060,6 +1050,8 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
   }
 
   void _showEditImageSheet() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final accent = RankingTokens.canteenAccent(isDark);
     final currentImage = _canteenData!['canteen']['image']?.toString() ?? '';
     CroppedFile? pendingCoverFile;
     Uint8List? pendingCoverBytes;
@@ -1074,7 +1066,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
         return StatefulBuilder(
           builder: (context, setSheetState) {
             Future<void> pickCover() async {
-              final cropped = await _pickAndCropCanteenCover(context);
+              final cropped = await _pickAndCropCanteenCover(context, accent);
               if (cropped == null) return;
               final bytes = await cropped.readAsBytes();
               if (!context.mounted) return;
@@ -1133,9 +1125,9 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
               ),
               child: Container(
                 padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
-                decoration: const BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.vertical(
+                decoration: BoxDecoration(
+                  color: RankingTokens.cardBg(isDark),
+                  borderRadius: const BorderRadius.vertical(
                     top: Radius.circular(24),
                   ),
                 ),
@@ -1150,26 +1142,26 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
                           width: 36,
                           height: 4,
                           decoration: BoxDecoration(
-                            color: const Color(0xFFE0E3EA),
+                            color: RankingTokens.borderColor(isDark),
                             borderRadius: BorderRadius.circular(999),
                           ),
                         ),
                       ),
                       const SizedBox(height: 18),
-                      const Text(
+                      Text(
                         '编辑食堂封面',
                         style: TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.w800,
-                          color: Color(0xFF151821),
+                          color: RankingTokens.titleColor(isDark),
                         ),
                       ),
                       const SizedBox(height: 6),
-                      const Text(
+                      Text(
                         '建议上传横向图片，可拖动和缩放裁剪区域，主体尽量放中间',
                         style: TextStyle(
                           fontSize: 13,
-                          color: Color(0xFF8A92A3),
+                          color: RankingTokens.subColor(isDark),
                         ),
                       ),
                       const SizedBox(height: 16),
@@ -1191,8 +1183,8 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
                           pendingCoverFile == null ? '选择图片并裁剪' : '重新选择图片',
                         ),
                         style: OutlinedButton.styleFrom(
-                          foregroundColor: const Color(0xFFFFA800),
-                          side: const BorderSide(color: Color(0xFFFFD27A)),
+                          foregroundColor: accent,
+                          side: BorderSide(color: accent.withValues(alpha: 0.4)),
                           minimumSize: const Size.fromHeight(44),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(14),
@@ -1221,7 +1213,7 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
                             child: FilledButton(
                               onPressed: isUploadingCover ? null : saveCover,
                               style: FilledButton.styleFrom(
-                                backgroundColor: const Color(0xFFFFA800),
+                                backgroundColor: accent,
                                 foregroundColor: Colors.white,
                                 minimumSize: const Size.fromHeight(46),
                                 shape: RoundedRectangleBorder(
@@ -1309,11 +1301,12 @@ class _CanteenDetailScreenState extends State<CanteenDetailScreen> {
 
   Future<CroppedFile?> _pickAndCropCanteenCover(
     BuildContext cropContext,
+    Color accent,
   ) async {
     final cropperUiSettings = [
       AndroidUiSettings(
         toolbarTitle: '调整食堂封面',
-        toolbarColor: const Color(0xFFFFA800),
+        toolbarColor: accent,
         toolbarWidgetColor: Colors.white,
         lockAspectRatio: true,
         hideBottomControls: false,

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
+import '../providers/theme_provider.dart';
 import '../widgets/image_upload_widget.dart';
 import '../utils/app_feedback.dart';
 
@@ -128,12 +129,18 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final themeProvider = context.watch<ThemeProvider>();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    // 简洁模式亮色下用暖白底；暗色与自定义背景模式沿用 colorScheme.surface。
+    final pageBg = themeProvider.isCleanBackgroundMode && !isDark
+        ? kCleanWarmBackgroundLight
+        : Theme.of(context).colorScheme.surface;
     return Scaffold(
-      backgroundColor: Theme.of(context).colorScheme.surface,
+      backgroundColor: pageBg,
       appBar: AppBar(
         title: const Text('意见反馈'),
         elevation: 0,
-        backgroundColor: Theme.of(context).colorScheme.surface,
+        backgroundColor: pageBg,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () => Navigator.pop(context),

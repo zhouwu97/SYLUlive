@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../providers/theme_provider.dart';
 
 import '../features/physical/physical_percentile_models.dart';
 import '../features/physical/physical_percentile_service.dart';
@@ -38,11 +39,11 @@ class _PhysicalPercentileReportScreenState
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
       backgroundColor:
-          isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
+          isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight,
       appBar: AppBar(
         title: const Text('超越了多少大学生'),
         backgroundColor:
-            isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
+            isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight,
         elevation: 0,
       ),
       body: FutureBuilder<PhysicalPercentileService>(

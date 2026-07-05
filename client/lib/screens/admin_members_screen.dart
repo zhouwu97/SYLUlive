@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/auth_provider.dart';
+import '../providers/theme_provider.dart';
 
 class AdminMembersScreen extends StatefulWidget {
   const AdminMembersScreen({super.key});
@@ -49,7 +50,7 @@ class _AdminMembersScreenState extends State<AdminMembersScreen> {
     return Scaffold(
       backgroundColor: isDark
           ? const Color(0xFF10131A)
-          : const Color(0xFFF4F6FB),
+          : kCleanWarmBackgroundLight,
       appBar: AppBar(
         title: const Text('管理人员'),
         backgroundColor: Colors.transparent,

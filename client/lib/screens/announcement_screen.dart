@@ -86,7 +86,7 @@ class _AnnouncementScreenState extends State<AnnouncementScreen>
 
   Widget _buildDefaultBg(bool isDark) {
     return ColoredBox(
-      color: isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
+      color: isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight,
     );
   }
 

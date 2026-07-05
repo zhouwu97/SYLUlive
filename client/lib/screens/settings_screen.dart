@@ -169,7 +169,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget _buildCleanBackground(bool isDark) {
     return SizedBox.expand(
       child: ColoredBox(
-        color: isDark ? const Color(0xFF101219) : const Color(0xFFF8FAFC),
+        color: isDark
+            ? kCleanWarmBackgroundDark
+            : kCleanWarmBackgroundLight,
       ),
     );
   }

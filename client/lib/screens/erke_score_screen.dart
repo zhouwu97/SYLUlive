@@ -231,9 +231,53 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
     _isLoading = false;
   }
 
-  // ==================================================================
-  //  Build
-  // ==================================================================
+  Color _accent(bool isDark) =>
+      isDark ? const Color(0xFF7ED6C5) : const Color(0xFF147C72);
+
+  Color _accentSoft(bool isDark) =>
+      isDark ? const Color(0xFF7ED6C5).withValues(alpha: 0.12) : const Color(0xFFEAF6F3);
+
+  Color _success(bool isDark) =>
+      isDark ? const Color(0xFF86EFAC) : const Color(0xFF16A34A);
+
+  Color _warning(bool isDark) =>
+      isDark ? const Color(0xFFFFB74D) : const Color(0xFFF59E0B);
+
+  Color _danger(bool isDark) =>
+      isDark ? const Color(0xFFFF8A80) : const Color(0xFFE54848);
+
+  Color _text(bool isDark) =>
+      isDark ? Colors.white : const Color(0xFF1F2328);
+
+  Color _subText(bool isDark) =>
+      isDark ? Colors.grey.shade400 : const Color(0xFF747B82);
+
+  Color _progressColor(double percent, bool isDark) {
+    if (percent >= 100) return _success(isDark);
+    if (percent < 60) return _warning(isDark);
+    return _accent(isDark);
+  }
+
+  BoxDecoration _softCardDecoration(bool isDark) {
+    return BoxDecoration(
+      color: isDark ? const Color(0xFF1E2226) : Colors.white,
+      borderRadius: BorderRadius.circular(20),
+      border: Border.all(
+        color: isDark
+            ? Colors.white.withValues(alpha: 0.08)
+            : const Color(0xFFE2EFEA),
+      ),
+      boxShadow: isDark
+          ? null
+          : [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.025),
+                blurRadius: 14,
+                offset: const Offset(0, 6),
+              ),
+            ],
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -241,11 +285,14 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
 
     return Scaffold(
       backgroundColor:
-          isDark ? const Color(0xFF131720) : const Color(0xFFF6F7FB),
+          isDark ? const Color(0xFF111315) : const Color(0xFFFFFAF4),
       appBar: AppBar(
-        title: const Text('二课成绩查询'),
+        title: const Text('二课成绩查询', style: TextStyle(fontWeight: FontWeight.bold)),
         centerTitle: true,
-        backgroundColor: Colors.transparent,
+        backgroundColor:
+            isDark ? const Color(0xFF111315) : const Color(0xFFFFFAF4),
+        surfaceTintColor: Colors.transparent,
+        scrolledUnderElevation: 0,
         elevation: 0,
         actions: [
           if (_repo.hasCachedData)
@@ -282,7 +329,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
   }
 
   // ==================================================================
-  //  Login Form (保留原有风格)
+  //  Login Form
   // ==================================================================
 
   Widget _buildLoginForm() {
@@ -291,22 +338,31 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
         _studentIdCtrl.text.isNotEmpty ? _studentIdCtrl.text : '未登录';
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       child: Column(
         children: [
-          GlassContainer(
+          Container(
             padding: const EdgeInsets.all(16),
-            borderRadius: 16,
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF1E2226) : const Color(0xFFEAF6F3),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: isDark
+                    ? Colors.white.withValues(alpha: 0.08)
+                    : const Color(0xFFE2EFEA),
+              ),
+            ),
             child: Row(
               children: [
-                const Icon(Icons.info_outline, color: Colors.blue, size: 20),
+                const Icon(Icons.info_outline, color: Color(0xFF147C72), size: 20),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
                     '学号 $studentId 已自动识别，请完成双重密码验证',
                     style: TextStyle(
                       fontSize: 13,
-                      color: isDark ? Colors.white70 : Colors.black87,
+                      color: isDark ? Colors.white70 : const Color(0xFF147C72),
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
                 ),
@@ -314,25 +370,29 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
             ),
           ),
           const SizedBox(height: 16),
-          GlassContainer(
+          Container(
             padding: const EdgeInsets.all(20),
-            borderRadius: 20,
+            decoration: _softCardDecoration(isDark),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                Text('验证信息',
+                    style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: isDark ? Colors.white : Colors.black87)),
+                const SizedBox(height: 20),
                 Row(children: [
-                  const Icon(Icons.security, color: Colors.blue, size: 22),
-                  const SizedBox(width: 10),
-                  const Text('1. 统一认证密码',
+                  const Text('1 统一认证密码',
                       style:
-                          TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                          TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
                   const Spacer(),
                   Text('VPN 穿透专用',
                       style: TextStyle(
-                          fontSize: 10,
-                          color: isDark ? Colors.white38 : Colors.grey[500])),
+                          fontSize: 12,
+                          color: isDark ? Colors.white54 : Colors.grey[500])),
                 ]),
-                const SizedBox(height: 16),
+                const SizedBox(height: 10),
                 TextField(
                   controller: _casPwdCtrl,
                   onChanged: _onCasPwdChanged,
@@ -351,35 +411,24 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
                     filled: true,
                     fillColor: isDark
                         ? Colors.white.withValues(alpha: 0.05)
-                        : Colors.black.withValues(alpha: 0.03),
+                        : const Color(0xFFF5F7F8),
                     border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: BorderRadius.circular(14),
                         borderSide: BorderSide.none),
                   ),
                 ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-          GlassContainer(
-            padding: const EdgeInsets.all(20),
-            borderRadius: 20,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
+                const SizedBox(height: 24),
                 Row(children: [
-                  const Icon(Icons.school, color: Colors.green, size: 22),
-                  const SizedBox(width: 10),
-                  const Text('2. 二课查询密码',
+                  const Text('2 二课查询密码',
                       style:
-                          TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                          TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
                   const Spacer(),
                   Text('系统登录专用',
                       style: TextStyle(
-                          fontSize: 10,
-                          color: isDark ? Colors.white38 : Colors.grey[500])),
+                          fontSize: 12,
+                          color: isDark ? Colors.white54 : Colors.grey[500])),
                 ]),
-                const SizedBox(height: 16),
+                const SizedBox(height: 10),
                 TextField(
                   controller: _erkePwdCtrl,
                   onChanged: _onErkePwdChanged,
@@ -400,9 +449,9 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
                     filled: true,
                     fillColor: isDark
                         ? Colors.white.withValues(alpha: 0.05)
-                        : Colors.black.withValues(alpha: 0.03),
+                        : const Color(0xFFF5F7F8),
                     border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: BorderRadius.circular(14),
                         borderSide: BorderSide.none),
                   ),
                 ),
@@ -416,46 +465,70 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
             child: ElevatedButton(
               onPressed: _isLoading ? null : _queryScores,
               style: ElevatedButton.styleFrom(
-                backgroundColor: Theme.of(context).primaryColor,
+                backgroundColor: const Color(0xFF147C72),
+                disabledBackgroundColor:
+                    const Color(0xFF147C72).withValues(alpha: 0.4),
                 foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16)),
+                    borderRadius: BorderRadius.circular(18)),
                 elevation: 0,
               ),
-              child: _isLoading
-                  ? const Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                                color: Colors.white, strokeWidth: 2)),
-                        SizedBox(width: 12),
-                        Text('查询中...',
-                            style: TextStyle(
-                                fontSize: 16, fontWeight: FontWeight.bold)),
-                      ],
-                    )
-                  : const Text('开始查询',
-                      style:
-                          TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              child: Text(
+                _isLoading ? '查询中...' : '查询二课成绩',
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
             ),
           ),
-          if (_isLoading && _loadingMessage.isNotEmpty) ...[
+          if (_isLoading) ...[
             const SizedBox(height: 16),
-            Text(_loadingMessage,
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(20),
+              decoration: _softCardDecoration(isDark),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('查询进度',
+                      style:
+                          TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Color(0xFF147C72)),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          _loadingMessage.isNotEmpty
+                              ? _loadingMessage
+                              : '系统正在自动完成 WebVPN 穿透',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: isDark ? Colors.white70 : Colors.black87,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ] else ...[
+            const SizedBox(height: 30),
+            Text('提示：系统会自动完成 WebVPN 穿透',
+                textAlign: TextAlign.center,
                 style: TextStyle(
                     fontSize: 12,
-                    color: isDark ? Colors.white54 : Colors.grey[600],
-                    fontStyle: FontStyle.italic)),
+                    color: isDark ? Colors.white38 : Colors.grey[500])),
           ],
-          const SizedBox(height: 30),
-          Text('提示：系统将自动完成 WebVPN 穿透，在校外也可无障碍查询成绩。',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                  fontSize: 11,
-                  color: isDark ? Colors.white38 : Colors.grey[500])),
         ],
       ),
     );
@@ -509,7 +582,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
         child: Container(
           margin: const EdgeInsets.all(3),
           decoration: BoxDecoration(
-            color: selected ? const Color(0xFF6366F1) : Colors.transparent,
+            color: selected ? _accentSoft(isDark) : Colors.transparent,
             borderRadius: BorderRadius.circular(10),
           ),
           alignment: Alignment.center,
@@ -518,11 +591,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
             style: TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w600,
-              color: selected
-                  ? Colors.white
-                  : isDark
-                      ? Colors.white54
-                      : const Color(0xFF8A8F9C),
+              color: selected ? _accent(isDark) : _subText(isDark),
             ),
           ),
         ),
@@ -588,10 +657,10 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
                       color: Color(0xFF20232A))),
               const Spacer(),
               Text('${percentage.toStringAsFixed(1)}%',
-                  style: const TextStyle(
+                  style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
-                      color: Color(0xFF6366F1))),
+                      color: _progressColor(percentage, isDark))),
             ],
           ),
           const SizedBox(height: 12),
@@ -602,10 +671,10 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
               value: (percentage / 100).clamp(0.0, 1.0),
               minHeight: 8,
               backgroundColor: isDark
-                  ? Colors.white.withValues(alpha: 0.1)
-                  : const Color(0xFFEEF0F4),
+                  ? Colors.white.withValues(alpha: 0.08)
+                  : const Color(0xFFE9F1EF),
               valueColor: AlwaysStoppedAnimation<Color>(
-                  isComplete ? Color(0xFF42B36F) : Color(0xFF6366F1)),
+                  _progressColor(percentage, isDark)),
             ),
           ),
           const SizedBox(height: 12),
@@ -614,16 +683,16 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
             children: [
               if (grad.graduationGap > 0) ...[
                 _infoTag('按分类最低还需 ${_formatScore(grad.graduationGap)} 分',
-                    Colors.orange),
+                    _warning(isDark)),
                 const SizedBox(width: 12),
               ] else ...[
-                _infoTag('已达标 ✓', Colors.green),
+                _infoTag('已达标 ✓', _success(isDark)),
                 const SizedBox(width: 12),
               ],
               if (grad.unmetCount > 0)
-                _infoTag('分类未达标 ${grad.unmetCount} 项', Colors.orange)
+                _infoTag('分类未达标 ${grad.unmetCount} 项', _warning(isDark))
               else
-                _infoTag('全部分类已达标', Colors.green),
+                _infoTag('全部分类已达标', _success(isDark)),
             ],
           ),
           if (grad.unmetCount > 0) ...[
@@ -703,8 +772,8 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             decoration: BoxDecoration(
               color: isOk
-                  ? const Color(0xFF42B36F).withValues(alpha: 0.12)
-                  : const Color(0xFFF3A640).withValues(alpha: 0.12),
+                  ? _success(isDark).withValues(alpha: 0.12)
+                  : _warning(isDark).withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(10),
             ),
             child: Text(
@@ -712,7 +781,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
-                color: isOk ? const Color(0xFF42B36F) : const Color(0xFFF3A640),
+                color: isOk ? _success(isDark) : _warning(isDark),
               ),
             ),
           ),
@@ -729,22 +798,27 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
   // ---- 官方结论 ----
 
   Widget _buildConclusionCard(String conclusion, bool isDark) {
+    Color color = _success(isDark);
+    if (conclusion.contains('严重') || conclusion.contains('不可') || conclusion.contains('未满足')) {
+      color = _danger(isDark);
+    } else if (conclusion.contains('不足') || conclusion.contains('未达标') || conclusion.contains('未完成') || conclusion.contains('还需') || conclusion.contains('缺少')) {
+      color = _warning(isDark);
+    }
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: isDark
-            ? const Color(0xFF1E2433)
-            : const Color(0xFF6366F1).withValues(alpha: 0.06),
+        color: color.withValues(alpha: 0.10),
         borderRadius: BorderRadius.circular(14),
       ),
       child: Row(
         children: [
-          const Icon(Icons.info_outline, size: 16, color: Color(0xFF6366F1)),
+          Icon(Icons.info_outline, size: 16, color: color),
           const SizedBox(width: 8),
           Expanded(
             child: Text('官方结论：$conclusion',
-                style: const TextStyle(fontSize: 13, color: Color(0xFF20232A))),
+                style: TextStyle(fontSize: 13, color: color, fontWeight: FontWeight.w600)),
           ),
         ],
       ),
@@ -854,10 +928,10 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
                     color: Color(0xFF20232A))),
             const Spacer(),
             Text('${percentage.toStringAsFixed(1)}%',
-                style: const TextStyle(
+                style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
-                    color: Color(0xFF6366F1))),
+                    color: _progressColor(percentage, isDark))),
           ]),
           const SizedBox(height: 12),
           Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
@@ -865,9 +939,9 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
                 style: TextStyle(
                     fontSize: 32,
                     fontWeight: FontWeight.bold,
-                    color: isDark ? Colors.white : const Color(0xFF20232A))),
+                    color: _text(isDark))),
             Text(' / ${_formatScore(yr.requiredTotal)}',
-                style: const TextStyle(fontSize: 18, color: Color(0xFF8A8F9C))),
+                style: TextStyle(fontSize: 18, color: _subText(isDark))),
           ]),
           const SizedBox(height: 10),
           ClipRRect(
@@ -876,17 +950,17 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
               value: (percentage / 100).clamp(0.0, 1.0),
               minHeight: 8,
               backgroundColor: isDark
-                  ? Colors.white.withValues(alpha: 0.1)
-                  : const Color(0xFFEEF0F4),
+                  ? Colors.white.withValues(alpha: 0.08)
+                  : const Color(0xFFE9F1EF),
               valueColor: AlwaysStoppedAnimation<Color>(
-                  isComplete ? Color(0xFF42B36F) : Color(0xFF6366F1)),
+                  _progressColor(percentage, isDark)),
             ),
           ),
           const SizedBox(height: 12),
           if (yr.minimumGap > 0)
-            _infoTag('按分类最低还需 ${_formatScore(yr.minimumGap)} 分', Colors.orange)
+            _infoTag('按分类最低还需 ${_formatScore(yr.minimumGap)} 分', _warning(isDark))
           else
-            _infoTag('已达标 ✓', Colors.green),
+            _infoTag('已达标 ✓', _success(isDark)),
           const SizedBox(height: 8),
           Row(
             children: [
@@ -955,8 +1029,8 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               decoration: BoxDecoration(
                 color: isOk
-                    ? const Color(0xFF42B36F).withValues(alpha: 0.12)
-                    : const Color(0xFFF3A640).withValues(alpha: 0.12),
+                    ? _success(isDark).withValues(alpha: 0.12)
+                    : _warning(isDark).withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Text(
@@ -964,8 +1038,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
-                  color:
-                      isOk ? const Color(0xFF42B36F) : const Color(0xFFF3A640),
+                  color: isOk ? _success(isDark) : _warning(isDark),
                 ),
               ),
             ),
@@ -1034,7 +1107,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
                 height: 36,
                 padding: const EdgeInsets.symmetric(horizontal: 14),
                 decoration: BoxDecoration(
-                  color: isDark ? Colors.white10 : const Color(0xFFF0F1F5),
+                  color: _accentSoft(isDark),
                   borderRadius: BorderRadius.circular(18),
                 ),
                 child: Row(mainAxisSize: MainAxisSize.min, children: [
@@ -1042,13 +1115,9 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
                       style: TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w600,
-                          color: isDark
-                              ? Colors.white70
-                              : const Color(0xFF5C6273))),
+                          color: _accent(isDark))),
                   const SizedBox(width: 4),
-                  Icon(Icons.filter_list,
-                      size: 16,
-                      color: isDark ? Colors.white70 : const Color(0xFF5C6273)),
+                  Icon(Icons.filter_list, size: 16, color: _accent(isDark)),
                 ]),
               ),
             ),
@@ -1089,7 +1158,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
               ListTile(
                   title: const Text('全部'),
                   trailing: _filterCategory == null
-                      ? const Icon(Icons.check, color: Color(0xFF6366F1))
+                      ? Icon(Icons.check, color: _accent(Theme.of(context).brightness == Brightness.dark))
                       : null,
                   onTap: () {
                     setState(() => _filterCategory = null);
@@ -1098,7 +1167,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
               ...categories.map((c) => ListTile(
                   title: Text(c),
                   trailing: _filterCategory == c
-                      ? const Icon(Icons.check, color: Color(0xFF6366F1))
+                      ? Icon(Icons.check, color: _accent(Theme.of(context).brightness == Brightness.dark))
                       : null,
                   onTap: () {
                     setState(() => _filterCategory = c);
@@ -1146,13 +1215,13 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
                       Padding(
                         padding: const EdgeInsets.only(right: 8),
                         child: Text(item.category,
-                            style: const TextStyle(
-                                fontSize: 12, color: Color(0xFF6366F1))),
+                            style: TextStyle(
+                                fontSize: 12, color: _accent(isDark))),
                       ),
                     Expanded(
                         child: Text(formattedDate,
-                            style: const TextStyle(
-                                fontSize: 12, color: Color(0xFF8A8F9C)))),
+                            style: TextStyle(
+                                fontSize: 12, color: _subText(isDark)))),
                   ]),
                 ],
               ),
@@ -1161,9 +1230,9 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
               top: 14,
               right: 14,
               child: Text('+${item.score}',
-                  style: const TextStyle(
-                      color: Color(0xFF42B36F),
-                      fontWeight: FontWeight.bold,
+                  style: TextStyle(
+                      color: _success(isDark),
+                      fontWeight: FontWeight.w800,
                       fontSize: 15)),
             ),
           ],
@@ -1229,7 +1298,7 @@ class _ErkeScoreScreenState extends State<ErkeScoreScreen> {
               child: ElevatedButton(
                 onPressed: _isLoading ? null : _queryScores,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF6366F1),
+                  backgroundColor: _accent(isDark),
                   foregroundColor: Colors.white,
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(14)),

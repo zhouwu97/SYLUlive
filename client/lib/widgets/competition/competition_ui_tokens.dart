@@ -15,7 +15,7 @@ class CompetitionUiTokens {
       isDark ? const Color(0xFF7ED6C5).withValues(alpha: 0.12) : const Color(0xFFEAF6F3);
 
   static Color borderColor(bool isDark) =>
-      isDark ? Colors.white.withValues(alpha: 0.08) : const Color(0xFFE2EFEA);
+      isDark ? Colors.white.withValues(alpha: 0.08) : const Color(0xFFE6EFEA);
 
   static Color titleColor(bool isDark) =>
       isDark ? Colors.white : const Color(0xFF1F2328);

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'campus_theme.dart';
 
 class CampusServiceItem {
   final String title;
@@ -27,18 +28,18 @@ class CampusServiceCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: isDark ? const Color(0xFF1B1E28) : Colors.white,
+      color: isDark ? CampusTheme.darkCard : Colors.white,
       borderRadius: BorderRadius.circular(18),
       child: InkWell(
         onTap: service.onTap,
-        borderRadius: BorderRadius.circular(15),
+        borderRadius: BorderRadius.circular(18),
         child: Container(
-          height: 76,
+          height: 78,
           padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(15),
+            borderRadius: BorderRadius.circular(18),
             border: Border.all(
-              color: isDark ? Colors.white10 : const Color(0xFFF0F1F5),
+              color: isDark ? Colors.white.withValues(alpha: 0.04) : CampusTheme.softBorder.withValues(alpha: 0.5),
             ),
           ),
           child: Column(
@@ -46,11 +47,11 @@ class CampusServiceCard extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Container(
-                width: 32,
-                height: 32,
+                width: 34,
+                height: 34,
                 decoration: BoxDecoration(
                   color: service.color.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(11),
+                  borderRadius: BorderRadius.circular(13),
                 ),
                 child: Icon(
                   service.icon,
@@ -65,10 +66,10 @@ class CampusServiceCard extends StatelessWidget {
                   service.title,
                   maxLines: 1,
                   style: TextStyle(
-                    fontSize: 11.2,
+                    fontSize: 11.5,
                     height: 1.0,
                     fontWeight: FontWeight.w700,
-                    color: isDark ? Colors.white : const Color(0xFF1F2430),
+                    color: isDark ? Colors.white : CampusTheme.text,
                   ),
                 ),
               ),

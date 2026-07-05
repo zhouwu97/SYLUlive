@@ -68,6 +68,11 @@ class CourseCustom(Base):
     course_code = Column(String(64), nullable=False)  # 用于关联原始数据
     raw_id = Column(Integer, ForeignKey("courses_raw.id"), nullable=True)
 
+    # 学期隔离相关
+    year = Column(String(10), nullable=True, index=True)
+    semester = Column(Integer, nullable=True, index=True)
+    term_id = Column(String(32), nullable=True, index=True)
+
     # 自定义信息
     custom_name = Column(String(100), nullable=True)  # 自定义简称
     color = Column(String(10), default="#4A90D9")  # 课程颜色

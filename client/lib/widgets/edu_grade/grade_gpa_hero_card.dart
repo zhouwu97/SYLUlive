@@ -7,6 +7,7 @@ class GradeGpaHeroCard extends StatelessWidget {
   final bool isLoading;
   final String? errorMessage;
   final VoidCallback? onRetry;
+  final bool isDrawerMode;
 
   const GradeGpaHeroCard({
     super.key,
@@ -14,13 +15,16 @@ class GradeGpaHeroCard extends StatelessWidget {
     required this.isLoading,
     required this.errorMessage,
     required this.onRetry,
+    this.isDrawerMode = false,
   });
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
+      padding: isDrawerMode 
+          ? const EdgeInsets.symmetric(horizontal: 0) 
+          : const EdgeInsets.fromLTRB(16, 10, 16, 8),
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
@@ -158,11 +162,13 @@ class GradeGpaHeroCard extends StatelessWidget {
             _metric(context, '未修', data?.notStartedCourses ?? 0),
           ],
         ),
-        const SizedBox(height: 10),
-        Text(
-          '官方学业情况查询$updatedText',
-          style: TextStyle(fontSize: 12, color: Colors.grey[500]),
-        ),
+        if (!isDrawerMode) ...[
+          const SizedBox(height: 10),
+          Text(
+            '官方学业情况查询$updatedText',
+            style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+          ),
+        ]
       ],
     );
   }

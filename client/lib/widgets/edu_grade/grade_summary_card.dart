@@ -2,8 +2,6 @@ import 'package:flutter/material.dart';
 import '../../models/edu_grade.dart';
 import '../../utils/edu_semester_utils.dart';
 
-/// Unified overview card — semester info + stats in 2 compact rows.
-/// Always operates on the FULL grade list (never filtered).
 class GradeSummaryCard extends StatelessWidget {
   final String selectedYear;
   final int selectedSemester;
@@ -20,95 +18,109 @@ class GradeSummaryCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final courseCount = grades.length;
-    final passedCount = grades.where((g) => g.isPassed == true).length;
-    final degreeCount = grades.where((g) => g.isDegree).length;
-    final totalCredits = grades.fold<double>(0, (sum, g) => sum + g.credits);
     final termGpa = EduGrade.computeWeightedGpa(grades);
+    final gpaText = termGpa?.toStringAsFixed(2) ?? '--';
+
+    final titleColor = isDark ? Colors.white : const Color(0xFF1F2328);
+    final subColor = isDark ? Colors.grey.shade400 : const Color(0xFF7A8087);
+    final accentColor = isDark ? const Color(0xFF7ED6C5) : const Color(0xFF147C72);
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
         decoration: BoxDecoration(
-          color: Theme.of(context)
-              .colorScheme
-              .primaryContainer
-              .withValues(alpha: isDark ? 0.2 : 0.35),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Column(
-          children: [
-            // Row 1: calendar + semester label | course count
-            Row(
-              children: [
-                Icon(
-                  Icons.calendar_month_outlined,
-                  size: 19,
-                  color: Theme.of(context).colorScheme.onPrimaryContainer,
+          gradient: isDark
+              ? null
+              : const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    Colors.white,
+                    Color(0xFFF1FBF7),
+                  ],
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
+          color: isDark ? const Color(0xFF1E2226) : null,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isDark
+                ? Colors.white.withValues(alpha: 0.08)
+                : const Color(0xFFE2EFEA),
+          ),
+          boxShadow: isDark
+              ? null
+              : [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.035),
+                    blurRadius: 14,
+                    offset: const Offset(0, 6),
+                  ),
+                ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: isDark
+                    ? accentColor.withValues(alpha: 0.12)
+                    : const Color(0xFFEAF6F3),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Icon(
+                Icons.calendar_month_outlined,
+                size: 20,
+                color: accentColor,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
                     EduSemester.fullLabel(selectedYear, selectedSemester),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                      color: Theme.of(context).colorScheme.onPrimaryContainer,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: titleColor,
                     ),
                   ),
-                ),
-                Text(
-                  '$courseCount 门课程',
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                    color: Theme.of(context).colorScheme.onPrimaryContainer,
+                  const SizedBox(height: 4),
+                  Text(
+                    '$courseCount 门课程',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: subColor,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-            const SizedBox(height: 14),
-            Row(
+            const SizedBox(width: 12),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 Text(
                   '学期 GPA',
                   style: TextStyle(
                     fontSize: 12,
-                    color: Theme.of(context)
-                        .colorScheme
-                        .onPrimaryContainer
-                        .withValues(alpha: 0.7),
+                    color: subColor,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(height: 4),
                 Text(
-                  termGpa?.toStringAsFixed(2) ?? '--',
+                  gpaText,
                   style: TextStyle(
-                    fontSize: 26,
+                    fontSize: 28,
                     height: 1,
                     fontWeight: FontWeight.w800,
-                    color: Theme.of(context).colorScheme.onPrimaryContainer,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 14),
-            // Row 2: three equal stats with dividers
-            Row(
-              children: [
-                Expanded(
-                  child: _metric(context, '本学期及格', '$passedCount'),
-                ),
-                _divider(context),
-                Expanded(
-                  child: _metric(context, '学位课', '$degreeCount'),
-                ),
-                _divider(context),
-                Expanded(
-                  child: _metric(
-                    context,
-                    '总学分',
-                    totalCredits.toStringAsFixed(1),
+                    color: accentColor,
                   ),
                 ),
               ],
@@ -116,44 +128,6 @@ class GradeSummaryCard extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
-
-  Widget _metric(BuildContext context, String label, String value) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          value,
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w700,
-            color: Theme.of(context).colorScheme.onPrimaryContainer,
-          ),
-        ),
-        const SizedBox(height: 2),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 12,
-            color: Theme.of(context)
-                .colorScheme
-                .onPrimaryContainer
-                .withValues(alpha: 0.7),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _divider(BuildContext context) {
-    return Container(
-      width: 1,
-      height: 28,
-      color: Theme.of(context)
-          .colorScheme
-          .onPrimaryContainer
-          .withValues(alpha: 0.2),
     );
   }
 }

@@ -21,6 +21,7 @@ import 'course_schedule_settings_screen.dart';
 import 'edu_screen.dart';
 import 'login_screen.dart';
 import '../services/home_widget_service.dart';
+import '../models/course_term.dart';
 
 /// 每节课槽的默认高度
 const double defaultSlotHeight = 75.0;
@@ -147,6 +148,20 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     ).subtract(Duration(days: d.weekday - 1));
   }
 
+  String _lastTermId = '';
+
+  DateTime _pageAnchorDate(CourseScheduleProvider sc) {
+    final start = sc.currentTerm.startDate;
+    if (start != null) {
+      final now = DateTime.now();
+      final end = start.add(Duration(days: sc.currentTerm.maxWeek * 7));
+      if (now.isBefore(start)) return start;
+      if (now.isAfter(end)) return start.add(Duration(days: (sc.currentTerm.maxWeek - 1) * 7));
+      return _mondayOf(now);
+    }
+    return _mondayOf(DateTime.now());
+  }
+
   @override
   void initState() {
     super.initState();
@@ -251,10 +266,9 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
   // PageView 滑动切换周
   void _onWeekPageChanged(int index) {
-    // 以当前周为基准，向前向后推算
-    final now = DateTime.now();
-    final currentMonday = _mondayOf(now);
-    final targetMonday = currentMonday.add(Duration(days: (index - 500) * 7));
+    final sc = context.read<CourseScheduleProvider>();
+    final anchor = _pageAnchorDate(sc);
+    final targetMonday = anchor.add(Duration(days: (index - 500) * 7));
     if (mounted) setState(() => _weekStart = targetMonday);
   }
 
@@ -340,6 +354,21 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                 builder: (context, edu, sc, _) {
                   _autoLoad(edu, sc);
 
+                  // 当学期切换时重置视图
+                  if (sc.currentTerm.id != _lastTermId && sc.currentTerm.startDate != null) {
+                    _lastTermId = sc.currentTerm.id;
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (_weekPageController.hasClients) {
+                        _weekPageController.jumpToPage(500);
+                      }
+                      if (mounted) {
+                        setState(() {
+                          _weekStart = _pageAnchorDate(sc);
+                        });
+                      }
+                    });
+                  }
+
                   // 正在初始化 + 没有数据 → 显示课表框架 + 加载动画
                   if ((_initializing || !edu.isStatusLoaded || sc.isLoading) &&
                       sc.courses.isEmpty) {
@@ -370,10 +399,8 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                                   physics: const NeverScrollableScrollPhysics(),
                                   onPageChanged: _onWeekPageChanged,
                                   itemBuilder: (_, index) {
-                                    final currentMonday = _mondayOf(
-                                      DateTime.now(),
-                                    );
-                                    final targetMonday = currentMonday.add(
+                                    final anchor = _pageAnchorDate(sc);
+                                    final targetMonday = anchor.add(
                                       Duration(days: (index - 500) * 7),
                                     );
                                     return SingleChildScrollView(
@@ -644,6 +671,109 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     );
   }
 
+  void _showTermPicker(BuildContext context, CourseScheduleProvider sc) {
+    final now = DateTime.now();
+    int currentYear = now.year;
+    
+    // 生成从当前年份往前推 4 年，往后推 1 年的学期列表
+    final terms = <CourseTerm>[];
+    for (int y = currentYear - 4; y <= currentYear + 1; y++) {
+      terms.add(CourseTerm(
+        id: '${y}_3',
+        year: '$y',
+        semester: 3,
+        title: '$y-${y+1} 第一学期',
+      ));
+      terms.add(CourseTerm(
+        id: '${y}_12',
+        year: '$y',
+        semester: 12,
+        title: '$y-${y+1} 第二学期',
+      ));
+    }
+    
+    // 逆序排列，让最新的在上面
+    terms.sort((a, b) {
+      if (a.year != b.year) return b.year.compareTo(a.year);
+      return b.semester.compareTo(a.semester);
+    });
+
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return Container(
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                margin: const EdgeInsets.symmetric(vertical: 12),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: isDark ? Colors.white24 : Colors.black12,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                child: Row(
+                  children: [
+                    Text(
+                      '选择学期',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: isDark ? Colors.white : Colors.black87,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: ListView.builder(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  itemCount: terms.length,
+                  itemBuilder: (context, index) {
+                    final term = terms[index];
+                    final isSelected = sc.currentTerm.id == term.id;
+                    return ListTile(
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 24),
+                      title: Text(
+                        term.title,
+                        style: TextStyle(
+                          color: isSelected 
+                              ? Theme.of(context).primaryColor
+                              : (isDark ? Colors.white70 : Colors.black87),
+                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                        ),
+                      ),
+                      trailing: isSelected 
+                          ? Icon(Icons.check, color: Theme.of(context).primaryColor)
+                          : null,
+                      onTap: () {
+                        Navigator.pop(context);
+                        if (!isSelected) {
+                          sc.selectTerm(term.year, term.semester);
+                        }
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   // ====== 顶部表头 ======
   Widget _buildDateHeader(CourseScheduleProvider sc) {
     final today = DateTime.now();
@@ -685,12 +815,34 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                           ),
                         ),
                       ),
-                      const SizedBox(height: 1),
-                      Text(
-                        '${_weekStart.year}/${_weekStart.month}/${_weekStart.day} 周${_wd[_weekStart.weekday - 1]}',
-                        style: TextStyle(
-                          color: secondaryColor,
-                          fontSize: 15,
+                      const SizedBox(height: 2),
+                      GestureDetector(
+                        onTap: () => _showTermPicker(context, sc),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              sc.currentTerm.title,
+                              style: TextStyle(
+                                color: secondaryColor,
+                                fontSize: 13,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            Icon(
+                              Icons.arrow_drop_down,
+                              size: 16,
+                              color: secondaryColor,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              '${_weekStart.month}/${_weekStart.day}',
+                              style: TextStyle(
+                                color: secondaryColor.withOpacity(0.7),
+                                fontSize: 13,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],

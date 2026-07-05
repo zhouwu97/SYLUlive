@@ -161,128 +161,117 @@ class BottomNavWrapper extends StatelessWidget {
     );
   }
 
-  // 悬浮模式：胶囊毛玻璃（纯图标）
+  // 悬浮模式：连成一块的弧形 Dock
   Widget _buildFloatingNav(BuildContext context, bool isDark) {
     final primaryColor = Theme.of(context).primaryColor;
-    final bottomSafe = MediaQuery.of(context).padding.bottom;
-
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      mainAxisAlignment: MainAxisAlignment.end,
-      children: [
-        Container(
-          padding: EdgeInsets.only(
-            top: 12,
-            bottom: bottomSafe > 0 ? bottomSafe : 16,
-          ),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 280),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(50),
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 4,
-                    vertical: 0,
+    
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(28),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+            child: Container(
+              height: 64,
+              decoration: BoxDecoration(
+                color: isDark
+                    ? const Color(0xFF1E2226).withValues(alpha: 0.86)
+                    : Colors.white.withValues(alpha: 0.92),
+                borderRadius: BorderRadius.circular(28),
+                border: Border.all(
+                  color: isDark
+                      ? Colors.white.withValues(alpha: 0.08)
+                      : const Color(0xFFE2EFEA),
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.08),
+                    blurRadius: 18,
+                    offset: const Offset(0, 8),
                   ),
-                  decoration: BoxDecoration(
-                    color: (isDark ? Colors.grey[900]! : Colors.white)
-                        .withValues(alpha: 0.8),
-                    borderRadius: BorderRadius.circular(50),
-                    border: Border.all(
-                      color: isDark
-                          ? Colors.white10
-                          : Colors.black.withValues(alpha: 0.05),
-                      width: 0.5,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.1),
-                        blurRadius: 10,
-                        spreadRadius: 1,
-                      ),
-                    ],
-                  ),
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      final itemWidth = constraints.maxWidth / 5;
-                      return Stack(
-                        alignment: Alignment.center,
-                        children: [
-                          // 指示器位置由 HomeScreen 的连续进度统一驱动。
-                          Positioned(
-                            left: itemWidth * visualIndex,
-                            width: itemWidth,
-                            top: 0,
-                            bottom: 0,
-                            child: Center(
-                              child: Container(
-                                width: 56,
-                                height: 32,
-                                decoration: BoxDecoration(
-                                  color: primaryColor.withValues(alpha: 0.12),
-                                  borderRadius: BorderRadius.circular(16),
-                                ),
-                              ),
+                ],
+              ),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final itemWidth = constraints.maxWidth / 5;
+                  return Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      // 选中项的背景指示器
+                      Positioned(
+                        left: itemWidth * visualIndex,
+                        width: itemWidth,
+                        top: 0,
+                        bottom: 0,
+                        child: Center(
+                          child: Container(
+                            width: 56,
+                            height: 40,
+                            decoration: BoxDecoration(
+                              color: isDark 
+                                  ? const Color(0xFF147C72).withValues(alpha: 0.2) 
+                                  : const Color(0xFFEAF6F3),
+                              borderRadius: BorderRadius.circular(18),
                             ),
                           ),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceAround,
-                            crossAxisAlignment: CrossAxisAlignment.center,
-                            children: [
-                              _iconOnly(
-                                Icons.home_rounded,
-                                0,
-                                context,
-                                primaryColor,
-                                itemWidth,
-                                visualIndex,
-                              ),
-                              _iconOnly(
-                                Icons.storefront_rounded,
-                                1,
-                                context,
-                                primaryColor,
-                                itemWidth,
-                                visualIndex,
-                              ),
-                              _iconOnly(
-                                Icons.calendar_month_rounded,
-                                2,
-                                context,
-                                primaryColor,
-                                itemWidth,
-                                visualIndex,
-                              ),
-                              _iconOnly(
-                                Icons.apartment_rounded,
-                                3,
-                                context,
-                                primaryColor,
-                                itemWidth,
-                                visualIndex,
-                              ),
-                              _iconOnly(
-                                Icons.person_rounded,
-                                4,
-                                context,
-                                primaryColor,
-                                itemWidth,
-                                visualIndex,
-                              ),
-                            ],
+                        ),
+                      ),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceAround,
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          _iconOnly(
+                            Icons.home_rounded,
+                            0,
+                            context,
+                            primaryColor,
+                            itemWidth,
+                            visualIndex,
+                          ),
+                          _iconOnly(
+                            Icons.storefront_rounded,
+                            1,
+                            context,
+                            primaryColor,
+                            itemWidth,
+                            visualIndex,
+                          ),
+                          _iconOnly(
+                            Icons.calendar_month_rounded,
+                            2,
+                            context,
+                            primaryColor,
+                            itemWidth,
+                            visualIndex,
+                          ),
+                          _iconOnly(
+                            Icons.apartment_rounded,
+                            3,
+                            context,
+                            primaryColor,
+                            itemWidth,
+                            visualIndex,
+                          ),
+                          _iconOnly(
+                            Icons.person_rounded,
+                            4,
+                            context,
+                            primaryColor,
+                            itemWidth,
+                            visualIndex,
                           ),
                         ],
-                      );
-                    },
-                  ),
-                ),
+                      ),
+                    ],
+                  );
+                },
               ),
             ),
           ),
         ),
-      ],
+      ),
     );
   }
 
@@ -388,7 +377,7 @@ class BottomNavWrapper extends StatelessWidget {
     final inactiveColor = isDark ? Colors.white54 : Colors.grey;
 
     return _NavItemVisualState(
-      color: Color.lerp(inactiveColor, primaryColor, softenedT)!,
+      color: Color.lerp(inactiveColor, const Color(0xFF147C72), softenedT)!,
       scale: 1.0 + 0.08 * softenedT,
       opacity: 0.72 + 0.28 * softenedT,
       fontWeight: softenedT > 0.55 ? FontWeight.w700 : FontWeight.w500,

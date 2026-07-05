@@ -33,7 +33,7 @@ class CampusNewsSectionHeader extends StatelessWidget {
                 '校园通知与赛事信息',
                 style: TextStyle(
                   fontSize: 12,
-                  color: isDark ? Colors.white54 : CampusTheme.subText,
+                  color: CampusTheme.subText,
                 ),
               ),
             ],
@@ -42,26 +42,26 @@ class CampusNewsSectionHeader extends StatelessWidget {
         const SizedBox(width: 12),
         Material(
           color: isDark
-              ? CampusTheme.primary.withValues(alpha: 0.18)
+              ? CampusTheme.primary.withValues(alpha: 0.15)
               : CampusTheme.primaryLight,
           borderRadius: BorderRadius.circular(999),
           child: InkWell(
             onTap: onCompetitionTap,
             borderRadius: BorderRadius.circular(999),
             child: Container(
-              height: 32,
+              height: 30,
               padding: const EdgeInsets.symmetric(horizontal: 14),
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(999),
                 border: Border.all(
-                  color: isDark ? CampusTheme.primary.withValues(alpha: 0.22) : Colors.transparent,
+                  color: isDark ? CampusTheme.primary.withValues(alpha: 0.2) : Colors.transparent,
                 ),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    '竞赛中心',
+                    '竞赛',
                     style: TextStyle(
                       fontSize: 12.5,
                       fontWeight: FontWeight.w700,

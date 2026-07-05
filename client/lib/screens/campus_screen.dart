@@ -188,7 +188,7 @@ class _CampusScreenState extends State<CampusScreen>
     final isDark = theme.brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor: isDark ? const Color(0xFF101219) : CampusTheme.bg,
+      backgroundColor: isDark ? CampusTheme.darkBg : CampusTheme.bg,
       body: SafeArea(
         bottom: false,
         child: RefreshIndicator(
@@ -199,7 +199,7 @@ class _CampusScreenState extends State<CampusScreen>
             ),
             slivers: [
               SliverPadding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
                 sliver: SliverList(
                   delegate: SliverChildListDelegate([
                     HomeTabRevealItem(
@@ -211,7 +211,7 @@ class _CampusScreenState extends State<CampusScreen>
                       index: 1,
                       child: _buildLatestCard(isDark),
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 18),
                     HomeTabRevealItem(
                       index: 2,
                       child: CampusServiceGrid(
@@ -223,7 +223,7 @@ class _CampusScreenState extends State<CampusScreen>
                             _openPage(const CampusCalendarScreen()),
                       ),
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 18),
                     HomeTabRevealItem(
                       index: 3,
                       child: CampusNewsSectionHeader(
@@ -232,7 +232,7 @@ class _CampusScreenState extends State<CampusScreen>
                             _openPage(const CompetitionCenterScreen()),
                       ),
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 10),
                   ]),
                 ),
               ),
@@ -339,7 +339,7 @@ class _CampusScreenState extends State<CampusScreen>
             isDark: isDark,
             onTap: () => _openArticleDetail(article),
           ),
-          const SizedBox(height: 7),
+          const SizedBox(height: 10),
         ],
         _buildViewAllLink(isDark),
       ],
@@ -387,24 +387,17 @@ class _LatestCardSkeleton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final primary = Theme.of(context).colorScheme.primary;
-    final endColor =
-        Color.lerp(primary, const Color(0xFF8B79C6), 0.58) ?? primary;
-    final shimmerColor = Colors.white.withValues(alpha: 0.15);
+    final shimmerColor = isDark ? Colors.white10 : CampusTheme.softBorder;
 
-    return Container(
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [primary, endColor],
-        ),
-        borderRadius: BorderRadius.circular(22),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(18, 17, 18, 18),
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: 106),
+      child: Container(
+        width: double.infinity,
+        clipBehavior: Clip.antiAlias,
+        decoration: CampusTheme.cardDecoration(isDark, softGreen: true),
+        padding: const EdgeInsets.fromLTRB(16, 13, 16, 13),
         child: Column(
+          mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
@@ -428,7 +421,7 @@ class _LatestCardSkeleton extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 10),
             Container(
               height: 22,
               decoration: BoxDecoration(
@@ -436,7 +429,7 @@ class _LatestCardSkeleton extends StatelessWidget {
                 borderRadius: BorderRadius.circular(8),
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 7),
             Container(
               width: 180,
               height: 14,
@@ -468,13 +461,7 @@ class _LatestCardError extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1B1E28) : Colors.white,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(
-          color: isDark ? Colors.white10 : const Color(0xFFEDEBF3),
-        ),
-      ),
+      decoration: CampusTheme.cardDecoration(isDark),
       child: Column(
         children: [
           Icon(
@@ -510,13 +497,7 @@ class _LatestCardEmpty extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1B1E28) : Colors.white,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(
-          color: isDark ? Colors.white10 : const Color(0xFFEDEBF3),
-        ),
-      ),
+      decoration: CampusTheme.cardDecoration(isDark),
       child: Column(
         children: [
           Icon(
@@ -552,11 +533,7 @@ class _RecentListSkeleton extends StatelessWidget {
           Container(
             height: 90,
             padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF1B1E28) : Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: shimmerColor),
-            ),
+            decoration: CampusTheme.cardDecoration(isDark),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -602,13 +579,7 @@ class _RecentListError extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1B1E28) : Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: isDark ? Colors.white10 : const Color(0xFFEDEBF3),
-        ),
-      ),
+      decoration: CampusTheme.cardDecoration(isDark),
       child: Column(
         children: [
           Icon(
@@ -644,13 +615,7 @@ class _RecentListEmpty extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1B1E28) : Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: isDark ? Colors.white10 : const Color(0xFFEDEBF3),
-        ),
-      ),
+      decoration: CampusTheme.cardDecoration(isDark),
       child: Column(
         children: [
           Icon(

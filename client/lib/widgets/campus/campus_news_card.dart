@@ -18,17 +18,17 @@ class CampusNewsCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: isDark ? const Color(0xFF1B1E28) : CampusTheme.card,
-      borderRadius: BorderRadius.circular(14),
+      color: isDark ? CampusTheme.darkCard : CampusTheme.card,
+      borderRadius: BorderRadius.circular(18),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(18),
         child: Container(
-          padding: const EdgeInsets.fromLTRB(12, 9, 12, 9),
+          padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(18),
             border: Border.all(
-              color: isDark ? Colors.white10 : const Color(0xFFF0F1F5),
+              color: isDark ? Colors.white.withValues(alpha: 0.08) : CampusTheme.softBorder,
             ),
           ),
           child: Column(
@@ -43,27 +43,27 @@ class CampusNewsCard extends StatelessWidget {
                   const Spacer(),
                   Text(
                     article.shortDate,
-                    style: TextStyle(
+                    style: const TextStyle(
                       fontSize: 12,
-                      color: isDark ? Colors.white38 : CampusTheme.subText,
+                      color: CampusTheme.subText,
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 6),
+              const SizedBox(height: 8),
               // 标题（最多两行）
               Text(
                 article.title,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  fontSize: 14.5,
-                  height: 1.28,
-                  fontWeight: FontWeight.w600,
+                  fontSize: 15,
+                  height: 1.32,
+                  fontWeight: FontWeight.w700,
                   color: isDark ? Colors.white : CampusTheme.text,
                 ),
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 6),
               // 部门 · 附件状态
               Row(
                 children: [
@@ -75,7 +75,7 @@ class CampusNewsCard extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           fontSize: 12,
-                          color: isDark ? Colors.white38 : CampusTheme.subText.withValues(alpha: 0.8),
+                          color: CampusTheme.subText.withValues(alpha: 0.6),
                         ),
                       ),
                     ),
@@ -86,7 +86,7 @@ class CampusNewsCard extends StatelessWidget {
                       ' · ',
                       style: TextStyle(
                         fontSize: 12,
-                        color: isDark ? Colors.white24 : CampusTheme.subText.withValues(alpha: 0.5),
+                        color: CampusTheme.subText.withValues(alpha: 0.4),
                       ),
                     ),
                   ],
@@ -94,14 +94,14 @@ class CampusNewsCard extends StatelessWidget {
                     Icon(
                       Icons.attach_file_rounded,
                       size: 13,
-                      color: isDark ? Colors.white38 : CampusTheme.subText,
+                      color: CampusTheme.subText.withValues(alpha: 0.6),
                     ),
                     const SizedBox(width: 4),
                     Text(
                       '含附件',
                       style: TextStyle(
                         fontSize: 12,
-                        color: isDark ? Colors.white38 : CampusTheme.subText,
+                        color: CampusTheme.subText.withValues(alpha: 0.6),
                       ),
                     ),
                   ],

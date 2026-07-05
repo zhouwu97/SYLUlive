@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'campus_theme.dart';
 
 class CampusHeader extends StatelessWidget {
   final String semester;
@@ -26,7 +27,7 @@ class CampusHeader extends StatelessWidget {
               Text(
                 '校园',
                 style: TextStyle(
-                  fontSize: 27,
+                  fontSize: 28,
                   height: 1.1,
                   fontWeight: FontWeight.w900,
                   color: isDark ? Colors.white : const Color(0xFF20212B),
@@ -37,7 +38,7 @@ class CampusHeader extends StatelessWidget {
                 semester, // Like "2025-2026 第二学期"
                 style: TextStyle(
                   fontSize: 12.5,
-                  color: isDark ? Colors.white54 : Colors.black54,
+                  color: CampusTheme.subText,
                 ),
               ),
             ],
@@ -45,10 +46,21 @@ class CampusHeader extends StatelessWidget {
         ),
         // Right side info pill
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          width: 58,
+          padding: const EdgeInsets.symmetric(vertical: 6),
           decoration: BoxDecoration(
-            color: isDark ? Colors.white.withValues(alpha: 0.1) : Colors.black.withValues(alpha: 0.04),
-            borderRadius: BorderRadius.circular(12),
+            color: isDark ? CampusTheme.darkCard : Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: isDark ? Colors.white.withValues(alpha: 0.08) : CampusTheme.border,
+            ),
+            boxShadow: isDark ? null : [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.025),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
           ),
           child: Column(
             children: [
@@ -57,7 +69,7 @@ class CampusHeader extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.w700,
-                  color: isDark ? Colors.white70 : Colors.black87,
+                  color: CampusTheme.primary,
                 ),
               ),
               const SizedBox(height: 2),
@@ -66,7 +78,7 @@ class CampusHeader extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 10,
                   fontWeight: FontWeight.w600,
-                  color: isDark ? Colors.white54 : Colors.black54,
+                  color: CampusTheme.subText,
                 ),
               ),
             ],

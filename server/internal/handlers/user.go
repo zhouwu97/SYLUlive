@@ -402,7 +402,7 @@ func (h *UserHandler) GetUserPosts(c *gin.Context) {
 		Preload("Author").
 		Preload("Images").
 		Preload("Images.File").
-		Where("author_id = ? AND status = ?", targetID, models.PostStatusNormal).
+		Where("author_id = ? AND status = ? AND board_id != ?", targetID, models.PostStatusNormal, models.BoardMarket).
 		Order("created_at DESC").
 		Offset(offset).
 		Limit(limit).

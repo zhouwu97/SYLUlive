@@ -5,6 +5,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'dart:convert';
 import '../config/api_constants.dart';
 import '../utils/app_feedback.dart';
+import '../models/edu_academic_situation.dart';
 import '../models/edu_grade.dart';
 
 /// 操作结果，包含成功状态和错误信息
@@ -30,6 +31,17 @@ class GradeCacheEntry {
   const GradeCacheEntry({required this.grades, required this.updatedAt});
 }
 
+/// 学业情况缓存条目
+class AcademicSituationCacheEntry {
+  final EduAcademicSituation data;
+  final DateTime updatedAt;
+
+  const AcademicSituationCacheEntry({
+    required this.data,
+    required this.updatedAt,
+  });
+}
+
 class EduProvider extends ChangeNotifier {
   late final Dio _eduDio; // Python 教务服务专用
   late final Dio _authDio; // Go 服务器（获取当前用户信息）
@@ -46,6 +58,7 @@ class EduProvider extends ChangeNotifier {
   String? _errorMessage;
   final Map<String, GradeCacheEntry> _gradeCache = {};
   final Map<String, EduGradeDetail> _gradeDetailCache = {};
+  final Map<String, AcademicSituationCacheEntry> _academicSituationCache = {};
   int _statusGeneration = 0;
 
   bool get isBound => _isBound;
@@ -73,10 +86,20 @@ class EduProvider extends ChangeNotifier {
     return 'edu_grades_${userId}_${year}_$semester';
   }
 
+  String _academicSituationCacheKey(String userId) {
+    return 'edu_academic_situation_$userId';
+  }
+
   /// 读取内存缓存（同步方法，直接使用当前 _userId，安全）
   GradeCacheEntry? getCachedGrades(String year, int semester) {
     if (_userId == null) return null;
     return _gradeCache[_cacheKeyFor(_userId!, year, semester)];
+  }
+
+  /// 读取学业情况缓存。
+  AcademicSituationCacheEntry? getCachedAcademicSituation() {
+    if (_userId == null) return null;
+    return _academicSituationCache[_academicSituationCacheKey(_userId!)];
   }
 
   /// 清除指定用户的所有成绩缓存
@@ -84,6 +107,7 @@ class EduProvider extends ChangeNotifier {
     final prefix = 'edu_grades_${userId}_';
     _gradeCache.removeWhere((key, _) => key.startsWith(prefix));
     _gradeDetailCache.removeWhere((key, _) => key.startsWith('$userId|'));
+    _academicSituationCache.remove(_academicSituationCacheKey(userId));
   }
 
   String _gradeDetailCacheKey(EduGrade grade, String year, int semester) {
@@ -267,6 +291,7 @@ class EduProvider extends ChangeNotifier {
     _errorMessage = null;
     _gradeCache.clear();
     _gradeDetailCache.clear();
+    _academicSituationCache.clear();
     notifyListeners();
 
     if (oldStudentId.trim().isNotEmpty) {
@@ -615,6 +640,82 @@ class EduProvider extends ChangeNotifier {
         }
       }
       debugPrint('获取成绩构成失败: $errorMsg');
+      return OperationResult.fail(errorMsg);
+    }
+  }
+
+  Future<OperationResult<EduAcademicSituation>> fetchAcademicSituation({
+    bool forceRefresh = false,
+  }) async {
+    final requestUserId = _userId;
+    if (requestUserId == null) {
+      return OperationResult.fail('用户未登录');
+    }
+
+    Future<Response<dynamic>> request() {
+      return _authDio.post(
+        '/edu/academic-situation',
+        data: {'force_refresh': forceRefresh},
+      );
+    }
+
+    try {
+      final response = await request();
+      if (_userId != requestUserId) {
+        return OperationResult.fail('用户已切换');
+      }
+      if (response.statusCode == 200) {
+        final situation = EduAcademicSituation.fromJson(
+          Map<String, dynamic>.from(response.data),
+        );
+        _academicSituationCache[_academicSituationCacheKey(requestUserId)] =
+            AcademicSituationCacheEntry(
+          data: situation,
+          updatedAt: DateTime.now(),
+        );
+        if (!situation.success) {
+          return OperationResult.fail(situation.message ?? '获取学业情况失败');
+        }
+        return OperationResult.ok(situation);
+      }
+      return OperationResult.fail('获取学业情况失败');
+    } on DioException catch (e) {
+      final errorMsg = _parseDioError(e);
+      if (errorMsg.contains('未登录') ||
+          errorMsg.contains('过期') ||
+          errorMsg.contains('重新登录') ||
+          errorMsg.contains('会话') ||
+          errorMsg.contains('cookie') ||
+          errorMsg.contains('失效') ||
+          errorMsg.contains('Cookie')) {
+        final rebindSuccess = await _trySilentRelogin();
+        if (rebindSuccess) {
+          try {
+            final retryResp = await request();
+            if (_userId != requestUserId) {
+              return OperationResult.fail('用户已切换');
+            }
+            if (retryResp.statusCode == 200) {
+              final situation = EduAcademicSituation.fromJson(
+                Map<String, dynamic>.from(retryResp.data),
+              );
+              _academicSituationCache[
+                      _academicSituationCacheKey(requestUserId)] =
+                  AcademicSituationCacheEntry(
+                data: situation,
+                updatedAt: DateTime.now(),
+              );
+              if (!situation.success) {
+                return OperationResult.fail(situation.message ?? '获取学业情况失败');
+              }
+              return OperationResult.ok(situation);
+            }
+          } catch (_) {}
+        } else {
+          return OperationResult.fail('教务登录状态已失效，请重新绑定');
+        }
+      }
+      debugPrint('获取学业情况失败: $errorMsg');
       return OperationResult.fail(errorMsg);
     }
   }

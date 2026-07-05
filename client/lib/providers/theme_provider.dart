@@ -6,6 +6,14 @@ enum AppBackgroundMode {
   custom,
 }
 
+/// 简洁模式（clean mode）下的暖色底色规范。
+///
+/// 亮色：页面底用暖白，卡片保持纯白，卡片边框用浅米灰。
+/// 暗色保持原有深色逻辑，不强制改动。
+const Color kCleanWarmBackgroundLight = Color(0xFFFFFAF4);
+const Color kCleanWarmCardBorderLight = Color(0xFFECE4DA);
+const Color kCleanWarmBackgroundDark = Color(0xFF101219);
+
 class ThemeProvider extends ChangeNotifier {
   static const String _nightModeKey = 'night_mode';
   static const String _backgroundModeKey = 'background_mode';
@@ -52,6 +60,15 @@ class ThemeProvider extends ChangeNotifier {
   bool get marketIsListView => _marketIsListView;
   AppBackgroundMode get backgroundMode => _backgroundMode;
   bool get isCleanBackgroundMode => _backgroundMode == AppBackgroundMode.clean;
+
+  /// 简洁模式下页面底色。亮色返回暖白 [kCleanWarmBackgroundLight]，
+  /// 暗色保持原深色 [kCleanWarmBackgroundDark]，不改变暗色逻辑。
+  Color cleanModePageBackground(Brightness brightness) {
+    if (brightness == Brightness.dark) {
+      return kCleanWarmBackgroundDark;
+    }
+    return kCleanWarmBackgroundLight;
+  }
   bool get hasBackground =>
       _backgroundImage != null && _backgroundImage!.isNotEmpty;
   bool get hasLandscapeBackground =>

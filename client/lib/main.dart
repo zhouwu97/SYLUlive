@@ -1131,6 +1131,11 @@ class _AppContent extends StatelessWidget {
                 : const FadeUpwardsPageTransitionsBuilder(),
           },
         ),
+        // 简洁模式下把全局 Scaffold 底色统一为暖白，覆盖所有走主题默认底色的页面。
+        // 自定义背景模式与暗色模式不受影响（null = 沿用 ColorScheme 默认）。
+        scaffoldBackgroundColor: themeProvider.isCleanBackgroundMode
+            ? kCleanWarmBackgroundLight
+            : null,
       ),
       darkTheme: AppTheme.darkTheme.copyWith(
         pageTransitionsTheme: PageTransitionsTheme(
@@ -1302,7 +1307,9 @@ class BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
   Widget _buildCleanBackground(bool isDark) {
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF101219) : const Color(0xFFF8FAFC),
+        color: isDark
+            ? kCleanWarmBackgroundDark
+            : kCleanWarmBackgroundLight,
       ),
     );
   }

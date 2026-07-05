@@ -1,19 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:provider/provider.dart';
-import 'package:image_picker/image_picker.dart';
-import 'package:image_cropper/image_cropper.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 
-import '../config/api_constants.dart';
 import '../models/water_moderator.dart';
 import '../models/water_moderation.dart';
 import '../models/water_section.dart';
 import '../models/water_section_level_title.dart';
-import '../providers/auth_provider.dart';
 import '../providers/water_moderator_provider.dart';
 import '../providers/water_moderation_provider.dart';
 import '../providers/water_section_provider.dart';
+import 'water/water_section_display_edit_screen.dart';
 
 /// 版块管理页。
 /// 按当前用户权限展示任免、禁言列表和操作日志。
@@ -110,6 +106,68 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
   List<WaterSectionModerator> get _moderators =>
       context.watch<WaterModeratorProvider>().moderatorsOf(widget.section.slug);
 
+  Color _sectionAccent() {
+    final section = context.watch<WaterSectionProvider>().getBySlug(
+              widget.section.slug,
+            ) ??
+        widget.section;
+    if (section.colorHex.isNotEmpty) {
+      return colorHexToColor(section.colorHex);
+    }
+    return const Color(0xFF147C72);
+  }
+
+  Color _borderColor(bool isDark) {
+    return isDark ? Colors.white.withValues(alpha: 0.08) : const Color(0xFFE2EFEA);
+  }
+
+  BoxDecoration _manageCardDecoration(bool isDark, {Color? borderColor}) {
+    return BoxDecoration(
+      color: isDark ? const Color(0xFF1E2226) : Colors.white,
+      borderRadius: BorderRadius.circular(20),
+      border: Border.all(
+        color: borderColor ?? _borderColor(isDark),
+      ),
+      boxShadow: isDark
+          ? null
+          : [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.025),
+                blurRadius: 14,
+                offset: const Offset(0, 6),
+              ),
+            ],
+    );
+  }
+
+  InputDecoration _manageInputDecoration(
+    BuildContext context, {
+    String? label,
+    String? hint,
+  }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final accent = _sectionAccent();
+    return InputDecoration(
+      labelText: label,
+      hintText: hint,
+      filled: true,
+      fillColor: isDark ? const Color(0xFF1E2226) : Colors.white,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide(color: _borderColor(isDark)),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide(color: _borderColor(isDark)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide(color: accent, width: 1.3),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -118,14 +176,16 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
             ) ??
         widget.section;
     final background =
-        isDark ? const Color(0xFF0D1117) : const Color(0xFFF7F8FA);
+        isDark ? const Color(0xFF111315) : const Color(0xFFFFFAF4);
 
     return Scaffold(
       backgroundColor: background,
       appBar: AppBar(
-        backgroundColor: isDark ? const Color(0xFF0D1117) : Colors.white,
+        backgroundColor: background,
         elevation: 0,
+        scrolledUnderElevation: 0,
         surfaceTintColor: Colors.transparent,
+        centerTitle: true,
         title: Text(
           '管理 · ${section.title}',
           style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
@@ -211,18 +271,98 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
       ),
     ];
 
+    final accent = _sectionAccent();
+    final cardColor = isDark ? const Color(0xFF1E2226) : Colors.white;
+
     return DefaultTabController(
       length: tabs.length,
       child: Column(
         children: [
-          Material(
-            color: isDark ? const Color(0xFF0D1117) : Colors.white,
+          // ── 轻量版块头部卡 ──
+          Container(
+            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            padding: const EdgeInsets.all(12),
+            decoration: _manageCardDecoration(isDark),
+            child: Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: isDark ? Colors.white.withValues(alpha: 0.05) : const Color(0xFFF3F4F6),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    iconKeyToIconData(section.iconKey, fallbackSlug: section.slug),
+                    color: accent,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        section.title,
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                          color: isDark ? Colors.white : const Color(0xFF20232A),
+                        ),
+                      ),
+                      Text(
+                        section.subtitle.isNotEmpty ? section.subtitle : section.description,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: isDark ? Colors.white54 : const Color(0xFF7B818C),
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: accent.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    '管理中',
+                    style: TextStyle(fontSize: 11, color: accent, fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          
+          // ── 胶囊工具栏 ──
+          Container(
+            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: cardColor,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: _borderColor(isDark)),
+            ),
             child: TabBar(
               isScrollable: true,
               tabAlignment: TabAlignment.start,
-              tabs: tabs.map((tab) => Tab(text: tab.label)).toList(),
+              indicator: BoxDecoration(
+                color: accent.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              indicatorSize: TabBarIndicatorSize.tab,
+              dividerColor: Colors.transparent,
+              labelColor: accent,
+              unselectedLabelColor: isDark ? Colors.white60 : const Color(0xFF6B7280),
+              labelStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+              unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+              tabs: tabs.map((tab) => Tab(text: tab.label, height: 34)).toList(),
             ),
           ),
+          
           Expanded(
             child: TabBarView(
               children: tabs
@@ -230,7 +370,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
                     (tab) => RefreshIndicator(
                       onRefresh: () async => _refreshAll(),
                       child: ListView(
-                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 40),
+                        padding: const EdgeInsets.fromLTRB(16, 4, 16, 40),
                         children: [tab.child],
                       ),
                     ),
@@ -243,22 +383,54 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
     );
   }
 
-  // ── 版块信息卡 ──
+  Widget _buildDisplaySettings(WaterSection section, bool isDark) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildPreviewCard(section, isDark),
+        const SizedBox(height: 12),
+        _buildContentConfigCard(section, isDark),
+        const SizedBox(height: 12),
+        _buildPromptQuestionsCard(section, isDark),
+        const SizedBox(height: 20),
+        SizedBox(
+          width: double.infinity,
+          height: 52,
+          child: FilledButton(
+            onPressed: () => _showDisplaySettingsSheet(section),
+            style: FilledButton.styleFrom(
+              backgroundColor: _sectionAccent(),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(18),
+              ),
+            ),
+            child: const Text(
+              '编辑展示设置',
+              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 
-  Widget _buildSectionInfoCard(WaterSection section, bool isDark) {
-    final color = section.colorHex.isNotEmpty
-        ? colorHexToColor(section.colorHex)
-        : Theme.of(context).colorScheme.primary;
+  Widget _buildPreviewCard(WaterSection section, bool isDark) {
+    final accent = _sectionAccent();
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF171B24) : Colors.white,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(22),
+        gradient: LinearGradient(
+          colors: [
+            accent.withValues(alpha: isDark ? 0.2 : 0.1),
+            accent.withValues(alpha: isDark ? 0.05 : 0.02),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
         border: Border.all(
-          color: isDark
-              ? Colors.white.withValues(alpha: 0.08)
-              : const Color(0xFFEDEFF3),
+          color: accent.withValues(alpha: 0.2),
         ),
       ),
       child: Column(
@@ -266,90 +438,240 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
         children: [
           Row(
             children: [
-              Icon(
-                iconKeyToIconData(section.iconKey, fallbackSlug: section.slug),
-                size: 22,
-                color: color,
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  section.title,
-                  style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w800,
-                      color: isDark ? Colors.white : const Color(0xFF20232A)),
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: isDark ? Colors.white12 : Colors.white,
                 ),
+                child: Icon(
+                  iconKeyToIconData(section.iconKey, fallbackSlug: section.slug),
+                  color: accent,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      section.title.isNotEmpty ? section.title : '未命名版块',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                        color: isDark ? Colors.white : const Color(0xFF20232A),
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      section.subtitle.isNotEmpty ? section.subtitle : '这里可以写一句简单的副标题',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: isDark ? Colors.white70 : const Color(0xFF525A66),
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: isDark ? Colors.black26 : Colors.white54,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text('展示预览', style: TextStyle(fontSize: 10, color: accent, fontWeight: FontWeight.w700)),
               ),
             ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
           Text(
-            section.subtitle.isNotEmpty
-                ? section.subtitle
-                : section.description,
+            section.description.isNotEmpty ? section.description : '版块描述空空如也...',
             style: TextStyle(
-                fontSize: 12.5,
-                color: isDark ? Colors.white54 : const Color(0xFF7B818C)),
+              fontSize: 13,
+              color: isDark ? Colors.white60 : const Color(0xFF525A66),
+            ),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 16),
+          Align(
+            alignment: Alignment.centerRight,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color: accent,
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                section.publishActionText.isNotEmpty ? section.publishActionText : '发布帖子',
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                ),
+              ),
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildDisplaySettings(WaterSection section, bool isDark) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildSectionInfoCard(section, isDark),
-        const SizedBox(height: 12),
-        _buildInfoRow(isDark, '说明', section.description),
-        _buildInfoRow(isDark, '发帖按钮', section.publishActionText),
-        _buildInfoRow(isDark, '空状态标题', section.emptyTitle),
-        _buildInfoRow(isDark, '空状态描述', section.emptyDescription),
-        _buildInfoRow(isDark, '发布提醒', section.noticeText),
-        _buildInfoRow(isDark, '默认排序', _sortLabel(section.defaultSort)),
-        if (section.starterQuestions.isNotEmpty)
-          _buildInfoRow(isDark, '引导问题', section.starterQuestions.join(' / ')),
-        const SizedBox(height: 16),
-        SizedBox(
-          width: double.infinity,
-          height: 46,
-          child: FilledButton.icon(
-            onPressed: () => _showDisplaySettingsSheet(section),
-            icon: const Icon(Icons.tune_outlined, size: 18),
-            label: const Text('编辑展示设置'),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildInfoRow(bool isDark, String label, String value) {
-    if (value.trim().isEmpty) return const SizedBox.shrink();
+  Widget _buildContentConfigCard(WaterSection section, bool isDark) {
     return Container(
       width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(12),
-      decoration: _cardDecoration(isDark),
+      padding: const EdgeInsets.all(16),
+      decoration: _manageCardDecoration(isDark),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            label,
+            '内容配置',
             style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              color: isDark ? Colors.white38 : const Color(0xFF9CA3AF),
+              fontSize: 14,
+              fontWeight: FontWeight.w800,
+              color: isDark ? Colors.white : const Color(0xFF20232A),
             ),
           ),
-          const SizedBox(height: 4),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 13,
-              color: isDark ? Colors.white70 : const Color(0xFF374151),
+          const SizedBox(height: 16),
+          _buildConfigItem(isDark, '发帖按钮', section.publishActionText.isNotEmpty ? section.publishActionText : '默认'),
+          _buildConfigItem(isDark, '默认排序', _sortLabel(section.defaultSort)),
+          _buildConfigItem(
+            isDark,
+            '空状态',
+            section.emptyTitle.isNotEmpty ? section.emptyTitle : '默认',
+            subtitle: section.emptyDescription,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildConfigItem(bool isDark, String label, String value, {String? subtitle}) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 70,
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: isDark ? Colors.white54 : const Color(0xFF7B818C),
+              ),
             ),
+          ),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  value,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: isDark ? Colors.white : const Color(0xFF20232A),
+                  ),
+                ),
+                if (subtitle != null && subtitle.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: isDark ? Colors.white38 : const Color(0xFF9CA3AF),
+                    ),
+                  ),
+                ]
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPromptQuestionsCard(WaterSection section, bool isDark) {
+    final questions = section.starterQuestions;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: _manageCardDecoration(isDark),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                '引导问题',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                  color: isDark ? Colors.white : const Color(0xFF20232A),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                '${questions.length}',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: isDark ? Colors.white38 : const Color(0xFF9CA3AF),
+                ),
+              ),
+            ],
+          ),
+          if (questions.isNotEmpty) const SizedBox(height: 12),
+          if (questions.isEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                '暂未配置引导问题',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: isDark ? Colors.white38 : const Color(0xFF9CA3AF),
+                ),
+              ),
+            ),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: questions.take(3).map((q) => Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: isDark ? Colors.white.withValues(alpha: 0.05) : const Color(0xFFF3F4F6),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                q,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: isDark ? Colors.white70 : const Color(0xFF525A66),
+                ),
+              ),
+            )).toList()..addAll([
+              if (questions.length > 3)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: isDark ? Colors.white.withValues(alpha: 0.05) : const Color(0xFFF3F4F6),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    '+${questions.length - 3}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: isDark ? Colors.white70 : const Color(0xFF525A66),
+                    ),
+                  ),
+                ),
+            ]),
           ),
         ],
       ),
@@ -402,86 +724,112 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(14),
-      decoration: _cardDecoration(isDark),
-      child: Column(
+      padding: const EdgeInsets.all(12),
+      decoration: _manageCardDecoration(isDark),
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  tag.name,
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        tag.name,
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w800,
+                          color: isDark ? Colors.white : const Color(0xFF20232A),
+                        ),
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: tag.isEnabled
+                            ? const Color(0xFF16A34A).withValues(alpha: 0.12)
+                            : const Color(0xFF9CA3AF).withValues(alpha: 0.14),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        tag.isEnabled ? '启用' : '停用',
+                        style: TextStyle(
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w700,
+                          color: tag.isEnabled
+                              ? const Color(0xFF16A34A)
+                              : const Color(0xFF6B7280),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '${tag.slug} · 排序 ${tag.sortOrder}${tag.isDefault ? ' · 默认' : ''}',
                   style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w800,
-                    color: isDark ? Colors.white : const Color(0xFF20232A),
+                    fontSize: 11,
+                    color: isDark ? Colors.white38 : const Color(0xFF9CA3AF),
                   ),
+                ),
+                if (tag.description.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    tag.description,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: isDark ? Colors.white54 : const Color(0xFF7B818C),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          PopupMenuButton<String>(
+            icon: Icon(
+              Icons.more_horiz,
+              size: 20,
+              color: isDark ? Colors.white54 : const Color(0xFF9CA3AF),
+            ),
+            color: isDark ? const Color(0xFF2C3136) : Colors.white,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: 'edit',
+                child: Row(
+                  children: [
+                    Icon(Icons.edit_outlined, size: 18),
+                    SizedBox(width: 8),
+                    Text('编辑标签', style: TextStyle(fontSize: 14)),
+                  ],
                 ),
               ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: tag.isEnabled
-                      ? const Color(0xFF16A34A).withValues(alpha: 0.12)
-                      : const Color(0xFF9CA3AF).withValues(alpha: 0.14),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text(
-                  tag.isEnabled ? '启用' : '停用',
-                  style: TextStyle(
-                    fontSize: 10.5,
-                    fontWeight: FontWeight.w700,
-                    color: tag.isEnabled
-                        ? const Color(0xFF16A34A)
-                        : const Color(0xFF6B7280),
-                  ),
+              PopupMenuItem(
+                value: 'toggle',
+                child: Row(
+                  children: [
+                    Icon(
+                      tag.isEnabled
+                          ? Icons.visibility_off_outlined
+                          : Icons.visibility_outlined,
+                      size: 18,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(tag.isEnabled ? '停用标签' : '启用标签', style: const TextStyle(fontSize: 14)),
+                  ],
                 ),
               ),
             ],
-          ),
-          const SizedBox(height: 4),
-          Text(
-            '${tag.slug} · 排序 ${tag.sortOrder}${tag.isDefault ? ' · 默认' : ''}',
-            style: TextStyle(
-              fontSize: 11,
-              color: isDark ? Colors.white38 : const Color(0xFF9CA3AF),
-            ),
-          ),
-          if (tag.description.isNotEmpty) ...[
-            const SizedBox(height: 6),
-            Text(
-              tag.description,
-              style: TextStyle(
-                fontSize: 12,
-                color: isDark ? Colors.white54 : const Color(0xFF7B818C),
-              ),
-            ),
-          ],
-          const SizedBox(height: 10),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              OutlinedButton.icon(
-                onPressed: () => _showTagFormSheet(section, existing: tag),
-                icon: const Icon(Icons.edit_outlined, size: 16),
-                label: const Text('编辑', style: TextStyle(fontSize: 12)),
-              ),
-              const SizedBox(width: 8),
-              TextButton.icon(
-                onPressed: () => _confirmTagStatus(section, tag),
-                icon: Icon(
-                  tag.isEnabled
-                      ? Icons.visibility_off_outlined
-                      : Icons.visibility_outlined,
-                  size: 16,
-                ),
-                label: Text(
-                  tag.isEnabled ? '停用' : '启用',
-                  style: const TextStyle(fontSize: 12),
-                ),
-              ),
-            ],
+            onSelected: (value) {
+              if (value == 'edit') {
+                _showTagFormSheet(section, existing: tag);
+              } else if (value == 'toggle') {
+                _confirmTagStatus(section, tag);
+              }
+            },
           ),
         ],
       ),
@@ -519,18 +867,16 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
     }
   }
 
-  void _showDisplaySettingsSheet(WaterSection section) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      backgroundColor: isDark ? const Color(0xFF171B24) : Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+  Future<void> _showDisplaySettingsSheet(WaterSection section) async {
+    final changed = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => WaterSectionDisplayEditScreen(section: section),
       ),
-      builder: (_) => _SectionDisplayFormSheet(section: section),
     );
+    if (changed == true && mounted) {
+      _refreshAll();
+    }
   }
 
   void _showTagFormSheet(WaterSection section, {WaterSectionTag? existing}) {
@@ -634,15 +980,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(vertical: 40),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF171B24) : Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: isDark
-              ? Colors.white.withValues(alpha: 0.08)
-              : const Color(0xFFEDEFF3),
-        ),
-      ),
+      decoration: _manageCardDecoration(isDark),
       child: Column(
         children: [
           Icon(Icons.group_outlined,
@@ -672,40 +1010,32 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF171B24) : Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: isDark
-              ? Colors.white.withValues(alpha: 0.08)
-              : const Color(0xFFEDEFF3),
-        ),
-      ),
-      child: Column(
+      padding: const EdgeInsets.all(12),
+      decoration: _manageCardDecoration(isDark),
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              CircleAvatar(
-                radius: 18,
-                backgroundImage: mod.user?.avatarUrl.isNotEmpty == true
-                    ? NetworkImage(mod.user!.avatarUrl)
-                    : null,
-                child: mod.user?.avatarUrl.isEmpty == true
-                    ? Text(
-                        mod.displayName.isNotEmpty
-                            ? mod.displayName[0].toUpperCase()
-                            : '?',
-                        style: const TextStyle(
-                            fontWeight: FontWeight.w700, fontSize: 14),
-                      )
-                    : null,
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+          CircleAvatar(
+            radius: 18,
+            backgroundImage: mod.user?.avatarUrl.isNotEmpty == true
+                ? NetworkImage(mod.user!.avatarUrl)
+                : null,
+            child: mod.user?.avatarUrl.isEmpty == true
+                ? Text(
+                    mod.displayName.isNotEmpty
+                        ? mod.displayName[0].toUpperCase()
+                        : '?',
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w700, fontSize: 14),
+                  )
+                : null,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
                   children: [
                     Text(
                       mod.displayName,
@@ -715,93 +1045,106 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
                           color:
                               isDark ? Colors.white : const Color(0xFF20232A)),
                     ),
-                    Text(
-                      'ID: ${mod.userId}',
-                      style: TextStyle(
-                          fontSize: 11,
-                          color: isDark
-                              ? Colors.white38
-                              : const Color(0xFF9CA3AF)),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: mod.role == 'owner'
+                            ? const Color(0xFFF59E0B).withValues(alpha: 0.15)
+                            : const Color(0xFF3B82F6).withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        mod.roleLabel,
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          color: mod.role == 'owner'
+                              ? const Color(0xFFD97706)
+                              : const Color(0xFF2563EB),
+                        ),
+                      ),
                     ),
                   ],
                 ),
-              ),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: mod.role == 'owner'
-                      ? const Color(0xFFF59E0B).withValues(alpha: 0.15)
-                      : const Color(0xFF3B82F6).withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text(
-                  mod.roleLabel,
+                Text(
+                  'ID: ${mod.userId}',
                   style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: mod.role == 'owner'
-                        ? const Color(0xFFD97706)
-                        : const Color(0xFF2563EB),
+                      fontSize: 11,
+                      color: isDark
+                          ? Colors.white38
+                          : const Color(0xFF9CA3AF)),
+                ),
+                if (mod.enabledPermissions.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: mod.enabledPermissions
+                        .map((p) => Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: isDark
+                                    ? Colors.white.withValues(alpha: 0.06)
+                                    : const Color(0xFFF3F4F6),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: Text(
+                                p,
+                                style: TextStyle(
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.w600,
+                                  color: isDark
+                                      ? Colors.white60
+                                      : const Color(0xFF667085),
+                                ),
+                              ),
+                            ))
+                        .toList(),
                   ),
-                ),
-              ),
-            ],
-          ),
-          if (mod.enabledPermissions.isNotEmpty) ...[
-            const SizedBox(height: 10),
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: mod.enabledPermissions
-                  .map((p) => Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: isDark
-                              ? Colors.white.withValues(alpha: 0.06)
-                              : const Color(0xFFF3F4F6),
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: Text(
-                          p,
-                          style: TextStyle(
-                            fontSize: 10.5,
-                            fontWeight: FontWeight.w600,
-                            color: isDark
-                                ? Colors.white60
-                                : const Color(0xFF667085),
-                          ),
-                        ),
-                      ))
-                  .toList(),
+                ],
+              ],
             ),
-          ],
-          const SizedBox(height: 10),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              OutlinedButton.icon(
-                onPressed: () => _showEditModeratorSheet(mod),
-                icon: const Icon(Icons.edit_outlined, size: 16),
-                label: const Text('修改权限', style: TextStyle(fontSize: 12)),
-                style: OutlinedButton.styleFrom(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          ),
+          PopupMenuButton<String>(
+            icon: Icon(
+              Icons.more_horiz,
+              size: 20,
+              color: isDark ? Colors.white54 : const Color(0xFF9CA3AF),
+            ),
+            color: isDark ? const Color(0xFF2C3136) : Colors.white,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: 'edit',
+                child: Row(
+                  children: [
+                    Icon(Icons.edit_outlined, size: 18),
+                    SizedBox(width: 8),
+                    Text('修改权限', style: TextStyle(fontSize: 14)),
+                  ],
                 ),
               ),
-              const SizedBox(width: 8),
-              TextButton.icon(
-                onPressed: () => _confirmRevoke(mod),
-                icon: const Icon(Icons.remove_circle_outline, size: 16),
-                label: const Text('罢免', style: TextStyle(fontSize: 12)),
-                style: TextButton.styleFrom(
-                  foregroundColor: Colors.red,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              const PopupMenuItem(
+                value: 'revoke',
+                child: Row(
+                  children: [
+                    Icon(Icons.remove_circle_outline, size: 18, color: Colors.red),
+                    SizedBox(width: 8),
+                    Text('罢免版主', style: TextStyle(fontSize: 14, color: Colors.red)),
+                  ],
                 ),
               ),
             ],
+            onSelected: (value) {
+              if (value == 'edit') {
+                _showEditModeratorSheet(mod);
+              } else if (value == 'revoke') {
+                _confirmRevoke(mod);
+              }
+            },
           ),
         ],
       ),
@@ -905,7 +1248,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
         if (isLoading)
           Container(
             padding: const EdgeInsets.all(20),
-            decoration: _cardDecoration(isDark),
+            decoration: _manageCardDecoration(isDark),
             child:
                 const Center(child: CircularProgressIndicator(strokeWidth: 2)),
           )
@@ -927,7 +1270,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
       width: double.infinity,
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
-      decoration: _cardDecoration(isDark),
+      decoration: _manageCardDecoration(isDark),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -961,6 +1304,17 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
                   ),
                   child: const Text('已过期',
                       style: TextStyle(fontSize: 10, color: Colors.orange)),
+                )
+              else
+                TextButton.icon(
+                  onPressed: () => _confirmUnmute(mute),
+                  icon: const Icon(Icons.lock_open_outlined, size: 14),
+                  label: const Text('解除', style: TextStyle(fontSize: 11)),
+                  style: TextButton.styleFrom(
+                    padding: EdgeInsets.zero,
+                    minimumSize: const Size(0, 24),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
                 ),
             ],
           ),
@@ -974,15 +1328,6 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
               style: TextStyle(
                   fontSize: 11,
                   color: isDark ? Colors.white38 : const Color(0xFF9CA3AF))),
-          const SizedBox(height: 8),
-          Align(
-            alignment: Alignment.centerRight,
-            child: TextButton.icon(
-              onPressed: () => _confirmUnmute(mute),
-              icon: const Icon(Icons.lock_open_outlined, size: 14),
-              label: const Text('解除禁言', style: TextStyle(fontSize: 11)),
-            ),
-          ),
         ],
       ),
     );
@@ -1053,7 +1398,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
         if (isLoading)
           Container(
             padding: const EdgeInsets.all(20),
-            decoration: _cardDecoration(isDark),
+            decoration: _manageCardDecoration(isDark),
             child:
                 const Center(child: CircularProgressIndicator(strokeWidth: 2)),
           )
@@ -1075,58 +1420,96 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
         log.action == 'delete_post' &&
         log.targetType == 'post' &&
         log.targetId > 0;
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 6),
-      padding: const EdgeInsets.all(10),
-      decoration: _cardDecoration(isDark),
+        
+    return IntrinsicHeight(
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+          // Timeline line
+          SizedBox(
+            width: 24,
+            child: Stack(
+              alignment: Alignment.topCenter,
               children: [
-                Text(log.actionLabel,
-                    style: TextStyle(
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w700,
-                        color:
-                            isDark ? Colors.white : const Color(0xFF20232A))),
-                const SizedBox(height: 2),
-                Text(log.reason.isNotEmpty ? log.reason : '无原因',
-                    style: TextStyle(
-                        fontSize: 11,
-                        color:
-                            isDark ? Colors.white54 : const Color(0xFF7B818C)),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis),
-              ],
-            ),
-          ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(time,
-                  style: TextStyle(
-                      fontSize: 10,
-                      color:
-                          isDark ? Colors.white38 : const Color(0xFF9CA3AF))),
-              if (canRestorePost) ...[
-                const SizedBox(height: 4),
-                TextButton.icon(
-                  onPressed:
-                      context.watch<WaterModerationProvider>().isOperating
-                          ? null
-                          : () => _confirmRestorePost(log),
-                  icon: const Icon(Icons.restore_rounded, size: 14),
-                  label: const Text('恢复', style: TextStyle(fontSize: 11)),
-                  style: TextButton.styleFrom(
-                    minimumSize: const Size(0, 28),
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                Positioned(
+                  top: 8,
+                  bottom: -16, // draw line beyond bottom
+                  child: Container(
+                    width: 2,
+                    color: isDark ? Colors.white10 : const Color(0xFFEDEFF3),
+                  ),
+                ),
+                Positioned(
+                  top: 8,
+                  child: Container(
+                    width: 8,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: _sectionAccent(),
+                      border: Border.all(color: isDark ? const Color(0xFF111315) : const Color(0xFFFFFAF4), width: 2),
+                    ),
                   ),
                 ),
               ],
-            ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Container(
+              margin: const EdgeInsets.only(bottom: 16),
+              padding: const EdgeInsets.all(12),
+              decoration: _manageCardDecoration(isDark),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(log.actionLabel,
+                            style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color:
+                                    isDark ? Colors.white : const Color(0xFF20232A))),
+                        const SizedBox(height: 4),
+                        Text(log.reason.isNotEmpty ? log.reason : '无原因',
+                            style: TextStyle(
+                                fontSize: 12,
+                                color:
+                                    isDark ? Colors.white54 : const Color(0xFF7B818C)),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis),
+                        const SizedBox(height: 6),
+                        Text(time,
+                            style: TextStyle(
+                                fontSize: 11,
+                                color:
+                                    isDark ? Colors.white38 : const Color(0xFF9CA3AF))),
+                      ],
+                    ),
+                  ),
+                  if (canRestorePost)
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        TextButton.icon(
+                          onPressed:
+                              context.watch<WaterModerationProvider>().isOperating
+                                  ? null
+                                  : () => _confirmRestorePost(log),
+                          icon: const Icon(Icons.restore_rounded, size: 14),
+                          label: const Text('恢复', style: TextStyle(fontSize: 11)),
+                          style: TextButton.styleFrom(
+                            minimumSize: const Size(0, 28),
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                          ),
+                        ),
+                      ],
+                    ),
+                ],
+              ),
+            ),
           ),
         ],
       ),
@@ -1252,77 +1635,102 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
         ),
       );
     }
+    
+    final accent = _sectionAccent();
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const SizedBox(height: 12),
-        Text(
-          '自定义版块 Lv.1 – Lv.8 的称号，留空则沿用默认称号',
-          style: TextStyle(
-            fontSize: 13,
-            color: isDark ? Colors.white70 : Colors.black54,
-          ),
-        ),
-        const SizedBox(height: 16),
-        ...List.generate(8, (i) {
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                SizedBox(
-                  width: 40,
-                  child: Text(
-                    'Lv.${i + 1}',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 14,
-                      color: isDark ? Colors.white : const Color(0xFF20232A),
-                    ),
-                  ),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: _manageCardDecoration(isDark),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '自定义称号',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                  color: isDark ? Colors.white : const Color(0xFF20232A),
                 ),
-                Expanded(
-                  child: TextField(
-                    controller: _levelTitleControllers[i],
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: isDark ? Colors.white : const Color(0xFF20232A),
-                    ),
-                    decoration: InputDecoration(
-                      hintText: _levelTitles != null && i < _levelTitles!.length
-                          ? _levelTitles![i].title
-                          : '',
-                      isDense: true,
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 10,
-                      ),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide: BorderSide(
-                          color: isDark ? Colors.white24 : Colors.black12,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '自定义版块 Lv.1 – Lv.8 的称号，留空则沿用默认称号',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: isDark ? Colors.white54 : const Color(0xFF7B818C),
+                ),
+              ),
+              const SizedBox(height: 20),
+              ...List.generate(8, (i) {
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: isDark ? Colors.white.withValues(alpha: 0.05) : const Color(0xFFF3F4F6),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          'Lv.${i + 1}',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13,
+                            color: isDark ? Colors.white70 : const Color(0xFF374151),
+                          ),
                         ),
                       ),
-                    ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: SizedBox(
+                          height: 44,
+                          child: TextField(
+                            controller: _levelTitleControllers[i],
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: isDark ? Colors.white : const Color(0xFF20232A),
+                            ),
+                            decoration: _manageInputDecoration(
+                              context,
+                              hint: _levelTitles != null && i < _levelTitles!.length
+                                  ? _levelTitles![i].title
+                                  : '',
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                ),
-              ],
-            ),
-          );
-        }),
-        const SizedBox(height: 16),
+                );
+              }),
+            ],
+          ),
+        ),
+        const SizedBox(height: 20),
         SizedBox(
           width: double.infinity,
-          height: 44,
-          child: ElevatedButton(
+          height: 52,
+          child: FilledButton(
             onPressed: _savingLevelTitles ? null : _saveLevelTitles,
+            style: FilledButton.styleFrom(
+              backgroundColor: accent,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(18),
+              ),
+            ),
             child: _savingLevelTitles
                 ? const SizedBox(
                     width: 20,
                     height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
+                    child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
                   )
-                : const Text('保存'),
+                : const Text('保存等级称号', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
           ),
         ),
       ],
@@ -1333,7 +1741,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(vertical: 24),
-      decoration: _cardDecoration(isDark),
+      decoration: _manageCardDecoration(isDark),
       child: Center(
         child: Text(text,
             style: TextStyle(
@@ -1357,581 +1765,7 @@ class _WaterSectionManageScreenState extends State<WaterSectionManageScreen> {
     return '$month/$day $hour:$minute';
   }
 
-  BoxDecoration _cardDecoration(bool isDark) {
-    return BoxDecoration(
-      color: isDark ? const Color(0xFF171B24) : Colors.white,
-      borderRadius: BorderRadius.circular(14),
-      border: Border.all(
-        color: isDark
-            ? Colors.white.withValues(alpha: 0.08)
-            : const Color(0xFFEDEFF3),
-      ),
-    );
-  }
-}
 
-// ── 版主表单 BottomSheet ──
-
-class _SectionDisplayFormSheet extends StatefulWidget {
-  final WaterSection section;
-
-  const _SectionDisplayFormSheet({required this.section});
-
-  @override
-  State<_SectionDisplayFormSheet> createState() =>
-      _SectionDisplayFormSheetState();
-}
-
-class _SectionDisplayFormSheetState extends State<_SectionDisplayFormSheet> {
-  late final TextEditingController _titleController;
-  late final TextEditingController _subtitleController;
-  late final TextEditingController _descriptionController;
-  late final TextEditingController _iconKeyController;
-  late final TextEditingController _colorHexController;
-  late final TextEditingController _publishActionController;
-  late final TextEditingController _emptyTitleController;
-  late final TextEditingController _emptyDescriptionController;
-  late final TextEditingController _noticeTextController;
-  late final TextEditingController _starterQuestionsController;
-  late final TextEditingController _reasonController;
-  late String _defaultSort;
-  String? _coverUrl; // 背景图 URL (Legacy)
-  String? _coverPortraitUrl; // 手机版块背景 3:4
-  String? _coverLandscapeUrl; // 横向封面 16:9
-  String? _coverSquareUrl; // 方形入口 1:1
-  String? _avatarUrl; // 版块头像 1:1
-  bool _isSubmitting = false;
-  bool _isUploadingCover = false;
-  bool _isUploadingAvatar = false;
-
-  static const List<String> _presetColors = [
-    '#10B981', // Emerald
-    '#3B82F6', // Blue
-    '#6366F1', // Indigo
-    '#8B5CF6', // Violet
-    '#EC4899', // Pink
-    '#EF4444', // Red
-    '#F97316', // Orange
-    '#EAB308', // Yellow
-    '#14B8A6', // Teal
-    '#06B6D4', // Cyan
-    '#84CC16', // Lime
-    '#64748B', // Slate
-    '#7ED321', // Original Custom Green
-  ];
-
-  @override
-  void initState() {
-    super.initState();
-    final section = widget.section;
-    _titleController = TextEditingController(text: section.title);
-    _subtitleController = TextEditingController(text: section.subtitle);
-    _descriptionController = TextEditingController(text: section.description);
-    _iconKeyController = TextEditingController(text: section.iconKey);
-    _colorHexController = TextEditingController(text: section.colorHex);
-    _publishActionController =
-        TextEditingController(text: section.publishActionText);
-    _emptyTitleController = TextEditingController(text: section.emptyTitle);
-    _emptyDescriptionController =
-        TextEditingController(text: section.emptyDescription);
-    _noticeTextController = TextEditingController(text: section.noticeText);
-    _starterQuestionsController =
-        TextEditingController(text: section.starterQuestions.join('\n'));
-    _reasonController = TextEditingController(text: '编辑版块展示');
-    _defaultSort = _normalizeSort(section.defaultSort);
-    _coverUrl = section.coverUrl.isNotEmpty ? section.coverUrl : null;
-    _coverPortraitUrl = section.coverPortraitUrl.isNotEmpty ? section.coverPortraitUrl : null;
-    _coverLandscapeUrl = section.coverLandscapeUrl.isNotEmpty ? section.coverLandscapeUrl : null;
-    _coverSquareUrl = section.coverSquareUrl.isNotEmpty ? section.coverSquareUrl : null;
-    _avatarUrl = section.avatarUrl.isNotEmpty ? section.avatarUrl : null;
-  }
-
-  @override
-  void dispose() {
-    _titleController.dispose();
-    _subtitleController.dispose();
-    _descriptionController.dispose();
-    _iconKeyController.dispose();
-    _colorHexController.dispose();
-    _publishActionController.dispose();
-    _emptyTitleController.dispose();
-    _emptyDescriptionController.dispose();
-    _noticeTextController.dispose();
-    _starterQuestionsController.dispose();
-    _reasonController.dispose();
-    super.dispose();
-  }
-
-  String _normalizeSort(String sort) {
-    switch (sort) {
-      case 'recommend':
-        return 'all';
-      case 'latest':
-        return 'time';
-      case 'all':
-      case 'time':
-      case 'featured':
-      case 'following':
-        return sort;
-      default:
-        return 'all';
-    }
-  }
-
-  Future<String?> _cropAndUpload(String sourcePath, String title, CropAspectRatio preset) async {
-    final cropped = await ImageCropper().cropImage(
-      sourcePath: sourcePath,
-      maxWidth: 1920,
-      maxHeight: 1920,
-      compressQuality: 85,
-      uiSettings: [
-        AndroidUiSettings(
-          toolbarTitle: title,
-          toolbarColor: Colors.black,
-          toolbarWidgetColor: Colors.white,
-          statusBarColor: Colors.black,
-          backgroundColor: Colors.black,
-          lockAspectRatio: true,
-        ),
-        IOSUiSettings(
-          title: title,
-          aspectRatioLockEnabled: true,
-          resetAspectRatioEnabled: false,
-        ),
-      ],
-      aspectRatio: preset,
-    );
-
-    if (cropped == null) return null;
-    final croppedBytes = await cropped.readAsBytes();
-    final croppedName = 'section_cover_${DateTime.now().millisecondsSinceEpoch}.jpg';
-    final auth = context.read<AuthProvider>();
-    final formData = FormData.fromMap({
-      'file': MultipartFile.fromBytes(
-        croppedBytes,
-        filename: croppedName,
-        contentType: DioMediaType('image', 'jpeg'),
-      ),
-    });
-    final uploadRes = await auth.dio.post('/upload', data: formData);
-    if (uploadRes.statusCode == 200 && uploadRes.data['url'] != null) {
-      return uploadRes.data['url'] as String;
-    }
-    return null;
-  }
-
-  Future<void> _pickAndUploadCover() async {
-    final picker = ImagePicker();
-    final picked = await picker.pickImage(source: ImageSource.gallery);
-    if (picked == null) return;
-    if (!mounted) return;
-
-    setState(() => _isUploadingCover = true);
-    try {
-      final sourcePath = picked.path;
-      // 1. Portrait 3:4
-      final portraitUrl = await _cropAndUpload(sourcePath, '裁剪手机版块背景 (3:4)', const CropAspectRatio(ratioX: 3, ratioY: 4));
-      if (portraitUrl == null) throw Exception('取消或失败');
-      
-      // 2. Landscape 16:9
-      final landscapeUrl = await _cropAndUpload(sourcePath, '裁剪横向封面 (16:9)', const CropAspectRatio(ratioX: 16, ratioY: 9));
-      if (landscapeUrl == null) throw Exception('取消或失败');
-
-      // 3. Square 1:1
-      final squareUrl = await _cropAndUpload(sourcePath, '裁剪方形封面 (1:1)', const CropAspectRatio(ratioX: 1, ratioY: 1));
-      if (squareUrl == null) throw Exception('取消或失败');
-
-      if (mounted) {
-        setState(() {
-          _coverPortraitUrl = portraitUrl;
-          _coverLandscapeUrl = landscapeUrl;
-          _coverSquareUrl = squareUrl;
-          _coverUrl = portraitUrl; // fallback compatibility
-        });
-        _showSnack('三组封面图已上传，保存后生效');
-      }
-    } catch (e) {
-      if (mounted) _showSnack('上传中断或失败: $e');
-    } finally {
-      if (mounted) setState(() => _isUploadingCover = false);
-    }
-  }
-
-  Future<void> _pickAndUploadAvatar() async {
-    final picker = ImagePicker();
-    final picked = await picker.pickImage(source: ImageSource.gallery);
-    if (picked == null) return;
-    if (!mounted) return;
-
-    setState(() => _isUploadingAvatar = true);
-    try {
-      final avatarUrl = await _cropAndUpload(picked.path, '裁剪版块头像 (1:1)', const CropAspectRatio(ratioX: 1, ratioY: 1));
-      if (avatarUrl == null) throw Exception('取消或失败');
-      
-      if (mounted) {
-        setState(() {
-          _avatarUrl = avatarUrl;
-        });
-        _showSnack('头像已上传，保存后生效');
-      }
-    } catch (e) {
-      if (mounted) _showSnack('上传中断或失败: $e');
-    } finally {
-      if (mounted) setState(() => _isUploadingAvatar = false);
-    }
-  }
-
-  void _clearAvatar() {
-    setState(() {
-      _avatarUrl = null;
-    });
-    _showSnack('头像已清除，保存后生效');
-  }
-
-  void _clearCover() {
-    setState(() {
-      _coverUrl = null;
-      _coverPortraitUrl = null;
-      _coverLandscapeUrl = null;
-      _coverSquareUrl = null;
-    });
-    _showSnack('封面图已清除，保存后生效');
-  }
-
-  Widget _buildSinglePreview(String title, String? url, double ratio, bool isDark) {
-    final hasCover = url != null && url.isNotEmpty;
-    final imageBox = AspectRatio(
-      aspectRatio: ratio,
-      child: Container(
-        decoration: BoxDecoration(
-          color: isDark ? Colors.white.withValues(alpha: 0.06) : const Color(0xFFF3F4F6),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: isDark ? Colors.white.withValues(alpha: 0.12) : const Color(0xFFE5E7EB),
-          ),
-        ),
-        child: hasCover
-            ? ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: CachedNetworkImage(
-                  imageUrl: ApiConstants.fullUrl(url!),
-                  fit: BoxFit.cover,
-                ),
-              )
-            : Center(
-                child: Icon(Icons.image_outlined, size: 24, color: isDark ? Colors.white24 : Colors.grey[400]),
-              ),
-      ),
-    );
-
-    if (title.isEmpty) return imageBox;
-
-    return Column(
-      children: [
-        Text(title, style: TextStyle(fontSize: 12, color: isDark ? Colors.white70 : Colors.black54)),
-        const SizedBox(height: 6),
-        imageBox,
-      ],
-    );
-  }
-
-  Widget _buildAvatarImagePreview(bool isDark) {
-    final hasAvatar = _avatarUrl != null && _avatarUrl!.isNotEmpty;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          '版块头像 (1:1)',
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            color: isDark ? Colors.white70 : const Color(0xFF374151),
-          ),
-        ),
-        const SizedBox(height: 8),
-        Row(
-          children: [
-            SizedBox(
-              width: 64,
-              height: 64,
-              child: _buildSinglePreview('', _avatarUrl, 1, isDark),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  OutlinedButton.icon(
-                    onPressed: _isUploadingAvatar ? null : _pickAndUploadAvatar,
-                    icon: _isUploadingAvatar
-                        ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
-                        : const Icon(Icons.cloud_upload_outlined, size: 16),
-                    label: Text(_isUploadingAvatar ? '上传中...' : '上传并裁剪头像'),
-                  ),
-                  if (hasAvatar) ...[
-                    const SizedBox(height: 6),
-                    OutlinedButton.icon(
-                      onPressed: _clearAvatar,
-                      icon: const Icon(Icons.delete_outline, size: 16),
-                      label: const Text('清除'),
-                      style: OutlinedButton.styleFrom(foregroundColor: Colors.red),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 16),
-      ],
-    );
-  }
-
-  Widget _buildCoverImagePreview(bool isDark) {
-    final hasAnyCover = _coverPortraitUrl != null && _coverPortraitUrl!.isNotEmpty;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          '版块背景图 (需裁剪3个比例)',
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            color: isDark ? Colors.white70 : const Color(0xFF374151),
-          ),
-        ),
-        const SizedBox(height: 8),
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            Expanded(flex: 30, child: _buildSinglePreview('手机版 3:4', _coverPortraitUrl, 3/4, isDark)),
-            const SizedBox(width: 8),
-            Expanded(flex: 40, child: _buildSinglePreview('横向 16:9', _coverLandscapeUrl, 16/9, isDark)),
-            const SizedBox(width: 8),
-            Expanded(flex: 30, child: _buildSinglePreview('方形 1:1', _coverSquareUrl, 1, isDark)),
-          ],
-        ),
-        const SizedBox(height: 10),
-        Row(
-          children: [
-            Expanded(
-              child: OutlinedButton.icon(
-                onPressed: _isUploadingCover ? null : _pickAndUploadCover,
-                icon: _isUploadingCover
-                    ? SizedBox(
-                        width: 14,
-                        height: 14,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.cloud_upload_outlined, size: 16),
-                label: Text(_isUploadingCover ? '上传中...' : '上传并裁剪背景图'),
-              ),
-            ),
-            if (hasAnyCover) ...[
-              const SizedBox(width: 10),
-              OutlinedButton.icon(
-                onPressed: _clearCover,
-                icon: const Icon(Icons.delete_outline, size: 16),
-                label: const Text('清除'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: Colors.red,
-                ),
-              ),
-            ],
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _buildColorPalette(bool isDark) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          '主题颜色',
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            color: isDark ? Colors.white70 : const Color(0xFF374151),
-          ),
-        ),
-        const SizedBox(height: 10),
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            children: _presetColors.map((hex) {
-              final color = Color(int.parse(hex.substring(1), radix: 16) + 0xFF000000);
-              final isSelected = _colorHexController.text.toUpperCase() == hex.toUpperCase();
-              return GestureDetector(
-                onTap: () {
-                  setState(() {
-                    _colorHexController.text = hex;
-                  });
-                },
-                child: Container(
-                  margin: const EdgeInsets.only(right: 12),
-                  width: 32,
-                  height: 32,
-                  decoration: BoxDecoration(
-                    color: color,
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: isSelected
-                          ? (isDark ? Colors.white : Colors.black)
-                          : Colors.transparent,
-                      width: 2,
-                    ),
-                    boxShadow: [
-                      if (isSelected)
-                        BoxShadow(
-                          color: color.withValues(alpha: 0.4),
-                          blurRadius: 8,
-                          offset: const Offset(0, 2),
-                        ),
-                    ],
-                  ),
-                  child: isSelected
-                      ? Icon(
-                          Icons.check,
-                          size: 16,
-                          color: color.computeLuminance() > 0.5 ? Colors.black : Colors.white,
-                        )
-                      : null,
-                ),
-              );
-            }).toList(),
-          ),
-        ),
-        const SizedBox(height: 16),
-      ],
-    );
-  }
-
-  Future<void> _submit() async {
-    final title = _titleController.text.trim();
-    final colorHex = _colorHexController.text.trim();
-    final questions = _starterQuestionsController.text
-        .split('\n')
-        .map((e) => e.trim())
-        .where((e) => e.isNotEmpty)
-        .toList();
-    if (title.isEmpty) {
-      _showSnack('标题不能为空');
-      return;
-    }
-    if (colorHex.isNotEmpty &&
-        !RegExp(r'^#[0-9A-Fa-f]{6}$').hasMatch(colorHex)) {
-      _showSnack('颜色必须为空或符合 #RRGGBB');
-      return;
-    }
-    if (questions.length > 10) {
-      _showSnack('引导问题最多 10 条');
-      return;
-    }
-    setState(() => _isSubmitting = true);
-    final provider = context.read<WaterSectionProvider>();
-    final ok = await provider.updateSectionDisplay(
-      slug: widget.section.slug,
-      fields: {
-        'title': title,
-        'subtitle': _subtitleController.text.trim(),
-        'description': _descriptionController.text.trim(),
-        'icon_key': _iconKeyController.text.trim(),
-        'color_hex': colorHex,
-        'cover_url': _coverUrl ?? '',
-        'cover_portrait_url': _coverPortraitUrl ?? '',
-        'cover_landscape_url': _coverLandscapeUrl ?? '',
-        'cover_square_url': _coverSquareUrl ?? '',
-        'avatar_url': _avatarUrl ?? '',
-        'publish_action_text': _publishActionController.text.trim(),
-        'empty_title': _emptyTitleController.text.trim(),
-        'empty_description': _emptyDescriptionController.text.trim(),
-        'notice_text': _noticeTextController.text.trim(),
-        'starter_questions': questions,
-        'default_sort': _defaultSort,
-        'reason': _reasonController.text.trim().isEmpty
-            ? '编辑版块展示'
-            : _reasonController.text.trim(),
-      },
-    );
-    if (!mounted) return;
-    setState(() => _isSubmitting = false);
-    if (ok) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('已保存版块展示设置')),
-      );
-      Navigator.pop(context);
-    } else {
-      _showSnack(provider.error ?? '保存失败');
-    }
-  }
-
-  void _showSnack(String message) {
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-        20,
-        20,
-        20,
-        20 + MediaQuery.of(context).viewInsets.bottom,
-      ),
-      child: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildSheetHandle(isDark),
-            const SizedBox(height: 16),
-            _buildSheetTitle('展示设置', isDark),
-            const SizedBox(height: 16),
-            _buildAvatarImagePreview(isDark),
-            _buildCoverImagePreview(isDark),
-            const SizedBox(height: 16),
-            _buildTextField(_titleController, '标题', isDark),
-            _buildTextField(_subtitleController, '副标题', isDark),
-            _buildTextField(_descriptionController, '说明', isDark, maxLines: 3),
-            _buildTextField(_iconKeyController, '图标 Key', isDark),
-            _buildColorPalette(isDark),
-            _buildTextField(_publishActionController, '发帖按钮文案', isDark),
-            _buildTextField(_emptyTitleController, '空状态标题', isDark),
-            _buildTextField(_emptyDescriptionController, '空状态描述', isDark,
-                maxLines: 2),
-            _buildTextField(_noticeTextController, '发布提醒', isDark, maxLines: 3),
-            _buildTextField(_starterQuestionsController, '引导问题（每行一条）', isDark,
-                maxLines: 5),
-            DropdownButtonFormField<String>(
-              initialValue: _defaultSort,
-              decoration: _inputDecoration('默认排序', isDark),
-              items: const [
-                DropdownMenuItem(value: 'all', child: Text('默认排序')),
-                DropdownMenuItem(value: 'time', child: Text('最新发布')),
-                DropdownMenuItem(value: 'featured', child: Text('精华内容')),
-                DropdownMenuItem(value: 'following', child: Text('关注的人')),
-              ],
-              onChanged: (value) {
-                if (value != null) setState(() => _defaultSort = value);
-              },
-            ),
-            const SizedBox(height: 12),
-            _buildTextField(_reasonController, '保存原因', isDark),
-            const SizedBox(height: 18),
-            _buildSubmitButton(
-              label: '保存展示设置',
-              isSubmitting: _isSubmitting,
-              onPressed: _submit,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }
 
 class _TagFormSheet extends StatefulWidget {

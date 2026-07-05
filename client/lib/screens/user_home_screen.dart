@@ -66,10 +66,13 @@ class _UserHomeScreenState extends State<UserHomeScreen>
       final user = await provider.getUserProfile(targetId);
       final posts = await provider.getUserPosts(targetId);
       final marketResult = await provider.getUserMarketPosts(targetId);
+      
+      final normalPosts = posts.where((post) => !_isMarketPost(post)).toList();
+
       if (mounted) {
         setState(() {
           _user = user;
-          _posts = posts;
+          _posts = normalPosts;
           _marketPosts = marketResult.items;
           _marketTotal = marketResult.total;
           _marketSoldCount = marketResult.sold;
@@ -79,6 +82,15 @@ class _UserHomeScreenState extends State<UserHomeScreen>
     if (mounted) {
       setState(() => _isLoading = false);
     }
+  }
+
+  bool _isMarketPost(Post post) {
+    return post.boardId == 2 ||
+        post.postType == 'market' ||
+        post.postType == 'sell' ||
+        post.postType == 'buy' ||
+        post.postType == 'service' ||
+        post.marketTags.isNotEmpty;
   }
 
   String get _marketTabText {

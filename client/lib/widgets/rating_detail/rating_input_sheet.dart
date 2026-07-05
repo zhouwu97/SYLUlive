@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'ranking_tokens.dart';
 
 Future<void> showRatingInputSheet({
   required BuildContext context,
@@ -7,6 +8,7 @@ Future<void> showRatingInputSheet({
   required Future<bool> Function(int, String) onSubmit,
   required String title,
   int maxCommentLength = 500,
+  Color? accentOverride,
 }) async {
   await showModalBottomSheet(
     context: context,
@@ -18,6 +20,7 @@ Future<void> showRatingInputSheet({
       onSubmit: onSubmit,
       title: title,
       maxCommentLength: maxCommentLength,
+      accentOverride: accentOverride,
     ),
   );
 }
@@ -28,6 +31,7 @@ class _RatingInputSheet extends StatefulWidget {
   final Future<bool> Function(int, String) onSubmit;
   final String title;
   final int maxCommentLength;
+  final Color? accentOverride;
 
   const _RatingInputSheet({
     required this.initialStar,
@@ -35,6 +39,7 @@ class _RatingInputSheet extends StatefulWidget {
     required this.onSubmit,
     required this.title,
     required this.maxCommentLength,
+    this.accentOverride,
   });
 
   @override
@@ -62,13 +67,15 @@ class _RatingInputSheetState extends State<_RatingInputSheet> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final accent = widget.accentOverride ?? RankingTokens.teacherAccent(isDark);
     final viewInsets = MediaQuery.of(context).viewInsets;
 
     return Container(
       margin: EdgeInsets.only(top: MediaQuery.of(context).padding.top + 20),
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1C2230) : Colors.white,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+        color: RankingTokens.cardBg(isDark),
+        borderRadius:
+            const BorderRadius.vertical(top: Radius.circular(20)),
       ),
       padding: EdgeInsets.only(
         left: 20,
@@ -90,8 +97,8 @@ class _RatingInputSheetState extends State<_RatingInputSheet> {
                   widget.title,
                   style: TextStyle(
                     fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: isDark ? Colors.white : Colors.black87,
+                    fontWeight: FontWeight.w700,
+                    color: RankingTokens.titleColor(isDark),
                   ),
                 ),
                 const Spacer(),
@@ -130,25 +137,29 @@ class _RatingInputSheetState extends State<_RatingInputSheet> {
               autofocus: true,
               decoration: InputDecoration(
                 hintText: '写下你的评价...',
+                hintStyle: TextStyle(
+                  color: RankingTokens.subColor(isDark),
+                ),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                   borderSide: BorderSide.none,
                 ),
                 filled: true,
-                fillColor:
-                    isDark ? const Color(0x33FFFFFF) : const Color(0x0A000000),
+                fillColor: isDark
+                    ? const Color(0x33FFFFFF)
+                    : const Color(0x0A000000),
                 contentPadding:
                     const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
               ),
               style: TextStyle(
                 fontSize: 15,
-                color: isDark ? Colors.white : Colors.black87,
+                color: RankingTokens.titleColor(isDark),
               ),
             ),
             const SizedBox(height: 16),
             SizedBox(
               width: double.infinity,
-              height: 48,
+              height: 46,
               child: ElevatedButton(
                 onPressed: _star == 0 || _isSubmitting
                     ? null
@@ -161,8 +172,12 @@ class _RatingInputSheetState extends State<_RatingInputSheet> {
                         if (success) Navigator.pop(context);
                       },
                 style: ElevatedButton.styleFrom(
+                  backgroundColor: accent,
+                  foregroundColor: Colors.white,
+                  elevation: 0,
                   shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
                 child: _isSubmitting
                     ? const SizedBox(
@@ -174,7 +189,7 @@ class _RatingInputSheetState extends State<_RatingInputSheet> {
                     : const Text(
                         '提交评价',
                         style: TextStyle(
-                            fontSize: 16, fontWeight: FontWeight.bold),
+                            fontSize: 16, fontWeight: FontWeight.w700),
                       ),
               ),
             ),

@@ -2,19 +2,20 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
+
+import '../config/api_constants.dart';
 import '../models/teacher.dart';
 import '../providers/auth_provider.dart';
+import '../providers/canteen_provider.dart';
 import '../providers/major_provider.dart';
 import '../providers/teacher_provider.dart';
-import '../widgets/glass_container.dart';
-import '../providers/canteen_provider.dart';
-import '../config/api_constants.dart';
+import '../utils/responsive_util.dart';
+import '../widgets/image_upload_widget.dart';
+import '../widgets/rating_detail/ranking_tokens.dart';
+import 'canteen_detail_screen.dart';
 import 'major_detail_screen.dart';
 import 'subject_ranking_detail_screen.dart';
-import 'canteen_detail_screen.dart';
-import '../widgets/image_upload_widget.dart';
-import '../utils/responsive_util.dart';
-import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 
 class TeacherRateScreen extends StatefulWidget {
   const TeacherRateScreen({super.key});
@@ -36,7 +37,7 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
     _tabCtrl = TabController(length: 3, vsync: this);
     _tabCtrl.addListener(() {
       if (!_tabCtrl.indexIsChanging) {
-        setState(() {}); // 确保切换 segment 时重建
+        setState(() {});
       }
     });
     WidgetsBinding.instance.addPostFrameCallback((_) => _refreshAll());
@@ -70,21 +71,39 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
     return query.isEmpty ? null : query;
   }
 
+  // ── per-tab accent helpers ─────────────────────────────────────────
+
+  Color _tabAccent(bool isDark) => switch (_tabCtrl.index) {
+        0 => RankingTokens.canteenAccent(isDark),
+        1 => RankingTokens.teacherAccent(isDark),
+        _ => RankingTokens.majorAccent(isDark),
+      };
+
+  Color _tabAccentSoft(bool isDark) => switch (_tabCtrl.index) {
+        0 => RankingTokens.canteenAccentSoft(isDark),
+        1 => RankingTokens.teacherAccentSoft(isDark),
+        _ => RankingTokens.majorAccentSoft(isDark),
+      };
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final bgColor = isDark ? const Color(0xFF101219) : Colors.white;
+    final accent = _tabAccent(isDark);
+
     return Scaffold(
-      backgroundColor: bgColor,
+      backgroundColor: RankingTokens.pageBg(isDark),
       appBar: AppBar(
         leading: const BackButton(),
-        title: const Text('校园榜单'),
+        title: const Text(
+          '校园榜单',
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+        ),
         centerTitle: true,
         elevation: 0,
         scrolledUnderElevation: 0,
-        backgroundColor: bgColor,
+        backgroundColor: RankingTokens.pageBg(isDark),
         surfaceTintColor: Colors.transparent,
-        foregroundColor: isDark ? Colors.white : const Color(0xFF20212B),
+        foregroundColor: RankingTokens.titleColor(isDark),
       ),
       body: Stack(
         children: [
@@ -103,22 +122,24 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
               ),
             ],
           ),
-          Positioned(right: 20, bottom: 20, child: _buildFAB(context)),
+          Positioned(right: 20, bottom: 20, child: _buildFAB(isDark, accent)),
         ],
       ),
     );
   }
 
+  // ── Segmented control ──────────────────────────────────────────────
+
   Widget _buildSegmentedControl(bool isDark) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
       child: Container(
-        height: 40,
+        height: RankingTokens.tabHeight,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(10),
           color: isDark
-              ? Colors.white.withValues(alpha: 0.08)
-              : Colors.black.withValues(alpha: 0.05),
+              ? Colors.white.withValues(alpha: 0.06)
+              : const Color(0xFFF3F2EF),
         ),
         child: Row(
           children: [
@@ -133,6 +154,17 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
 
   Widget _buildSegmentItem(int index, String label, bool isDark) {
     final isSelected = _tabCtrl.index == index;
+    final accent = switch (index) {
+      0 => RankingTokens.canteenAccent(isDark),
+      1 => RankingTokens.teacherAccent(isDark),
+      _ => RankingTokens.majorAccent(isDark),
+    };
+    final accentSoft = switch (index) {
+      0 => RankingTokens.canteenAccentSoft(isDark),
+      1 => RankingTokens.teacherAccentSoft(isDark),
+      _ => RankingTokens.majorAccentSoft(isDark),
+    };
+
     return GestureDetector(
       onTap: () {
         _tabCtrl.animateTo(index);
@@ -142,24 +174,24 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
         margin: const EdgeInsets.all(3),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(8),
-          color: isSelected
-              ? const Color(0xFF6D5EF9).withValues(alpha: 0.15)
-              : Colors.transparent,
+          color: isSelected ? accentSoft : Colors.transparent,
         ),
         alignment: Alignment.center,
         child: Text(
           label,
           style: TextStyle(
             fontSize: 13,
-            fontWeight: FontWeight.w600,
+            fontWeight: FontWeight.w700,
             color: isSelected
-                ? const Color(0xFF6D5EF9)
-                : (isDark ? Colors.white60 : Colors.black54),
+                ? accent
+                : (isDark ? Colors.white54 : Colors.black54),
           ),
         ),
       ),
     );
   }
+
+  // ── FAB ────────────────────────────────────────────────────────────
 
   String get _fabLabel => switch (_tabCtrl.index) {
         0 => '添加食堂',
@@ -167,56 +199,58 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
         _ => '添加专业',
       };
 
-  Widget _buildFAB(BuildContext context) {
+  Widget _buildFAB(bool isDark, Color accent) {
     final bottomSafe = MediaQuery.of(context).padding.bottom;
     return Padding(
       padding: EdgeInsets.only(bottom: bottomSafe > 0 ? bottomSafe : 0),
       child: FloatingActionButton.extended(
         heroTag: 'teacher_rate_fab',
         onPressed: _showAddDialog,
-        backgroundColor: const Color(0xFF7367C6),
+        backgroundColor: accent,
         foregroundColor: Colors.white,
-        elevation: 8,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(18),
-        ),
-        icon: const Icon(Icons.add_rounded, color: Colors.white, size: 22),
+        elevation: 3,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        icon: const Icon(Icons.add_rounded, color: Colors.white, size: 20),
         label: Text(
           _fabLabel,
           style: const TextStyle(
             color: Colors.white,
-            fontWeight: FontWeight.w600,
-            fontSize: 14,
+            fontWeight: FontWeight.w700,
+            fontSize: 13,
           ),
         ),
       ),
     );
   }
 
-  Widget _buildDisclaimer(bool isDark) => GlassContainer(
-        margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-        padding: const EdgeInsets.all(12),
-        borderRadius: 14,
-        blur: 12,
-        opacity: 0.18,
-        backgroundColor:
-            isDark ? const Color(0xA3182033) : const Color(0xCCEAF1FF),
+  // ── Disclaimer ─────────────────────────────────────────────────────
+
+  Widget _buildDisclaimer(bool isDark) => Container(
+        margin: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: RankingTokens.teacherAccentSoft(isDark),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: RankingTokens.teacherAccent(isDark).withValues(alpha: 0.18),
+          ),
+        ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Icon(
               Icons.info_outline,
-              size: 20,
-              color: isDark ? Colors.blue[300] : Colors.blue[700],
+              size: 18,
+              color: RankingTokens.teacherAccent(isDark),
             ),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
-                '教师榜已按学科聚合。添加教师时请填写完整课程名称，例如“数据结构”“高等数学A1”，避免同一学科被拆散。',
+                '教师榜已按学科聚合。添加教师时请填写完整课程名称，例如"数据结构""高等数学A1"，避免同一学科被拆散。',
                 style: TextStyle(
                   fontSize: 12,
-                  color: isDark ? Colors.grey[300] : Colors.grey[700],
-                  height: 1.45,
+                  color: RankingTokens.subColor(isDark),
+                  height: 1.4,
                 ),
               ),
             ),
@@ -226,35 +260,47 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
                 final prefs = await SharedPreferences.getInstance();
                 await prefs.setBool('has_shown_teacher_disclaimer', true);
               },
-              child: const Icon(Icons.close, size: 16, color: Colors.grey),
+              child: Icon(Icons.close, size: 16, color: RankingTokens.subColor(isDark)),
             ),
           ],
         ),
       );
 
+  // ── Search bar ─────────────────────────────────────────────────────
+
   Widget _buildSearchBar(bool isDark) => Padding(
-        padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-        child: GlassContainer(
-          borderRadius: 50,
-          blur: 12,
-          opacity: 0.18,
-          backgroundColor:
-              isDark ? const Color(0x99171B24) : const Color(0xCCFFFFFF),
-          borderColor: isDark
-              ? Colors.white.withValues(alpha: 0.08)
-              : Colors.white.withValues(alpha: 0.72),
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+        child: Container(
+          height: RankingTokens.searchHeight,
+          decoration: BoxDecoration(
+            color: RankingTokens.cardBg(isDark),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: RankingTokens.borderColor(isDark)),
+          ),
           child: TextField(
             controller: _searchCtrl,
+            style: TextStyle(
+              fontSize: 14,
+              color: RankingTokens.titleColor(isDark),
+            ),
             decoration: InputDecoration(
               hintText: _tabCtrl.index == 0
                   ? '搜索食堂...'
                   : (_tabCtrl.index == 1 ? '搜索学科或教师...' : '搜索专业...'),
-              prefixIcon: const Icon(Icons.search, size: 20),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide.none,
+              hintStyle: TextStyle(
+                fontSize: 14,
+                color: RankingTokens.mutedColor(isDark),
               ),
-              contentPadding: const EdgeInsets.symmetric(vertical: 10),
+              prefixIcon: Icon(
+                Icons.search_rounded,
+                size: 20,
+                color: RankingTokens.subColor(isDark),
+              ),
+              prefixIconConstraints:
+                  const BoxConstraints(minWidth: 40, minHeight: 40),
+              border: InputBorder.none,
+              isDense: true,
+              contentPadding: const EdgeInsets.symmetric(vertical: 12),
             ),
             onChanged: (value) {
               if (_tabCtrl.index == 1) {
@@ -269,6 +315,8 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
         ),
       );
 
+  // ── Subject list ───────────────────────────────────────────────────
+
   Widget _buildSubjectList(bool isDark) => Consumer<TeacherProvider>(
         builder: (_, provider, __) {
           if (provider.isLoading && provider.teachers.isEmpty) {
@@ -280,8 +328,7 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
             return Center(
               child: Text(
                 '暂无学科数据',
-                style: TextStyle(
-                    color: isDark ? Colors.white54 : Colors.grey[600]),
+                style: TextStyle(color: RankingTokens.subColor(isDark)),
               ),
             );
           }
@@ -324,22 +371,24 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
             },
             child: ResponsiveUtil.isDesktop(context)
                 ? MasonryGridView.count(
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 80),
                     crossAxisCount:
                         MediaQuery.of(context).size.width > 900 ? 3 : 2,
-                    mainAxisSpacing: 16,
-                    crossAxisSpacing: 16,
+                    mainAxisSpacing: RankingTokens.cardGap,
+                    crossAxisSpacing: RankingTokens.cardGap,
                     itemCount: groups.length,
                     itemBuilder: (_, index) => buildCard(index),
                   )
                 : ListView.builder(
-                    padding: const EdgeInsets.fromLTRB(12, 8, 12, 80),
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 80),
                     itemCount: groups.length,
                     itemBuilder: (_, index) => buildCard(index),
                   ),
           );
         },
       );
+
+  // ── Major list ─────────────────────────────────────────────────────
 
   Widget _buildMajorList(bool isDark) => Consumer<MajorProvider>(
         builder: (_, provider, __) {
@@ -357,8 +406,7 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
             return Center(
               child: Text(
                 '暂无专业',
-                style: TextStyle(
-                    color: isDark ? Colors.white54 : Colors.grey[600]),
+                style: TextStyle(color: RankingTokens.subColor(isDark)),
               ),
             );
           }
@@ -393,22 +441,24 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
             onRefresh: () => context.read<MajorProvider>().loadMajors(),
             child: ResponsiveUtil.isDesktop(context)
                 ? MasonryGridView.count(
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 80),
                     crossAxisCount:
                         MediaQuery.of(context).size.width > 900 ? 3 : 2,
-                    mainAxisSpacing: 16,
-                    crossAxisSpacing: 16,
+                    mainAxisSpacing: RankingTokens.cardGap,
+                    crossAxisSpacing: RankingTokens.cardGap,
                     itemCount: majors.length,
                     itemBuilder: (_, index) => buildCard(index),
                   )
                 : ListView.builder(
-                    padding: const EdgeInsets.fromLTRB(12, 8, 12, 80),
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 80),
                     itemCount: majors.length,
                     itemBuilder: (_, index) => buildCard(index),
                   ),
           );
         },
       );
+
+  // ── Leaderboard card (compact, shared) ─────────────────────────────
 
   Widget _buildLeaderboardCard({
     required bool isDark,
@@ -423,165 +473,174 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
     VoidCallback? onLongPress,
     String? imageUrl,
   }) {
-    final accent = _rankColor(rank - 1);
+    final accent = _tabAccent(isDark);
+    final accentSoft = _tabAccentSoft(isDark);
     final hasImage = imageUrl != null && imageUrl.isNotEmpty;
-    return GlassContainer(
-      margin: const EdgeInsets.only(bottom: 12),
-      borderRadius: 16,
-      blur: 12,
-      opacity: 0.18,
-      backgroundColor:
-          isDark ? const Color(0x99171B24) : const Color(0xCCFFFFFF),
-      borderColor: isDark
-          ? Colors.white.withValues(alpha: 0.08)
-          : Colors.white.withValues(alpha: 0.72),
-      onTap: onTap,
-      onLongPress: onLongPress,
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Row(
-          children: [
-            // Left: image with rank badge overlay, or icon + rank
-            SizedBox(
-              width: 60,
-              height: 60,
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  Container(
-                    width: 60,
-                    height: 60,
-                    decoration: BoxDecoration(
-                      color: hasImage ? null : accent.withValues(alpha: 0.14),
-                      borderRadius: BorderRadius.circular(16),
-                      image: hasImage
-                          ? DecorationImage(
-                              image: CachedNetworkImageProvider(imageUrl),
-                              fit: BoxFit.cover,
-                            )
-                          : null,
-                    ),
-                    child:
-                        hasImage ? null : Icon(icon, color: accent, size: 24),
-                  ),
-                  // Rank badge overlay (always visible, top-left)
-                  Positioned(
-                    top: -4,
-                    left: -4,
-                    child: Container(
-                      width: 22,
-                      height: 22,
-                      decoration: BoxDecoration(
-                        color: accent,
-                        borderRadius: BorderRadius.circular(7),
-                        boxShadow: [
-                          BoxShadow(
-                            color: accent.withValues(alpha: 0.45),
-                            blurRadius: 4,
-                            offset: const Offset(0, 1),
-                          ),
-                        ],
-                      ),
-                      alignment: Alignment.center,
-                      child: Text(
-                        '$rank',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w800,
-                          height: 1,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                      color: isDark ? Colors.white : Colors.black87,
-                    ),
-                  ),
-                  if (subtitle.isNotEmpty) ...[
-                    const SizedBox(height: 6),
-                    Text(
-                      subtitle,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 13,
-                        height: 1.35,
-                        color: isDark ? Colors.white60 : Colors.black54,
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 10),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
+    final rankColor = _rankColor(rank - 1);
+
+    return Padding(
+      padding: EdgeInsets.only(bottom: RankingTokens.cardGap),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(RankingTokens.cardRadius),
+          onTap: onTap,
+          onLongPress: onLongPress,
+          child: Container(
+            padding: const EdgeInsets.all(12),
+            decoration: RankingTokens.cardDecoration(isDark),
+            child: Row(
+              children: [
+                // Left: image / icon + rank badge
+                SizedBox(
+                  width: 56,
+                  height: 56,
+                  child: Stack(
+                    clipBehavior: Clip.none,
                     children: [
-                      _buildMetricChip(
-                        isDark,
-                        Icons.star_rounded,
-                        average.toStringAsFixed(1),
-                      ),
-                      _buildMetricChip(
-                        isDark,
-                        Icons.rate_review_outlined,
-                        '$count 条评价',
-                      ),
-                      if (extraLabel.isNotEmpty)
-                        _buildMetricChip(
-                          isDark,
-                          Icons.layers_outlined,
-                          extraLabel,
+                      Container(
+                        width: 56,
+                        height: 56,
+                        decoration: BoxDecoration(
+                          color: hasImage ? null : accentSoft,
+                          borderRadius: BorderRadius.circular(14),
+                          image: hasImage
+                              ? DecorationImage(
+                                  image: CachedNetworkImageProvider(imageUrl),
+                                  fit: BoxFit.cover,
+                                )
+                              : null,
                         ),
+                        child: hasImage
+                            ? null
+                            : Icon(icon, color: accent, size: 22),
+                      ),
+                      Positioned(
+                        top: -4,
+                        left: -4,
+                        child: Container(
+                          width: 20,
+                          height: 20,
+                          decoration: BoxDecoration(
+                            color: rankColor,
+                            borderRadius: BorderRadius.circular(6),
+                            boxShadow: [
+                              BoxShadow(
+                                color: rankColor.withValues(alpha: 0.4),
+                                blurRadius: 3,
+                                offset: const Offset(0, 1),
+                              ),
+                            ],
+                          ),
+                          alignment: Alignment.center,
+                          child: Text(
+                            '$rank',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800,
+                              height: 1,
+                            ),
+                          ),
+                        ),
+                      ),
                     ],
                   ),
-                ],
-              ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: RankingTokens.titleColor(isDark),
+                        ),
+                      ),
+                      if (subtitle.isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          subtitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: RankingTokens.subColor(isDark),
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          _buildMetricChip(
+                            isDark,
+                            Icons.star_rounded,
+                            average.toStringAsFixed(1),
+                            accent,
+                          ),
+                          const SizedBox(width: 6),
+                          _buildMetricChip(
+                            isDark,
+                            Icons.rate_review_outlined,
+                            '$count 条评价',
+                            accent,
+                          ),
+                          if (extraLabel.isNotEmpty) ...[
+                            const SizedBox(width: 6),
+                            _buildMetricChip(
+                              isDark,
+                              Icons.layers_outlined,
+                              extraLabel,
+                              accent,
+                            ),
+                          ],
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Icon(
+                  Icons.chevron_right_rounded,
+                  size: 20,
+                  color: RankingTokens.subColor(isDark),
+                ),
+              ],
             ),
-            const SizedBox(width: 8),
-            const Icon(Icons.chevron_right_rounded, color: Colors.grey),
-          ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildMetricChip(bool isDark, IconData icon, String text) {
-    return GlassContainer(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      borderRadius: 999,
-      blur: 8,
-      opacity: 0.14,
-      backgroundColor: isDark
-          ? Colors.white.withValues(alpha: 0.06)
-          : Colors.white.withValues(alpha: 0.68),
-      borderColor: isDark
-          ? Colors.white.withValues(alpha: 0.05)
-          : Colors.white.withValues(alpha: 0.52),
+  Widget _buildMetricChip(
+    bool isDark,
+    IconData icon,
+    String text,
+    Color accent,
+  ) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: accent.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(999),
+      ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 14, color: const Color(0xFF6D5EF9)),
-          const SizedBox(width: 6),
+          Icon(icon, size: 12, color: accent),
+          const SizedBox(width: 4),
           Text(
             text,
             style: TextStyle(
-              fontSize: 12,
+              fontSize: 11,
               fontWeight: FontWeight.w600,
-              color: isDark ? Colors.white70 : Colors.black54,
+              color: RankingTokens.subColor(isDark),
             ),
           ),
         ],
@@ -625,6 +684,8 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
     return groups;
   }
 
+  // ── Canteen list ───────────────────────────────────────────────────
+
   Widget _buildCanteenList(bool isDark) {
     final user = context.watch<AuthProvider>().user;
     final isAdmin = user?.role == 'admin' || user?.role == 'super_admin';
@@ -645,9 +706,7 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
           return Center(
             child: Text(
               '暂无食堂',
-              style: TextStyle(
-                color: isDark ? Colors.white54 : Colors.grey[600],
-              ),
+              style: TextStyle(color: RankingTokens.subColor(isDark)),
             ),
           );
         }
@@ -720,16 +779,16 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
           onRefresh: () => context.read<CanteenProvider>().loadCanteens(),
           child: ResponsiveUtil.isDesktop(context)
               ? MasonryGridView.count(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 104),
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 104),
                   crossAxisCount:
                       MediaQuery.of(context).size.width > 900 ? 3 : 2,
-                  mainAxisSpacing: 16,
-                  crossAxisSpacing: 16,
+                  mainAxisSpacing: RankingTokens.cardGap,
+                  crossAxisSpacing: RankingTokens.cardGap,
                   itemCount: canteens.length,
                   itemBuilder: (_, index) => buildCard(index),
                 )
               : ListView.builder(
-                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 104),
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 104),
                   itemCount: canteens.length,
                   itemBuilder: (_, index) => buildCard(index),
                 ),
@@ -738,10 +797,14 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
     );
   }
 
+  // ── Add canteen sheet ──────────────────────────────────────────────
+
   Future<void> _showAddCanteenSheet() async {
     final nameCtrl = TextEditingController();
     List<String> uploadedImageUrls = [];
     var submitting = false;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final accent = RankingTokens.canteenAccent(isDark);
 
     await showModalBottomSheet<void>(
       context: context,
@@ -754,11 +817,10 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
             return Padding(
               padding: EdgeInsets.only(bottom: bottomInset),
               child: Container(
-                decoration: const BoxDecoration(
-                  color: Color(0xFFFAF8FF),
-                  borderRadius: BorderRadius.vertical(
-                    top: Radius.circular(28),
-                  ),
+                decoration: BoxDecoration(
+                  color: RankingTokens.cardBg(isDark),
+                  borderRadius:
+                      const BorderRadius.vertical(top: Radius.circular(28)),
                 ),
                 padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
                 child: SafeArea(
@@ -772,7 +834,7 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
                           width: 42,
                           height: 4,
                           decoration: BoxDecoration(
-                            color: const Color(0xFFD8D4E8),
+                            color: RankingTokens.borderColor(isDark),
                             borderRadius: BorderRadius.circular(99),
                           ),
                         ),
@@ -784,16 +846,16 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
                             width: 44,
                             height: 44,
                             decoration: BoxDecoration(
-                              color: const Color(0xFFFFE8C2),
+                              color: RankingTokens.canteenAccentSoft(isDark),
                               borderRadius: BorderRadius.circular(14),
                             ),
-                            child: const Icon(
+                            child: Icon(
                               Icons.storefront_rounded,
-                              color: Color(0xFFF59E0B),
+                              color: accent,
                             ),
                           ),
                           const SizedBox(width: 12),
-                          const Expanded(
+                          Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
@@ -802,15 +864,15 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
                                   style: TextStyle(
                                     fontSize: 20,
                                     fontWeight: FontWeight.w800,
-                                    color: Color(0xFF222233),
+                                    color: RankingTokens.titleColor(isDark),
                                   ),
                                 ),
-                                SizedBox(height: 4),
+                                const SizedBox(height: 4),
                                 Text(
                                   '填写名称并上传一张店铺图片',
                                   style: TextStyle(
                                     fontSize: 13,
-                                    color: Color(0xFF8B8794),
+                                    color: RankingTokens.subColor(isDark),
                                   ),
                                 ),
                               ],
@@ -824,31 +886,30 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
                         textInputAction: TextInputAction.done,
                         decoration: InputDecoration(
                           hintText: '请输入食堂 / 店铺名',
-                          prefixIcon: const Icon(Icons.restaurant_rounded),
+                          hintStyle: TextStyle(
+                            color: RankingTokens.subColor(isDark),
+                          ),
+                          prefixIcon:
+                              const Icon(Icons.restaurant_rounded),
                           filled: true,
-                          fillColor: Colors.white,
+                          fillColor: RankingTokens.pageBg(isDark),
                           contentPadding: const EdgeInsets.symmetric(
                             horizontal: 16,
                             vertical: 14,
                           ),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(16),
-                            borderSide: const BorderSide(
-                              color: Color(0xFFE8E4F0),
-                            ),
+                            borderSide:
+                                BorderSide(color: RankingTokens.borderColor(isDark)),
                           ),
                           enabledBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(16),
-                            borderSide: const BorderSide(
-                              color: Color(0xFFE8E4F0),
-                            ),
+                            borderSide:
+                                BorderSide(color: RankingTokens.borderColor(isDark)),
                           ),
                           focusedBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(16),
-                            borderSide: const BorderSide(
-                              color: Color(0xFF7367C6),
-                              width: 1.4,
-                            ),
+                            borderSide: BorderSide(color: accent, width: 1.4),
                           ),
                         ),
                       ),
@@ -873,8 +934,8 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
                                   : () => Navigator.pop(sheetContext),
                               style: OutlinedButton.styleFrom(
                                 minimumSize: const Size.fromHeight(48),
-                                side: const BorderSide(
-                                  color: Color(0xFFE0DCEF),
+                                side: BorderSide(
+                                  color: RankingTokens.borderColor(isDark),
                                 ),
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(16),
@@ -941,7 +1002,7 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
                                       }
                                     },
                               style: FilledButton.styleFrom(
-                                backgroundColor: const Color(0xFF7367C6),
+                                backgroundColor: accent,
                                 foregroundColor: Colors.white,
                                 minimumSize: const Size.fromHeight(48),
                                 shape: RoundedRectangleBorder(
@@ -975,6 +1036,8 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
     nameCtrl.dispose();
   }
 
+  // ── Add dialog (teacher / major) ───────────────────────────────────
+
   Future<void> _showAddDialog() async {
     if (_tabCtrl.index == 0) {
       await _showAddCanteenSheet();
@@ -997,7 +1060,8 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
             TextField(
               controller: nameCtrl,
               decoration: InputDecoration(
-                labelText: isTeacher ? '教师姓名' : (isMajor ? '专业名' : '食堂/店铺名'),
+                labelText:
+                    isTeacher ? '教师姓名' : (isMajor ? '专业名' : '食堂/店铺名'),
               ),
             ),
             const SizedBox(height: 8),
@@ -1067,10 +1131,10 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
   }
 
   Color _rankColor(int index) {
-    if (index == 0) return const Color(0xFFFFB800); // gold
-    if (index == 1) return const Color(0xFF94A3B8); // silver-gray
-    if (index == 2) return const Color(0xFFCA8A4B); // bronze
-    return const Color(0xFF6D5EF9); // theme purple
+    if (index == 0) return RankingTokens.rankGold;
+    if (index == 1) return RankingTokens.rankSilver;
+    if (index == 2) return RankingTokens.rankBronze;
+    return const Color(0xFF9CA3AF); // neutral gray instead of purple
   }
 }
 

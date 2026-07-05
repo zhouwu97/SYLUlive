@@ -12,8 +12,7 @@ import 'dashed_outline.dart';
 /// 以三列方形网格展示已上传图片和本地新选图片。第一张图片会标记为「封面」。
 /// 空图片状态下仍展示添加入口，水帖页会将其渲染成单个虚线上传卡片。
 class PublishImageGrid extends StatelessWidget {
-  static const Color _teal = Color(0xFF12B8A6);
-  static const Color _marketAccent = Color(0xFF4F5AF7);
+  static const Color _marketAccent = Color(0xFFFF7A45);
 
   final List<PostImage> existingImages;
   final List<XFile> selectedImages;
@@ -25,6 +24,7 @@ class PublishImageGrid extends StatelessWidget {
   final bool compact;
   final bool singleSlot;
   final String addLabel;
+  final Color? accent;
 
   const PublishImageGrid({
     super.key,
@@ -38,6 +38,7 @@ class PublishImageGrid extends StatelessWidget {
     this.compact = false,
     this.singleSlot = false,
     this.addLabel = '添加照片',
+    this.accent,
   });
 
   int get totalImages => existingImages.length + selectedImages.length;
@@ -269,7 +270,8 @@ class PublishImageGrid extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
               color:
-                  Theme.of(context).colorScheme.primary.withValues(alpha: 0.88),
+                  (accent ?? Theme.of(context).colorScheme.primary)
+                      .withValues(alpha: 0.88),
               borderRadius: BorderRadius.circular(999),
             ),
             child: const Text(
@@ -372,14 +374,14 @@ class PublishImageGrid extends StatelessWidget {
       onTap: onAddImage,
       child: DashedOutline(
         color: isDark
-            ? _teal.withValues(alpha: 0.55)
-            : _teal.withValues(alpha: 0.34),
+            ? _marketAccent.withValues(alpha: 0.55)
+            : _marketAccent.withValues(alpha: 0.34),
         radius: _radius + 4,
         child: Container(
           decoration: BoxDecoration(
             color: isDark
-                ? _teal.withValues(alpha: 0.08)
-                : const Color(0xFFF3FFFC),
+                ? _marketAccent.withValues(alpha: 0.08)
+                : const Color(0xFFFFF0E8),
             borderRadius: BorderRadius.circular(_radius + 4),
           ),
           child: Column(
@@ -388,14 +390,14 @@ class PublishImageGrid extends StatelessWidget {
               Icon(
                 Icons.add_a_photo_outlined,
                 size: compact ? 30 : 34,
-                color: _teal,
+                color: _marketAccent,
               ),
               const SizedBox(height: 8),
               Text(
                 addLabel,
                 style: const TextStyle(
                   fontSize: 14,
-                  color: _teal,
+                  color: _marketAccent,
                   fontWeight: FontWeight.w600,
                 ),
               ),

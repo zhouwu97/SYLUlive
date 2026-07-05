@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 import 'package:provider/provider.dart';
 
 import '../models/post.dart';
@@ -7,8 +8,6 @@ import '../providers/auth_provider.dart';
 import '../providers/post_provider.dart';
 import '../providers/theme_provider.dart';
 import '../utils/responsive_util.dart';
-import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
-import '../widgets/glass_container.dart';
 import '../widgets/market_post_card.dart';
 import 'create_post_screen.dart';
 import 'login_screen.dart';
@@ -18,6 +17,36 @@ abstract final class AppLayout {
   static const double floatingNavHeight = 64;
   static const double floatingNavBottomMargin = 12;
   static const double fabNavGap = 12;
+}
+
+final class _MarketTokens {
+  static Color pageBg(bool isDark) =>
+      isDark ? const Color(0xFF111315) : const Color(0xFFFFFAF4);
+
+  static Color cardBg(bool isDark) =>
+      isDark ? const Color(0xFF1E2226) : Colors.white;
+
+  static Color accent(bool isDark) =>
+      isDark ? const Color(0xFFFFA06D) : const Color(0xFFFF7A45);
+
+  static Color accentSoft(bool isDark) =>
+      isDark
+          ? const Color(0xFFFFA06D).withValues(alpha: 0.14)
+          : const Color(0xFFFFF0E8);
+
+  static Color borderColor(bool isDark) =>
+      isDark
+          ? Colors.white.withValues(alpha: 0.08)
+          : const Color(0xFFF1E5DC);
+
+  static Color titleColor(bool isDark) =>
+      isDark ? Colors.white : const Color(0xFF1F2328);
+
+  static Color subColor(bool isDark) =>
+      isDark ? Colors.grey.shade400 : const Color(0xFF747B82);
+
+  static const double cardRadius = 18;
+  static const double chipRadius = 999;
 }
 
 class MarketScreen extends StatefulWidget {
@@ -41,12 +70,17 @@ class _MarketScreenState extends State<MarketScreen> {
 
   static const _marketPostTypes = ['sell', 'buy', 'proxy', 'lost', 'found'];
 
+  static const _categoryOptions = <MapEntry<String, String>>[
+    MapEntry('all', '全部'),
+    MapEntry('sell', '二手'),
+    MapEntry('buy', '求购'),
+    MapEntry('proxy', '办事'),
+  ];
+
   List<String> get _allowedTypes =>
       widget.onlyPostTypes == null || widget.onlyPostTypes!.isEmpty
           ? _marketPostTypes
           : widget.onlyPostTypes!;
-
-  int get _activeFilterCount => _typeFilter == 'all' ? 0 : 1;
 
   @override
   void initState() {
@@ -141,7 +175,7 @@ class _MarketScreenState extends State<MarketScreen> {
       case 'buy':
         return '求购';
       case 'proxy':
-        return '代取';
+        return '办事';
       case 'lost':
         return '寻物';
       case 'found':
@@ -162,7 +196,8 @@ class _MarketScreenState extends State<MarketScreen> {
   List<Post> _applyLocalTypeFilter(List<Post> posts) {
     return posts.where((post) {
       final typeAllowed = _allowedTypes.contains(post.postType);
-      final typeMatched = _typeFilter == 'all' || post.postType == _typeFilter;
+      final typeMatched =
+          _typeFilter == 'all' || post.postType == _typeFilter;
       return typeAllowed && typeMatched;
     }).toList();
   }
@@ -191,13 +226,13 @@ class _MarketScreenState extends State<MarketScreen> {
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (context) {
+      builder: (ctx) {
         return SafeArea(
           top: false,
           child: Container(
             padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
             decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF171A22) : Colors.white,
+              color: _MarketTokens.cardBg(isDark),
               borderRadius:
                   const BorderRadius.vertical(top: Radius.circular(24)),
             ),
@@ -213,13 +248,13 @@ class _MarketScreenState extends State<MarketScreen> {
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.w900,
-                        color: isDark ? Colors.white : const Color(0xFF111827),
+                        color: _MarketTokens.titleColor(isDark),
                       ),
                     ),
                     const Spacer(),
                     IconButton(
                       icon: const Icon(Icons.close_rounded),
-                      onPressed: () => Navigator.pop(context),
+                      onPressed: () => Navigator.pop(ctx),
                     ),
                   ],
                 ),
@@ -239,7 +274,7 @@ class _MarketScreenState extends State<MarketScreen> {
   Widget _buildSortOption(String value, String label) {
     final isSelected = _sortType == value;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    const primaryColor = Color(0xFFFF6A2A);
+    final accent = _MarketTokens.accent(isDark);
 
     return InkWell(
       borderRadius: BorderRadius.circular(14),
@@ -259,14 +294,14 @@ class _MarketScreenState extends State<MarketScreen> {
                 label,
                 style: TextStyle(
                   color: isSelected
-                      ? primaryColor
-                      : (isDark ? Colors.white : const Color(0xFF111827)),
+                      ? accent
+                      : _MarketTokens.titleColor(isDark),
                   fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
                 ),
               ),
             ),
             if (isSelected)
-              const Icon(Icons.check_rounded, color: primaryColor, size: 20),
+              Icon(Icons.check_rounded, color: accent, size: 20),
           ],
         ),
       ),
@@ -276,7 +311,7 @@ class _MarketScreenState extends State<MarketScreen> {
   void _showFilterBottomSheet() {
     var draftType = _typeFilter;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    const primary = Color(0xFFFF6B35);
+    final accent = _MarketTokens.accent(isDark);
     final options = <MapEntry<String, String>>[
       const MapEntry('all', '全部'),
       ..._allowedTypes.map((type) => MapEntry(type, _typeLabel(type))),
@@ -287,7 +322,7 @@ class _MarketScreenState extends State<MarketScreen> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       barrierColor: Colors.black.withValues(alpha: 0.36),
-      builder: (context) {
+      builder: (ctx) {
         return StatefulBuilder(
           builder: (context, setSheetState) {
             return SafeArea(
@@ -296,7 +331,7 @@ class _MarketScreenState extends State<MarketScreen> {
                 margin: const EdgeInsets.only(top: 80),
                 padding: const EdgeInsets.fromLTRB(20, 10, 20, 18),
                 decoration: BoxDecoration(
-                  color: isDark ? const Color(0xFF11141B) : Colors.white,
+                  color: _MarketTokens.cardBg(isDark),
                   borderRadius:
                       const BorderRadius.vertical(top: Radius.circular(28)),
                 ),
@@ -313,19 +348,16 @@ class _MarketScreenState extends State<MarketScreen> {
                           style: TextStyle(
                             fontSize: 20,
                             fontWeight: FontWeight.w800,
-                            color:
-                                isDark ? Colors.white : const Color(0xFF101828),
+                            color: _MarketTokens.titleColor(isDark),
                           ),
                         ),
                         const Spacer(),
                         IconButton(
                           visualDensity: VisualDensity.compact,
-                          onPressed: () => Navigator.pop(context),
+                          onPressed: () => Navigator.pop(ctx),
                           icon: Icon(
                             Icons.close_rounded,
-                            color: isDark
-                                ? Colors.white70
-                                : const Color(0xFF475467),
+                            color: _MarketTokens.subColor(isDark),
                           ),
                         ),
                       ],
@@ -336,8 +368,7 @@ class _MarketScreenState extends State<MarketScreen> {
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w700,
-                        color:
-                            isDark ? Colors.white70 : const Color(0xFF344054),
+                        color: _MarketTokens.subColor(isDark),
                       ),
                     ),
                     const SizedBox(height: 12),
@@ -362,7 +393,7 @@ class _MarketScreenState extends State<MarketScreen> {
                                   alignment: Alignment.center,
                                   decoration: BoxDecoration(
                                     color: selected
-                                        ? primary.withValues(alpha: 0.12)
+                                        ? _MarketTokens.accentSoft(isDark)
                                         : (isDark
                                             ? Colors.white
                                                 .withValues(alpha: 0.06)
@@ -370,7 +401,7 @@ class _MarketScreenState extends State<MarketScreen> {
                                     borderRadius: BorderRadius.circular(14),
                                     border: Border.all(
                                       color: selected
-                                          ? primary
+                                          ? accent
                                           : Colors.transparent,
                                     ),
                                   ),
@@ -380,10 +411,8 @@ class _MarketScreenState extends State<MarketScreen> {
                                       fontSize: 14,
                                       fontWeight: FontWeight.w700,
                                       color: selected
-                                          ? primary
-                                          : (isDark
-                                              ? Colors.white70
-                                              : const Color(0xFF344054)),
+                                          ? accent
+                                          : _MarketTokens.subColor(isDark),
                                     ),
                                   ),
                                 ),
@@ -406,12 +435,10 @@ class _MarketScreenState extends State<MarketScreen> {
                                       setSheetState(() => draftType = 'all');
                                     },
                               style: TextButton.styleFrom(
-                                backgroundColor: isDark
-                                    ? Colors.white.withValues(alpha: 0.06)
-                                    : const Color(0xFFFFF2EC),
-                                foregroundColor: primary,
+                                backgroundColor: _MarketTokens.accentSoft(isDark),
+                                foregroundColor: accent,
                                 disabledForegroundColor:
-                                    primary.withValues(alpha: 0.35),
+                                    accent.withValues(alpha: 0.35),
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(16),
                                 ),
@@ -430,10 +457,10 @@ class _MarketScreenState extends State<MarketScreen> {
                             child: ElevatedButton(
                               onPressed: () {
                                 _changeTypeFilter(draftType);
-                                Navigator.pop(context);
+                                Navigator.pop(ctx);
                               },
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: primary,
+                                backgroundColor: accent,
                                 foregroundColor: Colors.white,
                                 elevation: 0,
                                 shape: RoundedRectangleBorder(
@@ -476,45 +503,29 @@ class _MarketScreenState extends State<MarketScreen> {
     final themeProvider = context.watch<ThemeProvider>();
 
     return Scaffold(
-      backgroundColor:
-          isDark ? const Color(0xFF06080D) : const Color(0xFFF4F6FB),
+      backgroundColor: _MarketTokens.pageBg(isDark),
       appBar: null,
-      body: Stack(
-        children: [
-          Positioned.fill(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: isDark
-                      ? const [
-                          Color(0xFF06080D),
-                          Color(0xFF10131A),
-                          Color(0xFF06080D),
-                        ]
-                      : const [
-                          Color(0xFFF4F6FB),
-                          Color(0xFFEFF3F8),
-                          Color(0xFFF8FAFC),
-                        ],
+      body: Consumer<PostProvider>(
+        builder: (context, postProvider, child) {
+          final allPosts = postProvider.postsFor(2, sort: _sortType);
+          final marketPosts = _buildMarketPosts(
+            _searchQuery.isNotEmpty ? _searchResults : allPosts,
+          );
+
+          if (postProvider.isLoadingFor(2, sort: _sortType) &&
+              allPosts.isEmpty) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          return Stack(
+            children: [
+              Positioned.fill(
+                child: DecoratedBox(
+                  decoration:
+                      BoxDecoration(color: _MarketTokens.pageBg(isDark)),
                 ),
               ),
-            ),
-          ),
-          Consumer<PostProvider>(
-            builder: (context, postProvider, child) {
-              final allPosts = postProvider.postsFor(2, sort: _sortType);
-              final marketPosts = _buildMarketPosts(
-                _searchQuery.isNotEmpty ? _searchResults : allPosts,
-              );
-
-              if (postProvider.isLoadingFor(2, sort: _sortType) &&
-                  allPosts.isEmpty) {
-                return const Center(child: CircularProgressIndicator());
-              }
-
-              return RefreshIndicator(
+              RefreshIndicator(
                 onRefresh: _refreshCurrent,
                 child: CustomScrollView(
                   physics: const AlwaysScrollableScrollPhysics(
@@ -524,15 +535,19 @@ class _MarketScreenState extends State<MarketScreen> {
                     SliverPadding(
                       padding: EdgeInsets.fromLTRB(
                         16,
-                        MediaQuery.paddingOf(context).top + 10,
+                        MediaQuery.paddingOf(context).top + 8,
                         16,
-                        12,
+                        8,
                       ),
                       sliver: SliverList(
                         delegate: SliverChildListDelegate([
-                          _buildSearchAndViewRow(isDark, themeProvider),
-                          const SizedBox(height: 16),
-                          _buildToolbarRow(isDark, marketPosts.length),
+                          _buildHeader(isDark, themeProvider),
+                          const SizedBox(height: 12),
+                          _buildSearchBar(isDark),
+                          const SizedBox(height: 10),
+                          _buildCategoryRow(isDark),
+                          const SizedBox(height: 8),
+                          _buildSortFilterRow(isDark, marketPosts.length),
                         ]),
                       ),
                     ),
@@ -542,29 +557,28 @@ class _MarketScreenState extends State<MarketScreen> {
                       )
                     else if (marketPosts.isEmpty)
                       SliverToBoxAdapter(
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          child: _buildEmptyState(
-                            isDark,
-                            _searchQuery.isNotEmpty ? '没有找到匹配内容' : '暂无内容',
-                            _searchQuery.isNotEmpty
-                                ? '换个关键词试试'
-                                : (widget.titleOverride == '失物招领'
-                                    ? '发布一条失物或招领信息吧'
-                                    : '发布你的第一条商品吧'),
-                          ),
+                        child: _buildEmptyState(
+                          isDark,
+                          _searchQuery.isNotEmpty
+                              ? '没有找到匹配内容'
+                              : '还没有商品',
+                          _searchQuery.isNotEmpty
+                              ? '换个关键词试试'
+                              : '发布第一条闲置、求购或办事信息',
                         ),
                       )
                     else if (themeProvider.marketIsListView)
                       SliverPadding(
-                        padding: const EdgeInsets.fromLTRB(
+                        padding: EdgeInsets.fromLTRB(
                             16,
                             0,
                             16,
-                            AppLayout.floatingNavHeight +
-                                AppLayout.floatingNavBottomMargin +
-                                AppLayout.fabNavGap +
-                                120),
+                            marketPosts.length <= 2
+                                ? 12.0
+                                : AppLayout.floatingNavHeight +
+                                    AppLayout.floatingNavBottomMargin +
+                                    AppLayout.fabNavGap +
+                                    120),
                         sliver: SliverList(
                           delegate: SliverChildBuilderDelegate(
                             (context, index) =>
@@ -575,14 +589,16 @@ class _MarketScreenState extends State<MarketScreen> {
                       )
                     else
                       SliverPadding(
-                        padding: const EdgeInsets.fromLTRB(
+                        padding: EdgeInsets.fromLTRB(
                             16,
                             0,
                             16,
-                            AppLayout.floatingNavHeight +
-                                AppLayout.floatingNavBottomMargin +
-                                AppLayout.fabNavGap +
-                                120),
+                            marketPosts.length <= 2
+                                ? 12.0
+                                : AppLayout.floatingNavHeight +
+                                    AppLayout.floatingNavBottomMargin +
+                                    AppLayout.fabNavGap +
+                                    120),
                         sliver: SliverMasonryGrid.count(
                           crossAxisCount: 2,
                           mainAxisSpacing: 12,
@@ -592,99 +608,284 @@ class _MarketScreenState extends State<MarketScreen> {
                               _buildMarketCard(marketPosts[index], true),
                         ),
                       ),
+                    if (!_isSearching &&
+                        _searchQuery.isEmpty &&
+                        marketPosts.isNotEmpty &&
+                        marketPosts.length <= 2)
+                      SliverPadding(
+                        padding: const EdgeInsets.fromLTRB(
+                            16,
+                            0,
+                            16,
+                            AppLayout.floatingNavHeight +
+                                AppLayout.floatingNavBottomMargin +
+                                AppLayout.fabNavGap +
+                                16),
+                        sliver: SliverToBoxAdapter(
+                            child: _buildSparseGuidance(isDark)),
+                      ),
                   ],
                 ),
-              );
-            },
-          ),
-        ],
-      ),
-      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
-      floatingActionButton: Padding(
-        padding: const EdgeInsets.only(
-          bottom: AppLayout.floatingNavHeight +
-              AppLayout.floatingNavBottomMargin +
-              AppLayout.fabNavGap +
-              16,
-        ),
-        child: SizedBox(
-          height: 48,
-          child: FloatingActionButton.extended(
-            heroTag: 'market_fab',
-            elevation: 2,
-            label: const Text('发布'),
-            icon: const Icon(Icons.add),
-            backgroundColor: const Color(0xFF6266D9),
-            foregroundColor: Colors.white,
-            onPressed: () async {
-              final authProvider = context.read<AuthProvider>();
-              if (!authProvider.isLoggedIn) {
-                ScaffoldMessenger.of(
-                  context,
-                ).showSnackBar(const SnackBar(content: Text('请先登录')));
-                Navigator.push(
-                  context,
-                  PageRouteBuilder(
-                    opaque: false,
-                    pageBuilder: (_, __, ___) => const LoginScreen(),
-                  ),
-                );
-                return;
-              }
-              await Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => CreatePostScreen(
-                    boardId: 2,
-                    defaultPostType: widget.onlyPostTypes != null &&
-                            widget.onlyPostTypes!.contains('lost')
-                        ? 'lost'
-                        : 'sell',
-                    allowedPostTypes: widget.onlyPostTypes,
+              ),
+              if (marketPosts.isNotEmpty)
+                Positioned(
+                  right: 0,
+                  bottom: AppLayout.floatingNavHeight +
+                      AppLayout.floatingNavBottomMargin +
+                      AppLayout.fabNavGap +
+                      16,
+                  child: Padding(
+                    padding: const EdgeInsets.only(right: 16),
+                    child: SizedBox(
+                      height: 48,
+                      child: FloatingActionButton.extended(
+                        heroTag: 'market_fab',
+                        elevation: 2,
+                        label: const Text('发布'),
+                        icon: const Icon(Icons.add),
+                        backgroundColor: _MarketTokens.accent(isDark),
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(18),
+                        ),
+                        onPressed: () async {
+                          final authProvider = context.read<AuthProvider>();
+                          if (!authProvider.isLoggedIn) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('请先登录')),
+                            );
+                            Navigator.push(
+                              context,
+                              PageRouteBuilder(
+                                opaque: false,
+                                pageBuilder: (_, __, ___) =>
+                                    const LoginScreen(),
+                              ),
+                            );
+                            return;
+                          }
+                          await Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => CreatePostScreen(
+                                boardId: 2,
+                                defaultPostType:
+                                    widget.onlyPostTypes != null &&
+                                            widget.onlyPostTypes!
+                                                .contains('lost')
+                                        ? 'lost'
+                                        : 'sell',
+                                allowedPostTypes: widget.onlyPostTypes,
+                              ),
+                            ),
+                          );
+                          if (mounted) {
+                            await _refreshCurrent();
+                          }
+                        },
+                      ),
+                    ),
                   ),
                 ),
-              );
-              if (mounted) {
-                await _refreshCurrent();
-              }
-            },
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _openMarketPublish(String defaultPostType) async {
+    final authProvider = context.read<AuthProvider>();
+    if (!authProvider.isLoggedIn) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('请先登录')),
+      );
+      Navigator.push(
+        context,
+        PageRouteBuilder(
+          opaque: false,
+          pageBuilder: (_, __, ___) => const LoginScreen(),
+        ),
+      );
+      return;
+    }
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => CreatePostScreen(
+          boardId: 2,
+          defaultPostType: defaultPostType,
+          allowedPostTypes: widget.onlyPostTypes,
+        ),
+      ),
+    );
+    if (mounted) {
+      await _refreshCurrent();
+    }
+  }
+
+  Widget _buildSparseGuidance(bool isDark) {
+    final showBuy = _allowedTypes.contains('buy');
+    final showProxy = _allowedTypes.contains('proxy');
+    if (!showBuy && !showProxy) return const SizedBox.shrink();
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
+      decoration: BoxDecoration(
+        color: _MarketTokens.cardBg(isDark),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: _MarketTokens.borderColor(isDark)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '还没找到想要的？',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: _MarketTokens.titleColor(isDark),
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '发布求购或办事，让同学主动联系你',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: _MarketTokens.subColor(isDark),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          if (showBuy)
+            _buildGuidanceChip(
+                '发布求购', isDark, () => _openMarketPublish('buy')),
+          if (showBuy && showProxy) const SizedBox(width: 8),
+          if (showProxy)
+            _buildGuidanceChip(
+                '发布办事', isDark, () => _openMarketPublish('proxy')),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildGuidanceChip(
+    String label,
+    bool isDark,
+    VoidCallback onTap,
+  ) {
+    return Material(
+      color: _MarketTokens.accentSoft(isDark),
+      borderRadius: BorderRadius.circular(999),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(999),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: _MarketTokens.accent(isDark),
+            ),
           ),
         ),
       ),
     );
   }
 
-  Widget _buildSearchAndViewRow(
-    bool isDark,
-    ThemeProvider themeProvider,
-  ) {
+  Widget _buildHeader(bool isDark, ThemeProvider themeProvider) {
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Expanded(child: _buildSearchBar(isDark)),
-        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                widget.titleOverride ?? '集市',
+                style: TextStyle(
+                  fontSize: 26,
+                  fontWeight: FontWeight.w900,
+                  color: _MarketTokens.titleColor(isDark),
+                  height: 1.1,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                '校园二手、求购和办事信息',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: _MarketTokens.subColor(isDark),
+                  height: 1.2,
+                ),
+              ),
+            ],
+          ),
+        ),
         _buildViewToggleButton(isDark, themeProvider),
       ],
     );
   }
 
-  Widget _buildSearchBar(bool isDark) {
-    return Container(
-      height: 46,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF171A22) : Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: isDark ? Colors.white.withValues(alpha: 0.06) : Colors.black12,
+  Widget _buildViewToggleButton(bool isDark, ThemeProvider themeProvider) {
+    final isGrid = !themeProvider.marketIsListView;
+    return SizedBox(
+      width: 42,
+      height: 42,
+      child: Material(
+        color: isGrid
+            ? _MarketTokens.accentSoft(isDark)
+            : _MarketTokens.cardBg(isDark),
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: () {
+            themeProvider.setMarketIsListView(
+              !themeProvider.marketIsListView,
+            );
+          },
+          child: Icon(
+            themeProvider.marketIsListView
+                ? Icons.grid_view_rounded
+                : Icons.view_agenda_outlined,
+            size: 20,
+            color: isGrid
+                ? _MarketTokens.accent(isDark)
+                : _MarketTokens.subColor(isDark),
+          ),
         ),
-        boxShadow: [
-          if (!isDark)
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.04),
-              blurRadius: 12,
-              offset: const Offset(0, 4),
-            ),
-        ],
+      ),
+    );
+  }
+
+  Widget _buildSearchBar(bool isDark) {
+    final hasText = _searchController.text.isNotEmpty;
+
+    return Container(
+      height: 44,
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      decoration: BoxDecoration(
+        color: _MarketTokens.cardBg(isDark),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _MarketTokens.borderColor(isDark)),
+        boxShadow: isDark
+            ? null
+            : [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.015),
+                  blurRadius: 8,
+                  offset: const Offset(0, 3),
+                ),
+              ],
       ),
       child: TextField(
         controller: _searchController,
@@ -693,7 +894,7 @@ class _MarketScreenState extends State<MarketScreen> {
         textInputAction: TextInputAction.search,
         style: TextStyle(
           fontSize: 14,
-          color: isDark ? Colors.white : const Color(0xFF111827),
+          color: _MarketTokens.titleColor(isDark),
         ),
         decoration: InputDecoration(
           border: InputBorder.none,
@@ -711,7 +912,7 @@ class _MarketScreenState extends State<MarketScreen> {
           ),
           prefixIconConstraints:
               const BoxConstraints(minWidth: 34, minHeight: 34),
-          suffixIcon: _searchController.text.isEmpty
+          suffixIcon: !hasText
               ? null
               : IconButton(
                   icon: const Icon(Icons.close_rounded, size: 18),
@@ -727,87 +928,93 @@ class _MarketScreenState extends State<MarketScreen> {
     );
   }
 
-  Widget _buildViewToggleButton(bool isDark, ThemeProvider themeProvider) {
+  Widget _buildCategoryRow(bool isDark) {
+    final accent = _MarketTokens.accent(isDark);
     return SizedBox(
-      width: 46,
-      height: 46,
-      child: Material(
-        color: isDark ? const Color(0xFF171A22) : Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(16),
-          onTap: () {
-            themeProvider.setMarketIsListView(
-              !themeProvider.marketIsListView,
-            );
-          },
-          child: Icon(
-            themeProvider.marketIsListView
-                ? Icons.grid_view_rounded
-                : Icons.view_agenda_outlined,
-            size: 21,
-            color: isDark ? Colors.white : const Color(0xFF111827),
+      height: 36,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: _categoryOptions.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        itemBuilder: (context, index) {
+          final entry = _categoryOptions[index];
+          final selected = _typeFilter == entry.key;
+          return _buildChip(
+            isDark: isDark,
+            label: entry.value,
+            selected: selected,
+            accent: accent,
+            onTap: () => _changeTypeFilter(entry.key),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildChip({
+    required bool isDark,
+    required String label,
+    required bool selected,
+    required Color accent,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: selected
+              ? _MarketTokens.accentSoft(isDark)
+              : _MarketTokens.cardBg(isDark),
+          borderRadius: BorderRadius.circular(_MarketTokens.chipRadius),
+          border: Border.all(
+            color: selected
+                ? accent.withValues(alpha: 0.32)
+                : _MarketTokens.borderColor(isDark),
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+            color: selected ? accent : _MarketTokens.subColor(isDark),
           ),
         ),
       ),
     );
   }
 
-  Widget _buildToolbarRow(bool isDark, int count) {
-    final sectionTitle =
-        _searchQuery.isNotEmpty ? '搜索结果' : (widget.titleOverride ?? '最新商品');
-    final hasFilter = _activeFilterCount > 0;
-
+  Widget _buildSortFilterRow(bool isDark, int count) {
+    final accent = _MarketTokens.accent(isDark);
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              sectionTitle,
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.w900,
-                color: isDark ? Colors.white : const Color(0xFF111827),
-              ),
-            ),
-            if (count > 0) ...[
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                decoration: BoxDecoration(
-                  color: isDark
-                      ? Colors.white.withValues(alpha: 0.08)
-                      : const Color(0xFFEFF3F8),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text(
-                  '$count条',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: isDark ? Colors.white54 : const Color(0xFF667085),
-                  ),
-                ),
-              ),
-            ],
-          ],
+        Text(
+          count > 0 ? '共 $count 条' : '',
+          style: TextStyle(
+            fontSize: 12,
+            color: _MarketTokens.subColor(isDark),
+            fontWeight: FontWeight.w600,
+          ),
         ),
         Row(
           children: [
-            _buildToolbarButton(
+            _buildPillButton(
               isDark: isDark,
               label: _sortLabel(),
               icon: Icons.keyboard_arrow_down_rounded,
+              accent: accent,
               onTap: _showSortBottomSheet,
             ),
             const SizedBox(width: 8),
-            _buildToolbarButton(
+            _buildPillButton(
               isDark: isDark,
-              label: hasFilter ? _typeLabel(_typeFilter) : '筛选',
+              label: '筛选',
               icon: Icons.tune_rounded,
-              highlighted: hasFilter,
+              accent: accent,
               onTap: _showFilterBottomSheet,
             ),
           ],
@@ -816,45 +1023,36 @@ class _MarketScreenState extends State<MarketScreen> {
     );
   }
 
-  Widget _buildToolbarButton({
+  Widget _buildPillButton({
     required bool isDark,
     required String label,
     required IconData icon,
+    required Color accent,
     required VoidCallback onTap,
-    bool highlighted = false,
   }) {
     return SizedBox(
-      height: 34,
+      height: 32,
       child: Material(
-        color: highlighted
-            ? const Color(0xFFFFEFE8)
-            : (isDark ? const Color(0xFF171A22) : Colors.white),
-        borderRadius: BorderRadius.circular(999),
+        color: _MarketTokens.cardBg(isDark),
+        borderRadius: BorderRadius.circular(_MarketTokens.chipRadius),
         child: InkWell(
-          borderRadius: BorderRadius.circular(999),
+          borderRadius: BorderRadius.circular(_MarketTokens.chipRadius),
           onTap: onTap,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 10),
             child: Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
                   label,
                   style: TextStyle(
-                    fontSize: 13,
+                    fontSize: 12,
                     fontWeight: FontWeight.w700,
-                    color: highlighted
-                        ? const Color(0xFFFF6B35)
-                        : (isDark ? Colors.white70 : const Color(0xFF344054)),
+                    color: _MarketTokens.titleColor(isDark),
                   ),
                 ),
                 const SizedBox(width: 2),
-                Icon(
-                  icon,
-                  size: 17,
-                  color: highlighted
-                      ? const Color(0xFFFF6B35)
-                      : (isDark ? Colors.white60 : const Color(0xFF667085)),
-                ),
+                Icon(icon, size: 16, color: _MarketTokens.subColor(isDark)),
               ],
             ),
           ),
@@ -865,7 +1063,7 @@ class _MarketScreenState extends State<MarketScreen> {
 
   Widget _buildMarketCard(Post post, [bool inGrid = false]) {
     return Padding(
-      padding: EdgeInsets.only(bottom: inGrid ? 0 : 12),
+      padding: const EdgeInsets.only(bottom: 0),
       child: MarketPostCard(
         post: post,
         compact: inGrid,
@@ -887,42 +1085,105 @@ class _MarketScreenState extends State<MarketScreen> {
   }
 
   Widget _buildEmptyState(bool isDark, String title, String subtitle) {
-    return GlassContainer(
-      padding: const EdgeInsets.all(20),
-      borderRadius: 12,
-      blur: 12,
-      opacity: 0.18,
-      backgroundColor:
-          isDark ? const Color(0x99171B24) : const Color(0xCCFFFFFF),
-      borderColor: isDark
-          ? Colors.white.withValues(alpha: 0.08)
-          : Colors.white.withValues(alpha: 0.72),
-      child: Column(
-        children: [
-          Icon(
-            Icons.inventory_2_outlined,
-            size: 42,
-            color: isDark ? Colors.white38 : Colors.grey[500],
+    final accent = _MarketTokens.accent(isDark);
+    final isNoResults = title.contains('没有找到');
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 48, 16, 0),
+      child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 36),
+          decoration: BoxDecoration(
+            color: _MarketTokens.cardBg(isDark),
+            borderRadius: BorderRadius.circular(_MarketTokens.cardRadius),
+            border: Border.all(color: _MarketTokens.borderColor(isDark)),
           ),
-          const SizedBox(height: 12),
-          Text(
-            title,
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-              color: isDark ? Colors.white70 : Colors.black87,
-            ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 72,
+                height: 72,
+                decoration: BoxDecoration(
+                  color: _MarketTokens.accentSoft(isDark),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.inventory_2_outlined,
+                  size: 34,
+                  color: accent.withValues(alpha: 0.8),
+                ),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                title,
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                  color: _MarketTokens.titleColor(isDark),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                subtitle,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: _MarketTokens.subColor(isDark),
+                  height: 1.4,
+                ),
+              ),
+              if (!isNoResults) ...[
+                const SizedBox(height: 24),
+                SizedBox(
+                  width: 200,
+                  height: 44,
+                  child: ElevatedButton.icon(
+                    onPressed: () async {
+                      final authProvider = context.read<AuthProvider>();
+                      if (!authProvider.isLoggedIn) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('请先登录')),
+                        );
+                        Navigator.push(
+                          context,
+                          PageRouteBuilder(
+                            opaque: false,
+                            pageBuilder: (_, __, ___) => const LoginScreen(),
+                          ),
+                        );
+                        return;
+                      }
+                      await Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const CreatePostScreen(
+                            boardId: 2,
+                            defaultPostType: 'sell',
+                          ),
+                        ),
+                      );
+                      if (mounted) {
+                        await _refreshCurrent();
+                      }
+                    },
+                    icon: const Icon(Icons.add, size: 18),
+                    label: const Text(
+                      '发布商品',
+                      style: TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: accent,
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ],
           ),
-          const SizedBox(height: 6),
-          Text(
-            subtitle,
-            style: TextStyle(
-              fontSize: 13,
-              color: isDark ? Colors.white38 : Colors.grey[600],
-            ),
-          ),
-        ],
-      ),
-    );
+        ),
+      );
   }
 }

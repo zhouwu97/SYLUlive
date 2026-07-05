@@ -3,7 +3,6 @@ import '../../models/edu_grade.dart';
 import '../../utils/edu_semester_utils.dart';
 
 /// Unified overview card — semester info + stats in 2 compact rows.
-/// No "上次更新", no GPA, no tap.
 /// Always operates on the FULL grade list (never filtered).
 class GradeSummaryCard extends StatelessWidget {
   final String selectedYear;
@@ -24,6 +23,7 @@ class GradeSummaryCard extends StatelessWidget {
     final passedCount = grades.where((g) => g.isPassed == true).length;
     final degreeCount = grades.where((g) => g.isDegree).length;
     final totalCredits = grades.fold<double>(0, (sum, g) => sum + g.credits);
+    final termGpa = EduGrade.computeWeightedGpa(grades);
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
@@ -34,7 +34,7 @@ class GradeSummaryCard extends StatelessWidget {
               .colorScheme
               .primaryContainer
               .withValues(alpha: isDark ? 0.2 : 0.35),
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(8),
         ),
         child: Column(
           children: [
@@ -62,6 +62,31 @@ class GradeSummaryCard extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
+                    color: Theme.of(context).colorScheme.onPrimaryContainer,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                Text(
+                  '学期 GPA',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(context)
+                        .colorScheme
+                        .onPrimaryContainer
+                        .withValues(alpha: 0.7),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  termGpa?.toStringAsFixed(2) ?? '--',
+                  style: TextStyle(
+                    fontSize: 26,
+                    height: 1,
+                    fontWeight: FontWeight.w800,
                     color: Theme.of(context).colorScheme.onPrimaryContainer,
                   ),
                 ),

@@ -255,6 +255,61 @@ class GradeDetailResponse(BaseModel):
     message: Optional[str] = None
 
 
+class AcademicSituationInput(BaseModel):
+    """学业情况查询输入"""
+    user_id: str
+    force_refresh: bool = False
+
+
+class AcademicCourseInfo(BaseModel):
+    """培养方案课程完成情况"""
+    study_status: Optional[str] = None
+    academic_year: Optional[str] = None
+    semester: Optional[str] = None
+    course_code: str = ""
+    course_name: str = ""
+    hours: Optional[str] = None
+    course_nature: Optional[str] = None
+    credits: float = 0
+    course_category: Optional[str] = None
+    max_grade: Optional[str] = None
+    gpa: Optional[float] = None
+    grade: Optional[str] = None
+    makeup_grade: Optional[str] = None
+    retake_grade: Optional[str] = None
+    suggested_year: Optional[str] = None
+    suggested_semester: Optional[str] = None
+    important_nature_count: Optional[str] = None
+    is_degree: bool = False
+    has_retake: bool = False
+    effective_grade: Optional[str] = None
+    effective_passed: Optional[bool] = None
+
+
+class AcademicSituationResponse(BaseModel):
+    """学生学业情况查询响应"""
+    success: bool
+    source: str = "academic_situation"
+    all_gpa: Optional[float] = None
+    degree_gpa: Optional[float] = None
+
+    total_courses: int = 0
+    passed_courses: int = 0
+    failed_courses: int = 0
+    not_started_courses: int = 0
+    in_progress_courses: int = 0
+
+    degree_total_courses: int = 0
+    degree_passed_courses: int = 0
+    degree_failed_courses: int = 0
+    degree_not_started_courses: int = 0
+    degree_in_progress_courses: int = 0
+
+    courses: List[AcademicCourseInfo] = Field(default_factory=list)
+    message: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
 # ============== 错误响应 ==============
 
 class ErrorResponse(BaseModel):

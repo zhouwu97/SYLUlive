@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:ui';
 import 'dart:io' show File;
 import 'package:dio/dio.dart';
-import 'package:flutter/foundation.dart' show kDebugMode;
+import 'package:flutter/foundation.dart' show kDebugMode, visibleForTesting;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -1342,9 +1342,20 @@ class AuthWrapper extends StatefulWidget {
   State<AuthWrapper> createState() => _AuthWrapperState();
 }
 
+@visibleForTesting
+class HomeInitialTabResolver {
+  int? _initialTab;
+
+  int resolve(ThemeProvider themeProvider) {
+    return _initialTab ??= themeProvider.startOnTimetable ? 2 : 0;
+  }
+}
+
 class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
   bool _jpushSetup = false;
   bool _jpushSettingUp = false;
+  final HomeInitialTabResolver _homeInitialTabResolver =
+      HomeInitialTabResolver();
 
   @override
   void initState() {
@@ -1437,7 +1448,13 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
         }
 
         final tp = context.watch<ThemeProvider>();
-        return HomeScreen(initialTab: tp.startOnTimetable ? 2 : 0);
+        if (!tp.isLoaded) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        return HomeScreen(initialTab: _homeInitialTabResolver.resolve(tp));
       },
     );
   }

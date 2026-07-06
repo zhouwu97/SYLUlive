@@ -53,13 +53,50 @@ class _LoginScreenState extends State<LoginScreen> {
 
   bool get _isGraduateRegister => _isRegister && _registerMode == 'graduate';
 
+  InputDecoration _inputDecoration(BuildContext context, {
+    required String label,
+    required IconData icon,
+    String? helperText,
+    Widget? suffixIcon,
+  }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final border = isDark ? Colors.white.withValues(alpha: 0.08) : const Color(0xFFECE4DA);
+    final accent = isDark ? const Color(0xFF80C4FC) : const Color(0xFF76C4FF);
+    final subText = isDark ? Colors.white70 : const Color(0xFF747B82);
+
+    return InputDecoration(
+      labelText: label,
+      helperText: helperText,
+      filled: true,
+      fillColor: isDark ? const Color(0xFF1A1D21) : const Color(0xFFFFFCF8),
+      prefixIcon: Icon(icon, color: subText),
+      suffixIcon: suffixIcon,
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide(color: border),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide(color: accent, width: 1.2),
+      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 15),
+      helperStyle: TextStyle(color: subText, fontSize: 11.5),
+    );
+  }
+
   Future<void> _showLoginLimitedDialog(String message) async {
     FocusManager.instance.primaryFocus?.unfocus();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final accent = isDark ? const Color(0xFF80C4FC) : const Color(0xFF76C4FF);
+    final subText = isDark ? Colors.white70 : const Color(0xFF747B82);
+    final cardBg = isDark ? const Color(0xFF1E2226) : Colors.white;
+
     await showDialog<void>(
       context: context,
       barrierDismissible: true,
       builder: (dialogContext) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        backgroundColor: cardBg,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         title: const Text('登录受限'),
         content: Text(message),
         actions: [
@@ -68,10 +105,12 @@ class _LoginScreenState extends State<LoginScreen> {
               Navigator.pop(dialogContext);
               await _showForgotPasswordDialog();
             },
+            style: TextButton.styleFrom(foregroundColor: subText),
             child: const Text('去忘记密码'),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(dialogContext),
+            style: FilledButton.styleFrom(backgroundColor: accent),
             child: const Text('知道了'),
           ),
         ],
@@ -209,9 +248,16 @@ class _LoginScreenState extends State<LoginScreen> {
       context: context,
       builder: (dialogContext) {
         return StatefulBuilder(
-          builder: (dialogContext, setLocalState) => AlertDialog(
+          builder: (dialogContext, setLocalState) {
+            final isDark = Theme.of(context).brightness == Brightness.dark;
+            final accent = isDark ? const Color(0xFF80C4FC) : const Color(0xFF76C4FF);
+            final subText = isDark ? Colors.white70 : const Color(0xFF747B82);
+            final cardBg = isDark ? const Color(0xFF1E2226) : Colors.white;
+
+            return AlertDialog(
+            backgroundColor: cardBg,
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(18),
+              borderRadius: BorderRadius.circular(24),
             ),
             title: const Text('忘记密码'),
             content: SingleChildScrollView(
@@ -234,12 +280,10 @@ class _LoginScreenState extends State<LoginScreen> {
                       controller: studentIdController,
                       maxLength: 10,
                       keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: '学号',
-                        prefixIcon: Icon(Icons.person_outline),
-                        border: OutlineInputBorder(),
-                        counterText: '',
-                      ),
+                      decoration: _inputDecoration(context,
+                        label: '学号',
+                        icon: Icons.person_outline,
+                      ).copyWith(counterText: ''),
                       validator: (v) {
                         final value = v?.trim() ?? '';
                         if (value.isEmpty) return '请输入学号';
@@ -251,24 +295,21 @@ class _LoginScreenState extends State<LoginScreen> {
                     TextFormField(
                       controller: eduPasswordController,
                       obscureText: obscureEduPassword,
-                      decoration:
-                          const InputDecoration(
-                            labelText: '教务密码',
-                            prefixIcon: Icon(Icons.school_outlined),
-                            border: OutlineInputBorder(),
-                            helperText: '仅用于确认账号属于本人',
-                          ).copyWith(
-                            suffixIcon: IconButton(
-                              onPressed: () => setLocalState(
-                                () => obscureEduPassword = !obscureEduPassword,
-                              ),
-                              icon: Icon(
-                                obscureEduPassword
-                                    ? Icons.visibility_off_outlined
-                                    : Icons.visibility_outlined,
-                              ),
-                            ),
+                      decoration: _inputDecoration(context,
+                        label: '教务密码',
+                        icon: Icons.school_outlined,
+                        helperText: '仅用于确认账号属于本人',
+                        suffixIcon: IconButton(
+                          onPressed: () => setLocalState(
+                            () => obscureEduPassword = !obscureEduPassword,
                           ),
+                          icon: Icon(
+                            obscureEduPassword
+                                ? Icons.visibility_off_outlined
+                                : Icons.visibility_outlined,
+                          ),
+                        ),
+                      ),
                       validator: (v) =>
                           (v == null || v.isEmpty) ? '请输入教务密码' : null,
                     ),
@@ -276,48 +317,42 @@ class _LoginScreenState extends State<LoginScreen> {
                     TextFormField(
                       controller: newPasswordController,
                       obscureText: obscureNewPassword,
-                      decoration:
-                          const InputDecoration(
-                            labelText: '新的软件密码',
-                            prefixIcon: Icon(Icons.lock_reset),
-                            border: OutlineInputBorder(),
-                            helperText: '8位以上，需包含数字和字母',
-                          ).copyWith(
-                            suffixIcon: IconButton(
-                              onPressed: () => setLocalState(
-                                () => obscureNewPassword = !obscureNewPassword,
-                              ),
-                              icon: Icon(
-                                obscureNewPassword
-                                    ? Icons.visibility_off_outlined
-                                    : Icons.visibility_outlined,
-                              ),
-                            ),
+                      decoration: _inputDecoration(context,
+                        label: '新的软件密码',
+                        icon: Icons.lock_reset,
+                        helperText: '8位以上，需包含数字和字母',
+                        suffixIcon: IconButton(
+                          onPressed: () => setLocalState(
+                            () => obscureNewPassword = !obscureNewPassword,
                           ),
+                          icon: Icon(
+                            obscureNewPassword
+                                ? Icons.visibility_off_outlined
+                                : Icons.visibility_outlined,
+                          ),
+                        ),
+                      ),
                       validator: _validateAppPassword,
                     ),
                     const SizedBox(height: 12),
                     TextFormField(
                       controller: confirmPasswordController,
                       obscureText: obscureConfirmPassword,
-                      decoration:
-                          const InputDecoration(
-                            labelText: '确认新密码',
-                            prefixIcon: Icon(Icons.check_circle_outline),
-                            border: OutlineInputBorder(),
-                          ).copyWith(
-                            suffixIcon: IconButton(
-                              onPressed: () => setLocalState(
-                                () => obscureConfirmPassword =
-                                    !obscureConfirmPassword,
-                              ),
-                              icon: Icon(
-                                obscureConfirmPassword
-                                    ? Icons.visibility_off_outlined
-                                    : Icons.visibility_outlined,
-                              ),
-                            ),
+                      decoration: _inputDecoration(context,
+                        label: '确认新密码',
+                        icon: Icons.check_circle_outline,
+                        suffixIcon: IconButton(
+                          onPressed: () => setLocalState(
+                            () => obscureConfirmPassword =
+                                !obscureConfirmPassword,
                           ),
+                          icon: Icon(
+                            obscureConfirmPassword
+                                ? Icons.visibility_off_outlined
+                                : Icons.visibility_outlined,
+                          ),
+                        ),
+                      ),
                       validator: (v) {
                         if (v == null || v.isEmpty) return '请再次输入新密码';
                         if (v != newPasswordController.text) {
@@ -335,6 +370,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 onPressed: isSubmitting
                     ? null
                     : () => Navigator.pop(dialogContext),
+                style: TextButton.styleFrom(foregroundColor: subText),
                 child: const Text('取消'),
               ),
               FilledButton(
@@ -381,6 +417,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           );
                         }
                       },
+                style: FilledButton.styleFrom(backgroundColor: accent),
                 child: isSubmitting
                     ? const SizedBox(
                         width: 18,
@@ -393,7 +430,8 @@ class _LoginScreenState extends State<LoginScreen> {
                     : const Text('确认重置'),
               ),
             ],
-          ),
+          );
+          },
         );
       },
     );
@@ -404,93 +442,167 @@ class _LoginScreenState extends State<LoginScreen> {
     confirmPasswordController.dispose();
   }
 
+
+  Widget _buildRegisterSegment(String value, String label, Color accent, Color accentSoft, Color border, Color subText) {
+    final isSelected = _registerMode == value;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () {
+          FocusManager.instance.primaryFocus?.unfocus();
+          if (mounted) {
+            setState(() {
+              _registerMode = value;
+              _appPasswordController.clear();
+              _eduPasswordController.clear();
+              _verifyCodeController.clear();
+            });
+          }
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          decoration: BoxDecoration(
+            color: isSelected ? accentSoft : Colors.transparent,
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+              color: isSelected ? accent : border,
+            ),
+          ),
+          alignment: Alignment.center,
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+              color: isSelected ? accent : subText,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final pageBg = isDark ? const Color(0xFF101219) : const Color(0xFFFFFAF4);
+    final cardBg = isDark ? const Color(0xFF1E2226) : Colors.white;
+    final accent = isDark ? const Color(0xFF80C4FC) : const Color(0xFF76C4FF);
+    final accentSoft = accent.withValues(alpha: 0.12);
+    final border = isDark ? Colors.white.withValues(alpha: 0.08) : const Color(0xFFECE4DA);
+    final text = isDark ? Colors.white : const Color(0xFF1F2328);
+    final subText = isDark ? Colors.white70 : const Color(0xFF747B82);
 
     return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 24),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 400),
-            child: Card(
-              elevation: 8,
-              shadowColor: Colors.black26,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Stack(
+      backgroundColor: pageBg,
+      body: SafeArea(
+        child: Stack(
+          children: [
+            SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(24, 18, 24, 28),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(28, 40, 28, 28),
+                  const SizedBox(height: 40),
+                  // Hero 
+                  Center(
+                    child: Container(
+                      width: 64,
+                      height: 64,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(22),
+                        boxShadow: [
+                          if (!isDark)
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.05),
+                              blurRadius: 10,
+                              offset: const Offset(0, 4),
+                            ),
+                        ],
+                      ),
+                      clipBehavior: Clip.antiAlias,
+                      child: Image.asset(
+                        'assets/images/mingfeng.png',
+                        width: 64,
+                        height: 64,
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    '沈理校园',
+                    style: TextStyle(
+                      fontSize: 26,
+                      fontWeight: FontWeight.w800,
+                      color: text,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '校园互助社交平台',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: subText,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 40),
+
+                  // Card
+                  Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: cardBg,
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(color: border),
+                      boxShadow: [
+                        if (!isDark)
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.02),
+                            blurRadius: 10,
+                            offset: const Offset(0, 2),
+                          ),
+                      ],
+                    ),
                     child: Form(
                       key: _formKey,
                       child: Column(
-                        mainAxisSize: MainAxisSize.min,
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          Icon(
-                            Icons.school,
-                            size: 56,
-                            color: Theme.of(context).primaryColor,
-                          ),
-                          const SizedBox(height: 12),
-                          Text(
-                            '沈理校园',
-                            style: Theme.of(context).textTheme.headlineSmall
-                                ?.copyWith(fontWeight: FontWeight.bold),
-                            textAlign: TextAlign.center,
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            '校园互助社交平台',
-                            style: Theme.of(
-                              context,
-                            ).textTheme.bodySmall?.copyWith(color: Colors.grey),
-                            textAlign: TextAlign.center,
-                          ),
-                          const SizedBox(height: 28),
-
                           if (_isRegister) ...[
+                            Row(
+                              children: [
+                                _buildRegisterSegment('campus', '在校生注册', accent, accentSoft, border, subText),
+                                const SizedBox(width: 12),
+                                _buildRegisterSegment('graduate', '毕业人员注册', accent, accentSoft, border, subText),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
                             Container(
                               padding: const EdgeInsets.all(14),
                               decoration: BoxDecoration(
                                 color: _isGraduateRegister
-                                    ? const Color(0xFFFDF5E8)
-                                    : const Color(0xFFF3F6FF),
-                                borderRadius: BorderRadius.circular(14),
+                                    ? (isDark ? const Color(0xFFF59E0B).withValues(alpha: 0.1) : const Color(0xFFFFF4DE))
+                                    : accentSoft,
+                                borderRadius: BorderRadius.circular(16),
                                 border: Border.all(
                                   color: _isGraduateRegister
-                                      ? const Color(0xFFFFD8A8)
-                                      : const Color(0xFFD6E4FF),
+                                      ? const Color(0xFFF59E0B).withValues(alpha: 0.3)
+                                      : accent.withValues(alpha: 0.16),
                                 ),
                               ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    _isGraduateRegister
-                                        ? '毕业人员注册说明'
-                                        : '在校生注册说明',
-                                    style: const TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 6),
-                                  Text(
-                                    _isGraduateRegister
-                                        ? '毕业人员使用 QQ 号注册，验证码会发送到 QQ 邮箱。为降低交易风险，毕业人员账号不能在集市发布帖子，可在首页转到闲鱼等专业平台。'
-                                        : '在校生仅使用学号注册，并通过教务密码验证身份。注册成功后可使用校园全部功能。',
-                                    style: TextStyle(
-                                      fontSize: 12.5,
-                                      height: 1.45,
-                                      color: Colors.grey[700],
-                                    ),
-                                  ),
-                                ],
+                              child: Text(
+                                _isGraduateRegister
+                                    ? '毕业人员使用 QQ 号注册，验证码会发送到 QQ 邮箱。为降低交易风险，毕业人员账号不能在集市发布帖子。'
+                                    : '在校生仅使用学号注册，并通过教务密码验证身份。注册成功后可使用校园全部功能。',
+                                style: TextStyle(
+                                  fontSize: 12.5,
+                                  height: 1.45,
+                                  color: _isGraduateRegister
+                                      ? (isDark ? const Color(0xFFFFD8A8) : const Color(0xFFB45309))
+                                      : (isDark ? accent : const Color(0xFF0F5A52)),
+                                ),
                               ),
                             ),
                             const SizedBox(height: 16),
@@ -504,24 +616,17 @@ class _LoginScreenState extends State<LoginScreen> {
                             keyboardType: _isGraduateRegister
                                 ? TextInputType.number
                                 : TextInputType.text,
-                            decoration: InputDecoration(
-                              labelText: _isRegister
+                            decoration: _inputDecoration(context,
+                              label: _isRegister
                                   ? (_isGraduateRegister ? 'QQ号' : '学号')
                                   : '学号 / QQ',
+                              icon: Icons.person_outline,
                               helperText: _isRegister
                                   ? (_isGraduateRegister
                                         ? '仅毕业人员使用 QQ 注册'
                                         : '仅在校生使用学号注册')
                                   : '在校生用学号登录，毕业人员用 QQ 登录',
-                              prefixIcon: const Icon(Icons.person_outline),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 14,
-                              ),
-                            ),
+                            ).copyWith(counterText: ''),
                             validator: (v) {
                               if (v == null || v.isEmpty) {
                                 if (_isRegister) {
@@ -537,49 +642,12 @@ class _LoginScreenState extends State<LoginScreen> {
 
                           if (_isRegister) ...[
                             const SizedBox(height: 16),
-
-                            SegmentedButton<String>(
-                              segments: const [
-                                ButtonSegment(
-                                  value: 'campus',
-                                  label: Text('在校生注册'),
-                                  icon: Icon(Icons.school_outlined),
-                                ),
-                                ButtonSegment(
-                                  value: 'graduate',
-                                  label: Text('毕业人员注册'),
-                                  icon: Icon(Icons.mark_email_read_outlined),
-                                ),
-                              ],
-                              selected: {_registerMode},
-                              onSelectionChanged: (value) {
-                                FocusManager.instance.primaryFocus?.unfocus();
-                                if (mounted)
-                                  setState(() {
-                                    _registerMode = value.first;
-                                    _appPasswordController.clear();
-                                    _eduPasswordController.clear();
-                                    _verifyCodeController.clear();
-                                  });
-                              },
-                            ),
-                            const SizedBox(height: 16),
-
-                            // 昵称
                             TextFormField(
                               controller: _nicknameController,
-                              decoration: InputDecoration(
-                                labelText: '昵称（选填）',
-                                prefixIcon: const Icon(Icons.badge_outlined),
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                  vertical: 14,
-                                ),
+                              decoration: _inputDecoration(context,
+                                label: '昵称（选填）',
+                                icon: Icons.badge_outlined,
                                 helperText: '将显示在帖子和评论中',
-                                helperStyle: TextStyle(color: Colors.orange),
                               ),
                             ),
                             const SizedBox(height: 16),
@@ -589,18 +657,10 @@ class _LoginScreenState extends State<LoginScreen> {
                                 controller: _eduPasswordController,
                                 focusNode: _eduPasswordFocus,
                                 obscureText: _obscureEduPassword,
-                                decoration: InputDecoration(
-                                  labelText: '教务密码',
-                                  prefixIcon: const Icon(Icons.lock_outline),
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 16,
-                                    vertical: 14,
-                                  ),
+                                decoration: _inputDecoration(context,
+                                  label: '教务密码',
+                                  icon: Icons.lock_outline,
                                   helperText: '用于验证学号真实性',
-                                  helperStyle: TextStyle(color: Colors.orange),
                                   suffixIcon: IconButton(
                                     onPressed: () => setState(() {
                                       _obscureEduPassword =
@@ -623,25 +683,10 @@ class _LoginScreenState extends State<LoginScreen> {
                                     child: TextFormField(
                                       controller: _verifyCodeController,
                                       keyboardType: TextInputType.number,
-                                      decoration: InputDecoration(
-                                        labelText: '验证码',
-                                        prefixIcon: const Icon(
-                                          Icons.verified_outlined,
-                                        ),
-                                        border: OutlineInputBorder(
-                                          borderRadius: BorderRadius.circular(
-                                            12,
-                                          ),
-                                        ),
-                                        contentPadding:
-                                            const EdgeInsets.symmetric(
-                                              horizontal: 16,
-                                              vertical: 14,
-                                            ),
+                                      decoration: _inputDecoration(context,
+                                        label: '验证码',
+                                        icon: Icons.verified_outlined,
                                         helperText: '发送到 QQ 邮箱',
-                                        helperStyle: TextStyle(
-                                          color: Colors.orange,
-                                        ),
                                       ),
                                       validator: (v) =>
                                           (v == null || v.trim().length != 6)
@@ -651,12 +696,19 @@ class _LoginScreenState extends State<LoginScreen> {
                                   ),
                                   const SizedBox(width: 12),
                                   SizedBox(
-                                    height: 54,
+                                    height: 52,
                                     child: FilledButton.tonal(
                                       onPressed:
                                           (_isLoading || _codeCooldown > 0)
                                           ? null
                                           : _sendGraduateCode,
+                                      style: FilledButton.styleFrom(
+                                        backgroundColor: accentSoft,
+                                        foregroundColor: accent,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(16)
+                                        )
+                                      ),
                                       child: Text(
                                         _codeCooldown > 0
                                             ? '${_codeCooldown}s'
@@ -669,23 +721,13 @@ class _LoginScreenState extends State<LoginScreen> {
                           ],
 
                           const SizedBox(height: 16),
-
-                          // APP密码
                           TextFormField(
                             controller: _appPasswordController,
                             obscureText: _obscureAppPassword,
-                            decoration: InputDecoration(
-                              labelText: _isRegister ? 'APP密码' : '密码',
-                              prefixIcon: const Icon(Icons.lock_outline),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 14,
-                              ),
+                            decoration: _inputDecoration(context,
+                              label: _isRegister ? 'APP密码' : '密码',
+                              icon: Icons.lock_outline,
                               helperText: _isRegister ? '8位以上，需包含数字和字母' : null,
-                              helperStyle: TextStyle(color: Colors.orange),
                               suffixIcon: IconButton(
                                 onPressed: () => setState(() {
                                   _obscureAppPassword = !_obscureAppPassword;
@@ -703,39 +745,39 @@ class _LoginScreenState extends State<LoginScreen> {
                                       (v == null || v.isEmpty) ? '请输入密码' : null,
                           ),
 
-                          if (!_isRegister)
+                          if (!_isRegister) ...[
+                            const SizedBox(height: 8),
                             Align(
                               alignment: Alignment.centerRight,
                               child: TextButton(
                                 onPressed: _isLoading
                                     ? null
                                     : _showForgotPasswordDialog,
-                                child: Text(
-                                  '忘记密码？',
-                                  style: TextStyle(
-                                    color: Theme.of(context).primaryColor,
-                                  ),
-                                ),
+                                style: TextButton.styleFrom(foregroundColor: accent),
+                                child: const Text('忘记密码？'),
                               ),
                             ),
+                          ] else ...[
+                            const SizedBox(height: 24),
+                          ],
 
-                          const SizedBox(height: 24),
-
-                          // 提交按钮
+                          // Submit Button
                           Consumer<AuthProvider>(
                             builder: (context, auth, child) => SizedBox(
-                              height: 48,
-                              child: ElevatedButton(
+                              height: 52,
+                              child: FilledButton(
                                 onPressed: _isLoading ? null : _submit,
-                                style: ElevatedButton.styleFrom(
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: accent,
+                                  disabledBackgroundColor: accent.withValues(alpha: 0.38),
                                   shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
+                                    borderRadius: BorderRadius.circular(18),
                                   ),
                                 ),
                                 child: _isLoading
                                     ? const SizedBox(
-                                        height: 20,
-                                        width: 20,
+                                        height: 18,
+                                        width: 18,
                                         child: CircularProgressIndicator(
                                           strokeWidth: 2,
                                           color: Colors.white,
@@ -746,6 +788,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                         style: const TextStyle(
                                           fontSize: 16,
                                           fontWeight: FontWeight.w600,
+                                          color: Colors.white,
                                         ),
                                       ),
                               ),
@@ -753,7 +796,6 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                           const SizedBox(height: 16),
 
-                          // 切换登录/注册
                           TextButton(
                             onPressed: () {
                               FocusManager.instance.primaryFocus?.unfocus();
@@ -766,43 +808,28 @@ class _LoginScreenState extends State<LoginScreen> {
                                   _verifyCodeController.clear();
                                 });
                             },
-                            child: Text(
-                              _isRegister ? '已有账号？去登录' : '没有账号？去注册',
-                              style: TextStyle(
-                                color: Theme.of(context).primaryColor,
-                              ),
-                            ),
+                            style: TextButton.styleFrom(foregroundColor: subText),
+                            child: Text(_isRegister ? '已有账号？去登录' : '没有账号？去注册'),
                           ),
                         ],
-                      ),
-                    ),
-                  ),
-                  Positioned(
-                    top: 12,
-                    right: 16,
-                    child: TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      style: TextButton.styleFrom(
-                        minimumSize: Size.zero,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 8,
-                        ),
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
-                      child: Text(
-                        '跳过',
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: isDark ? Colors.white70 : Colors.black54,
-                        ),
                       ),
                     ),
                   ),
                 ],
               ),
             ),
-          ),
+
+            // Skip
+            Positioned(
+              top: 12,
+              right: 16,
+              child: TextButton(
+                onPressed: () => Navigator.pop(context),
+                style: TextButton.styleFrom(foregroundColor: subText),
+                child: const Text('跳过'),
+              ),
+            ),
+          ],
         ),
       ),
     );

@@ -18,6 +18,7 @@ import '../providers/theme_provider.dart';
 import '../providers/course_schedule_provider.dart';
 import '../providers/edu_provider.dart';
 import '../services/diagnostic_log_service.dart';
+import '../services/grade_reminder_service.dart';
 import '../models/diagnostic_log_entry.dart';
 import '../services/keep_alive_service.dart';
 import '../services/wallpaper_prefetch_service.dart';
@@ -169,9 +170,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget _buildCleanBackground(bool isDark) {
     return SizedBox.expand(
       child: ColoredBox(
-        color: isDark
-            ? kCleanWarmBackgroundDark
-            : kCleanWarmBackgroundLight,
+        color: isDark ? kCleanWarmBackgroundDark : kCleanWarmBackgroundLight,
       ),
     );
   }
@@ -482,8 +481,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           child: SizedBox(
             width: double.infinity,
             child: OutlinedButton.icon(
-              onPressed: () =>
-                  UpdateChecker.check(context, showNoUpdateToast: true, manual: true),
+              onPressed: () => UpdateChecker.check(context,
+                  showNoUpdateToast: true, manual: true),
               icon: const Icon(Icons.system_update, size: 18),
               label: const Text('检查更新'),
               style: OutlinedButton.styleFrom(
@@ -532,9 +531,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 child: InkWell(
                   borderRadius: BorderRadius.circular(16),
                   onTap: () async {
+                    final userId = authProvider.user?.id.toString();
+                    final eduProvider = context.read<EduProvider>();
+                    final courseProvider =
+                        context.read<CourseScheduleProvider>();
+                    if (userId != null) {
+                      await GradeReminderService.instance.clearForUser(userId);
+                    }
                     // 登出前清空本机教务和课表状态，防止跨账号数据泄漏。
-                    await context.read<EduProvider>().clearLocalSession();
-                    context.read<CourseScheduleProvider>().clearAllUserState();
+                    await eduProvider.clearLocalSession();
+                    courseProvider.clearAllUserState();
                     await authProvider.logout();
                     if (context.mounted) {
                       Navigator.of(context).popUntil((route) => route.isFirst);

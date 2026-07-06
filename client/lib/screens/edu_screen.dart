@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/edu_provider.dart';
 import '../providers/course_schedule_provider.dart';
+import '../services/grade_reminder_service.dart';
 import '../utils/app_navigator.dart' show appNavigatorKey;
 import '../features/campus_data/evaluation/evaluation_screen.dart';
 import 'edu_grade_screen.dart';
@@ -89,7 +90,8 @@ class _EduScreenState extends State<EduScreen> {
     );
   }
 
-  Widget _buildEduStatusCard(BuildContext context, EduProvider eduProvider, bool isDark) {
+  Widget _buildEduStatusCard(
+      BuildContext context, EduProvider eduProvider, bool isDark) {
     return Container(
       decoration: CampusTheme.cardDecoration(isDark),
       padding: const EdgeInsets.all(20),
@@ -108,8 +110,12 @@ class _EduScreenState extends State<EduScreen> {
                   borderRadius: BorderRadius.circular(14),
                 ),
                 child: Icon(
-                  eduProvider.isBound ? Icons.check_circle_rounded : Icons.warning_rounded,
-                  color: eduProvider.isBound ? CampusTheme.green : CampusTheme.orange,
+                  eduProvider.isBound
+                      ? Icons.check_circle_rounded
+                      : Icons.warning_rounded,
+                  color: eduProvider.isBound
+                      ? CampusTheme.green
+                      : CampusTheme.orange,
                   size: 24,
                 ),
               ),
@@ -154,7 +160,9 @@ class _EduScreenState extends State<EduScreen> {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: isDark ? Colors.white.withValues(alpha: 0.04) : const Color(0xFFF8F9FA),
+                color: isDark
+                    ? Colors.white.withValues(alpha: 0.04)
+                    : const Color(0xFFF8F9FA),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Row(
@@ -168,12 +176,16 @@ class _EduScreenState extends State<EduScreen> {
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w600,
-                            color: isDark ? Colors.white70 : CampusTheme.text.withValues(alpha: 0.85),
+                            color: isDark
+                                ? Colors.white70
+                                : CampusTheme.text.withValues(alpha: 0.85),
                           ),
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          eduProvider.major.isNotEmpty ? eduProvider.major : "未知",
+                          eduProvider.major.isNotEmpty
+                              ? eduProvider.major
+                              : "未知",
                           style: const TextStyle(
                             fontSize: 12,
                             color: CampusTheme.subText,
@@ -190,7 +202,8 @@ class _EduScreenState extends State<EduScreen> {
             ElevatedButton.icon(
               onPressed: () => _showBindDialog(context, eduProvider),
               icon: const Icon(Icons.link_rounded, size: 20),
-              label: const Text('立即绑定教务', style: TextStyle(fontWeight: FontWeight.w700)),
+              label: const Text('立即绑定教务',
+                  style: TextStyle(fontWeight: FontWeight.w700)),
               style: ElevatedButton.styleFrom(
                 backgroundColor: CampusTheme.primary,
                 foregroundColor: Colors.white,
@@ -207,7 +220,8 @@ class _EduScreenState extends State<EduScreen> {
     );
   }
 
-  Widget _buildEduActionGrid(BuildContext context, EduProvider eduProvider, bool isDark) {
+  Widget _buildEduActionGrid(
+      BuildContext context, EduProvider eduProvider, bool isDark) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -216,7 +230,7 @@ class _EduScreenState extends State<EduScreen> {
           child: Text(
             '教务功能',
             style: TextStyle(
-              fontSize: 16, 
+              fontSize: 16,
               fontWeight: FontWeight.w800,
               color: isDark ? Colors.white : CampusTheme.text,
             ),
@@ -300,19 +314,19 @@ class _EduScreenState extends State<EduScreen> {
     );
   }
 
-  Widget _buildDangerUnbindButton(BuildContext context, EduProvider eduProvider, bool isDark) {
+  Widget _buildDangerUnbindButton(
+      BuildContext context, EduProvider eduProvider, bool isDark) {
     return Center(
       child: TextButton.icon(
         onPressed: () => _showUnbindDialog(context, eduProvider),
-        icon: const Icon(Icons.link_off_rounded, size: 18, color: CampusTheme.red),
-        label: const Text(
-          '解绑教务账号', 
-          style: const TextStyle(
-            fontSize: 14, 
-            fontWeight: FontWeight.w600,
-            color: CampusTheme.red,
-          )
-        ),
+        icon: const Icon(Icons.link_off_rounded,
+            size: 18, color: CampusTheme.red),
+        label: const Text('解绑教务账号',
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: CampusTheme.red,
+            )),
         style: TextButton.styleFrom(
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
           shape: RoundedRectangleBorder(
@@ -343,7 +357,9 @@ class _EduScreenState extends State<EduScreen> {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
-              color: isDark ? Colors.white.withValues(alpha: 0.08) : CampusTheme.softBorder,
+              color: isDark
+                  ? Colors.white.withValues(alpha: 0.08)
+                  : CampusTheme.softBorder,
             ),
           ),
           child: Column(
@@ -480,7 +496,11 @@ class _EduScreenState extends State<EduScreen> {
           ElevatedButton(
             onPressed: () async {
               Navigator.pop(context);
+              final userId = context.read<AuthProvider>().user?.id.toString();
               final result = await eduProvider.unbind();
+              if (result.success && userId != null) {
+                await GradeReminderService.instance.clearForUser(userId);
+              }
               if (context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(

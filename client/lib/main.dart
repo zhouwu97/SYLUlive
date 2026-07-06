@@ -451,6 +451,17 @@ void _processPendingNotificationOpen() {
 }
 
 Future<void> setupJPush(AuthProvider authProvider) async {
+  if (ApiConstants.jpushAppKey.isEmpty) {
+    DiagnosticLogService.instance.record(
+      level: 'error',
+      source: '推送',
+      type: 'JPush 配置缺失',
+      summary: 'JPUSH_APP_KEY 为空，已跳过初始化',
+      detail: '请通过 --dart-define=JPUSH_APP_KEY 注入或设置默认值',
+    );
+    return;
+  }
+
   _ensureJPushHandlersRegistered();
 
   jpush.setup(

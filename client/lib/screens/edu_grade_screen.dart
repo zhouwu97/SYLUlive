@@ -76,7 +76,8 @@ class _EduGradeScreenState extends State<EduGradeScreen>
   @override
   Future<bool> switchToGradeSemester(String year, int semester) async {
     if (year == _selectedYear && semester == _selectedSemester) {
-      return _refreshGrades();
+      final grades = await _refreshGrades();
+      return grades != null;
     }
     return _switchSemester(year, semester);
   }
@@ -290,9 +291,9 @@ class _EduGradeScreenState extends State<EduGradeScreen>
     }
   }
 
-  Future<bool> _refreshGrades() async {
-    if (_isInitialLoading || _isRefreshing) return false;
-    if (_eduProvider == null) return false;
+  Future<List<EduGrade>?> _refreshGrades() async {
+    if (_isInitialLoading || _isRefreshing) return null;
+    if (_eduProvider == null) return null;
 
     setState(() => _isRefreshing = true);
 
@@ -302,7 +303,7 @@ class _EduGradeScreenState extends State<EduGradeScreen>
 
     if (!mounted || _requestGeneration != gen) {
       // 页面已切换或用户变化 → 视为失败
-      return false;
+      return null;
     }
 
     if (result.success && result.data != null) {
@@ -318,15 +319,15 @@ class _EduGradeScreenState extends State<EduGradeScreen>
       });
       await _syncGradeReminderBaseline(result.data!);
       if (mounted) _showSnackBar('成绩已更新');
-      return true;
+      return result.data;
     }
 
     setState(() => _isRefreshing = false);
     if (mounted) _showSnackBar('刷新失败，请稍后重试');
-    return false;
+    return null;
   }
 
-  Future<bool> _refreshCurrentView() {
+  Future<List<EduGrade>?> _refreshCurrentView() {
     return _refreshGrades();
   }
 

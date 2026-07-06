@@ -15,7 +15,7 @@ class GradeManageDrawer extends StatefulWidget {
   final bool isEduBound;
   final int enrollmentYear;
   final Future<bool> Function(String year, int semester) onSemesterChanged;
-  final Future<bool> Function()? onRefreshGrades;
+  final Future<List<EduGrade>?> Function()? onRefreshGrades;
   final Future<bool> Function()? onRefreshAcademic;
   final EduAcademicSituation? academicSituation;
   final bool isAcademicRefreshing;
@@ -74,10 +74,10 @@ class _GradeManageDrawerState extends State<GradeManageDrawer> {
   Future<void> _handleRefreshGrades() async {
     if (_isRefreshingGrades || widget.onRefreshGrades == null) return;
     setState(() => _isRefreshingGrades = true);
-    final success = await widget.onRefreshGrades!();
+    final data = await widget.onRefreshGrades!();
     if (!mounted) return;
     setState(() => _isRefreshingGrades = false);
-    if (success) {
+    if (data != null) {
       await Future.delayed(const Duration(milliseconds: 300));
       if (mounted) Navigator.of(context).pop();
     }
@@ -121,12 +121,25 @@ class _GradeManageDrawerState extends State<GradeManageDrawer> {
     }
 
     setState(() => _isReminderBusy = true);
+
+    List<EduGrade> currentGrades = widget.grades;
+    if (enabled && widget.onRefreshGrades != null) {
+      final freshGrades = await widget.onRefreshGrades!();
+      if (!mounted) return;
+      if (freshGrades == null) {
+        setState(() => _isReminderBusy = false);
+        _showSnackBar('由于无法获取最新成绩，开启提醒失败');
+        return;
+      }
+      currentGrades = freshGrades;
+    }
+
     final status = await GradeReminderService.instance.setEnabled(
       enabled: enabled,
       userId: userId,
       year: widget.selectedYear,
       semester: widget.selectedSemester,
-      grades: widget.grades,
+      grades: currentGrades,
     );
     if (!mounted) return;
     setState(() {

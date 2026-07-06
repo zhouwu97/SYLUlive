@@ -140,6 +140,15 @@ class _GradeManageDrawerState extends State<GradeManageDrawer> {
     }
   }
 
+  Future<void> _handleReminderPermissionAction() async {
+    if (!_reminderStatus.notificationGranted) {
+      await GradeReminderService.instance.openNotificationSettings();
+    } else if (_reminderStatus.enabled && !_reminderStatus.backgroundReady) {
+      await GradeReminderService.instance.openKeepAliveSettings();
+    }
+    await _loadReminderStatus();
+  }
+
   Future<bool?> _showReminderConfirmSheet() {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final accent = isDark ? const Color(0xFF7ED6C5) : const Color(0xFF147C72);
@@ -514,6 +523,20 @@ class _GradeManageDrawerState extends State<GradeManageDrawer> {
     final textColor = isDark ? Colors.white : const Color(0xFF1F2328);
     final subColor = isDark ? Colors.grey.shade400 : const Color(0xFF7A8087);
     final enabled = _reminderStatus.supported && _reminderStatus.enabled;
+    final needsNotification = _reminderStatus.supported &&
+        enabled &&
+        !_reminderStatus.notificationGranted;
+    final needsBackground = _reminderStatus.supported &&
+        enabled &&
+        _reminderStatus.notificationGranted &&
+        !_reminderStatus.backgroundReady;
+    final warningColor =
+        isDark ? const Color(0xFFF4B860) : const Color(0xFFC47C14);
+    final statusColor = needsNotification || needsBackground
+        ? warningColor
+        : enabled
+            ? accent
+            : subColor;
 
     return Material(
       color: isDark ? const Color(0xFF1E2226) : Colors.white,
@@ -542,75 +565,157 @@ class _GradeManageDrawerState extends State<GradeManageDrawer> {
                   : const Color(0xFFE6E8EB),
             ),
           ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Container(
-                width: 32,
-                height: 32,
-                decoration: BoxDecoration(
-                  color: accent.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(Icons.notifications_active_outlined,
-                    size: 18, color: accent),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '成绩更新提醒',
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        color: textColor,
-                      ),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: accent.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(10),
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '约每 3~4 小时检查一次，有新成绩会通知你',
-                      style: TextStyle(fontSize: 12, color: subColor),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      _reminderStatus.statusText,
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: enabled ? accent : subColor,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              _isReminderBusy
-                  ? Padding(
-                      padding: const EdgeInsets.only(top: 8, right: 10),
-                      child: SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: accent,
+                    child: Icon(Icons.notifications_active_outlined,
+                        size: 18, color: accent),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '成绩更新提醒',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                            color: textColor,
+                          ),
                         ),
-                      ),
-                    )
-                  : Transform.scale(
-                      scale: 0.82,
-                      child: Switch(
-                        value: enabled,
-                        activeThumbColor: accent,
-                        onChanged: _reminderStatus.supported
-                            ? _handleReminderToggle
-                            : null,
-                      ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '约每 3~4 小时检查一次，有新成绩会通知你',
+                          style: TextStyle(fontSize: 12, color: subColor),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          _reminderStatus.statusText,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: statusColor,
+                          ),
+                        ),
+                      ],
                     ),
+                  ),
+                  const SizedBox(width: 8),
+                  _isReminderBusy
+                      ? Padding(
+                          padding: const EdgeInsets.only(top: 8, right: 10),
+                          child: SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: accent,
+                            ),
+                          ),
+                        )
+                      : Transform.scale(
+                          scale: 0.82,
+                          child: Switch(
+                            value: enabled,
+                            activeThumbColor: accent,
+                            onChanged: _reminderStatus.supported
+                                ? _handleReminderToggle
+                                : null,
+                          ),
+                        ),
+                ],
+              ),
+              if (needsNotification || needsBackground) ...[
+                const SizedBox(height: 12),
+                _buildReminderPermissionHint(
+                  isDark: isDark,
+                  warningColor: warningColor,
+                  title: needsNotification ? '开启通知权限' : '开启后台运行权限',
+                  message: needsNotification
+                      ? '没有通知权限时，发现新成绩也无法提醒你。'
+                      : '允许后台运行和电池优化白名单后，定时检查会更稳定。',
+                  buttonText: needsNotification ? '去开启' : '去设置',
+                ),
+              ],
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildReminderPermissionHint({
+    required bool isDark,
+    required Color warningColor,
+    required String title,
+    required String message,
+    required String buttonText,
+  }) {
+    final hintBg = isDark
+        ? warningColor.withValues(alpha: 0.12)
+        : warningColor.withValues(alpha: 0.08);
+    final hintBorder = warningColor.withValues(alpha: isDark ? 0.24 : 0.18);
+    final bodyColor = isDark ? Colors.grey.shade300 : const Color(0xFF6B5B3E);
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
+      decoration: BoxDecoration(
+        color: hintBg,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: hintBorder),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Icon(Icons.info_outline_rounded, size: 18, color: warningColor),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    color: warningColor,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  message,
+                  style:
+                      TextStyle(fontSize: 11, height: 1.35, color: bodyColor),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          TextButton(
+            onPressed: _handleReminderPermissionAction,
+            style: TextButton.styleFrom(
+              minimumSize: const Size(58, 34),
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              foregroundColor: warningColor,
+              textStyle: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            child: Text(buttonText),
+          ),
+        ],
       ),
     );
   }

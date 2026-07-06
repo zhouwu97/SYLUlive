@@ -32,11 +32,13 @@ import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/course_schedule_screen.dart';
 import 'screens/exam_schedule_screen.dart';
+import 'screens/edu_grade_screen.dart';
 import 'screens/notifications_screen.dart';
 import 'services/course_reminder_service.dart';
 import 'theme/AppTheme.dart';
 import 'config/api_constants.dart';
 import 'utils/app_navigator.dart';
+import 'utils/grade_screen_registry.dart';
 import 'utils/private_message_notification.dart';
 import 'utils/notification_open_target.dart';
 import 'services/diagnostic_log_service.dart';
@@ -1053,16 +1055,7 @@ class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
     _channel.setMethodCallHandler((call) async {
       if (call.method == 'onDeepLink') {
         final uri = call.arguments as String?;
-        if ((uri == 'widget_timetable' || uri == 'campus://timetable') &&
-            mounted) {
-          appNavigatorKey.currentState?.popUntil((route) => route.isFirst);
-          widgetTabSwitch.value++;
-        } else if (uri != null && uri.startsWith('widget_exam') && mounted) {
-          appNavigatorKey.currentState?.popUntil((route) => route.isFirst);
-          appNavigatorKey.currentState?.push(
-            MaterialPageRoute(builder: (_) => const ExamScheduleScreen()),
-          );
-        }
+        await _handleDeepLinkUri(uri);
       }
     });
   }
@@ -1083,20 +1076,49 @@ class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
   Future<void> _checkDeepLink() async {
     try {
       final uri = await _channel.invokeMethod<String>('getPendingDeepLink');
-      if ((uri == 'widget_timetable' || uri == 'campus://timetable') &&
-          mounted) {
-        appNavigatorKey.currentState?.popUntil((route) => route.isFirst);
-        // 切换到底部导航的课程表 tab，不 push 新页面
-        widgetTabSwitch.value++;
-      } else if (uri != null && uri.startsWith('widget_exam') && mounted) {
-        appNavigatorKey.currentState?.popUntil((route) => route.isFirst);
-        appNavigatorKey.currentState?.push(
-          MaterialPageRoute(builder: (_) => const ExamScheduleScreen()),
-        );
-      }
+      await _handleDeepLinkUri(uri);
     } catch (e) {
       debugPrint('深度链接检查失败: $e');
     }
+  }
+
+  Future<void> _handleDeepLinkUri(String? uri) async {
+    if (uri == null || !mounted) return;
+    if (uri == 'widget_timetable' || uri == 'campus://timetable') {
+      appNavigatorKey.currentState?.popUntil((route) => route.isFirst);
+      widgetTabSwitch.value++;
+      return;
+    }
+    if (uri.startsWith('widget_exam')) {
+      appNavigatorKey.currentState?.popUntil((route) => route.isFirst);
+      appNavigatorKey.currentState?.push(
+        MaterialPageRoute(builder: (_) => const ExamScheduleScreen()),
+      );
+      return;
+    }
+    if (uri.startsWith('sylulive://grades') || uri.startsWith('grade_update')) {
+      await _openGradeDeepLink(uri);
+    }
+  }
+
+  Future<void> _openGradeDeepLink(String raw) async {
+    final parsed = Uri.tryParse(raw);
+    final year = parsed?.queryParameters['year'];
+    final semester = int.tryParse(parsed?.queryParameters['semester'] ?? '');
+    if (year == null || semester == null) return;
+
+    if (await GradeScreenRegistry.trySwitch(year, semester)) {
+      return;
+    }
+
+    appNavigatorKey.currentState?.push(
+      MaterialPageRoute(
+        builder: (_) => EduGradeScreen(
+          initialYear: year,
+          initialSemester: semester,
+        ),
+      ),
+    );
   }
 
   @override
@@ -1307,9 +1329,7 @@ class BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
   Widget _buildCleanBackground(bool isDark) {
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: isDark
-            ? kCleanWarmBackgroundDark
-            : kCleanWarmBackgroundLight,
+        color: isDark ? kCleanWarmBackgroundDark : kCleanWarmBackgroundLight,
       ),
     );
   }

@@ -6,7 +6,8 @@ class CompetitionCenterHeader extends StatelessWidget {
   final int pendingTimeCount;
   final int adminTotalCount;
   final int adminDraftCount;
-  final int adminActiveCount;
+  final int adminPublishedCount;
+  final int adminArchivedCount;
   final VoidCallback onPrimaryTap;
   final VoidCallback onSecondaryTap;
   final TextEditingController searchController;
@@ -24,7 +25,8 @@ class CompetitionCenterHeader extends StatelessWidget {
     required this.pendingTimeCount,
     required this.adminTotalCount,
     required this.adminDraftCount,
-    required this.adminActiveCount,
+    required this.adminPublishedCount,
+    required this.adminArchivedCount,
     required this.onPrimaryTap,
     required this.onSecondaryTap,
     required this.searchController,
@@ -143,20 +145,25 @@ class CompetitionCenterHeader extends StatelessWidget {
   Widget _buildOverviewBar(bool isDark) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: CompetitionUiTokens.pagePadding),
-      child: Row(
-        children: isAdmin
-            ? [
-                _overviewItem('官方库', adminTotalCount, isDark),
-                const SizedBox(width: 16),
-                _overviewItem('草稿', adminDraftCount, isDark),
-                const SizedBox(width: 16),
-                _overviewItem('已发布', adminActiveCount, isDark),
-              ]
-            : [
-                _overviewItem('我的计划', myPlanCount, isDark, onTap: onMyPlanTap),
-                const SizedBox(width: 16),
-                _overviewItem('待确认', pendingTimeCount, isDark),
-              ],
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: isAdmin
+              ? [
+                  _overviewItem('官方库', adminTotalCount, isDark),
+                  const SizedBox(width: 16),
+                  _overviewItem('草稿', adminDraftCount, isDark),
+                  const SizedBox(width: 16),
+                  _overviewItem('已发布', adminPublishedCount, isDark),
+                  const SizedBox(width: 16),
+                  _overviewItem('已归档', adminArchivedCount, isDark),
+                ]
+              : [
+                  _overviewItem('我的计划', myPlanCount, isDark, onTap: onMyPlanTap),
+                  const SizedBox(width: 16),
+                  _overviewItem('待确认', pendingTimeCount, isDark),
+                ],
+        ),
       ),
     );
   }

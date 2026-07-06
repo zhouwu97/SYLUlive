@@ -686,8 +686,9 @@ class MainActivity : FlutterActivity() {
             info["privateMessageChannelBlocked"] = false
         }
 
-        // 保活服务存储的 Alias
+        // 保活服务存储的 Alias 及其状态
         info["storedAlias"] = KeepAliveForegroundService.getStoredAlias(this)
+        info["storedAliasState"] = KeepAliveForegroundService.getAliasState(this)
 
         return info
     }

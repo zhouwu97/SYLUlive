@@ -29,7 +29,7 @@ class ApiConstants {
   // 极光推送 AppKey
   static const String jpushAppKey = String.fromEnvironment(
     'JPUSH_APP_KEY',
-    defaultValue: '', // 必须通过 --dart-define 注入
+    defaultValue: 'fbbd87f741e919f39519afe6', // 避免本地调试忘传导致初始化失败
   );
 
   /// 将服务端返回的相对路径转为完整 URL

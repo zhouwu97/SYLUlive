@@ -5,14 +5,26 @@ import 'competition_status_helper.dart';
 
 class CompetitionEventCard extends StatelessWidget {
   final CompetitionEvent event;
+  final bool isAdmin;
+  final bool selectionMode;
+  final bool isSelected;
   final VoidCallback onTap;
   final VoidCallback onAddPlan;
+  final VoidCallback? onEdit;
+  final VoidCallback? onPublish;
+  final VoidCallback? onArchive;
 
   const CompetitionEventCard({
     super.key,
     required this.event,
+    this.isAdmin = false,
+    this.selectionMode = false,
+    this.isSelected = false,
     required this.onTap,
     required this.onAddPlan,
+    this.onEdit,
+    this.onPublish,
+    this.onArchive,
   });
 
   @override
@@ -40,6 +52,20 @@ class CompetitionEventCard extends StatelessWidget {
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  if (selectionMode) ...[
+                    Padding(
+                      padding: const EdgeInsets.only(right: 12, top: 2),
+                      child: SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: Checkbox(
+                          value: isSelected,
+                          onChanged: (_) => onTap(),
+                          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                      ),
+                    ),
+                  ],
                   Expanded(
                     child: Text(
                       event.title,
@@ -92,25 +118,61 @@ class CompetitionEventCard extends StatelessWidget {
                     child: _buildInfoRow(Icons.label_outline_rounded, levelAndCategory, isDark),
                   ),
                   const SizedBox(width: 8),
-                  SizedBox(
-                    height: 34,
-                    child: FilledButton.icon(
-                      onPressed: onAddPlan,
-                      style: FilledButton.styleFrom(
-                        backgroundColor: CompetitionUiTokens.accent(isDark),
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(999),
+                  if (!isAdmin)
+                    SizedBox(
+                      height: 34,
+                      child: FilledButton.icon(
+                        onPressed: onAddPlan,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: CompetitionUiTokens.accent(isDark),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          padding: const EdgeInsets.symmetric(horizontal: 14),
+                          minimumSize: const Size(0, 34),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          visualDensity: VisualDensity.compact,
                         ),
-                        padding: const EdgeInsets.symmetric(horizontal: 14),
-                        minimumSize: const Size(0, 34),
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        visualDensity: VisualDensity.compact,
+                        icon: const Icon(Icons.add_rounded, size: 16),
+                        label: const Text('加入计划', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
                       ),
-                      icon: const Icon(Icons.add_rounded, size: 16),
-                      label: const Text('加入计划', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                    ),
-                  ),
+                    )
+                  else if (!selectionMode) ...[
+                    if (event.status == 'draft') ...[
+                      if (onEdit != null)
+                        TextButton(
+                          onPressed: onEdit,
+                          style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+                          child: const Text('编辑'),
+                        ),
+                      if (onPublish != null)
+                        FilledButton(
+                          onPressed: onPublish,
+                          style: FilledButton.styleFrom(
+                            visualDensity: VisualDensity.compact,
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                          ),
+                          child: const Text('发布'),
+                        ),
+                    ] else ...[
+                      if (onEdit != null)
+                        TextButton(
+                          onPressed: onEdit,
+                          style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+                          child: const Text('编辑'),
+                        ),
+                      if (onArchive != null && event.status != 'archived')
+                        TextButton(
+                          onPressed: onArchive,
+                          style: TextButton.styleFrom(
+                            visualDensity: VisualDensity.compact,
+                            foregroundColor: CompetitionUiTokens.dangerColor(isDark),
+                          ),
+                          child: const Text('归档'),
+                        ),
+                    ]
+                  ],
                 ],
               ),
             ],

@@ -168,4 +168,41 @@ class CompetitionEvent {
     }
     return '时间待通知';
   }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'title': title,
+      'summary': summary,
+      if (primaryCategory != null)
+        'primary_category': {
+          'id': primaryCategory!.id,
+          'name': primaryCategory!.name,
+          'slug': primaryCategory!.slug,
+          'icon': primaryCategory!.icon,
+        },
+      'competition_level': competitionLevel,
+      'school_recognition_status': schoolRecognitionStatus,
+      'school_recognition_grade': schoolRecognitionGrade,
+      'recommendation_level': recommendationLevel,
+      'importance_score': importanceScore,
+      'recommendation_reason': recommendationReason,
+      'organizer': organizer,
+      'registration_time_text': registrationTimeText,
+      'event_time_text': eventTimeText,
+      if (registrationEnd != null) 'registration_end': registrationEnd!.toIso8601String(),
+      if (eventStart != null) 'event_start': eventStart!.toIso8601String(),
+      'time_precision': timePrecision,
+      'time_status': timeStatus,
+      'time_note': timeNote,
+      'sort_month': sortMonth,
+      'source_channel': sourceChannel,
+      'location': location,
+      'is_online': isOnline,
+      'official_url': officialUrl,
+      'notice_url': noticeUrl,
+      'description': description,
+      'status': status,
+    };
+  }
 }

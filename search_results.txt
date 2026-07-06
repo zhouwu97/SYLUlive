@@ -1,0 +1,7 @@
+client/lib\providers\course_schedule_provider.dart:   /// 从 SharedPreferences 加载当前学期起始日期
+client/lib\providers\course_schedule_provider.dart:     // 如果启用提醒，则重新应用当前学期提醒
+client/lib\screens\course_schedule_screen.dart:               '这次没有拿到课表，页面会继续保留当前数据。\n\n可能原因：\n1. 教务系统临时不可用或网络波动。\n2. 教务登录状态过期，需要重新绑定。\n3. 当前学期暂时没有课表数据。\n\n详细原因：$errorMsg',
+client/lib\screens\course_schedule_screen.dart:           message: '教务系统返回了空课表。请确认选择的是当前学期；如果学期正确，可能是学校暂未开放该学期课表。',
+client/lib\screens\exam_schedule_screen.dart:       ).showSnackBar(const SnackBar(content: Text('当前学期没有可导出的考试')));
+client/lib\screens\exam_schedule_screen.dart:                     '当前学期暂无考试安排',
+client/lib\widgets\edu_grade\grade_manage_drawer.dart:         _sectionTitle('当前学期'),

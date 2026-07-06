@@ -44,6 +44,7 @@ class ThemeProvider extends ChangeNotifier {
   bool _predictiveBack = true;
   bool _startOnTimetable = false;
   bool _marketIsListView = false;
+  bool _isLoaded = false;
   AppBackgroundMode _backgroundMode = AppBackgroundMode.clean;
 
   bool get isDarkMode => _isDarkMode;
@@ -58,6 +59,7 @@ class ThemeProvider extends ChangeNotifier {
   bool get predictiveBack => _predictiveBack;
   bool get startOnTimetable => _startOnTimetable;
   bool get marketIsListView => _marketIsListView;
+  bool get isLoaded => _isLoaded;
   AppBackgroundMode get backgroundMode => _backgroundMode;
   bool get isCleanBackgroundMode => _backgroundMode == AppBackgroundMode.clean;
 
@@ -69,6 +71,7 @@ class ThemeProvider extends ChangeNotifier {
     }
     return kCleanWarmBackgroundLight;
   }
+
   bool get hasBackground =>
       _backgroundImage != null && _backgroundImage!.isNotEmpty;
   bool get hasLandscapeBackground =>
@@ -193,6 +196,7 @@ class ThemeProvider extends ChangeNotifier {
     _marketIsListView = prefs.getBool(_marketIsListViewKey) ?? false;
     _backgroundMode =
         _backgroundModeFromString(prefs.getString(_backgroundModeKey));
+    _isLoaded = true;
     notifyListeners();
   }
 

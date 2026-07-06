@@ -27,13 +27,13 @@ class CompetitionEventCard extends StatelessWidget {
     ].join(' / ');
 
     return Container(
-      margin: const EdgeInsets.only(top: 10),
+      margin: const EdgeInsets.only(bottom: 10),
       decoration: CompetitionUiTokens.cardDecoration(isDark),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(CompetitionUiTokens.cardRadius),
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -47,42 +47,71 @@ class CompetitionEventCard extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontSize: 16,
-                        height: 1.25,
+                        height: 1.22,
                         fontWeight: FontWeight.w800,
                         color: CompetitionUiTokens.titleColor(isDark),
                       ),
                     ),
                   ),
                   const SizedBox(width: 12),
+                  if (event.status == 'draft') ...[
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: CompetitionUiTokens.subColor(isDark).withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        '草稿',
+                        style: TextStyle(
+                          fontSize: 11,
+                          height: 1.0,
+                          fontWeight: FontWeight.w700,
+                          color: CompetitionUiTokens.subColor(isDark),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 5),
+                  ],
                   _buildStatusPill(status, isDark),
                 ],
               ),
-              const SizedBox(height: 12),
-              if (criticalTime != null)
+              const SizedBox(height: 8),
+              if (criticalTime != null) ...[
                 _buildInfoRow(Icons.access_time_rounded, criticalTime, isDark),
-              const SizedBox(height: 4),
-              _buildInfoRow(Icons.label_outline_rounded, levelAndCategory, isDark),
-              if (event.organizer.isNotEmpty)
-                ...[
-                  const SizedBox(height: 4),
-                  _buildInfoRow(Icons.account_balance_outlined, '主办方：${event.organizer}', isDark),
-                ],
-              const SizedBox(height: 14),
-              Align(
-                alignment: Alignment.centerRight,
-                child: FilledButton.icon(
-                  onPressed: onAddPlan,
-                  style: FilledButton.styleFrom(
-                    backgroundColor: CompetitionUiTokens.accent(isDark),
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(CompetitionUiTokens.cardRadius),
-                    ),
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                const SizedBox(height: 4),
+              ],
+              if (event.organizer.isNotEmpty) ...[
+                _buildInfoRow(Icons.account_balance_outlined, '主办方：${event.organizer}', isDark),
+                const SizedBox(height: 4),
+              ],
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Expanded(
+                    child: _buildInfoRow(Icons.label_outline_rounded, levelAndCategory, isDark),
                   ),
-                  icon: const Icon(Icons.add_rounded, size: 18),
-                  label: const Text('加入计划', style: TextStyle(fontWeight: FontWeight.w600)),
-                ),
+                  const SizedBox(width: 8),
+                  SizedBox(
+                    height: 34,
+                    child: FilledButton.icon(
+                      onPressed: onAddPlan,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: CompetitionUiTokens.accent(isDark),
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 14),
+                        minimumSize: const Size(0, 34),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      icon: const Icon(Icons.add_rounded, size: 16),
+                      label: const Text('加入计划', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -93,7 +122,7 @@ class CompetitionEventCard extends StatelessWidget {
 
   Widget _buildStatusPill(CompetitionStatusView status, bool isDark) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
       decoration: BoxDecoration(
         color: status.color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(CompetitionUiTokens.chipRadius),
@@ -103,6 +132,7 @@ class CompetitionEventCard extends StatelessWidget {
         style: TextStyle(
           color: status.color,
           fontSize: 11,
+          height: 1.0,
           fontWeight: FontWeight.w800,
         ),
       ),
@@ -121,6 +151,7 @@ class CompetitionEventCard extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
               fontSize: 12,
+              height: 1.15,
               color: CompetitionUiTokens.subColor(isDark),
             ),
           ),

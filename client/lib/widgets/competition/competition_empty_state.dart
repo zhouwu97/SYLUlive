@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'competition_ui_tokens.dart';
 
 class CompetitionEmptyState extends StatelessWidget {
-  final VoidCallback onAiImport;
-  final VoidCallback onCreate;
+  final VoidCallback onPrimaryTap;
+  final VoidCallback onSecondaryTap;
   final String title;
   final String message;
   final String primaryText;
@@ -11,8 +11,8 @@ class CompetitionEmptyState extends StatelessWidget {
 
   const CompetitionEmptyState({
     super.key,
-    required this.onAiImport,
-    required this.onCreate,
+    required this.onPrimaryTap,
+    required this.onSecondaryTap,
     this.title = '还没有官方比赛',
     this.message = '先导入一批比赛，或手动创建',
     this.primaryText = 'AI导入',
@@ -60,7 +60,7 @@ class CompetitionEmptyState extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               FilledButton(
-                onPressed: onAiImport,
+                onPressed: onPrimaryTap,
                 style: FilledButton.styleFrom(
                   backgroundColor: CompetitionUiTokens.accent(isDark),
                   foregroundColor: Colors.white,
@@ -76,7 +76,7 @@ class CompetitionEmptyState extends StatelessWidget {
               ),
               const SizedBox(width: 12),
               OutlinedButton(
-                onPressed: onCreate,
+                onPressed: onSecondaryTap,
                 style: OutlinedButton.styleFrom(
                   foregroundColor: CompetitionUiTokens.titleColor(isDark),
                   side: BorderSide(color: CompetitionUiTokens.borderColor(isDark)),

@@ -727,23 +727,9 @@ func (h *WaterSectionHandler) Update(c *gin.Context) {
 		section.Description = description
 		changed = true
 	}
-	if req.IconKey != nil {
-		iconKey := strings.TrimSpace(*req.IconKey)
-		if msg := validateMaxLen(iconKey, 64, "图标"); msg != "" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": msg})
-			return
-		}
-		section.IconKey = iconKey
-		changed = true
-	}
-	if req.AvatarURL != nil {
-		avatarURL := strings.TrimSpace(*req.AvatarURL)
-		if msg := validateMaxLen(avatarURL, 500, "头像地址"); msg != "" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": msg})
-			return
-		}
-		section.AvatarURL = avatarURL
-		changed = true
+	if req.IconKey != nil || req.AvatarURL != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "图标请通过审核申请修改"})
+		return
 	}
 	if req.ColorHex != nil {
 		colorHex := strings.TrimSpace(*req.ColorHex)
@@ -1480,3 +1466,334 @@ func (h *WaterSectionHandler) UpdateLevelTitles(c *gin.Context) {
 		"titles":       out,
 	})
 }
+
+// --- 版块图标审核链路 ---
+
+type createSectionIconReviewRequest struct {
+	NewAvatarURL string `json:"new_avatar_url"`
+	Reason       string `json:"reason"`
+}
+
+type reviewSectionIconRequest struct {
+	ReviewReason string `json:"review_reason"`
+}
+
+type waterSectionIconReviewResponse struct {
+	ID            uint       `json:"id"`
+	SectionID     uint       `json:"section_id"`
+	SectionTitle  string     `json:"section_title"`
+	RequestedBy   uint       `json:"requested_by"`
+	RequesterName string     `json:"requester_name"`
+	OldAvatarURL  string     `json:"old_avatar_url"`
+	NewAvatarURL  string     `json:"new_avatar_url"`
+	Reason        string     `json:"reason"`
+	Status        string     `json:"status"`
+	ReviewedBy    *uint      `json:"reviewed_by"`
+	ReviewerName  string     `json:"reviewer_name"`
+	ReviewedAt    *time.Time `json:"reviewed_at"`
+	ReviewReason  string     `json:"review_reason"`
+	CreatedAt     time.Time  `json:"created_at"`
+}
+
+func formatIconReviewResponse(r models.WaterSectionIconReview) waterSectionIconReviewResponse {
+	resp := waterSectionIconReviewResponse{
+		ID:            r.ID,
+		SectionID:     r.SectionID,
+		SectionTitle:  r.Section.Title,
+		RequestedBy:   r.RequestedBy,
+		OldAvatarURL:  r.OldAvatarURL,
+		NewAvatarURL:  r.NewAvatarURL,
+		Reason:        r.Reason,
+		Status:        r.Status,
+		ReviewedBy:    r.ReviewedBy,
+		ReviewedAt:    r.ReviewedAt,
+		ReviewReason:  r.ReviewReason,
+		CreatedAt:     r.CreatedAt,
+	}
+	if r.Requester.ID != 0 {
+		resp.RequesterName = r.Requester.Nickname
+	}
+	if r.Reviewer != nil && r.Reviewer.ID != 0 {
+		resp.ReviewerName = r.Reviewer.Nickname
+	}
+	return resp
+}
+
+// SubmitSectionIconReview 提交图标审核申请
+func (h *WaterSectionHandler) SubmitSectionIconReview(c *gin.Context) {
+	slug := c.Param("slug")
+	userID := c.GetUint("userID")
+
+	var section models.WaterSection
+	if err := h.db.Where("slug = ?", slug).First(&section).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "版块不存在"})
+		return
+	}
+
+	var user models.User
+	if err := h.db.First(&user, userID).Error; err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		return
+	}
+
+	canEdit := h.permSvc.CanEditSection(section.ID, &user)
+	if !canEdit {
+		c.JSON(http.StatusForbidden, gin.H{"error": "没有权限修改该版块"})
+		return
+	}
+
+	var req createSectionIconReviewRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请求参数错误"})
+		return
+	}
+
+	if req.NewAvatarURL == "" || (!strings.HasPrefix(req.NewAvatarURL, "/uploads/") && !strings.HasPrefix(req.NewAvatarURL, "/api/uploads/")) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "图片地址不合法，只能使用本站上传的图片"})
+		return
+	}
+	if utf8.RuneCountInString(req.Reason) > 500 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "申请说明过长"})
+		return
+	}
+
+	var pendingCount int64
+	h.db.Model(&models.WaterSectionIconReview{}).Where("section_id = ? AND status = ?", section.ID, models.SectionIconReviewPending).Count(&pendingCount)
+	if pendingCount > 0 {
+		c.JSON(http.StatusConflict, gin.H{"error": "该版块已有一个待审核的图标申请，请先等待或撤回"})
+		return
+	}
+
+	review := models.WaterSectionIconReview{
+		SectionID:    section.ID,
+		RequestedBy:  userID,
+		OldAvatarURL: section.AvatarURL,
+		NewAvatarURL: req.NewAvatarURL,
+		Reason:       req.Reason,
+		Status:       models.SectionIconReviewPending,
+	}
+
+	if err := h.db.Create(&review).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "提交申请失败"})
+		return
+	}
+
+	h.db.Preload("Section").Preload("Requester").First(&review, review.ID)
+	c.JSON(http.StatusOK, formatIconReviewResponse(review))
+}
+
+// GetCurrentSectionIconReview 获取当前版块的图标审核状态
+func (h *WaterSectionHandler) GetCurrentSectionIconReview(c *gin.Context) {
+	slug := c.Param("slug")
+	var section models.WaterSection
+	if err := h.db.Where("slug = ?", slug).First(&section).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "版块不存在"})
+		return
+	}
+
+	var pending models.WaterSectionIconReview
+	pendingErr := h.db.Preload("Section").Preload("Requester").Preload("Reviewer").
+		Where("section_id = ? AND status = ?", section.ID, models.SectionIconReviewPending).
+		First(&pending).Error
+
+	var latest models.WaterSectionIconReview
+	latestErr := h.db.Preload("Section").Preload("Requester").Preload("Reviewer").
+		Where("section_id = ? AND status != ?", section.ID, models.SectionIconReviewPending).
+		Order("created_at desc").
+		First(&latest).Error
+
+	resp := gin.H{}
+	if pendingErr == nil {
+		resp["pending"] = formatIconReviewResponse(pending)
+	} else {
+		resp["pending"] = nil
+	}
+
+	if latestErr == nil {
+		resp["latest"] = formatIconReviewResponse(latest)
+	} else {
+		resp["latest"] = nil
+	}
+
+	c.JSON(http.StatusOK, resp)
+}
+
+// CancelSectionIconReview 撤回审核申请
+func (h *WaterSectionHandler) CancelSectionIconReview(c *gin.Context) {
+	slug := c.Param("slug")
+	id := c.Param("id")
+	userID := c.GetUint("userID")
+
+	var section models.WaterSection
+	if err := h.db.Where("slug = ?", slug).First(&section).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "版块不存在"})
+		return
+	}
+
+	var review models.WaterSectionIconReview
+	if err := h.db.Where("id = ? AND section_id = ?", id, section.ID).First(&review).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "申请不存在或不属于该版块"})
+		return
+	}
+
+	if review.Status != models.SectionIconReviewPending {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "该申请已被处理，无法撤回"})
+		return
+	}
+
+	var user models.User
+	if err := h.db.First(&user, userID).Error; err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		return
+	}
+
+	canEdit := h.permSvc.CanEditSection(section.ID, &user)
+	if !canEdit && review.RequestedBy != userID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "没有权限撤回该申请"})
+		return
+	}
+
+	if err := h.db.Model(&review).Update("status", models.SectionIconReviewCancelled).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "撤回失败"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "已撤回"})
+}
+
+// AdminListSectionIconReviews 管理员查看审核列表
+func (h *WaterSectionHandler) AdminListSectionIconReviews(c *gin.Context) {
+	status := c.Query("status")
+	if status == "" {
+		status = models.SectionIconReviewPending
+	}
+
+	var reviews []models.WaterSectionIconReview
+	query := h.db.Preload("Section").Preload("Requester").Preload("Reviewer")
+	if status != "" && status != "all" {
+		query = query.Where("status = ?", status)
+	}
+
+	if err := query.Order("created_at desc").Limit(100).Find(&reviews).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取列表失败"})
+		return
+	}
+
+	resp := make([]waterSectionIconReviewResponse, len(reviews))
+	for i, r := range reviews {
+		resp[i] = formatIconReviewResponse(r)
+	}
+
+	c.JSON(http.StatusOK, gin.H{"reviews": resp})
+}
+
+// AdminApproveSectionIconReview 管理员通过
+func (h *WaterSectionHandler) AdminApproveSectionIconReview(c *gin.Context) {
+	id := c.Param("id")
+	adminID := c.GetUint("userID")
+
+	var review models.WaterSectionIconReview
+	if err := h.db.Preload("Section").Preload("Requester").Where("id = ?", id).First(&review).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "申请不存在"})
+		return
+	}
+
+	if review.Status != models.SectionIconReviewPending {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "该申请不再处于待审核状态"})
+		return
+	}
+
+	var req reviewSectionIconRequest
+	_ = c.ShouldBindJSON(&req)
+
+	now := time.Now()
+	err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&models.WaterSection{}).Where("id = ?", review.SectionID).
+			Update("avatar_url", review.NewAvatarURL).Error; err != nil {
+			return err
+		}
+
+		review.Status = models.SectionIconReviewApproved
+		review.ReviewedBy = &adminID
+		review.ReviewedAt = &now
+		review.ReviewReason = req.ReviewReason
+		if err := tx.Save(&review).Error; err != nil {
+			return err
+		}
+
+		snapshot, _ := json.Marshal(map[string]interface{}{
+			"old_avatar_url": review.OldAvatarURL,
+			"new_avatar_url": review.NewAvatarURL,
+			"review_id":      review.ID,
+		})
+		tx.Create(&models.WaterModerationLog{
+			SectionID:  review.SectionID,
+			OperatorID: adminID,
+			Action:     "section_icon_review_approve",
+			TargetType: "section",
+			TargetID:   review.SectionID,
+			Reason:     req.ReviewReason,
+			Snapshot:   string(snapshot),
+		})
+		return nil
+	})
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "处理失败"})
+		return
+	}
+
+	h.db.Preload("Section").Preload("Requester").Preload("Reviewer").First(&review, review.ID)
+	c.JSON(http.StatusOK, formatIconReviewResponse(review))
+}
+
+// AdminRejectSectionIconReview 管理员拒绝
+func (h *WaterSectionHandler) AdminRejectSectionIconReview(c *gin.Context) {
+	id := c.Param("id")
+	adminID := c.GetUint("userID")
+
+	var review models.WaterSectionIconReview
+	if err := h.db.Preload("Section").Preload("Requester").Where("id = ?", id).First(&review).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "申请不存在"})
+		return
+	}
+
+	if review.Status != models.SectionIconReviewPending {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "该申请不再处于待审核状态"})
+		return
+	}
+
+	var req reviewSectionIconRequest
+	if err := c.ShouldBindJSON(&req); err != nil || strings.TrimSpace(req.ReviewReason) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "拒绝操作必须填写原因"})
+		return
+	}
+
+	now := time.Now()
+	review.Status = models.SectionIconReviewRejected
+	review.ReviewedBy = &adminID
+	review.ReviewedAt = &now
+	review.ReviewReason = req.ReviewReason
+
+	if err := h.db.Save(&review).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "处理失败"})
+		return
+	}
+
+	snapshot, _ := json.Marshal(map[string]interface{}{
+		"review_id": review.ID,
+	})
+	h.db.Create(&models.WaterModerationLog{
+		SectionID:  review.SectionID,
+		OperatorID: adminID,
+		Action:     "section_icon_review_reject",
+		TargetType: "section",
+		TargetID:   review.SectionID,
+		Reason:     req.ReviewReason,
+		Snapshot:   string(snapshot),
+	})
+
+	h.db.Preload("Section").Preload("Requester").Preload("Reviewer").First(&review, review.ID)
+	c.JSON(http.StatusOK, formatIconReviewResponse(review))
+}
+

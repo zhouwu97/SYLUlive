@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'competition_ui_tokens.dart';
+import '../app_action_popup_menu.dart';
 
 class MyCompetitionPlanCard extends StatelessWidget {
   final Map<String, dynamic> item;
@@ -161,78 +162,41 @@ class MyCompetitionPlanCard extends StatelessWidget {
   Widget _buildMoreMenu(bool isDark, BuildContext context) {
     final color = CompetitionUiTokens.subColor(isDark);
     final planStatus = '${item['plan_status'] ?? ''}'.trim();
-    final accent = CompetitionUiTokens.accent(isDark);
-    final danger = CompetitionUiTokens.dangerColor(isDark);
-    final cardBg = CompetitionUiTokens.cardBg(isDark);
+    final entries = <Object>[
+      const AppPopupAction(
+        value: 'edit',
+        label: '编辑',
+        icon: Icons.edit_outlined,
+      ),
+      if (planStatus != 'archived')
+        const AppPopupAction(
+          value: 'archive',
+          label: '归档',
+          icon: Icons.inventory_2_outlined,
+        ),
+      const AppPopupAction(
+        value: 'delete',
+        label: '删除',
+        icon: Icons.delete_outline_rounded,
+        danger: true,
+      ),
+    ];
 
     return SizedBox(
-      width: 28,
-      height: 28,
-      child: PopupMenuButton<String>(
-        padding: EdgeInsets.zero,
+      width: 32,
+      height: 32,
+      child: AppActionPopupMenu(
+        width: 122,
+        offset: const Offset(0, 6),
+        accentColor: CompetitionUiTokens.accent(isDark),
+        dangerColor: CompetitionUiTokens.dangerColor(isDark),
         icon: Icon(Icons.more_horiz_rounded, size: 20, color: color),
-        offset: const Offset(-60, 0),
-        color: cardBg,
-        surfaceTintColor: Colors.transparent,
-        shadowColor: Colors.black.withValues(alpha: 0.12),
-        elevation: 8,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-          side: BorderSide(color: CompetitionUiTokens.borderColor(isDark)),
-        ),
+        entries: entries,
         onSelected: (value) {
           if (value == 'edit') onEdit();
           if (value == 'archive') onArchive();
           if (value == 'delete') onDelete();
         },
-        itemBuilder: (context) => [
-          PopupMenuItem(
-            value: 'edit',
-            height: 48,
-            child: Row(
-              children: [
-                Icon(Icons.edit_outlined, size: 18, color: accent),
-                const SizedBox(width: 10),
-                Text('编辑',
-                    style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: CompetitionUiTokens.titleColor(isDark))),
-              ],
-            ),
-          ),
-          if (planStatus != 'archived')
-            PopupMenuItem(
-              value: 'archive',
-              height: 48,
-              child: Row(
-                children: [
-                  Icon(Icons.inventory_2_outlined, size: 18, color: accent),
-                  const SizedBox(width: 10),
-                  Text('归档',
-                      style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: CompetitionUiTokens.titleColor(isDark))),
-                ],
-              ),
-            ),
-          PopupMenuItem(
-            value: 'delete',
-            height: 48,
-            child: Row(
-              children: [
-                Icon(Icons.delete_outline_rounded, size: 18, color: danger),
-                const SizedBox(width: 10),
-                Text('删除',
-                    style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: danger)),
-              ],
-            ),
-          ),
-        ],
       ),
     );
   }

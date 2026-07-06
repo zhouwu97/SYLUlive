@@ -7,6 +7,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 
 import '../../config/api_constants.dart';
 import '../../models/water_section.dart';
+import '../../models/water_section_icon_review.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/water_section_provider.dart';
 
@@ -39,6 +40,8 @@ class _WaterSectionDisplayEditScreenState
   String? _coverLandscapeUrl;
   String? _coverSquareUrl;
   String? _avatarUrl;
+  WaterSectionIconReview? _pendingIconReview;
+  bool _isLoadingReview = true;
   bool _isSubmitting = false;
   bool _isUploadingCover = false;
   bool _isUploadingAvatar = false;
@@ -81,6 +84,27 @@ class _WaterSectionDisplayEditScreenState
     _subtitleController.addListener(_onFieldChanged);
     _descriptionController.addListener(_onFieldChanged);
     _publishActionController.addListener(_onFieldChanged);
+
+    _loadIconReviewStatus();
+  }
+
+  Future<void> _loadIconReviewStatus() async {
+    try {
+      final provider = context.read<WaterSectionProvider>();
+      final service = provider.iconReviewService;
+      if (service == null) return;
+      final state = await service.getCurrentSectionIconReview(widget.section.slug);
+      if (mounted) {
+        setState(() {
+          _pendingIconReview = state.pending;
+          _isLoadingReview = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoadingReview = false);
+      }
+    }
   }
 
   void _onFieldChanged() {
@@ -204,7 +228,7 @@ class _WaterSectionDisplayEditScreenState
     }
   }
 
-  Future<void> _pickAndUploadAvatar() async {
+  Future<void> _submitNewIcon() async {
     final picker = ImagePicker();
     final picked = await picker.pickImage(source: ImageSource.gallery);
     if (picked == null) return;
@@ -217,15 +241,37 @@ class _WaterSectionDisplayEditScreenState
       if (avatarUrl == null) throw Exception('取消或失败');
 
       if (mounted) {
-        setState(() {
-          _avatarUrl = avatarUrl;
-        });
-        _showSnack('头像已上传，保存后生效');
+        final provider = context.read<WaterSectionProvider>();
+        final service = provider.iconReviewService;
+        if (service != null) {
+          final review = await service.submitSectionIconReview(widget.section.slug, avatarUrl, '更换版块头像申请');
+          setState(() {
+            _pendingIconReview = review;
+          });
+          _showSnack('图标审核申请已提交，等待管理员审核');
+        }
       }
     } catch (e) {
       if (mounted) _showSnack('上传中断或失败: $e');
     } finally {
       if (mounted) setState(() => _isUploadingAvatar = false);
+    }
+  }
+
+  Future<void> _cancelIconReview() async {
+    if (_pendingIconReview == null) return;
+    try {
+      final provider = context.read<WaterSectionProvider>();
+      final service = provider.iconReviewService;
+      if (service != null) {
+        await service.cancelSectionIconReview(widget.section.slug, _pendingIconReview!.id);
+        setState(() {
+          _pendingIconReview = null;
+        });
+        _showSnack('已撤销审核申请');
+      }
+    } catch (e) {
+      if (mounted) _showSnack('撤销失败: $e');
     }
   }
 
@@ -278,7 +324,6 @@ class _WaterSectionDisplayEditScreenState
         'cover_portrait_url': _coverPortraitUrl ?? '',
         'cover_landscape_url': _coverLandscapeUrl ?? '',
         'cover_square_url': _coverSquareUrl ?? '',
-        'avatar_url': _avatarUrl ?? '',
         'publish_action_text': _publishActionController.text.trim(),
         'empty_title': _emptyTitleController.text.trim(),
         'empty_description': _emptyDescriptionController.text.trim(),
@@ -500,71 +545,115 @@ class _WaterSectionDisplayEditScreenState
       title: '视觉设置',
       isDark: isDark,
       children: [
-        // 头像
-        Row(
-          children: [
-            Container(
-              width: 56,
-              height: 56,
-              decoration: BoxDecoration(
-                color: isDark ? Colors.white10 : const Color(0xFFF3F4F6),
-                shape: BoxShape.circle,
-                image: _avatarUrl != null && _avatarUrl!.isNotEmpty
-                    ? DecorationImage(
-                        image: CachedNetworkImageProvider(ApiConstants.fullUrl(_avatarUrl!)),
-                        fit: BoxFit.cover,
-                      )
-                    : null,
-                border: Border.all(
-                  color: isDark ? Colors.white12 : const Color(0xFFE5E7EB),
-                ),
-              ),
-              child: _avatarUrl == null || _avatarUrl!.isEmpty
-                  ? Icon(Icons.image_outlined, color: isDark ? Colors.white38 : Colors.black26)
-                  : null,
+        // 头像审核区块
+        if (_isLoadingReview)
+          const Center(child: Padding(padding: EdgeInsets.all(16), child: CircularProgressIndicator()))
+        else if (_pendingIconReview != null)
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: isDark ? Colors.white.withValues(alpha: 0.05) : const Color(0xFFFFF7ED),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: isDark ? Colors.white12 : const Color(0xFFFFEDD5)),
             ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '版块头像',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: isDark ? Colors.white : const Color(0xFF20232A),
+            child: Row(
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    image: DecorationImage(
+                      image: CachedNetworkImageProvider(ApiConstants.fullUrl(_pendingIconReview!.newAvatarUrl)),
+                      fit: BoxFit.cover,
                     ),
                   ),
-                  const SizedBox(height: 4),
-                  Row(
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      OutlinedButton(
-                        onPressed: _isUploadingAvatar ? null : _pickAndUploadAvatar,
-                        style: OutlinedButton.styleFrom(
-                          minimumSize: const Size(0, 32),
-                          padding: const EdgeInsets.symmetric(horizontal: 12),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      Text(
+                        '头像更新审核中',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: isDark ? Colors.orange[300] : Colors.orange[800],
                         ),
-                        child: _isUploadingAvatar
-                            ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
-                            : const Text('上传', style: TextStyle(fontSize: 13)),
                       ),
-                      if (_avatarUrl != null && _avatarUrl!.isNotEmpty) ...[
-                        const SizedBox(width: 8),
-                        TextButton(
-                          onPressed: () => setState(() => _avatarUrl = null),
-                          style: TextButton.styleFrom(foregroundColor: Colors.red),
-                          child: const Text('清除', style: TextStyle(fontSize: 13)),
+                      const SizedBox(height: 4),
+                      Text(
+                        '您有一条更换版块头像的申请正在等待管理员审核。',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: isDark ? Colors.white70 : const Color(0xFF525A66),
                         ),
-                      ],
+                      ),
                     ],
                   ),
-                ],
-              ),
+                ),
+                TextButton(
+                  onPressed: _cancelIconReview,
+                  style: TextButton.styleFrom(foregroundColor: Colors.red),
+                  child: const Text('撤销申请'),
+                ),
+              ],
             ),
-          ],
-        ),
+          )
+        else
+          Row(
+            children: [
+              Container(
+                width: 56,
+                height: 56,
+                decoration: BoxDecoration(
+                  color: isDark ? Colors.white10 : const Color(0xFFF3F4F6),
+                  shape: BoxShape.circle,
+                  image: _avatarUrl != null && _avatarUrl!.isNotEmpty
+                      ? DecorationImage(
+                          image: CachedNetworkImageProvider(ApiConstants.fullUrl(_avatarUrl!)),
+                          fit: BoxFit.cover,
+                        )
+                      : null,
+                  border: Border.all(
+                    color: isDark ? Colors.white12 : const Color(0xFFE5E7EB),
+                  ),
+                ),
+                child: _avatarUrl == null || _avatarUrl!.isEmpty
+                    ? Icon(Icons.image_outlined, color: isDark ? Colors.white38 : Colors.black26)
+                    : null,
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '版块头像',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: isDark ? Colors.white : const Color(0xFF20232A),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    OutlinedButton(
+                      onPressed: _isUploadingAvatar ? null : _submitNewIcon,
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size(0, 32),
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      child: _isUploadingAvatar
+                          ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
+                          : const Text('更换新头像', style: TextStyle(fontSize: 13)),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         const SizedBox(height: 20),
         
         // 背景图

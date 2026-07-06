@@ -38,6 +38,7 @@ import 'feedback_screen.dart';
 import 'login_screen.dart';
 import 'post_detail_screen.dart';
 import 'search_results_screen.dart';
+import 'water_section_directory_screen.dart';
 import 'toolbox_screen.dart';
 import 'user_home_screen.dart';
 import 'water_category_feed_route.dart';
@@ -711,6 +712,22 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     );
   }
 
+  void _openWaterSectionDirectoryKeepingPanel() {
+    Navigator.of(context, rootNavigator: true).push(
+      MaterialPageRoute(
+        builder: (_) => const WaterSectionDirectoryScreen(),
+      ),
+    );
+  }
+
+  void _openWaterSectionKeepingPanel(WaterSection section) {
+    Navigator.of(context, rootNavigator: true).push(
+      MaterialPageRoute(
+        builder: (_) => WaterCategoryFeedRoute.fromSection(section),
+      ),
+    );
+  }
+
   Future<void> _openHomeServicePanel() async {
     await _ensureCheckinStatusLoaded();
     if (!mounted) return;
@@ -833,21 +850,11 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                     );
                   });
                 },
-                onOpenAllWaterPosts: () {
-                  _closePanelThenOpen(dialogContext, () {
-                    _changeFeedMode('all');
-                  });
+                onOpenWaterSectionDirectory: () {
+                  _openWaterSectionDirectoryKeepingPanel();
                 },
                 onOpenWaterSection: (WaterSection section) {
-                  _closePanelThenOpen(dialogContext, () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) =>
-                            WaterCategoryFeedRoute.fromSection(section),
-                      ),
-                    );
-                  });
+                  _openWaterSectionKeepingPanel(section);
                 },
               ),
             ),
@@ -1333,7 +1340,12 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                       color: isDark ? Colors.white : Colors.black87)),
               GestureDetector(
                 onTap: () {
-                  _openHomeServicePanel();
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const WaterSectionDirectoryScreen(),
+                    ),
+                  );
                 },
                 child: Row(
                   children: [

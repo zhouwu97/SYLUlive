@@ -19,6 +19,21 @@ Map<String, dynamic> _postJson(int id) {
   };
 }
 
+Map<String, dynamic> _marketPostJson(
+  int id, {
+  List<String> marketTags = const [],
+}) {
+  return {
+    ..._postJson(id),
+    'title': '显示器',
+    'content': '成色很好',
+    'board_id': 2,
+    'post_type': 'sell',
+    'price': 99,
+    'market_tags': marketTags,
+  };
+}
+
 Response<dynamic> _response(RequestOptions options, int postId) {
   return Response(
     requestOptions: options,
@@ -307,6 +322,92 @@ void main() {
       pinnedUntil: DateTime.now().subtract(const Duration(minutes: 1)),
     );
     expect(expired.isActivePinned, isFalse);
+  });
+
+  test('post parses market tags from list and comma-separated strings', () {
+    final fromList = Post.fromJson({
+      'id': 1,
+      'content': 'content',
+      'board_id': 2,
+      'author_id': 1,
+      'market_tags': ['自提', '可小刀'],
+      'created_at': '2026-06-14T08:00:00Z',
+    });
+    expect(fromList.marketTags, ['自提', '可小刀']);
+
+    final fromString = Post.fromJson({
+      'id': 2,
+      'content': 'content',
+      'board_id': 2,
+      'author_id': 1,
+      'market_tags': '自提,急出',
+      'created_at': '2026-06-14T08:00:00Z',
+    });
+    expect(fromString.marketTags, ['自提', '急出']);
+  });
+
+  test('createPost sends selected market tags as independent form data',
+      () async {
+    final dio = Dio();
+    String? sentTags;
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) async {
+          final formData = options.data as FormData;
+          sentTags = formData.fields
+              .firstWhere((field) => field.key == 'market_tags')
+              .value;
+          handler.resolve(
+            Response(
+              requestOptions: options,
+              statusCode: 201,
+              data: _postJson(1),
+            ),
+          );
+        },
+      ),
+    );
+    final provider = PostProvider(dio, enableCache: false);
+
+    final result = await provider.createPost(
+      boardId: 2,
+      content: '成色很好',
+      title: '显示器',
+      postType: 'sell',
+      marketTags: ['自提', '可小刀'],
+    );
+
+    expect(result.success, isTrue);
+    expect(sentTags, '自提,可小刀');
+  });
+
+  test('createPost exposes returned post with selected market tags', () async {
+    final dio = Dio();
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) async {
+          handler.resolve(
+            Response(
+              requestOptions: options,
+              statusCode: 201,
+              data: _marketPostJson(9, marketTags: ['自提']),
+            ),
+          );
+        },
+      ),
+    );
+    final provider = PostProvider(dio, enableCache: false);
+
+    final result = await provider.createPost(
+      boardId: 2,
+      content: '成色很好',
+      title: '显示器',
+      postType: 'sell',
+      marketTags: ['自提'],
+    );
+
+    expect(result.success, isTrue);
+    expect(result.post?.marketTags, ['自提']);
   });
 
   test('post cache preserves pin and featured metadata', () async {

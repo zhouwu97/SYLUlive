@@ -641,7 +641,9 @@ class _ProfileScreenState extends State<ProfileScreen>
               Navigator.push(
                 context,
                 MaterialPageRoute(builder: (_) => const AdminPanelScreen()),
-              );
+              ).then((_) {
+                if (mounted) setState(() {});
+              });
             },
           ),
           if (user?.isSuperAdmin == true)

@@ -18,6 +18,7 @@ class SectionHeroHeader extends StatelessWidget {
   final bool isFollowing;
   final bool isLoggedIn;
   final WaterSectionMyLevel? myLevel;
+  final double topContentInset;
   final VoidCallback onToggleFollow;
 
   const SectionHeroHeader({
@@ -27,6 +28,7 @@ class SectionHeroHeader extends StatelessWidget {
     required this.isFollowing,
     required this.isLoggedIn,
     this.myLevel,
+    required this.topContentInset,
     required this.onToggleFollow,
   });
 
@@ -36,10 +38,8 @@ class SectionHeroHeader extends StatelessWidget {
     final hasCover = section.mobileCoverUrl.isNotEmpty;
     final backgroundColor =
         isDark ? const Color(0xFF0D1117) : const Color(0xFFF7F8FA);
-    // Hero 自身高度固定为屏幕高度的 72%，而不是 fit:expand 撑满整屏。
-    // 这样默认 sheet(initialChildSize=0.66) 时只有顶部约 34% 可见，
-    // 刚好压到等级卡/关注下面，不露大面积空背景；下拉 sheet 到 0.24
-    // 才完整展示背景与频道卡。
+    // Hero 自身高度固定为屏幕高度的一部分，默认 sheet 展开时只露出顶部信息区。
+    // 顶部安全区由父页面统一传入，避免 SafeArea 和固定 padding 叠加。
     final heroHeight = MediaQuery.sizeOf(context).height * 0.62;
 
     return SizedBox(
@@ -65,13 +65,9 @@ class SectionHeroHeader extends StatelessWidget {
           if (hasCover) _buildScrim(backgroundColor),
 
           // ── 内容层 ──
-          SafeArea(
-            bottom: false,
-            child: Padding(
-              // top 68 给操作栏留空间，比原来多下移一点
-              padding: const EdgeInsets.fromLTRB(16, 68, 16, 0),
-              child: _buildContent(isDark, hasCover, context),
-            ),
+          Padding(
+            padding: EdgeInsets.fromLTRB(16, topContentInset, 16, 0),
+            child: _buildContent(isDark, hasCover, context),
           ),
         ],
       ),
@@ -241,9 +237,8 @@ class SectionHeroHeader extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
         decoration: BoxDecoration(
-          color: isFollowing
-              ? Colors.white.withValues(alpha: 0.15)
-              : accentColor,
+          color:
+              isFollowing ? Colors.white.withValues(alpha: 0.15) : accentColor,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
             color: isFollowing
@@ -301,8 +296,12 @@ class SectionHeroHeader extends StatelessWidget {
 
     if (expToNext < 0) expToNext = 0;
 
-    final cardBg = (hasCover || isDark) ? Colors.white.withValues(alpha: 0.1) : Colors.white.withValues(alpha: 0.8);
-    final borderColor = (hasCover || isDark) ? Colors.white.withValues(alpha: 0.15) : Colors.white.withValues(alpha: 0.5);
+    final cardBg = (hasCover || isDark)
+        ? Colors.white.withValues(alpha: 0.1)
+        : Colors.white.withValues(alpha: 0.8);
+    final borderColor = (hasCover || isDark)
+        ? Colors.white.withValues(alpha: 0.15)
+        : Colors.white.withValues(alpha: 0.5);
 
     return Container(
       width: double.infinity,
@@ -322,7 +321,11 @@ class SectionHeroHeader extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('今日成长', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: mutedColor)),
+          Text('今日成长',
+              style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: mutedColor)),
           const SizedBox(height: 12),
           Row(
             children: [
@@ -352,15 +355,22 @@ class SectionHeroHeader extends StatelessWidget {
       children: [
         Text(label, style: TextStyle(fontSize: 13, color: mutedColor)),
         const SizedBox(width: 4),
-        Text(value, style: TextStyle(fontSize: 13, color: accentColor, fontWeight: FontWeight.bold)),
+        Text(value,
+            style: TextStyle(
+                fontSize: 13, color: accentColor, fontWeight: FontWeight.bold)),
       ],
     );
   }
 
   Widget _buildDescriptionCard(bool isDark, bool hasCover, Color mutedColor) {
-    final textColor = (hasCover || isDark) ? Colors.white : const Color(0xFF151922);
-    final cardBg = (hasCover || isDark) ? Colors.white.withValues(alpha: 0.1) : Colors.white.withValues(alpha: 0.8);
-    final borderColor = (hasCover || isDark) ? Colors.white.withValues(alpha: 0.15) : Colors.white.withValues(alpha: 0.5);
+    final textColor =
+        (hasCover || isDark) ? Colors.white : const Color(0xFF151922);
+    final cardBg = (hasCover || isDark)
+        ? Colors.white.withValues(alpha: 0.1)
+        : Colors.white.withValues(alpha: 0.8);
+    final borderColor = (hasCover || isDark)
+        ? Colors.white.withValues(alpha: 0.15)
+        : Colors.white.withValues(alpha: 0.5);
 
     return Container(
       width: double.infinity,
@@ -380,10 +390,16 @@ class SectionHeroHeader extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('版块说明', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: mutedColor)),
+          Text('版块说明',
+              style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: mutedColor)),
           const SizedBox(height: 8),
           Text(
-            section.description.isNotEmpty ? section.description : '校园日常、宿舍食堂、校园卡、随手拍、校园见闻。',
+            section.description.isNotEmpty
+                ? section.description
+                : '校园日常、宿舍食堂、校园卡、随手拍、校园见闻。',
             style: TextStyle(fontSize: 14, color: textColor, height: 1.4),
           ),
           const SizedBox(height: 10),
@@ -398,11 +414,14 @@ class SectionHeroHeader extends StatelessWidget {
   }
 
   Widget _buildRuleItem(String text, Color color) {
-    return Text(text, style: TextStyle(fontSize: 13, color: color.withValues(alpha: 0.85), height: 1.4));
+    return Text(text,
+        style: TextStyle(
+            fontSize: 13, color: color.withValues(alpha: 0.85), height: 1.4));
   }
 
   Widget _buildDataCapsules(bool isDark, bool hasCover, Color mutedColor) {
-    final textColor = (hasCover || isDark) ? Colors.white : const Color(0xFF151922);
+    final textColor =
+        (hasCover || isDark) ? Colors.white : const Color(0xFF151922);
 
     Widget buildItem(String label, String value) {
       return Expanded(
@@ -412,8 +431,20 @@ class SectionHeroHeader extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             text: TextSpan(
               children: [
-                TextSpan(text: '$label ', style: TextStyle(fontSize: 14, color: mutedColor, fontWeight: FontWeight.w600, height: 1.0)),
-                TextSpan(text: value, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: textColor, height: 1.0)),
+                TextSpan(
+                    text: '$label ',
+                    style: TextStyle(
+                        fontSize: 14,
+                        color: mutedColor,
+                        fontWeight: FontWeight.w600,
+                        height: 1.0)),
+                TextSpan(
+                    text: value,
+                    style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: textColor,
+                        height: 1.0)),
               ],
             ),
           ),

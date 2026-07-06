@@ -46,12 +46,12 @@ class LoginFailedError(EduError):
 
 
 class CourseNotOpenError(EduError):
-    """课表未开攁"""
+    """课表未开放"""
     pass
 
 
 class GradesNotOpenError(EduError):
-    """成绩未开攁"""
+    """成绩未开放"""
     pass
 
 
@@ -468,7 +468,7 @@ class EduCrawler:
                 print(f"  [MOBILE] 失败: {e}")
 
         if not all_courses:
-            raise CourseNotOpenError("当前学期课表暂未开攁")
+            raise CourseNotOpenError("当前学期课表暂未排课")
 
         return all_courses
 

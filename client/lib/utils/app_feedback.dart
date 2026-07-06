@@ -62,7 +62,6 @@ class AppFeedback {
       case DioExceptionType.cancel:
         return '请求已取消';
       case DioExceptionType.badResponse:
-      case DioExceptionType.transformTimeout:
       case DioExceptionType.unknown:
         return e.message?.trim().isNotEmpty == true ? e.message! : fallback;
     }

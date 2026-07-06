@@ -248,7 +248,9 @@ class _MyContentScreenState extends State<MyContentScreen>
       ),
       body: Stack(
         children: [
-          _buildBackground(themeProvider, isDark),
+          Positioned.fill(
+            child: _buildBackground(themeProvider, isDark),
+          ),
           SafeArea(
             child: Column(
               children: [

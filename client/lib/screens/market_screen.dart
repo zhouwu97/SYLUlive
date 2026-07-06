@@ -68,7 +68,7 @@ class _MarketScreenState extends State<MarketScreen> {
   List<Post> _searchResults = [];
   String _typeFilter = 'all';
 
-  static const _marketPostTypes = ['sell', 'buy', 'proxy', 'lost', 'found'];
+  static const _marketPostTypes = ['sell', 'buy', 'lost', 'found', 'proxy'];
 
   static const _categoryOptions = <MapEntry<String, String>>[
     MapEntry('all', '全部'),

@@ -13,13 +13,34 @@ import '../widgets/pinned_post_summary_bar.dart';
 import '../widgets/water_section/section_filter_header.dart';
 import '../widgets/water_section/section_hero_header.dart';
 import '../widgets/water_section/section_post_card.dart';
-import '../widgets/water_section/section_tab_bar.dart';
 import 'create_post_screen.dart';
 import 'post_detail_screen.dart';
 import 'water_section_manage_screen.dart';
 import 'login_screen.dart';
 import 'chat_list_screen.dart';
 import '../widgets/water_section/section_floating_dock.dart';
+
+@visibleForTesting
+double waterSectionInitialSheetChildSize({
+  required double screenHeight,
+  required double topInset,
+}) {
+  const topActionsVisualHeight = 44.0;
+  const heroActionsGap = 18.0;
+  // 默认只露出版块信息和关注行，盖住“今日成长”等展开卡片。
+  const visibleHeroContentHeight = 186.0;
+  const sheetGapBelowFollowRow = 8.0;
+
+  final requiredVisibleHeight = topInset +
+      topActionsVisualHeight +
+      heroActionsGap +
+      visibleHeroContentHeight +
+      sheetGapBelowFollowRow;
+
+  return (1 - requiredVisibleHeight / screenHeight)
+      .clamp(0.64, 0.68)
+      .toDouble();
+}
 
 class WaterCategoryFeedScreen extends StatefulWidget {
   final WaterPostCategory category;
@@ -57,12 +78,13 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
       _selectedFilterKey = widget.initialFilterKey!;
     } else {
       final ds = _defaultSortFor(widget.section ?? _sectionFromCategory());
-      if (ds == 'time')
+      if (ds == 'time') {
         _selectedFilterKey = 'mode:latest';
-      else if (ds == 'featured')
+      } else if (ds == 'featured') {
         _selectedFilterKey = 'mode:featured';
-      else
+      } else {
         _selectedFilterKey = 'mode:recommend';
+      }
     }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _bootstrap();
@@ -105,12 +127,13 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
       _sectionReady = true;
       if (updateSortFromFreshSection && !_sortTouched) {
         final ds = _defaultSortFor(fresh);
-        if (ds == 'time')
+        if (ds == 'time') {
           _selectedFilterKey = 'mode:latest';
-        else if (ds == 'featured')
+        } else if (ds == 'featured') {
           _selectedFilterKey = 'mode:featured';
-        else
+        } else {
           _selectedFilterKey = 'mode:recommend';
+        }
       }
       if (_selectedFilterKey.startsWith('tag:')) {
         final tid = int.tryParse(_selectedFilterKey.substring(4));
@@ -130,8 +153,9 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
   MapEntry<String, int?> _resolveFilterKey(String key) {
     if (key == 'mode:latest') return const MapEntry('time', null);
     if (key == 'mode:featured') return const MapEntry('featured', null);
-    if (key.startsWith('tag:'))
+    if (key.startsWith('tag:')) {
       return MapEntry('all', int.tryParse(key.substring(4)));
+    }
     return const MapEntry('all', null);
   }
 
@@ -264,9 +288,8 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
     final slug = _activeSection.slug;
     final perm = context.watch<WaterModeratorProvider>().permissionOf(slug);
     final user = context.watch<AuthProvider>().user;
-    
-    final canEditSectionDisplay =
-        user?.isAdmin == true ||
+
+    final canEditSectionDisplay = user?.isAdmin == true ||
         user?.isSuperAdmin == true ||
         perm.isGlobalAdmin ||
         perm.isModerator;
@@ -437,6 +460,14 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
     }
   }
 
+  double _initialSheetChildSize(BuildContext context) {
+    final media = MediaQuery.of(context);
+    return waterSectionInitialSheetChildSize(
+      screenHeight: media.size.height,
+      topInset: media.padding.top,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -444,6 +475,11 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
         isDark ? const Color(0xFF0D1117) : const Color(0xFFF7F8FA);
     final section = _activeSection;
     final categoryColor = _sectionColor(section, isDark);
+    final topInset = MediaQuery.paddingOf(context).top;
+    const topActionsVisualHeight = 44.0;
+    const heroActionsGap = 18.0;
+    final heroTopContentInset =
+        topInset + topActionsVisualHeight + heroActionsGap;
 
     return Scaffold(
       backgroundColor: background,
@@ -460,6 +496,7 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
                 isFollowing: _optimisticIsFollowed ?? section.isFollowed,
                 isLoggedIn: context.read<AuthProvider>().isLoggedIn,
                 myLevel: _myLevel,
+                topContentInset: heroTopContentInset,
                 onToggleFollow: _toggleFollowSection,
               ),
 
@@ -508,22 +545,23 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
   /// DraggableScrollableSheet：圆角白板 + 排序/标签/帖子列表
   ///
   /// 状态语义：
-  /// - 默认 [initialChildSize=0.66]：内容板盖上来，顶部约在屏幕 34% 处，
-  ///   刚好压到 Hero 的等级卡/关注下面，不露大面积空背景。
-  /// - 下拉 [minChildSize=0.24]：内容板收起到底部一小截，完整展示上方
+  /// - 默认 [initialChildSize]：内容板停在关注行下方，盖住“今日成长”等展开卡片。
+  /// - 下拉 [minChildSize=0.30]：内容板收起到底部一小截，完整展示上方
   ///   版块背景和 Hero 头部内容（含频道卡）。
   /// - 上拉 [maxChildSize=0.94]：内容板展开到接近全屏，分类栏吸顶刷帖子。
   Widget _buildContentSheet(
       WaterSection section, Color categoryColor, bool isDark) {
     // sheet 用略亮的暗色当作 elevated surface，与 background 0xFF0D1117 区分
     final sheetColor = isDark ? const Color(0xFF171B24) : Colors.white;
+    final initialSheetSize = _initialSheetChildSize(context);
 
     return DraggableScrollableSheet(
-      initialChildSize: 0.66,
+      key: const ValueKey('water-section-content-sheet'),
+      initialChildSize: initialSheetSize,
       minChildSize: 0.30,
       maxChildSize: 0.94,
       snap: true,
-      snapSizes: const [0.30, 0.66, 0.94],
+      snapSizes: [0.30, initialSheetSize, 0.94],
       builder: (context, scrollController) {
         // 存储 scrollController 供 _changeSort 滚动到顶部使用
         _sheetScrollController = scrollController;
@@ -654,7 +692,7 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
       },
       child: CustomScrollView(
         key: PageStorageKey(
-            'water_category_${section.slug}_${_selectedFilterKey}'),
+            'water_category_${section.slug}_$_selectedFilterKey'),
         controller: scrollController,
         physics: const ClampingScrollPhysics(),
         slivers: [

@@ -677,7 +677,7 @@ class _MyContentScreenState extends State<MyContentScreen>
         color = Colors.orange;
         break;
       case 'proxy':
-        label = '代课';
+        label = '办事';
         color = Colors.blue;
         break;
       case 'exposure':

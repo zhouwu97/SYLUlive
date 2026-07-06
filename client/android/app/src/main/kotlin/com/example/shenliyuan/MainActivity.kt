@@ -310,6 +310,7 @@ class MainActivity : FlutterActivity() {
                         result.error("INVALID_ALIAS", "userId 不能为空", null)
                     } else {
                         KeepAliveForegroundService.syncAlias(this, userId)
+                        KeepAliveForegroundService.reconcileAliasState(this)
                         result.success(true)
                     }
                 }

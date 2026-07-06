@@ -15,7 +15,7 @@ class GradeManageDrawer extends StatefulWidget {
   final bool isEduBound;
   final int enrollmentYear;
   final Future<bool> Function(String year, int semester) onSemesterChanged;
-  final Future<List<EduGrade>?> Function()? onRefreshGrades;
+  final Future<List<EduGrade>?> Function({bool silent})? onRefreshGrades;
   final Future<bool> Function()? onRefreshAcademic;
   final EduAcademicSituation? academicSituation;
   final bool isAcademicRefreshing;
@@ -124,7 +124,7 @@ class _GradeManageDrawerState extends State<GradeManageDrawer> {
 
     List<EduGrade> currentGrades = widget.grades;
     if (enabled && widget.onRefreshGrades != null) {
-      final freshGrades = await widget.onRefreshGrades!();
+      final freshGrades = await widget.onRefreshGrades!(silent: true);
       if (!mounted) return;
       if (freshGrades == null) {
         setState(() => _isReminderBusy = false);
@@ -146,10 +146,15 @@ class _GradeManageDrawerState extends State<GradeManageDrawer> {
       _reminderStatus = status;
       _isReminderBusy = false;
     });
-    if (enabled && !status.enabled && !status.notificationGranted) {
-      _showSnackBar('未获得通知权限，成绩提醒未开启');
-    } else if (enabled && status.enabled && !status.backgroundReady) {
-      _showSnackBar('成绩提醒已开启，建议打开后台权限提升稳定性');
+
+    if (enabled) {
+      if (!status.enabled && !status.notificationGranted) {
+        _showSnackBar('未获得通知权限，成绩提醒未开启');
+      } else if (status.enabled && !status.backgroundReady) {
+        _showSnackBar('成绩提醒已开启，建议打开后台权限提升稳定性');
+      } else if (status.enabled) {
+        _showSnackBar('成绩提醒已开启，已同步当前成绩作为基准');
+      }
     }
   }
 

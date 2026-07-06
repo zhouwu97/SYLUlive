@@ -284,12 +284,7 @@ const MethodChannel _privateMessageNotificationChannel = MethodChannel(
   'shenliyuan/private_message_notifications',
 );
 
-// ── Alias 绑定状态追踪 ──
-String? _lastBoundUserId;
-String? _lastBoundRegistrationId;
-int _aliasRetryCount = 0;
-const int _maxAliasRetries = 3;
-const List<int> _aliasRetryDelays = [0, 2, 5]; // 秒，指数退避
+// ── 移除 Flutter 侧 Alias 绑定状态追踪（统一由原生状态机管理） ──
 
 /// 冷启动时通知数据临时存放（navigator 未就绪前）
 final PendingPrivateMessageOpen _pendingPrivateMessageOpen =
@@ -476,131 +471,16 @@ Future<void> setupJPush(AuthProvider authProvider) async {
 
   final userIdStr = userId.toString();
 
-  // 用户切换 → 重置旧 Alias 追踪状态
-  if (_lastBoundUserId != null && _lastBoundUserId != userIdStr) {
-    debugPrint('检测到用户切换: $_lastBoundUserId → $userIdStr，重置 Alias 状态');
-    _lastBoundUserId = null;
-    _lastBoundRegistrationId = null;
-    _aliasRetryCount = 0;
-  }
-
-  // 三端校验后才跳过：内存状态 + 原生存储 + RegistrationID
-  if (rid.isNotEmpty &&
-      _lastBoundUserId == userIdStr &&
-      _lastBoundRegistrationId == rid) {
-    // 额外确认原生 SharedPreferences 中 Alias 未被清除（覆盖退出后同账号重登场景）
-    String? storedAlias;
-    try {
-      final native = await _privateMessageNotificationChannel
-          .invokeMapMethod<String, dynamic>('getPushDiagnostics');
-      storedAlias = native?['storedAlias']?.toString();
-    } catch (_) {
-      // 原生查询失败 → 保守处理，不跳过
-    }
-    if (storedAlias == userIdStr) {
-      debugPrint(
-        'Alias 已绑定（三端一致），跳过: userId=$userIdStr '
-        'rid=***${rid.substring(rid.length - 6)}',
-      );
-      return;
-    }
-    debugPrint('原生 Alias 缺失（stored=$storedAlias），重新绑定');
-  }
-
-  // RegistrationID 变化 → 需要重新绑定
-  if (rid.isNotEmpty &&
-      _lastBoundRegistrationId != null &&
-      _lastBoundRegistrationId != rid) {
-    debugPrint(
-      'RegistrationID 已变化，重新绑定 Alias: '
-      'old=***${_lastBoundRegistrationId!.substring(_lastBoundRegistrationId!.length - 6)} '
-      'new=***${rid.substring(rid.length - 6)}',
-    );
-  }
-
-  _aliasRetryCount = 0;
-  await _tryBindAlias(userIdStr);
-}
-
-/// 带指数退避的 Alias 绑定（包含 RID 等待）
-///
-/// 首次尝试 + 最多 [_maxAliasRetries] 次重试（共 4 次调用机会），
-/// 每次失败后按 [_aliasRetryDelays] 延迟后重试。
-/// RID 为空和 setAlias 异常统一走重试逻辑。
-/// 全部重试耗尽后抛出异常，使 setupJPush 感知失败，_jpushSetup 保持 false。
-Future<void> _tryBindAlias(String userId) async {
-  String? failureReason;
-  bool isRidEmpty = false;
-
+  // 将 userId 同步给原生层，后续的 Alias 绑定与退避重试完全由原生层
+  // KeepAliveForegroundService 的 reconcileAliasState 机制接管
   try {
-    final rid = await jpush.getRegistrationID();
-    if (rid.isEmpty) {
-      failureReason = 'RegistrationID 为空';
-      isRidEmpty = true;
-    } else {
-      await jpush.setAlias(userId);
-
-      // ── 成功 ──
-      _lastBoundUserId = userId;
-      _lastBoundRegistrationId = rid;
-      _aliasRetryCount = 0;
-      debugPrint(
-        '✅ 成功设置 JPush Alias: $userId (rid=***${rid.substring(rid.length - 6)})',
-      );
-      DiagnosticLogService.instance.record(
-        level: 'info',
-        source: '推送',
-        type: 'Alias 绑定成功',
-        summary: 'Alias 绑定成功',
-        detail: 'userId=$userId rid=***${rid.substring(rid.length - 6)}',
-      );
-
-      // 同步 alias 到原生层，供保活服务恢复时使用
-      try {
-        await _privateMessageNotificationChannel.invokeMethod(
-          'syncAlias',
-          {'userId': userId},
-        );
-      } catch (_) {}
-      return;
-    }
-  } catch (e) {
-    failureReason = e.toString();
-    isRidEmpty = false;
-  }
-
-  // ── 失败：统一进入重试 ──
-  _aliasRetryCount++;
-  debugPrint('Alias 绑定失败 (第$_aliasRetryCount次): $failureReason');
-
-  if (_aliasRetryCount <= _maxAliasRetries) {
-    final delay = _aliasRetryDelays[_aliasRetryCount - 1];
-    final source = isRidEmpty ? 'RegistrationID 等待' : 'Alias 重试';
-    DiagnosticLogService.instance.record(
-      level: 'warning',
-      source: '推送',
-      type: source,
-      summary: failureReason,
-      detail:
-          'userId=$userId retry=$_aliasRetryCount/$_maxAliasRetries delay=${delay}s',
+    await _privateMessageNotificationChannel.invokeMethod(
+      'syncAlias',
+      {'userId': userIdStr},
     );
-    debugPrint('将在 ${delay}s 后重试');
-    await Future.delayed(Duration(seconds: delay));
-    await _tryBindAlias(userId);
-    return;
+  } catch (e) {
+    debugPrint('同步 Alias 到原生层失败: $e');
   }
-
-  // ── 重试耗尽：抛出异常，阻止 _jpushSetup = true ──
-  final label = isRidEmpty ? 'RegistrationID' : 'Alias';
-  final msg = '$label 重试 $_maxAliasRetries 次后仍失败: $failureReason';
-  DiagnosticLogService.instance.record(
-    level: 'error',
-    source: '推送',
-    type: 'Alias 绑定失败',
-    summary: msg,
-    detail: 'userId=$userId',
-  );
-  throw StateError(msg);
 }
 
 Future<void> _initializePrivateMessageNotifications() async {

@@ -10,11 +10,11 @@ from models.schemas import (
     CourseFetchInput, CourseFetchResponse, CourseInfo,
     CourseSyncInput, CourseSyncResponse,
     CourseCustomInput, CourseCustomResponse,
-    LocalCourse, LocalCoursesResponse
+    LocalCourse, LocalCoursesResponse, ManualCourseInput
 )
 from services.crawler import (
     EduCrawler, CookieLapseError, CourseNotOpenError,
-    NetworkError, parse_weeks, parse_time_sections
+    LoginFailedError, NetworkError, parse_weeks, parse_time_sections
 )
 
 router = APIRouter(prefix="/api/edu/courses", tags=["课程"])

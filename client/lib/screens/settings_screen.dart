@@ -1928,15 +1928,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             isDarkSheet,
                           ),
                         _diagRow(
-                          '已存储 Alias',
+                          info.storedAliasState == 'pending_bind' ? '本地待绑定 Alias' : '已存储 Alias',
                           info.storedAlias != null
                               ? '***${info.storedAlias!.length > 4 ? info.storedAlias!.substring(info.storedAlias!.length - 4) : info.storedAlias}'
                               : '未存储',
                           info.storedAlias != null
-                              ? Icons.check_circle
+                              ? (info.storedAliasState == 'active' ? Icons.check_circle : Icons.hourglass_empty)
                               : Icons.warning_amber_rounded,
                           info.storedAlias != null
-                              ? Colors.green
+                              ? (info.storedAliasState == 'active' ? Colors.green : Colors.blue)
                               : Colors.orange,
                           isDarkSheet,
                         ),
@@ -2075,6 +2075,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       privateMessageChannelBlocked:
           native['privateMessageChannelBlocked'] == true,
       storedAlias: native['storedAlias']?.toString(),
+      storedAliasState: native['storedAliasState']?.toString(),
       aliasLastStatus: aliasLastStatus,
       aliasLastTime: aliasLastTime,
       error: errors.isNotEmpty ? errors.join('\n') : null,
@@ -2094,7 +2095,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     sb.writeln(
       '渠道重要性: ${_importanceLabel(info.privateMessageChannelImportance)}',
     );
-    sb.writeln('已存储 Alias: ${_maskValue(info.storedAlias, 4)}');
+    final aliasLabel = info.storedAliasState == 'pending_bind' ? '本地待绑定 Alias' : '已存储 Alias';
+    sb.writeln('$aliasLabel: ${_maskValue(info.storedAlias, 4)}');
     sb.writeln(
       'Alias 最近状态: ${info.aliasLastStatus ?? "无记录"}'
       '${info.aliasLastTime != null ? " (${info.aliasLastTime})" : ""}',
@@ -2200,6 +2202,7 @@ class _PushDiagnosticInfo {
   final int privateMessageChannelImportance;
   final bool privateMessageChannelBlocked;
   final String? storedAlias;
+  final String? storedAliasState;
   final String? aliasLastStatus;
   final String? aliasLastTime;
   final String? error;
@@ -2211,6 +2214,7 @@ class _PushDiagnosticInfo {
     required this.privateMessageChannelImportance,
     required this.privateMessageChannelBlocked,
     required this.storedAlias,
+    required this.storedAliasState,
     required this.aliasLastStatus,
     required this.aliasLastTime,
     this.error,

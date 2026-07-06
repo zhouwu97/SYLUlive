@@ -20,16 +20,17 @@ import 'water_section_manage_screen.dart';
 import 'login_screen.dart';
 import 'chat_list_screen.dart';
 import '../widgets/water_section/section_floating_dock.dart';
-import '../widgets/water_section/section_floating_dock.dart';
 
 class WaterCategoryFeedScreen extends StatefulWidget {
   final WaterPostCategory category;
   final WaterSection? section;
+  final String? initialFilterKey;
 
   const WaterCategoryFeedScreen({
     super.key,
     required this.category,
     this.section,
+    this.initialFilterKey,
   });
 
   @override
@@ -52,10 +53,17 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
   @override
   void initState() {
     super.initState();
-    final ds = _defaultSortFor(widget.section ?? _sectionFromCategory());
-    if (ds == 'time') _selectedFilterKey = 'mode:latest';
-    else if (ds == 'featured') _selectedFilterKey = 'mode:featured';
-    else _selectedFilterKey = 'mode:recommend';
+    if (widget.initialFilterKey != null) {
+      _selectedFilterKey = widget.initialFilterKey!;
+    } else {
+      final ds = _defaultSortFor(widget.section ?? _sectionFromCategory());
+      if (ds == 'time')
+        _selectedFilterKey = 'mode:latest';
+      else if (ds == 'featured')
+        _selectedFilterKey = 'mode:featured';
+      else
+        _selectedFilterKey = 'mode:recommend';
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _bootstrap();
     });
@@ -97,9 +105,12 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
       _sectionReady = true;
       if (updateSortFromFreshSection && !_sortTouched) {
         final ds = _defaultSortFor(fresh);
-        if (ds == 'time') _selectedFilterKey = 'mode:latest';
-        else if (ds == 'featured') _selectedFilterKey = 'mode:featured';
-        else _selectedFilterKey = 'mode:recommend';
+        if (ds == 'time')
+          _selectedFilterKey = 'mode:latest';
+        else if (ds == 'featured')
+          _selectedFilterKey = 'mode:featured';
+        else
+          _selectedFilterKey = 'mode:recommend';
       }
       if (_selectedFilterKey.startsWith('tag:')) {
         final tid = int.tryParse(_selectedFilterKey.substring(4));
@@ -119,7 +130,8 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
   MapEntry<String, int?> _resolveFilterKey(String key) {
     if (key == 'mode:latest') return const MapEntry('time', null);
     if (key == 'mode:featured') return const MapEntry('featured', null);
-    if (key.startsWith('tag:')) return MapEntry('all', int.tryParse(key.substring(4)));
+    if (key.startsWith('tag:'))
+      return MapEntry('all', int.tryParse(key.substring(4)));
     return const MapEntry('all', null);
   }
 
@@ -183,8 +195,8 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
     return context.read<PostProvider>().loadPosts(
           boardId: 1,
           sort: _resolveFilterKey(_selectedFilterKey).key,
-              type: section.slug,
-              tagId: _resolveFilterKey(_selectedFilterKey).value,
+          type: section.slug,
+          tagId: _resolveFilterKey(_selectedFilterKey).value,
         );
   }
 
@@ -236,11 +248,11 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
       setState(() {
         _resolvedSection = fresh;
         if (_selectedFilterKey.startsWith('tag:')) {
-            final tid = int.tryParse(_selectedFilterKey.substring(4));
-            if (tid != null && !fresh.enabledTags.any((t) => t.id == tid)) {
-              _selectedFilterKey = 'mode:recommend';
-            }
+          final tid = int.tryParse(_selectedFilterKey.substring(4));
+          if (tid != null && !fresh.enabledTags.any((t) => t.id == tid)) {
+            _selectedFilterKey = 'mode:recommend';
           }
+        }
       });
     }
     await context
@@ -251,7 +263,15 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
   Widget _buildManageAction(bool isDark) {
     final slug = _activeSection.slug;
     final perm = context.watch<WaterModeratorProvider>().permissionOf(slug);
-    if (!perm.isGlobalAdmin && !perm.canEditSection) {
+    final user = context.watch<AuthProvider>().user;
+    
+    final canEditSectionDisplay =
+        user?.isAdmin == true ||
+        user?.isSuperAdmin == true ||
+        perm.isGlobalAdmin ||
+        perm.isModerator;
+
+    if (!canEditSectionDisplay) {
       return const SizedBox.shrink();
     }
     return GestureDetector(
@@ -317,13 +337,17 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(7),
-                  color: isDark ? const Color(0xFF332A12) : const Color(0xFFFFEDBA),
+                  color: isDark
+                      ? const Color(0xFF332A12)
+                      : const Color(0xFFFFEDBA),
                 ),
                 child: Text(
                   '公告',
                   style: TextStyle(
                     fontSize: 12,
-                    color: isDark ? const Color(0xFFFFD45E) : const Color(0xFFB37B00),
+                    color: isDark
+                        ? const Color(0xFFFFD45E)
+                        : const Color(0xFFB37B00),
                     fontWeight: FontWeight.w700,
                   ),
                 ),
@@ -337,7 +361,9 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
                   style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
-                    color: isDark ? const Color(0xFFFFEAB3) : const Color(0xFF8A5F00),
+                    color: isDark
+                        ? const Color(0xFFFFEAB3)
+                        : const Color(0xFF8A5F00),
                   ),
                 ),
               ),
@@ -532,32 +558,32 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
               posts: provider.postsFor(
                 1,
                 sort: _resolveFilterKey(_selectedFilterKey).key,
-              type: section.slug,
-              tagId: _resolveFilterKey(_selectedFilterKey).value,
+                type: section.slug,
+                tagId: _resolveFilterKey(_selectedFilterKey).value,
               ),
               isLoading: provider.isLoadingFor(
                 1,
                 sort: _resolveFilterKey(_selectedFilterKey).key,
-              type: section.slug,
-              tagId: _resolveFilterKey(_selectedFilterKey).value,
+                type: section.slug,
+                tagId: _resolveFilterKey(_selectedFilterKey).value,
               ),
               hasLoaded: provider.hasLoadedFor(
                 1,
                 sort: _resolveFilterKey(_selectedFilterKey).key,
-              type: section.slug,
-              tagId: _resolveFilterKey(_selectedFilterKey).value,
+                type: section.slug,
+                tagId: _resolveFilterKey(_selectedFilterKey).value,
               ),
               hasMore: provider.hasMoreFor(
                 1,
                 sort: _resolveFilterKey(_selectedFilterKey).key,
-              type: section.slug,
-              tagId: _resolveFilterKey(_selectedFilterKey).value,
+                type: section.slug,
+                tagId: _resolveFilterKey(_selectedFilterKey).value,
               ),
               revision: provider.revisionFor(
                 1,
                 sort: _resolveFilterKey(_selectedFilterKey).key,
-              type: section.slug,
-              tagId: _resolveFilterKey(_selectedFilterKey).value,
+                type: section.slug,
+                tagId: _resolveFilterKey(_selectedFilterKey).value,
               ),
             ),
             builder: (context, data, _) => _buildSheetContent(
@@ -596,122 +622,123 @@ class _WaterCategoryFeedScreenState extends State<WaterCategoryFeedScreen> {
     }).toList();
 
     return NotificationListener<ScrollNotification>(
-        onNotification: (notification) {
-          final offset = notification.metrics.pixels;
-          final isCompact = offset > 80;
-          if (_isCompact != isCompact) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) setState(() => _isCompact = isCompact);
-            });
-          }
+      onNotification: (notification) {
+        final offset = notification.metrics.pixels;
+        final isCompact = offset > 80;
+        if (_isCompact != isCompact) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) setState(() => _isCompact = isCompact);
+          });
+        }
 
-          if (notification.metrics.pixels >=
-              notification.metrics.maxScrollExtent - 360) {
-            final provider = context.read<PostProvider>();
-            final isLoadingNow = provider.isLoadingFor(
-              1,
-              sort: _resolveFilterKey(_selectedFilterKey).key,
-              type: section.slug,
-              tagId: _resolveFilterKey(_selectedFilterKey).value,
-            );
-            final hasMoreNow = provider.hasMoreFor(
-              1,
-              sort: _resolveFilterKey(_selectedFilterKey).key,
-              type: section.slug,
-              tagId: _resolveFilterKey(_selectedFilterKey).value,
-            );
-            if (!isLoadingNow && hasMoreNow) {
-              _loadMore();
-            }
+        if (notification.metrics.pixels >=
+            notification.metrics.maxScrollExtent - 360) {
+          final provider = context.read<PostProvider>();
+          final isLoadingNow = provider.isLoadingFor(
+            1,
+            sort: _resolveFilterKey(_selectedFilterKey).key,
+            type: section.slug,
+            tagId: _resolveFilterKey(_selectedFilterKey).value,
+          );
+          final hasMoreNow = provider.hasMoreFor(
+            1,
+            sort: _resolveFilterKey(_selectedFilterKey).key,
+            type: section.slug,
+            tagId: _resolveFilterKey(_selectedFilterKey).value,
+          );
+          if (!isLoadingNow && hasMoreNow) {
+            _loadMore();
           }
-          return false;
-        },
-        child: CustomScrollView(
-          key: PageStorageKey('water_category_${section.slug}_${_selectedFilterKey}'),
-          controller: scrollController,
-          physics: const ClampingScrollPhysics(),
-          slivers: [
-            // 吸顶：小横条 + 排序/标签单行筛选
-            SliverPersistentHeader(
-              pinned: true,
-              delegate: _SheetPinnedHeaderDelegate(
-                height: 70,
-                child: _buildSheetPinnedHeader(isDark, categoryColor, section),
+        }
+        return false;
+      },
+      child: CustomScrollView(
+        key: PageStorageKey(
+            'water_category_${section.slug}_${_selectedFilterKey}'),
+        controller: scrollController,
+        physics: const ClampingScrollPhysics(),
+        slivers: [
+          // 吸顶：小横条 + 排序/标签单行筛选
+          SliverPersistentHeader(
+            pinned: true,
+            delegate: _SheetPinnedHeaderDelegate(
+              height: 70,
+              child: _buildSheetPinnedHeader(isDark, categoryColor, section),
+            ),
+          ),
+
+          // body
+          if (!_sectionReady ||
+              (!hasLoaded && posts.isEmpty) ||
+              (isLoading && posts.isEmpty))
+            SliverFillRemaining(
+              hasScrollBody: false,
+              child: _buildLoadingState(isDark),
+            )
+          else if (pinnedPosts.isEmpty &&
+              normalPosts.isEmpty &&
+              section.noticeText.trim().isEmpty)
+            SliverFillRemaining(
+              hasScrollBody: false,
+              child: _buildEmptyState(isDark),
+            )
+          else ...[
+            if (section.noticeText.trim().isNotEmpty)
+              SliverToBoxAdapter(
+                child: _buildNoticeBar(section, isDark),
+              ),
+            if (pinnedPosts.isNotEmpty)
+              SliverToBoxAdapter(
+                child: PinnedPostSummaryBar(
+                  posts: pinnedPosts,
+                  isDark: isDark,
+                  label: '置顶',
+                  onOpenPost: _openPost,
+                ),
+              ),
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 148),
+              sliver: SliverList.separated(
+                itemCount: normalPosts.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 0),
+                itemBuilder: (context, index) {
+                  final post = normalPosts[index];
+                  return SectionPostCard(
+                    post: post,
+                    section: section,
+                    accentColor: categoryColor,
+                    onTap: () => _openPost(post),
+                  );
+                },
               ),
             ),
-
-            // body
-            if (!_sectionReady ||
-                (!hasLoaded && posts.isEmpty) ||
-                (isLoading && posts.isEmpty))
-              SliverFillRemaining(
-                hasScrollBody: false,
-                child: _buildLoadingState(isDark),
+            if (isLoading)
+              const SliverToBoxAdapter(
+                child: Padding(
+                  padding: EdgeInsets.only(bottom: 148),
+                  child: Center(child: CircularProgressIndicator()),
+                ),
               )
-            else if (pinnedPosts.isEmpty &&
-                normalPosts.isEmpty &&
-                section.noticeText.trim().isEmpty)
-              SliverFillRemaining(
-                hasScrollBody: false,
-                child: _buildEmptyState(isDark),
-              )
-            else ...[
-              if (section.noticeText.trim().isNotEmpty)
-                SliverToBoxAdapter(
-                  child: _buildNoticeBar(section, isDark),
-                ),
-              if (pinnedPosts.isNotEmpty)
-                SliverToBoxAdapter(
-                  child: PinnedPostSummaryBar(
-                    posts: pinnedPosts,
-                    isDark: isDark,
-                    label: '置顶',
-                    onOpenPost: _openPost,
-                  ),
-                ),
-              SliverPadding(
-                padding: const EdgeInsets.fromLTRB(12, 10, 12, 148),
-                sliver: SliverList.separated(
-                  itemCount: normalPosts.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 0),
-                  itemBuilder: (context, index) {
-                    final post = normalPosts[index];
-                    return SectionPostCard(
-                      post: post,
-                      section: section,
-                      accentColor: categoryColor,
-                      onTap: () => _openPost(post),
-                    );
-                  },
-                ),
-              ),
-              if (isLoading)
-                const SliverToBoxAdapter(
-                  child: Padding(
-                    padding: EdgeInsets.only(bottom: 148),
-                    child: Center(child: CircularProgressIndicator()),
-                  ),
-                )
-              else if (!hasMore)
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(0, 0, 0, 148),
-                    child: Center(
-                      child: Text(
-                        '已经到底了',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color:
-                              isDark ? Colors.white38 : const Color(0xFF9AA0A6),
-                        ),
+            else if (!hasMore)
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(0, 0, 0, 148),
+                  child: Center(
+                    child: Text(
+                      '已经到底了',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color:
+                            isDark ? Colors.white38 : const Color(0xFF9AA0A6),
                       ),
                     ),
                   ),
                 ),
-            ],
+              ),
           ],
-        ),
-      );
+        ],
+      ),
+    );
   }
 
   /// sheet 吸顶头部：小横条 + 单行筛选栏

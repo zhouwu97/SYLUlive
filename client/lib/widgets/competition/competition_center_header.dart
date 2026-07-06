@@ -4,8 +4,11 @@ import 'competition_ui_tokens.dart';
 class CompetitionCenterHeader extends StatelessWidget {
   final int myPlanCount;
   final int pendingTimeCount;
-  final VoidCallback onAiImport;
-  final VoidCallback onCreateCompetition;
+  final int adminTotalCount;
+  final int adminDraftCount;
+  final int adminActiveCount;
+  final VoidCallback onPrimaryTap;
+  final VoidCallback onSecondaryTap;
   final TextEditingController searchController;
   final ValueChanged<String> onSearchSubmitted;
   final VoidCallback onClearSearch;
@@ -19,8 +22,11 @@ class CompetitionCenterHeader extends StatelessWidget {
     super.key,
     required this.myPlanCount,
     required this.pendingTimeCount,
-    required this.onAiImport,
-    required this.onCreateCompetition,
+    required this.adminTotalCount,
+    required this.adminDraftCount,
+    required this.adminActiveCount,
+    required this.onPrimaryTap,
+    required this.onSecondaryTap,
     required this.searchController,
     required this.onSearchSubmitted,
     required this.onClearSearch,
@@ -138,11 +144,19 @@ class CompetitionCenterHeader extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: CompetitionUiTokens.pagePadding),
       child: Row(
-        children: [
-          _overviewItem('我的计划', myPlanCount, isDark, onTap: onMyPlanTap),
-          const SizedBox(width: 16),
-          _overviewItem('待确认', pendingTimeCount, isDark),
-        ],
+        children: isAdmin
+            ? [
+                _overviewItem('官方库', adminTotalCount, isDark),
+                const SizedBox(width: 16),
+                _overviewItem('草稿', adminDraftCount, isDark),
+                const SizedBox(width: 16),
+                _overviewItem('已发布', adminActiveCount, isDark),
+              ]
+            : [
+                _overviewItem('我的计划', myPlanCount, isDark, onTap: onMyPlanTap),
+                const SizedBox(width: 16),
+                _overviewItem('待确认', pendingTimeCount, isDark),
+              ],
       ),
     );
   }

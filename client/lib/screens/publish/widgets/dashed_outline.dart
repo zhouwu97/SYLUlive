@@ -21,7 +21,7 @@ class DashedOutline extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return CustomPaint(
-      painter: _DashedOutlinePainter(
+      foregroundPainter: _DashedOutlinePainter(
         color: color,
         radius: radius,
         strokeWidth: strokeWidth,

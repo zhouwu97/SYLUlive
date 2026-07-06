@@ -85,6 +85,32 @@ class _HomeScreenState extends State<HomeScreen>
   // Unread badge state
   int _unreadBadgeCount = 0;
   bool _hasUrgentUnread = false;
+  bool _hasAdminTasks = false;
+
+  Future<void> _checkAdminTasks(AuthProvider auth) async {
+    try {
+      final futures = await Future.wait([
+        auth.dio.get('/teachers/pending').catchError((_) => Response(requestOptions: RequestOptions(path: ''), data: [])),
+        auth.dio.get('/majors/pending').catchError((_) => Response(requestOptions: RequestOptions(path: ''), data: [])),
+        auth.dio.get('/admin/invitations/pending').catchError((_) => Response(requestOptions: RequestOptions(path: ''), data: [])),
+        auth.dio.get('/admin/removals/pending').catchError((_) => Response(requestOptions: RequestOptions(path: ''), data: [])),
+      ]);
+      int count = 0;
+      if (futures[0].data is List) count += (futures[0].data as List).length;
+      if (futures[1].data is List) count += (futures[1].data as List).length;
+      if (futures[2].data is List) count += (futures[2].data as List).where((i) => i['my_vote'] != true).length;
+      if (futures[3].data is List) count += (futures[3].data as List).where((r) => r['can_vote'] == true).length;
+      
+      if (auth.user?.isSuperAdmin == true) {
+        final superRes = await auth.dio.get('/super/invitations/pending').catchError((_) => Response(requestOptions: RequestOptions(path: ''), data: []));
+        if (superRes.data is List) count += (superRes.data as List).where((i) => i['my_vote'] != true).length;
+      }
+      
+      if (mounted && _hasAdminTasks != (count > 0)) {
+        setState(() => _hasAdminTasks = count > 0);
+      }
+    } catch (_) {}
+  }
 
   // Snooze: keyed by userId:announcementId in SharedPreferences
   static const _snoozePrefix = 'announcement_snooze_';
@@ -280,11 +306,17 @@ class _HomeScreenState extends State<HomeScreen>
     final auth = context.read<AuthProvider>();
     if (!auth.isLoggedIn) {
       _syncAnnouncementPolling(auth);
+      if (_hasAdminTasks) setState(() => _hasAdminTasks = false);
       return;
     }
 
     _isCheckingAnnouncements = true;
     try {
+      if (auth.user?.isAdmin == true) {
+        _checkAdminTasks(auth);
+      } else if (_hasAdminTasks) {
+        setState(() => _hasAdminTasks = false);
+      }
       // 1. Get lightweight unread count first
       final countResult = await _fetchUnreadCount(auth);
       final count = (countResult['count'] as num?)?.toInt() ?? 0;
@@ -1588,6 +1620,7 @@ class _HomeScreenState extends State<HomeScreen>
                 visualIndex: _mainVisualIndex,
                 onTap: _onTabTapped,
                 authProvider: authProvider,
+                badges: {4: _hasAdminTasks},
               ),
         floatingActionButton: _currentIndex == 0 && useBottomNav
             ? Padding(

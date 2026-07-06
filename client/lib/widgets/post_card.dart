@@ -475,9 +475,9 @@ class _PostCardState extends State<PostCard>
         icon = Icons.shopping_cart;
         break;
       case 'proxy':
-        label = '代课';
+        label = '办事';
         color = Colors.blue;
-        icon = Icons.school;
+        icon = Icons.task_alt;
         break;
       case 'lost':
         label = '失物';

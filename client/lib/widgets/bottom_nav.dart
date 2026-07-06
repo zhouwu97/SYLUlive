@@ -23,6 +23,7 @@ class BottomNavWrapper extends StatelessWidget {
   final double visualIndex;
   final Function(int) onTap;
   final AuthProvider authProvider;
+  final Map<int, bool> badges;
 
   const BottomNavWrapper({
     super.key,
@@ -30,6 +31,7 @@ class BottomNavWrapper extends StatelessWidget {
     required this.visualIndex,
     required this.onTap,
     required this.authProvider,
+    this.badges = const {},
   });
 
   @override
@@ -111,6 +113,7 @@ class BottomNavWrapper extends StatelessWidget {
                             primaryColor,
                             itemWidth,
                             visualIndex,
+                            badges[0] == true,
                           ),
                           _labeledItem(
                             Icons.storefront_rounded,
@@ -120,6 +123,7 @@ class BottomNavWrapper extends StatelessWidget {
                             primaryColor,
                             itemWidth,
                             visualIndex,
+                            badges[1] == true,
                           ),
                           _labeledItem(
                             Icons.calendar_month_rounded,
@@ -129,6 +133,7 @@ class BottomNavWrapper extends StatelessWidget {
                             primaryColor,
                             itemWidth,
                             visualIndex,
+                            badges[2] == true,
                           ),
                           _labeledItem(
                             Icons.apartment_rounded,
@@ -138,6 +143,7 @@ class BottomNavWrapper extends StatelessWidget {
                             primaryColor,
                             itemWidth,
                             visualIndex,
+                            badges[3] == true,
                           ),
                           _labeledItem(
                             Icons.person_rounded,
@@ -147,6 +153,7 @@ class BottomNavWrapper extends StatelessWidget {
                             primaryColor,
                             itemWidth,
                             visualIndex,
+                            badges[4] == true,
                           ),
                         ],
                       ),
@@ -229,6 +236,7 @@ class BottomNavWrapper extends StatelessWidget {
                             primaryColor,
                             itemWidth,
                             visualIndex,
+                            badges[0] == true,
                           ),
                           _iconOnly(
                             Icons.storefront_rounded,
@@ -237,6 +245,7 @@ class BottomNavWrapper extends StatelessWidget {
                             primaryColor,
                             itemWidth,
                             visualIndex,
+                            badges[1] == true,
                           ),
                           _iconOnly(
                             Icons.calendar_month_rounded,
@@ -245,6 +254,7 @@ class BottomNavWrapper extends StatelessWidget {
                             primaryColor,
                             itemWidth,
                             visualIndex,
+                            badges[2] == true,
                           ),
                           _iconOnly(
                             Icons.apartment_rounded,
@@ -253,6 +263,7 @@ class BottomNavWrapper extends StatelessWidget {
                             primaryColor,
                             itemWidth,
                             visualIndex,
+                            badges[3] == true,
                           ),
                           _iconOnly(
                             Icons.person_rounded,
@@ -261,6 +272,7 @@ class BottomNavWrapper extends StatelessWidget {
                             primaryColor,
                             itemWidth,
                             visualIndex,
+                            badges[4] == true,
                           ),
                         ],
                       ),
@@ -284,6 +296,7 @@ class BottomNavWrapper extends StatelessWidget {
     Color primaryColor,
     double width,
     double visualIndex,
+    bool showBadge,
   ) {
     final visualState = _visualStateFor(
       context: context,
@@ -307,7 +320,25 @@ class BottomNavWrapper extends StatelessWidget {
                 alignment: Alignment.center,
                 child: Opacity(
                   opacity: visualState.opacity,
-                  child: Icon(icon, color: visualState.color, size: 22),
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      Icon(icon, color: visualState.color, size: 22),
+                      if (showBadge)
+                        Positioned(
+                          top: -2,
+                          right: -4,
+                          child: Container(
+                            width: 8,
+                            height: 8,
+                            decoration: const BoxDecoration(
+                              color: Colors.red,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
               ),
               const SizedBox(height: 2),
@@ -337,6 +368,7 @@ class BottomNavWrapper extends StatelessWidget {
     Color primaryColor,
     double width,
     double visualIndex,
+    bool showBadge,
   ) {
     final visualState = _visualStateFor(
       context: context,
@@ -357,7 +389,25 @@ class BottomNavWrapper extends StatelessWidget {
             alignment: Alignment.center,
             child: Opacity(
               opacity: visualState.opacity,
-              child: Icon(icon, color: visualState.color, size: 24),
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Icon(icon, color: visualState.color, size: 24),
+                  if (showBadge)
+                    Positioned(
+                      top: 0,
+                      right: -2,
+                      child: Container(
+                        width: 8,
+                        height: 8,
+                        decoration: const BoxDecoration(
+                          color: Colors.red,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             ),
           ),
         ),

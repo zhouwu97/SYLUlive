@@ -1,25 +1,25 @@
-"\"\"Pydantic Êı¾İÄ£ĞÍ\"\"\"
+"""Pydantic æ•°æ®æ¨¡å‹"""
 from pydantic import BaseModel, Field
 from typing import Optional, List
 from datetime import datetime
 
 
-# ============== ÈÏÖ¤Ïà¹Ø ==============
+# ============== ï¿½ï¿½Ö¤ï¿½ï¿½ï¿½ ==============
 
 class BindInput(BaseModel):
-    \"\"\"°ó¶¨½ÌÎñÕËºÅÊäÈë\"\"\"
-    user_id: str = Field(..., description="AppÓÃ»§ID")
-    student_id: str = Field(..., min_length=10, max_length=10, description="Ñ§ºÅ")
-    password: str = Field(..., description="½ÌÎñÃÜÂë")
+    """ï¿½ó¶¨½ï¿½ï¿½ï¿½ï¿½Ëºï¿½ï¿½ï¿½ï¿½ï¿½"""
+    user_id: str = Field(..., description="Appï¿½Ã»ï¿½ID")
+    student_id: str = Field(..., min_length=10, max_length=10, description="Ñ§ï¿½ï¿½")
+    password: str = Field(..., description="ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½")
 
 
 class BindResponse(BaseModel):
-    \"\"\"°ó¶¨ÏìÓ¦\"\"\"
+    """ï¿½ï¿½ï¿½ï¿½Ó¦"""
     success: bool
     message: str
     code: Optional[str] = None
     student_id: str
-    cookie: Optional[str] = None  # µÇÂ¼Cookie£¬¹©Go·şÎñÆ÷´æ´¢
+    cookie: Optional[str] = None  # ï¿½ï¿½Â¼Cookieï¿½ï¿½ï¿½ï¿½Goï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½æ´¢
     name: Optional[str] = None
     grade: Optional[str] = None
     college: Optional[str] = None
@@ -27,13 +27,13 @@ class BindResponse(BaseModel):
 
 
 class UnbindResponse(BaseModel):
-    \"\"\"½â°óÏìÓ¦\"\"\"
+    """ï¿½ï¿½ï¿½ï¿½ï¿½Ó¦"""
     success: bool
     message: str
 
 
 class EduStatusResponse(BaseModel):
-    \"\"\"½ÌÎñ°ó¶¨×´Ì¬\"\"\"
+    """ï¿½ï¿½ï¿½ï¿½ï¿½×´Ì¬"""
     bound: bool
     student_id: Optional[str] = None
     name: Optional[str] = None
@@ -43,13 +43,13 @@ class EduStatusResponse(BaseModel):
 
 
 class PreVerifyInput(BaseModel):
-    \"\"\"Ô¤ÑéÖ¤½ÌÎñÕËºÅÊäÈë\"\"\"
-    student_id: str = Field(..., min_length=10, max_length=10, description="Ñ§ºÅ")
-    password: str = Field(..., description="½ÌÎñÃÜÂë")
+    """Ô¤ï¿½ï¿½Ö¤ï¿½ï¿½ï¿½ï¿½ï¿½Ëºï¿½ï¿½ï¿½ï¿½ï¿½"""
+    student_id: str = Field(..., min_length=10, max_length=10, description="Ñ§ï¿½ï¿½")
+    password: str = Field(..., description="ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½")
 
 
 class PreVerifyResponse(BaseModel):
-    \"\"\"Ô¤ÑéÖ¤ÏìÓ¦\"\"\"
+    """Ô¤ï¿½ï¿½Ö¤ï¿½ï¿½Ó¦"""
     success: bool
     message: str
     code: Optional[str] = None
@@ -58,14 +58,14 @@ class PreVerifyResponse(BaseModel):
 
 
 class LoginEduInput(BaseModel):
-    \"\"\"Í³Ò»µÇÂ¼ÊäÈë\"\"\"
-    student_id: str = Field(..., min_length=10, max_length=10, description="Ñ§ºÅ")
-    edu_password: str = Field(..., description="½ÌÎñÃÜÂë")
-    password: str = Field(..., min_length=8, max_length=32, description="APPÃÜÂë")
+    """Í³Ò»ï¿½ï¿½Â¼ï¿½ï¿½ï¿½ï¿½"""
+    student_id: str = Field(..., min_length=10, max_length=10, description="Ñ§ï¿½ï¿½")
+    edu_password: str = Field(..., description="ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½")
+    password: str = Field(..., min_length=8, max_length=32, description="APPï¿½ï¿½ï¿½ï¿½")
 
 
 class LoginEduResponse(BaseModel):
-    \"\"\"Í³Ò»µÇÂ¼ÏìÓ¦\"\"\"
+    """Í³Ò»ï¿½ï¿½Â¼ï¿½ï¿½Ó¦"""
     success: bool
     message: str
     code: Optional[str] = None
@@ -76,28 +76,28 @@ class LoginEduResponse(BaseModel):
     major: Optional[str] = None
 
 
-# ============== ¿Î³ÌÏà¹Ø ==============
+# ============== ï¿½Î³ï¿½ï¿½ï¿½ï¿½ ==============
 
 class CourseInfo(BaseModel):
-    \"\"\"¿Î³ÌĞÅÏ¢£¨Ô­Ê¼£©\"\"\"
-    name: str  # ¿Î³ÌÃû³Æ
-    teacher: Optional[str] = None  # ½ÌÊ¦
-    location: Optional[str] = None  # ÉÏ¿ÎµØµã
-    time: int  # ÆğÊ¼½Ú´Î
-    end_time: int = 0  # ½áÊø½Ú´Î
-    week_day: int  # ÖÜ¼¸ (1-7)
-    weeks: List[int]  # ÉÏ¿ÎÖÜÊı
+    """ï¿½Î³ï¿½ï¿½ï¿½Ï¢ï¿½ï¿½Ô­Ê¼ï¿½ï¿½"""
+    name: str  # ï¿½Î³ï¿½ï¿½ï¿½ï¿½ï¿½
+    teacher: Optional[str] = None  # ï¿½ï¿½Ê¦
+    location: Optional[str] = None  # ï¿½Ï¿ÎµØµï¿½
+    time: int  # ï¿½ï¿½Ê¼ï¿½Ú´ï¿½
+    end_time: int = 0  # ï¿½ï¿½ï¿½ï¿½ï¿½Ú´ï¿½
+    week_day: int  # ï¿½Ü¼ï¿½ (1-7)
+    weeks: List[int]  # ï¿½Ï¿ï¿½ï¿½ï¿½ï¿½ï¿½
 
 
 class CourseFetchInput(BaseModel):
-    \"\"\"ÌáÈ¡¿Î±íÊäÈë\"\"\"
+    """ï¿½ï¿½È¡ï¿½Î±ï¿½ï¿½ï¿½ï¿½ï¿½"""
     user_id: str
-    year: str = Field(..., description="Ñ§Äê e.g. 2024")
-    semester: int = Field(..., description="Ñ§ÆÚ 3=µÚÒ»Ñ§ÆÚ, 12=µÚ¶şÑ§ÆÚ")
+    year: str = Field(..., description="Ñ§ï¿½ï¿½ e.g. 2024")
+    semester: int = Field(..., description="Ñ§ï¿½ï¿½ 3=ï¿½ï¿½Ò»Ñ§ï¿½ï¿½, 12=ï¿½Ú¶ï¿½Ñ§ï¿½ï¿½")
 
 
 class CourseFetchResponse(BaseModel):
-    \"\"\"ÌáÈ¡¿Î±íÏìÓ¦£¨Ô­Ê¼Êı¾İ¹©Ô¤ÀÀ£©\"\"\"
+    """ï¿½ï¿½È¡ï¿½Î±ï¿½ï¿½ï¿½Ó¦ï¿½ï¿½Ô­Ê¼ï¿½ï¿½ï¿½İ¹ï¿½Ô¤ï¿½ï¿½ï¿½ï¿½"""
     success: bool
     year: str
     semester: int
@@ -106,8 +106,8 @@ class CourseFetchResponse(BaseModel):
 
 
 class CourseCustomInput(BaseModel):
-    \"\"\"×Ô¶¨Òå¿Î³ÌÊäÈë\"\"\"
-    course_code: str = Field(..., description="¿Î³Ì´úÂë")
+    """ï¿½Ô¶ï¿½ï¿½ï¿½Î³ï¿½ï¿½ï¿½ï¿½ï¿½"""
+    course_code: str = Field(..., description="ï¿½Î³Ì´ï¿½ï¿½ï¿½")
     custom_name: Optional[str] = None
     color: str = "#4A90D9"
     location_custom: Optional[str] = None
@@ -117,26 +117,26 @@ class CourseCustomInput(BaseModel):
     weekday: int = Field(..., ge=1, le=7)
     start_section: int = Field(..., ge=1, le=14)
     end_section: int = Field(..., ge=1, le=14)
-    weeks: List[int] = Field(..., description="ÉÏ¿ÎÖÜÊıÁĞ±í")
+    weeks: List[int] = Field(..., description="ï¿½Ï¿ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ğ±ï¿½")
 
 
 class ManualCourseInput(BaseModel):
-    \"\"\"ÊÖ¶¯Ìí¼Ó¿Î³ÌÊäÈë\"\"\"
-    user_id: str = Field(..., description="ÓÃ»§ID")
-    year: str = Field(..., description="Ñ§Äê")
-    semester: int = Field(..., description="Ñ§ÆÚ")
-    custom_name: str = Field(..., description="¿Î³ÌÃû³Æ")
+    """ï¿½Ö¶ï¿½ï¿½ï¿½ï¿½Ó¿Î³ï¿½ï¿½ï¿½ï¿½ï¿½"""
+    user_id: str = Field(..., description="ï¿½Ã»ï¿½ID")
+    year: str = Field(..., description="Ñ§ï¿½ï¿½")
+    semester: int = Field(..., description="Ñ§ï¿½ï¿½")
+    custom_name: str = Field(..., description="ï¿½Î³ï¿½ï¿½ï¿½ï¿½ï¿½")
     teacher: Optional[str] = None
     location: Optional[str] = None
     color: str = "#4A90D9"
     weekday: int = Field(..., ge=1, le=7)
     start_section: int = Field(..., ge=1, le=14)
     end_section: int = Field(..., ge=1, le=14)
-    weeks: List[int] = Field(..., description="ÉÏ¿ÎÖÜÊıÁĞ±í")
+    weeks: List[int] = Field(..., description="ï¿½Ï¿ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ğ±ï¿½")
 
 
 class CourseCustomResponse(BaseModel):
-    \"\"\"×Ô¶¨Òå¿Î³ÌÏìÓ¦\"\"\"
+    """ï¿½Ô¶ï¿½ï¿½ï¿½Î³ï¿½ï¿½ï¿½Ó¦"""
     id: int
     course_code: str
     year: Optional[str]
@@ -157,7 +157,7 @@ class CourseCustomResponse(BaseModel):
 
 
 class CourseSyncInput(BaseModel):
-    \"\"\"Í¬²½¿Î±íµ½±¾µØ\"\"\"
+    """Í¬ï¿½ï¿½ï¿½Î±ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½"""
     user_id: str
     year: str
     semester: int
@@ -166,21 +166,21 @@ class CourseSyncInput(BaseModel):
 
 
 class CourseSyncResponse(BaseModel):
-    \"\"\"Í¬²½ÏìÓ¦\"\"\"
+    """Í¬ï¿½ï¿½ï¿½ï¿½Ó¦"""
     success: bool
     message: str
     synced_count: int
 
 
 class LocalCourse(BaseModel):
-    \"\"\"±¾µØ¿Î³Ì£¨ÃÀ»¯ºó£©\"\"\"
+    """ï¿½ï¿½ï¿½Ø¿Î³Ì£ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½"""
     id: int
     course_code: str
     year: Optional[str]
     semester: Optional[int]
     custom_name: Optional[str]
     color: str
-    location: Optional[str]  # ÏÔÊ¾ÓÃ£¨ÓÅÏÈcustom_location£©
+    location: Optional[str]  # ï¿½ï¿½Ê¾ï¿½Ã£ï¿½ï¿½ï¿½ï¿½ï¿½custom_locationï¿½ï¿½
     note: Optional[str]
     class_duration: int
     break_duration: int
@@ -193,40 +193,40 @@ class LocalCourse(BaseModel):
 
 
 class LocalCoursesResponse(BaseModel):
-    \"\"\"±¾µØ¿Î³ÌÁĞ±íÏìÓ¦\"\"\"
+    """ï¿½ï¿½ï¿½Ø¿Î³ï¿½ï¿½Ğ±ï¿½ï¿½ï¿½Ó¦"""
     courses: List[LocalCourse]
 
 
-# ============== ³É¼¨Ïà¹Ø ==============
+# ============== ï¿½É¼ï¿½ï¿½ï¿½ï¿½ ==============
 
 class GradeInfo(BaseModel):
-    \"\"\"³É¼¨ĞÅÏ¢\"\"\"
-    name: str  # ¿Î³ÌÃû³Æ
-    course_id: str = ""  # ¿Î³ÌID
-    course_code: str = ""  # ¿Î³Ì±àºÅ
-    class_id: str  # ½ÌÑ§°àID
-    student_grade_id: str = ""  # Ñ§Éú³É¼¨ÏêÇéËùĞèµÄ½ÌÎñÏµÍ³ID
+    """ï¿½É¼ï¿½ï¿½ï¿½Ï¢"""
+    name: str  # ï¿½Î³ï¿½ï¿½ï¿½ï¿½ï¿½
+    course_id: str = ""  # ï¿½Î³ï¿½ID
+    course_code: str = ""  # ï¿½Î³Ì±ï¿½ï¿½
+    class_id: str  # ï¿½ï¿½Ñ§ï¿½ï¿½ID
+    student_grade_id: str = ""  # Ñ§ï¿½ï¿½ï¿½É¼ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ä½ï¿½ï¿½ï¿½ÏµÍ³ID
     teacher: Optional[str] = None
-    is_degree: bool = False  # ÊÇ·ñÑ§Î»¿Î
-    credits: float  # Ñ§·Ö
-    gpa: float  # ¼¨µã
-    grade_points: float  # Ñ§·Ö¼¨µã
-    fraction: float  # °Ù·Ö³É¼¨
-    grade: str  # µÈ¼¶³É¼¨
-    exam_type: Optional[str] = None  # Õı³£¿¼ÊÔ / ²¹¿¼ / ÖØĞŞ
-    course_category: Optional[str] = None  # Ö÷ĞŞ¿Î³Ì / ÖØĞŞ¿Î³ÌµÈ
-    assessment_method: Optional[str] = None  # ¿¼ÊÔ / ¿¼²é
+    is_degree: bool = False  # ï¿½Ç·ï¿½Ñ§Î»ï¿½ï¿½
+    credits: float  # Ñ§ï¿½ï¿½
+    gpa: float  # ï¿½ï¿½ï¿½ï¿½
+    grade_points: float  # Ñ§ï¿½Ö¼ï¿½ï¿½ï¿½
+    fraction: float  # ï¿½Ù·Ö³É¼ï¿½
+    grade: str  # ï¿½È¼ï¿½ï¿½É¼ï¿½
+    exam_type: Optional[str] = None  # ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ / ï¿½ï¿½ï¿½ï¿½ / ï¿½ï¿½ï¿½ï¿½
+    course_category: Optional[str] = None  # ï¿½ï¿½ï¿½Ş¿Î³ï¿½ / ï¿½ï¿½ï¿½Ş¿Î³Ìµï¿½
+    assessment_method: Optional[str] = None  # ï¿½ï¿½ï¿½ï¿½ / ï¿½ï¿½ï¿½ï¿½
 
 
 class GradesInput(BaseModel):
-    \"\"\"³É¼¨²éÑ¯ÊäÈë\"\"\"
+    """ï¿½É¼ï¿½ï¿½ï¿½Ñ¯ï¿½ï¿½ï¿½ï¿½"""
     user_id: str
     year: str
     semester: int
 
 
 class GradesResponse(BaseModel):
-    \"\"\"³É¼¨ÏìÓ¦\"\"\"
+    """ï¿½É¼ï¿½ï¿½ï¿½Ó¦"""
     success: bool
     year: str
     semester: int
@@ -235,14 +235,14 @@ class GradesResponse(BaseModel):
 
 
 class GradeComponent(BaseModel):
-    \"\"\"³É¼¨¹¹³É·ÖÏî\"\"\"
+    """ï¿½É¼ï¿½ï¿½ï¿½ï¿½É·ï¿½ï¿½ï¿½"""
     name: str
     weight: Optional[str] = None
     score: str
 
 
 class GradeDetailInput(BaseModel):
-    \"\"\"³É¼¨Ã÷Ï¸²éÑ¯ÊäÈë\"\"\"
+    """ï¿½É¼ï¿½ï¿½ï¿½Ï¸ï¿½ï¿½Ñ¯ï¿½ï¿½ï¿½ï¿½"""
     user_id: str
     year: str
     semester: int
@@ -253,7 +253,7 @@ class GradeDetailInput(BaseModel):
 
 
 class GradeDetailResponse(BaseModel):
-    \"\"\"³É¼¨Ã÷Ï¸ÏìÓ¦\"\"\"
+    """ï¿½É¼ï¿½ï¿½ï¿½Ï¸ï¿½ï¿½Ó¦"""
     success: bool
     course_name: str
     total_grade: str
@@ -262,13 +262,13 @@ class GradeDetailResponse(BaseModel):
 
 
 class AcademicSituationInput(BaseModel):
-    \"\"\"Ñ§ÒµÇé¿ö²éÑ¯ÊäÈë\"\"\"
+    """Ñ§Òµï¿½ï¿½ï¿½ï¿½ï¿½Ñ¯ï¿½ï¿½ï¿½ï¿½"""
     user_id: str
     force_refresh: bool = False
 
 
 class AcademicCourseInfo(BaseModel):
-    \"\"\"ÅàÑø·½°¸¿Î³ÌÍê³ÉÇé¿ö\"\"\"
+    """ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Î³ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½"""
     study_status: Optional[str] = None
     academic_year: Optional[str] = None
     semester: Optional[str] = None
@@ -293,7 +293,7 @@ class AcademicCourseInfo(BaseModel):
 
 
 class AcademicSituationResponse(BaseModel):
-    \"\"\"Ñ§ÉúÑ§ÒµÇé¿ö²éÑ¯ÏìÓ¦\"\"\"
+    """Ñ§ï¿½ï¿½Ñ§Òµï¿½ï¿½ï¿½ï¿½ï¿½Ñ¯ï¿½ï¿½Ó¦"""
     success: bool
     source: str = "academic_situation"
     all_gpa: Optional[float] = None
@@ -316,9 +316,9 @@ class AcademicSituationResponse(BaseModel):
     updated_at: Optional[str] = None
 
 
-# ============== ´íÎóÏìÓ¦ ==============
+# ============== ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ó¦ ==============
 
 class ErrorResponse(BaseModel):
-    \"\"\"´íÎóÏìÓ¦\"\"\"
+    """ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ó¦"""
     error: str
     detail: Optional[str] = None

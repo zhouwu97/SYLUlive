@@ -52,10 +52,14 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
   final Set<String> _sources = {};
   int? _calendarCount;
   
-  String _adminStatusFilter = 'all'; // all, draft, active
+  String _adminStatusFilter = 'all'; // all, draft, published, archived
+  String? _maintenanceFilter;
   int _adminTotalCount = 0;
   int _adminDraftCount = 0;
-  int _adminActiveCount = 0;
+  int _adminPublishedCount = 0;
+  int _adminArchivedCount = 0;
+  bool _selectionMode = false;
+  final Set<int> _selectedEventIds = {};
 
   @override
   void initState() {
@@ -82,8 +86,12 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
       ];
 
       if (isAdmin) {
-        // Fetch all admin events for stats
-        futures.add(_dio.get('/admin/competitions/events', queryParameters: {'page_size': 1000}));
+        // Fetch stats independently
+        futures.add(_dio.get('/admin/competitions/events', queryParameters: {'page_size': 1}));
+        futures.add(_dio.get('/admin/competitions/events', queryParameters: {'status': 'draft', 'page_size': 1}));
+        futures.add(_dio.get('/admin/competitions/events', queryParameters: {'status': 'published', 'page_size': 1}));
+        futures.add(_dio.get('/admin/competitions/events', queryParameters: {'status': 'archived', 'page_size': 1}));
+        
         // Fetch specific list based on filter
         futures.add(_dio.get('/admin/competitions/events', queryParameters: _queryParams(isAdmin: true)));
       } else {
@@ -111,14 +119,12 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
             .toList();
 
         if (isAdmin) {
-          final statsData = ((results[1].data['items'] as List?) ?? [])
-              .map((e) => CompetitionEvent.fromJson(e))
-              .toList();
-          _adminTotalCount = statsData.length;
-          _adminDraftCount = statsData.where((e) => e.status == 'draft').length;
-          _adminActiveCount = statsData.where((e) => e.status == 'active').length;
+          _adminTotalCount = results[1].data['total'] ?? 0;
+          _adminDraftCount = results[2].data['total'] ?? 0;
+          _adminPublishedCount = results[3].data['total'] ?? 0;
+          _adminArchivedCount = results[4].data['total'] ?? 0;
 
-          final listData = results[2].data as Map<String, dynamic>;
+          final listData = results[5].data as Map<String, dynamic>;
           _events = ((listData['items'] as List?) ?? [])
               .map((e) => CompetitionEvent.fromJson(e))
               .toList();
@@ -156,8 +162,13 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
       if (_sources.isNotEmpty) 'source_channel': _sources.join(','),
     };
     
-    if (isAdmin && _adminStatusFilter != 'all') {
-      params['status'] = _adminStatusFilter;
+    if (isAdmin) {
+      if (_adminStatusFilter != 'all') {
+        params['status'] = _adminStatusFilter;
+      }
+      if (_maintenanceFilter != null) {
+        params['maintenance_status'] = _maintenanceFilter;
+      }
     }
     return params;
   }
@@ -220,7 +231,8 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
               pendingTimeCount: _events.where((event) => event.registrationEnd == null).length,
               adminTotalCount: _adminTotalCount,
               adminDraftCount: _adminDraftCount,
-              adminActiveCount: _adminActiveCount,
+              adminPublishedCount: _adminPublishedCount,
+              adminArchivedCount: _adminArchivedCount,
               onPrimaryTap: _openAdminImport,
               onSecondaryTap: _openAdminManualCreate,
               searchController: _searchController,
@@ -301,14 +313,51 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
                 padding: const EdgeInsets.fromLTRB(CompetitionUiTokens.pagePadding, 0, CompetitionUiTokens.pagePadding, 16),
                 child: Row(
                   children: [
-                    _buildAdminChip('全部', 'all', isDark),
+                    Expanded(
+                      child: SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          children: [
+                            _buildAdminChip('全部', 'all', isDark),
+                            const SizedBox(width: 8),
+                            _buildAdminChip('草稿', 'draft', isDark),
+                            const SizedBox(width: 8),
+                            _buildAdminChip('已发布', 'published', isDark),
+                            const SizedBox(width: 8),
+                            _buildAdminChip('已归档', 'archived', isDark),
+                          ],
+                        ),
+                      ),
+                    ),
                     const SizedBox(width: 8),
-                    _buildAdminChip('草稿', 'draft', isDark),
+                    _buildSoftButton(
+                      icon: Icons.filter_alt_outlined,
+                      label: '维护',
+                      isDark: isDark,
+                      highlight: _maintenanceFilter != null,
+                      onTap: _openMaintenanceFilters,
+                    ),
                     const SizedBox(width: 8),
-                    _buildAdminChip('已发布', 'active', isDark),
+                    _buildSoftButton(
+                      icon: _selectionMode ? Icons.close : Icons.checklist_rounded,
+                      label: _selectionMode ? '取消' : '选择',
+                      isDark: isDark,
+                      highlight: _selectionMode,
+                      onTap: () {
+                        setState(() {
+                          _selectionMode = !_selectionMode;
+                          if (!_selectionMode) {
+                            _selectedEventIds.clear();
+                          }
+                        });
+                      },
+                    ),
                   ],
                 ),
               ),
+
+            if (isAdmin && _selectionMode)
+              _buildSelectionBar(isDark),
 
             // 内容区
             if (_loading)
@@ -323,10 +372,16 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
             else if (_events.isEmpty)
               CompetitionEmptyState(
                 title: isAdmin
-                    ? '列表还没有内容'
+                    ? (_adminStatusFilter == 'draft' 
+                        ? '草稿列表还没有内容' 
+                        : (_adminStatusFilter == 'published' ? '已发布列表还没有内容' : '列表还没有内容'))
                     : '暂时没有官方推荐比赛',
                 message: isAdmin
-                    ? '没有找到符合条件的比赛。'
+                    ? (_adminStatusFilter == 'draft'
+                        ? '可以 AI 导入或手动新建官方草稿。'
+                        : (_adminStatusFilter == 'published'
+                            ? '可以先导入草稿，确认后再发布。'
+                            : '没有找到符合条件的比赛。'))
                     : '暂时没有官方推荐比赛。你可以先导入同学整理的计划，或手动添加想关注的比赛。',
                 primaryText: isAdmin ? 'AI导入' : '导入计划',
                 onPrimaryTap: isAdmin ? _openAdminImport : _openShareImport,
@@ -337,7 +392,7 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: CompetitionUiTokens.pagePadding),
                 child: Column(
-                  children: _events.map((e) => _buildEventCard(e)).toList(),
+                  children: _events.map((e) => _buildEventCard(e, isAdmin)).toList(),
                 ),
               ),
           ],
@@ -381,11 +436,321 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
 
   // Removed hero card, import button, stat items, search field, filter bar
 
-  Widget _buildEventCard(CompetitionEvent event) {
+  Widget _buildEventCard(CompetitionEvent event, bool isAdmin) {
     return CompetitionEventCard(
       event: event,
-      onTap: () => _openDetail(event),
+      isAdmin: isAdmin,
+      selectionMode: _selectionMode,
+      isSelected: _selectedEventIds.contains(event.id),
+      onTap: () {
+        if (_selectionMode) {
+          setState(() {
+            if (_selectedEventIds.contains(event.id)) {
+              _selectedEventIds.remove(event.id);
+            } else {
+              _selectedEventIds.add(event.id);
+            }
+          });
+        } else if (isAdmin && event.status == 'draft') {
+          _openAdminDetail(event);
+        } else {
+          _openDetail(event);
+        }
+      },
       onAddPlan: () => _copyToCalendar(event.id),
+      onEdit: isAdmin ? () => _openAdminDetail(event) : null,
+      onPublish: isAdmin && event.status == 'draft' 
+          ? () => _singleAction(event.id, '发布', (id) => _dio.post('/admin/competitions/events/$id/publish'))
+          : null,
+      onArchive: isAdmin && event.status != 'draft' && event.status != 'archived'
+          ? () => _singleAction(event.id, '归档', (id) => _dio.post('/admin/competitions/events/$id/archive'))
+          : null,
+    );
+  }
+
+  Future<void> _singleAction(int eventId, String actionName, Future<void> Function(int id) actionFn) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('确认$actionName'),
+        content: Text('确认要将该比赛$actionName吗？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('确认'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+    if (!mounted) return;
+    
+    AppFeedback.showSnackBar(context, '正在$actionName...');
+    try {
+      await actionFn(eventId);
+      if (!mounted) return;
+      AppFeedback.showSnackBar(context, '$actionName成功');
+      _load();
+    } catch (e) {
+      if (!mounted) return;
+      AppFeedback.showSnackBar(context, '$actionName失败');
+    }
+  }
+
+  Future<void> _openAdminDetail(CompetitionEvent event) async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => CompetitionOfficialEventEditorScreen(
+          initialData: event.toJson(),
+        ),
+      ),
+    );
+    if (result == true) {
+      _load();
+    }
+  }
+
+  Widget _buildSoftButton({
+    required IconData icon,
+    required String label,
+    required bool isDark,
+    required bool highlight,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: highlight ? CompetitionUiTokens.titleColor(isDark) : Colors.transparent,
+      shape: StadiumBorder(
+        side: BorderSide(
+          color: highlight ? Colors.transparent : CompetitionUiTokens.borderColor(isDark),
+        ),
+      ),
+      child: InkWell(
+        onTap: onTap,
+        customBorder: const StadiumBorder(),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icon,
+                size: 16,
+                color: highlight ? CompetitionUiTokens.pageBg(isDark) : CompetitionUiTokens.titleColor(isDark),
+              ),
+              const SizedBox(width: 4),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: highlight ? FontWeight.w600 : FontWeight.normal,
+                  color: highlight ? CompetitionUiTokens.pageBg(isDark) : CompetitionUiTokens.titleColor(isDark),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSelectionBar(bool isDark) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(CompetitionUiTokens.pagePadding, 0, CompetitionUiTokens.pagePadding, 16),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: CompetitionUiTokens.cardBg(isDark),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: CompetitionUiTokens.borderColor(isDark)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Text(
+            '已选 ${_selectedEventIds.length} 项',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: CompetitionUiTokens.titleColor(isDark),
+            ),
+          ),
+          const SizedBox(width: 16),
+          TextButton(
+            onPressed: () {
+              setState(() {
+                if (_selectedEventIds.length == _events.length) {
+                  _selectedEventIds.clear();
+                } else {
+                  _selectedEventIds.addAll(_events.map((e) => e.id));
+                }
+              });
+            },
+            style: TextButton.styleFrom(
+              visualDensity: VisualDensity.compact,
+              foregroundColor: CompetitionUiTokens.accent(isDark),
+            ),
+            child: Text(_selectedEventIds.length == _events.length ? '取消全选' : '全选当前页'),
+          ),
+          const Spacer(),
+          if (_selectedEventIds.isNotEmpty) ...[
+            FilledButton.tonal(
+              onPressed: () => _batchAction('发布', (id) => _dio.post('/admin/competitions/events/$id/publish')),
+              style: FilledButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+              ),
+              child: const Text('发布'),
+            ),
+            const SizedBox(width: 8),
+            FilledButton.tonal(
+              onPressed: () => _batchAction('移入归档', (id) => _dio.post('/admin/competitions/events/$id/archive')),
+              style: FilledButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                backgroundColor: isDark ? Colors.red.withValues(alpha: 0.2) : Colors.red.shade50,
+                foregroundColor: CompetitionUiTokens.dangerColor(isDark),
+              ),
+              child: const Text('移入归档'),
+            ),
+          ]
+        ],
+      ),
+    );
+  }
+
+  Future<void> _batchAction(String actionName, Future<void> Function(int id) actionFn) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('确认批量$actionName'),
+        content: Text('即将对选中的 ${_selectedEventIds.length} 项比赛进行“$actionName”操作，是否继续？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('确认'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    if (!mounted) return;
+    AppFeedback.showSnackBar(context, '正在$actionName...');
+    
+    int successCount = 0;
+    int failCount = 0;
+    
+    for (final id in _selectedEventIds) {
+      try {
+        await actionFn(id);
+        successCount++;
+      } catch (e) {
+        failCount++;
+      }
+    }
+    
+    if (!mounted) return;
+    setState(() {
+      _selectionMode = false;
+      _selectedEventIds.clear();
+    });
+    
+    AppFeedback.showSnackBar(
+      context,
+      '$actionName完成: 成功 $successCount, 失败 $failCount',
+    );
+    _load();
+  }
+
+  void _openMaintenanceFilters() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) {
+        final isDark = Theme.of(context).brightness == Brightness.dark;
+        return Container(
+          decoration: BoxDecoration(
+            color: CompetitionUiTokens.pageBg(isDark),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          padding: const EdgeInsets.all(24),
+          child: SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      '维护筛选',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                        color: CompetitionUiTokens.titleColor(isDark),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                _buildMaintenanceOption('全部', null, isDark),
+                _buildMaintenanceOption('AI导入草稿', 'ai_draft', isDark),
+                _buildMaintenanceOption('缺时间', 'time_pending', isDark),
+                _buildMaintenanceOption('可能过期', 'stale', isDark),
+                _buildMaintenanceOption('临近截止', 'ending_soon', isDark),
+                _buildMaintenanceOption('已结束', 'expired', isDark),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildMaintenanceOption(String label, String? value, bool isDark) {
+    final selected = _maintenanceFilter == value;
+    return ListTile(
+      title: Text(
+        label,
+        style: TextStyle(
+          fontWeight: selected ? FontWeight.bold : FontWeight.normal,
+          color: selected ? CompetitionUiTokens.accent(isDark) : CompetitionUiTokens.titleColor(isDark),
+        ),
+      ),
+      trailing: selected
+          ? Icon(Icons.check, color: CompetitionUiTokens.accent(isDark))
+          : null,
+      onTap: () {
+        Navigator.pop(context);
+        setState(() {
+          _maintenanceFilter = value;
+          if (value == 'ai_draft') {
+            _adminStatusFilter = 'draft';
+          }
+        });
+        _load();
+      },
     );
   }
 
@@ -465,6 +830,12 @@ class _CompetitionCenterScreenState extends State<CompetitionCenterScreen> {
       MaterialPageRoute(builder: (_) => const CompetitionAdminImportScreen()),
     );
     if (result == true) {
+      setState(() {
+        _adminStatusFilter = 'draft';
+        _maintenanceFilter = 'ai_draft';
+        _selectionMode = false;
+        _selectedEventIds.clear();
+      });
       _load();
     }
   }

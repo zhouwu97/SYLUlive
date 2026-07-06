@@ -68,8 +68,8 @@ class SectionHeroHeader extends StatelessWidget {
           SafeArea(
             bottom: false,
             child: Padding(
-              // top 52 给操作栏留空间
-              padding: const EdgeInsets.fromLTRB(18, 52, 18, 0),
+              // top 68 给操作栏留空间，比原来多下移一点
+              padding: const EdgeInsets.fromLTRB(16, 68, 16, 0),
               child: _buildContent(isDark, hasCover, context),
             ),
           ),
@@ -180,13 +180,13 @@ class SectionHeroHeader extends StatelessWidget {
         Expanded(
           child: SingleChildScrollView(
             physics: const BouncingScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            padding: const EdgeInsets.fromLTRB(0, 0, 0, 12),
             child: Column(
               children: [
                 _buildGrowthCard(isDark, hasCover, mutedColor),
                 const SizedBox(height: 10),
                 _buildDescriptionCard(isDark, hasCover, mutedColor),
-                const SizedBox(height: 8),
+                const SizedBox(height: 20),
                 _buildDataCapsules(isDark, hasCover, mutedColor),
               ],
             ),
@@ -322,7 +322,7 @@ class SectionHeroHeader extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('今日成长', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: mutedColor)),
+          Text('今日成长', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: mutedColor)),
           const SizedBox(height: 12),
           Row(
             children: [
@@ -340,7 +340,7 @@ class SectionHeroHeader extends StatelessWidget {
                 : isMaxLevel
                     ? '已达到最高等级'
                     : '距离 Lv.${level + 1} 还差 $expToNext 经验',
-            style: TextStyle(fontSize: 11, color: mutedColor),
+            style: TextStyle(fontSize: 12, color: mutedColor),
           ),
         ],
       ),
@@ -350,9 +350,9 @@ class SectionHeroHeader extends StatelessWidget {
   Widget _buildExpSourceItem(String label, String value, Color mutedColor) {
     return Row(
       children: [
-        Text(label, style: TextStyle(fontSize: 12, color: mutedColor)),
+        Text(label, style: TextStyle(fontSize: 13, color: mutedColor)),
         const SizedBox(width: 4),
-        Text(value, style: TextStyle(fontSize: 12, color: accentColor, fontWeight: FontWeight.bold)),
+        Text(value, style: TextStyle(fontSize: 13, color: accentColor, fontWeight: FontWeight.bold)),
       ],
     );
   }
@@ -380,11 +380,11 @@ class SectionHeroHeader extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('版块说明', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: mutedColor)),
+          Text('版块说明', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: mutedColor)),
           const SizedBox(height: 8),
           Text(
             section.description.isNotEmpty ? section.description : '校园日常、宿舍食堂、校园卡、随手拍、校园见闻。',
-            style: TextStyle(fontSize: 13, color: textColor, height: 1.4),
+            style: TextStyle(fontSize: 14, color: textColor, height: 1.4),
           ),
           const SizedBox(height: 10),
           _buildRuleItem('· 不发广告和引流', textColor),
@@ -398,7 +398,7 @@ class SectionHeroHeader extends StatelessWidget {
   }
 
   Widget _buildRuleItem(String text, Color color) {
-    return Text(text, style: TextStyle(fontSize: 12, color: color.withValues(alpha: 0.85), height: 1.4));
+    return Text(text, style: TextStyle(fontSize: 13, color: color.withValues(alpha: 0.85), height: 1.4));
   }
 
   Widget _buildDataCapsules(bool isDark, bool hasCover, Color mutedColor) {
@@ -412,8 +412,8 @@ class SectionHeroHeader extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             text: TextSpan(
               children: [
-                TextSpan(text: '$label ', style: TextStyle(fontSize: 11, color: mutedColor, fontWeight: FontWeight.w600, height: 1.0)),
-                TextSpan(text: value, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: textColor, height: 1.0)),
+                TextSpan(text: '$label ', style: TextStyle(fontSize: 14, color: mutedColor, fontWeight: FontWeight.w600, height: 1.0)),
+                TextSpan(text: value, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: textColor, height: 1.0)),
               ],
             ),
           ),

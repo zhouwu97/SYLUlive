@@ -22,7 +22,7 @@ class HomeServiceDrawer extends StatelessWidget {
   final VoidCallback onOpenGrades;
   final VoidCallback onOpenExamSchedule;
   final VoidCallback onOpenFeedback;
-  final VoidCallback onOpenAllWaterPosts;
+  final VoidCallback onOpenWaterSectionDirectory;
   final ValueChanged<WaterPostCategory>? onOpenWaterCategory;
   final ValueChanged<WaterSection>? onOpenWaterSection;
   final List<WaterSection> waterSections;
@@ -42,7 +42,7 @@ class HomeServiceDrawer extends StatelessWidget {
     required this.onOpenGrades,
     required this.onOpenExamSchedule,
     required this.onOpenFeedback,
-    required this.onOpenAllWaterPosts,
+    required this.onOpenWaterSectionDirectory,
     this.onOpenWaterCategory,
     this.onOpenWaterSection,
     this.waterSections = const [],
@@ -299,7 +299,7 @@ class HomeServiceDrawer extends StatelessWidget {
     );
   }
 
-  // ---- 水帖分类 ----
+  // ---- 社区版块 ----
   Widget _buildWaterCategorySection(BuildContext context, bool isDark) {
     final sections = _resolvedSections;
     final categoryCount = sections.length;
@@ -313,7 +313,7 @@ class HomeServiceDrawer extends StatelessWidget {
               child: Row(
                 children: [
                   Text(
-                    '水帖分类',
+                    '社区版块',
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w800,
@@ -344,7 +344,7 @@ class HomeServiceDrawer extends StatelessWidget {
               ),
             ),
             InkWell(
-              onTap: onOpenAllWaterPosts,
+              onTap: onOpenWaterSectionDirectory,
               borderRadius: BorderRadius.circular(999),
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),

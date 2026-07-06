@@ -13,6 +13,7 @@ import 'admin_featured_applications_screen.dart';
 import 'admin_logs_screen.dart';
 import 'admin_announcements_screen.dart';
 import 'admin_water_sections_screen.dart';
+import 'admin_water_icon_review_screen.dart';
 
 class AdminPanelScreen extends StatefulWidget {
   const AdminPanelScreen({super.key});
@@ -136,6 +137,14 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                       subtitle: '内容推荐与审核',
                       isDark: isDark,
                       onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminFeaturedApplicationsScreen())),
+                    ),
+                    _AdminActionPill(
+                      icon: Icons.image_search,
+                      iconColor: Colors.deepPurple,
+                      title: '版块图标审核',
+                      subtitle: '版主上传图标审核',
+                      isDark: isDark,
+                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminWaterIconReviewScreen())),
                     ),
                     _AdminActionPill(
                       icon: Icons.history,

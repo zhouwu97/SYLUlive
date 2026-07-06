@@ -12,22 +12,25 @@ class WaterCategoryFeedRoute extends StatelessWidget {
   final WaterPostCategory? legacyCategory;
   final WaterSection? section;
   final String? sectionSlug;
+  final String? initialFilterKey;
 
   const WaterCategoryFeedRoute({
     super.key,
     this.legacyCategory,
     this.section,
     this.sectionSlug,
+    this.initialFilterKey,
   }) : assert(legacyCategory != null || section != null || sectionSlug != null,
             'Must provide at least one of: legacyCategory, section, sectionSlug');
 
-  WaterCategoryFeedRoute.fromLegacyCategory(WaterPostCategory category)
+  WaterCategoryFeedRoute.fromLegacyCategory(WaterPostCategory category, {String? initialFilterKey})
       : this(
             key: ValueKey('legacy_${category.value}'),
-            legacyCategory: category);
+            legacyCategory: category,
+            initialFilterKey: initialFilterKey);
 
-  WaterCategoryFeedRoute.fromSection(WaterSection section)
-      : this(key: ValueKey('section_${section.slug}'), section: section);
+  WaterCategoryFeedRoute.fromSection(WaterSection section, {String? initialFilterKey})
+      : this(key: ValueKey('section_${section.slug}'), section: section, initialFilterKey: initialFilterKey);
 
   @override
   Widget build(BuildContext context) {
@@ -48,6 +51,7 @@ class WaterCategoryFeedRoute extends StatelessWidget {
           waterCategoryOf(resolved.slug) ??
           kWaterPostCategories[0],
       section: resolved,
+      initialFilterKey: initialFilterKey,
     );
   }
 }

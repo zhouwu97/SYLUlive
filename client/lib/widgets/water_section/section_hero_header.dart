@@ -6,7 +6,6 @@ import '../../models/water_section.dart';
 import '../../models/water_section_my_level.dart';
 import '../level_progress_pill.dart';
 import 'section_avatar.dart';
-import 'section_channel_card.dart';
 
 /// 版块沉浸式头图，作为 Stack 底层使用。
 ///
@@ -41,7 +40,7 @@ class SectionHeroHeader extends StatelessWidget {
     // 这样默认 sheet(initialChildSize=0.66) 时只有顶部约 34% 可见，
     // 刚好压到等级卡/关注下面，不露大面积空背景；下拉 sheet 到 0.24
     // 才完整展示背景与频道卡。
-    final heroHeight = MediaQuery.sizeOf(context).height * 0.72;
+    final heroHeight = MediaQuery.sizeOf(context).height * 0.62;
 
     return SizedBox(
       height: heroHeight,
@@ -176,14 +175,21 @@ class SectionHeroHeader extends StatelessWidget {
           ],
         ),
 
-        // ── 频道卡（底部，被 sheet 盖住一部分）──
-        const Spacer(),
-        Padding(
-          padding: const EdgeInsets.only(bottom: 0),
-          child: SectionChannelCard(
-            section: section,
-            accentColor: accentColor,
-            isDark: isDark,
+        // ── 下拉展开的信息区 ──
+        const SizedBox(height: 16),
+        Expanded(
+          child: SingleChildScrollView(
+            physics: const BouncingScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            child: Column(
+              children: [
+                _buildGrowthCard(isDark, hasCover, mutedColor),
+                const SizedBox(height: 10),
+                _buildDescriptionCard(isDark, hasCover, mutedColor),
+                const SizedBox(height: 8),
+                _buildDataCapsules(isDark, hasCover, mutedColor),
+              ],
+            ),
           ),
         ),
       ],
@@ -275,6 +281,153 @@ class SectionHeroHeader extends StatelessWidget {
         style:
             TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: color),
       ),
+    );
+  }
+
+  Widget _buildGrowthCard(bool isDark, bool hasCover, Color mutedColor) {
+    int level = 1;
+    int expToNext = 0;
+    bool isMaxLevel = false;
+
+    if (myLevel != null) {
+      level = myLevel!.level;
+      expToNext = myLevel!.nextLevelExp - myLevel!.exp;
+      isMaxLevel = myLevel!.isMaxLevel;
+    } else if (section.myLevel != null) {
+      level = section.myLevel!.level;
+      expToNext = section.myLevel!.expToNext;
+      isMaxLevel = section.myLevel!.isMaxLevel;
+    }
+
+    if (expToNext < 0) expToNext = 0;
+
+    final cardBg = (hasCover || isDark) ? Colors.white.withValues(alpha: 0.1) : Colors.white.withValues(alpha: 0.8);
+    final borderColor = (hasCover || isDark) ? Colors.white.withValues(alpha: 0.15) : Colors.white.withValues(alpha: 0.5);
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+      decoration: BoxDecoration(
+        color: cardBg,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: borderColor),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('今日成长', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: mutedColor)),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              _buildExpSourceItem('发帖', '+5', mutedColor),
+              const SizedBox(width: 12),
+              _buildExpSourceItem('评论', '+2', mutedColor),
+              const SizedBox(width: 12),
+              _buildExpSourceItem('被点赞', '+1', mutedColor),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            !isFollowing
+                ? '关注后解锁版块等级'
+                : isMaxLevel
+                    ? '已达到最高等级'
+                    : '距离 Lv.${level + 1} 还差 $expToNext 经验',
+            style: TextStyle(fontSize: 11, color: mutedColor),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildExpSourceItem(String label, String value, Color mutedColor) {
+    return Row(
+      children: [
+        Text(label, style: TextStyle(fontSize: 12, color: mutedColor)),
+        const SizedBox(width: 4),
+        Text(value, style: TextStyle(fontSize: 12, color: accentColor, fontWeight: FontWeight.bold)),
+      ],
+    );
+  }
+
+  Widget _buildDescriptionCard(bool isDark, bool hasCover, Color mutedColor) {
+    final textColor = (hasCover || isDark) ? Colors.white : const Color(0xFF151922);
+    final cardBg = (hasCover || isDark) ? Colors.white.withValues(alpha: 0.1) : Colors.white.withValues(alpha: 0.8);
+    final borderColor = (hasCover || isDark) ? Colors.white.withValues(alpha: 0.15) : Colors.white.withValues(alpha: 0.5);
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+      decoration: BoxDecoration(
+        color: cardBg,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: borderColor),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('版块说明', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: mutedColor)),
+          const SizedBox(height: 8),
+          Text(
+            section.description.isNotEmpty ? section.description : '校园日常、宿舍食堂、校园卡、随手拍、校园见闻。',
+            style: TextStyle(fontSize: 13, color: textColor, height: 1.4),
+          ),
+          const SizedBox(height: 10),
+          _buildRuleItem('· 不发广告和引流', textColor),
+          const SizedBox(height: 4),
+          _buildRuleItem('· 不挂人、不泄露隐私', textColor),
+          const SizedBox(height: 4),
+          _buildRuleItem('· 友善交流，求助尽量带图', textColor),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRuleItem(String text, Color color) {
+    return Text(text, style: TextStyle(fontSize: 12, color: color.withValues(alpha: 0.85), height: 1.4));
+  }
+
+  Widget _buildDataCapsules(bool isDark, bool hasCover, Color mutedColor) {
+    final textColor = (hasCover || isDark) ? Colors.white : const Color(0xFF151922);
+
+    Widget buildItem(String label, String value) {
+      return Expanded(
+        child: Center(
+          child: RichText(
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            text: TextSpan(
+              children: [
+                TextSpan(text: '$label ', style: TextStyle(fontSize: 11, color: mutedColor, fontWeight: FontWeight.w600, height: 1.0)),
+                TextSpan(text: value, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: textColor, height: 1.0)),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Row(
+      children: [
+        buildItem('今日', '-'),
+        buildItem('本周', '-'),
+        buildItem('关注', '${section.followerCount}'),
+        buildItem('精华', '-'),
+      ],
     );
   }
 }

@@ -93,21 +93,21 @@ data class GradeReminderSnapshot(
         }
 
         private fun fromGradeJson(json: JSONObject): GradeReminderItem {
-            val name = json.optString("name").trim()
+            val name = json.optStringOrNull("name").orEmpty()
             val credits = normalizeNumber(json.opt("credits"))
-            val examType = blankToNull(json.optString("exam_type"))
+            val examType = blankToNull(json.optStringOrNull("exam_type"))
             val key = stableKey(json, name, credits, examType)
             return GradeReminderItem(
                 key = key,
                 name = name,
-                grade = json.optString("grade", "--").trim(),
+                grade = json.optStringOrNull("grade") ?: "--",
                 gpa = blankToNull(normalizeNumber(json.opt("gpa"))),
                 fraction = blankToNull(normalizeNumber(json.opt("fraction"))),
                 credits = credits.ifBlank { "0" },
                 examType = examType,
                 isDegree = json.optBoolean("is_degree", false) ||
-                    json.optString("is_degree") == "1" ||
-                    json.optString("is_degree") == "是",
+                    json.optStringOrNull("is_degree") == "1" ||
+                    json.optStringOrNull("is_degree") == "是",
             )
         }
 
@@ -117,13 +117,13 @@ data class GradeReminderSnapshot(
             credits: String,
             examType: String?,
         ): String {
-            val studentGradeId = json.optString("student_grade_id").trim()
+            val studentGradeId = json.optStringOrNull("student_grade_id").orEmpty()
             if (studentGradeId.isNotEmpty()) return "student:$studentGradeId"
-            val classId = json.optString("class_id").trim()
+            val classId = json.optStringOrNull("class_id").orEmpty()
             if (classId.isNotEmpty()) return "class:$classId"
-            val courseId = json.optString("course_id").trim()
+            val courseId = json.optStringOrNull("course_id").orEmpty()
             if (courseId.isNotEmpty()) return "course:$courseId"
-            val courseCode = json.optString("course_code").trim()
+            val courseCode = json.optStringOrNull("course_code").orEmpty()
             if (courseCode.isNotEmpty() && name.isNotEmpty()) {
                 return "code:$courseCode|$name"
             }

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -7,6 +9,8 @@ import '../models/edu_academic_situation.dart';
 import '../models/edu_grade.dart';
 import '../utils/app_motion.dart';
 import '../utils/edu_semester_utils.dart';
+import '../utils/grade_screen_registry.dart';
+import '../services/grade_reminder_service.dart';
 import '../widgets/edu_grade/grade_summary_card.dart';
 import '../widgets/edu_grade/grade_course_item.dart';
 import '../widgets/edu_grade/grade_empty_state.dart';
@@ -16,13 +20,21 @@ import '../widgets/edu_grade/grade_manage_drawer.dart';
 // GradeViewMode removed
 
 class EduGradeScreen extends StatefulWidget {
-  const EduGradeScreen({super.key});
+  final String? initialYear;
+  final int? initialSemester;
+
+  const EduGradeScreen({
+    super.key,
+    this.initialYear,
+    this.initialSemester,
+  });
 
   @override
   State<EduGradeScreen> createState() => _EduGradeScreenState();
 }
 
-class _EduGradeScreenState extends State<EduGradeScreen> {
+class _EduGradeScreenState extends State<EduGradeScreen>
+    implements GradeScreenLinkTarget {
   String _selectedYear = '';
   int _selectedSemester = EduSemester.first;
   List<EduGrade> _grades = [];
@@ -44,6 +56,30 @@ class _EduGradeScreenState extends State<EduGradeScreen> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
   EduProvider? _eduProvider;
+
+  @override
+  void initState() {
+    super.initState();
+    GradeScreenRegistry.register(this);
+  }
+
+  @override
+  void dispose() {
+    GradeScreenRegistry.unregister(this);
+    super.dispose();
+  }
+
+  @override
+  bool get canHandleGradeLink =>
+      mounted && (ModalRoute.of(context)?.isCurrent ?? false);
+
+  @override
+  Future<bool> switchToGradeSemester(String year, int semester) async {
+    if (year == _selectedYear && semester == _selectedSemester) {
+      return _refreshGrades();
+    }
+    return _switchSemester(year, semester);
+  }
 
   @override
   void didChangeDependencies() {
@@ -76,7 +112,15 @@ class _EduGradeScreenState extends State<EduGradeScreen> {
         // 捕获局部变量防止异步期间 _lastUserId 变化
         final capturedUserId = currentUserId;
         eduProvider.setUserId(currentUserId);
+        unawaited(
+          GradeReminderService.instance.syncRuntimeConfig(
+            userId: currentUserId,
+          ),
+        );
         _initSemesterAndLoad(capturedUserId);
+      } else {
+        unawaited(
+            GradeReminderService.instance.syncRuntimeConfig(userId: null));
       }
     }
   }
@@ -87,8 +131,8 @@ class _EduGradeScreenState extends State<EduGradeScreen> {
     final savedKey = 'edu_last_semester_$userId';
     final saved = prefs.getString(savedKey);
 
-    bool loaded = false;
-    if (saved != null) {
+    bool loaded = _tryUseInitialSemester(userId);
+    if (!loaded && saved != null) {
       final parts = saved.split('_');
       if (parts.length == 2) {
         final year = parts[0];
@@ -119,6 +163,27 @@ class _EduGradeScreenState extends State<EduGradeScreen> {
     if (mounted) setState(() {});
     _loadAcademicSituation();
     _loadGrades();
+  }
+
+  bool _tryUseInitialSemester(String userId) {
+    final year = widget.initialYear;
+    final semester = widget.initialSemester;
+    if (year == null || semester == null) return false;
+    final enrollmentYear = _eduProvider?.enrollmentYear ?? 2000;
+    final cur = EduSemester.current();
+    final curYear = int.tryParse(cur.year) ?? DateTime.now().year;
+    final yearNumber = int.tryParse(year);
+    if (yearNumber == null ||
+        !EduSemester.isValid(semester) ||
+        yearNumber < enrollmentYear ||
+        (yearNumber > curYear ||
+            (yearNumber == curYear && semester > cur.semester))) {
+      return false;
+    }
+    _selectedYear = year;
+    _selectedSemester = semester;
+    _saveSelectedSemesterFor(userId, year, semester);
+    return true;
   }
 
   Future<void> _loadAcademicSituation({bool forceRefresh = false}) async {
@@ -204,6 +269,7 @@ class _EduGradeScreenState extends State<EduGradeScreen> {
         _isRefreshing = false;
         _errorMessage = null;
       });
+      await _syncGradeReminderBaseline(result.data!);
     } else {
       final errorMsg = result.errorMessage ?? '成绩加载失败';
       if (_grades.isNotEmpty) {
@@ -250,6 +316,7 @@ class _EduGradeScreenState extends State<EduGradeScreen> {
             : GradePageState.content;
         _isRefreshing = false;
       });
+      await _syncGradeReminderBaseline(result.data!);
       if (mounted) _showSnackBar('成绩已更新');
       return true;
     }
@@ -299,6 +366,7 @@ class _EduGradeScreenState extends State<EduGradeScreen> {
       });
 
       _saveSelectedSemester(year, semester);
+      await _syncGradeReminderBaseline(cache.grades);
 
       // Background refresh
       _refreshSelectedSemesterInBackground(year, semester, generation);
@@ -323,15 +391,27 @@ class _EduGradeScreenState extends State<EduGradeScreen> {
     });
 
     _saveSelectedSemester(year, semester);
+    await _syncGradeReminderBaseline(result.data!);
     return true;
   }
 
   void _saveSelectedSemester(String year, int semester) {
     final userId = _lastUserId;
     if (userId == null) return;
+    _saveSelectedSemesterFor(userId, year, semester);
+  }
+
+  void _saveSelectedSemesterFor(String userId, String year, int semester) {
     SharedPreferences.getInstance().then((prefs) {
       prefs.setString('edu_last_semester_$userId', '${year}_$semester');
     });
+    unawaited(
+      GradeReminderService.instance.syncSelectedSemester(
+        userId: userId,
+        year: year,
+        semester: semester,
+      ),
+    );
   }
 
   Future<void> _refreshSelectedSemesterInBackground(
@@ -351,7 +431,19 @@ class _EduGradeScreenState extends State<EduGradeScreen> {
         _pageState =
             _grades.isEmpty ? GradePageState.empty : GradePageState.content;
       });
+      await _syncGradeReminderBaseline(result.data!);
     }
+  }
+
+  Future<void> _syncGradeReminderBaseline(List<EduGrade> grades) async {
+    final userId = _lastUserId;
+    if (userId == null) return;
+    await GradeReminderService.instance.syncBaselineIfEnabled(
+      userId: userId,
+      year: _selectedYear,
+      semester: _selectedSemester,
+      grades: grades,
+    );
   }
 
   void _showSnackBar(String message) {
@@ -383,6 +475,9 @@ class _EduGradeScreenState extends State<EduGradeScreen> {
       endDrawer: GradeManageDrawer(
         selectedYear: _selectedYear,
         selectedSemester: _selectedSemester,
+        grades: _grades,
+        userId: _lastUserId,
+        isEduBound: _eduProvider?.isBound ?? false,
         enrollmentYear: _eduProvider?.enrollmentYear ?? 2000,
         onSemesterChanged: _switchSemester,
         onRefreshGrades: _refreshCurrentView,
@@ -565,7 +660,9 @@ class _EduGradeScreenState extends State<EduGradeScreen> {
                     height: 4,
                     margin: const EdgeInsets.only(bottom: 18),
                     decoration: BoxDecoration(
-                      color: isDark ? Colors.grey.shade700 : const Color(0xFFE1E4E8),
+                      color: isDark
+                          ? Colors.grey.shade700
+                          : const Color(0xFFE1E4E8),
                       borderRadius: BorderRadius.circular(999),
                     ),
                   ),
@@ -658,7 +755,8 @@ class _EduGradeScreenState extends State<EduGradeScreen> {
               borderRadius: BorderRadius.circular(999),
               onTap: _showGradeFilterSheet,
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [

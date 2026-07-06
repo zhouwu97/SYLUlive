@@ -429,3 +429,43 @@ func EnsureWaterSections(db *gorm.DB) error {
 	}
 	return nil
 }
+
+// WaterSectionIconReview 版块图标更换审核
+type WaterSectionIconReview struct {
+	ID uint `gorm:"primaryKey" json:"id"`
+
+	SectionID uint         `gorm:"not null;index" json:"section_id"`
+	Section   WaterSection `gorm:"foreignKey:SectionID" json:"section,omitempty"`
+
+	RequestedBy uint `gorm:"not null;index" json:"requested_by"`
+	Requester   User `gorm:"foreignKey:RequestedBy" json:"requester,omitempty"`
+
+	OldAvatarURL string `gorm:"size:500" json:"old_avatar_url"`
+	NewAvatarURL string `gorm:"size:500;not null" json:"new_avatar_url"`
+
+	Reason string `gorm:"size:500" json:"reason"`
+
+	Status string `gorm:"size:32;not null;default:'pending';index" json:"status"`
+	// pending / approved / rejected / cancelled
+
+	ReviewedBy *uint `gorm:"index" json:"reviewed_by"`
+	Reviewer   *User `gorm:"foreignKey:ReviewedBy" json:"reviewer,omitempty"`
+
+	ReviewedAt   *time.Time `json:"reviewed_at"`
+	ReviewReason string     `gorm:"size:500" json:"review_reason"`
+
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+func (WaterSectionIconReview) TableName() string {
+	return "water_section_icon_reviews"
+}
+
+// 图标审核状态常量
+const (
+	SectionIconReviewPending   = "pending"
+	SectionIconReviewApproved  = "approved"
+	SectionIconReviewRejected  = "rejected"
+	SectionIconReviewCancelled = "cancelled"
+)

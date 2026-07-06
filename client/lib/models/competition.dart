@@ -48,6 +48,7 @@ class CompetitionEvent {
   final String officialUrl;
   final String noticeUrl;
   final String description;
+  final String status;
 
   CompetitionEvent({
     required this.id,
@@ -76,6 +77,7 @@ class CompetitionEvent {
     this.officialUrl = '',
     this.noticeUrl = '',
     this.description = '',
+    this.status = 'published',
   });
 
   factory CompetitionEvent.fromJson(Map<String, dynamic> json) {
@@ -110,6 +112,7 @@ class CompetitionEvent {
       officialUrl: json['official_url'] ?? '',
       noticeUrl: json['notice_url'] ?? '',
       description: json['description'] ?? '',
+      status: json['status'] ?? 'published',
     );
   }
 

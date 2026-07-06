@@ -96,6 +96,8 @@ func main() {
 
 		&models.WaterSection{},
 
+		&models.WaterSectionIconReview{},
+
 		&models.WaterSectionTag{},
 
 		&models.WaterSectionModerator{},
@@ -572,6 +574,14 @@ func main() {
 		adminWater.DELETE("/:moderator_id", waterModeratorHandler.RevokeModerator)
 	}
 
+	adminWaterReviews := r.Group("/api/admin/water/section-icon-reviews")
+	adminWaterReviews.Use(middleware.AuthMiddleware(db, cfg.JWTSecret), middleware.AdminMiddleware())
+	{
+		adminWaterReviews.GET("", waterSectionHandler.AdminListSectionIconReviews)
+		adminWaterReviews.POST("/:id/approve", waterSectionHandler.AdminApproveSectionIconReview)
+		adminWaterReviews.POST("/:id/reject", waterSectionHandler.AdminRejectSectionIconReview)
+	}
+
 	// 水帖版块内容管理接口（登录后，权限由 handler 内部判断）
 	waterMod := r.Group("/api/water/sections/:slug")
 	waterMod.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
@@ -591,6 +601,10 @@ func main() {
 		waterMod.DELETE("/users/:user_id/mute", waterModerationHandler.UnmuteUser)
 		waterMod.GET("/mutes", waterModerationHandler.ListMutes)
 		waterMod.GET("/moderation/logs", waterModerationHandler.ListLogs)
+
+		waterMod.POST("/icon-review", waterSectionHandler.SubmitSectionIconReview)
+		waterMod.GET("/icon-review/current", waterSectionHandler.GetCurrentSectionIconReview)
+		waterMod.POST("/icon-review/:id/cancel", waterSectionHandler.CancelSectionIconReview)
 	}
 
 	r.POST("/api/collaboration-applications/:id/approve", middleware.AuthMiddleware(db, cfg.JWTSecret), postHandler.ApproveCollaborationApplication)

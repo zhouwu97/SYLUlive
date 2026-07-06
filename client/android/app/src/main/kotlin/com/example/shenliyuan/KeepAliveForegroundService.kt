@@ -495,6 +495,14 @@ class KeepAliveForegroundService : Service() {
 
         fun syncAlias(context: Context, alias: String?) {
             val p = prefs(context.applicationContext)
+            if (alias != null) {
+                val currentAlias = p.getString(KEY_JPUSH_ALIAS, null)
+                val currentState = p.getString(KEY_JPUSH_ALIAS_STATE, null)
+                if (currentAlias == alias && currentState == "active") {
+                    Log.d(TAG, "JPush alias sync skipped: already active for ***${alias.takeLast(4)}")
+                    return
+                }
+            }
             val editor = p.edit()
             if (alias.isNullOrBlank()) {
                 editor.remove(KEY_JPUSH_ALIAS)

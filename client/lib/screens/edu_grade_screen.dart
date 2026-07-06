@@ -291,7 +291,7 @@ class _EduGradeScreenState extends State<EduGradeScreen>
     }
   }
 
-  Future<List<EduGrade>?> _refreshGrades() async {
+  Future<List<EduGrade>?> _refreshGrades({bool silent = false}) async {
     if (_isInitialLoading || _isRefreshing) return null;
     if (_eduProvider == null) return null;
 
@@ -318,17 +318,17 @@ class _EduGradeScreenState extends State<EduGradeScreen>
         _isRefreshing = false;
       });
       await _syncGradeReminderBaseline(result.data!);
-      if (mounted) _showSnackBar('成绩已更新');
+      if (mounted && !silent) _showSnackBar('成绩已更新');
       return result.data;
     }
 
     setState(() => _isRefreshing = false);
-    if (mounted) _showSnackBar('刷新失败，请稍后重试');
+    if (mounted && !silent) _showSnackBar('刷新失败，请稍后重试');
     return null;
   }
 
-  Future<List<EduGrade>?> _refreshCurrentView() {
-    return _refreshGrades();
+  Future<List<EduGrade>?> _refreshCurrentView({bool silent = false}) {
+    return _refreshGrades(silent: silent);
   }
 
   Future<bool> _refreshAcademicSituation() async {

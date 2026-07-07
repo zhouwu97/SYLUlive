@@ -65,6 +65,28 @@ class WaterModerationProvider extends ChangeNotifier {
         await _service.unpinPost(sectionSlug: sectionSlug, postId: postId));
   }
 
+  Future<bool> featurePost({
+    required String sectionSlug,
+    required int postId,
+    required String reason,
+  }) async {
+    return _operation(() async {
+      await _service.featurePost(
+        sectionSlug: sectionSlug,
+        postId: postId,
+        reason: reason,
+      );
+    });
+  }
+
+  Future<bool> unfeaturePost({
+    required String sectionSlug,
+    required int postId,
+  }) async {
+    return _operation(() async =>
+        await _service.unfeaturePost(sectionSlug: sectionSlug, postId: postId));
+  }
+
   Future<bool> deletePostByModerator({
     required String sectionSlug,
     required int postId,

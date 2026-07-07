@@ -41,26 +41,52 @@ func NewInvitationHandler(db *gorm.DB, jwtSecret string) *InvitationHandler {
 // GetCandidates 获取管理员候选人列表
 
 func (h *InvitationHandler) GetCandidates(c *gin.Context) {
-
-	studentID := c.Query("student_id")
-
-	query := h.db.Model(&models.User{}).
-		Where("report_count = 0 AND credit_score > 90 AND role = ?", models.RoleUser)
-
-	if studentID != "" {
-
-		query = query.Where("student_id LIKE ?", "%"+studentID+"%")
-
+	keyword := strings.TrimSpace(c.Query("q"))
+	if keyword == "" {
+		keyword = strings.TrimSpace(c.Query("student_id"))
 	}
 
+	if keyword == "" {
+		c.JSON(http.StatusOK, []models.User{})
+		return
+	}
+
+	like := "%" + keyword + "%"
+
+	query := h.db.Model(&models.User{}).
+		Select("id, nickname, student_id, avatar, credit_score, role, report_count").
+		Where("report_count = 0 AND credit_score > 90 AND role = ?", models.RoleUser).
+		Where("student_id LIKE ? OR nickname LIKE ?", like, like)
+
 	var candidates []models.User
-	if err := query.Order("credit_score DESC").Find(&candidates).Error; err != nil {
+	if err := query.Order("credit_score DESC, created_at DESC").Limit(30).Find(&candidates).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取候选人列表失败"})
 		return
 	}
 
 	c.JSON(http.StatusOK, candidates)
+}
 
+// GetCandidatesStats 获取用户分布统计
+func (h *InvitationHandler) GetCandidatesStats(c *gin.Context) {
+	var total int64
+	var eduCount int64
+
+	if err := h.db.Model(&models.User{}).Count(&total).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取统计数据失败"})
+		return
+	}
+
+	if err := h.db.Model(&models.User{}).Where("edu_bound = ?", true).Count(&eduCount).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取统计数据失败"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"total": total,
+		"edu":   eduCount,
+		"other": total - eduCount,
+	})
 }
 
 // GetMembers 获取所有管理员列表

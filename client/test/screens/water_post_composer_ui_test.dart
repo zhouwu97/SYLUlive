@@ -37,6 +37,7 @@ class FakePostProvider extends Fake
     double? price,
     String? contact,
     List<int>? fileIds,
+    List<String>? marketTags,
   }) async {
     createPostCalls++;
     lastContent = content;

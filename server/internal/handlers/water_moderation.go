@@ -323,6 +323,173 @@ func (h *WaterModerationHandler) UnpinPost(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "已取消置顶"})
 }
 
+// ── 版块加精 ──
+
+type featurePostInput struct {
+	Reason string `json:"reason" binding:"required"`
+}
+
+// FeaturePost POST /api/water/sections/:slug/posts/:post_id/feature
+func (h *WaterModerationHandler) FeaturePost(c *gin.Context) {
+	operator, ok := h.getOperatorOr401(c)
+	if !ok {
+		return
+	}
+	section, ok := h.getSectionOr404(c)
+	if !ok {
+		return
+	}
+
+	postIDStr := c.Param("post_id")
+	postID, err := strconv.ParseUint(postIDStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的帖子 ID"})
+		return
+	}
+
+	// 权限：复用 CanPinPost 作为版块精华的权限
+	if !h.permSvc.CanPinPost(section.ID, operator) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "没有加精权限"})
+		return
+	}
+
+	var post models.Post
+	if err := h.db.First(&post, postID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "帖子不存在"})
+		return
+	}
+	if post.Status == models.PostStatusDeleted {
+		c.JSON(http.StatusNotFound, gin.H{"error": "帖子已删除"})
+		return
+	}
+	if post.BoardID != models.BoardShuitie {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "只能加精水帖版块帖子"})
+		return
+	}
+	if post.PostType != section.Slug {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "帖子不属于该版块"})
+		return
+	}
+
+	var input featurePostInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请填写加精原因"})
+		return
+	}
+	reason, reasonMsg := validateModerationReason(input.Reason, "加精")
+	if reasonMsg != "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": reasonMsg})
+		return
+	}
+
+	var existing models.WaterSectionFeaturedPost
+	dupErr := h.db.Where("section_id = ? AND post_id = ?", section.ID, postID).First(&existing).Error
+	if dupErr == nil && existing.Status == models.SectionFeaturedStatusActive {
+		c.JSON(http.StatusOK, gin.H{"message": "帖子已是版块精华", "featured": existing})
+		return
+	}
+
+	if dupErr == nil {
+		h.db.Model(&existing).Updates(map[string]interface{}{
+			"featured_by": operator.ID,
+			"reason":      reason,
+			"status":      models.SectionFeaturedStatusActive,
+		})
+		_ = h.db.First(&existing, existing.ID)
+		snapshot, _ := json.Marshal(existing)
+		h.writeLog(section.ID, operator.ID, models.ModActionFeaturePost, "post", uint(postID), &post.AuthorID, reason, string(snapshot))
+		h.createHomeFeaturedApplication(uint(postID), operator.ID, section.ID, existing.ID, reason)
+		c.JSON(http.StatusOK, gin.H{"message": "加精成功，并已提交首页推荐审核", "featured": existing})
+		return
+	}
+
+	featured := models.WaterSectionFeaturedPost{
+		SectionID:  section.ID,
+		PostID:     uint(postID),
+		FeaturedBy: operator.ID,
+		Reason:     reason,
+		Status:     models.SectionFeaturedStatusActive,
+	}
+	if err := h.db.Create(&featured).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "加精失败"})
+		return
+	}
+
+	snapshot, _ := json.Marshal(featured)
+	h.writeLog(section.ID, operator.ID, models.ModActionFeaturePost, "post", uint(postID), &post.AuthorID, reason, string(snapshot))
+	
+	// 自动生成首页精华审核记录
+	h.createHomeFeaturedApplication(uint(postID), operator.ID, section.ID, featured.ID, reason)
+
+	c.JSON(http.StatusCreated, gin.H{"message": "加精成功，并已提交首页推荐审核", "featured": featured})
+}
+
+func (h *WaterModerationHandler) createHomeFeaturedApplication(postID uint, moderatorID uint, sectionID uint, sectionFeaturedID uint, reason string) {
+	var existing models.FeaturedApplication
+	err := h.db.Where("post_id = ? AND status = ?", postID, "pending").First(&existing).Error
+	if err == nil {
+		return // 已有待审核记录
+	}
+	app := models.FeaturedApplication{
+		PostID:            postID,
+		ApplicantID:       moderatorID,
+		Source:            "moderator",
+		SectionID:         &sectionID,
+		SectionFeaturedID: &sectionFeaturedID,
+		Reason:            "版主推荐: " + reason,
+		Status:            "pending",
+	}
+	h.db.Create(&app)
+}
+
+// UnfeaturePost DELETE /api/water/sections/:slug/posts/:post_id/feature
+func (h *WaterModerationHandler) UnfeaturePost(c *gin.Context) {
+	operator, ok := h.getOperatorOr401(c)
+	if !ok {
+		return
+	}
+	section, ok := h.getSectionOr404(c)
+	if !ok {
+		return
+	}
+
+	postIDStr := c.Param("post_id")
+	postID, err := strconv.ParseUint(postIDStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的帖子 ID"})
+		return
+	}
+
+	if !h.permSvc.CanPinPost(section.ID, operator) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "没有取消加精权限"})
+		return
+	}
+
+	var featured models.WaterSectionFeaturedPost
+	dbErr := h.db.Where("section_id = ? AND post_id = ? AND status = ?",
+		section.ID, postID, models.SectionFeaturedStatusActive).First(&featured).Error
+	if dbErr == gorm.ErrRecordNotFound {
+		c.JSON(http.StatusOK, gin.H{"message": "已取消加精"})
+		return
+	}
+	if dbErr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询加精记录失败"})
+		return
+	}
+
+	reason := "取消加精"
+	var body struct {
+		Reason string `json:"reason"`
+	}
+	if err := c.ShouldBindJSON(&body); err == nil && body.Reason != "" {
+		reason = body.Reason
+	}
+
+	h.db.Model(&featured).Update("status", models.SectionFeaturedStatusInactive)
+	h.writeLog(section.ID, operator.ID, models.ModActionUnfeaturePost, "post", uint(postID), nil, reason, "")
+	c.JSON(http.StatusOK, gin.H{"message": "已取消加精"})
+}
+
 // ── 版块删帖 ──
 
 type moderateDeleteInput struct {

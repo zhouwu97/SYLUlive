@@ -7,10 +7,12 @@ import 'package:flutter/services.dart';
 import '../../config/privileged_accounts.dart';
 import '../../config/water_post_taxonomy.dart';
 import '../../models/post.dart';
+import '../../models/user.dart';
 import '../../models/water_section.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/post_provider.dart';
 import '../../providers/water_section_provider.dart';
+import '../../widgets/water_section/section_avatar.dart';
 import 'widgets/publish_image_grid.dart';
 import 'widgets/publish_image_picker.dart';
 import 'widgets/water_post_bottom_bar.dart';
@@ -288,6 +290,8 @@ class _WaterPostComposerState extends State<WaterPostComposer>
 
       if (!mounted) return;
       if (result.success) {
+        _showSubmitSuccessFeedback(result.post);
+        if (!mounted) return;
         Navigator.of(context).pop(true);
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -306,6 +310,70 @@ class _WaterPostComposerState extends State<WaterPostComposer>
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  ExpAward? _firstAwardWhere(
+    List<ExpAward> awards,
+    bool Function(ExpAward award) test,
+  ) {
+    for (final award in awards) {
+      if (test(award)) return award;
+    }
+    return null;
+  }
+
+  void _showSubmitSuccessFeedback(Post? post) {
+    final awards = post?.expAwards ?? const <ExpAward>[];
+    final globalAward = _firstAwardWhere(awards, (a) => a.scope == 'global');
+    final sectionAward =
+        _firstAwardWhere(awards, (a) => a.scope == 'water_section');
+    final lines = <String>[_isEditing ? '保存成功' : '发布成功'];
+
+    final expParts = <String>[];
+    if (globalAward != null && globalAward.exp > 0) {
+      expParts.add('全站经验 +${globalAward.exp}');
+    }
+    if (sectionAward != null && sectionAward.exp > 0) {
+      final sectionName = sectionAward.sectionTitle.isNotEmpty
+          ? sectionAward.sectionTitle
+          : _selectedSection.title;
+      expParts.add('$sectionName经验 +${sectionAward.exp}');
+    }
+    if (expParts.isNotEmpty) {
+      lines.add(expParts.join(' · '));
+    }
+    if (sectionAward != null && sectionAward.levelUp) {
+      final sectionName = sectionAward.sectionTitle.isNotEmpty
+          ? sectionAward.sectionTitle
+          : _selectedSection.title;
+      final title = sectionAward.titleAfter.isNotEmpty
+          ? '「${sectionAward.titleAfter}」'
+          : '';
+      lines.add('$sectionName升级到 Lv.${sectionAward.levelAfter}$title');
+    } else if (globalAward != null && globalAward.levelUp) {
+      lines.add('全站等级升级到 Lv.${globalAward.levelAfter}');
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 3),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              lines.first,
+              style: const TextStyle(fontWeight: FontWeight.w800),
+            ),
+            for (final line in lines.skip(1)) ...[
+              const SizedBox(height: 2),
+              Text(line),
+            ],
+          ],
+        ),
+      ),
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -345,7 +413,6 @@ class _WaterPostComposerState extends State<WaterPostComposer>
             final sec = sections[index - 1];
             final isSelected = sec.slug == _selectedPostType;
             final color = colorHexToColor(sec.colorHex, fallback: Colors.teal);
-            final icon = iconKeyToIconData(sec.iconKey, fallbackSlug: sec.slug);
             return InkWell(
               borderRadius: BorderRadius.circular(10),
               onTap: () => Navigator.of(context).pop(sec.slug),
@@ -354,14 +421,15 @@ class _WaterPostComposerState extends State<WaterPostComposer>
                     const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
                 child: Row(
                   children: [
-                    Container(
-                      width: 30,
-                      height: 30,
-                      decoration: BoxDecoration(
-                        color: color.withValues(alpha: 0.12),
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(icon, size: 17, color: color),
+                    SectionAvatar(
+                      section: sec,
+                      size: 30,
+                      radius: 30, // make it circular
+                      accentColor: color,
+                      isDark: isDark,
+                      showBorder: true,
+                      borderColor: color.withValues(alpha: 0.15),
+                      borderWidth: 1,
                     ),
                     const SizedBox(width: 12),
                     Expanded(
@@ -448,7 +516,16 @@ class _WaterPostComposerState extends State<WaterPostComposer>
                     ),
                   ),
                   const Spacer(),
-                  Icon(icon, size: 22, color: color),
+                  SectionAvatar(
+                    section: section,
+                    size: 24,
+                    radius: 8,
+                    accentColor: color,
+                    isDark: isDark,
+                    showBorder: true,
+                    borderColor: color.withValues(alpha: 0.15),
+                    borderWidth: 1,
+                  ),
                   const SizedBox(width: 8),
                   Text(
                     section.title,

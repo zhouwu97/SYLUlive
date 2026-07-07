@@ -201,10 +201,31 @@ class _LotteryScreenState extends State<LotteryScreen> {
     }
   }
 
+  BoxDecoration _softCardDecoration(bool isDark, {Color? border, bool warm = false}) {
+    return BoxDecoration(
+      color: isDark ? const Color(0xFF1E2226) : Colors.white,
+      borderRadius: BorderRadius.circular(20),
+      border: Border.all(
+        color: isDark
+            ? Colors.white.withValues(alpha: 0.08)
+            : (border ?? const Color(0xFFF4E2C5)),
+      ),
+      boxShadow: isDark
+          ? null
+          : [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.025),
+                blurRadius: 14,
+                offset: const Offset(0, 6),
+              ),
+            ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final primary = Theme.of(context).primaryColor;
+    final primary = const Color(0xFFF59E0B);
     final user = context.watch<AuthProvider>().user;
     final isSuperAdmin = user?.isSuperAdmin == true;
 
@@ -216,9 +237,9 @@ class _LotteryScreenState extends State<LotteryScreen> {
       ),
       child: Scaffold(
         backgroundColor:
-            isDark ? const Color(0xFF06080D) : const Color(0xFFF4F6FB),
+            isDark ? const Color(0xFF111315) : const Color(0xFFFFFAF4),
         appBar: AppBar(
-          title: const Text('官方抽奖'),
+          title: const Text('官方抽奖', style: TextStyle(fontWeight: FontWeight.bold)),
           elevation: 0,
           backgroundColor: Colors.transparent,
         ),
@@ -228,21 +249,7 @@ class _LotteryScreenState extends State<LotteryScreen> {
             Positioned.fill(
               child: DecoratedBox(
                 decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: isDark
-                        ? const [
-                            Color(0xFF06080D),
-                            Color(0xFF10131A),
-                            Color(0xFF06080D),
-                          ]
-                        : const [
-                            Color(0xFFF4F6FB),
-                            Color(0xFFEFF3F8),
-                            Color(0xFFF8FAFC),
-                          ],
-                  ),
+                  color: isDark ? const Color(0xFF111315) : const Color(0xFFFFFAF4),
                 ),
               ),
             ),
@@ -288,227 +295,276 @@ class _LotteryScreenState extends State<LotteryScreen> {
   ) {
     final ev = _event!;
     final isOngoing = ev.status == 0;
-    final titleColor = isDark ? Colors.white : const Color(0xFF111827);
+    final titleColor = isDark ? Colors.white : const Color(0xFF1F2328);
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
-      child: Column(
-        children: [
-          _buildEventHero(ev, primary, isDark),
-          const SizedBox(height: 20),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              '本期奖品',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w700,
-                color: isDark ? Colors.white70 : const Color(0xFF596170),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+      child: SafeArea(
+        top: true,
+        child: Column(
+          children: [
+            _buildEventHero(ev, isOngoing, primary, isDark),
+            const SizedBox(height: 16),
+            _buildPrizeCard(ev, isOngoing, primary, isDark),
+            const SizedBox(height: 16),
+            if (!isOngoing)
+              _buildWinnerCard(ev, primary, isDark, titleColor)
+            else ...[
+              _buildWinnerCard(ev, primary, isDark, titleColor),
+              const SizedBox(height: 16),
+              if (_joined)
+                _buildJoinedCard(isDark)
+              else
+                SizedBox(
+                  width: double.infinity,
+                  height: 52,
+                  child: ElevatedButton(
+                    onPressed: _isSubmitting ? null : _joinLottery,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: primary,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(18),
+                      ),
+                      elevation: 0,
+                    ),
+                    child: _isSubmitting
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                                color: Colors.white, strokeWidth: 2),
+                          )
+                        : const Text(
+                            '立即参与',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                  ),
+                ),
+              const SizedBox(height: 16),
+              _buildLotteryRules(primary, isDark),
+            ],
+            if (isSuperAdmin && isOngoing) ...[
+              const SizedBox(height: 32),
+              TextButton.icon(
+                onPressed: _adminDraw,
+                icon: const Icon(Icons.flash_on, color: Colors.orange),
+                label: const Text(
+                  '管理员手动开奖',
+                  style: TextStyle(color: Colors.orange),
+                ),
+                style: TextButton.styleFrom(
+                  backgroundColor: Colors.orange.withValues(alpha: 0.1),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 12,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
               ),
+            ],
+            if (!isOngoing) ...[
+              const SizedBox(height: 32),
+              Text(
+                '已结束 · 感谢参与',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: isDark ? Colors.white54 : const Color(0xFF7D8A97),
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildWinnerCard(LotteryEvent ev, Color primary, bool isDark, Color titleColor) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: _softCardDecoration(isDark, border: const Color(0xFFF4E2C5)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '开奖结果',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: titleColor,
             ),
           ),
-          const SizedBox(height: 12),
-          _buildPrizeCard(ev, isOngoing, primary, isDark),
-          const SizedBox(height: 18),
-          if (isOngoing) ...[
-            if (_joined)
-              _buildJoinedCard(isDark)
-            else
-              SizedBox(
-                width: double.infinity,
-                height: 52,
-                child: ElevatedButton(
-                  onPressed: _isSubmitting ? null : _joinLottery,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: primary,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
+          const SizedBox(height: 16),
+          if (ev.status == 0)
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 20),
+                child: Column(
+                  children: [
+                    const Icon(Icons.hourglass_empty, color: Color(0xFFF59E0B), size: 32),
+                    const SizedBox(height: 12),
+                    Text(
+                      '暂未开奖',
+                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: isDark ? Colors.white : const Color(0xFF1F2328)),
                     ),
-                    elevation: 4,
-                    shadowColor: primary.withValues(alpha: 0.4),
-                  ),
-                  child: _isSubmitting
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                              color: Colors.white, strokeWidth: 2),
-                        )
-                      : const Text(
-                          '立即参与',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                ),
-              ),
-            const SizedBox(height: 20),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                '抽奖说明',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: isDark ? Colors.white54 : const Color(0xFF8A8F9C),
-                ),
-              ),
-            ),
-            const SizedBox(height: 10),
-            _buildLotteryRules(primary, isDark),
-          ] else ...[
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: isDark
-                    ? primary.withValues(alpha: 0.14)
-                    : Colors.white.withValues(alpha: 0.96),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: primary.withValues(alpha: 0.3)),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: isDark ? 0.18 : 0.06),
-                    blurRadius: 18,
-                    offset: const Offset(0, 8),
-                  ),
-                ],
-              ),
-              child: Column(
-                children: [
-                  Text(
-                    '🎉 中奖名单',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: titleColor,
+                    const SizedBox(height: 4),
+                    Text(
+                      '开奖后会在这里公布中奖名单',
+                      style: TextStyle(fontSize: 13, color: isDark ? Colors.white54 : const Color(0xFF747B82)),
                     ),
-                  ),
-                  const SizedBox(height: 16),
-                  if (ev.winner != null)
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        CachedAvatar(
-                          radius: 24,
-                          imageUrl: ev.winner!.avatar.isNotEmpty
-                              ? ApiConstants.fullUrl(ev.winner!.avatar)
-                              : null,
-                          fallbackText: ev.winner!.nickname,
-                        ),
-                        const SizedBox(width: 12),
-                        Text(
-                          ev.winner!.nickname,
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    )
-                  else
-                    const Text('暂无中奖者', style: TextStyle(color: Colors.grey)),
-                ],
-              ),
-            ),
-          ],
-          if (isSuperAdmin && isOngoing) ...[
-            const SizedBox(height: 32),
-            TextButton.icon(
-              onPressed: _adminDraw,
-              icon: const Icon(Icons.flash_on, color: Colors.orange),
-              label: const Text(
-                '管理员手动开奖',
-                style: TextStyle(color: Colors.orange),
-              ),
-              style: TextButton.styleFrom(
-                backgroundColor: Colors.orange.withValues(alpha: 0.1),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 12,
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
+                  ],
                 ),
               ),
+            )
+          else if (ev.winner != null)
+            Column(
+              children: [
+                const Row(
+                  children: [
+                    Text('🎉 ', style: TextStyle(fontSize: 18)),
+                    Text(
+                      '恭喜中奖',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFFF97316)),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    CachedAvatar(
+                      radius: 20,
+                      imageUrl: ev.winner!.avatar.isNotEmpty
+                          ? ApiConstants.fullUrl(ev.winner!.avatar)
+                          : null,
+                      fallbackText: ev.winner!.nickname,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        ev.winner!.nickname,
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: isDark ? Colors.white : const Color(0xFF1F2328),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Text('中奖奖品：', style: TextStyle(fontSize: 14, color: isDark ? Colors.white70 : const Color(0xFF747B82))),
+                    Text(ev.prizeName, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: isDark ? Colors.white : const Color(0xFF1F2328))),
+                  ],
+                )
+              ],
+            )
+          else
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.symmetric(vertical: 20),
+                child: Text('暂无中奖者', style: TextStyle(color: Colors.grey)),
+              ),
             ),
-          ],
         ],
       ),
     );
   }
 
-  Widget _buildEventHero(LotteryEvent event, Color primary, bool isDark) {
-    final titleColor = isDark ? Colors.white : const Color(0xFF20232A);
-    final subtitleColor = isDark ? Colors.white70 : const Color(0xFF7D8492);
+  Widget _buildEventHero(LotteryEvent event, bool isOngoing, Color primary, bool isDark) {
+    final titleColor = isDark ? Colors.white : const Color(0xFF1F2328);
 
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: isDark
-              ? [
-                  primary.withValues(alpha: 0.24),
-                  primary.withValues(alpha: 0.10),
-                ]
-              : const [
-                  Color(0xFFF0EFFF),
-                  Color(0xFFF8F7FF),
-                ],
-        ),
-        borderRadius: BorderRadius.circular(22),
+        color: isDark ? const Color(0xFF1E2226) : Colors.white,
+        borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: primary.withValues(alpha: isDark ? 0.20 : 0.10),
+          color: isDark
+              ? Colors.white.withValues(alpha: 0.08)
+              : const Color(0xFFF4E2C5),
         ),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 58,
-            height: 58,
-            decoration: BoxDecoration(
-              color: primary.withValues(alpha: 0.13),
-              borderRadius: BorderRadius.circular(18),
-            ),
-            child: Icon(
-              Icons.card_giftcard_rounded,
-              size: 32,
-              color: primary,
-            ),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  event.title,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 22,
-                    height: 1.2,
-                    fontWeight: FontWeight.w700,
-                    color: titleColor,
-                  ),
+        boxShadow: isDark
+            ? null
+            : [
+                BoxShadow(
+                  color: const Color(0xFFF59E0B).withValues(alpha: 0.05),
+                  blurRadius: 16,
+                  offset: const Offset(0, 4),
                 ),
-                if (event.description.trim().isNotEmpty) ...[
-                  const SizedBox(height: 7),
-                  Text(
-                    event.description,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 13,
-                      height: 1.4,
-                      color: subtitleColor,
-                    ),
-                  ),
-                ],
               ],
-            ),
+        gradient: isDark
+            ? null
+            : const LinearGradient(
+                colors: [Color(0xFFFFFDF8), Color(0xFFFFF4E5)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('本期抽奖', style: TextStyle(fontSize: 14, color: isDark ? Colors.white70 : const Color(0xFF747B82))),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: primary.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(Icons.card_giftcard_rounded, color: primary, size: 28),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      event.prizeName,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 22,
+                        height: 1.2,
+                        fontWeight: FontWeight.w800,
+                        color: titleColor,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        Text(
+                          event.title,
+                          style: TextStyle(fontSize: 13, color: isDark ? Colors.white70 : const Color(0xFF747B82)),
+                        ),
+                        const SizedBox(width: 8),
+                        const Text('·', style: TextStyle(color: Colors.grey)),
+                        const SizedBox(width: 8),
+                        Text(
+                          isOngoing ? '进行中' : '已开奖',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: isOngoing ? primary : const Color(0xFF7D8A97),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -517,56 +573,76 @@ class _LotteryScreenState extends State<LotteryScreen> {
 
   Widget _buildPrizeCard(
       LotteryEvent event, bool isOngoing, Color primary, bool isDark) {
-    final cardColor = isDark ? const Color(0xFF151A24) : Colors.white;
-    final textColor = isDark ? Colors.white : const Color(0xFF20232A);
+    final titleColor = isDark ? Colors.white : const Color(0xFF1F2328);
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: cardColor,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: isDark
-              ? Colors.white.withValues(alpha: 0.07)
-              : const Color(0xFFEEF0F4),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: isDark ? 0.18 : 0.05),
-            blurRadius: 18,
-            offset: const Offset(0, 7),
-          ),
-        ],
-      ),
+      padding: const EdgeInsets.all(20),
+      decoration: _softCardDecoration(isDark),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          Text(
+            '奖品信息',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: titleColor,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            event.prizeName,
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+              color: isDark ? Colors.white : const Color(0xFFF97316),
+            ),
+          ),
+          const SizedBox(height: 16),
           Row(
             children: [
-              Container(
-                width: 46,
-                height: 46,
-                decoration: BoxDecoration(
-                  color: primary.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Icon(
-                  Icons.redeem_rounded,
-                  color: primary,
-                  size: 25,
-                ),
-              ),
-              const SizedBox(width: 13),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      event.prizeName,
+                      '当前参与',
                       style: TextStyle(
-                        fontSize: 19,
-                        fontWeight: FontWeight.w700,
-                        color: textColor,
+                        fontSize: 13,
+                        color: isDark ? Colors.white54 : const Color(0xFF747B82),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '$_participantCount 人',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: titleColor,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      isOngoing ? '距离开奖' : '开奖状态',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: isDark ? Colors.white54 : const Color(0xFF747B82),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      isOngoing ? _formatCountdown(event.drawTime) : '已结束',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: isOngoing ? titleColor : const Color(0xFF7D8A97),
                       ),
                     ),
                   ],
@@ -574,99 +650,30 @@ class _LotteryScreenState extends State<LotteryScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 18),
-          Divider(
-            height: 1,
-            color: isDark
-                ? Colors.white.withValues(alpha: 0.08)
-                : const Color(0xFFEEF0F4),
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: _buildInfoCell(
-                  label: '当前参与',
-                  value: '$_participantCount 人',
-                  isDark: isDark,
-                ),
-              ),
-              Container(
-                width: 1,
-                height: 40,
-                color: isDark
-                    ? Colors.white.withValues(alpha: 0.08)
-                    : const Color(0xFFEEF0F4),
-              ),
-              Expanded(
-                child: _buildInfoCell(
-                  label: '距离开奖',
-                  value: isOngoing ? _formatCountdown(event.drawTime) : '已结束',
-                  isDark: isDark,
-                ),
-              ),
-            ],
-          ),
         ],
       ),
     );
   }
 
-  Widget _buildInfoCell(
-      {required String label, required String value, required bool isDark}) {
-    return Column(
-      children: [
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 12,
-            color: isDark ? Colors.white54 : const Color(0xFF8A8F9C),
-          ),
-        ),
-        const SizedBox(height: 6),
-        Text(
-          value,
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.w600,
-            color: isDark ? Colors.white : const Color(0xFF20232A),
-          ),
-        ),
-      ],
-    );
-  }
-
   Widget _buildJoinedCard(bool isDark) {
-    const success = Color(0xFF42B36F);
-    final bonusWeight = (_myWeight - 1).clamp(0, 1 << 30);
+    const success = Color(0xFF147C72);
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color:
-            isDark ? success.withValues(alpha: 0.13) : const Color(0xFFEAF8F0),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: success.withValues(alpha: 0.26),
-        ),
-      ),
+      padding: const EdgeInsets.all(20),
+      decoration: _softCardDecoration(isDark, border: success.withValues(alpha: 0.2)),
       child: Row(
         children: [
           Container(
             width: 40,
             height: 40,
             decoration: BoxDecoration(
-              color: success.withValues(alpha: 0.14),
+              color: success.withValues(alpha: 0.1),
               shape: BoxShape.circle,
             ),
-            child: const Icon(
-              Icons.check_rounded,
-              color: success,
-            ),
+            child: const Icon(Icons.check_rounded, color: success),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 16),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -679,12 +686,12 @@ class _LotteryScreenState extends State<LotteryScreen> {
                     color: success,
                   ),
                 ),
-                const SizedBox(height: 3),
+                const SizedBox(height: 4),
                 Text(
-                  '基础 1 · 经验加成 $bonusWeight',
+                  '当前等级权重：$_myWeight 份，开奖前按最新等级重算',
                   style: TextStyle(
                     fontSize: 12,
-                    color: isDark ? Colors.white60 : const Color(0xFF718079),
+                    color: isDark ? Colors.white60 : const Color(0xFF747B82),
                   ),
                 ),
               ],
@@ -705,7 +712,7 @@ class _LotteryScreenState extends State<LotteryScreen> {
                 '当前权重',
                 style: TextStyle(
                   fontSize: 11,
-                  color: isDark ? Colors.white54 : const Color(0xFF718079),
+                  color: isDark ? Colors.white54 : const Color(0xFF747B82),
                 ),
               ),
             ],
@@ -716,36 +723,38 @@ class _LotteryScreenState extends State<LotteryScreen> {
   }
 
   Widget _buildLotteryRules(Color primary, bool isDark) {
-    final textColor = isDark ? Colors.white70 : const Color(0xFF596170);
+    final textColor = isDark ? Colors.white70 : const Color(0xFF747B82);
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(17),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF151A24) : Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: isDark
-              ? Colors.white.withValues(alpha: 0.07)
-              : const Color(0xFFEEF0F4),
-        ),
-      ),
+      padding: const EdgeInsets.all(20),
+      decoration: _softCardDecoration(isDark),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          Text(
+            '抽奖说明',
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.bold,
+              color: isDark ? Colors.white : const Color(0xFF1F2328),
+            ),
+          ),
+          const SizedBox(height: 16),
           _buildRuleRow(
             Icons.person_outline_rounded,
             '每个账号仅可参与一次',
             primary,
             textColor,
           ),
-          const SizedBox(height: 13),
+          const SizedBox(height: 12),
           _buildRuleRow(
             Icons.trending_up_rounded,
-            '基础权重 1，经验每 10 点增加 1 权重',
+            '用户等级就是抽奖权重，Lv.几就是几份权重',
             primary,
             textColor,
           ),
-          const SizedBox(height: 13),
+          const SizedBox(height: 12),
           _buildRuleRow(
             Icons.verified_user_outlined,
             '系统按参与者权重随机抽取中奖者',

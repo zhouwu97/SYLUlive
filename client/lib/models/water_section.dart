@@ -2,6 +2,42 @@ import 'package:flutter/material.dart';
 
 import '../config/water_post_taxonomy.dart';
 
+/// 版块列表中返回的当前用户本版等级简要信息
+class WaterSectionMyLevelBrief {
+  final int level;
+  final String title;
+  final int exp;
+  final int currentLevelExp;
+  final int nextLevelExp;
+  final int expToNext;
+  final double progress;
+
+  const WaterSectionMyLevelBrief({
+    required this.level,
+    required this.title,
+    required this.exp,
+    required this.currentLevelExp,
+    required this.nextLevelExp,
+    required this.expToNext,
+    required this.progress,
+  });
+
+  factory WaterSectionMyLevelBrief.fromJson(Map<String, dynamic> json) {
+    return WaterSectionMyLevelBrief(
+      level: (json['level'] as num?)?.toInt() ?? 1,
+      title: json['title'] ?? '',
+      exp: (json['exp'] as num?)?.toInt() ?? 0,
+      currentLevelExp: (json['current_level_exp'] as num?)?.toInt() ?? 0,
+      nextLevelExp: (json['next_level_exp'] as num?)?.toInt() ?? 0,
+      expToNext: (json['exp_to_next'] as num?)?.toInt() ?? 0,
+      progress: (json['progress'] as num?)?.toDouble() ?? 0.0,
+    );
+  }
+
+  String get levelLabel => 'Lv.$level';
+  bool get isMaxLevel => nextLevelExp <= 0 || expToNext <= 0;
+}
+
 /// 水帖版块内标签
 class WaterSectionTag {
   final int id;
@@ -60,7 +96,13 @@ class WaterSection {
   final String subtitle;
   final String description;
   final String iconKey;
+  final String avatarUrl;
   final String colorHex;
+  final String coverUrl; // 兼容旧版块背景图
+  final String coverPortraitUrl; // 手机版块背景 3:4
+  final String coverLandscapeUrl; // 横向封面 16:9
+  final String coverSquareUrl; // 方形入口 1:1
+  final String coverBlurColor; // 加载前底色
   final String publishActionText;
   final String emptyTitle;
   final String emptyDescription;
@@ -70,6 +112,10 @@ class WaterSection {
   final String defaultSort;
   final int sortOrder;
   final String status;
+  final bool isFollowed;
+  final int postCount;
+  final int followerCount;
+  final WaterSectionMyLevelBrief? myLevel;
   final List<WaterSectionTag> tags;
 
   const WaterSection({
@@ -79,7 +125,13 @@ class WaterSection {
     this.subtitle = '',
     this.description = '',
     this.iconKey = '',
+    this.avatarUrl = '',
     this.colorHex = '',
+    this.coverUrl = '',
+    this.coverPortraitUrl = '',
+    this.coverLandscapeUrl = '',
+    this.coverSquareUrl = '',
+    this.coverBlurColor = '',
     this.publishActionText = '发布帖子',
     this.emptyTitle = '',
     this.emptyDescription = '',
@@ -89,6 +141,10 @@ class WaterSection {
     this.defaultSort = 'recommend',
     this.sortOrder = 0,
     this.status = 'active',
+    this.isFollowed = false,
+    this.postCount = 0,
+    this.followerCount = 0,
+    this.myLevel,
     this.tags = const [],
   });
 
@@ -98,11 +154,9 @@ class WaterSection {
         .map((e) => WaterSectionTag.fromJson(e as Map<String, dynamic>))
         .toList()
       ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
-    final sq = json['starter_questions'];
-    List<String> starterQuestions = const [];
-    if (sq is List) {
-      starterQuestions = sq.map((e) => e.toString()).toList();
-    }
+
+    final myLevelRaw = json['my_level'] as Map<String, dynamic>?;
+
     return WaterSection(
       id: json['id'] ?? 0,
       slug: json['slug'] ?? '',
@@ -110,16 +164,31 @@ class WaterSection {
       subtitle: json['subtitle'] ?? '',
       description: json['description'] ?? '',
       iconKey: json['icon_key'] ?? '',
+      avatarUrl: json['avatar_url'] ?? '',
       colorHex: json['color_hex'] ?? '',
+      coverUrl: json['cover_url'] ?? '',
+      coverPortraitUrl: json['cover_portrait_url'] ?? '',
+      coverLandscapeUrl: json['cover_landscape_url'] ?? '',
+      coverSquareUrl: json['cover_square_url'] ?? '',
+      coverBlurColor: json['cover_blur_color'] ?? '',
       publishActionText: json['publish_action_text'] ?? '发布帖子',
       emptyTitle: json['empty_title'] ?? '',
       emptyDescription: json['empty_description'] ?? '',
-      starterQuestions: starterQuestions,
+      starterQuestions: (json['starter_questions'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          const [],
       noticeText: json['notice_text'] ?? '',
       sensitiveLevel: json['sensitive_level'] ?? 'normal',
       defaultSort: json['default_sort'] ?? 'recommend',
       sortOrder: json['sort_order'] ?? 0,
       status: json['status'] ?? 'active',
+      isFollowed: json['is_followed'] == true,
+      postCount: (json['post_count'] as num?)?.toInt() ?? 0,
+      followerCount: (json['follower_count'] as num?)?.toInt() ?? 0,
+      myLevel: myLevelRaw != null
+          ? WaterSectionMyLevelBrief.fromJson(myLevelRaw)
+          : null,
       tags: tags,
     );
   }
@@ -130,7 +199,13 @@ class WaterSection {
       'subtitle': subtitle,
       'description': description,
       'icon_key': iconKey,
+      'avatar_url': avatarUrl,
       'color_hex': colorHex,
+      'cover_url': coverUrl,
+      'cover_portrait_url': coverPortraitUrl,
+      'cover_landscape_url': coverLandscapeUrl,
+      'cover_square_url': coverSquareUrl,
+      'cover_blur_color': coverBlurColor,
       'publish_action_text': publishActionText,
       'empty_title': emptyTitle,
       'empty_description': emptyDescription,
@@ -148,6 +223,15 @@ class WaterSection {
   bool get isSensitive =>
       sensitiveLevel == 'caution' || sensitiveLevel == 'strict';
 
+  String get mobileCoverUrl =>
+      coverPortraitUrl.isNotEmpty ? coverPortraitUrl : coverUrl;
+
+  String get landscapeCoverUrl =>
+      coverLandscapeUrl.isNotEmpty ? coverLandscapeUrl : mobileCoverUrl;
+
+  String get squareCoverUrl =>
+      coverSquareUrl.isNotEmpty ? coverSquareUrl : mobileCoverUrl;
+
   /// 将旧客户端硬编码分类转成 fallback WaterSection（接口失败时使用）
   factory WaterSection.fromLegacyCategory(WaterPostCategory category) {
     return WaterSection(
@@ -157,8 +241,14 @@ class WaterSection {
       subtitle: category.hint,
       description: category.hint,
       iconKey: '',
+      avatarUrl: '',
       colorHex:
           '#${category.color.toARGB32().toRadixString(16).padLeft(8, '0').substring(2)}',
+      coverUrl: '',
+      coverPortraitUrl: '',
+      coverLandscapeUrl: '',
+      coverSquareUrl: '',
+      coverBlurColor: '',
       publishActionText: category.publishActionText,
       emptyTitle: category.emptyTitle,
       emptyDescription: category.emptyDescription,
@@ -168,6 +258,9 @@ class WaterSection {
       defaultSort: 'recommend',
       sortOrder: 0,
       status: 'active',
+      postCount: 0,
+      followerCount: 0,
+      myLevel: null,
       tags: const [],
     );
   }
@@ -259,7 +352,7 @@ String defaultSortForSection(WaterSection section) {
     case 'featured':
       return 'featured';
     case 'following':
-      return 'following';
+      return 'all';
     default:
       return 'all';
   }

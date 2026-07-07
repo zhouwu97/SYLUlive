@@ -248,7 +248,9 @@ class _MyContentScreenState extends State<MyContentScreen>
       ),
       body: Stack(
         children: [
-          _buildBackground(themeProvider, isDark),
+          Positioned.fill(
+            child: _buildBackground(themeProvider, isDark),
+          ),
           SafeArea(
             child: Column(
               children: [
@@ -349,7 +351,7 @@ class _MyContentScreenState extends State<MyContentScreen>
 
   Widget _buildDefaultBackground(bool isDark) {
     return ColoredBox(
-      color: isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
+      color: isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight,
     );
   }
 
@@ -675,7 +677,7 @@ class _MyContentScreenState extends State<MyContentScreen>
         color = Colors.orange;
         break;
       case 'proxy':
-        label = '代课';
+        label = '办事';
         color = Colors.blue;
         break;
       case 'exposure':

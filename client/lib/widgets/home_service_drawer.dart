@@ -1,8 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../config/water_post_taxonomy.dart';
 import '../models/announcement.dart' as model;
 import '../models/water_section.dart';
+import '../providers/theme_provider.dart';
+import '../utils/responsive_util.dart';
+import 'group_chat_dialog.dart';
+import 'water_section/section_avatar.dart';
 
 /// 校园服务抽屉 —— 纯展示组件，所有数据和回调由外部提供。
 class HomeServiceDrawer extends StatelessWidget {
@@ -18,7 +23,7 @@ class HomeServiceDrawer extends StatelessWidget {
   final VoidCallback onOpenGrades;
   final VoidCallback onOpenExamSchedule;
   final VoidCallback onOpenFeedback;
-  final VoidCallback onOpenAllWaterPosts;
+  final VoidCallback onOpenWaterSectionDirectory;
   final ValueChanged<WaterPostCategory>? onOpenWaterCategory;
   final ValueChanged<WaterSection>? onOpenWaterSection;
   final List<WaterSection> waterSections;
@@ -38,7 +43,7 @@ class HomeServiceDrawer extends StatelessWidget {
     required this.onOpenGrades,
     required this.onOpenExamSchedule,
     required this.onOpenFeedback,
-    required this.onOpenAllWaterPosts,
+    required this.onOpenWaterSectionDirectory,
     this.onOpenWaterCategory,
     this.onOpenWaterSection,
     this.waterSections = const [],
@@ -51,10 +56,19 @@ class HomeServiceDrawer extends StatelessWidget {
     final screenWidth = MediaQuery.sizeOf(context).width;
     final drawerWidth = (screenWidth * 0.8).clamp(0.0, 360.0);
 
+    final themeProvider = context.watch<ThemeProvider>();
+    final isCustomMode = !themeProvider.isCleanBackgroundMode;
+
+    final drawerBg = isDark
+        ? const Color(0xFF151A24)
+        : isCustomMode
+            ? kCleanWarmBackgroundLight.withValues(alpha: 0.96)
+            : kCleanWarmBackgroundLight;
+
     return Container(
       width: drawerWidth,
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF151A24) : const Color(0xFFFFFFFF),
+        color: drawerBg,
         borderRadius: const BorderRadius.only(
           topRight: Radius.circular(28),
           bottomRight: Radius.circular(28),
@@ -137,14 +151,12 @@ class HomeServiceDrawer extends StatelessWidget {
     return Container(
       height: 50,
       decoration: BoxDecoration(
-        color: isDark
-            ? Colors.white.withValues(alpha: 0.06)
-            : const Color(0xFFF7F9FC),
+        color: isDark ? Colors.white.withValues(alpha: 0.06) : Colors.white,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
           color: isDark
               ? Colors.white.withValues(alpha: 0.08)
-              : const Color(0xFFE9EDF5),
+              : kCleanWarmCardBorderLight,
         ),
       ),
       child: Row(
@@ -197,14 +209,12 @@ class HomeServiceDrawer extends StatelessWidget {
           width: double.infinity,
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: isDark
-                ? Colors.white.withValues(alpha: 0.06)
-                : const Color(0xFFF7F9FC),
+            color: isDark ? Colors.white.withValues(alpha: 0.06) : Colors.white,
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
               color: isDark
                   ? Colors.white.withValues(alpha: 0.08)
-                  : const Color(0xFFE9EDF5),
+                  : kCleanWarmCardBorderLight,
             ),
           ),
           child: Column(
@@ -290,7 +300,7 @@ class HomeServiceDrawer extends StatelessWidget {
     );
   }
 
-  // ---- 水帖分类 ----
+  // ---- 社区版块 ----
   Widget _buildWaterCategorySection(BuildContext context, bool isDark) {
     final sections = _resolvedSections;
     final categoryCount = sections.length;
@@ -304,7 +314,7 @@ class HomeServiceDrawer extends StatelessWidget {
               child: Row(
                 children: [
                   Text(
-                    '水帖分类',
+                    '社区版块',
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w800,
@@ -335,7 +345,7 @@ class HomeServiceDrawer extends StatelessWidget {
               ),
             ),
             InkWell(
-              onTap: onOpenAllWaterPosts,
+              onTap: onOpenWaterSectionDirectory,
               borderRadius: BorderRadius.circular(999),
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
@@ -368,14 +378,13 @@ class HomeServiceDrawer extends StatelessWidget {
           width: double.infinity,
           padding: const EdgeInsets.fromLTRB(10, 12, 10, 12),
           decoration: BoxDecoration(
-            color: isDark
-                ? Colors.white.withValues(alpha: 0.045)
-                : const Color(0xFFF9FAFB),
+            color:
+                isDark ? Colors.white.withValues(alpha: 0.045) : Colors.white,
             borderRadius: BorderRadius.circular(20),
             border: Border.all(
               color: isDark
                   ? Colors.white.withValues(alpha: 0.07)
-                  : const Color(0xFFEDF1F7),
+                  : kCleanWarmCardBorderLight,
             ),
           ),
           child: waterSectionsLoading
@@ -396,10 +405,11 @@ class HomeServiceDrawer extends StatelessWidget {
               : LayoutBuilder(
                   builder: (context, constraints) {
                     final itemWidth = (constraints.maxWidth - 10) / 2;
+                    final displaySections = sections.take(4).toList();
                     return Wrap(
                       spacing: 10,
                       runSpacing: 10,
-                      children: sections.map((section) {
+                      children: displaySections.map((section) {
                         return SizedBox(
                           width: itemWidth,
                           child: _WaterCategoryMiniItem(
@@ -451,14 +461,13 @@ class HomeServiceDrawer extends StatelessWidget {
         const SizedBox(height: 10),
         Container(
           decoration: BoxDecoration(
-            color: isDark
-                ? Colors.white.withValues(alpha: 0.045)
-                : const Color(0xFFF9FAFB),
+            color:
+                isDark ? Colors.white.withValues(alpha: 0.045) : Colors.white,
             borderRadius: BorderRadius.circular(20),
             border: Border.all(
               color: isDark
                   ? Colors.white.withValues(alpha: 0.07)
-                  : const Color(0xFFEDF1F7),
+                  : kCleanWarmCardBorderLight,
             ),
           ),
           child: Column(
@@ -497,6 +506,15 @@ class HomeServiceDrawer extends StatelessWidget {
                 subtitle: 'Bug 报告与功能建议',
                 isDark: isDark,
                 onTap: onOpenFeedback,
+              ),
+              _buildServiceDivider(isDark),
+              _ServiceRow(
+                icon: Icons.group_rounded,
+                color: const Color(0xFF2563EB),
+                title: '加入群聊',
+                subtitle: '扫码进群交流反馈',
+                isDark: isDark,
+                onTap: () => showGroupChatDialog(context),
               ),
             ],
           ),
@@ -624,23 +642,18 @@ class _WaterCategoryMiniItem extends StatelessWidget {
             border: Border.all(
               color: isDark
                   ? Colors.white.withValues(alpha: 0.07)
-                  : const Color(0xFFEDEFF3),
+                  : kCleanWarmCardBorderLight,
             ),
           ),
           child: Row(
             children: [
-              Container(
-                width: 34,
-                height: 34,
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: isDark ? 0.18 : 0.11),
-                  borderRadius: BorderRadius.circular(13),
-                ),
-                child: Icon(
-                  icon,
-                  size: 18,
-                  color: color,
-                ),
+              SectionAvatar(
+                section: section,
+                size: 34,
+                radius: 13,
+                accentColor: color,
+                isDark: isDark,
+                showBorder: false, // 服务抽屉不需要明显描边
               ),
               const SizedBox(width: 8),
               Expanded(

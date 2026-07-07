@@ -22,6 +22,10 @@ type Reply struct {
 	Status        ReplyStatus  `gorm:"default:normal" json:"status"`
 	LikeCount     int          `gorm:"default:0" json:"like_count"`
 	IsLiked       bool         `gorm:"-" json:"is_liked"`
+	// 统一经验返回字段
+	ExpEarned     int          `gorm:"-" json:"exp_earned,omitempty"`
+	// ExpAwards 评论成功后本次下发的经验奖励（post 接口的子集，统一用同结构）。
+	ExpAwards     []ExpAward   `gorm:"-" json:"exp_awards,omitempty"`
 	Images        []ReplyImage `gorm:"foreignKey:ReplyID" json:"images"`
 	Author        User         `gorm:"foreignKey:AuthorID" json:"author"`
 	CreatedAt     time.Time    `json:"created_at"`

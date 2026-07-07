@@ -15,7 +15,13 @@ type WaterSection struct {
 	Subtitle             string    `gorm:"size:200" json:"subtitle"`
 	Description          string    `gorm:"size:1000" json:"description"`
 	IconKey              string    `gorm:"size:64" json:"icon_key"`
+	AvatarURL            string    `gorm:"size:500" json:"avatar_url"`
 	ColorHex             string    `gorm:"size:20" json:"color_hex"`
+	CoverURL             string    `gorm:"size:500" json:"cover_url"` // 兼容旧字段
+	CoverPortraitURL     string    `gorm:"size:500" json:"cover_portrait_url"` // 手机版块背景 3:4
+	CoverLandscapeURL    string    `gorm:"size:500" json:"cover_landscape_url"`// 横向封面 16:9
+	CoverSquareURL       string    `gorm:"size:500" json:"cover_square_url"`   // 方形入口 1:1
+	CoverBlurColor       string    `gorm:"size:20" json:"cover_blur_color"`    // 可选，加载前底色
 	PublishActionText    string    `gorm:"size:40" json:"publish_action_text"`
 	EmptyTitle           string    `gorm:"size:100" json:"empty_title"`
 	EmptyDescription     string    `gorm:"size:300" json:"empty_description"`
@@ -123,6 +129,29 @@ type WaterSectionPin struct {
 
 func (WaterSectionPin) TableName() string { return "water_section_pins" }
 
+// WaterSectionFeaturedStatus
+const (
+	SectionFeaturedStatusActive   = "active"
+	SectionFeaturedStatusInactive = "inactive"
+)
+
+// WaterSectionFeaturedPost 版块精华帖
+type WaterSectionFeaturedPost struct {
+	ID         uint      `gorm:"primaryKey" json:"id"`
+	SectionID  uint      `gorm:"index;not null" json:"section_id"`
+	PostID     uint      `gorm:"index;not null" json:"post_id"`
+	FeaturedBy uint      `gorm:"index;not null" json:"featured_by"`
+	Reason     string    `gorm:"size:500" json:"reason"`
+	Status     string    `gorm:"size:32;index;not null;default:'active'" json:"status"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
+
+	Section WaterSection `gorm:"foreignKey:SectionID" json:"section,omitempty"`
+	Post    Post         `gorm:"foreignKey:PostID" json:"post,omitempty"`
+}
+
+func (WaterSectionFeaturedPost) TableName() string { return "water_section_featured_posts" }
+
 // WaterSectionMuteStatus
 const (
 	MuteStatusActive = "active"
@@ -174,9 +203,11 @@ func (WaterModerationLog) TableName() string { return "water_moderation_logs" }
 
 // ModerationAction 枚举
 const (
-	ModActionPinPost     = "pin_post"
-	ModActionUnpinPost   = "unpin_post"
-	ModActionDeletePost  = "delete_post"
+	ModActionPinPost       = "pin_post"
+	ModActionUnpinPost     = "unpin_post"
+	ModActionFeaturePost   = "feature_post"
+	ModActionUnfeaturePost = "unfeature_post"
+	ModActionDeletePost    = "delete_post"
 	ModActionRestorePost = "restore_post"
 	ModActionMuteUser    = "mute_user"
 	ModActionUnmuteUser  = "unmute_user"
@@ -263,8 +294,6 @@ func defaultWaterSections() []waterSectionSeedEntry {
 				{Slug: "notice", Name: "通知", SortOrder: 10},
 				{Slug: "team", Name: "组队", SortOrder: 20},
 				{Slug: "experience", Name: "经验", SortOrder: 30},
-				{Slug: "algorithm", Name: "算法", SortOrder: 40},
-				{Slug: "modeling", Name: "数模", SortOrder: 50},
 			},
 		},
 		{
@@ -277,11 +306,11 @@ func defaultWaterSections() []waterSectionSeedEntry {
 			StarterQuestions: []string{"食堂哪家强？", "宿舍怎么样？", "校园卡丢了怎么办？", "校园里有什么好去处？", "随手拍分享什么？"},
 			SensitiveLevel:   "normal", DefaultSort: "recommend", SortOrder: 40,
 			Tags: []waterSectionTagSeed{
-				{Slug: "canteen", Name: "食堂", SortOrder: 10},
+				{Slug: "daily", Name: "日常", SortOrder: 10},
 				{Slug: "dormitory", Name: "宿舍", SortOrder: 20},
-				{Slug: "daily", Name: "日常", SortOrder: 30},
-				{Slug: "campus_card", Name: "校园卡", SortOrder: 40},
-				{Slug: "snapshot", Name: "随手拍", SortOrder: 50},
+				{Slug: "canteen", Name: "食堂", SortOrder: 30},
+				{Slug: "campus_view", Name: "校园见闻", SortOrder: 40},
+				{Slug: "other", Name: "其他", SortOrder: 50},
 			},
 		},
 		{
@@ -400,3 +429,43 @@ func EnsureWaterSections(db *gorm.DB) error {
 	}
 	return nil
 }
+
+// WaterSectionIconReview 版块图标更换审核
+type WaterSectionIconReview struct {
+	ID uint `gorm:"primaryKey" json:"id"`
+
+	SectionID uint         `gorm:"not null;index" json:"section_id"`
+	Section   WaterSection `gorm:"foreignKey:SectionID" json:"section,omitempty"`
+
+	RequestedBy uint `gorm:"not null;index" json:"requested_by"`
+	Requester   User `gorm:"foreignKey:RequestedBy" json:"requester,omitempty"`
+
+	OldAvatarURL string `gorm:"size:500" json:"old_avatar_url"`
+	NewAvatarURL string `gorm:"size:500;not null" json:"new_avatar_url"`
+
+	Reason string `gorm:"size:500" json:"reason"`
+
+	Status string `gorm:"size:32;not null;default:'pending';index" json:"status"`
+	// pending / approved / rejected / cancelled
+
+	ReviewedBy *uint `gorm:"index" json:"reviewed_by"`
+	Reviewer   *User `gorm:"foreignKey:ReviewedBy" json:"reviewer,omitempty"`
+
+	ReviewedAt   *time.Time `json:"reviewed_at"`
+	ReviewReason string     `gorm:"size:500" json:"review_reason"`
+
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+func (WaterSectionIconReview) TableName() string {
+	return "water_section_icon_reviews"
+}
+
+// 图标审核状态常量
+const (
+	SectionIconReviewPending   = "pending"
+	SectionIconReviewApproved  = "approved"
+	SectionIconReviewRejected  = "rejected"
+	SectionIconReviewCancelled = "cancelled"
+)

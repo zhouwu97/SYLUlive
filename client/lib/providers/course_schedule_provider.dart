@@ -5,6 +5,8 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config/api_constants.dart';
 import '../services/home_widget_service.dart';
+import '../services/course_reminder_service.dart';
+import '../models/course_term.dart';
 
 /// 单个课程块，用于课表网格展示
 class CourseBlock {
@@ -113,46 +115,50 @@ class CourseScheduleProvider extends ChangeNotifier {
   bool _isLoading = false;
   String? _errorMessage;
 
-  // 当前选中的学年和学期
-  String _selectedYear = '';
-  int _selectedSemester = 3;
+  // 学期管理
+  List<CourseTerm> _terms = [];
+  CourseTerm? _currentTerm;
+
+  CourseTerm get currentTerm => _currentTerm ?? CourseTerm.inferCurrentTerm();
+
+  // 兼容旧的 getters
+  String get selectedYear => currentTerm.year;
+  int get selectedSemester => currentTerm.semester;
+  DateTime? get semesterStart => currentTerm.startDate;
 
   // 课程数据
   List<CourseBlock> _courses = [];
   Map<int, Map<int, List<CourseBlock>>> _gridData = {};
 
-  // 本地缓存 key
-  static const String _cacheKeyPrefix = 'course_cache_v4_';
-  static const int _cacheVersion = 4;
+  // 本地缓存 key (v5)
+  static const String _cacheKeyPrefix = 'course_cache_v5_';
+  static const int _cacheVersion = 5;
 
   String get _currentCacheKey =>
-      '$_cacheKeyPrefix${_userId}_${_selectedYear}_$_selectedSemester';
+      '$_cacheKeyPrefix${_userId}_${selectedYear}_$selectedSemester';
   String get _hiddenCoursesCacheKey =>
-      'course_hidden_v4_${_userId}_${_selectedYear}_$_selectedSemester';
+      'course_hidden_v5_${_userId}_${selectedYear}_$selectedSemester';
   Set<int> _hiddenCourseIds = {};
 
-  // 存档相关
-  static const String _archiveListKeyPrefix = 'course_archives_v1_';
-  static const String _archiveDataKeyPrefix = 'course_archive_data_v1_';
-  static const String _activeArchiveIdKeyPrefix = 'active_archive_v1_';
+  // 存档相关 (v2)
+  static const String _archiveListKeyPrefix = 'course_archives_v2_';
+  static const String _archiveDataKeyPrefix = 'course_archive_data_v2_';
+  static const String _activeArchiveIdKeyPrefix = 'active_archive_v2_';
   List<CourseArchive> _archives = [];
   String get _archiveListKey =>
-      '$_archiveListKeyPrefix${_userId}_${_selectedYear}_$_selectedSemester';
+      '$_archiveListKeyPrefix${_userId}_${selectedYear}_$selectedSemester';
   String get _activeArchiveKey =>
-      '$_activeArchiveIdKeyPrefix${_userId}_${_selectedYear}_$_selectedSemester';
+      '$_activeArchiveIdKeyPrefix${_userId}_${selectedYear}_$selectedSemester';
 
-  // 学期起始日期（用于推算教学周）
-  DateTime? _semesterStart;
-  static const String _semesterStartKey = 'semester_start';
+  // 学期起始日期 key
+  String get _semesterStartKey => 'semester_start_v2_${_userId}_${selectedYear}_$selectedSemester';
+  static const String _legacySemesterStartKey = 'semester_start';
 
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
-  String get selectedYear => _selectedYear;
-  int get selectedSemester => _selectedSemester;
   List<CourseBlock> get courses => _courses;
   Map<int, Map<int, List<CourseBlock>>> get gridData => _gridData;
   String? get userId => _userId;
-  DateTime? get semesterStart => _semesterStart;
   String? get cacheUserId => _userId;
   List<CourseArchive> get archives => _archives;
 
@@ -168,22 +174,7 @@ class CourseScheduleProvider extends ChangeNotifier {
   }
 
   void _initDefaults() {
-    final now = DateTime.now();
-    int currentYear = now.year;
-
-    // 如果当前是 2月到7月（春季学期），则属于上一年的秋季入学的学年，正方系统通常用 12 表示春季(第二学期)
-    if (now.month >= 2 && now.month <= 7) {
-      _selectedYear = (currentYear - 1).toString();
-      _selectedSemester = 12; // 春季（第二学期）
-    } else if (now.month == 1) {
-      // 1月份还是秋季学期末，属于上一年的学年
-      _selectedYear = (currentYear - 1).toString();
-      _selectedSemester = 3; // 秋季（第一学期）
-    } else {
-      // 8月到12月，属于当前年份的秋季学期
-      _selectedYear = currentYear.toString();
-      _selectedSemester = 3; // 秋季（第一学期）
-    }
+    _currentTerm = CourseTerm.inferCurrentTerm();
   }
 
   /// 设置当前用户，但不自动拉取数据（由调用方决定何时拉取）
@@ -203,9 +194,14 @@ class CourseScheduleProvider extends ChangeNotifier {
     _archives = [];
     _errorMessage = null;
     _userId = userId;
-    loadSemesterStart();
-    loadArchiveList();
-    notifyListeners();
+    // 重置为默认学期
+    _currentTerm = CourseTerm.inferCurrentTerm();
+    
+    _migrateLegacySemesterStart().then((_) {
+      loadSemesterStart();
+      loadArchiveList();
+      notifyListeners();
+    });
   }
 
   /// 彻底清空当前用户所有内存状态（用于登出场景）
@@ -216,7 +212,7 @@ class CourseScheduleProvider extends ChangeNotifier {
     _hiddenCourseIds = {};
     _archives = [];
     _errorMessage = null;
-    _semesterStart = null;
+    _currentTerm = null;
     _isLoading = false;
     notifyListeners();
   }
@@ -437,8 +433,8 @@ class CourseScheduleProvider extends ChangeNotifier {
         '/api/edu/courses/local',
         queryParameters: {
           'user_id': _userId,
-          'year': _selectedYear,
-          'semester': _selectedSemester,
+          'year': selectedYear,
+          'semester': selectedSemester,
         },
       );
 
@@ -472,8 +468,8 @@ class CourseScheduleProvider extends ChangeNotifier {
           '/api/edu/courses/fetch',
           data: {
             'user_id': _userId,
-            'year': _selectedYear,
-            'semester': _selectedSemester,
+            'year': selectedYear,
+            'semester': selectedSemester,
           },
         );
 
@@ -647,29 +643,52 @@ class CourseScheduleProvider extends ChangeNotifier {
   /// 设置学期起始日期（周一），持久化到 SharedPreferences
   Future<void> setSemesterStart(DateTime date) async {
     // 对齐到周一
-    _semesterStart = DateTime(
+    final start = DateTime(
       date.year,
       date.month,
       date.day,
     ).subtract(Duration(days: date.weekday - 1));
+    
+    _currentTerm = currentTerm.copyWith(startDate: start);
+    
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_semesterStartKey, _semesterStart!.toIso8601String());
+    await prefs.setString(_semesterStartKey, start.toIso8601String());
     notifyListeners();
   }
 
-  /// 从 SharedPreferences 加载学期起始日期
+  /// 从 SharedPreferences 加载当前学期起始日期
   Future<void> loadSemesterStart() async {
     final prefs = await SharedPreferences.getInstance();
     final s = prefs.getString(_semesterStartKey);
     if (s != null) {
-      _semesterStart = DateTime.tryParse(s);
+      _currentTerm = currentTerm.copyWith(startDate: DateTime.tryParse(s));
+    } else {
+      _currentTerm = currentTerm.copyWith(startDate: null); // 清除旧状态
+    }
+  }
+
+  /// 迁移旧版本 `semester_start`
+  Future<void> _migrateLegacySemesterStart() async {
+    if (_userId == null) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final newKey = _semesterStartKey;
+      if (!prefs.containsKey(newKey) && prefs.containsKey(_legacySemesterStartKey)) {
+        final legacyStr = prefs.getString(_legacySemesterStartKey);
+        if (legacyStr != null) {
+          await prefs.setString(newKey, legacyStr);
+          debugPrint('Migrated legacy semester_start to $newKey');
+        }
+      }
+    } catch (e) {
+      debugPrint('Error migrating legacy semester_start: $e');
     }
   }
 
   /// 计算给定日期对应的教学周号（1-based），未设置则返回 null
   int? getAcademicWeek(DateTime date) {
-    if (_semesterStart == null) return null;
-    final diff = date.difference(_semesterStart!).inDays;
+    if (semesterStart == null) return null;
+    final diff = date.difference(semesterStart!).inDays;
     if (diff < 0) return null;
     return (diff / 7).floor() + 1;
   }
@@ -778,9 +797,28 @@ class CourseScheduleProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void setSemester(String year, int semester) {
-    _selectedYear = year;
-    _selectedSemester = semester;
+  Future<void> selectTerm(String year, int semester) async {
+    _currentTerm = CourseTerm(
+      id: '${year}_$semester',
+      year: year,
+      semester: semester,
+      title: '$year 第${semester == 3 ? "一" : "二"}学期',
+    );
+    
+    // 切换学期后重新加载日期并刷新课程
+    await loadSemesterStart();
+    await loadCachedCoursesIfAvailable();
+    
+    // 如果启用提醒，则重新应用当前学期提醒
+    if (await CourseReminderService.instance.isEnabled()) {
+      await CourseReminderService.instance.reschedule(
+        courses: courses,
+        semesterStart: semesterStart,
+      );
+    }
+    
+    _syncWidget();
+    notifyListeners();
   }
 
   // ====== 存档管理 ======

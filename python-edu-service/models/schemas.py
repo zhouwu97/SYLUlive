@@ -4,22 +4,22 @@ from typing import Optional, List
 from datetime import datetime
 
 
-# ============== 认证相关 ==============
+# ============== ��֤��� ==============
 
 class BindInput(BaseModel):
-    """绑定教务账号输入"""
-    user_id: str = Field(..., description="App用户ID")
-    student_id: str = Field(..., min_length=10, max_length=10, description="学号")
-    password: str = Field(..., description="教务密码")
+    """�󶨽����˺�����"""
+    user_id: str = Field(..., description="App�û�ID")
+    student_id: str = Field(..., min_length=10, max_length=10, description="ѧ��")
+    password: str = Field(..., description="��������")
 
 
 class BindResponse(BaseModel):
-    """绑定响应"""
+    """����Ӧ"""
     success: bool
     message: str
     code: Optional[str] = None
     student_id: str
-    cookie: Optional[str] = None  # 登录Cookie，供Go服务器存储
+    cookie: Optional[str] = None  # ��¼Cookie����Go�������洢
     name: Optional[str] = None
     grade: Optional[str] = None
     college: Optional[str] = None
@@ -27,13 +27,13 @@ class BindResponse(BaseModel):
 
 
 class UnbindResponse(BaseModel):
-    """解绑响应"""
+    """�����Ӧ"""
     success: bool
     message: str
 
 
 class EduStatusResponse(BaseModel):
-    """教务绑定状态"""
+    """�����״̬"""
     bound: bool
     student_id: Optional[str] = None
     name: Optional[str] = None
@@ -43,13 +43,13 @@ class EduStatusResponse(BaseModel):
 
 
 class PreVerifyInput(BaseModel):
-    """预验证教务账号输入"""
-    student_id: str = Field(..., min_length=10, max_length=10, description="学号")
-    password: str = Field(..., description="教务密码")
+    """Ԥ��֤�����˺�����"""
+    student_id: str = Field(..., min_length=10, max_length=10, description="ѧ��")
+    password: str = Field(..., description="��������")
 
 
 class PreVerifyResponse(BaseModel):
-    """预验证响应"""
+    """Ԥ��֤��Ӧ"""
     success: bool
     message: str
     code: Optional[str] = None
@@ -58,14 +58,14 @@ class PreVerifyResponse(BaseModel):
 
 
 class LoginEduInput(BaseModel):
-    """统一登录输入"""
-    student_id: str = Field(..., min_length=10, max_length=10, description="学号")
-    edu_password: str = Field(..., description="教务密码")
-    password: str = Field(..., min_length=8, max_length=32, description="APP密码")
+    """ͳһ��¼����"""
+    student_id: str = Field(..., min_length=10, max_length=10, description="ѧ��")
+    edu_password: str = Field(..., description="��������")
+    password: str = Field(..., min_length=8, max_length=32, description="APP����")
 
 
 class LoginEduResponse(BaseModel):
-    """统一登录响应"""
+    """ͳһ��¼��Ӧ"""
     success: bool
     message: str
     code: Optional[str] = None
@@ -76,28 +76,28 @@ class LoginEduResponse(BaseModel):
     major: Optional[str] = None
 
 
-# ============== 课程相关 ==============
+# ============== �γ���� ==============
 
 class CourseInfo(BaseModel):
-    """课程信息（原始）"""
-    name: str  # 课程名称
-    teacher: Optional[str] = None  # 教师
-    location: Optional[str] = None  # 上课地点
-    time: int  # 起始节次
-    end_time: int = 0  # 结束节次
-    week_day: int  # 周几 (1-7)
-    weeks: List[int]  # 上课周数
+    """�γ���Ϣ��ԭʼ��"""
+    name: str  # �γ�����
+    teacher: Optional[str] = None  # ��ʦ
+    location: Optional[str] = None  # �Ͽεص�
+    time: int  # ��ʼ�ڴ�
+    end_time: int = 0  # �����ڴ�
+    week_day: int  # �ܼ� (1-7)
+    weeks: List[int]  # �Ͽ�����
 
 
 class CourseFetchInput(BaseModel):
-    """提取课表输入"""
+    """��ȡ�α�����"""
     user_id: str
-    year: str = Field(..., description="学年 e.g. 2024")
-    semester: int = Field(..., description="学期 3=第一学期, 12=第二学期")
+    year: str = Field(..., description="ѧ�� e.g. 2024")
+    semester: int = Field(..., description="ѧ�� 3=��һѧ��, 12=�ڶ�ѧ��")
 
 
 class CourseFetchResponse(BaseModel):
-    """提取课表响应（原始数据供预览）"""
+    """��ȡ�α���Ӧ��ԭʼ���ݹ�Ԥ����"""
     success: bool
     year: str
     semester: int
@@ -106,8 +106,8 @@ class CourseFetchResponse(BaseModel):
 
 
 class CourseCustomInput(BaseModel):
-    """自定义课程输入"""
-    course_code: str = Field(..., description="课程代码")
+    """�Զ���γ�����"""
+    course_code: str = Field(..., description="�γ̴���")
     custom_name: Optional[str] = None
     color: str = "#4A90D9"
     location_custom: Optional[str] = None
@@ -117,26 +117,30 @@ class CourseCustomInput(BaseModel):
     weekday: int = Field(..., ge=1, le=7)
     start_section: int = Field(..., ge=1, le=14)
     end_section: int = Field(..., ge=1, le=14)
-    weeks: List[int] = Field(..., description="上课周数列表")
+    weeks: List[int] = Field(..., description="�Ͽ������б�")
 
 
 class ManualCourseInput(BaseModel):
-    """手动添加课程输入"""
-    user_id: str = Field(..., description="用户ID")
-    custom_name: str = Field(..., description="课程名称")
+    """�ֶ����ӿγ�����"""
+    user_id: str = Field(..., description="�û�ID")
+    year: str = Field(..., description="ѧ��")
+    semester: int = Field(..., description="ѧ��")
+    custom_name: str = Field(..., description="�γ�����")
     teacher: Optional[str] = None
     location: Optional[str] = None
     color: str = "#4A90D9"
     weekday: int = Field(..., ge=1, le=7)
     start_section: int = Field(..., ge=1, le=14)
     end_section: int = Field(..., ge=1, le=14)
-    weeks: List[int] = Field(..., description="上课周数列表")
+    weeks: List[int] = Field(..., description="�Ͽ������б�")
 
 
 class CourseCustomResponse(BaseModel):
-    """自定义课程响应"""
+    """�Զ���γ���Ӧ"""
     id: int
     course_code: str
+    year: Optional[str]
+    semester: Optional[int]
     custom_name: Optional[str]
     color: str
     location_custom: Optional[str]
@@ -153,28 +157,30 @@ class CourseCustomResponse(BaseModel):
 
 
 class CourseSyncInput(BaseModel):
-    """同步课表到本地"""
+    """ͬ���α�������"""
     user_id: str
     year: str
     semester: int
-    raw_json: str  # 原始JSON
+    raw_json: str  # ԭʼJSON
     customizations: List[CourseCustomInput] = Field(default_factory=list)
 
 
 class CourseSyncResponse(BaseModel):
-    """同步响应"""
+    """ͬ����Ӧ"""
     success: bool
     message: str
     synced_count: int
 
 
 class LocalCourse(BaseModel):
-    """本地课程（美化后）"""
+    """���ؿγ̣�������"""
     id: int
     course_code: str
+    year: Optional[str]
+    semester: Optional[int]
     custom_name: Optional[str]
     color: str
-    location: Optional[str]  # 显示用（优先custom_location）
+    location: Optional[str]  # ��ʾ�ã�����custom_location��
     note: Optional[str]
     class_duration: int
     break_duration: int
@@ -187,40 +193,40 @@ class LocalCourse(BaseModel):
 
 
 class LocalCoursesResponse(BaseModel):
-    """本地课程列表响应"""
+    """���ؿγ��б���Ӧ"""
     courses: List[LocalCourse]
 
 
-# ============== 成绩相关 ==============
+# ============== �ɼ���� ==============
 
 class GradeInfo(BaseModel):
-    """成绩信息"""
-    name: str  # 课程名称
-    course_id: str = ""  # 课程ID
-    course_code: str = ""  # 课程编号
-    class_id: str  # 教学班ID
-    student_grade_id: str = ""  # 学生成绩详情所需的教务系统ID
+    """�ɼ���Ϣ"""
+    name: str  # �γ�����
+    course_id: str = ""  # �γ�ID
+    course_code: str = ""  # �γ̱��
+    class_id: str  # ��ѧ��ID
+    student_grade_id: str = ""  # ѧ���ɼ���������Ľ���ϵͳID
     teacher: Optional[str] = None
-    is_degree: bool = False  # 是否学位课
-    credits: float  # 学分
-    gpa: float  # 绩点
-    grade_points: float  # 学分绩点
-    fraction: float  # 百分成绩
-    grade: str  # 等级成绩
-    exam_type: Optional[str] = None  # 正常考试 / 补考 / 重修
-    course_category: Optional[str] = None  # 主修课程 / 重修课程等
-    assessment_method: Optional[str] = None  # 考试 / 考查
+    is_degree: bool = False  # �Ƿ�ѧλ��
+    credits: float  # ѧ��
+    gpa: float  # ����
+    grade_points: float  # ѧ�ּ���
+    fraction: float  # �ٷֳɼ�
+    grade: str  # �ȼ��ɼ�
+    exam_type: Optional[str] = None  # �������� / ���� / ����
+    course_category: Optional[str] = None  # ���޿γ� / ���޿γ̵�
+    assessment_method: Optional[str] = None  # ���� / ����
 
 
 class GradesInput(BaseModel):
-    """成绩查询输入"""
+    """�ɼ���ѯ����"""
     user_id: str
     year: str
     semester: int
 
 
 class GradesResponse(BaseModel):
-    """成绩响应"""
+    """�ɼ���Ӧ"""
     success: bool
     year: str
     semester: int
@@ -229,14 +235,14 @@ class GradesResponse(BaseModel):
 
 
 class GradeComponent(BaseModel):
-    """成绩构成分项"""
+    """�ɼ����ɷ���"""
     name: str
     weight: Optional[str] = None
     score: str
 
 
 class GradeDetailInput(BaseModel):
-    """成绩明细查询输入"""
+    """�ɼ���ϸ��ѯ����"""
     user_id: str
     year: str
     semester: int
@@ -247,7 +253,7 @@ class GradeDetailInput(BaseModel):
 
 
 class GradeDetailResponse(BaseModel):
-    """成绩明细响应"""
+    """�ɼ���ϸ��Ӧ"""
     success: bool
     course_name: str
     total_grade: str
@@ -255,9 +261,64 @@ class GradeDetailResponse(BaseModel):
     message: Optional[str] = None
 
 
-# ============== 错误响应 ==============
+class AcademicSituationInput(BaseModel):
+    """ѧҵ�����ѯ����"""
+    user_id: str
+    force_refresh: bool = False
+
+
+class AcademicCourseInfo(BaseModel):
+    """���������γ�������"""
+    study_status: Optional[str] = None
+    academic_year: Optional[str] = None
+    semester: Optional[str] = None
+    course_code: str = ""
+    course_name: str = ""
+    hours: Optional[str] = None
+    course_nature: Optional[str] = None
+    credits: float = 0
+    course_category: Optional[str] = None
+    max_grade: Optional[str] = None
+    gpa: Optional[float] = None
+    grade: Optional[str] = None
+    makeup_grade: Optional[str] = None
+    retake_grade: Optional[str] = None
+    suggested_year: Optional[str] = None
+    suggested_semester: Optional[str] = None
+    important_nature_count: Optional[str] = None
+    is_degree: bool = False
+    has_retake: bool = False
+    effective_grade: Optional[str] = None
+    effective_passed: Optional[bool] = None
+
+
+class AcademicSituationResponse(BaseModel):
+    """ѧ��ѧҵ�����ѯ��Ӧ"""
+    success: bool
+    source: str = "academic_situation"
+    all_gpa: Optional[float] = None
+    degree_gpa: Optional[float] = None
+
+    total_courses: int = 0
+    passed_courses: int = 0
+    failed_courses: int = 0
+    not_started_courses: int = 0
+    in_progress_courses: int = 0
+
+    degree_total_courses: int = 0
+    degree_passed_courses: int = 0
+    degree_failed_courses: int = 0
+    degree_not_started_courses: int = 0
+    degree_in_progress_courses: int = 0
+
+    courses: List[AcademicCourseInfo] = Field(default_factory=list)
+    message: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+# ============== ������Ӧ ==============
 
 class ErrorResponse(BaseModel):
-    """错误响应"""
+    """������Ӧ"""
     error: str
     detail: Optional[str] = None

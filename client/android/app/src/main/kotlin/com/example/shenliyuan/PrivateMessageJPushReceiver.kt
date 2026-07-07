@@ -184,7 +184,7 @@ class PrivateMessageJPushReceiver : JPushEventReceiver() {
                 val currentAlias =
                     KeepAliveForegroundService.getStoredAlias(context)
 
-                if (currentState != "active"
+                if ((currentState != "active" && currentState != "pending_bind")
                     || currentGen != generation
                     || !hasToken
                     || currentAlias.isNullOrBlank()) {
@@ -427,7 +427,7 @@ class PrivateMessageJPushReceiver : JPushEventReceiver() {
                         KeepAliveForegroundService.getStoredAlias(context)
                     val callbackAlias = jPushMessage.alias.orEmpty()
 
-                    if (currentState != "active"
+                    if ((currentState != "active" && currentState != "pending_bind")
                         || currentGen != requestGen
                         || callbackAlias != (currentAlias ?: "")) {
                         restoreRetries.remove(requestGen)
@@ -453,18 +453,25 @@ class PrivateMessageJPushReceiver : JPushEventReceiver() {
 
                     restoreRetries.remove(requestGen)
                     scheduledRestoreGenerations.remove(requestGen)
+
+                    val confirmed = KeepAliveForegroundService.confirmAliasBoundIfCurrent(
+                        context,
+                        requestGen,
+                        callbackAlias
+                    )
+
                     DiagnosticLogStore.info(
                         context,
                         source = "推送",
-                        type = "Alias 恢复成功",
-                        summary = "保活服务 Alias 绑定成功",
+                        type = "Alias 绑定成功",
+                        summary = if (confirmed) "保活服务 Alias 绑定成功并确认生效" else "Alias 绑定成功，但本地状态已变化",
                         detail = "sequence=$sequence gen=$requestGen",
                     )
                 } else {
                     DiagnosticLogStore.warning(
                         context,
                         source = "推送",
-                        type = "Alias 恢复失败",
+                        type = "Alias 绑定失败",
                         summary = "保活服务 Alias 绑定失败，安排退避重试",
                         detail = "code=${jPushMessage.errorCode} sequence=$sequence",
                     )

@@ -1,17 +1,37 @@
 import 'package:flutter/material.dart';
 
 class CampusMapTabPage extends StatefulWidget {
-  const CampusMapTabPage({Key? key}) : super(key: key);
+  const CampusMapTabPage({super.key});
 
   @override
   State<CampusMapTabPage> createState() => _CampusMapTabPageState();
 }
 
 class _CampusMapTabPageState extends State<CampusMapTabPage> {
+  late final TransformationController _mapController;
+
+  @override
+  void initState() {
+    super.initState();
+    _mapController = TransformationController();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    precacheImage(const AssetImage('assets/images/map.jpg'), context);
+  }
+
+  @override
+  void dispose() {
+    _mapController.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final bgColor = isDark ? const Color(0xFF101219) : Colors.white;
+    final bgColor = isDark ? const Color(0xFF111315) : const Color(0xFFFAF8F4);
 
     return Scaffold(
       backgroundColor: bgColor,
@@ -27,235 +47,45 @@ class _CampusMapTabPageState extends State<CampusMapTabPage> {
       ),
       body: SafeArea(
         top: false,
-        child: Column(
-          children: [
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: const [
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+          child: Container(
+            clipBehavior: Clip.antiAlias,
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF1E2226) : Colors.white,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: isDark
+                    ? Colors.white.withValues(alpha: 0.08)
+                    : const Color(0xFFE2EFEA),
+              ),
+              boxShadow: isDark
+                  ? null
+                  : [
                       BoxShadow(
-                        color: Colors.black12,
-                        blurRadius: 6,
-                        offset: Offset(0, 2),
+                        color: Colors.black.withValues(alpha: 0.025),
+                        blurRadius: 12,
+                        offset: const Offset(0, 5),
                       ),
                     ],
-                  ),
-                  clipBehavior: Clip.antiAlias,
-                  child: Image.asset(
-                    'assets/images/map.jpg',
-                    fit: BoxFit.contain,
-                  ),
-                ),
-              ),
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-              child: SizedBox(
-                width: double.infinity,
-                height: 44,
-                child: OutlinedButton.icon(
-                  style: OutlinedButton.styleFrom(
-                    backgroundColor: Colors.white,
-                    foregroundColor: Colors.black87,
-                    side: BorderSide(color: Colors.grey[300]!),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    elevation: 1,
-                  ),
-                  icon: const Icon(
-                    Icons.zoom_in,
-                    size: 18,
-                    color: Colors.black87,
-                  ),
-                  label: const Text(
-                    '进入操控模式 (Only Scale)',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                  ),
-                  onPressed: () {
-                    _openMapControlMode(context);
-                  },
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // 唤起全屏纯白按钮操控模式
-  void _openMapControlMode(BuildContext context) {
-    Navigator.of(context).push(
-      PageRouteBuilder(
-        opaque: false,
-        transitionDuration: const Duration(milliseconds: 150),
-        pageBuilder: (context, _, __) => const MapControlFullscreenOverlay(),
-      ),
-    );
-  }
-}
-
-// ------------------- 完美的右侧纯白按钮全屏层 -------------------
-class MapControlFullscreenOverlay extends StatefulWidget {
-  const MapControlFullscreenOverlay({Key? key}) : super(key: key);
-
-  @override
-  State<MapControlFullscreenOverlay> createState() =>
-      _MapControlFullscreenOverlayState();
-}
-
-class _MapControlFullscreenOverlayState
-    extends State<MapControlFullscreenOverlay> {
-  final TransformationController _transformationController =
-      TransformationController();
-
-  void _zoomIn() {
-    final Matrix4 matrix = _transformationController.value.clone();
-    matrix.scale(1.3);
-    _transformationController.value = matrix;
-  }
-
-  void _zoomOut() {
-    final Matrix4 matrix = _transformationController.value.clone();
-    matrix.scale(1 / 1.3);
-    _transformationController.value = matrix;
-  }
-
-  @override
-  void dispose() {
-    _transformationController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black.withOpacity(0.95), // 深色沉浸式背景
-      body: SafeArea(
-        child: Stack(
-          children: [
-            // 1. 独立手势层
-            InteractiveViewer(
-              transformationController: _transformationController,
-              minScale: 1.0,
-              maxScale: 6.0,
-              panAxis: PanAxis.free,
-              boundaryMargin: const EdgeInsets.all(200),
+            child: InteractiveViewer(
+              transformationController: _mapController,
+              minScale: 0.7,
+              maxScale: 5.0,
+              panEnabled: true,
+              scaleEnabled: true,
+              boundaryMargin: const EdgeInsets.all(160),
               child: Center(
                 child: Image.asset(
-                  'assets/images/map.jpg', // 修正路径
+                  'assets/images/map.jpg',
                   fit: BoxFit.contain,
+                  filterQuality: FilterQuality.medium,
+                  gaplessPlayback: true,
                 ),
               ),
             ),
-
-            // 2. 底部左侧半透明说明小字 HUD
-            Positioned(
-              bottom: 24,
-              left: 16,
-              right: 88,
-              child: Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.65),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.white10),
-                ),
-                child: const Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      '当前：缩放操控模式',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 13,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    SizedBox(height: 4),
-                    Text(
-                      '仅可缩放，不可左右滑动切换版块。双指捏合或使用右侧按钮控制。',
-                      style: TextStyle(color: Colors.white70, fontSize: 11),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
-            // 3. 右侧垂直排列的纯白按钮控制面板 (➕、➖、❌)
-            Positioned(
-              right: 16,
-              bottom: 24,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _buildWhiteButton(
-                    icon: Icons.add,
-                    label: '放大',
-                    onTap: _zoomIn,
-                  ),
-                  const SizedBox(height: 12),
-                  _buildWhiteButton(
-                    icon: Icons.remove,
-                    label: '缩小',
-                    onTap: _zoomOut,
-                  ),
-                  const SizedBox(height: 12),
-                  _buildWhiteButton(
-                    icon: Icons.close,
-                    label: '退出',
-                    onTap: () => Navigator.of(context).pop(),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildWhiteButton({
-    required IconData icon,
-    required String label,
-    required VoidCallback onTap,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 56,
-        height: 62,
-        decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.96), // 优雅纯白
-          borderRadius: BorderRadius.circular(8),
-          boxShadow: const [
-            BoxShadow(
-              color: Colors.black45,
-              blurRadius: 5,
-              offset: Offset(0, 2),
-            ),
-          ],
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, color: Colors.black87, size: 20),
-            const SizedBox(height: 2),
-            Text(
-              label,
-              style: const TextStyle(
-                color: Colors.black87,
-                fontSize: 10,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );

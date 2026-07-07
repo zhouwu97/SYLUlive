@@ -74,7 +74,7 @@ class _PostCardState extends State<PostCard>
             : 4;
 
     return GlassContainer(
-      margin: EdgeInsets.only(bottom: isDesktop ? 16 : 12),
+      margin: EdgeInsets.only(bottom: isDesktop ? 14 : 8),
       borderRadius: isDesktop ? 16 : 12,
       blur: 8,
       opacity: 1,
@@ -91,6 +91,7 @@ class _PostCardState extends State<PostCard>
             Row(
               children: [
                 GestureDetector(
+                  behavior: HitTestBehavior.opaque,
                   onTap: widget.disableAuthorNavigation
                       ? null
                       : () => _openAuthor(context),
@@ -140,6 +141,11 @@ class _PostCardState extends State<PostCard>
                             if (widget.post.author != null) ...[
                               const SizedBox(width: 4),
                               _buildLevelBadge(widget.post.author!),
+                            ],
+                            if (widget.post.waterSectionAuthorMeta != null) ...[
+                              const SizedBox(width: 4),
+                              _buildSectionLevelBadge(
+                                  widget.post.waterSectionAuthorMeta!),
                             ],
                           ],
                         ),
@@ -206,7 +212,10 @@ class _PostCardState extends State<PostCard>
                     const SizedBox(width: 6),
                   ],
                   if (widget.post.isFeatured) ...[
-                    _buildFeaturedBadge(isDesktop),
+                    _buildFeaturedBadge(isDesktop, label: '精华'),
+                    const SizedBox(width: 6),
+                  ] else if (widget.post.waterSectionFeatured) ...[
+                    _buildFeaturedBadge(isDesktop, label: '版块精华'),
                     const SizedBox(width: 6),
                   ],
                   Expanded(
@@ -243,6 +252,11 @@ class _PostCardState extends State<PostCard>
             if (widget.post.boardId == 1 && !widget.showCategoryBadge) ...[
               const SizedBox(height: 6),
               _buildWaterInlineTag(context, isDark),
+            ],
+            if (widget.post.boardId == 1 &&
+                widget.post.waterSectionFeatured) ...[
+              const SizedBox(height: 6),
+              _buildSectionFeaturedStatus(isDark),
             ],
             if ((widget.showPrice && widget.post.price > 0) ||
                 widget.showWarning) ...[
@@ -312,6 +326,58 @@ class _PostCardState extends State<PostCard>
             color: isDark ? Colors.white60 : const Color(0xFF60646C),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildSectionFeaturedStatus(bool isDark) {
+    return Wrap(
+      spacing: 6,
+      runSpacing: 6,
+      children: [
+        _buildStatusPill(
+          icon: Icons.workspace_premium_rounded,
+          label: '已入版块精华',
+          color: const Color(0xFFD97706),
+          isDark: isDark,
+        ),
+        if (widget.post.homeFeaturedPending)
+          _buildStatusPill(
+            icon: Icons.pending_actions_rounded,
+            label: '首页推荐待审核',
+            color: const Color(0xFF2563EB),
+            isDark: isDark,
+          ),
+      ],
+    );
+  }
+
+  Widget _buildStatusPill({
+    required IconData icon,
+    required String label,
+    required Color color,
+    required bool isDark,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: isDark ? 0.18 : 0.10),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: color),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: color,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -409,9 +475,9 @@ class _PostCardState extends State<PostCard>
         icon = Icons.shopping_cart;
         break;
       case 'proxy':
-        label = '代课';
+        label = '办事';
         color = Colors.blue;
-        icon = Icons.school;
+        icon = Icons.task_alt;
         break;
       case 'lost':
         label = '失物';
@@ -458,7 +524,7 @@ class _PostCardState extends State<PostCard>
     );
   }
 
-  Widget _buildFeaturedBadge(bool isDesktop) {
+  Widget _buildFeaturedBadge(bool isDesktop, {String label = '精华'}) {
     return Container(
       padding: EdgeInsets.symmetric(
         horizontal: isDesktop ? 7 : 6,
@@ -481,7 +547,7 @@ class _PostCardState extends State<PostCard>
           ),
           const SizedBox(width: 3),
           Text(
-            '精华',
+            label,
             style: TextStyle(
               fontSize: isDesktop ? 11 : 10,
               fontWeight: FontWeight.w700,
@@ -727,6 +793,28 @@ class _PostCardState extends State<PostCard>
           height: 1.15,
           fontWeight: FontWeight.w700,
           color: Color(user.levelColorValue),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSectionLevelBadge(WaterSectionAuthorMeta meta) {
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: 4,
+        vertical: 0.5,
+      ),
+      decoration: BoxDecoration(
+        color: const Color(0xFF6B8EFF).withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        meta.title,
+        style: const TextStyle(
+          fontSize: 8,
+          height: 1.15,
+          fontWeight: FontWeight.w700,
+          color: Color(0xFF6B8EFF),
         ),
       ),
     );

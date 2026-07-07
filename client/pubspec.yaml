@@ -63,6 +63,7 @@ flutter:
     - assets/images/map.jpg
     - assets/images/mingfeng.png
     - assets/images/morenbeijing.jpeg
+    - assets/images/group_chat_qr.png
     - assets/images/pcys.png
     - assets/images/sjys.png
     - assets/images/tablet_default_landscape.png

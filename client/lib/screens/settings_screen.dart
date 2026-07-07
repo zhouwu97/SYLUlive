@@ -24,6 +24,7 @@ import '../services/keep_alive_service.dart';
 import '../services/wallpaper_prefetch_service.dart';
 import '../utils/update_checker.dart';
 import '../widgets/glass_container.dart';
+import '../widgets/group_chat_dialog.dart';
 import 'diagnostic_log_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -35,6 +36,7 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   static const String _wallpaperBaseUrl = WallpaperPrefetchService.baseUrl;
+  static const String _authorEmail = '3170305904@qq.com';
   KeepAliveStatus _keepAliveStatus = const KeepAliveStatus.unsupported();
   bool _keepAliveBusy = false;
   bool _hideRecentsBusy = false;
@@ -1626,7 +1628,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                   ),
                                 ),
                                 Text(
-                                  '纯合子',
+                                  '纯合子、掉分员',
                                   style: TextStyle(
                                     fontSize: 16,
                                     fontWeight: FontWeight.bold,
@@ -1675,8 +1677,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           null,
                           isDark,
                           Colors.blue,
-                          onTapOverride: () =>
-                              _copyToClipboard(context, '1076639620', '复制成功'),
+                          onTapOverride: () => showGroupChatDialog(context),
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -1688,10 +1689,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           null,
                           isDark,
                           Colors.orange,
-                          onTapOverride: () => _copyToClipboard(
+                          onTapOverride: () => _showAuthorContactDialog(
                             context,
-                            '3170305904@qq.com',
-                            '邮箱已复制到剪贴板',
                           ),
                         ),
                       ),
@@ -1703,6 +1702,148 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  void _showAuthorContactDialog(BuildContext context) {
+    _showContactInfoDialog(
+      context,
+      title: '联系作者',
+      icon: Icons.email_rounded,
+      label: '作者邮箱',
+      value: _authorEmail,
+      description: '欢迎通过邮件反馈问题或提出建议。',
+      copyText: '复制邮箱',
+      copiedMessage: '邮箱已复制到剪贴板',
+      valueIcon: Icons.alternate_email_rounded,
+      accent: Colors.orange,
+    );
+  }
+
+  void _showContactInfoDialog(
+    BuildContext context, {
+    required String title,
+    required IconData icon,
+    required String label,
+    required String value,
+    required String description,
+    required String copyText,
+    required String copiedMessage,
+    required IconData valueIcon,
+    required Color accent,
+  }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final dialogBackground = isDark ? const Color(0xFF1E1E2E) : Colors.white;
+    final titleColor = isDark ? Colors.white : const Color(0xFF2D3142);
+    final labelColor = isDark ? Colors.white54 : const Color(0xFF9094A6);
+    final descriptionColor = isDark ? Colors.white70 : const Color(0xFF4F5568);
+    final valuePanelColor =
+        isDark ? const Color(0x0AFFFFFF) : const Color(0x08000000);
+    final valueBorderColor =
+        isDark ? const Color(0x0DFFFFFF) : const Color(0x0D000000);
+
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          backgroundColor: dialogBackground,
+          surfaceTintColor: Colors.transparent,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          title: Row(
+            children: [
+              Icon(icon, color: accent),
+              const SizedBox(width: 8),
+              Text(title, style: TextStyle(color: titleColor)),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: labelColor,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 12,
+                ),
+                decoration: BoxDecoration(
+                  color: valuePanelColor,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: valueBorderColor),
+                ),
+                child: Row(
+                  children: [
+                    Icon(valueIcon, size: 18, color: accent),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        value,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.6,
+                          color: titleColor,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                description,
+                style: TextStyle(
+                  fontSize: 13,
+                  height: 1.4,
+                  color: descriptionColor,
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              style: TextButton.styleFrom(foregroundColor: accent),
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('知道了'),
+            ),
+            FilledButton.icon(
+              style: FilledButton.styleFrom(
+                backgroundColor: accent,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () {
+                Clipboard.setData(ClipboardData(text: value));
+                Navigator.pop(dialogContext);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(copiedMessage),
+                    behavior: SnackBarBehavior.floating,
+                    margin: const EdgeInsets.all(16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    duration: const Duration(seconds: 2),
+                  ),
+                );
+              },
+              icon: const Icon(Icons.copy_rounded, size: 16),
+              label: Text(copyText),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -1756,23 +1897,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ],
           ),
         ),
-      ),
-    );
-  }
-
-  void _copyToClipboard(
-    BuildContext context,
-    String text,
-    String successMessage,
-  ) {
-    Clipboard.setData(ClipboardData(text: text));
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(successMessage),
-        behavior: SnackBarBehavior.floating,
-        margin: const EdgeInsets.all(16),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        duration: const Duration(seconds: 2),
       ),
     );
   }
@@ -1928,15 +2052,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             isDarkSheet,
                           ),
                         _diagRow(
-                          info.storedAliasState == 'pending_bind' ? '本地待绑定 Alias' : '已存储 Alias',
+                          info.storedAliasState == 'pending_bind'
+                              ? '本地待绑定 Alias'
+                              : '已存储 Alias',
                           info.storedAlias != null
                               ? '***${info.storedAlias!.length > 4 ? info.storedAlias!.substring(info.storedAlias!.length - 4) : info.storedAlias}'
                               : '未存储',
                           info.storedAlias != null
-                              ? (info.storedAliasState == 'active' ? Icons.check_circle : Icons.hourglass_empty)
+                              ? (info.storedAliasState == 'active'
+                                  ? Icons.check_circle
+                                  : Icons.hourglass_empty)
                               : Icons.warning_amber_rounded,
                           info.storedAlias != null
-                              ? (info.storedAliasState == 'active' ? Colors.green : Colors.blue)
+                              ? (info.storedAliasState == 'active'
+                                  ? Colors.green
+                                  : Colors.blue)
                               : Colors.orange,
                           isDarkSheet,
                         ),
@@ -1947,14 +2077,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               ? Icons.check_circle
                               : info.aliasLastStatus == '失败'
                                   ? Icons.error
-                                  : Icons.help_outline,
+                                  : info.aliasLastStatus == '待绑定'
+                                      ? Icons.hourglass_empty
+                                      : Icons.help_outline,
                           info.aliasLastStatus == '成功'
                               ? Colors.green
                               : info.aliasLastStatus == '失败'
                                   ? Colors.red
-                                  : Colors.grey,
+                                  : info.aliasLastStatus == '待绑定'
+                                      ? Colors.blue
+                                      : Colors.grey,
                           isDarkSheet,
-                          subtitle: info.aliasLastTime,
+                          subtitle: _joinDiagnosticSubtitle([
+                            info.aliasLastTime,
+                            info.aliasLastDetail,
+                          ]),
                         ),
                         if (info.error != null) ...[
                           const SizedBox(height: 12),
@@ -2042,26 +2179,40 @@ class _SettingsScreenState extends State<SettingsScreen> {
     // 从日志中提取最近一次 Alias 绑定状态
     String? aliasLastStatus;
     String? aliasLastTime;
+    String? aliasLastDetail;
     for (final log in logs) {
       if (log.source != '推送') continue;
-      if (log.type == 'Alias 绑定成功') {
+      if (log.type == 'Alias 绑定成功' || log.type == 'Alias 恢复成功') {
         aliasLastStatus = '成功';
         final effectiveTime =
             log.lastSeenAt > 0 ? log.lastSeenAt : log.timestamp;
         aliasLastTime = DateFormat(
           'MM-dd HH:mm:ss',
         ).format(DateTime.fromMillisecondsSinceEpoch(effectiveTime));
+        aliasLastDetail = log.detail.isNotEmpty ? log.detail : null;
         break;
       }
-      if (log.type == 'Alias 绑定失败') {
+      if (log.type == 'Alias 绑定失败' || log.type == 'Alias 恢复失败') {
         aliasLastStatus = '失败';
         final effectiveTime =
             log.lastSeenAt > 0 ? log.lastSeenAt : log.timestamp;
         aliasLastTime = DateFormat(
           'MM-dd HH:mm:ss',
         ).format(DateTime.fromMillisecondsSinceEpoch(effectiveTime));
+        aliasLastDetail = log.detail.isNotEmpty ? log.detail : null;
         break;
       }
+    }
+
+    final storedAliasState = native['storedAliasState']?.toString();
+    if (storedAliasState == 'active') {
+      if (aliasLastStatus != '成功') {
+        aliasLastTime = null;
+        aliasLastDetail = null;
+      }
+      aliasLastStatus = '成功';
+    } else if (storedAliasState == 'pending_bind' && aliasLastStatus == null) {
+      aliasLastStatus = '待绑定';
     }
 
     return _PushDiagnosticInfo(
@@ -2075,9 +2226,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
       privateMessageChannelBlocked:
           native['privateMessageChannelBlocked'] == true,
       storedAlias: native['storedAlias']?.toString(),
-      storedAliasState: native['storedAliasState']?.toString(),
+      storedAliasState: storedAliasState,
       aliasLastStatus: aliasLastStatus,
       aliasLastTime: aliasLastTime,
+      aliasLastDetail: aliasLastDetail,
       error: errors.isNotEmpty ? errors.join('\n') : null,
     );
   }
@@ -2095,12 +2247,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
     sb.writeln(
       '渠道重要性: ${_importanceLabel(info.privateMessageChannelImportance)}',
     );
-    final aliasLabel = info.storedAliasState == 'pending_bind' ? '本地待绑定 Alias' : '已存储 Alias';
+    final aliasLabel =
+        info.storedAliasState == 'pending_bind' ? '本地待绑定 Alias' : '已存储 Alias';
     sb.writeln('$aliasLabel: ${_maskValue(info.storedAlias, 4)}');
     sb.writeln(
       'Alias 最近状态: ${info.aliasLastStatus ?? "无记录"}'
       '${info.aliasLastTime != null ? " (${info.aliasLastTime})" : ""}',
     );
+    if (info.aliasLastDetail != null) {
+      sb.writeln('Alias 最近详情: ${info.aliasLastDetail}');
+    }
     if (info.error != null) {
       sb.writeln('诊断异常: ${info.error}');
     }
@@ -2192,6 +2348,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
     );
   }
+
+  String? _joinDiagnosticSubtitle(List<String?> parts) {
+    final lines = parts
+        .whereType<String>()
+        .map((s) => s.trim())
+        .where((s) => s.isNotEmpty)
+        .toList();
+    return lines.isEmpty ? null : lines.join('\n');
+  }
 }
 
 /// 推送诊断信息
@@ -2205,6 +2370,7 @@ class _PushDiagnosticInfo {
   final String? storedAliasState;
   final String? aliasLastStatus;
   final String? aliasLastTime;
+  final String? aliasLastDetail;
   final String? error;
 
   const _PushDiagnosticInfo({
@@ -2217,6 +2383,7 @@ class _PushDiagnosticInfo {
     required this.storedAliasState,
     required this.aliasLastStatus,
     required this.aliasLastTime,
+    required this.aliasLastDetail,
     this.error,
   });
 }

@@ -19,7 +19,7 @@ data class GradeReminderSnapshot(
     }
 
     fun diffFrom(old: GradeReminderSnapshot?): GradeReminderDiff {
-        if (old == null || !old.initialized) {
+        if (old == null || !old.initialized || old.grades.isEmpty()) {
             return GradeReminderDiff(emptyList(), baselineOnly = true)
         }
 
@@ -53,6 +53,11 @@ data class GradeReminderSnapshot(
 
         return GradeReminderDiff(changes.sortedBy { it.next.name })
     }
+
+    fun effectiveCount(): Int = grades.count { it.hasEffectiveGrade() }
+
+    fun isPendingOnly(): Boolean =
+        grades.isEmpty() || grades.none { it.hasEffectiveGrade() }
 
     companion object {
         fun empty(): GradeReminderSnapshot =

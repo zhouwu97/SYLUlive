@@ -40,6 +40,22 @@ class GradeReminderSnapshot {
     );
   }
 
+  factory GradeReminderSnapshot.initialBaseline(
+    List<EduGrade> grades, {
+    DateTime? updatedAt,
+  }) {
+    final snapshot = GradeReminderSnapshot.fromGrades(
+      grades,
+      updatedAt: updatedAt,
+    );
+    if (snapshot.grades.isNotEmpty) return snapshot;
+    return GradeReminderSnapshot(
+      initialized: false,
+      grades: const [],
+      updatedAt: snapshot.updatedAt,
+    );
+  }
+
   factory GradeReminderSnapshot.fromJson(Map<String, dynamic> json) {
     final rawGrades = json['grades'];
     return GradeReminderSnapshot(
@@ -67,7 +83,9 @@ class GradeReminderSnapshot {
       };
 
   GradeReminderDiff diffFrom(GradeReminderSnapshot? oldSnapshot) {
-    if (oldSnapshot == null || !oldSnapshot.initialized) {
+    if (oldSnapshot == null ||
+        !oldSnapshot.initialized ||
+        oldSnapshot.grades.isEmpty) {
       return const GradeReminderDiff(changes: [], baselineOnly: true);
     }
 

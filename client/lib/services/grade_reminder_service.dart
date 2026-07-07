@@ -72,7 +72,9 @@ class GradeReminderService {
       permissionGranted = await requestNotificationPermission();
     }
 
-    final snapshot = GradeReminderSnapshot.fromGrades(grades);
+    final snapshot = enabled
+        ? GradeReminderSnapshot.initialBaseline(grades)
+        : GradeReminderSnapshot.fromGrades(grades);
     try {
       final result = await _channel.invokeMapMethod<String, dynamic>(
         'setGradeReminderEnabled',

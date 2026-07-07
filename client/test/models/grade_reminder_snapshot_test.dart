@@ -14,7 +14,7 @@ void main() {
       expect(diff.hasChanges, false);
     });
 
-    test('空基线到有成绩会提醒', () {
+    test('旧空基线到有成绩只建立基线不提醒', () {
       final old = GradeReminderSnapshot.empty();
       final next = GradeReminderSnapshot.fromGrades([
         _grade(name: '计算机网络', grade: '88', classId: 'jxb-1'),
@@ -22,8 +22,20 @@ void main() {
 
       final diff = next.diffFrom(old);
 
-      expect(diff.hasChanges, true);
-      expect(diff.changes.single.summary, '计算机网络: -- -> 88');
+      expect(diff.baselineOnly, true);
+      expect(diff.hasChanges, false);
+    });
+
+    test('开启时没有成绩会写未初始化基线', () {
+      final snapshot = GradeReminderSnapshot.initialBaseline(const []);
+      final next = GradeReminderSnapshot.fromGrades([
+        _grade(name: '计算机网络', grade: '88', classId: 'jxb-1'),
+      ]);
+      final diff = next.diffFrom(snapshot);
+
+      expect(snapshot.initialized, false);
+      expect(diff.baselineOnly, true);
+      expect(diff.hasChanges, false);
     });
 
     test('-- 到 88 会提醒', () {
@@ -87,7 +99,9 @@ void main() {
     });
 
     test('相同变化 hash 相同', () {
-      final old = GradeReminderSnapshot.empty();
+      final old = GradeReminderSnapshot.fromGrades([
+        _grade(name: '操作系统', grade: '--', classId: 'jxb-1'),
+      ]);
       final next = GradeReminderSnapshot.fromGrades([
         _grade(name: '操作系统', grade: '95', classId: 'jxb-1'),
       ]);

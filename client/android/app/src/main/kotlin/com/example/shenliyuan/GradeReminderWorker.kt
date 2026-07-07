@@ -116,6 +116,9 @@ class GradeReminderWorker(
                 .apply()
             markSuccess(userId)
             val isFix = oldSnapshot != null && oldSnapshot.initialized && oldSnapshot.isPendingOnly()
+            if (isFix) {
+                clearGradeUpdateNotifications()
+            }
             DiagnosticLogStore.info(
                 context,
                 source = "成绩提醒",
@@ -409,6 +412,23 @@ class GradeReminderWorker(
             enableVibration(true)
         }
         manager.createNotificationChannel(channel)
+    }
+
+    private fun clearGradeUpdateNotifications() {
+        val manager = applicationContext.getSystemService(NotificationManager::class.java) ?: return
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            manager.activeNotifications
+                ?.filter { it.packageName == applicationContext.packageName }
+                ?.filter { it.notification.channelId == CHANNEL_ID }
+                ?.forEach { notification ->
+                    if (notification.tag != null) {
+                        manager.cancel(notification.tag, notification.id)
+                    } else {
+                        manager.cancel(notification.id)
+                    }
+                }
+        }
     }
 
     companion object {

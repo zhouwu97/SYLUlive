@@ -415,20 +415,20 @@ class GradeReminderWorker(
     }
 
     private fun clearGradeUpdateNotifications() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+
         val manager = applicationContext.getSystemService(NotificationManager::class.java) ?: return
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            manager.activeNotifications
-                ?.filter { it.packageName == applicationContext.packageName }
-                ?.filter { it.notification.channelId == CHANNEL_ID }
-                ?.forEach { notification ->
-                    if (notification.tag != null) {
-                        manager.cancel(notification.tag, notification.id)
-                    } else {
-                        manager.cancel(notification.id)
-                    }
+        manager.activeNotifications
+            ?.filter { it.packageName == applicationContext.packageName }
+            ?.filter { it.notification.channelId == CHANNEL_ID }
+            ?.forEach { notification ->
+                if (notification.tag != null) {
+                    manager.cancel(notification.tag, notification.id)
+                } else {
+                    manager.cancel(notification.id)
                 }
-        }
+            }
     }
 
     companion object {

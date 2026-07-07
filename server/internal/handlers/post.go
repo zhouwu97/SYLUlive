@@ -327,14 +327,18 @@ func (h *PostHandler) GetList(c *gin.Context) {
 				WHEN is_pinned = ? AND (pinned_until IS NULL OR pinned_until > ?)
 				THEN 0 ELSE 1
 			END ASC,
-			posts.pinned_weight DESC,
-			posts.pinned_at DESC NULLS LAST,
+			CASE WHEN is_pinned = ? AND (pinned_until IS NULL OR pinned_until > ?) THEN posts.pinned_weight ELSE 0 END DESC,
+			CASE WHEN is_pinned = ? AND (pinned_until IS NULL OR pinned_until > ?) THEN posts.pinned_at ELSE NULL END DESC NULLS LAST,
 			posts.created_at DESC`,
 				Vars: []interface{}{
 					searchQuery,
 					searchQuery + "%",
 					searchLike,
 					searchLike,
+					true,
+					now,
+					true,
+					now,
 					true,
 					now,
 				},

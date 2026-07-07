@@ -109,23 +109,24 @@ class GradeReminderWorker(
             return Result.success()
         }
 
-        val diff = newSnapshot.diffFrom(oldSnapshot)
-        if (oldSnapshot == null || diff.baselineOnly) {
+        if (oldSnapshot == null || oldSnapshot.isPendingOnly() || !oldSnapshot.initialized) {
             p.edit()
                 .putString(snapshotKey, newSnapshot.toJson().toString())
                 .putString(GradeReminderScheduler.stateKey(userId), "ready")
                 .apply()
             markSuccess(userId)
+            val isFix = oldSnapshot != null && oldSnapshot.initialized && oldSnapshot.isPendingOnly()
             DiagnosticLogStore.info(
                 context,
                 source = "成绩提醒",
-                type = "基线",
-                summary = "已保存成绩提醒首次基线",
+                type = if (isFix) "基线修复" else "基线",
+                summary = if (isFix) "旧成绩提醒基线为空或仅包含占位成绩，已用本次结果重建基线并跳过历史批量提醒" else "已保存成绩提醒首次基线",
                 detail = "userId=$userId year=$year semester=$semester count=${grades.length()}",
             )
             return Result.success()
         }
 
+        val diff = newSnapshot.diffFrom(oldSnapshot)
         if (diff.hasChanges) {
             val changeHash = diff.changeHash()
             if (!alreadyNotified(userId, year, semester, changeHash)) {

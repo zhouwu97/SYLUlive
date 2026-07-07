@@ -6,6 +6,7 @@ import '../models/announcement.dart' as model;
 import '../models/water_section.dart';
 import '../providers/theme_provider.dart';
 import '../utils/responsive_util.dart';
+import 'group_chat_dialog.dart';
 import 'water_section/section_avatar.dart';
 
 /// 校园服务抽屉 —— 纯展示组件，所有数据和回调由外部提供。
@@ -505,6 +506,15 @@ class HomeServiceDrawer extends StatelessWidget {
                 subtitle: 'Bug 报告与功能建议',
                 isDark: isDark,
                 onTap: onOpenFeedback,
+              ),
+              _buildServiceDivider(isDark),
+              _ServiceRow(
+                icon: Icons.group_rounded,
+                color: const Color(0xFF2563EB),
+                title: '加入群聊',
+                subtitle: '扫码进群交流反馈',
+                isDark: isDark,
+                onTap: () => showGroupChatDialog(context),
               ),
             ],
           ),

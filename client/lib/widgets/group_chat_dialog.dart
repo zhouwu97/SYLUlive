@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:gal/gal.dart';
 
 const String kGroupChatNumber = '692905367';
 const String kGroupChatQrAsset = 'assets/images/group_chat_qr.png';
@@ -37,15 +38,33 @@ Future<void> showGroupChatDialog(BuildContext context) {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(16),
-                child: SizedBox(
-                  width: 280,
-                  child: Image.asset(
-                    kGroupChatQrAsset,
-                    key: const ValueKey('group-chat-qr-image'),
-                    fit: BoxFit.contain,
-                  ),
+              Center(
+                child: Column(
+                  children: [
+                    InkWell(
+                      borderRadius: BorderRadius.circular(16),
+                      onTap: () => _handleDownload(context),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(16),
+                        child: SizedBox(
+                          width: 280,
+                          child: Image.asset(
+                            kGroupChatQrAsset,
+                            key: const ValueKey('group-chat-qr-image'),
+                            fit: BoxFit.contain,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      '点击二维码保存到相册',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: isDark ? Colors.white38 : Colors.black38,
+                      ),
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(height: 14),
@@ -137,4 +156,81 @@ Future<void> showGroupChatDialog(BuildContext context) {
       );
     },
   );
+}
+
+Future<void> _handleDownload(BuildContext context) async {
+  final isDark = Theme.of(context).brightness == Brightness.dark;
+  const accent = Colors.blue;
+  final dialogBackground = isDark ? const Color(0xFF1E1E2E) : Colors.white;
+  final titleColor = isDark ? Colors.white : const Color(0xFF2D3142);
+  final contentColor = isDark ? Colors.white70 : const Color(0xFF4F5568);
+
+  final confirm = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      backgroundColor: dialogBackground,
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+      ),
+      title: Row(
+        children: [
+          const Icon(Icons.save_alt_rounded, color: accent),
+          const SizedBox(width: 8),
+          Text('保存二维码', style: TextStyle(color: titleColor)),
+        ],
+      ),
+      content: Text(
+        '是否将群聊二维码保存到手机相册？',
+        style: TextStyle(
+          color: contentColor,
+          fontSize: 15,
+        ),
+      ),
+      actions: [
+        TextButton(
+          style: TextButton.styleFrom(foregroundColor: accent),
+          onPressed: () => Navigator.pop(ctx, false),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          style: FilledButton.styleFrom(
+            backgroundColor: accent,
+            foregroundColor: Colors.white,
+          ),
+          onPressed: () => Navigator.pop(ctx, true),
+          child: const Text('确定'),
+        ),
+      ],
+    ),
+  );
+
+  if (confirm != true) return;
+
+  try {
+    if (!await Gal.hasAccess()) {
+      final access = await Gal.requestAccess();
+      if (!access) {
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('需要相册权限才能保存图片')),
+        );
+        return;
+      }
+    }
+
+    final byteData = await rootBundle.load(kGroupChatQrAsset);
+    final bytes = byteData.buffer.asUint8List();
+    await Gal.putImageBytes(bytes);
+
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('已保存到相册')),
+    );
+  } catch (e) {
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('保存失败: $e')),
+    );
+  }
 }

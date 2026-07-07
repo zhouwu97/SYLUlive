@@ -35,6 +35,9 @@ class AppTheme {
       appBarTheme: AppBarTheme(
         centerTitle: true,
         elevation: 0,
+        scrolledUnderElevation: 0,
+        backgroundColor: scheme.surface,
+        surfaceTintColor: Colors.transparent,
         toolbarHeight: 48,
         titleTextStyle: TextStyle(
           fontSize: 17,

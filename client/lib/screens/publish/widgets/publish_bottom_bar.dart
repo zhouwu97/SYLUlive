@@ -5,12 +5,14 @@ class PublishBottomBar extends StatelessWidget {
   final bool isLoading;
   final VoidCallback? onPressed;
   final String label;
+  final Color accent;
 
   const PublishBottomBar({
     super.key,
     required this.isLoading,
     this.onPressed,
     required this.label,
+    this.accent = const Color(0xFFFF7A45),
   });
 
   @override
@@ -22,21 +24,27 @@ class PublishBottomBar extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
         decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF0D1117) : Colors.white,
+          color: isDark ? const Color(0xFF1E2226) : Colors.white,
           border: Border(
             top: BorderSide(
-              color: Colors.black.withValues(alpha: 0.05),
+              color: isDark
+                  ? Colors.white.withValues(alpha: 0.06)
+                  : const Color(0xFFF1E5DC),
             ),
           ),
         ),
         child: SizedBox(
           width: double.infinity,
-          height: 50,
+          height: 52,
           child: FilledButton(
             onPressed: isLoading ? null : onPressed,
             style: FilledButton.styleFrom(
+              backgroundColor: accent,
+              foregroundColor: Colors.white,
+              disabledBackgroundColor: accent.withValues(alpha: 0.38),
+              elevation: 0,
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
+                borderRadius: BorderRadius.circular(18),
               ),
             ),
             child: isLoading
@@ -52,7 +60,7 @@ class PublishBottomBar extends StatelessWidget {
                     label,
                     style: const TextStyle(
                       fontSize: 16,
-                      fontWeight: FontWeight.w600,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
           ),

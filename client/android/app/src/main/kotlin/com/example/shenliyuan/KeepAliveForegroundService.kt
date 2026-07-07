@@ -336,7 +336,7 @@ class KeepAliveForegroundService : Service() {
         return builder
             .setSmallIcon(android.R.drawable.stat_notify_sync)
             .setContentTitle("沈理校园保活中")
-            .setContentText("保持私信和课程提醒更稳定")
+            .setContentText("保持私信、课程提醒和成绩提醒更稳定")
             .setContentIntent(contentIntent)
             .setOngoing(true)
             .setShowWhen(false)
@@ -439,7 +439,7 @@ class KeepAliveForegroundService : Service() {
                     }
                 }
 
-                loggedIn && state == "active" && !alias.isNullOrBlank() -> {
+                loggedIn && (state == "pending_bind" || state == "active") && !alias.isNullOrBlank() -> {
                     try {
                         val sequence =
                             PrivateMessageJPushReceiver.restoreSequence(gen)
@@ -495,6 +495,17 @@ class KeepAliveForegroundService : Service() {
 
         fun syncAlias(context: Context, alias: String?) {
             val p = prefs(context.applicationContext)
+            
+            // 如果 alias 没有变化，且已经是 active 或 pending_bind，跳过自增
+            if (alias != null) {
+                val currentAlias = p.getString(KEY_JPUSH_ALIAS, null)
+                val currentState = p.getString(KEY_JPUSH_ALIAS_STATE, null)
+                if (currentAlias == alias && (currentState == "active" || currentState == "pending_bind")) {
+                    Log.d(TAG, "JPush alias sync skipped: already $currentState for ***${alias.takeLast(4)}")
+                    return
+                }
+            }
+            
             val editor = p.edit()
             if (alias.isNullOrBlank()) {
                 editor.remove(KEY_JPUSH_ALIAS)
@@ -503,11 +514,24 @@ class KeepAliveForegroundService : Service() {
             } else {
                 val gen = p.getInt(KEY_JPUSH_ALIAS_GEN, 0) + 1
                 editor.putString(KEY_JPUSH_ALIAS, alias)
-                editor.putString(KEY_JPUSH_ALIAS_STATE, "active")
+                editor.putString(KEY_JPUSH_ALIAS_STATE, "pending_bind")
                 editor.putInt(KEY_JPUSH_ALIAS_GEN, gen)
-                Log.d(TAG, "JPush alias synced: ***${alias.takeLast(4)} state=active gen=$gen")
+                Log.d(TAG, "JPush alias synced: ***${alias.takeLast(4)} state=pending_bind gen=$gen")
             }
             editor.apply()
+        }
+
+        fun confirmAliasBoundIfCurrent(context: Context, gen: Int, alias: String): Boolean {
+            val p = prefs(context.applicationContext)
+            val currentGen = p.getInt(KEY_JPUSH_ALIAS_GEN, 0)
+            val currentAlias = p.getString(KEY_JPUSH_ALIAS, null)
+            
+            if (currentGen == gen && currentAlias == alias) {
+                p.edit().putString(KEY_JPUSH_ALIAS_STATE, "active").apply()
+                Log.d(TAG, "JPush alias confirmed active gen=$gen")
+                return true
+            }
+            return false
         }
 
         fun getStoredAlias(context: Context): String? {
@@ -613,7 +637,7 @@ class KeepAliveForegroundService : Service() {
                     CHANNEL_NAME,
                     NotificationManager.IMPORTANCE_LOW,
                 ).apply {
-                    description = "用于维持私信与课程提醒后台连接"
+                    description = "用于维持私信、课程提醒和成绩提醒后台连接"
                     setShowBadge(false)
                 },
             )

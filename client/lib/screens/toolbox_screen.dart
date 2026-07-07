@@ -571,7 +571,7 @@ class _PhysicalTestGateState extends State<_PhysicalTestGate> {
 
     return Scaffold(
       backgroundColor:
-          isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
+          isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight,
       appBar: AppBar(
         title: const Text('体测成绩查询'),
         backgroundColor: Colors.transparent,

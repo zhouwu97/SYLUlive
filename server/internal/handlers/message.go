@@ -346,6 +346,22 @@ func (h *MessageHandler) Send(c *gin.Context) {
 		return
 	}
 
+	// 陌生人私信限制：
+	// current 已经给 target 发过且 target 未关注/未回复 → 拒绝
+	allow, reason, _, canErr := h.canSendMessage(currentUserID, targetID)
+	if canErr != nil {
+		// 内部错误不阻断主流程，按"允许"处理但记日志
+		log.Printf("[PM_LIMIT] canSendMessage unexpected error current=%d target=%d err=%v", currentUserID, targetID, canErr)
+	} else if !allow {
+		c.JSON(http.StatusForbidden, gin.H{
+			"error": "对方未关注你或回复你之前，只能发送 1 条消息，请等待对方回应。",
+			"code":  "message_requires_reply_or_follow",
+			// 兼容旧客户端读取 reason 字段
+			"reason": reason,
+		})
+		return
+	}
+
 	var sender models.User
 	if err := h.db.Select("id", "nickname", "avatar").First(&sender, currentUserID).Error; err != nil {
 		sender = models.User{ID: currentUserID, Nickname: fmt.Sprintf("用户%d", currentUserID)}
@@ -419,6 +435,122 @@ func (h *MessageHandler) getOrCreateConversation(tx *gorm.DB, user1ID, user2ID u
 		return conv, nil
 	}
 	return conv, createErr
+}
+
+// canSendMessage 陌生人私信限制
+//
+// 允许发送，如果满足任意一个：
+//   1. target 已关注 current（UserFollow: follower=target, following=current）
+//   2. target 曾经给 current 发过消息
+//   3. current 还没有给 target 发过任何消息（首次接触）
+//
+// 否则拒绝：current 已经发过且 target 没关注也没回复，进入等待状态。
+//
+// 返回：
+//   allow (bool)：是否允许
+//   reason (string)：拒绝时的原因码，"waiting_for_reply_or_follow"
+//   各种判定中间值用于 send-state 接口
+func (h *MessageHandler) canSendMessage(currentUserID, targetID uint) (allow bool, reason string, state messageSendState, err error) {
+	state = messageSendState{
+		CanSend:         true,
+		FirstContactUsed: false,
+		TargetFollowsMe: false,
+		TargetReplied:   false,
+	}
+
+	// 1. target 关注 current？
+	var followCount int64
+	if err := h.db.Model(&models.UserFollow{}).
+		Where("follower_id = ? AND following_id = ?", targetID, currentUserID).
+		Count(&followCount).Error; err != nil {
+		return false, "internal_error", state, err
+	}
+	state.TargetFollowsMe = followCount > 0
+	if state.TargetFollowsMe {
+		return true, "", state, nil
+	}
+
+	// 2. 找一对一会话
+	user1ID, user2ID := currentUserID, targetID
+	if user1ID > user2ID {
+		user1ID, user2ID = user2ID, user1ID
+	}
+	var conv models.Conversation
+	convErr := h.db.Where("user1_id = ? AND user2_id = ?", user1ID, user2ID).First(&conv).Error
+	if errors.Is(convErr, gorm.ErrRecordNotFound) {
+		// 还没有会话 = current 从未发过 = 允许
+		return true, "", state, nil
+	}
+	if convErr != nil {
+		return false, "internal_error", state, convErr
+	}
+
+	// 3. target 是否回复过 current
+	var targetSentCount int64
+	if err := h.db.Model(&models.Message{}).
+		Where("conversation_id = ? AND sender_id = ?", conv.ID, targetID).
+		Count(&targetSentCount).Error; err != nil {
+		return false, "internal_error", state, err
+	}
+	state.TargetReplied = targetSentCount > 0
+	if state.TargetReplied {
+		return true, "", state, nil
+	}
+
+	// 4. current 是否已发过消息
+	var currentSentCount int64
+	if err := h.db.Model(&models.Message{}).
+		Where("conversation_id = ? AND sender_id = ?", conv.ID, currentUserID).
+		Count(&currentSentCount).Error; err != nil {
+		return false, "internal_error", state, err
+	}
+	state.FirstContactUsed = currentSentCount > 0
+	if !state.FirstContactUsed {
+		return true, "", state, nil
+	}
+
+	// 5. 拒绝
+	state.CanSend = false
+	return false, "waiting_for_reply_or_follow", state, nil
+}
+
+// messageSendState 陌生人私信发送状态，用于 send-state 接口
+type messageSendState struct {
+	CanSend         bool   `json:"can_send"`
+	Reason          string `json:"reason,omitempty"`
+	FirstContactUsed bool  `json:"first_contact_used"`
+	TargetFollowsMe bool  `json:"target_follows_me"`
+	TargetReplied   bool   `json:"target_replied"`
+}
+
+// GetSendState GET /api/messages/:user_id/send-state
+// 返回陌生人私信发送权限说明，供前端决定输入框是否锁定。
+func (h *MessageHandler) GetSendState(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	currentUserID := userID.(uint)
+	targetUserID, err := strconv.ParseUint(c.Param("user_id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的用户ID"})
+		return
+	}
+	targetID := uint(targetUserID)
+	if targetID == currentUserID {
+		// 自己不能给自己发，前端也只是查询用，统一返回 can_send=false
+		c.JSON(http.StatusOK, messageSendState{CanSend: false, Reason: "self_target"})
+		return
+	}
+
+	_, reason, state, err := h.canSendMessage(currentUserID, targetID)
+	if err != nil {
+		log.Printf("[PM_LIMIT] canSendMessage failed current=%d target=%d err=%v", currentUserID, targetID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询发送状态失败"})
+		return
+	}
+	// canSendMessage 不填充 Reason 字段当允许时；这里补一次
+	if !state.CanSend {
+		state.Reason = reason
+	}
+	c.JSON(http.StatusOK, state)
 }
 
 func (h *MessageHandler) pushPrivateMessage(targetUserID uint, sender models.User, message models.Message) {

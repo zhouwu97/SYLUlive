@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:shenliyuan/main.dart';
 import 'package:shenliyuan/providers/theme_provider.dart';
 
 Future<ThemeProvider> _loadProvider(WidgetTester tester) async {
@@ -81,5 +82,48 @@ void main() {
     expect(provider.landscapeBackgroundFillScreen, isFalse);
     expect(provider.hasAnyBackground, isFalse);
     expect(provider.shouldShowCustomBackground, isFalse);
+  });
+
+  testWidgets('加载主题后保留直接进入课表偏好', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      'start_on_timetable': true,
+    });
+
+    final provider = await _loadProvider(tester);
+
+    expect(provider.isLoaded, isTrue);
+    expect(provider.startOnTimetable, isTrue);
+  });
+
+  testWidgets('直接进入课表开关会持久化且不会被消费', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+
+    final provider = await _loadProvider(tester);
+    await provider.setStartOnTimetable(true);
+
+    var prefs = await SharedPreferences.getInstance();
+    expect(prefs.getBool('start_on_timetable'), isTrue);
+    expect(provider.startOnTimetable, isTrue);
+
+    await provider.setStartOnTimetable(false);
+
+    prefs = await SharedPreferences.getInstance();
+    expect(prefs.getBool('start_on_timetable'), isFalse);
+    expect(provider.startOnTimetable, isFalse);
+  });
+
+  testWidgets('同一会话只解析一次启动 tab，新会话重新读取偏好', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      'start_on_timetable': true,
+    });
+    final provider = await _loadProvider(tester);
+    final session = HomeInitialTabResolver();
+
+    expect(session.resolve(provider), 2);
+
+    await provider.setStartOnTimetable(false);
+
+    expect(session.resolve(provider), 2);
+    expect(HomeInitialTabResolver().resolve(provider), 0);
   });
 }

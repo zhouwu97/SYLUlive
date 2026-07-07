@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'ranking_tokens.dart';
 
 class RatingBottomInputBar extends StatelessWidget {
   final String hintText;
@@ -13,19 +14,19 @@ class RatingBottomInputBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    
+
     return Container(
       padding: EdgeInsets.only(
         left: 16,
         right: 16,
-        top: 10,
-        bottom: 10 + MediaQuery.of(context).padding.bottom,
+        top: 8,
+        bottom: 8 + MediaQuery.of(context).padding.bottom,
       ),
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1B1E28) : Colors.white,
+        color: RankingTokens.cardBg(isDark),
         border: Border(
           top: BorderSide(
-            color: isDark ? Colors.white10 : Colors.black.withValues(alpha: 0.05),
+            color: RankingTokens.borderColor(isDark),
           ),
         ),
       ),
@@ -33,25 +34,27 @@ class RatingBottomInputBar extends StatelessWidget {
         onTap: onTap,
         behavior: HitTestBehavior.opaque,
         child: Container(
-          height: 38,
+          height: 42,
           padding: const EdgeInsets.symmetric(horizontal: 16),
           decoration: BoxDecoration(
-            color: isDark ? Colors.white10 : const Color(0xFFF4F6FB),
-            borderRadius: BorderRadius.circular(19),
+            color: isDark
+                ? Colors.white.withValues(alpha: 0.06)
+                : RankingTokens.pageBg(isDark),
+            borderRadius: BorderRadius.circular(16),
           ),
           child: Row(
             children: [
               Icon(
                 Icons.edit_rounded,
                 size: 16,
-                color: isDark ? Colors.white54 : Colors.black45,
+                color: RankingTokens.subColor(isDark),
               ),
               const SizedBox(width: 8),
               Text(
                 hintText,
                 style: TextStyle(
-                  fontSize: 14,
-                  color: isDark ? Colors.white54 : Colors.black45,
+                  fontSize: 13,
+                  color: RankingTokens.subColor(isDark),
                 ),
               ),
             ],

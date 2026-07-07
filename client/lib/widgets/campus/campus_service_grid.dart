@@ -36,7 +36,7 @@ class CampusServiceGrid extends StatelessWidget {
       CampusServiceItem(
         title: '校园地图',
         icon: Icons.map_rounded,
-        color: const Color(0xFF0EA5E9), // 青蓝色
+        color: CampusTheme.cyan,
         onTap: onMapTap,
       ),
       CampusServiceItem(
@@ -63,22 +63,43 @@ class CampusServiceGrid extends StatelessWidget {
           '常用校园功能',
           style: TextStyle(
             fontSize: 12,
-            color: isDark ? Colors.white54 : CampusTheme.subText,
+            color: CampusTheme.subText,
           ),
         ),
         const SizedBox(height: 12),
-        Row(
-          children: [
-            for (var index = 0; index < services.length; index++) ...[
-              Expanded(
-                child: CampusServiceCard(
-                  service: services[index],
-                  isDark: isDark,
+        Container(
+          decoration: BoxDecoration(
+            color: isDark ? CampusTheme.darkCard : Colors.white,
+            borderRadius: BorderRadius.circular(28),
+            border: Border.all(
+              color: isDark 
+                  ? Colors.white.withValues(alpha: 0.04) 
+                  : CampusTheme.softBorder.withValues(alpha: 0.5),
+            ),
+            boxShadow: [
+              if (!isDark)
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.02),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
                 ),
-              ),
-              if (index != services.length - 1) const SizedBox(width: 10),
             ],
-          ],
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: Material(
+            color: Colors.transparent,
+            child: Row(
+              children: [
+                for (var index = 0; index < services.length; index++)
+                  Expanded(
+                    child: CampusServiceCard(
+                      service: services[index],
+                      isDark: isDark,
+                    ),
+                  ),
+              ],
+            ),
+          ),
         ),
       ],
     );

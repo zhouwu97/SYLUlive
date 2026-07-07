@@ -9,6 +9,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config/api_constants.dart';
 import '../models/water_section.dart';
+import '../config/water_post_taxonomy.dart';
+import '../widgets/water_section/section_avatar.dart';
 import '../utils/app_motion.dart';
 import '../utils/app_feedback.dart';
 import '../utils/responsive_util.dart';
@@ -25,6 +27,7 @@ import '../providers/water_section_provider.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/home_service_drawer.dart';
 import '../widgets/home_tab_reveal.dart';
+import '../widgets/pinned_post_summary_bar.dart';
 import '../widgets/post_card.dart';
 import 'announcement_screen.dart';
 import 'chat_list_screen.dart';
@@ -35,6 +38,7 @@ import 'feedback_screen.dart';
 import 'login_screen.dart';
 import 'post_detail_screen.dart';
 import 'search_results_screen.dart';
+import 'water_section_directory_screen.dart';
 import 'toolbox_screen.dart';
 import 'user_home_screen.dart';
 import 'water_category_feed_route.dart';
@@ -120,6 +124,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   List<Post> _searchResults = [];
   bool _checkedIn = false;
   int _streakDays = 0;
+  bool _followingExpanded = false;
   bool _checkInLoading = false;
   Post? _selectedPost;
   int? _selectedUserId;
@@ -707,16 +712,35 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     );
   }
 
+  void _openWaterSectionDirectoryKeepingPanel() {
+    Navigator.of(context, rootNavigator: true).push(
+      MaterialPageRoute(
+        builder: (_) => const WaterSectionDirectoryScreen(),
+      ),
+    );
+  }
+
+  void _openWaterSectionKeepingPanel(WaterSection section) {
+    Navigator.of(context, rootNavigator: true).push(
+      MaterialPageRoute(
+        builder: (_) => WaterCategoryFeedRoute.fromSection(section),
+      ),
+    );
+  }
+
   Future<void> _openHomeServicePanel() async {
     await _ensureCheckinStatusLoaded();
     if (!mounted) return;
+
+    final themeProvider = context.read<ThemeProvider>();
+    final isCustomMode = !themeProvider.isCleanBackgroundMode;
 
     await showGeneralDialog(
       context: context,
       useRootNavigator: true,
       barrierDismissible: true,
       barrierLabel: '关闭校园服务',
-      barrierColor: Colors.black.withValues(alpha: 0.35),
+      barrierColor: Colors.black.withValues(alpha: isCustomMode ? 0.22 : 0.28),
       transitionDuration: const Duration(milliseconds: 230),
       pageBuilder: (dialogContext, __, ___) {
         final width = MediaQuery.sizeOf(dialogContext).width;
@@ -734,7 +758,8 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                 checkInLoading: _checkInLoading,
                 showCheckInDot: _showCheckInDot,
                 announcements: _announcements,
-                waterSections: context.read<WaterSectionProvider>().activeSections,
+                waterSections:
+                    context.read<WaterSectionProvider>().activeSections,
                 onCheckIn: () {
                   _closePanelThenOpen(dialogContext, _doCheckIn);
                 },
@@ -825,21 +850,11 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                     );
                   });
                 },
-                onOpenAllWaterPosts: () {
-                  _closePanelThenOpen(dialogContext, () {
-                    _changeFeedMode('all');
-                  });
+                onOpenWaterSectionDirectory: () {
+                  _openWaterSectionDirectoryKeepingPanel();
                 },
                 onOpenWaterSection: (WaterSection section) {
-                  _closePanelThenOpen(dialogContext, () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) =>
-                            WaterCategoryFeedRoute.fromSection(section),
-                      ),
-                    );
-                  });
+                  _openWaterSectionKeepingPanel(section);
                 },
               ),
             ),
@@ -916,7 +931,7 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     return Scaffold(
       backgroundColor: showCustomBackground
           ? Colors.transparent
-          : (isDark ? const Color(0xFF101219) : const Color(0xFFF7F8FC)),
+          : (isDark ? const Color(0xFF101219) : kCleanWarmBackgroundLight),
       extendBodyBehindAppBar: true,
       body: Stack(
         children: [
@@ -997,6 +1012,13 @@ class _ShuitieScreenState extends State<ShuitieScreen>
 
   void _openUserInSplit(int userId) {
     if (!mounted) return;
+    if (MediaQuery.of(context).size.width <= 600) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => UserHomeScreen(userId: userId)),
+      );
+      return;
+    }
     setState(() {
       _selectedPost = null;
       _selectedUserId = userId;
@@ -1204,6 +1226,244 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     );
   }
 
+  Widget _buildFollowingDashboard(
+      bool isDark, List<Post> posts, bool isFeedLoading) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('关注动态',
+                  style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: isDark ? Colors.white : Colors.black87)),
+              GestureDetector(
+                onTap: () {
+                  setState(() => _followingExpanded = true);
+                },
+                child: Row(
+                  children: [
+                    Text('全部',
+                        style: TextStyle(
+                            fontSize: 14,
+                            color: isDark ? Colors.white54 : Colors.black54)),
+                    Icon(Icons.chevron_right,
+                        size: 16,
+                        color: isDark ? Colors.white54 : Colors.black54),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (posts.isEmpty && !isFeedLoading)
+            Container(
+              height: 100,
+              width: double.infinity,
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF1F2937) : Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                    color: isDark
+                        ? Colors.white.withValues(alpha: 0.1)
+                        : Colors.grey.withValues(alpha: 0.2)),
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text('还没有关注动态',
+                      style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                          color: isDark ? Colors.white70 : Colors.black87)),
+                  const SizedBox(height: 4),
+                  Text('关注版块后会在这里看到更新',
+                      style: TextStyle(
+                          fontSize: 13,
+                          color: isDark ? Colors.white54 : Colors.black54)),
+                ],
+              ),
+            )
+          else if (posts.isNotEmpty)
+            ...posts.take(2).map((post) => Padding(
+                  padding: const EdgeInsets.only(bottom: 8.0),
+                  child: PostCard(
+                    post: post,
+                    onAuthorTap: _openUserInSplit,
+                    onTap: () {
+                      if (ResponsiveUtil.useDesktopShell(context)) {
+                        _openPostInSplit(post);
+                      } else {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => PostDetailScreen(
+                              postId: post.id,
+                              isMarket: false,
+                              initialPost: post,
+                            ),
+                          ),
+                        );
+                      }
+                    },
+                  ),
+                )),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCommunitySectionsGrid(bool isDark) {
+    final sections = context.watch<WaterSectionProvider>().sections;
+    final displaySections = sections.isNotEmpty
+        ? sections
+        : kWaterPostCategories
+            .map((c) => WaterSection.fromLegacyCategory(c))
+            .toList();
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('社区版块',
+                  style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: isDark ? Colors.white : Colors.black87)),
+              GestureDetector(
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const WaterSectionDirectoryScreen(),
+                    ),
+                  );
+                },
+                child: Row(
+                  children: [
+                    Text('全部',
+                        style: TextStyle(
+                            fontSize: 14,
+                            color: isDark ? Colors.white54 : Colors.black54)),
+                    Icon(Icons.chevron_right,
+                        size: 16,
+                        color: isDark ? Colors.white54 : Colors.black54),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            padding: EdgeInsets.zero,
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              mainAxisExtent: 74,
+              crossAxisSpacing: 10,
+              mainAxisSpacing: 10,
+            ),
+            itemCount: displaySections.length,
+            itemBuilder: (context, index) {
+              final section = displaySections[index];
+              return GestureDetector(
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) =>
+                          WaterCategoryFeedRoute.fromSection(section),
+                    ),
+                  );
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  decoration: BoxDecoration(
+                    color: isDark ? const Color(0xFF1F2937) : Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                        color: isDark
+                            ? Colors.white.withValues(alpha: 0.08)
+                            : Colors.grey.withValues(alpha: 0.15)),
+                  ),
+                  child: Row(
+                    children: [
+                      SectionAvatar(
+                        section: section,
+                        size: 36,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              section.title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 14.5,
+                                fontWeight: FontWeight.bold,
+                                color: isDark ? Colors.white : Colors.black87,
+                              ),
+                            ),
+                            if (section.subtitle.isNotEmpty)
+                              Text(
+                                section.subtitle,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color:
+                                      isDark ? Colors.white54 : Colors.black54,
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 30),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildExpandedFollowingHeader(bool isDark) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+      child: Row(
+        children: [
+          IconButton(
+            icon: Icon(Icons.arrow_back,
+                color: isDark ? Colors.white : Colors.black87),
+            onPressed: () => setState(() => _followingExpanded = false),
+          ),
+          const SizedBox(width: 4),
+          Text('关注动态',
+              style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: isDark ? Colors.white : Colors.black87)),
+        ],
+      ),
+    );
+  }
+
   // ---- 关注模式未登录占位 ----
   Widget _buildFollowingPlaceholder(bool isDark) {
     return Center(
@@ -1288,13 +1548,26 @@ class _ShuitieScreenState extends State<ShuitieScreen>
             ),
             const SizedBox(height: 8),
             Text(
-              '关注的同学发布帖子后，会显示在这里',
+              '关注的版块发布帖子后，会显示在这里',
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 14,
                 color: isDark
                     ? Colors.white.withValues(alpha: 0.4)
                     : Colors.grey[400],
+              ),
+            ),
+            const SizedBox(height: 24),
+            OutlinedButton.icon(
+              onPressed: () {
+                _openHomeServicePanel();
+              },
+              icon: const Icon(Icons.explore_outlined, size: 18),
+              label: const Text('探索版块'),
+              style: OutlinedButton.styleFrom(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
             ),
           ],
@@ -1365,6 +1638,12 @@ class _ShuitieScreenState extends State<ShuitieScreen>
         final feedHasMore = data.hasMore;
         final visiblePosts = _resolveVisiblePosts(posts, mode);
 
+        final pinnedPosts =
+            visiblePosts.where((post) => post.isActivePinned).toList();
+
+        final normalPosts =
+            visiblePosts.where((post) => !post.isActivePinned).toList();
+
         return NotificationListener<ScrollNotification>(
           onNotification: (notification) {
             final canLoadMore =
@@ -1401,86 +1680,131 @@ class _ShuitieScreenState extends State<ShuitieScreen>
                   ),
                 ),
               ),
-              if (mode == 'following' &&
-                  !context.read<AuthProvider>().isLoggedIn)
-                SliverFillRemaining(
-                  hasScrollBody: false,
-                  child: _buildFollowingPlaceholder(isDark),
-                )
-              else if (isFeedLoading && posts.isEmpty)
-                const SliverFillRemaining(
-                  child: Center(
-                    child: CircularProgressIndicator(),
+              if (mode == 'following' && !_followingExpanded) ...[
+                if (!context.read<AuthProvider>().isLoggedIn)
+                  SliverToBoxAdapter(
+                    child: _buildFollowingPlaceholder(isDark),
+                  )
+                else
+                  SliverToBoxAdapter(
+                    child: _buildFollowingDashboard(
+                        isDark, normalPosts, isFeedLoading),
                   ),
-                )
-              else if (visiblePosts.isEmpty)
-                SliverFillRemaining(
-                  child: mode == 'following'
-                      ? _buildFollowingEmptyState(isDark)
-                      : _buildEmptyState(
-                          isDark,
-                          title: _searchQuery.isNotEmpty ? '没有找到匹配帖子' : '暂无帖子',
-                          subtitle: _searchQuery.isNotEmpty
-                              ? '目前只按标题搜索，换个标题关键词试试'
-                              : '发布第一条帖子吧',
-                          onRetry: _refresh,
-                        ),
-                )
-              else
-                SliverList(
-                  delegate: SliverChildBuilderDelegate((context, index) {
-                    final post = visiblePosts[index];
-                    final isSelected = _selectedPost?.id == post.id &&
-                        _selectedUserId == null &&
-                        ResponsiveUtil.useDesktopShell(context);
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      child: Container(
-                        decoration: isSelected
-                            ? BoxDecoration(
-                                borderRadius: BorderRadius.circular(20),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Theme.of(context)
-                                        .primaryColor
-                                        .withValues(alpha: 0.15),
-                                    blurRadius: 20,
-                                    spreadRadius: 2,
-                                  ),
-                                ],
-                              )
-                            : null,
-                        child: HomeTabRevealItem(
-                          index: index,
-                          revealOrder: index,
-                          child: PostCard(
-                            post: post,
-                            onAuthorTap: _openUserInSplit,
-                            onTap: () {
-                              if (_exitSearchInputMode()) {
-                                return;
-                              }
-                              if (ResponsiveUtil.useDesktopShell(context)) {
-                                _openPostInSplit(post);
-                              } else {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => PostDetailScreen(
-                                      postId: post.id,
-                                      isMarket: false,
-                                      initialPost: post,
+                SliverToBoxAdapter(
+                  child: _buildCommunitySectionsGrid(isDark),
+                ),
+              ] else ...[
+                if (mode == 'following' && _followingExpanded)
+                  SliverToBoxAdapter(
+                    child: _buildExpandedFollowingHeader(isDark),
+                  ),
+                if (mode == 'following' &&
+                    !context.read<AuthProvider>().isLoggedIn)
+                  SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: _buildFollowingPlaceholder(isDark),
+                  )
+                else if (isFeedLoading && posts.isEmpty)
+                  const SliverFillRemaining(
+                    child: Center(
+                      child: CircularProgressIndicator(),
+                    ),
+                  )
+                else if (pinnedPosts.isEmpty && normalPosts.isEmpty)
+                  SliverFillRemaining(
+                    child: mode == 'following'
+                        ? _buildFollowingEmptyState(isDark)
+                        : _buildEmptyState(
+                            isDark,
+                            title:
+                                _searchQuery.isNotEmpty ? '没有找到匹配帖子' : '暂无帖子',
+                            subtitle: _searchQuery.isNotEmpty
+                                ? '目前只按标题搜索，换个标题关键词试试'
+                                : '发布第一条帖子吧',
+                            onRetry: _refresh,
+                          ),
+                  )
+                else ...[
+                  if (pinnedPosts.isNotEmpty)
+                    SliverToBoxAdapter(
+                      child: PinnedPostSummaryBar(
+                        posts: pinnedPosts,
+                        isDark: isDark,
+                        label: '置顶',
+                        onOpenPost: (post) {
+                          if (ResponsiveUtil.useDesktopShell(context)) {
+                            _openPostInSplit(post);
+                          } else {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => PostDetailScreen(
+                                  postId: post.id,
+                                  isMarket: false,
+                                  initialPost: post,
+                                ),
+                              ),
+                            );
+                          }
+                        },
+                      ),
+                    ),
+                  SliverList(
+                    delegate: SliverChildBuilderDelegate((context, index) {
+                      final post = normalPosts[index];
+                      final isSelected = _selectedPost?.id == post.id &&
+                          _selectedUserId == null &&
+                          ResponsiveUtil.useDesktopShell(context);
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        child: Container(
+                          decoration: isSelected
+                              ? BoxDecoration(
+                                  borderRadius: BorderRadius.circular(20),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Theme.of(context)
+                                          .primaryColor
+                                          .withValues(alpha: 0.15),
+                                      blurRadius: 20,
+                                      spreadRadius: 2,
                                     ),
-                                  ),
-                                );
-                              }
-                            },
+                                  ],
+                                )
+                              : null,
+                          child: HomeTabRevealItem(
+                            index: index,
+                            revealOrder: index,
+                            child: PostCard(
+                              post: post,
+                              onAuthorTap: _openUserInSplit,
+                              onTap: () {
+                                if (_exitSearchInputMode()) {
+                                  return;
+                                }
+                                if (ResponsiveUtil.useDesktopShell(context)) {
+                                  _openPostInSplit(post);
+                                } else {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => PostDetailScreen(
+                                        postId: post.id,
+                                        isMarket: false,
+                                        initialPost: post,
+                                      ),
+                                    ),
+                                  );
+                                }
+                              },
+                            ),
                           ),
                         ),
-                      ),
-                    );
-                  }, childCount: visiblePosts.length),
-                ),
+                      );
+                    }, childCount: normalPosts.length),
+                  ),
+                ],
+              ],
               if (isFeedLoading && posts.isNotEmpty)
                 const SliverToBoxAdapter(
                   child: Padding(

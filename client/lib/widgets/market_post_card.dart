@@ -1,19 +1,53 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../config/api_constants.dart';
 import '../models/post.dart';
+import '../providers/auth_provider.dart';
 import '../screens/image_viewer_screen.dart';
+import '../screens/user_home_screen.dart';
 import '../utils/post_image_cache.dart';
 import 'cached_avatar.dart';
-import 'package:provider/provider.dart';
-import '../providers/auth_provider.dart';
-import '../screens/user_home_screen.dart';
+
+final class _CardTokens {
+  static Color cardBg(bool isDark) =>
+      isDark ? const Color(0xFF1E2226) : Colors.white;
+
+  static Color borderColor(bool isDark) =>
+      isDark
+          ? Colors.white.withValues(alpha: 0.08)
+          : const Color(0xFFF1E5DC);
+
+  static Color titleColor(bool isDark) =>
+      isDark ? Colors.white : const Color(0xFF1F2328);
+
+  static Color subColor(bool isDark) =>
+      isDark ? Colors.grey.shade400 : const Color(0xFF747B82);
+
+  static Color accent(bool isDark) =>
+      isDark ? const Color(0xFFFFA06D) : const Color(0xFFFF7A45);
+
+  static Color accentSoft(bool isDark) =>
+      isDark
+          ? const Color(0xFFFFA06D).withValues(alpha: 0.14)
+          : const Color(0xFFFFF0E8);
+
+  static Color priceColor(bool _) => const Color(0xFFE76F51);
+
+  static Color skeletonBg(bool isDark) =>
+      isDark ? const Color(0xFF242833) : const Color(0xFFF1F3F6);
+
+  static Color skeletonIcon(bool isDark) =>
+      isDark ? Colors.white12 : const Color(0xFFC9CED6);
+
+  static const double cardRadius = 18;
+}
 
 class MarketPostCard extends StatelessWidget {
   final Post post;
   final VoidCallback? onTap;
-  final bool compact; // If true, it represents Grid mode. If false, List mode.
+  final bool compact;
   final ValueChanged<int>? onAuthorTap;
 
   const MarketPostCard({
@@ -31,7 +65,7 @@ class MarketPostCard extends StatelessWidget {
       case 'buy':
         return '求购';
       case 'proxy':
-        return '代取';
+        return '办事';
       case 'lost':
         return '寻物';
       case 'found':
@@ -56,92 +90,241 @@ class MarketPostCard extends StatelessWidget {
     }
   }
 
+  // ── Compact list card (the main market card) ──────────────────────
+
   Widget _buildListCard(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final validImages =
         post.images.where((img) => img.url.trim().isNotEmpty).toList();
+    final isSold = post.status == 'sold' || post.status == 'closed';
+    final accent = _CardTokens.accent(isDark);
+    final title = post.title.isNotEmpty ? post.title : post.content;
+    final typeLabel = _marketTypeLabel(post);
+    final statusLabel = _marketStatusLabel(post);
 
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF171A22) : Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: isDark
-                  ? Colors.white.withValues(alpha: 0.08)
-                  : const Color(0xFFE5E7EB),
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(_CardTokens.cardRadius),
+          onTap: onTap,
+          child: Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: _CardTokens.cardBg(isDark),
+              borderRadius: BorderRadius.circular(_CardTokens.cardRadius),
+              border: Border.all(color: _CardTokens.borderColor(isDark)),
+              boxShadow: [
+                if (!isDark)
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.025),
+                    blurRadius: 10,
+                    offset: const Offset(0, 3),
+                  ),
+              ],
             ),
-            boxShadow: [
-              if (!isDark)
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.04),
-                  blurRadius: 12,
-                  offset: const Offset(0, 4),
-                ),
-            ],
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (validImages.isNotEmpty)
-                _buildCover(context, validImages, 112, 112, isDark,
-                    isGrid: false)
-              else
-                _buildNoImageCover(112, 112, isDark, isGrid: false),
-              const SizedBox(width: 12),
-              Expanded(
-                child: SizedBox(
-                  height: 112,
+            clipBehavior: Clip.antiAlias,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Left: image (96×96, with type badge)
+                if (validImages.isNotEmpty)
+                  _buildCover(
+                      context, validImages, 96, 96, isDark, isGrid: false)
+                else
+                  _buildNoImageCover(96, 96, isDark, isGrid: false),
+                const SizedBox(width: 10),
+                // Right: compact info
+                Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      if (post.title.isNotEmpty || post.content.isNotEmpty)
-                        Text(
-                          post.title.isNotEmpty ? post.title : post.content,
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w700,
-                            height: 1.25,
-                            color:
-                                isDark ? Colors.white : const Color(0xFF111827),
+                      // Row 1: title + time
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Text(
+                              title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                                height: 1.2,
+                                color: _CardTokens.titleColor(isDark),
+                              ),
+                            ),
                           ),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      if (post.title.isNotEmpty && post.content.isNotEmpty) ...[
-                        const SizedBox(height: 4),
-                        Text(
-                          post.content,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: isDark
-                                ? Colors.white54
-                                : const Color(0xFF98A2B3),
-                            fontSize: 12,
+                          const SizedBox(width: 8),
+                          Text(
+                            _formatTime(post.createdAt),
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: _CardTokens.subColor(isDark),
+                            ),
                           ),
-                        ),
-                      ],
-                      const Spacer(),
-                      _buildPriceRow(context, isDark, showViews: true),
+                        ],
+                      ),
                       const SizedBox(height: 6),
-                      _buildListUserInfo(context, isDark),
+                      // Row 2: price + status badge
+                      Row(
+                        children: [
+                          if (post.postType != 'lost' &&
+                              post.postType != 'found') ...[
+                            if (post.price > 0) ...[
+                              Text(
+                                '¥',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w900,
+                                  color: isSold
+                                      ? _CardTokens.subColor(isDark)
+                                      : _CardTokens.priceColor(isDark),
+                                ),
+                              ),
+                              Text(
+                                post.price.toStringAsFixed(
+                                    post.price.truncateToDouble() ==
+                                            post.price
+                                        ? 0
+                                        : 2),
+                                style: TextStyle(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w900,
+                                  height: 1.0,
+                                  color: isSold
+                                      ? _CardTokens.subColor(isDark)
+                                      : _CardTokens.priceColor(isDark),
+                                ),
+                              ),
+                            ] else ...[
+                              Text(
+                                post.postType == 'buy' ? '求购' : '面议',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w800,
+                                  color: accent,
+                                ),
+                              ),
+                            ],
+                            const SizedBox(width: 6),
+                          ],
+                          if (statusLabel != null)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 5, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: isSold
+                                    ? Colors.grey.withValues(alpha: 0.08)
+                                    : _CardTokens.accentSoft(isDark),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                statusLabel,
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: isSold ? Colors.grey : accent,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          if (typeLabel.isNotEmpty &&
+                              statusLabel == null) ...[
+                            const SizedBox(width: 4),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 5, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: _CardTokens.accentSoft(isDark),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                typeLabel,
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: accent,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      // Row 3: tags + user
+                      Row(
+                        children: [
+                          if (post.marketTags.isNotEmpty) ...[
+                            Expanded(
+                              child: Text(
+                                post.marketTags.take(2).join(' · '),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: _CardTokens.subColor(isDark),
+                                ),
+                              ),
+                            ),
+                          ] else
+                            Expanded(
+                              child: _buildUserLine(context, isDark),
+                            ),
+                        ],
+                      ),
                     ],
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
     );
   }
+
+  Widget _buildUserLine(BuildContext context, bool isDark) {
+    final authUser = context.watch<AuthProvider>().user;
+    final isMyPost = authUser != null && post.author?.id == authUser.id;
+    final displayAvatar =
+        isMyPost ? authUser.avatar : (post.author?.avatar ?? '');
+    final displayNickname =
+        isMyPost ? authUser.nickname : (post.author?.nickname ?? '匿名');
+
+    return Row(
+      children: [
+        GestureDetector(
+          onTap: () => _openAuthor(context),
+          child: CachedAvatar(
+            radius: 7,
+            imageUrl: displayAvatar.isNotEmpty
+                ? ApiConstants.fullUrl(displayAvatar)
+                : null,
+            fallbackText: displayNickname,
+          ),
+        ),
+        const SizedBox(width: 4),
+        Flexible(
+          child: GestureDetector(
+            onTap: () => _openAuthor(context),
+            child: Text(
+              displayNickname,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 11,
+                color: _CardTokens.subColor(isDark),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ── Grid card (unchanged layout, just tokens) ────────────────────
 
   Widget _buildGridCard(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -151,24 +334,20 @@ class MarketPostCard extends StatelessWidget {
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(_CardTokens.cardRadius),
         onTap: onTap,
         child: Container(
           clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF171A22) : Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: isDark
-                  ? Colors.white.withValues(alpha: 0.08)
-                  : const Color(0xFFE5E7EB),
-            ),
+            color: _CardTokens.cardBg(isDark),
+            borderRadius: BorderRadius.circular(_CardTokens.cardRadius),
+            border: Border.all(color: _CardTokens.borderColor(isDark)),
             boxShadow: [
               if (!isDark)
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.05),
-                  blurRadius: 14,
-                  offset: const Offset(0, 5),
+                  color: Colors.black.withValues(alpha: 0.04),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
                 ),
             ],
           ),
@@ -176,12 +355,12 @@ class MarketPostCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               if (validImages.isNotEmpty)
-                _buildCover(context, validImages, double.infinity, null, isDark,
-                    isGrid: true)
+                _buildCover(context, validImages, double.infinity, null,
+                    isDark, isGrid: true)
               else
                 _buildNoImageCover(double.infinity, 0, isDark, isGrid: true),
               Padding(
-                padding: const EdgeInsets.fromLTRB(8, 8, 8, 9),
+                padding: const EdgeInsets.fromLTRB(10, 10, 10, 12),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -192,13 +371,16 @@ class MarketPostCard extends StatelessWidget {
                           fontSize: 14,
                           fontWeight: FontWeight.w700,
                           height: 1.25,
-                          color:
-                              isDark ? Colors.white : const Color(0xFF111827),
+                          color: _CardTokens.titleColor(isDark),
                         ),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
                     const SizedBox(height: 6),
+                    if (post.marketTags.isNotEmpty) ...[
+                      _buildMarketTags(context, isDark, maxTags: 2),
+                      const SizedBox(height: 6),
+                    ],
                     _buildPriceRow(context, isDark),
                     const SizedBox(height: 8),
                     _buildGridUserInfo(context, isDark),
@@ -212,8 +394,10 @@ class MarketPostCard extends StatelessWidget {
     );
   }
 
-  Widget _buildCover(BuildContext context, List<PostImage> images, double width,
-      double? height, bool isDark,
+  // ── Cover & helpers ───────────────────────────────────────────────
+
+  Widget _buildCover(BuildContext context, List<PostImage> images,
+      double width, double? height, bool isDark,
       {required bool isGrid}) {
     final count = images.length;
     final imgUrl = ApiConstants.fullUrl(images[0].url);
@@ -230,16 +414,14 @@ class MarketPostCard extends StatelessWidget {
     );
 
     if (isGrid) {
-      imageWidget = AspectRatio(
-        aspectRatio: 1,
-        child: imageWidget,
-      );
+      imageWidget = AspectRatio(aspectRatio: 1, child: imageWidget);
     }
 
     return ClipRRect(
       borderRadius: isGrid
-          ? const BorderRadius.vertical(top: Radius.circular(16))
-          : BorderRadius.circular(12),
+          ? const BorderRadius.vertical(
+              top: Radius.circular(_CardTokens.cardRadius))
+          : BorderRadius.circular(14),
       child: Stack(
         children: [
           GestureDetector(
@@ -248,9 +430,8 @@ class MarketPostCard extends StatelessWidget {
                 context,
                 MaterialPageRoute(
                   builder: (_) => ImageViewerScreen(
-                    imageUrls: images
-                        .map((img) => ApiConstants.fullUrl(img.url))
-                        .toList(),
+                    imageUrls:
+                        images.map((img) => ApiConstants.fullUrl(img.url)).toList(),
                     initialIndex: 0,
                   ),
                 ),
@@ -259,14 +440,22 @@ class MarketPostCard extends StatelessWidget {
             child: imageWidget,
           ),
           Positioned(
-            left: 6,
-            top: 6,
+            left: 4,
+            top: 4,
             child: _buildImageBadge(_marketTypeLabel(post)),
           ),
-          if (count > 1)
+          if (post.status == 'sold' || post.status == 'closed')
             Positioned(
-              right: 6,
-              top: 6,
+              right: 4,
+              top: 4,
+              child: _buildStatusCornerBadge(
+                post.status == 'sold' ? '已售出' : '已结束',
+              ),
+            )
+          else if (count > 1)
+            Positioned(
+              right: 4,
+              top: 4,
               child: _buildImageBadge('$count图'),
             ),
         ],
@@ -277,16 +466,34 @@ class MarketPostCard extends StatelessWidget {
   Widget _buildImageBadge(String label) {
     if (label.isEmpty) return const SizedBox.shrink();
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
       decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.48),
+        color: Colors.black.withValues(alpha: 0.45),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
         label,
         style: const TextStyle(
           color: Colors.white,
-          fontSize: 10,
+          fontSize: 9,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatusCornerBadge(String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.45),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 9,
           fontWeight: FontWeight.w700,
         ),
       ),
@@ -295,10 +502,10 @@ class MarketPostCard extends StatelessWidget {
 
   Widget _buildSkeleton(bool isDark) {
     return Container(
-      color: isDark ? const Color(0xFF242833) : const Color(0xFFF1F3F6),
+      color: _CardTokens.skeletonBg(isDark),
       child: Center(
         child: Icon(Icons.image_outlined,
-            color: isDark ? Colors.white12 : const Color(0xFFC9CED6), size: 28),
+            color: _CardTokens.skeletonIcon(isDark), size: 24),
       ),
     );
   }
@@ -309,15 +516,16 @@ class MarketPostCard extends StatelessWidget {
       width: width,
       height: isGrid ? null : height,
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF242833) : const Color(0xFFF1F3F6),
+        color: _CardTokens.skeletonBg(isDark),
         borderRadius: isGrid
-            ? const BorderRadius.vertical(top: Radius.circular(16))
-            : BorderRadius.circular(12),
+            ? const BorderRadius.vertical(
+                top: Radius.circular(_CardTokens.cardRadius))
+            : BorderRadius.circular(14),
       ),
       child: Center(
         child: Icon(
-          Icons.image_outlined,
-          color: isDark ? Colors.white12 : const Color(0xFFC9CED6),
+          _getCategoryIcon(),
+          color: _CardTokens.skeletonIcon(isDark),
           size: 28,
         ),
       ),
@@ -331,8 +539,8 @@ class MarketPostCard extends StatelessWidget {
         children: [
           Positioned.fill(child: placeholder),
           Positioned(
-            left: 6,
-            top: 6,
+            left: 4,
+            top: 4,
             child: _buildImageBadge(_marketTypeLabel(post)),
           ),
         ],
@@ -340,11 +548,28 @@ class MarketPostCard extends StatelessWidget {
     );
   }
 
+  IconData _getCategoryIcon() {
+    switch (post.postType) {
+      case 'sell':
+        return Icons.sell_outlined;
+      case 'buy':
+        return Icons.shopping_cart_outlined;
+      case 'proxy':
+        return Icons.assignment_outlined;
+      case 'lost':
+        return Icons.search_off_rounded;
+      case 'found':
+        return Icons.search_rounded;
+      default:
+        return Icons.image_outlined;
+    }
+  }
+
   Widget _buildPriceRow(BuildContext context, bool isDark,
       {bool showViews = false}) {
     final isLostOrFound = post.postType == 'lost' || post.postType == 'found';
     final isSold = post.status == 'sold' || post.status == 'closed';
-    final primaryColor = Theme.of(context).colorScheme.primary;
+    final accent = _CardTokens.accent(isDark);
     final statusLabel = _marketStatusLabel(post);
     final typeLabel = _marketTypeLabel(post);
 
@@ -358,7 +583,9 @@ class MarketPostCard extends StatelessWidget {
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w900,
-                color: isSold ? Colors.grey : const Color(0xFFFF5F2E),
+                color: isSold
+                    ? _CardTokens.subColor(isDark)
+                    : _CardTokens.priceColor(isDark),
               ),
             ),
             Text(
@@ -368,16 +595,18 @@ class MarketPostCard extends StatelessWidget {
                 fontSize: 20,
                 fontWeight: FontWeight.w900,
                 height: 1.0,
-                color: isSold ? Colors.grey : const Color(0xFFFF5F2E),
+                color: isSold
+                    ? _CardTokens.subColor(isDark)
+                    : _CardTokens.priceColor(isDark),
               ),
             ),
           ] else ...[
             Text(
-              '面议',
+              post.postType == 'buy' ? '求购' : '面议',
               style: TextStyle(
-                fontSize: 14,
+                fontSize: 13,
                 fontWeight: FontWeight.w900,
-                color: isSold ? Colors.grey : const Color(0xFFFF5F2E),
+                color: accent,
               ),
             ),
           ],
@@ -389,14 +618,14 @@ class MarketPostCard extends StatelessWidget {
             decoration: BoxDecoration(
               color: isSold
                   ? Colors.grey.withValues(alpha: 0.1)
-                  : const Color(0xFF39A96B).withValues(alpha: 0.1),
+                  : _CardTokens.accentSoft(isDark),
               borderRadius: BorderRadius.circular(4),
             ),
             child: Text(
               statusLabel,
               style: TextStyle(
                 fontSize: 10,
-                color: isSold ? Colors.grey : const Color(0xFF39A96B),
+                color: isSold ? Colors.grey : accent,
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -405,14 +634,14 @@ class MarketPostCard extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
             decoration: BoxDecoration(
-              color: primaryColor.withValues(alpha: 0.1),
+              color: _CardTokens.accentSoft(isDark),
               borderRadius: BorderRadius.circular(4),
             ),
             child: Text(
               typeLabel,
               style: TextStyle(
                 fontSize: 10,
-                color: primaryColor,
+                color: accent,
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -423,7 +652,7 @@ class MarketPostCard extends StatelessWidget {
             '${post.viewCount}浏览',
             style: TextStyle(
               fontSize: 11,
-              color: isDark ? Colors.white38 : const Color(0xFF98A2B3),
+              color: _CardTokens.subColor(isDark),
               fontWeight: FontWeight.w600,
             ),
           ),
@@ -432,49 +661,33 @@ class MarketPostCard extends StatelessWidget {
     );
   }
 
-  Widget _buildListUserInfo(BuildContext context, bool isDark) {
-    final authUser = context.watch<AuthProvider>().user;
-    final isMyPost = authUser != null && post.author?.id == authUser.id;
-    final displayAvatar =
-        isMyPost ? authUser.avatar : (post.author?.avatar ?? '');
-    final displayNickname =
-        isMyPost ? authUser.nickname : (post.author?.nickname ?? '匿名');
-
-    return Row(
-      children: [
-        GestureDetector(
-          onTap: () => _openAuthor(context),
-          child: CachedAvatar(
-            radius: 8,
-            imageUrl: displayAvatar.isNotEmpty
-                ? ApiConstants.fullUrl(displayAvatar)
-                : null,
-            fallbackText: displayNickname,
-          ),
-        ),
-        const SizedBox(width: 6),
-        Expanded(
-          child: GestureDetector(
-            onTap: () => _openAuthor(context),
-            child: Text(
-              displayNickname,
-              style: const TextStyle(
-                fontSize: 11,
-                color: Color(0xFF8A9099),
+  Widget _buildMarketTags(BuildContext context, bool isDark,
+      {int maxTags = 2}) {
+    final tags = post.marketTags.take(maxTags).toList(growable: false);
+    final accent = _CardTokens.accent(isDark);
+    return Wrap(
+      spacing: 6,
+      runSpacing: 4,
+      children: tags
+          .map(
+            (tag) => Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+              decoration: BoxDecoration(
+                color: _CardTokens.accentSoft(isDark),
+                borderRadius: BorderRadius.circular(999),
               ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+              child: Text(
+                tag,
+                style: TextStyle(
+                  fontSize: 10.5,
+                  height: 1.0,
+                  color: accent,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
             ),
-          ),
-        ),
-        Text(
-          _formatTime(post.createdAt),
-          style: const TextStyle(
-            fontSize: 10,
-            color: Color(0xFF8A9099),
-          ),
-        ),
-      ],
+          )
+          .toList(),
     );
   }
 

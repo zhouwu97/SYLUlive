@@ -10,6 +10,7 @@ import (
 	"gorm.io/gorm"
 
 	"shenliyuan/internal/models"
+	"shenliyuan/internal/services"
 )
 
 // StartLotteryCron 启动抽奖自动开奖轮询任务
@@ -95,7 +96,11 @@ func ExecuteDraw(db *gorm.DB, eventID uint) error {
 	}
 
 	var participants []models.LotteryParticipant
-	db.Where("lottery_id = ?", event.ID).Find(&participants)
+	if err := db.Where("lottery_id = ?", event.ID).
+		Preload("User").
+		Find(&participants).Error; err != nil {
+		return err
+	}
 
 	if len(participants) == 0 {
 		// 没有人参与，可以视为流拍，或者直接标记为已结束
@@ -105,8 +110,16 @@ func ExecuteDraw(db *gorm.DB, eventID uint) error {
 	}
 
 	var totalWeight int64
-	for _, p := range participants {
-		totalWeight += int64(p.Weight)
+	for i := range participants {
+		currentWeight := services.CalculateLotteryWeightByLevel(participants[i].User.Exp)
+		participants[i].Weight = currentWeight
+		totalWeight += int64(currentWeight)
+
+		if err := db.Model(&models.LotteryParticipant{}).
+			Where("id = ?", participants[i].ID).
+			Update("weight", currentWeight).Error; err != nil {
+			return err
+		}
 	}
 
 	// 密码学级公平摇号
@@ -150,7 +163,7 @@ func ExecuteDraw(db *gorm.DB, eventID uint) error {
 
 		// 3. 创建全服系统公告
 		announcementContent := fmt.Sprintf(
-			"本次抽奖已于 %s 准时由系统自动开出！\n\n经过公平的底层真随机算法与经验值加权计算，恭喜用户【%s】幸运地抽中了【%s】！\n\n（本系统抽奖权重规则：基础权重1 + 经验值/10，完全公平公正，欢迎大家踊跃在社区活跃！）",
+			"本次抽奖已于 %s 准时由系统自动开出！\n\n经过公平的底层真随机算法与经验值加权计算，恭喜用户【%s】幸运地抽中了【%s】！\n\n（本系统抽奖权重规则：用户等级即抽奖权重，Lv.1=1份权重，Lv.8=8份权重；开奖前会按最新等级重新计算。）",
 			time.Now().Format("2006-01-02 15:04"),
 			winner.Nickname,
 			event.PrizeName,

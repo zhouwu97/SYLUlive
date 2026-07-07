@@ -10,19 +10,22 @@ import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
-import 'package:package_info_plus/package_info_plus.dart';
+
 import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart';
+
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/course_schedule_provider.dart';
 import '../providers/edu_provider.dart';
 import '../services/diagnostic_log_service.dart';
+import '../services/grade_reminder_service.dart';
 import '../models/diagnostic_log_entry.dart';
 import '../services/keep_alive_service.dart';
 import '../services/wallpaper_prefetch_service.dart';
 import '../utils/update_checker.dart';
 import '../widgets/glass_container.dart';
+
+import '../widgets/about_app_sheet.dart';
 import 'diagnostic_log_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -34,6 +37,7 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   static const String _wallpaperBaseUrl = WallpaperPrefetchService.baseUrl;
+
   KeepAliveStatus _keepAliveStatus = const KeepAliveStatus.unsupported();
   bool _keepAliveBusy = false;
   bool _hideRecentsBusy = false;
@@ -169,7 +173,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget _buildCleanBackground(bool isDark) {
     return SizedBox.expand(
       child: ColoredBox(
-        color: isDark ? const Color(0xFF101219) : const Color(0xFFF8FAFC),
+        color: isDark ? kCleanWarmBackgroundDark : kCleanWarmBackgroundLight,
       ),
     );
   }
@@ -472,35 +476,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
             iconColor: Colors.blue,
             title: '关于',
             isDark: isDark,
-            onTap: () => _showAboutDialog(context),
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-          child: SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: () =>
-                  UpdateChecker.check(context, showNoUpdateToast: true),
-              icon: const Icon(Icons.system_update, size: 18),
-              label: const Text('检查更新'),
-              style: OutlinedButton.styleFrom(
-                backgroundColor: isDark
-                    ? Colors.green.withValues(alpha: 0.15)
-                    : Colors.green.shade50,
-                foregroundColor:
-                    isDark ? Colors.green.shade300 : Colors.green.shade700,
-                side: BorderSide(
-                  color: isDark
-                      ? Colors.green.withValues(alpha: 0.3)
-                      : Colors.green.shade200,
-                ),
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
-              ),
-            ),
+            onTap: () {
+              showModalBottomSheet(
+                context: context,
+                isScrollControlled: true,
+                backgroundColor: Colors.transparent,
+                builder: (_) => const AboutAppSheet(),
+              );
+            },
           ),
         ),
 
@@ -530,9 +513,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 child: InkWell(
                   borderRadius: BorderRadius.circular(16),
                   onTap: () async {
+                    final userId = authProvider.user?.id.toString();
+                    final eduProvider = context.read<EduProvider>();
+                    final courseProvider =
+                        context.read<CourseScheduleProvider>();
+                    if (userId != null) {
+                      await GradeReminderService.instance.clearForUser(userId);
+                    }
                     // 登出前清空本机教务和课表状态，防止跨账号数据泄漏。
-                    await context.read<EduProvider>().clearLocalSession();
-                    context.read<CourseScheduleProvider>().clearAllUserState();
+                    await eduProvider.clearLocalSession();
+                    courseProvider.clearAllUserState();
                     await authProvider.logout();
                     if (context.mounted) {
                       Navigator.of(context).popUntil((route) => route.isFirst);
@@ -1418,365 +1408,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     newController.dispose();
   }
 
-  void _showAboutDialog(BuildContext context) async {
-    final packageInfo = await PackageInfo.fromPlatform();
-    final currentVersion = packageInfo.version;
-    if (!context.mounted) return;
-
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final primary = Theme.of(context).primaryColor;
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      barrierColor: Colors.black.withOpacity(0.4),
-      builder: (context) => TweenAnimationBuilder<double>(
-        tween: Tween(begin: 0.0, end: 1.0),
-        duration: const Duration(milliseconds: 400),
-        curve: Curves.easeOutCubic,
-        builder: (context, value, child) {
-          return Transform.translate(
-            offset: Offset(0, 50 * (1 - value)),
-            child: Opacity(opacity: value, child: child),
-          );
-        },
-        child: Container(
-          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-          decoration: BoxDecoration(
-            color: isDark
-                ? const Color(0xFF1E1E2E).withOpacity(0.8)
-                : Colors.white.withOpacity(0.9),
-            borderRadius: BorderRadius.circular(32),
-            border: Border.all(
-              color: isDark
-                  ? Colors.white.withOpacity(0.1)
-                  : Colors.white.withOpacity(0.5),
-              width: 1.5,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: primary.withOpacity(isDark ? 0.2 : 0.1),
-                blurRadius: 40,
-                spreadRadius: 5,
-              ),
-            ],
-          ),
-          child: SafeArea(
-            top: false,
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(24, 0, 24, 32),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // 拖拽指示条
-                  Padding(
-                    padding: const EdgeInsets.only(top: 12, bottom: 24),
-                    child: Container(
-                      width: 48,
-                      height: 5,
-                      decoration: BoxDecoration(
-                        color: isDark ? Colors.white24 : Colors.grey[300],
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                    ),
-                  ),
-                  // 动态 App 图标
-                  TweenAnimationBuilder<double>(
-                    tween: Tween(begin: 0.8, end: 1.0),
-                    duration: const Duration(milliseconds: 800),
-                    curve: Curves.elasticOut,
-                    builder: (context, scale, child) {
-                      return Transform.scale(scale: scale, child: child);
-                    },
-                    child: Container(
-                      width: 90,
-                      height: 90,
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [primary, primary.withOpacity(0.6)],
-                        ),
-                        borderRadius: BorderRadius.circular(28),
-                        boxShadow: [
-                          BoxShadow(
-                            color: primary.withOpacity(0.4),
-                            blurRadius: 20,
-                            offset: const Offset(0, 8),
-                          ),
-                        ],
-                      ),
-                      child: const Icon(
-                        Icons.school_rounded,
-                        color: Colors.white,
-                        size: 48,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  // 标题与版本号
-                  Text(
-                    '沈理校园',
-                    style: TextStyle(
-                      fontSize: 26,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 1.2,
-                      color: isDark ? Colors.white : const Color(0xFF2D3142),
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    '一款为沈理人写的开源校园工具',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: isDark ? Colors.white54 : const Color(0xFF9094A6),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: primary.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: primary.withOpacity(0.2)),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.verified, size: 14, color: primary),
-                        const SizedBox(width: 6),
-                        Text(
-                          'Version $currentVersion',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.bold,
-                            color: primary,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 32),
-
-                  // 开发者卡片 - 采用流光渐变设计
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: isDark
-                            ? [
-                                Colors.white.withOpacity(0.05),
-                                Colors.white.withOpacity(0.02),
-                              ]
-                            : [
-                                const Color(0xFFF4F7FC),
-                                const Color(0xFFEEF2F9),
-                              ],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      borderRadius: BorderRadius.circular(24),
-                      border: Border.all(
-                        color: isDark
-                            ? Colors.white12
-                            : Colors.black.withOpacity(0.05),
-                      ),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(
-                                color: primary.withOpacity(0.15),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Icon(
-                                Icons.code_rounded,
-                                size: 20,
-                                color: primary,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  '开发者',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: isDark
-                                        ? Colors.white54
-                                        : const Color(0xFF9094A6),
-                                  ),
-                                ),
-                                Text(
-                                  '纯合子',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold,
-                                    color: isDark
-                                        ? Colors.white
-                                        : const Color(0xFF2D3142),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          '用爱发电，写个自己觉得好用的课表和论坛。',
-                          style: TextStyle(
-                            fontSize: 13,
-                            height: 1.6,
-                            color: isDark
-                                ? Colors.white70
-                                : const Color(0xFF4F5568),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-
-                  // 联系与源码按钮组
-                  _aboutLink(
-                    context,
-                    Icons.device_hub_rounded,
-                    '开源仓库与源码',
-                    'https://github.com/zhouwu97/SYLUlive',
-                    isDark,
-                    primary,
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _aboutLink(
-                          context,
-                          Icons.group_rounded,
-                          '加入群聊',
-                          null,
-                          isDark,
-                          Colors.blue,
-                          onTapOverride: () =>
-                              _copyToClipboard(context, '1076639620', '复制成功'),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _aboutLink(
-                          context,
-                          Icons.email_rounded,
-                          '联系作者',
-                          null,
-                          isDark,
-                          Colors.orange,
-                          onTapOverride: () => _copyToClipboard(
-                            context,
-                            '3170305904@qq.com',
-                            '邮箱已复制到剪贴板',
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _aboutLink(
-    BuildContext context,
-    IconData icon,
-    String label,
-    String? url,
-    bool isDark,
-    Color color, {
-    VoidCallback? onTapOverride,
-  }) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTapOverride ?? (url != null ? () => _launchUrl(url) : null),
-        borderRadius: BorderRadius.circular(16),
-        highlightColor: color.withOpacity(0.1),
-        splashColor: color.withOpacity(0.2),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          decoration: BoxDecoration(
-            color: isDark
-                ? Colors.white.withOpacity(0.04)
-                : Colors.black.withOpacity(0.03),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: isDark
-                  ? Colors.white.withOpacity(0.05)
-                  : Colors.black.withOpacity(0.05),
-            ),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon, size: 20, color: color),
-              const SizedBox(width: 10),
-              Flexible(
-                child: Text(
-                  label,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: isDark
-                        ? Colors.white.withOpacity(0.9)
-                        : const Color(0xFF2D3142),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _copyToClipboard(
-    BuildContext context,
-    String text,
-    String successMessage,
-  ) {
-    Clipboard.setData(ClipboardData(text: text));
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(successMessage),
-        behavior: SnackBarBehavior.floating,
-        margin: const EdgeInsets.all(16),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        duration: const Duration(seconds: 2),
-      ),
-    );
-  }
-
-  Future<void> _launchUrl(String url) async {
-    final uri = Uri.parse(url);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } else {
-      debugPrint('Could not launch URL: $url');
-    }
-  }
 
   // ── 推送诊断 ──
 
@@ -1920,15 +1551,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             isDarkSheet,
                           ),
                         _diagRow(
-                          '已存储 Alias',
+                          info.storedAliasState == 'pending_bind'
+                              ? '本地待绑定 Alias'
+                              : '已存储 Alias',
                           info.storedAlias != null
                               ? '***${info.storedAlias!.length > 4 ? info.storedAlias!.substring(info.storedAlias!.length - 4) : info.storedAlias}'
                               : '未存储',
                           info.storedAlias != null
-                              ? Icons.check_circle
+                              ? (info.storedAliasState == 'active'
+                                  ? Icons.check_circle
+                                  : Icons.hourglass_empty)
                               : Icons.warning_amber_rounded,
                           info.storedAlias != null
-                              ? Colors.green
+                              ? (info.storedAliasState == 'active'
+                                  ? Colors.green
+                                  : Colors.blue)
                               : Colors.orange,
                           isDarkSheet,
                         ),
@@ -1939,14 +1576,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               ? Icons.check_circle
                               : info.aliasLastStatus == '失败'
                                   ? Icons.error
-                                  : Icons.help_outline,
+                                  : info.aliasLastStatus == '待绑定'
+                                      ? Icons.hourglass_empty
+                                      : Icons.help_outline,
                           info.aliasLastStatus == '成功'
                               ? Colors.green
                               : info.aliasLastStatus == '失败'
                                   ? Colors.red
-                                  : Colors.grey,
+                                  : info.aliasLastStatus == '待绑定'
+                                      ? Colors.blue
+                                      : Colors.grey,
                           isDarkSheet,
-                          subtitle: info.aliasLastTime,
+                          subtitle: _joinDiagnosticSubtitle([
+                            info.aliasLastTime,
+                            info.aliasLastDetail,
+                          ]),
                         ),
                         if (info.error != null) ...[
                           const SizedBox(height: 12),
@@ -2034,26 +1678,40 @@ class _SettingsScreenState extends State<SettingsScreen> {
     // 从日志中提取最近一次 Alias 绑定状态
     String? aliasLastStatus;
     String? aliasLastTime;
+    String? aliasLastDetail;
     for (final log in logs) {
       if (log.source != '推送') continue;
-      if (log.type == 'Alias 绑定成功') {
+      if (log.type == 'Alias 绑定成功' || log.type == 'Alias 恢复成功') {
         aliasLastStatus = '成功';
         final effectiveTime =
             log.lastSeenAt > 0 ? log.lastSeenAt : log.timestamp;
         aliasLastTime = DateFormat(
           'MM-dd HH:mm:ss',
         ).format(DateTime.fromMillisecondsSinceEpoch(effectiveTime));
+        aliasLastDetail = log.detail.isNotEmpty ? log.detail : null;
         break;
       }
-      if (log.type == 'Alias 绑定失败') {
+      if (log.type == 'Alias 绑定失败' || log.type == 'Alias 恢复失败') {
         aliasLastStatus = '失败';
         final effectiveTime =
             log.lastSeenAt > 0 ? log.lastSeenAt : log.timestamp;
         aliasLastTime = DateFormat(
           'MM-dd HH:mm:ss',
         ).format(DateTime.fromMillisecondsSinceEpoch(effectiveTime));
+        aliasLastDetail = log.detail.isNotEmpty ? log.detail : null;
         break;
       }
+    }
+
+    final storedAliasState = native['storedAliasState']?.toString();
+    if (storedAliasState == 'active') {
+      if (aliasLastStatus != '成功') {
+        aliasLastTime = null;
+        aliasLastDetail = null;
+      }
+      aliasLastStatus = '成功';
+    } else if (storedAliasState == 'pending_bind' && aliasLastStatus == null) {
+      aliasLastStatus = '待绑定';
     }
 
     return _PushDiagnosticInfo(
@@ -2067,8 +1725,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
       privateMessageChannelBlocked:
           native['privateMessageChannelBlocked'] == true,
       storedAlias: native['storedAlias']?.toString(),
+      storedAliasState: storedAliasState,
       aliasLastStatus: aliasLastStatus,
       aliasLastTime: aliasLastTime,
+      aliasLastDetail: aliasLastDetail,
       error: errors.isNotEmpty ? errors.join('\n') : null,
     );
   }
@@ -2086,11 +1746,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
     sb.writeln(
       '渠道重要性: ${_importanceLabel(info.privateMessageChannelImportance)}',
     );
-    sb.writeln('已存储 Alias: ${_maskValue(info.storedAlias, 4)}');
+    final aliasLabel =
+        info.storedAliasState == 'pending_bind' ? '本地待绑定 Alias' : '已存储 Alias';
+    sb.writeln('$aliasLabel: ${_maskValue(info.storedAlias, 4)}');
     sb.writeln(
       'Alias 最近状态: ${info.aliasLastStatus ?? "无记录"}'
       '${info.aliasLastTime != null ? " (${info.aliasLastTime})" : ""}',
     );
+    if (info.aliasLastDetail != null) {
+      sb.writeln('Alias 最近详情: ${info.aliasLastDetail}');
+    }
     if (info.error != null) {
       sb.writeln('诊断异常: ${info.error}');
     }
@@ -2182,6 +1847,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
     );
   }
+
+  String? _joinDiagnosticSubtitle(List<String?> parts) {
+    final lines = parts
+        .whereType<String>()
+        .map((s) => s.trim())
+        .where((s) => s.isNotEmpty)
+        .toList();
+    return lines.isEmpty ? null : lines.join('\n');
+  }
 }
 
 /// 推送诊断信息
@@ -2192,8 +1866,10 @@ class _PushDiagnosticInfo {
   final int privateMessageChannelImportance;
   final bool privateMessageChannelBlocked;
   final String? storedAlias;
+  final String? storedAliasState;
   final String? aliasLastStatus;
   final String? aliasLastTime;
+  final String? aliasLastDetail;
   final String? error;
 
   const _PushDiagnosticInfo({
@@ -2203,8 +1879,10 @@ class _PushDiagnosticInfo {
     required this.privateMessageChannelImportance,
     required this.privateMessageChannelBlocked,
     required this.storedAlias,
+    required this.storedAliasState,
     required this.aliasLastStatus,
     required this.aliasLastTime,
+    required this.aliasLastDetail,
     this.error,
   });
 }

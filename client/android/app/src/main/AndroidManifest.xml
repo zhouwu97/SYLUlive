@@ -57,6 +57,13 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:scheme="timetable" android:host="home" />
             </intent-filter>
+            <!-- 成绩更新提醒点击跳转深度链接 -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="sylulive" android:host="grades" />
+            </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->

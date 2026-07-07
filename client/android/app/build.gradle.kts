@@ -97,6 +97,6 @@ dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:1.2.2")
 
     // WorkManager — 后台定时刷新
-    implementation("androidx.work:work-runtime-ktx:2.10.0")
+    implementation("androidx.work:work-runtime-ktx:2.11.2")
     implementation("cn.jiguang.sdk:jpush:6.1.0")
 }

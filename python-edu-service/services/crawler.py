@@ -6,7 +6,8 @@ import json
 import random
 import re
 import time
-from typing import Optional, List, Tuple
+from datetime import datetime
+from typing import Any, Dict, Optional, List, Tuple
 from dataclasses import dataclass
 
 import httpx
@@ -16,6 +17,8 @@ from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.backends import default_backend
 
 from config import INDEX_URL, COURSE_URL, GRADE_URL
+
+ACADEMIC_SITUATION_URL = "https://jxw.sylu.edu.cn/xsxy/xsxyqk_cxXsxyqkIndex.html"
 
 
 # ============== 错误定义 ==============
@@ -43,12 +46,12 @@ class LoginFailedError(EduError):
 
 
 class CourseNotOpenError(EduError):
-    """课表未开攁"""
+    """课表未开放"""
     pass
 
 
 class GradesNotOpenError(EduError):
-    """成绩未开攁"""
+    """成绩未开放"""
     pass
 
 
@@ -465,7 +468,7 @@ class EduCrawler:
                 print(f"  [MOBILE] 失败: {e}")
 
         if not all_courses:
-            raise CourseNotOpenError("当前学期课表暂未开攁")
+            raise CourseNotOpenError("当前学期课表暂未排课")
 
         return all_courses
 
@@ -594,6 +597,33 @@ class EduCrawler:
             "components": [],
             "message": last_message,
         }
+
+    async def fetch_academic_situation(self, cookie: str) -> dict:
+        """抓取学生学业情况查询页面。"""
+        if not self.client:
+            raise NetworkError("Client not initialized")
+
+        resp = await self.client.get(
+            ACADEMIC_SITUATION_URL,
+            params={"gnmkdm": "N105515", "layout": "default"},
+            headers={
+                "Cookie": cookie,
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Referer": "https://jxw.sylu.edu.cn/xtgl/index_initMenu.html",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            },
+        )
+
+        if resp.status_code in (302, 901):
+            raise CookieLapseError("Cookie已失效")
+        if resp.status_code != 200:
+            raise NetworkError(f"学业情况接口返回状态码 {resp.status_code}")
+
+        body = resp.text
+        if _looks_like_login_page(body):
+            raise CookieLapseError("Cookie已失效")
+
+        return parse_academic_situation_html(body)
 
 
 def parse_grade_detail_response(body: str, course_name: str) -> dict:
@@ -724,6 +754,291 @@ def _normalize_text(value: str) -> str:
 def _normalize_component_name(value: str) -> str:
     text = _normalize_text(value)
     return text.strip("【】[] ").strip()
+
+
+def parse_academic_situation_html(html: str) -> dict:
+    """解析官方“学生学业情况查询”HTML。"""
+    soup = BeautifulSoup(html or "", "html.parser")
+    plain_text = _normalize_text(soup.get_text(" ", strip=True))
+    total_part, degree_part = _split_academic_summary(plain_text)
+
+    return {
+        "success": True,
+        "source": "academic_situation",
+        "all_gpa": _extract_gpa_value_any(plain_text, [
+            "当前所有课程平均学分绩点",
+            "所有课程平均学分绩点",
+            "当前所有课程GPA",
+        ]),
+        "degree_gpa": _extract_gpa_value_any(plain_text, [
+            "当前学位课程平均学分绩点",
+            "当前学位课平均学分绩点",
+            "学位课程平均学分绩点",
+            "学位课平均学分绩点",
+            "当前学位课程GPA",
+            "当前学位课GPA",
+            "学位课GPA",
+        ]),
+        "total_courses": _find_int(total_part, r"计划总课程(?:为)?\s*(\d+)\s*门"),
+        "passed_courses": _find_int(total_part, r"通过\s*(\d+)\s*门"),
+        "failed_courses": _find_int(total_part, r"未通过\s*(\d+)\s*门"),
+        "not_started_courses": _find_int(total_part, r"未修\s*(\d+)\s*门"),
+        "in_progress_courses": _find_int(total_part, r"在读\s*(\d+)\s*门"),
+        "degree_total_courses": _find_int(degree_part, r"计划学位课程(?:为)?\s*(\d+)\s*门"),
+        "degree_passed_courses": _find_int(degree_part, r"通过\s*(\d+)\s*门"),
+        "degree_failed_courses": _find_int(degree_part, r"未通过\s*(\d+)\s*门"),
+        "degree_not_started_courses": _find_int(degree_part, r"未修\s*(\d+)\s*门"),
+        "degree_in_progress_courses": _find_int(degree_part, r"在读\s*(\d+)\s*门"),
+        "courses": _parse_academic_courses(html),
+        "message": None,
+        "updated_at": datetime.now().isoformat(),
+    }
+
+
+def _looks_like_login_page(html: str) -> bool:
+    text = html or ""
+    return any(token in text for token in ("login_slogin", "统一身份认证", "用户登录"))
+
+
+def _split_academic_summary(text: str) -> Tuple[str, str]:
+    total_start = text.find("计划总课程")
+    degree_start = text.find("计划学位课程")
+    table_start = _first_existing_index(text, ["修读状态", "课程名称", "最大成绩"])
+
+    if total_start < 0:
+        total_start = 0
+    if degree_start < 0:
+        return text[total_start:table_start], ""
+    if table_start < 0:
+        table_start = len(text)
+    return text[total_start:degree_start], text[degree_start:table_start]
+
+
+def _first_existing_index(text: str, tokens: List[str]) -> int:
+    indexes = [text.find(token) for token in tokens if text.find(token) >= 0]
+    return min(indexes) if indexes else -1
+
+
+def _find_float(text: str, pattern: str) -> Optional[float]:
+    match = re.search(pattern, text)
+    if not match:
+        return None
+    try:
+        return float(match.group(1))
+    except (TypeError, ValueError):
+        return None
+
+
+def _compact_text(value: str) -> str:
+    return re.sub(r"\s+", "", value or "")
+
+
+def _extract_gpa_value_any(text: str, labels: List[str]) -> Optional[float]:
+    for label in labels:
+        value = _extract_gpa_value(text, label)
+        if value is not None:
+            return value
+
+    compact = _compact_text(text)
+    for label in labels:
+        compact_label = _compact_text(label)
+        index = compact.find(compact_label)
+        if index < 0:
+            continue
+
+        window = compact[index:index + 100]
+        match = re.search(r"([0-9]+(?:\.[0-9]+)?)", window)
+        if match:
+            try:
+                return float(match.group(1))
+            except (TypeError, ValueError):
+                pass
+
+    return None
+
+
+def _extract_gpa_value(text: str, label: str) -> Optional[float]:
+    """
+    从官方学业情况文本中提取 GPA。
+    兼容：
+    当前所有课程平均学分绩点（GPA）：2.61728
+    当前所有课程平均学分绩点 （GPA） ： 2.61728
+    当前所有课程平均学分绩点 GPA : 2.61728
+    """
+    if not text:
+        return None
+
+    # 先用宽松正则：label 后面允许任意空白、括号、GPA、冒号，再取第一个数字
+    pattern = (
+        re.escape(label)
+        + r"\s*[\(（]?\s*GPA\s*[\)）]?\s*[:：]?\s*([0-9]+(?:\.[0-9]+)?)"
+    )
+    value = _find_float(text, pattern)
+    if value is not None:
+        return value
+
+    # fallback：定位 label 后，在后面一小段文本里找第一个浮点数
+    index = text.find(label)
+    if index < 0:
+        return None
+
+    window = text[index:index + 120]
+    match = re.search(r"([0-9]+(?:\.[0-9]+)?)", window)
+    if not match:
+        return None
+
+    try:
+        return float(match.group(1))
+    except (TypeError, ValueError):
+        return None
+
+
+def _find_int(text: str, pattern: str) -> int:
+    match = re.search(pattern, text)
+    if not match:
+        return 0
+    try:
+        return int(match.group(1))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _parse_academic_courses(html: str) -> List[dict]:
+    soup = BeautifulSoup(html or "", "html.parser")
+    for table in soup.select("table"):
+        parsed = _parse_academic_course_table(table)
+        if parsed:
+            return parsed
+    return []
+
+
+def _parse_academic_course_table(table) -> List[dict]:
+    rows = table.select("tr")
+    header_index = -1
+    headers: List[str] = []
+
+    for index, tr in enumerate(rows):
+        cells = [_normalize_text(cell.get_text(" ", strip=True)) for cell in tr.select("th,td")]
+        if "课程名称" in cells and "最大成绩" in cells and "修读状态" in cells:
+            header_index = index
+            headers = cells
+            break
+
+    if header_index < 0:
+        return []
+
+    field_map = {
+        "修读状态": "study_status",
+        "成绩学年": "academic_year",
+        "学期": "semester",
+        "课程号": "course_code",
+        "课程名称": "course_name",
+        "学时": "hours",
+        "课程性质": "course_nature",
+        "学分": "credits",
+        "课程类别": "course_category",
+        "最大成绩": "max_grade",
+        "绩点": "gpa",
+        "成绩": "grade",
+        "补考": "makeup_grade",
+        "重修": "retake_grade",
+        "建议修读学年": "suggested_year",
+        "建议修读学期": "suggested_semester",
+        "课程重要性质数": "important_nature_count",
+    }
+
+    courses = []
+    for tr in rows[header_index + 1:]:
+        cells = [_normalize_text(td.get_text(" ", strip=True)) for td in tr.select("td")]
+        if not any(cells):
+            continue
+
+        row: Dict[str, Any] = {}
+        for header, cell in zip(headers, cells):
+            field = field_map.get(header)
+            if field:
+                row[field] = _empty_to_none_text(cell)
+
+        if not row.get("course_name"):
+            continue
+
+        row["course_code"] = row.get("course_code") or ""
+        row["credits"] = _to_float(row.get("credits"))
+        row["gpa"] = _to_nullable_float(row.get("gpa"))
+        row["is_degree"] = _is_degree_course(row)
+        row["has_retake"] = _has_value(row.get("retake_grade"))
+        row["effective_grade"] = _effective_grade(row)
+        row["effective_passed"] = _effective_passed(row)
+        courses.append(row)
+
+    return courses
+
+
+def _empty_to_none_text(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text or text in ("--", "—", "-"):
+        return None
+    return text
+
+
+def _has_value(value: Optional[str]) -> bool:
+    return _empty_to_none_text(value) is not None
+
+
+def _to_float(value: Any) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _to_nullable_float(value: Any) -> Optional[float]:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _is_degree_course(row: Dict[str, Any]) -> bool:
+    text = " ".join(
+        str(row.get(key) or "")
+        for key in ("course_nature", "course_category")
+    )
+    important = str(row.get("important_nature_count") or "").strip()
+    return "学位" in text or (important not in ("", "0", "0.0"))
+
+
+def _effective_grade(row: Dict[str, Any]) -> Optional[str]:
+    for key in ("max_grade", "retake_grade", "makeup_grade", "grade"):
+        value = _empty_to_none_text(row.get(key))
+        if value:
+            return value
+    return None
+
+
+def _effective_passed(row: Dict[str, Any]) -> Optional[bool]:
+    status = str(row.get("study_status") or "").strip()
+    if "未通过" in status:
+        return False
+    if "通过" in status or "已通过" in status:
+        return True
+    if "在读" in status or "未修" in status:
+        return None
+
+    grade = _effective_grade(row)
+    if not grade:
+        return None
+
+    numeric = float(grade) if re.fullmatch(r"\d+(?:\.\d+)?", grade) else None
+    if numeric is not None:
+        return numeric >= 60
+    if re.fullmatch(r"优秀|良好|中等|及格|合格", grade):
+        return True
+    if re.fullmatch(r"不及格|不合格|未通过", grade):
+        return False
+    return None
 
 
 # ============== 辅助函数 ==============

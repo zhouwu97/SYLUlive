@@ -38,8 +38,14 @@ func activePinOrder(now time.Time) clause.Expr {
 func applyPinnedOrder(query *gorm.DB, now time.Time) *gorm.DB {
 	return query.
 		Order(activePinOrder(now)).
-		Order("posts.pinned_weight DESC").
-		Order("posts.pinned_at DESC NULLS LAST")
+		Order(clause.Expr{
+			SQL: `CASE WHEN posts.is_pinned = ? AND (posts.pinned_until IS NULL OR posts.pinned_until > ?) THEN posts.pinned_weight ELSE 0 END DESC`,
+			Vars: []interface{}{true, now},
+		}).
+		Order(clause.Expr{
+			SQL: `CASE WHEN posts.is_pinned = ? AND (posts.pinned_until IS NULL OR posts.pinned_until > ?) THEN posts.pinned_at ELSE NULL END DESC NULLS LAST`,
+			Vars: []interface{}{true, now},
+		})
 }
 
 func (h *PostHandler) AdminPinPost(c *gin.Context) {

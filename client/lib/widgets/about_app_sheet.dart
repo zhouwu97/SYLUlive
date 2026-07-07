@@ -151,6 +151,7 @@ class _AboutAppSheetState extends State<AboutAppSheet> {
                             Divider(height: 1, color: border, indent: 16, endIndent: 16),
                             InkWell(
                               onTap: () {
+                                Navigator.pop(context);
                                 UpdateChecker.check(context, showNoUpdateToast: true, manual: true);
                               },
                               borderRadius: const BorderRadius.only(

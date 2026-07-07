@@ -71,11 +71,21 @@ object GradeReminderScheduler {
             .remove(needActionKey(userId))
 
         if (snapshot != null) {
-            editor.putString(snapshotKey(userId, year, semester), snapshot.toString())
+            val parsed = GradeReminderSnapshot.fromJsonObject(snapshot)
+            if (parsed != null && parsed.isPendingOnly()) {
+                editor.putString(
+                    snapshotKey(userId, year, semester),
+                    parsed.copy(initialized = false).toJson().toString()
+                )
+            } else {
+                editor.putString(snapshotKey(userId, year, semester), snapshot.toString())
+            }
         } else if (enabled) {
             editor.putString(
                 snapshotKey(userId, year, semester),
-                GradeReminderSnapshot.empty().toJson().toString(),
+                GradeReminderSnapshot(false, emptyList(), System.currentTimeMillis())
+                    .toJson()
+                    .toString(),
             )
         }
         editor.apply()

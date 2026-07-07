@@ -463,7 +463,7 @@ class PrivateMessageJPushReceiver : JPushEventReceiver() {
                     DiagnosticLogStore.info(
                         context,
                         source = "推送",
-                        type = "Alias 恢复成功",
+                        type = "Alias 绑定成功",
                         summary = if (confirmed) "保活服务 Alias 绑定成功并确认生效" else "Alias 绑定成功，但本地状态已变化",
                         detail = "sequence=$sequence gen=$requestGen",
                     )
@@ -471,7 +471,7 @@ class PrivateMessageJPushReceiver : JPushEventReceiver() {
                     DiagnosticLogStore.warning(
                         context,
                         source = "推送",
-                        type = "Alias 恢复失败",
+                        type = "Alias 绑定失败",
                         summary = "保活服务 Alias 绑定失败，安排退避重试",
                         detail = "code=${jPushMessage.errorCode} sequence=$sequence",
                     )

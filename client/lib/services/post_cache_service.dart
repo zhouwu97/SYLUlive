@@ -11,29 +11,39 @@ class PostCacheService {
     return await Hive.openBox<String>(_boxName);
   }
 
-  static String _cacheKey(int boardId, String sort) {
-    return '$_boardPrefix${boardId}_$sort';
+  static String _cacheKey(
+    int boardId,
+    String sort, {
+    String? type,
+    int? tagId,
+  }) {
+    final normalizedType = (type ?? '').trim();
+    return '$_boardPrefix${boardId}_${sort}_${normalizedType}_${tagId ?? ''}';
   }
 
-  /// 保存指定板块的帖子列表到本地缓存
+  /// 保存指定帖子流到本地缓存，按 board/sort/section/tag 隔离。
   static Future<void> savePosts(
     int boardId,
     List<Post> posts, {
     String sort = 'time',
+    String? type,
+    int? tagId,
   }) async {
     final box = await _openBox();
-    final key = _cacheKey(boardId, sort);
+    final key = _cacheKey(boardId, sort, type: type, tagId: tagId);
     final json = jsonEncode(posts.map((p) => _postToJson(p)).toList());
     await box.put(key, json);
   }
 
-  /// 从本地缓存读取指定板块的帖子列表
+  /// 从本地缓存读取指定帖子流。
   static Future<List<Post>> loadPosts(
     int boardId, {
     String sort = 'time',
+    String? type,
+    int? tagId,
   }) async {
     final box = await _openBox();
-    final key = _cacheKey(boardId, sort);
+    final key = _cacheKey(boardId, sort, type: type, tagId: tagId);
     final json = box.get(key);
     if (json == null || json.isEmpty) return [];
     try {
@@ -48,8 +58,15 @@ class PostCacheService {
   static Future<String?> getLatestTimestamp(
     int boardId, {
     String sort = 'time',
+    String? type,
+    int? tagId,
   }) async {
-    final posts = await loadPosts(boardId, sort: sort);
+    final posts = await loadPosts(
+      boardId,
+      sort: sort,
+      type: type,
+      tagId: tagId,
+    );
     if (posts.isEmpty) return null;
     posts.sort((a, b) => b.createdAt.compareTo(a.createdAt));
     return posts.first.createdAt.toUtc().toIso8601String();
@@ -60,9 +77,16 @@ class PostCacheService {
     int boardId,
     List<Post> newPosts, {
     String sort = 'time',
+    String? type,
+    int? tagId,
   }) async {
     if (newPosts.isEmpty) return;
-    final existing = await loadPosts(boardId, sort: sort);
+    final existing = await loadPosts(
+      boardId,
+      sort: sort,
+      type: type,
+      tagId: tagId,
+    );
     final existingIds = existing.map((p) => p.id).toSet();
     final uniqueNew =
         newPosts.where((p) => !existingIds.contains(p.id)).toList();
@@ -71,7 +95,7 @@ class PostCacheService {
     if (merged.length > 200) {
       merged.removeRange(200, merged.length);
     }
-    await savePosts(boardId, merged, sort: sort);
+    await savePosts(boardId, merged, sort: sort, type: type, tagId: tagId);
   }
 
   /// 清除指定板块缓存
@@ -92,6 +116,8 @@ class PostCacheService {
       'post_type': post.postType,
       'price': post.price,
       'contact': post.contact,
+      'market_tags': post.marketTags,
+      'water_tag_id': post.waterTagId,
       'status': post.status,
       'view_count': post.viewCount,
       'reply_count': post.replyCount,
@@ -107,6 +133,21 @@ class PostCacheService {
       'featured_at': post.featuredAt?.toUtc().toIso8601String(),
       'featured_by': post.featuredBy,
       'featured_reason': post.featuredReason,
+      'water_section_pinned': post.waterSectionPinned,
+      'water_section_pin_id': post.waterSectionPinId,
+      'water_section_featured': post.waterSectionFeatured,
+      'water_section_featured_id': post.waterSectionFeaturedId,
+      'home_featured_pending': post.homeFeaturedPending,
+      'water_section_author_meta': post.waterSectionAuthorMeta != null
+          ? {
+              'section_id': post.waterSectionAuthorMeta!.sectionId,
+              'section_slug': post.waterSectionAuthorMeta!.sectionSlug,
+              'section_title': post.waterSectionAuthorMeta!.sectionTitle,
+              'level': post.waterSectionAuthorMeta!.level,
+              'exp': post.waterSectionAuthorMeta!.exp,
+              'title': post.waterSectionAuthorMeta!.title,
+            }
+          : null,
       'images': post.images
           .map(
             (img) => {

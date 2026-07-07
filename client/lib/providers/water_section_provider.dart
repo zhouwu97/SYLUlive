@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import '../config/water_post_taxonomy.dart';
 import '../models/water_section.dart';
 import '../services/water_section_service.dart';
+import '../services/water_section_icon_review_service.dart';
 
 /// 管理水帖版块的缓存与 fallback。
 /// 接口失败时使用 kWaterPostCategories 转出的 fallback 版块，保证离线可用。
@@ -11,6 +12,7 @@ class WaterSectionProvider extends ChangeNotifier {
   static const _cacheTtl = Duration(minutes: 5);
 
   final WaterSectionService? _service;
+  final WaterSectionIconReviewService? _iconReviewService;
 
   List<WaterSection> _sections = const [];
   bool _isLoading = false;
@@ -20,7 +22,8 @@ class WaterSectionProvider extends ChangeNotifier {
   bool _usingFallback = false;
 
   WaterSectionProvider(Dio? dio)
-      : _service = dio != null ? WaterSectionService(dio) : null;
+      : _service = dio != null ? WaterSectionService(dio) : null,
+        _iconReviewService = dio != null ? WaterSectionIconReviewService(dio) : null;
 
   List<WaterSection> get sections => _sections;
   bool get isLoading => _isLoading;
@@ -28,6 +31,8 @@ class WaterSectionProvider extends ChangeNotifier {
   String? get error => _error;
   bool get usingFallback => _usingFallback;
   DateTime? get lastLoadedAt => _lastLoadedAt;
+  WaterSectionService? get service => _service;
+  WaterSectionIconReviewService? get iconReviewService => _iconReviewService;
 
   /// active 状态版块（接口数据或 fallback）
   List<WaterSection> get activeSections =>
@@ -186,6 +191,18 @@ class WaterSectionProvider extends ChangeNotifier {
         reason: reason,
       );
       await _refreshSectionAfterMutation(sectionSlug);
+    });
+  }
+
+  Future<bool> toggleFollow(String slug, bool follow) async {
+    if (_service == null) return false;
+    return _save(() async {
+      if (follow) {
+        await _service!.followSection(slug);
+      } else {
+        await _service!.unfollowSection(slug);
+      }
+      await _refreshSectionAfterMutation(slug);
     });
   }
 

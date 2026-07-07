@@ -14,8 +14,37 @@ class AdminCandidatesScreen extends StatefulWidget {
 class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
   List<dynamic> _candidates = [];
   bool _isLoading = false;
+  bool _hasSearched = false;
   String? _errorMessage;
   final _searchController = TextEditingController();
+  
+  int? _totalUsers;
+  int? _eduUsers;
+  int? _otherUsers;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _fetchStats();
+    });
+  }
+
+  Future<void> _fetchStats() async {
+    try {
+      final dio = context.read<AuthProvider>().dio;
+      final res = await dio.get('/admin/candidates/stats');
+      if (mounted) {
+        setState(() {
+          _totalUsers = res.data['total'];
+          _eduUsers = res.data['edu'];
+          _otherUsers = res.data['other'];
+        });
+      }
+    } catch (e) {
+      // ignore
+    }
+  }
 
   @override
   void dispose() {
@@ -29,6 +58,7 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
     
     setState(() {
       _isLoading = true;
+      _hasSearched = true;
       _errorMessage = null;
     });
     
@@ -36,7 +66,7 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
       final dio = context.read<AuthProvider>().dio;
       final res = await dio.get(
         '/admin/candidates',
-        queryParameters: {'student_id': keyword},
+        queryParameters: {'q': keyword},
       );
       if (mounted) {
         setState(() {
@@ -133,6 +163,26 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
     );
   }
 
+  Widget _buildStatItem(String label, int value, bool isDark) {
+    return Column(
+      children: [
+        Text(
+          value.toString(),
+          style: TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+            color: isDark ? Colors.white : Colors.black87,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          label,
+          style: const TextStyle(fontSize: 12, color: Colors.grey),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -141,6 +191,24 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
       appBar: AppBar(title: const Text('管理员候选人')),
       body: Column(
         children: [
+          if (_totalUsers != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+              child: GlassContainer(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                borderRadius: 16,
+                blur: 8,
+                opacity: isDark ? 0.05 : 0.8,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    _buildStatItem('总用户', _totalUsers!, isDark),
+                    _buildStatItem('教务账号', _eduUsers!, isDark),
+                    _buildStatItem('其他', _otherUsers!, isDark),
+                  ],
+                ),
+              ),
+            ),
           Padding(
             padding: const EdgeInsets.all(12),
             child: GlassContainer(
@@ -174,9 +242,9 @@ class _AdminCandidatesScreenState extends State<AdminCandidatesScreen> {
                             child: Padding(
                               padding: const EdgeInsets.all(32),
                               child: Text(
-                                _searchController.text.isEmpty
-                                    ? '请输入关键词搜索'
-                                    : '未找到候选人',
+                                _hasSearched
+                                    ? '未找到候选人'
+                                    : '请输入关键词搜索',
                                 style: TextStyle(color: isDark ? Colors.white54 : Colors.black54),
                               ),
                             ),

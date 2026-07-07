@@ -96,11 +96,21 @@ func main() {
 
 		&models.WaterSection{},
 
+		&models.WaterSectionIconReview{},
+
 		&models.WaterSectionTag{},
 
 		&models.WaterSectionModerator{},
 
 		&models.WaterSectionPin{},
+
+		&models.WaterSectionFeaturedPost{},
+
+		// 水帖版块等级 / 经验 / 称号
+		&models.WaterSectionUserStat{},
+		&models.WaterSectionExpLog{},
+		&models.WaterSectionLevelTitle{},
+		&models.WaterSectionFollow{},
 
 		&models.WaterSectionMute{},
 
@@ -229,8 +239,6 @@ func main() {
 
 	ensureSystemSuperAdmin(db, cfg.SuperAdminID, cfg.SuperAdminPass)
 
-
-
 	r := gin.Default()
 
 	// CORS中间件
@@ -295,8 +303,6 @@ func main() {
 
 	eduHandler := handlers.NewEduHandler(db)
 
-
-
 	teacherHandler := handlers.NewTeacherHandler(db)
 
 	majorHandler := handlers.NewMajorHandler(db)
@@ -312,8 +318,6 @@ func main() {
 	erkeHandler := handlers.NewErkeHandler(db)
 
 	lotteryHandler := handlers.NewLotteryHandler(db)
-
-
 
 	// 初始化教务服务配置
 
@@ -438,8 +442,6 @@ func main() {
 
 	}
 
-
-
 	// 用户路由
 
 	user := r.Group("/api/user")
@@ -541,10 +543,26 @@ func main() {
 
 	r.GET("/api/search", middleware.OptionalAuthMiddleware(db, cfg.JWTSecret), searchHandler.Search)
 
-	// 水帖版块读取接口（公开）
-	r.GET("/api/water/sections", waterSectionHandler.List)
-	r.GET("/api/water/sections/:slug", waterSectionHandler.Get)
-	r.GET("/api/water/sections/:slug/my-permission", middleware.AuthMiddleware(db, cfg.JWTSecret), waterModeratorHandler.MyPermission)
+	// 水帖版块读取接口（公开，可选鉴权）
+	waterPublic := r.Group("/api/water/sections")
+	waterPublic.Use(middleware.OptionalAuthMiddleware(db, cfg.JWTSecret))
+	{
+		waterPublic.GET("", waterSectionHandler.List)
+		waterPublic.GET("/:slug", waterSectionHandler.Get)
+		waterPublic.GET("/:slug/level-titles", waterSectionHandler.GetLevelTitles)
+	}
+
+	// 水帖版块关注相关（需要登录）
+	waterFollow := r.Group("/api/water/sections")
+	waterFollow.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
+	{
+		// 注意: /followed 必须在 /:slug 之前以防冲突
+		waterFollow.GET("/followed", waterSectionHandler.GetFollowedSections)
+		waterFollow.GET("/:slug/my-level", waterSectionHandler.GetMyLevel)
+		waterFollow.POST("/:slug/follow", waterSectionHandler.Follow)
+		waterFollow.DELETE("/:slug/follow", waterSectionHandler.Unfollow)
+		waterFollow.GET("/:slug/my-permission", waterModeratorHandler.MyPermission)
+	}
 
 	// 水帖版主管理接口（仅 admin/super_admin）
 	adminWater := r.Group("/api/admin/water/sections/:slug/moderators")
@@ -556,22 +574,37 @@ func main() {
 		adminWater.DELETE("/:moderator_id", waterModeratorHandler.RevokeModerator)
 	}
 
+	adminWaterReviews := r.Group("/api/admin/water/section-icon-reviews")
+	adminWaterReviews.Use(middleware.AuthMiddleware(db, cfg.JWTSecret), middleware.AdminMiddleware())
+	{
+		adminWaterReviews.GET("", waterSectionHandler.AdminListSectionIconReviews)
+		adminWaterReviews.POST("/:id/approve", waterSectionHandler.AdminApproveSectionIconReview)
+		adminWaterReviews.POST("/:id/reject", waterSectionHandler.AdminRejectSectionIconReview)
+	}
+
 	// 水帖版块内容管理接口（登录后，权限由 handler 内部判断）
 	waterMod := r.Group("/api/water/sections/:slug")
 	waterMod.Use(middleware.AuthMiddleware(db, cfg.JWTSecret))
 	{
 		waterMod.PATCH("", waterSectionHandler.Update)
+		waterMod.PATCH("/level-titles", waterSectionHandler.UpdateLevelTitles)
 		waterMod.POST("/tags", waterSectionHandler.CreateTag)
 		waterMod.PATCH("/tags/:tag_id/status", waterSectionHandler.UpdateTagStatus)
 		waterMod.PATCH("/tags/:tag_id", waterSectionHandler.UpdateTag)
 		waterMod.POST("/posts/:post_id/pin", waterModerationHandler.PinPost)
 		waterMod.DELETE("/posts/:post_id/pin", waterModerationHandler.UnpinPost)
+		waterMod.POST("/posts/:post_id/feature", waterModerationHandler.FeaturePost)
+		waterMod.DELETE("/posts/:post_id/feature", waterModerationHandler.UnfeaturePost)
 		waterMod.DELETE("/posts/:post_id/moderate", waterModerationHandler.DeletePost)
 		waterMod.POST("/posts/:post_id/restore", waterModerationHandler.RestorePost)
 		waterMod.POST("/users/:user_id/mute", waterModerationHandler.MuteUser)
 		waterMod.DELETE("/users/:user_id/mute", waterModerationHandler.UnmuteUser)
 		waterMod.GET("/mutes", waterModerationHandler.ListMutes)
 		waterMod.GET("/moderation/logs", waterModerationHandler.ListLogs)
+
+		waterMod.POST("/icon-review", waterSectionHandler.SubmitSectionIconReview)
+		waterMod.GET("/icon-review/current", waterSectionHandler.GetCurrentSectionIconReview)
+		waterMod.POST("/icon-review/:id/cancel", waterSectionHandler.CancelSectionIconReview)
 	}
 
 	r.POST("/api/collaboration-applications/:id/approve", middleware.AuthMiddleware(db, cfg.JWTSecret), postHandler.ApproveCollaborationApplication)
@@ -654,6 +687,8 @@ func main() {
 		messages.GET("/conversations", messageHandler.GetConversations)
 
 		messages.GET("/conversations/:id", messageHandler.GetMessages)
+
+		messages.GET("/:user_id/send-state", messageHandler.GetSendState)
 
 		messages.POST("/:user_id", messageHandler.Send)
 
@@ -796,6 +831,7 @@ func main() {
 	{
 
 		admin.GET("/candidates", invitationHandler.GetCandidates)
+		admin.GET("/candidates/stats", invitationHandler.GetCandidatesStats)
 
 		admin.GET("/members", invitationHandler.GetMembers)
 
@@ -868,6 +904,8 @@ func main() {
 
 		edu.POST("/grades/detail", middleware.AuthMiddleware(db, cfg.JWTSecret), eduHandler.GetGradeDetail)
 
+		edu.POST("/academic-situation", middleware.AuthMiddleware(db, cfg.JWTSecret), eduHandler.GetAcademicSituation)
+
 		edu.POST("/pre_verify", eduHandler.PreVerify) // 注册前验证教务账号
 
 	}
@@ -899,14 +937,10 @@ func main() {
 
 		superAdmin.POST("/admin_logs/revoke_exp", superAdminHandler.RevokeAdminExp)
 
-
-
 		superAdmin.GET("/invitations/pending", invitationHandler.GetApprovalList)
 
 		superAdmin.POST("/invitations/:id/approve", invitationHandler.Approve)
 	}
-
-
 
 	// 二课查询路由
 
@@ -1248,4 +1282,3 @@ func ensurePostPinColumns(db *gorm.DB) error {
 func ensurePostMarketTagsColumn(db *gorm.DB) error {
 	return db.Exec(`ALTER TABLE posts ADD COLUMN IF NOT EXISTS market_tags VARCHAR(200) NOT NULL DEFAULT ''`).Error
 }
-

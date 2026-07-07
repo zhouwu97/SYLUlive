@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+
 import '../providers/auth_provider.dart';
 import '../providers/major_provider.dart';
+import '../widgets/rating_detail/ranking_tokens.dart';
 import '../widgets/rating_detail/rating_subject_header.dart';
 import '../widgets/rating_detail/rating_score_panel.dart';
 import '../widgets/rating_detail/my_rating_card.dart';
@@ -10,14 +12,17 @@ import '../widgets/rating_detail/rating_item_card.dart';
 import '../widgets/rating_detail/rating_policy_tip.dart';
 import '../widgets/rating_detail/rating_bottom_input_bar.dart';
 import '../widgets/rating_detail/rating_input_sheet.dart';
+
 class MajorDetailScreen extends StatefulWidget {
   final int majorId;
   final String majorName;
+
   const MajorDetailScreen({
     super.key,
     required this.majorId,
     required this.majorName,
   });
+
   @override
   State<MajorDetailScreen> createState() => _MajorDetailScreenState();
 }
@@ -31,11 +36,6 @@ class _MajorDetailScreenState extends State<MajorDetailScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<MajorProvider>().loadDetail(widget.majorId);
     });
-  }
-
-  @override
-  void dispose() {
-    super.dispose();
   }
 
   bool _isOwnRating(MajorRating rating) {
@@ -122,39 +122,41 @@ class _MajorDetailScreenState extends State<MajorDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final accent = RankingTokens.majorAccent(isDark);
 
     return Scaffold(
-      backgroundColor:
-          isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
-      extendBodyBehindAppBar: false, // 修复重叠
+      backgroundColor: RankingTokens.pageBg(isDark),
+      extendBodyBehindAppBar: false,
       appBar: AppBar(
         systemOverlayStyle: SystemUiOverlayStyle(
           statusBarColor: Colors.transparent,
-          statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
+          statusBarIconBrightness:
+              isDark ? Brightness.light : Brightness.dark,
         ),
         centerTitle: true,
         titleTextStyle: TextStyle(
-          color: isDark ? Colors.white : Colors.black87,
+          color: RankingTokens.titleColor(isDark),
           fontSize: 18,
-          fontWeight: FontWeight.bold,
+          fontWeight: FontWeight.w800,
         ),
-        iconTheme: IconThemeData(color: isDark ? Colors.white : Colors.black87),
+        iconTheme: IconThemeData(color: RankingTokens.titleColor(isDark)),
         title: const Text('专业评价'),
-        backgroundColor: Colors.transparent,
+        backgroundColor: RankingTokens.pageBg(isDark),
+        surfaceTintColor: Colors.transparent,
         elevation: 0,
         scrolledUnderElevation: 0,
         actions: [
           if (context.watch<AuthProvider>().user?.isAdmin == true)
             PopupMenuButton<String>(
-              icon: Icon(Icons.more_horiz, color: isDark ? Colors.white : Colors.black87),
+              icon: Icon(
+                Icons.more_horiz,
+                color: RankingTokens.titleColor(isDark),
+              ),
               onSelected: (value) {
                 if (value == 'delete') _deleteMajor();
               },
               itemBuilder: (_) => const [
-                PopupMenuItem(
-                  value: 'delete',
-                  child: Text('删除专业'),
-                ),
+                PopupMenuItem(value: 'delete', child: Text('删除专业')),
               ],
             ),
         ],
@@ -168,18 +170,20 @@ class _MajorDetailScreenState extends State<MajorDetailScreen> {
           return Stack(
             children: [
               ListView(
-                padding: const EdgeInsets.fromLTRB(16, 6, 16, 84),
+                padding: const EdgeInsets.fromLTRB(16, 6, 16, 80),
                 children: [
                   RatingSubjectHeader(
                     title: m.selected!.name,
                     subtitle: m.selected!.level,
                     initial: m.selected!.name,
+                    accentOverride: accent,
                   ),
                   const SizedBox(height: 8),
                   RatingScorePanel(
                     averageStar: m.averageStar,
                     ratingCount: m.ratingCount,
                     starCounts: m.starCounts,
+                    accentOverride: accent,
                   ),
                   const SizedBox(height: 10),
                   if (m.myRating != null) ...[
@@ -187,19 +191,24 @@ class _MajorDetailScreenState extends State<MajorDetailScreen> {
                       currentStar: m.myRating!.star,
                       currentComment: m.myRating!.comment,
                       isDeleting: _isDeletingRating,
+                      accentOverride: accent,
                       onEdit: () {
                         showRatingInputSheet(
                           context: context,
                           initialStar: m.myRating!.star,
-                          initialComment: m.myRating!.comment ?? '',
+                          initialComment: m.myRating!.comment,
                           title: '修改评价',
                           maxCommentLength: 500,
+                          accentOverride: accent,
                           onSubmit: (star, comment) async {
                             try {
                               await m.rate(widget.majorId, star, comment);
                               if (mounted) {
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('评价修改成功'), backgroundColor: Colors.green),
+                                  const SnackBar(
+                                    content: Text('评价修改成功'),
+                                    backgroundColor: Colors.green,
+                                  ),
                                 );
                               }
                               return true;
@@ -213,8 +222,7 @@ class _MajorDetailScreenState extends State<MajorDetailScreen> {
                     ),
                     const SizedBox(height: 10),
                   ],
-                  _buildRatingSection(m, isDark),
-                  const SizedBox(height: 80),
+                  _buildRatingSection(m, isDark, accent),
                 ],
               ),
               Positioned(
@@ -236,12 +244,16 @@ class _MajorDetailScreenState extends State<MajorDetailScreen> {
                       initialComment: m.myRating?.comment ?? '',
                       title: m.myRating == null ? '写评价' : '修改评价',
                       maxCommentLength: 500,
+                      accentOverride: accent,
                       onSubmit: (star, comment) async {
                         try {
                           await m.rate(widget.majorId, star, comment);
                           if (mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('评价成功'), backgroundColor: Colors.green),
+                              const SnackBar(
+                                content: Text('评价成功'),
+                                backgroundColor: Colors.green,
+                              ),
                             );
                           }
                           return true;
@@ -260,7 +272,7 @@ class _MajorDetailScreenState extends State<MajorDetailScreen> {
     );
   }
 
-  Widget _buildRatingSection(MajorProvider m, bool isDark) {
+  Widget _buildRatingSection(MajorProvider m, bool isDark, Color accent) {
     return Padding(
       padding: EdgeInsets.zero,
       child: Column(
@@ -273,77 +285,67 @@ class _MajorDetailScreenState extends State<MajorDetailScreen> {
                 style: TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.w800,
-                  color: isDark ? Colors.white : Colors.black87,
+                  color: RankingTokens.titleColor(isDark),
                 ),
               ),
               const Spacer(),
-              if (_isDeletingRating)
-                const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              else
-                Text(
-                  '最新',
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-            ],
-          ),
-          const SizedBox(height: 8),
-        const RatingPolicyTip(
-          type: RatingPolicyType.info,
-          text: '评价请基于课程设置、培养方案、学习体验和就业方向，避免攻击个人或群体。',
-        ),
-        if (m.ratings.isEmpty)
-          Padding(
-            padding: const EdgeInsets.only(top: 24, bottom: 24),
-            child: Center(
-              child: Text(
-                '还没有同学评价',
+              Text(
+                '最新',
                 style: TextStyle(
-                  fontSize: 14,
-                  color: isDark ? Colors.grey.shade300 : Colors.grey.shade600,
+                  fontSize: 13,
+                  color: RankingTokens.subColor(isDark),
+                  fontWeight: FontWeight.w600,
                 ),
               ),
-            ),
-          )
-        else
-          Container(
-            decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF1B1E28) : Colors.white,
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Column(
-              children: [
-                ...m.ratings.map((r) => RatingItemCard(
-                  userName: r.userName,
-                  comment: r.comment,
-                  star: r.star,
-                  isOwn: _isOwnRating(r),
-                  onLongPress: () => _confirmDeleteRating(r),
-                )),
-                Padding(
-                  padding: const EdgeInsets.only(top: 12, bottom: 12),
-                  child: Center(
-                    child: Text(
-                      '更多评价等待同学补充',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: isDark ? Colors.white38 : Colors.black38,
+            ],
+          ),
+          const SizedBox(height: 6),
+          const RatingPolicyTip(
+            type: RatingPolicyType.info,
+            text: '评价请基于课程设置、培养方案、学习体验和就业方向，避免攻击个人或群体。',
+          ),
+          if (m.ratings.isEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 20, bottom: 20),
+              child: Center(
+                child: Text(
+                  '还没有同学评价',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: RankingTokens.subColor(isDark),
+                  ),
+                ),
+              ),
+            )
+          else
+            Container(
+              decoration: RankingTokens.cardDecoration(isDark),
+              child: Column(
+                children: [
+                  ...m.ratings.map((r) => RatingItemCard(
+                        userName: r.userName,
+                        comment: r.comment,
+                        star: r.star,
+                        isOwn: _isOwnRating(r),
+                        onLongPress: () => _confirmDeleteRating(r),
+                      )),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 10, bottom: 10),
+                    child: Center(
+                      child: Text(
+                        '更多评价等待同学补充',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: RankingTokens.subColor(isDark),
+                        ),
                       ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-      ],
-    ),
+        ],
+      ),
     );
   }
 }

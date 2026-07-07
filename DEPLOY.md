@@ -119,6 +119,144 @@ chmod +x /opt/shenliyuan/shenliyuan
 systemctl restart shenliyuan
 ```
 
+## 国内环境：Gitee 拉取并部署 Python 教务服务
+
+Python 教务服务通常部署在国内服务器，GitHub 访问可能不稳定。国内服务器更新教务服务时，优先从 Gitee 拉取 `fwqtest` 分支，然后重启 `shenliyuan-edu.service`。
+
+### 部署位置
+
+- 源码目录：`/root/SYLUlive`
+- Python 服务目录：`/root/SYLUlive/python-edu-service`
+- systemd 服务：`shenliyuan-edu.service`
+- 服务监听：`127.0.0.1:8000`
+- 健康检查：`http://127.0.0.1:8000/health`
+
+不要在 `/opt/shenliyuan` 执行 `git pull`。`/opt/shenliyuan` 是运行目录，可能包含线上二进制、配置、上传文件和历史备份。
+
+### 从 Gitee 拉取源码
+
+如果服务器已经配置好 `gitee` 远端，直接执行：
+
+```bash
+cd /root/SYLUlive
+git fetch gitee fwqtest
+git checkout fwqtest
+git merge --ff-only FETCH_HEAD
+
+git log -1 --oneline
+git status --short --branch
+```
+
+如果服务器没有配置 `gitee` 远端，可以临时使用 Gitee HTTPS 地址拉取。不要把令牌写入文档、脚本或提交记录；建议通过环境变量传入：
+
+```bash
+export GITEE_USER="你的 Gitee 用户名"
+export GITEE_TOKEN="你的 Gitee 令牌"
+
+cd /root/SYLUlive
+git fetch "https://${GITEE_USER}:${GITEE_TOKEN}@gitee.com/chunhezi/SYLUlive.git" fwqtest
+git checkout fwqtest
+git merge --ff-only FETCH_HEAD
+
+unset GITEE_TOKEN
+git log -1 --oneline
+git status --short --branch
+```
+
+### 部署前检查
+
+拉取完成后，先检查 Python 文件能否编译，并确认 FastAPI 入口能正常导入。这样可以提前发现 `schemas.py`、`routers/*.py` 这类启动期错误，避免服务进入反复重启。
+
+```bash
+cd /root/SYLUlive/python-edu-service
+
+venv/bin/python -m py_compile \
+  main.py \
+  models/schemas.py \
+  routers/courses.py \
+  services/crawler.py
+
+venv/bin/python -c "import sys; sys.path.insert(0, '.'); import main; print('main_import=ok')"
+```
+
+如果这里失败，不要重启服务。先修复语法错误、缺失 import 或损坏的字符串，再重新提交、推送、拉取。
+
+### 重启教务服务
+
+检查通过后重启 systemd 服务：
+
+```bash
+systemctl restart shenliyuan-edu
+sleep 5
+systemctl is-active shenliyuan-edu
+systemctl status shenliyuan-edu --no-pager --lines=20
+```
+
+期望结果：
+
+- `systemctl is-active shenliyuan-edu` 输出 `active`
+- `systemctl status` 中显示 `Active: active (running)`
+- 进程为 `uvicorn main:app --host 127.0.0.1 --port 8000`
+
+### 健康检查
+
+服务重启后必须做本地健康检查：
+
+```bash
+curl -fsS --max-time 8 http://127.0.0.1:8000/health
+```
+
+期望返回：
+
+```json
+{"status":"healthy"}
+```
+
+如果 `/health` 不存在或返回异常，再查看服务根路径和日志：
+
+```bash
+curl -v --max-time 8 http://127.0.0.1:8000/
+journalctl -u shenliyuan-edu -n 100 --no-pager
+```
+
+### 常见故障
+
+1. `SyntaxError: unterminated string literal`
+   - 常见于 Python 文件开头 docstring 被写坏，例如 `\"\"\"` 被提交成普通文本。
+   - 处理：修复对应文件后运行 `venv/bin/python -m py_compile ...`。
+
+2. `NameError: name 'ManualCourseInput' is not defined`
+   - 常见于路由函数使用了 schema，但 `from models.schemas import ...` 没导入。
+   - 处理：补齐 import，再运行 `venv/bin/python -c "import sys; sys.path.insert(0, '.'); import main"`。
+
+3. `shenliyuan-edu.service` 一直 `activating` 或反复重启
+   - 先看日志，不要只看 `systemctl is-active`：
+
+```bash
+systemctl status shenliyuan-edu --no-pager --lines=40
+journalctl -u shenliyuan-edu -n 100 --no-pager
+```
+
+4. `curl: (7) Failed to connect to 127.0.0.1 port 8000`
+   - 通常表示 Uvicorn 没启动成功或启动后立即退出。
+   - 处理：查看 `journalctl -u shenliyuan-edu -n 100 --no-pager`，优先修复最上面的 Python 异常。
+
+### Go 主服务与教务服务的关系
+
+Go 主服务通过环境变量中的 `EDU_SERVICE_URL` 调用 Python 教务服务。部署后如教务接口异常，需要同时检查：
+
+```bash
+# Go 主服务
+systemctl status shenliyuan --no-pager
+systemctl cat shenliyuan --no-pager
+
+# Python 教务服务
+systemctl status shenliyuan-edu --no-pager
+curl -fsS --max-time 8 http://127.0.0.1:8000/health
+```
+
+如果 Go 主服务在另一台服务器上通过公网或内网访问教务服务，还要确认 `EDU_SERVICE_URL` 指向当前可访问的地址。
+
 ## 客户端 (APK) 更新
 
 如果修改了 Flutter 客户端代码，需要重新打包 Android 安装包并上传到服务器，用户即可下载更新：

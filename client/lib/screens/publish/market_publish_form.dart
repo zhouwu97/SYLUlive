@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
@@ -30,19 +30,30 @@ class MarketPublishForm extends StatefulWidget {
   State<MarketPublishForm> createState() => _MarketPublishFormState();
 }
 
+enum _PublishField { type, title, price, content }
+
 class _MarketPublishFormState extends State<MarketPublishForm>
-    with PublishImagePickerMixin {
+    with SingleTickerProviderStateMixin, PublishImagePickerMixin {
   static const _maxImages = 9;
+  static const _maxDescriptionLength = 500;
+  static const _marketAccent = Color(0xFFFF7A45);
+  static const _marketPageBg = Color(0xFFFFFAF4);
+  static const _marketMutedText = Color(0xFF747B82);
+  static const _marketFormFontSize = 17.0;
 
   final _formKey = GlobalKey<FormState>();
   final _titleController = TextEditingController();
   final _contentController = TextEditingController();
   final _priceController = TextEditingController();
   final _contactController = TextEditingController();
+  late final AnimationController _shakeController;
   String _postType = '';
   bool _isLoading = false;
+  Set<_PublishField> _attentionFields = {};
+  int _attentionPulse = 0;
   final List<XFile> _selectedImages = [];
   final List<PostImage> _existingImages = [];
+  final Set<String> _selectedMarketTags = {};
 
   // ---------------------------------------------------------------------------
   // PublishImagePickerMixin abstract impl
@@ -99,6 +110,8 @@ class _MarketPublishFormState extends State<MarketPublishForm>
         return '发布失物';
       case 'found':
         return '发布招领';
+      case 'proxy':
+        return '发布办事';
       case 'exposure':
         return '曝光骗子';
       default:
@@ -117,6 +130,8 @@ class _MarketPublishFormState extends State<MarketPublishForm>
         return '发布失物';
       case 'found':
         return '发布招领';
+      case 'proxy':
+        return '发布办事';
       case 'exposure':
         return '提交曝光';
       default:
@@ -124,7 +139,23 @@ class _MarketPublishFormState extends State<MarketPublishForm>
     }
   }
 
-  String get _titleLabel => _isLostOrFound ? '物品名称' : '商品名称';
+  String get _titleLabel {
+    if (_postType == 'proxy') return '办事标题';
+    return _isLostOrFound ? '物品名称' : '商品名称';
+  }
+
+  String get _priceLabel {
+    switch (_postType) {
+      case 'sell':
+        return '出售价格';
+      case 'buy':
+        return '求购预算';
+      case 'proxy':
+        return '办事预算';
+      default:
+        return '价格';
+    }
+  }
 
   String get _contentHint {
     switch (_postType) {
@@ -134,6 +165,8 @@ class _MarketPublishFormState extends State<MarketPublishForm>
         return '描述丢失物品、时间、地点和联系方式...';
       case 'found':
         return '描述捡到的物品、地点、时间和领取方式...';
+      case 'proxy':
+        return '描述要办的事情、时间地点、预算和具体要求...';
       default:
         return '描述物品成色、使用情况、瑕疵、配件和交易要求……';
     }
@@ -157,6 +190,10 @@ class _MarketPublishFormState extends State<MarketPublishForm>
   @override
   void initState() {
     super.initState();
+    _shakeController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 520),
+    );
     final post = widget.editingPost;
     if (post != null) {
       _titleController.text = post.title;
@@ -165,6 +202,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
       _contactController.text = post.contact;
       _postType = post.postType;
       _existingImages.addAll(post.images);
+      _selectedMarketTags.addAll(post.marketTags);
     } else if (widget.defaultPostType != null) {
       _postType = widget.defaultPostType!;
     }
@@ -172,6 +210,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
 
   @override
   void dispose() {
+    _shakeController.dispose();
     _titleController.dispose();
     _contentController.dispose();
     _priceController.dispose();
@@ -191,7 +230,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
     if (!_showsTitleField) return null;
     final v = (value ?? '').trim();
     if (v.isEmpty) {
-      return _isLostOrFound ? '请输入物品名称' : '请输入商品名称';
+      return '请输入$_titleLabel';
     }
     return null;
   }
@@ -211,21 +250,50 @@ class _MarketPublishFormState extends State<MarketPublishForm>
   String? _validateContent(String? value) {
     final v = (value ?? '').trim();
     if (v.isEmpty) return '请输入详细描述';
+    if (v.length > _maxDescriptionLength) {
+      return '描述不能超过 $_maxDescriptionLength 字';
+    }
     return null;
   }
 
+  Set<_PublishField> _collectMissingRequiredFields() {
+    final fields = <_PublishField>{};
+    if (_postType.isEmpty) fields.add(_PublishField.type);
+    if (_showsTitleField && _titleController.text.trim().isEmpty) {
+      fields.add(_PublishField.title);
+    }
+    if (_showsPriceField &&
+        _postType != 'exposure' &&
+        _priceController.text.trim().isEmpty) {
+      fields.add(_PublishField.price);
+    }
+    if (_contentController.text.trim().isEmpty) {
+      fields.add(_PublishField.content);
+    }
+    return fields;
+  }
+
+  Future<void> _triggerRequiredHint(Set<_PublishField> fields) async {
+    if (!mounted || fields.isEmpty) return;
+
+    final pulse = ++_attentionPulse;
+    setState(() => _attentionFields = fields);
+    _shakeController.forward(from: 0);
+
+    await Future.delayed(const Duration(milliseconds: 1100));
+    if (mounted && pulse == _attentionPulse) {
+      setState(() => _attentionFields = {});
+    }
+  }
+
   bool _validate() {
-    if (!_formKey.currentState!.validate()) return false;
-    final content = _contentController.text.trim();
-    if (content.isEmpty) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('请输入内容'), backgroundColor: Colors.red),
-        );
-      }
+    final missingFields = _collectMissingRequiredFields();
+    if (missingFields.isNotEmpty) {
+      _triggerRequiredHint(missingFields);
+      _formKey.currentState!.validate();
       return false;
     }
-    return true;
+    return _formKey.currentState!.validate();
   }
 
   // ---------------------------------------------------------------------------
@@ -243,15 +311,6 @@ class _MarketPublishFormState extends State<MarketPublishForm>
             content: Text('毕业用户仅可发布普通帖子，不能在集市发帖'),
             backgroundColor: Colors.red,
           ),
-        );
-      }
-      return;
-    }
-
-    if (_postType.isEmpty) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('请选择帖子类型')),
         );
       }
       return;
@@ -308,6 +367,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
               price: _showsPriceField ? double.tryParse(priceText) : null,
               contact: contact,
               fileIds: mergedFileIds,
+              marketTags: _selectedMarketTags.toList(growable: false),
             )
           : await postProvider.createPost(
               boardId: 2,
@@ -317,6 +377,7 @@ class _MarketPublishFormState extends State<MarketPublishForm>
               price: _showsPriceField ? double.tryParse(priceText) : null,
               contact: contact.isNotEmpty ? contact : null,
               fileIds: mergedFileIds.isNotEmpty ? mergedFileIds : null,
+              marketTags: _selectedMarketTags.toList(growable: false),
             );
 
       if (!mounted) return;
@@ -354,70 +415,63 @@ class _MarketPublishFormState extends State<MarketPublishForm>
     final colorScheme = Theme.of(context).colorScheme;
 
     return Scaffold(
-      backgroundColor:
-          isDark ? const Color(0xFF06080D) : const Color(0xFFF6F7FA),
+      backgroundColor: isDark ? const Color(0xFF111315) : _marketPageBg,
+      extendBodyBehindAppBar: true,
       resizeToAvoidBottomInset: true,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
         elevation: 0,
+        scrolledUnderElevation: 0,
+        forceMaterialTransparency: true,
+        centerTitle: true,
         title: Text(_pageTitle),
+        titleTextStyle: TextStyle(
+          color: isDark ? Colors.white : const Color(0xFF1F2328),
+          fontSize: 20,
+          fontWeight: FontWeight.w800,
+        ),
         leading: const BackButton(),
       ),
       bottomNavigationBar: PublishBottomBar(
         isLoading: _isLoading,
         onPressed: _isLoading ? null : _submit,
         label: _bottomBarLabel,
+        accent: _marketAccent,
       ),
-      body: SafeArea(
-        bottom: false,
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // =====================================================
-                // 1. 商品图片（置顶，不套卡片）
-                // =====================================================
-                _buildImageSection(colorScheme),
-                const SizedBox(height: 24),
-
-                // =====================================================
-                // 2. 基本信息（白色容器，字段间分割线）
-                // =====================================================
-                if (_postType != 'exposure')
-                  _buildBasicInfoCard(isDark, colorScheme),
-                if (_postType != 'exposure') const SizedBox(height: 20),
-
-                // =====================================================
-                // 3. 发布类型 + 曝光入口
-                // =====================================================
-                _buildTypeSection(isDark),
-                const SizedBox(height: 20),
-
-                // =====================================================
-                // 4. 曝光：警告横幅 + 涉及金额
-                // =====================================================
-                if (_postType == 'exposure') ...[
-                  _buildExposureWarning(),
+      body: DecoratedBox(
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF111315) : _marketPageBg,
+        ),
+        child: SafeArea(
+          bottom: false,
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 18),
+            child: Form(
+              key: _formKey,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _buildCampusHeader(isDark),
+                  const SizedBox(height: 14),
+                  _buildImageSection(colorScheme),
                   const SizedBox(height: 16),
-                  _buildExposureAmountField(isDark),
-                  const SizedBox(height: 20),
+                  if (_postType != 'exposure')
+                    _buildMarketDetailsCard(isDark, colorScheme)
+                  else ...[
+                    _buildTypeSection(isDark),
+                    const SizedBox(height: 14),
+                    _buildExposureWarning(),
+                    const SizedBox(height: 16),
+                    _buildExposureAmountField(isDark),
+                    const SizedBox(height: 14),
+                    _buildDescriptionField(isDark, colorScheme),
+                    const SizedBox(height: 14),
+                    _buildContactField(isDark),
+                  ],
                 ],
-
-                // =====================================================
-                // 5. 商品描述（浅灰填充，更高）
-                // =====================================================
-                _buildDescriptionField(isDark, colorScheme),
-                const SizedBox(height: 20),
-
-                // =====================================================
-                // 6. 联系方式（弱化）
-                // =====================================================
-                _buildContactField(isDark),
-              ],
+              ),
             ),
           ),
         ),
@@ -429,28 +483,102 @@ class _MarketPublishFormState extends State<MarketPublishForm>
   // Section builders
   // ---------------------------------------------------------------------------
 
+  Widget _buildCampusHeader(bool isDark) {
+    final secondaryText =
+        isDark ? Colors.white.withValues(alpha: 0.58) : _marketMutedText;
+
+    return SizedBox(
+      height: 72,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Positioned(
+            right: -30,
+            top: -22,
+            child: Opacity(
+              opacity: isDark ? 0.18 : 0.16,
+              child: SizedBox(
+                width: 176,
+                height: 96,
+                child: CustomPaint(
+                  painter: _CampusLineArtPainter(
+                    color: isDark ? Colors.white : _marketAccent,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            left: 0,
+            bottom: 9,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  '校园集市',
+                  style: TextStyle(
+                    color: _marketAccent,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Container(
+                  width: 16,
+                  height: 16,
+                  decoration: BoxDecoration(
+                    color: _marketAccent,
+                    borderRadius: BorderRadius.circular(5),
+                    boxShadow: [
+                      BoxShadow(
+                        color: _marketAccent.withValues(alpha: 0.14),
+                        blurRadius: 8,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: const Icon(
+                    Icons.verified_rounded,
+                    color: Colors.white,
+                    size: 12,
+                  ),
+                ),
+                const SizedBox(width: 7),
+                Text(
+                  '· 2 分钟发布闲置',
+                  style: TextStyle(
+                    color: secondaryText,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildImageSection(ColorScheme colorScheme) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // header row
         Row(
           children: [
-            const Text(
-              '商品图片',
-              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
-            ),
+            _buildSectionLabel('商品图片'),
             const Spacer(),
             Text(
-              '$_totalImageCount/$_maxImages',
+              '${_totalImageCount.clamp(0, _maxImages)}/$_maxImages',
               style: TextStyle(
-                fontSize: 13,
+                fontSize: 17,
+                fontWeight: FontWeight.w500,
                 color: colorScheme.onSurfaceVariant,
               ),
             ),
           ],
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 8),
         PublishImageGrid(
           existingImages: _existingImages,
           selectedImages: _selectedImages,
@@ -458,69 +586,334 @@ class _MarketPublishFormState extends State<MarketPublishForm>
           onAddImage: showImageSourceDialog,
           onRemoveNewImage: onNewImageRemoved,
           onRemoveExistingImage: onExistingImageRemoved,
-        ),
-        const SizedBox(height: 8),
-        Text(
-          '清晰实拍更容易成交，第一张将作为封面',
-          style: TextStyle(
-            fontSize: 12,
-            color: colorScheme.onSurfaceVariant,
-          ),
+          addLabel: '添加图片',
+          compact: true,
+          accent: _marketAccent,
         ),
       ],
     );
   }
 
-  Widget _buildBasicInfoCard(bool isDark, ColorScheme colorScheme) {
+  Widget _buildMarketDetailsCard(bool isDark, ColorScheme colorScheme) {
     return Container(
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF171B24) : Colors.white,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [
+          if (!isDark)
+            BoxShadow(
+              color: const Color(0xFF2B3154).withValues(alpha: 0.045),
+              blurRadius: 20,
+              offset: const Offset(0, 8),
+            ),
+        ],
       ),
       child: Column(
         children: [
-          // title field
           if (_showsTitleField)
-            TextFormField(
+            _buildLabeledTextFormField(
+              field: _PublishField.title,
+              label: _titleLabel,
               controller: _titleController,
-              decoration: _plainInputDecoration(hint: _titleLabel),
+              hint: '请输入$_titleLabel',
               validator: _validateTitle,
             ),
-          // divider
           if (_showsTitleField && _showsPriceField)
-            Divider(
-                height: 1,
-                indent: 16,
-                color: colorScheme.outlineVariant.withValues(alpha: 0.3)),
-          // price field
+            _buildCardDivider(colorScheme),
           if (_showsPriceField)
-            TextFormField(
+            _buildLabeledTextFormField(
+              field: _PublishField.price,
+              label: _priceLabel,
               controller: _priceController,
-              decoration:
-                  _plainInputDecoration(hint: '请输入价格', prefixText: '¥ '),
+              hint: '请输入价格',
+              prefixText: '¥ ',
               keyboardType:
                   const TextInputType.numberWithOptions(decimal: true),
               inputFormatters: [_priceFormatter],
               validator: _validatePrice,
             ),
+          _buildCardDivider(colorScheme),
+          _buildTypeRowInsideCard(colorScheme),
+          _buildCardDivider(colorScheme),
+          _buildDescriptionInsideCard(isDark, colorScheme),
+          _buildCardDivider(colorScheme),
+          _buildContactInsideCard(isDark, colorScheme),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCardDivider(ColorScheme colorScheme) {
+    return Divider(
+      height: 1,
+      indent: 16,
+      endIndent: 16,
+      color: colorScheme.outlineVariant.withValues(alpha: 0.30),
+    );
+  }
+
+  Widget _buildLabeledTextFormField({
+    required _PublishField field,
+    required String label,
+    required TextEditingController controller,
+    required String hint,
+    String? prefixText,
+    TextInputType? keyboardType,
+    List<TextInputFormatter>? inputFormatters,
+    String? Function(String?)? validator,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildRequiredLabel(label, field),
+          const SizedBox(height: 6),
+          TextFormField(
+            controller: controller,
+            decoration: _inlineInputDecoration(
+              hint: hint,
+              prefixText: prefixText,
+            ),
+            keyboardType: keyboardType,
+            inputFormatters: inputFormatters,
+            validator: validator,
+            style: const TextStyle(
+              fontSize: _marketFormFontSize,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTypeRowInsideCard(ColorScheme colorScheme) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      child: Row(
+        children: [
+          Expanded(child: _buildRequiredLabel('类型', _PublishField.type)),
+          PublishTypeSelector(
+            currentType: _postType == 'exposure' ? '' : _postType,
+            allowedTypes: widget.allowedPostTypes,
+            onChanged: _onTypeChanged,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDescriptionInsideCard(bool isDark, ColorScheme colorScheme) {
+    final needsAttention = _attentionFields.contains(_PublishField.content);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildRequiredLabel('描述', _PublishField.content),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _buildDescriptionChip('自提', Icons.shopping_bag_outlined),
+                  const SizedBox(width: 6),
+                  _buildDescriptionChip('可送宿舍楼下', Icons.delivery_dining),
+                  const SizedBox(width: 6),
+                  _buildDescriptionChip('可小刀', Icons.local_offer_outlined),
+                  const SizedBox(width: 6),
+                  _buildDescriptionChip('急出', Icons.bolt_rounded),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextFormField(
+            controller: _contentController,
+            decoration: InputDecoration(
+              hintText: _contentHint,
+              hintStyle: TextStyle(
+                color: colorScheme.onSurfaceVariant.withValues(alpha: 0.54),
+                fontSize: 14,
+              ),
+              filled: true,
+              fillColor: isDark
+                  ? Colors.white.withValues(alpha: 0.06)
+                  : const Color(0xFFF8F7F5),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(13),
+                borderSide: BorderSide.none,
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(13),
+                borderSide: BorderSide(
+                  color: needsAttention
+                      ? colorScheme.error.withValues(alpha: 0.55)
+                      : Colors.transparent,
+                ),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(13),
+                borderSide: BorderSide(
+                  color: needsAttention
+                      ? colorScheme.error.withValues(alpha: 0.75)
+                      : _marketAccent.withValues(alpha: 0.45),
+                ),
+              ),
+              contentPadding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+              counterText:
+                  '${_contentController.text.length}/$_maxDescriptionLength',
+              counterStyle: TextStyle(
+                fontSize: 13,
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+            onChanged: (_) => setState(() {}),
+            inputFormatters: [
+              LengthLimitingTextInputFormatter(_maxDescriptionLength),
+            ],
+            maxLength: _maxDescriptionLength,
+            minLines: 4,
+            maxLines: null,
+            validator: _validateContent,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDescriptionChip(String label, IconData icon) {
+    final selected = _selectedMarketTags.contains(label);
+    final textColor = selected ? _marketAccent : const Color(0xFF747B82);
+    final iconColor = selected
+        ? _marketAccent.withValues(alpha: 0.7)
+        : const Color(0xFF9AA0AE);
+    final bgColor = selected
+        ? _marketAccent.withValues(alpha: 0.06)
+        : const Color(0xFFF7F7F8);
+    final borderColor = selected
+        ? _marketAccent.withValues(alpha: 0.24)
+        : const Color(0xFFE8E7E6);
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(999),
+      onTap: () => _toggleMarketTag(label),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        curve: Curves.easeOutCubic,
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+        decoration: BoxDecoration(
+          color: bgColor,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: borderColor),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              label,
+              style: TextStyle(
+                color: textColor,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(width: 3),
+            Icon(icon, size: 13, color: iconColor),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _toggleMarketTag(String tag) {
+    setState(() {
+      if (!_selectedMarketTags.add(tag)) {
+        _selectedMarketTags.remove(tag);
+      }
+    });
+  }
+
+  Widget _buildContactInsideCard(bool isDark, ColorScheme colorScheme) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 11, 16, 11),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '联系方式',
+                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 5),
+                SizedBox(
+                  height: 22,
+                  child: TextFormField(
+                    controller: _contactController,
+                    decoration: InputDecoration(
+                      hintText: '站内私信优先，可选填 QQ/微信',
+                      hintStyle: TextStyle(
+                        fontSize: 14.5,
+                        color: colorScheme.onSurfaceVariant
+                            .withValues(alpha: 0.78),
+                        fontWeight: FontWeight.w500,
+                      ),
+                      border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: InputBorder.none,
+                      isDense: true,
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                    style: TextStyle(
+                      fontSize: 14.5,
+                      color: isDark ? Colors.white : const Color(0xFF202333),
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );
   }
 
   Widget _buildTypeSection(bool isDark) {
+    final colorScheme = Theme.of(context).colorScheme;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          '发布类型',
-          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
-        ),
-        const SizedBox(height: 10),
-        PublishTypeSelector(
-          currentType: _postType == 'exposure' ? '' : _postType,
-          allowedTypes: widget.allowedPostTypes,
-          onChanged: _onTypeChanged,
+        Container(
+          padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF171B24) : Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: _attentionFields.contains(_PublishField.type)
+                  ? colorScheme.error.withValues(alpha: 0.7)
+                  : Colors.transparent,
+            ),
+          ),
+          child: Row(
+            children: [
+              Expanded(child: _buildRequiredLabel('发布类型', _PublishField.type)),
+              PublishTypeSelector(
+                currentType: _postType == 'exposure' ? '' : _postType,
+                allowedTypes: widget.allowedPostTypes,
+                onChanged: _onTypeChanged,
+              ),
+            ],
+          ),
         ),
         const SizedBox(height: 8),
         // exposure link
@@ -577,13 +970,16 @@ class _MarketPublishFormState extends State<MarketPublishForm>
   }
 
   Widget _buildDescriptionField(bool isDark, ColorScheme colorScheme) {
+    final needsAttention = _attentionFields.contains(_PublishField.content);
+    final quietBorderColor = colorScheme.outlineVariant.withValues(alpha: 0.2);
+    final activeBorderColor = needsAttention
+        ? colorScheme.error.withValues(alpha: 0.75)
+        : _marketAccent.withValues(alpha: 0.38);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          '商品描述',
-          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
-        ),
+        _buildRequiredLabel('商品描述', _PublishField.content),
         const SizedBox(height: 10),
         TextFormField(
           controller: _contentController,
@@ -599,26 +995,32 @@ class _MarketPublishFormState extends State<MarketPublishForm>
                 : const Color(0xFFF7F7FA),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(
-                color: colorScheme.outlineVariant.withValues(alpha: 0.2),
-              ),
+              borderSide: BorderSide(color: quietBorderColor),
             ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
               borderSide: BorderSide(
-                color: colorScheme.outlineVariant.withValues(alpha: 0.2),
+                color: needsAttention
+                    ? colorScheme.error.withValues(alpha: 0.55)
+                    : quietBorderColor,
               ),
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(
-                color: colorScheme.primary.withValues(alpha: 0.35),
-              ),
+              borderSide: BorderSide(color: activeBorderColor),
             ),
-            contentPadding: const EdgeInsets.all(16),
+            contentPadding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
             alignLabelWithHint: true,
+            counterStyle: TextStyle(
+              fontSize: 12,
+              color: colorScheme.onSurfaceVariant,
+            ),
           ),
-          minLines: 5,
+          inputFormatters: [
+            LengthLimitingTextInputFormatter(_maxDescriptionLength),
+          ],
+          maxLength: _maxDescriptionLength,
+          minLines: 4,
           maxLines: null,
           validator: _validateContent,
         ),
@@ -665,17 +1067,279 @@ class _MarketPublishFormState extends State<MarketPublishForm>
   // Shared plain input decoration (no border — used inside containers)
   // ---------------------------------------------------------------------------
 
-  InputDecoration _plainInputDecoration({
+  Widget _buildRequiredLabel(String text, _PublishField field) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final active = _attentionFields.contains(field);
+
+    return _ShakingAttention(
+      active: active,
+      controller: _shakeController,
+      child: _buildSectionLabel(
+        text,
+        color: active ? colorScheme.error : colorScheme.onSurface,
+      ),
+    );
+  }
+
+  Widget _buildSectionLabel(String text, {Color? color}) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Text(
+      text,
+      style: TextStyle(
+        fontSize: 17,
+        fontWeight: FontWeight.w800,
+        color: color ?? colorScheme.onSurface,
+      ),
+    );
+  }
+
+  InputDecoration _inlineInputDecoration({
     required String hint,
     String? prefixText,
   }) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final isPricePrefix = prefixText == '¥ ';
+
     return InputDecoration(
       hintText: hint,
-      prefixText: prefixText,
+      prefixIcon: isPricePrefix
+          ? const _PricePrefixSymbol(
+              fontSize: _marketFormFontSize,
+              leftPadding: 0,
+            )
+          : null,
+      prefixIconConstraints: isPricePrefix
+          ? const BoxConstraints(minWidth: 34, minHeight: 32)
+          : null,
+      prefixText: isPricePrefix ? null : prefixText,
       border: InputBorder.none,
       enabledBorder: InputBorder.none,
       focusedBorder: InputBorder.none,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+      isDense: true,
+      contentPadding:
+          isPricePrefix ? const EdgeInsets.only(top: 3) : EdgeInsets.zero,
+      hintStyle: TextStyle(
+        fontSize: _marketFormFontSize,
+        color: colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+      ),
+      prefixStyle: TextStyle(
+        fontSize: _marketFormFontSize,
+        fontWeight: FontWeight.w800,
+        color: prefixText == '¥ ' ? _marketAccent : colorScheme.onSurfaceVariant,
+      ),
     );
+  }
+
+  InputDecoration _plainInputDecoration({
+    required String hint,
+    String? prefixText,
+    IconData? suffixIcon,
+  }) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final isPricePrefix = prefixText == '¥ ';
+
+    return InputDecoration(
+      hintText: hint,
+      prefixIcon: isPricePrefix
+          ? const _PricePrefixSymbol(fontSize: 22, leftPadding: 16)
+          : null,
+      prefixIconConstraints: isPricePrefix
+          ? const BoxConstraints(minWidth: 50, minHeight: 48)
+          : null,
+      prefixText: isPricePrefix ? null : prefixText,
+      border: InputBorder.none,
+      enabledBorder: InputBorder.none,
+      focusedBorder: InputBorder.none,
+      isDense: true,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      hintStyle: TextStyle(
+        fontSize: 15,
+        color: colorScheme.onSurfaceVariant.withValues(alpha: 0.78),
+        fontWeight: FontWeight.w500,
+      ),
+      prefixStyle: TextStyle(
+        fontSize: prefixText == '¥ ' ? 22 : 15,
+        color: prefixText == '¥ ' ? _marketAccent : colorScheme.onSurfaceVariant,
+        fontWeight: FontWeight.w800,
+      ),
+      suffixIcon: suffixIcon == null
+          ? null
+          : Icon(
+              suffixIcon,
+              size: 26,
+              color: colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
+            ),
+    );
+  }
+}
+
+class _ShakingAttention extends StatelessWidget {
+  final bool active;
+  final Animation<double> controller;
+  final Widget child;
+
+  const _ShakingAttention({
+    required this.active,
+    required this.controller,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (!active) return child;
+
+    return AnimatedBuilder(
+      animation: controller,
+      child: child,
+      builder: (context, child) {
+        final progress = controller.value;
+        final offset = math.sin(progress * math.pi * 8) * (1 - progress) * 7;
+        return Transform.translate(
+          offset: Offset(offset, 0),
+          child: child,
+        );
+      },
+    );
+  }
+}
+
+class _PricePrefixSymbol extends StatelessWidget {
+  final double fontSize;
+  final double leftPadding;
+
+  const _PricePrefixSymbol({
+    required this.fontSize,
+    required this.leftPadding,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(left: leftPadding, right: 8),
+      child: Align(
+        widthFactor: 1,
+        alignment: Alignment.center,
+        child: Transform.translate(
+          offset: const Offset(0, -1.0),
+          child: Text(
+            '¥',
+            style: TextStyle(
+              color: _MarketPublishFormState._marketAccent,
+              fontSize: fontSize,
+              fontWeight: FontWeight.w800,
+              height: 1.0,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CampusLineArtPainter extends CustomPainter {
+  final Color color;
+
+  const _CampusLineArtPainter({required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.2
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+
+    final w = size.width;
+    final h = size.height;
+    final baseY = h * 0.78;
+    final centerX = w * 0.56;
+    final towerW = w * 0.18;
+    final wingW = w * 0.20;
+    final bodyTop = h * 0.34;
+    final roofTop = h * 0.13;
+
+    canvas.drawLine(Offset(w * 0.04, baseY), Offset(w * 0.96, baseY), paint);
+
+    final tower = RRect.fromRectAndRadius(
+      Rect.fromLTWH(centerX - towerW / 2, bodyTop, towerW, baseY - bodyTop),
+      const Radius.circular(3),
+    );
+    canvas.drawRRect(tower, paint);
+    canvas.drawPath(
+      Path()
+        ..moveTo(centerX - towerW * 0.58, bodyTop)
+        ..lineTo(centerX, roofTop)
+        ..lineTo(centerX + towerW * 0.58, bodyTop),
+      paint,
+    );
+    canvas.drawLine(Offset(centerX, roofTop), Offset(centerX, h * 0.04), paint);
+
+    final leftWing = RRect.fromRectAndRadius(
+      Rect.fromLTWH(
+        centerX - towerW / 2 - wingW,
+        h * 0.46,
+        wingW,
+        baseY - h * 0.46,
+      ),
+      const Radius.circular(3),
+    );
+    final rightWing = RRect.fromRectAndRadius(
+      Rect.fromLTWH(
+        centerX + towerW / 2,
+        h * 0.46,
+        wingW,
+        baseY - h * 0.46,
+      ),
+      const Radius.circular(3),
+    );
+    canvas
+      ..drawRRect(leftWing, paint)
+      ..drawRRect(rightWing, paint);
+
+    final clockPaint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.9;
+    canvas.drawCircle(Offset(centerX, h * 0.40), towerW * 0.17, clockPaint);
+
+    for (final dx in [-0.13, 0.13]) {
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromCenter(
+            center: Offset(centerX + w * dx, h * 0.58),
+            width: w * 0.045,
+            height: h * 0.12,
+          ),
+          const Radius.circular(2),
+        ),
+        paint,
+      );
+    }
+    for (final dx in [-0.27, -0.20, 0.20, 0.27]) {
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromCenter(
+            center: Offset(centerX + w * dx, h * 0.61),
+            width: w * 0.035,
+            height: h * 0.12,
+          ),
+          const Radius.circular(2),
+        ),
+        paint,
+      );
+    }
+
+    final door = RRect.fromRectAndRadius(
+      Rect.fromLTWH(centerX - towerW * 0.17, h * 0.63, towerW * 0.34, h * 0.15),
+      const Radius.circular(5),
+    );
+    canvas.drawRRect(door, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _CampusLineArtPainter oldDelegate) {
+    return color != oldDelegate.color;
   }
 }

@@ -51,7 +51,9 @@ class GlassContainer extends StatelessWidget {
 
     final defaultBorderColor = isDark
         ? Colors.white.withValues(alpha: 0.15)
-        : Colors.white.withValues(alpha: 0.6);
+        : (useCleanDefaultSurface
+            ? kCleanWarmCardBorderLight
+            : Colors.white.withValues(alpha: 0.6));
     final defaultBgColor = useCleanDefaultSurface
         ? (isDark
             ? const Color(0xFF1B1E28).withValues(alpha: 0.96)

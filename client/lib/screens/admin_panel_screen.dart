@@ -13,6 +13,7 @@ import 'admin_featured_applications_screen.dart';
 import 'admin_logs_screen.dart';
 import 'admin_announcements_screen.dart';
 import 'admin_water_sections_screen.dart';
+import 'admin_water_icon_review_screen.dart';
 
 class AdminPanelScreen extends StatefulWidget {
   const AdminPanelScreen({super.key});
@@ -119,7 +120,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                       title: '举报处理',
                       subtitle: '内容投诉与违规处理',
                       isDark: isDark,
-                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminReportsScreen())),
+                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminReportsScreen())).then((_) => _loadCounts()),
                     ),
                     _AdminActionPill(
                       icon: Icons.forum_outlined,
@@ -127,7 +128,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                       title: '水帖版块',
                       subtitle: '版主、标签、禁言与日志',
                       isDark: isDark,
-                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminWaterSectionsScreen())),
+                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminWaterSectionsScreen())).then((_) => _loadCounts()),
                     ),
                     _AdminActionPill(
                       icon: Icons.star_border,
@@ -135,7 +136,15 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                       title: '精华申请',
                       subtitle: '内容推荐与审核',
                       isDark: isDark,
-                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminFeaturedApplicationsScreen())),
+                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminFeaturedApplicationsScreen())).then((_) => _loadCounts()),
+                    ),
+                    _AdminActionPill(
+                      icon: Icons.image_search,
+                      iconColor: Colors.deepPurple,
+                      title: '版块图标审核',
+                      subtitle: '版主上传图标审核',
+                      isDark: isDark,
+                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminWaterIconReviewScreen())).then((_) => _loadCounts()),
                     ),
                     _AdminActionPill(
                       icon: Icons.history,
@@ -143,7 +152,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                       title: '操作日志',
                       subtitle: '管理员处理记录',
                       isDark: isDark,
-                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminLogsScreen())),
+                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminLogsScreen())).then((_) => _loadCounts()),
                     ),
                   ],
                 ),
@@ -158,7 +167,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                       title: '教师审核',
                       subtitle: '教师词条提交审核',
                       isDark: isDark,
-                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminReviewTasksScreen())),
+                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminReviewTasksScreen())).then((_) => _loadCounts()),
                     ),
                     _AdminActionPill(
                       icon: Icons.school_outlined,
@@ -166,7 +175,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                       title: '专业审核',
                       subtitle: '专业信息提交审核',
                       isDark: isDark,
-                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminReviewTasksScreen())),
+                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminReviewTasksScreen())).then((_) => _loadCounts()),
                     ),
                   ],
                 ),
@@ -181,7 +190,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                       title: '管理员候选',
                       subtitle: '搜索并邀请普通用户',
                       isDark: isDark,
-                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminCandidatesScreen())),
+                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminCandidatesScreen())).then((_) => _loadCounts()),
                     ),
                     _AdminActionPill(
                       icon: Icons.how_to_reg,
@@ -189,7 +198,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                       title: '邀请 / 罢免',
                       subtitle: '管理员协作代办',
                       isDark: isDark,
-                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminReviewTasksScreen())),
+                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminReviewTasksScreen())).then((_) => _loadCounts()),
                     ),
                   ],
                 ),
@@ -204,7 +213,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                       title: '公告管理',
                       subtitle: '系统公告与通知',
                       isDark: isDark,
-                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminAnnouncementsScreen())),
+                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminAnnouncementsScreen())).then((_) => _loadCounts()),
                     ),
                   ],
                 ),
@@ -240,28 +249,28 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
               count: _reportsCount,
               isLoading: _isLoading,
               isDark: isDark,
-              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminReportsScreen())),
+              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminReportsScreen())).then((_) => _loadCounts()),
             ),
             _AdminMetricPill(
               title: '精华',
               count: _featuredCount,
               isLoading: _isLoading,
               isDark: isDark,
-              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminFeaturedApplicationsScreen())),
+              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminFeaturedApplicationsScreen())).then((_) => _loadCounts()),
             ),
             _AdminMetricPill(
               title: '审核',
               count: _reviewTasksCount,
               isLoading: _isLoading,
               isDark: isDark,
-              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminReviewTasksScreen())),
+              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminReviewTasksScreen())).then((_) => _loadCounts()),
             ),
             _AdminMetricPill(
               title: '管理员代办',
               count: _adminTasksCount,
               isLoading: _isLoading,
               isDark: isDark,
-              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminReviewTasksScreen())),
+              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminReviewTasksScreen())).then((_) => _loadCounts()),
             ),
           ],
         ),
@@ -284,7 +293,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
         ],
       );
     }
-    return ColoredBox(color: isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB));
+    return ColoredBox(color: isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight);
   }
 }
 

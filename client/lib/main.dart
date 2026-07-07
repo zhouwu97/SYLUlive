@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:ui';
 import 'dart:io' show File;
 import 'package:dio/dio.dart';
-import 'package:flutter/foundation.dart' show kDebugMode;
+import 'package:flutter/foundation.dart' show kDebugMode, visibleForTesting;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -32,11 +32,13 @@ import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/course_schedule_screen.dart';
 import 'screens/exam_schedule_screen.dart';
+import 'screens/edu_grade_screen.dart';
 import 'screens/notifications_screen.dart';
 import 'services/course_reminder_service.dart';
 import 'theme/AppTheme.dart';
 import 'config/api_constants.dart';
 import 'utils/app_navigator.dart';
+import 'utils/grade_screen_registry.dart';
 import 'utils/private_message_notification.dart';
 import 'utils/notification_open_target.dart';
 import 'services/diagnostic_log_service.dart';
@@ -282,12 +284,7 @@ const MethodChannel _privateMessageNotificationChannel = MethodChannel(
   'shenliyuan/private_message_notifications',
 );
 
-// ── Alias 绑定状态追踪 ──
-String? _lastBoundUserId;
-String? _lastBoundRegistrationId;
-int _aliasRetryCount = 0;
-const int _maxAliasRetries = 3;
-const List<int> _aliasRetryDelays = [0, 2, 5]; // 秒，指数退避
+// ── 移除 Flutter 侧 Alias 绑定状态追踪（统一由原生状态机管理） ──
 
 /// 冷启动时通知数据临时存放（navigator 未就绪前）
 final PendingPrivateMessageOpen _pendingPrivateMessageOpen =
@@ -454,6 +451,17 @@ void _processPendingNotificationOpen() {
 }
 
 Future<void> setupJPush(AuthProvider authProvider) async {
+  if (ApiConstants.jpushAppKey.isEmpty) {
+    DiagnosticLogService.instance.record(
+      level: 'error',
+      source: '推送',
+      type: 'JPush 配置缺失',
+      summary: 'JPUSH_APP_KEY 为空，已跳过初始化',
+      detail: '请通过 --dart-define=JPUSH_APP_KEY 注入或设置默认值',
+    );
+    return;
+  }
+
   _ensureJPushHandlersRegistered();
 
   jpush.setup(
@@ -474,131 +482,16 @@ Future<void> setupJPush(AuthProvider authProvider) async {
 
   final userIdStr = userId.toString();
 
-  // 用户切换 → 重置旧 Alias 追踪状态
-  if (_lastBoundUserId != null && _lastBoundUserId != userIdStr) {
-    debugPrint('检测到用户切换: $_lastBoundUserId → $userIdStr，重置 Alias 状态');
-    _lastBoundUserId = null;
-    _lastBoundRegistrationId = null;
-    _aliasRetryCount = 0;
-  }
-
-  // 三端校验后才跳过：内存状态 + 原生存储 + RegistrationID
-  if (rid.isNotEmpty &&
-      _lastBoundUserId == userIdStr &&
-      _lastBoundRegistrationId == rid) {
-    // 额外确认原生 SharedPreferences 中 Alias 未被清除（覆盖退出后同账号重登场景）
-    String? storedAlias;
-    try {
-      final native = await _privateMessageNotificationChannel
-          .invokeMapMethod<String, dynamic>('getPushDiagnostics');
-      storedAlias = native?['storedAlias']?.toString();
-    } catch (_) {
-      // 原生查询失败 → 保守处理，不跳过
-    }
-    if (storedAlias == userIdStr) {
-      debugPrint(
-        'Alias 已绑定（三端一致），跳过: userId=$userIdStr '
-        'rid=***${rid.substring(rid.length - 6)}',
-      );
-      return;
-    }
-    debugPrint('原生 Alias 缺失（stored=$storedAlias），重新绑定');
-  }
-
-  // RegistrationID 变化 → 需要重新绑定
-  if (rid.isNotEmpty &&
-      _lastBoundRegistrationId != null &&
-      _lastBoundRegistrationId != rid) {
-    debugPrint(
-      'RegistrationID 已变化，重新绑定 Alias: '
-      'old=***${_lastBoundRegistrationId!.substring(_lastBoundRegistrationId!.length - 6)} '
-      'new=***${rid.substring(rid.length - 6)}',
-    );
-  }
-
-  _aliasRetryCount = 0;
-  await _tryBindAlias(userIdStr);
-}
-
-/// 带指数退避的 Alias 绑定（包含 RID 等待）
-///
-/// 首次尝试 + 最多 [_maxAliasRetries] 次重试（共 4 次调用机会），
-/// 每次失败后按 [_aliasRetryDelays] 延迟后重试。
-/// RID 为空和 setAlias 异常统一走重试逻辑。
-/// 全部重试耗尽后抛出异常，使 setupJPush 感知失败，_jpushSetup 保持 false。
-Future<void> _tryBindAlias(String userId) async {
-  String? failureReason;
-  bool isRidEmpty = false;
-
+  // 将 userId 同步给原生层，后续的 Alias 绑定与退避重试完全由原生层
+  // KeepAliveForegroundService 的 reconcileAliasState 机制接管
   try {
-    final rid = await jpush.getRegistrationID();
-    if (rid.isEmpty) {
-      failureReason = 'RegistrationID 为空';
-      isRidEmpty = true;
-    } else {
-      await jpush.setAlias(userId);
-
-      // ── 成功 ──
-      _lastBoundUserId = userId;
-      _lastBoundRegistrationId = rid;
-      _aliasRetryCount = 0;
-      debugPrint(
-        '✅ 成功设置 JPush Alias: $userId (rid=***${rid.substring(rid.length - 6)})',
-      );
-      DiagnosticLogService.instance.record(
-        level: 'info',
-        source: '推送',
-        type: 'Alias 绑定成功',
-        summary: 'Alias 绑定成功',
-        detail: 'userId=$userId rid=***${rid.substring(rid.length - 6)}',
-      );
-
-      // 同步 alias 到原生层，供保活服务恢复时使用
-      try {
-        await _privateMessageNotificationChannel.invokeMethod(
-          'syncAlias',
-          {'userId': userId},
-        );
-      } catch (_) {}
-      return;
-    }
-  } catch (e) {
-    failureReason = e.toString();
-    isRidEmpty = false;
-  }
-
-  // ── 失败：统一进入重试 ──
-  _aliasRetryCount++;
-  debugPrint('Alias 绑定失败 (第$_aliasRetryCount次): $failureReason');
-
-  if (_aliasRetryCount <= _maxAliasRetries) {
-    final delay = _aliasRetryDelays[_aliasRetryCount - 1];
-    final source = isRidEmpty ? 'RegistrationID 等待' : 'Alias 重试';
-    DiagnosticLogService.instance.record(
-      level: 'warning',
-      source: '推送',
-      type: source,
-      summary: failureReason,
-      detail:
-          'userId=$userId retry=$_aliasRetryCount/$_maxAliasRetries delay=${delay}s',
+    await _privateMessageNotificationChannel.invokeMethod(
+      'syncAlias',
+      {'userId': userIdStr},
     );
-    debugPrint('将在 ${delay}s 后重试');
-    await Future.delayed(Duration(seconds: delay));
-    await _tryBindAlias(userId);
-    return;
+  } catch (e) {
+    debugPrint('同步 Alias 到原生层失败: $e');
   }
-
-  // ── 重试耗尽：抛出异常，阻止 _jpushSetup = true ──
-  final label = isRidEmpty ? 'RegistrationID' : 'Alias';
-  final msg = '$label 重试 $_maxAliasRetries 次后仍失败: $failureReason';
-  DiagnosticLogService.instance.record(
-    level: 'error',
-    source: '推送',
-    type: 'Alias 绑定失败',
-    summary: msg,
-    detail: 'userId=$userId',
-  );
-  throw StateError(msg);
 }
 
 Future<void> _initializePrivateMessageNotifications() async {
@@ -1053,16 +946,7 @@ class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
     _channel.setMethodCallHandler((call) async {
       if (call.method == 'onDeepLink') {
         final uri = call.arguments as String?;
-        if ((uri == 'widget_timetable' || uri == 'campus://timetable') &&
-            mounted) {
-          appNavigatorKey.currentState?.popUntil((route) => route.isFirst);
-          widgetTabSwitch.value++;
-        } else if (uri != null && uri.startsWith('widget_exam') && mounted) {
-          appNavigatorKey.currentState?.popUntil((route) => route.isFirst);
-          appNavigatorKey.currentState?.push(
-            MaterialPageRoute(builder: (_) => const ExamScheduleScreen()),
-          );
-        }
+        await _handleDeepLinkUri(uri);
       }
     });
   }
@@ -1083,20 +967,49 @@ class _WidgetDeepLinkHandlerState extends State<_WidgetDeepLinkHandler>
   Future<void> _checkDeepLink() async {
     try {
       final uri = await _channel.invokeMethod<String>('getPendingDeepLink');
-      if ((uri == 'widget_timetable' || uri == 'campus://timetable') &&
-          mounted) {
-        appNavigatorKey.currentState?.popUntil((route) => route.isFirst);
-        // 切换到底部导航的课程表 tab，不 push 新页面
-        widgetTabSwitch.value++;
-      } else if (uri != null && uri.startsWith('widget_exam') && mounted) {
-        appNavigatorKey.currentState?.popUntil((route) => route.isFirst);
-        appNavigatorKey.currentState?.push(
-          MaterialPageRoute(builder: (_) => const ExamScheduleScreen()),
-        );
-      }
+      await _handleDeepLinkUri(uri);
     } catch (e) {
       debugPrint('深度链接检查失败: $e');
     }
+  }
+
+  Future<void> _handleDeepLinkUri(String? uri) async {
+    if (uri == null || !mounted) return;
+    if (uri == 'widget_timetable' || uri == 'campus://timetable') {
+      appNavigatorKey.currentState?.popUntil((route) => route.isFirst);
+      widgetTabSwitch.value++;
+      return;
+    }
+    if (uri.startsWith('widget_exam')) {
+      appNavigatorKey.currentState?.popUntil((route) => route.isFirst);
+      appNavigatorKey.currentState?.push(
+        MaterialPageRoute(builder: (_) => const ExamScheduleScreen()),
+      );
+      return;
+    }
+    if (uri.startsWith('sylulive://grades') || uri.startsWith('grade_update')) {
+      await _openGradeDeepLink(uri);
+    }
+  }
+
+  Future<void> _openGradeDeepLink(String raw) async {
+    final parsed = Uri.tryParse(raw);
+    final year = parsed?.queryParameters['year'];
+    final semester = int.tryParse(parsed?.queryParameters['semester'] ?? '');
+    if (year == null || semester == null) return;
+
+    if (await GradeScreenRegistry.trySwitch(year, semester)) {
+      return;
+    }
+
+    appNavigatorKey.currentState?.push(
+      MaterialPageRoute(
+        builder: (_) => EduGradeScreen(
+          initialYear: year,
+          initialSemester: semester,
+        ),
+      ),
+    );
   }
 
   @override
@@ -1131,6 +1044,11 @@ class _AppContent extends StatelessWidget {
                 : const FadeUpwardsPageTransitionsBuilder(),
           },
         ),
+        // 简洁模式下把全局 Scaffold 底色统一为暖白，覆盖所有走主题默认底色的页面。
+        // 自定义背景模式与暗色模式不受影响（null = 沿用 ColorScheme 默认）。
+        scaffoldBackgroundColor: themeProvider.isCleanBackgroundMode
+            ? kCleanWarmBackgroundLight
+            : null,
       ),
       darkTheme: AppTheme.darkTheme.copyWith(
         pageTransitionsTheme: PageTransitionsTheme(
@@ -1302,7 +1220,7 @@ class BackgroundWrapperState extends State<GlobalBackgroundWrapper> {
   Widget _buildCleanBackground(bool isDark) {
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF101219) : const Color(0xFFF8FAFC),
+        color: isDark ? kCleanWarmBackgroundDark : kCleanWarmBackgroundLight,
       ),
     );
   }
@@ -1315,9 +1233,20 @@ class AuthWrapper extends StatefulWidget {
   State<AuthWrapper> createState() => _AuthWrapperState();
 }
 
+@visibleForTesting
+class HomeInitialTabResolver {
+  int? _initialTab;
+
+  int resolve(ThemeProvider themeProvider) {
+    return _initialTab ??= themeProvider.startOnTimetable ? 2 : 0;
+  }
+}
+
 class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
   bool _jpushSetup = false;
   bool _jpushSettingUp = false;
+  final HomeInitialTabResolver _homeInitialTabResolver =
+      HomeInitialTabResolver();
 
   @override
   void initState() {
@@ -1410,7 +1339,13 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
         }
 
         final tp = context.watch<ThemeProvider>();
-        return HomeScreen(initialTab: tp.startOnTimetable ? 2 : 0);
+        if (!tp.isLoaded) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        return HomeScreen(initialTab: _homeInitialTabResolver.resolve(tp));
       },
     );
   }

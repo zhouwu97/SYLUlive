@@ -32,7 +32,7 @@ const (
 var (
 	Error302          = errors.New("post redirect disabled")
 	ErrorLapse        = errors.New("cookie已失效")
-	ErrorCourseNoOpen = errors.New("当前学期课表暂未开放")
+	ErrorCourseNoOpen = errors.New("当前学期课表暂未排课")
 	ErrorGradesNoOpen = errors.New("当前学期暂无成绩")
 )
 
@@ -341,6 +341,11 @@ type GradeDetailInput struct {
 	StudentGradeID string `json:"student_grade_id"`
 }
 
+// AcademicSituationInput 学业情况查询输入
+type AcademicSituationInput struct {
+	ForceRefresh bool `json:"force_refresh"`
+}
+
 // GetGrades 获取成绩（通过Python服务访问教务系统）
 func (h *EduHandler) GetGrades(c *gin.Context) {
 	userID, _ := c.Get("user_id")
@@ -384,6 +389,58 @@ func (h *EduHandler) GetGrades(c *gin.Context) {
 	if !json.Valid(resp.Body()) {
 		log.Printf(
 			"[EDU] grades returned non-JSON: status=%d content_type=%q",
+			resp.StatusCode(),
+			resp.Header().Get("Content-Type"),
+		)
+		c.JSON(http.StatusBadGateway, gin.H{
+			"error": "教务服务返回异常，请稍后再试",
+		})
+		return
+	}
+
+	c.Data(resp.StatusCode(), "application/json; charset=utf-8", resp.Body())
+}
+
+// GetAcademicSituation 获取官方学生学业情况（通过Python服务访问教务系统）
+func (h *EduHandler) GetAcademicSituation(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+
+	var user models.User
+	if err := h.db.First(&user, userID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
+		return
+	}
+
+	if !user.EduBound {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请先绑定教务账号"})
+		return
+	}
+
+	var input AcademicSituationInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	client := resty.New()
+	client.SetTimeout(45 * time.Second)
+
+	resp, err := client.R().
+		SetHeader("Content-Type", "application/json").
+		SetBody(map[string]interface{}{
+			"user_id":       fmt.Sprintf("%d", userID),
+			"force_refresh": input.ForceRefresh,
+		}).
+		Post(strings.TrimRight(EduServiceConfig.BaseURL, "/") + "/api/edu/academic-situation/")
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "无法连接教务服务，请检查网络"})
+		return
+	}
+
+	if !json.Valid(resp.Body()) {
+		log.Printf(
+			"[EDU] academic situation returned non-JSON: status=%d content_type=%q",
 			resp.StatusCode(),
 			resp.Header().Get("Content-Type"),
 		)

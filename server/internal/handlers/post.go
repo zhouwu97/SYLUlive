@@ -199,6 +199,8 @@ func (h *PostHandler) GetList(c *gin.Context) {
 					// 直接返回，不再走正常查询
 					h.fillLikes(c, posts)
 					h.fillWaterSectionPinState(posts, now)
+					h.fillWaterSectionFeaturedState(posts)
+					h.fillWaterSectionAuthorMeta(posts)
 					if posts == nil {
 						posts = []models.Post{}
 					}
@@ -287,21 +289,22 @@ func (h *PostHandler) GetList(c *gin.Context) {
 		}
 	}
 
-	// 关注信息流：仅显示当前用户关注的人发布的帖子
+	// 关注信息：仅展示当前用户关注的版块内的帖子（水帖）
 	if sort == "following" {
 		rawUserID, exists := c.Get("user_id")
 		userID, ok := rawUserID.(uint)
 		if !exists || !ok || userID == 0 {
 			c.JSON(http.StatusUnauthorized, gin.H{
-				"error": "登录后才能查看关注动态",
+				"error": "请先登录查看关注动态",
 			})
 			return
 		}
 		followingSubQuery := h.db.
-			Model(&models.UserFollow{}).
-			Select("following_id").
-			Where("follower_id = ?", userID)
-		query = query.Where("author_id IN (?)", followingSubQuery)
+			Model(&models.WaterSectionFollow{}).
+			Joins("JOIN water_sections ON water_sections.id = water_section_follows.section_id").
+			Select("water_sections.slug").
+			Where("water_section_follows.user_id = ?", userID)
+		query = query.Where("posts.board_id = ? AND posts.post_type IN (?)", models.BoardShuitie, followingSubQuery)
 	}
 
 	if searchQuery != "" {
@@ -324,14 +327,18 @@ func (h *PostHandler) GetList(c *gin.Context) {
 				WHEN is_pinned = ? AND (pinned_until IS NULL OR pinned_until > ?)
 				THEN 0 ELSE 1
 			END ASC,
-			posts.pinned_weight DESC,
-			posts.pinned_at DESC NULLS LAST,
+			CASE WHEN is_pinned = ? AND (pinned_until IS NULL OR pinned_until > ?) THEN posts.pinned_weight ELSE 0 END DESC,
+			CASE WHEN is_pinned = ? AND (pinned_until IS NULL OR pinned_until > ?) THEN posts.pinned_at ELSE NULL END DESC NULLS LAST,
 			posts.created_at DESC`,
 				Vars: []interface{}{
 					searchQuery,
 					searchQuery + "%",
 					searchLike,
 					searchLike,
+					true,
+					now,
+					true,
+					now,
 					true,
 					now,
 				},
@@ -361,6 +368,14 @@ func (h *PostHandler) GetList(c *gin.Context) {
 			query = query.Order("posts.price DESC").Order("posts.created_at DESC")
 		case "following":
 			query = query.Order("posts.created_at DESC")
+		case "featured":
+			if postType != "" && waterSectionFeedID > 0 {
+				query = query.Joins("JOIN water_section_featured_posts ON water_section_featured_posts.post_id = posts.id").
+					Where("water_section_featured_posts.section_id = ? AND water_section_featured_posts.status = ?", waterSectionFeedID, models.SectionFeaturedStatusActive).
+					Order("water_section_featured_posts.created_at DESC")
+			} else {
+				query = query.Where("posts.is_featured = ?", true).Order("posts.created_at DESC")
+			}
 		default:
 			if searchQuery == "" {
 				query = applyWaterSectionPinOrder(query, waterSectionFeedID, now)
@@ -444,6 +459,8 @@ func (h *PostHandler) GetList(c *gin.Context) {
 
 	h.fillLikes(c, posts)
 	h.fillWaterSectionPinState(posts, now)
+	h.fillWaterSectionFeaturedState(posts)
+	h.fillWaterSectionAuthorMeta(posts)
 	if posts == nil {
 		posts = []models.Post{}
 	}
@@ -561,6 +578,211 @@ func (h *PostHandler) fillWaterSectionPinState(posts []models.Post, now time.Tim
 	}
 }
 
+func (h *PostHandler) fillWaterSectionFeaturedState(posts []models.Post) {
+	if len(posts) == 0 {
+		return
+	}
+
+	postIDs := make([]uint, 0, len(posts))
+	slugs := map[string]struct{}{}
+	for _, post := range posts {
+		if post.BoardID != models.BoardShuitie || post.PostType == "" {
+			continue
+		}
+		postIDs = append(postIDs, post.ID)
+		slugs[post.PostType] = struct{}{}
+	}
+	if len(postIDs) == 0 {
+		return
+	}
+
+	slugList := make([]string, 0, len(slugs))
+	for slug := range slugs {
+		slugList = append(slugList, slug)
+	}
+	var sections []models.WaterSection
+	if err := h.db.Where("slug IN ?", slugList).Find(&sections).Error; err != nil {
+		return
+	}
+	sectionIDBySlug := map[string]uint{}
+	sectionIDs := make([]uint, 0, len(sections))
+	for _, section := range sections {
+		sectionIDBySlug[section.Slug] = section.ID
+		sectionIDs = append(sectionIDs, section.ID)
+	}
+	if len(sectionIDs) == 0 {
+		return
+	}
+
+	var featureds []models.WaterSectionFeaturedPost
+	if err := h.db.
+		Where("post_id IN ? AND section_id IN ? AND status = ?",
+			postIDs, sectionIDs, models.SectionFeaturedStatusActive).
+		Find(&featureds).Error; err != nil {
+		return
+	}
+	featuredIDByPostAndSection := map[string]uint{}
+	for _, f := range featureds {
+		key := fmt.Sprintf("%d:%d", f.PostID, f.SectionID)
+		featuredIDByPostAndSection[key] = f.ID
+	}
+	var pendingApps []models.FeaturedApplication
+	if err := h.db.
+		Where("post_id IN ? AND status = ?", postIDs, "pending").
+		Find(&pendingApps).Error; err != nil {
+		return
+	}
+	pendingByPost := map[uint]struct{}{}
+	for _, app := range pendingApps {
+		pendingByPost[app.PostID] = struct{}{}
+	}
+	for i := range posts {
+		sectionID := sectionIDBySlug[posts[i].PostType]
+		if sectionID == 0 {
+			continue
+		}
+		key := fmt.Sprintf("%d:%d", posts[i].ID, sectionID)
+		if fID, ok := featuredIDByPostAndSection[key]; ok {
+			posts[i].WaterSectionFeatured = true
+			posts[i].WaterSectionFeaturedID = &fID
+		}
+		if _, ok := pendingByPost[posts[i].ID]; ok {
+			posts[i].HomeFeaturedPending = true
+		}
+	}
+}
+
+// fillWaterSectionAuthorMeta 为水帖帖子的作者填充当前帖子所属版块内的等级与称号。
+// 仅当 board_id=BoardShuitie 且 post_type 有效时填充；其余帖子保持 WaterSectionAuthorMeta 为 nil。
+func (h *PostHandler) fillWaterSectionAuthorMeta(posts []models.Post) {
+	if len(posts) == 0 {
+		return
+	}
+
+	type userSectionKey struct {
+		UserID    uint
+		SectionID uint
+	}
+
+	postTypeSet := map[string]struct{}{}
+	authorSectionSet := map[userSectionKey]struct{}{}
+	requireFill := false
+	for _, p := range posts {
+		if p.BoardID != models.BoardShuitie || p.PostType == "" {
+			continue
+		}
+		requireFill = true
+		postTypeSet[p.PostType] = struct{}{}
+		authorSectionSet[userSectionKey{UserID: p.AuthorID, SectionID: 0}] = struct{}{} // 占位
+	}
+	if !requireFill {
+		return
+	}
+
+	// 第一阶段：拉取所有涉及到的 WaterSection（slug → section）
+	slugList := make([]string, 0, len(postTypeSet))
+	for slug := range postTypeSet {
+		slugList = append(slugList, slug)
+	}
+	var sections []models.WaterSection
+	if err := h.db.Where("slug IN ?", slugList).Find(&sections).Error; err != nil {
+		return
+	}
+	sectionBySlug := map[string]models.WaterSection{}
+	sectionIDSet := map[uint]struct{}{}
+	for _, s := range sections {
+		sectionBySlug[s.Slug] = s
+		sectionIDSet[s.ID] = struct{}{}
+	}
+	if len(sectionIDSet) == 0 {
+		return
+	}
+
+	// 第二阶段：组装实际的 (author, section) 二元组
+	authorSectionSet = map[userSectionKey]struct{}{}
+	for _, p := range posts {
+		if p.BoardID != models.BoardShuitie || p.PostType == "" {
+			continue
+		}
+		sec, ok := sectionBySlug[p.PostType]
+		if !ok {
+			continue
+		}
+		authorSectionSet[userSectionKey{UserID: p.AuthorID, SectionID: sec.ID}] = struct{}{}
+	}
+	if len(authorSectionSet) == 0 {
+		return
+	}
+
+	// 第三阶段：批量查 WaterSectionUserStat
+	userIDs := make([]uint, 0, len(authorSectionSet))
+	sectionIDs := make([]uint, 0, len(sectionIDSet))
+	seenUsers := map[uint]struct{}{}
+	for k := range authorSectionSet {
+		if _, ok := seenUsers[k.UserID]; !ok {
+			seenUsers[k.UserID] = struct{}{}
+			userIDs = append(userIDs, k.UserID)
+		}
+	}
+	for id := range sectionIDSet {
+		sectionIDs = append(sectionIDs, id)
+	}
+
+	var stats []models.WaterSectionUserStat
+	if err := h.db.
+		Where("user_id IN ? AND section_id IN ?", userIDs, sectionIDs).
+		Find(&stats).Error; err != nil {
+		return
+	}
+	statByUserSection := map[userSectionKey]models.WaterSectionUserStat{}
+	for _, s := range stats {
+		statByUserSection[userSectionKey{UserID: s.UserID, SectionID: s.SectionID}] = s
+	}
+
+	// 第四阶段：批量查 WaterSectionLevelTitle（自定义称号），避免 N+1
+	// 既然 section 范围有限，按段查询每个 section 的全部 1-8 称号。
+	customTitles := map[userSectionKey]string{} // (section, level) → title
+	{
+		var titles []models.WaterSectionLevelTitle
+		if err := h.db.Where("section_id IN ?", sectionIDs).Find(&titles).Error; err == nil {
+			for _, t := range titles {
+				customTitles[userSectionKey{UserID: t.SectionID, SectionID: uint(t.Level)}] = t.Title
+			}
+		}
+	}
+
+	// 第五阶段：按帖子回填
+	for i := range posts {
+		p := &posts[i]
+		if p.BoardID != models.BoardShuitie || p.PostType == "" {
+			continue
+		}
+		sec, ok := sectionBySlug[p.PostType]
+		if !ok {
+			continue
+		}
+		key := userSectionKey{UserID: p.AuthorID, SectionID: sec.ID}
+		level := 1
+		exp := 0
+		if stat, found := statByUserSection[key]; found {
+			exp = stat.Exp
+			level = services.CalculateWaterSectionLevel(exp)
+		}
+		title := services.DefaultWaterSectionLevelTitle(level)
+		if custom, ok := customTitles[userSectionKey{UserID: sec.ID, SectionID: uint(level)}]; ok && custom != "" {
+			title = custom
+		}
+		p.WaterSectionAuthorMeta = &models.WaterSectionAuthorMeta{
+			SectionID:    sec.ID,
+			SectionSlug:  sec.Slug,
+			SectionTitle: sec.Title,
+			Level:        level,
+			Exp:          exp,
+			Title:        title,
+		}
+	}
+}
+
 // CreatePostInput 创建帖子输入
 type CreatePostInput struct {
 	Title      string  `form:"title"`
@@ -643,26 +865,34 @@ func (h *PostHandler) Create(c *gin.Context) {
 		return
 	}
 
-	// 尝试增加每日首发经验
-	now := time.Now()
-	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
-	expErr := h.db.Transaction(func(tx *gorm.DB) error {
-		expLog := models.ExpLog{
-			UserID:    userID.(uint),
-			Action:    "post_daily",
-			Date:      today,
-			ExpEarned: 5,
+	// 发放每日首发经验 (全局 + 版块)
+	awards := make([]models.ExpAward, 0, 2)
+	awarded, globalAward, expErr := services.AwardDailyGlobalExp(h.db, userID.(uint), services.GlobalActionPostDaily, services.GlobalExpPostDaily, "post", post.ID)
+	if expErr != nil {
+		log.Printf("[EXP_AWARD] global post_daily failed user=%v post_id=%d err=%v", userID, post.ID, expErr)
+	} else if awarded && globalAward != nil {
+		awards = append(awards, *globalAward)
+	}
+
+	if post.BoardID == models.BoardShuitie && post.PostType != "" {
+		var section models.WaterSection
+		if secErr := h.db.Where("slug = ?", post.PostType).First(&section).Error; secErr == nil && section.ID != 0 {
+			secAwarded, secAward, secErr := services.AwardDailySectionExp(h.db, userID.(uint), section.ID, section.Slug, section.Title, services.GlobalActionPostDaily, services.GlobalExpPostDaily, "post", post.ID)
+			if secErr != nil {
+				log.Printf("[EXP_AWARD] section post_daily failed user=%v section=%d post_id=%d err=%v", userID, section.ID, post.ID, secErr)
+			} else if secAwarded && secAward != nil {
+				awards = append(awards, *secAward)
+			}
 		}
-		if err := tx.Create(&expLog).Error; err != nil {
-			return err // 违反唯一约束等，直接回滚
+	}
+
+	if len(awards) > 0 {
+		post.ExpAwards = awards
+		for _, award := range awards {
+			if award.Scope == "global" {
+				post.ExpEarned = award.Exp
+			}
 		}
-		if err := tx.Model(&models.User{}).Where("id = ?", userID.(uint)).UpdateColumn("exp", gorm.Expr("exp + ?", 5)).Error; err != nil {
-			return err
-		}
-		return nil
-	})
-	if expErr == nil {
-		log.Printf("用户 %v 获得每日首发经验 5 点", userID)
 	}
 
 	// 处理图片 - 从 multipart form 读取 file_ids
@@ -740,6 +970,8 @@ func (h *PostHandler) GetOne(c *gin.Context) {
 
 	responsePosts := []models.Post{post}
 	h.fillWaterSectionPinState(responsePosts, time.Now())
+	h.fillWaterSectionFeaturedState(responsePosts)
+	h.fillWaterSectionAuthorMeta(responsePosts)
 	post = responsePosts[0]
 	c.JSON(http.StatusOK, post)
 }

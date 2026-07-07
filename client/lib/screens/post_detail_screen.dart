@@ -5,6 +5,7 @@ import 'package:dio/dio.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
+import '../providers/theme_provider.dart';
 import '../config/api_constants.dart';
 import '../config/water_post_taxonomy.dart';
 import '../models/post.dart';
@@ -19,6 +20,7 @@ import '../utils/app_feedback.dart';
 import '../utils/post_image_cache.dart';
 import '../widgets/report_sheet.dart';
 import '../widgets/cached_avatar.dart';
+import '../widgets/app_action_popup_menu.dart';
 import 'create_post_screen.dart';
 import 'image_viewer_screen.dart';
 import 'water_category_feed_route.dart';
@@ -419,7 +421,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         if (parentId != null) 'parent_reply_id': parentId.toString(),
         if (replyToUserId != null) 'reply_to_user_id': replyToUserId.toString(),
       });
-      await _dio.post('/posts/${widget.postId}/replies', data: formData);
+      final createResponse =
+          await _dio.post('/posts/${widget.postId}/replies', data: formData);
+      final createdReply = createResponse.data is Map<String, dynamic>
+          ? Reply.fromJson(createResponse.data as Map<String, dynamic>)
+          : null;
+      if (mounted) {
+        _showReplyRewardFeedback(createdReply);
+      }
       // 静默刷新获取真实 ID
       final repliesResponse = await _dio.get('/posts/${widget.postId}/replies');
       if (mounted && repliesResponse.data is List) {
@@ -449,6 +458,71 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     } finally {
       if (mounted) setState(() => _isSending = false);
     }
+  }
+
+  ExpAward? _firstAwardWhere(
+    List<ExpAward> awards,
+    bool Function(ExpAward award) test,
+  ) {
+    for (final award in awards) {
+      if (test(award)) return award;
+    }
+    return null;
+  }
+
+  void _showReplyRewardFeedback(Reply? reply) {
+    final awards = reply?.expAwards ?? const <ExpAward>[];
+    if (awards.isEmpty) return;
+    final globalAward = _firstAwardWhere(awards, (a) => a.scope == 'global');
+    final sectionAward =
+        _firstAwardWhere(awards, (a) => a.scope == 'water_section');
+    final lines = <String>['回复成功'];
+    final expParts = <String>[];
+
+    if (globalAward != null && globalAward.exp > 0) {
+      expParts.add('全站经验 +${globalAward.exp}');
+    }
+    if (sectionAward != null && sectionAward.exp > 0) {
+      final sectionName = sectionAward.sectionTitle.isNotEmpty
+          ? sectionAward.sectionTitle
+          : waterCategoryLabelOf(_post?.postType ?? '');
+      expParts.add('$sectionName经验 +${sectionAward.exp}');
+    }
+    if (expParts.isNotEmpty) {
+      lines.add(expParts.join(' · '));
+    }
+    if (sectionAward != null && sectionAward.levelUp) {
+      final sectionName = sectionAward.sectionTitle.isNotEmpty
+          ? sectionAward.sectionTitle
+          : waterCategoryLabelOf(_post?.postType ?? '');
+      final title = sectionAward.titleAfter.isNotEmpty
+          ? '「${sectionAward.titleAfter}」'
+          : '';
+      lines.add('$sectionName升级到 Lv.${sectionAward.levelAfter}$title');
+    } else if (globalAward != null && globalAward.levelUp) {
+      lines.add('全站等级升级到 Lv.${globalAward.levelAfter}');
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 3),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              lines.first,
+              style: const TextStyle(fontWeight: FontWeight.w800),
+            ),
+            for (final line in lines.skip(1)) ...[
+              const SizedBox(height: 2),
+              Text(line),
+            ],
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _deletePost() async {
@@ -730,6 +804,89 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       if (mounted) await _loadPost();
     } else {
       AppFeedback.showSnackBar(context, provider.error ?? '取消置顶失败',
+          isError: true);
+    }
+  }
+
+  // ── 版块精华 ──
+
+  Future<void> _sectionFeaturePost() async {
+    final post = _post;
+    if (post == null) return;
+    final sectionSlug = post.postType;
+    if (sectionSlug.isEmpty) return;
+
+    final reason = await _askReason(title: '加精原因', hint: '为什么设为精华');
+    if (reason == null) return;
+    if (reason.length < 2) {
+      if (mounted) {
+        AppFeedback.showSnackBar(context, '原因至少 2 个字', isError: true);
+      }
+      return;
+    }
+
+    if (!mounted) return;
+    final confirmed = await AppFeedback.confirmDanger(
+      context,
+      title: '版块精华',
+      message: '设为精华后将在版块的精华区展示，并会自动提交首页精华审核。确认继续吗？',
+      confirmText: '设为精华',
+    );
+    if (!confirmed) return;
+
+    if (!mounted) return;
+    final provider = context.read<WaterModerationProvider>();
+    final ok = await provider.featurePost(
+      sectionSlug: sectionSlug,
+      postId: post.id,
+      reason: reason,
+    );
+    if (!mounted) return;
+    if (ok) {
+      AppFeedback.showSnackBar(context, '已入版块精华 · 首页推荐待审核');
+      setState(() => _post = _post?.copyWith(
+            waterSectionFeatured: true,
+            homeFeaturedPending: true,
+          ));
+      await context.read<PostProvider>().refreshWaterSectionFeeds(sectionSlug);
+      if (mounted) await _loadPost();
+    } else {
+      AppFeedback.showSnackBar(context, provider.error ?? '设为精华失败',
+          isError: true);
+    }
+  }
+
+  Future<void> _sectionUnfeaturePost() async {
+    final post = _post;
+    if (post == null) return;
+    final sectionSlug = post.postType;
+    if (sectionSlug.isEmpty) return;
+
+    if (!mounted) return;
+    final confirmed = await AppFeedback.confirmDanger(
+      context,
+      title: '取消版块精华',
+      message: '确定要取消该帖子的版块精华吗？',
+      confirmText: '取消精华',
+    );
+    if (!confirmed) return;
+
+    if (!mounted) return;
+    final provider = context.read<WaterModerationProvider>();
+    final ok = await provider.unfeaturePost(
+      sectionSlug: sectionSlug,
+      postId: post.id,
+    );
+    if (!mounted) return;
+    if (ok) {
+      AppFeedback.showSnackBar(context, '已取消版块精华');
+      setState(() => _post = _post?.copyWith(
+            waterSectionFeatured: false,
+          ));
+      await context.read<PostProvider>().refreshWaterSectionFeeds(sectionSlug);
+      if (mounted) await _loadPost();
+    } else {
+      AppFeedback.showSnackBar(context, provider.error ?? '取消精华失败',
           isError: true);
     }
   }
@@ -1198,7 +1355,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       child: Scaffold(
         backgroundColor: transparentMode
             ? Colors.transparent
-            : (isDark ? const Color(0xFF131720) : const Color(0xFFF6F7F9)),
+            : (isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight),
         appBar: transparentMode
             ? AppBar(
                 backgroundColor: Colors.transparent,
@@ -1264,200 +1421,305 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       centerTitle: false,
       actions: [
         if (_post != null)
-          PopupMenuButton<String>(
-            icon: const Icon(Icons.more_horiz),
-            onSelected: (value) {
-              switch (value) {
-                case 'edit':
-                  _editPost();
-                  break;
-                case 'mark_sold':
-                  _markAsSold();
-                  break;
-                case 'delete':
-                  _deletePost();
-                  break;
-                case 'pin':
-                  _pinPost();
-                  break;
-                case 'unpin':
-                  _unpinPost();
-                  break;
-                case 'report':
-                  showReportSheet(
-                    context,
-                    targetId: widget.postId,
-                    targetType: 'post',
-                  );
-                  break;
-                case 'apply_featured':
-                  _applyFeatured();
-                  break;
-                case 'apply_collaboration':
-                  _applyCollaboration();
-                  break;
-                case 'submit_revision':
-                  _submitRevisionProposal();
-                  break;
-                case 'creation_management':
-                  _openCreationManagement();
-                  break;
-                case 'unfeature':
-                  _unfeaturePost();
-                  break;
-                case 'section_pin':
-                  _sectionPinPost();
-                  break;
-                case 'section_unpin':
-                  _sectionUnpinPost();
-                  break;
-                case 'moderate_delete':
-                  _moderateDeletePost();
-                  break;
-                case 'mute_author':
-                  _muteAuthor();
-                  break;
-              }
-            },
-            itemBuilder: (context) {
-              final items = <PopupMenuEntry<String>>[];
-              final sectionSlug = _post?.postType ?? '';
-              // 仅水帖版块显示版主操作，集市不显示
-              final isWaterPost = _post?.boardId == 1;
-              final perm = (isWaterPost && sectionSlug.isNotEmpty)
-                  ? context
-                      .read<WaterModeratorProvider>()
-                      .permissionOf(sectionSlug)
-                  : null;
-
-              // ── 版块管理操作（版主/管理员可见）──
-              if (_post?.boardId == 1 &&
-                  sectionSlug.isNotEmpty &&
-                  perm != null &&
-                  (perm.isGlobalAdmin || perm.isModerator)) {
-                if (perm.canPinPost) {
-                  if (_post?.waterSectionPinned == true) {
-                    items.add(const PopupMenuItem(
-                      value: 'section_unpin',
-                      child: Text('取消版块置顶'),
-                    ));
-                  } else {
-                    items.add(const PopupMenuItem(
-                      value: 'section_pin',
-                      child: Text('设为版块置顶'),
-                    ));
-                  }
-                }
-                if (perm.canDeletePost) {
-                  // 如果作者是自己，可以走普通删除；版主删除仍然需要
-                  items.add(const PopupMenuItem(
-                    value: 'moderate_delete',
-                    child: Text('版主删除', style: TextStyle(color: Colors.red)),
-                  ));
-                }
-                if (perm.canMuteUser && _post?.authorId != null) {
-                  // 不显示禁言自己的入口
-                  final currentUserId = context.read<AuthProvider>().user?.id;
-                  if (currentUserId != _post!.authorId) {
-                    items.add(const PopupMenuItem(
-                      value: 'mute_author',
-                      child: Text('禁言作者'),
-                    ));
-                  }
-                }
-                if (perm.canPinPost || perm.canDeletePost || perm.canMuteUser) {
-                  items.add(const PopupMenuDivider());
-                }
-              }
-
-              // ── 全局置顶（仅 admin）──
-              if (isAdmin && _post?.boardId == 1) {
-                items.add(PopupMenuItem(
-                  value: _post!.isActivePinned ? 'unpin' : 'pin',
-                  child: Text(_post!.isActivePinned ? '取消置顶' : '置顶到首页'),
-                ));
-              }
-              if (_post?.boardId == 1) {
-                if (_post?.isFeatured == true) {
-                  if (isOwn) {
-                    items.add(const PopupMenuItem(
-                      value: 'creation_management',
-                      child: Text('创作管理'),
-                    ));
-                  } else {
-                    items.add(const PopupMenuItem(
-                      value: 'apply_collaboration',
-                      child: Text('申请共同创作'),
-                    ));
-                    items.add(const PopupMenuItem(
-                      value: 'submit_revision',
-                      child: Text('提交修改版本'),
-                    ));
-                  }
-                } else if (_hasPendingFeaturedApp) {
-                  items.add(const PopupMenuItem(
-                    enabled: false,
-                    child: Text('精华申请待审核'),
-                  ));
-                } else {
-                  items.add(const PopupMenuItem(
-                    value: 'apply_featured',
-                    child: Text('申请精华'),
-                  ));
-                }
-              }
-              // 自己的帖子：编辑 + 删除（不举报自己）
-              if (isOwn) {
-                items.add(const PopupMenuItem(
-                  value: 'edit',
-                  child: Text('编辑帖子'),
-                ));
-                if (_canMarkSellPostSold()) {
-                  items.add(const PopupMenuItem(
-                    value: 'mark_sold',
-                    child: Text('标记已售出'),
-                  ));
-                }
-                items.add(const PopupMenuItem(
-                  value: 'delete',
-                  child: Text('删除帖子', style: TextStyle(color: Colors.red)),
-                ));
-              } else if (isAdmin) {
-                // 管理员看他人帖子：删除 + 举报
-                items.add(const PopupMenuItem(
-                  value: 'delete',
-                  child: Text('删除帖子', style: TextStyle(color: Colors.red)),
-                ));
-                items.add(const PopupMenuItem(
-                  value: 'report',
-                  child: Text('举报帖子'),
-                ));
-                if (_post?.isFeatured == true) {
-                  items.add(const PopupMenuItem(
-                    value: 'unfeature',
-                    child: Text('取消精华'),
-                  ));
-                }
-              } else {
-                // 普通用户看他人帖子：仅举报
-                items.add(const PopupMenuItem(
-                  value: 'report',
-                  child: Text('举报帖子'),
-                ));
-              }
-              return items;
-            },
+          _buildPostMoreMenu(
+            isDark: isDark,
+            canEdit: canEdit,
+            canDelete: canDelete,
+            isOwn: isOwn,
+            isAdmin: isAdmin,
           ),
       ],
     );
   }
 
+  Widget _buildPostMoreMenu({
+    required bool isDark,
+    required bool canEdit,
+    required bool canDelete,
+    required bool isOwn,
+    required bool isAdmin,
+  }) {
+    final entries = _buildPostMenuEntries(
+      isOwn: isOwn,
+      isAdmin: isAdmin,
+    );
+
+    return AppActionPopupMenu(
+      width: 188,
+      offset: const Offset(0, 8),
+      icon: const Icon(Icons.more_horiz_rounded),
+      accentColor: isDark ? const Color(0xFF7ED6C5) : const Color(0xFF147C72),
+      dangerColor: const Color(0xFFE54848),
+      entries: entries,
+      onSelected: _handlePostMenuAction,
+    );
+  }
+
+  void _handlePostMenuAction(String value) {
+    switch (value) {
+      case 'edit':
+        _editPost();
+        break;
+      case 'mark_sold':
+        _markAsSold();
+        break;
+      case 'delete':
+        _deletePost();
+        break;
+      case 'pin':
+        _pinPost();
+        break;
+      case 'unpin':
+        _unpinPost();
+        break;
+      case 'report':
+        showReportSheet(
+          context,
+          targetId: widget.postId,
+          targetType: 'post',
+        );
+        break;
+      case 'apply_featured':
+        _applyFeatured();
+        break;
+      case 'apply_collaboration':
+        _applyCollaboration();
+        break;
+      case 'submit_revision':
+        _submitRevisionProposal();
+        break;
+      case 'creation_management':
+        _openCreationManagement();
+        break;
+      case 'unfeature':
+        _unfeaturePost();
+        break;
+      case 'section_pin':
+        _sectionPinPost();
+        break;
+      case 'section_unpin':
+        _sectionUnpinPost();
+        break;
+      case 'section_feature':
+        _sectionFeaturePost();
+        break;
+      case 'section_unfeature':
+        _sectionUnfeaturePost();
+        break;
+      case 'moderate_delete':
+        _moderateDeletePost();
+        break;
+      case 'mute_author':
+        _muteAuthor();
+        break;
+    }
+  }
+
+  List<Object> _buildPostMenuEntries({
+    required bool isOwn,
+    required bool isAdmin,
+  }) {
+    final entries = <Object>[];
+    final sectionSlug = _post?.postType ?? '';
+    final isWaterPost = _post?.boardId == 1;
+
+    final perm = (isWaterPost && sectionSlug.isNotEmpty)
+        ? context.read<WaterModeratorProvider>().permissionOf(sectionSlug)
+        : null;
+
+    final hasModeration = isWaterPost &&
+        sectionSlug.isNotEmpty &&
+        perm != null &&
+        (perm.isGlobalAdmin || perm.isModerator);
+
+    if (hasModeration) {
+      if (perm.canPinPost) {
+        entries.add(
+          AppPopupAction(
+            value: _post?.waterSectionPinned == true
+                ? 'section_unpin'
+                : 'section_pin',
+            label: _post?.waterSectionPinned == true
+                ? '取消版块置顶'
+                : '设为版块置顶',
+            icon: _post?.waterSectionPinned == true
+                ? Icons.push_pin_outlined
+                : Icons.push_pin_rounded,
+          ),
+        );
+
+        entries.add(
+          AppPopupAction(
+            value: _post?.waterSectionFeatured == true
+                ? 'section_unfeature'
+                : 'section_feature',
+            label: _post?.waterSectionFeatured == true
+                ? '取消版块精华'
+                : '设为版块精华',
+            icon: _post?.waterSectionFeatured == true
+                ? Icons.star_border_rounded
+                : Icons.auto_awesome_rounded,
+          ),
+        );
+      }
+
+      if (perm.canDeletePost) {
+        entries.add(
+          const AppPopupAction(
+            value: 'moderate_delete',
+            label: '版主删除',
+            icon: Icons.admin_panel_settings_outlined,
+            danger: true,
+          ),
+        );
+      }
+
+      if (perm.canMuteUser && _post?.authorId != null) {
+        final currentUserId = context.read<AuthProvider>().user?.id;
+        if (currentUserId != _post!.authorId) {
+          entries.add(
+            const AppPopupAction(
+              value: 'mute_author',
+              label: '禁言作者',
+              icon: Icons.volume_off_outlined,
+            ),
+          );
+        }
+      }
+
+      entries.add(const Divider());
+    }
+
+    if (isAdmin && _post?.boardId == 1) {
+      entries.add(
+        AppPopupAction(
+          value: _post!.isActivePinned ? 'unpin' : 'pin',
+          label: _post!.isActivePinned ? '取消首页置顶' : '置顶到首页',
+          icon: _post!.isActivePinned
+              ? Icons.vertical_align_top_outlined
+              : Icons.home_filled,
+        ),
+      );
+    }
+
+    if (_post?.boardId == 1) {
+      if (_post?.isFeatured == true) {
+        if (isOwn) {
+          entries.add(
+            const AppPopupAction(
+              value: 'creation_management',
+              label: '创作管理',
+              icon: Icons.manage_accounts_outlined,
+            ),
+          );
+        } else {
+          entries.add(
+            const AppPopupAction(
+              value: 'apply_collaboration',
+              label: '申请共同创作',
+              icon: Icons.group_add_outlined,
+            ),
+          );
+          entries.add(
+            const AppPopupAction(
+              value: 'submit_revision',
+              label: '提交修改版本',
+              icon: Icons.edit_note_rounded,
+            ),
+          );
+        }
+      } else if (_hasPendingFeaturedApp) {
+        entries.add(
+          const AppPopupAction(
+            value: 'pending_featured',
+            label: '精华申请待审核',
+            icon: Icons.hourglass_top_rounded,
+            enabled: false,
+          ),
+        );
+      } else {
+        entries.add(
+          const AppPopupAction(
+            value: 'apply_featured',
+            label: '申请精华',
+            icon: Icons.star_outline_rounded,
+          ),
+        );
+      }
+    }
+
+    entries.add(const Divider());
+
+    if (isOwn) {
+      entries.add(
+        const AppPopupAction(
+          value: 'edit',
+          label: '编辑帖子',
+          icon: Icons.edit_outlined,
+        ),
+      );
+
+      if (_canMarkSellPostSold()) {
+        entries.add(
+          const AppPopupAction(
+            value: 'mark_sold',
+            label: '标记已售出',
+            icon: Icons.check_circle_outline_rounded,
+          ),
+        );
+      }
+
+      entries.add(
+        const AppPopupAction(
+          value: 'delete',
+          label: '删除帖子',
+          icon: Icons.delete_outline_rounded,
+          danger: true,
+        ),
+      );
+    } else {
+      if (isAdmin) {
+        entries.add(
+          const AppPopupAction(
+            value: 'delete',
+            label: '删除帖子',
+            icon: Icons.delete_outline_rounded,
+            danger: true,
+          ),
+        );
+
+        if (_post?.isFeatured == true) {
+          entries.add(
+            const AppPopupAction(
+              value: 'unfeature',
+              label: '取消首页精华',
+              icon: Icons.star_border_rounded,
+            ),
+          );
+        }
+      }
+
+      entries.add(
+        const AppPopupAction(
+          value: 'report',
+          label: '举报帖子',
+          icon: Icons.flag_outlined,
+        ),
+      );
+    }
+
+    while (entries.isNotEmpty && entries.last is Divider) {
+      entries.removeLast();
+    }
+
+    return entries;
+  }
+
   Widget _buildWaterAppBarCategoryChip(bool isDark) {
     final sectionSlug = _post?.postType ?? '';
     final sectionProvider = context.watch<WaterSectionProvider?>();
-    final section = sectionSlug.isNotEmpty
-        ? sectionProvider?.getBySlug(sectionSlug)
-        : null;
+    final section =
+        sectionSlug.isNotEmpty ? sectionProvider?.getBySlug(sectionSlug) : null;
     final label = section?.title ?? waterCategoryOf(sectionSlug)?.label ?? '水帖';
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -1602,6 +1864,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           ),
                           const SizedBox(height: 16),
                         ],
+                        if (p.marketTags.isNotEmpty) ...[
+                          _buildMarketTagWrap(p.marketTags, isDark),
+                          const SizedBox(height: 16),
+                        ],
                         Text(
                           p.content,
                           style: TextStyle(
@@ -1653,7 +1919,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 : Container(
                     color: isDark
                         ? const Color(0xFF131720)
-                        : const Color(0xFFF4F6FB),
+                        : kCleanWarmBackgroundLight,
                     child: Center(
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -1746,6 +2012,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           ),
                           const SizedBox(height: 16),
                         ],
+                        if (p.marketTags.isNotEmpty) ...[
+                          _buildMarketTagWrap(p.marketTags, isDark),
+                          const SizedBox(height: 16),
+                        ],
                         Text(
                           p.content,
                           style: TextStyle(
@@ -1786,6 +2056,38 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         ),
         _buildReplyBar(isDark),
       ],
+    );
+  }
+
+  Widget _buildMarketTagWrap(List<String> tags, bool isDark) {
+    final primary = Theme.of(context).colorScheme.primary;
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: tags
+          .map(
+            (tag) => Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: isDark
+                    ? primary.withValues(alpha: 0.14)
+                    : primary.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(
+                  color: primary.withValues(alpha: isDark ? 0.24 : 0.16),
+                ),
+              ),
+              child: Text(
+                tag,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: primary,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          )
+          .toList(growable: false),
     );
   }
 
@@ -1963,6 +2265,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                       if (p.author != null) ...[
                         const SizedBox(width: 6),
                         _buildLevelBadge(p.author!, isDark),
+                      ],
+                      if (p.waterSectionAuthorMeta != null) ...[
+                        const SizedBox(width: 6),
+                        _buildSectionLevelBadge(p.waterSectionAuthorMeta!),
                       ],
                     ],
                   ),
@@ -2372,7 +2678,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       return Container(
         padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
         decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF131720) : const Color(0xFFF6F7F9),
+          color: isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight,
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.06),
@@ -2647,6 +2953,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                       if (p.author != null) ...[
                         const SizedBox(width: 6),
                         _buildLevelBadge(p.author!, isDark),
+                      ],
+                      if (p.waterSectionAuthorMeta != null) ...[
+                        const SizedBox(width: 6),
+                        _buildSectionLevelBadge(p.waterSectionAuthorMeta!),
                       ],
                     ],
                   ),
@@ -3325,7 +3635,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             return Container(
               decoration: BoxDecoration(
                 color: isDark ? const Color(0xFF171B24) : Colors.white,
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                borderRadius:
+                    const BorderRadius.vertical(top: Radius.circular(16)),
               ),
               child: Column(
                 children: [
@@ -3337,15 +3648,18 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                         SliverToBoxAdapter(
                           child: Padding(
                             padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-                            child: _buildSheetParentReply(sheetContext, parentReply, isDark),
+                            child: _buildSheetParentReply(
+                                sheetContext, parentReply, isDark),
                           ),
                         ),
                         SliverToBoxAdapter(
-                          child: _buildRelatedRepliesHeader(parentReply.id, isDark),
+                          child: _buildRelatedRepliesHeader(
+                              parentReply.id, isDark),
                         ),
                         SliverPadding(
                           padding: const EdgeInsets.symmetric(horizontal: 16),
-                          sliver: _buildSheetChildrenList(sheetContext, parentReply, isDark),
+                          sliver: _buildSheetChildrenList(
+                              sheetContext, parentReply, isDark),
                         ),
                       ],
                     ),
@@ -3409,7 +3723,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
-  Widget _buildSheetParentReply(BuildContext sheetContext, Reply r, bool isDark) {
+  Widget _buildSheetParentReply(
+      BuildContext sheetContext, Reply r, bool isDark) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -3562,7 +3877,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
-  Widget _buildSheetChildrenList(BuildContext sheetContext, Reply parentReply, bool isDark) {
+  Widget _buildSheetChildrenList(
+      BuildContext sheetContext, Reply parentReply, bool isDark) {
     final children = _collectThreadChildren(parentReply.id);
 
     if (children.isEmpty) {
@@ -3574,7 +3890,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     return SliverList(
       delegate: SliverChildBuilderDelegate(
         (context, index) {
-          return _buildSheetChildReplyItem(sheetContext, children[index], parentReply, isDark);
+          return _buildSheetChildReplyItem(
+              sheetContext, children[index], parentReply, isDark);
         },
         childCount: children.length,
       ),
@@ -3682,7 +3999,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                       GestureDetector(
                         onTap: () {
                           Navigator.pop(sheetContext);
-                          showReportSheet(context, targetId: child.id, targetType: 'reply');
+                          showReportSheet(context,
+                              targetId: child.id, targetType: 'reply');
                         },
                         child: Text(
                           '举报',
@@ -3702,7 +4020,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
-  Widget _buildSheetReplyInputBar(BuildContext sheetContext, Reply parentReply, bool isDark) {
+  Widget _buildSheetReplyInputBar(
+      BuildContext sheetContext, Reply parentReply, bool isDark) {
     return Container(
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF131720) : Colors.white,
@@ -4041,6 +4360,24 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           fontSize: 10,
           fontWeight: FontWeight.w700,
           color: Color(user.levelColorValue),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSectionLevelBadge(WaterSectionAuthorMeta meta) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+      decoration: BoxDecoration(
+        color: const Color(0xFF6B8EFF).withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        meta.title,
+        style: const TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+          color: Color(0xFF6B8EFF),
         ),
       ),
     );

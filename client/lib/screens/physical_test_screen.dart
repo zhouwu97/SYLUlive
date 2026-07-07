@@ -6,6 +6,7 @@ import 'package:dio_cookie_manager/dio_cookie_manager.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import '../providers/theme_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../features/physical/physical_percentile_models.dart';
 import '../features/physical/physical_percentile_service.dart';
@@ -363,11 +364,11 @@ class _PhysicalTestPageState extends State<PhysicalTestPage> {
 
     return Scaffold(
       backgroundColor:
-          isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
+          isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight,
       appBar: AppBar(
         title: const Text('体测成绩查询'),
         backgroundColor:
-            isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
+            isDark ? const Color(0xFF131720) : kCleanWarmBackgroundLight,
         elevation: 0,
         actions: [
           IconButton(

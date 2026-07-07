@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+
+import '../models/teacher.dart';
 import '../providers/auth_provider.dart';
 import '../providers/teacher_provider.dart';
 import '../providers/theme_provider.dart';
-import '../models/teacher.dart';
+import '../widgets/rating_detail/ranking_tokens.dart';
 import '../widgets/rating_detail/rating_subject_header.dart';
 import '../widgets/rating_detail/rating_score_panel.dart';
 import '../widgets/rating_detail/my_rating_card.dart';
@@ -37,11 +39,6 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<TeacherProvider>().loadTeacherDetail(widget.teacherId);
     });
-  }
-
-  @override
-  void dispose() {
-    super.dispose();
   }
 
   Future<void> _deleteTeacher(BuildContext context) async {
@@ -135,6 +132,7 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final themeProvider = context.watch<ThemeProvider>();
+    final accent = RankingTokens.teacherAccent(isDark);
 
     return PopScope(
       canPop: themeProvider.predictiveBack,
@@ -143,9 +141,8 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
         Navigator.pop(context, _didChange);
       },
       child: Scaffold(
-        backgroundColor:
-            isDark ? const Color(0xFF131720) : const Color(0xFFF4F6FB),
-        extendBodyBehindAppBar: false, // 修复重叠：不再将 body 延伸到 AppBar 后方
+        backgroundColor: RankingTokens.pageBg(isDark),
+        extendBodyBehindAppBar: false,
         appBar: AppBar(
           systemOverlayStyle: SystemUiOverlayStyle(
             statusBarColor: Colors.transparent,
@@ -154,33 +151,32 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
           ),
           centerTitle: true,
           titleTextStyle: TextStyle(
-            color: isDark ? Colors.white : Colors.black87,
+            color: RankingTokens.titleColor(isDark),
             fontSize: 18,
-            fontWeight: FontWeight.bold,
+            fontWeight: FontWeight.w800,
           ),
-          iconTheme: IconThemeData(
-            color: isDark ? Colors.white : Colors.black87,
-          ),
+          iconTheme: IconThemeData(color: RankingTokens.titleColor(isDark)),
           leading: IconButton(
             icon: const Icon(Icons.arrow_back),
             onPressed: () => Navigator.pop(context, _didChange),
           ),
           title: const Text('教师评价'),
-          backgroundColor: Colors.transparent,
+          backgroundColor: RankingTokens.pageBg(isDark),
+          surfaceTintColor: Colors.transparent,
           elevation: 0,
           scrolledUnderElevation: 0,
           actions: [
             if (context.watch<AuthProvider>().user?.isAdmin == true)
               PopupMenuButton<String>(
-                icon: Icon(Icons.more_horiz, color: isDark ? Colors.white : Colors.black87),
+                icon: Icon(
+                  Icons.more_horiz,
+                  color: RankingTokens.titleColor(isDark),
+                ),
                 onSelected: (value) {
                   if (value == 'delete') _deleteTeacher(context);
                 },
                 itemBuilder: (_) => const [
-                  PopupMenuItem(
-                    value: 'delete',
-                    child: Text('删除教师'),
-                  ),
+                  PopupMenuItem(value: 'delete', child: Text('删除教师')),
                 ],
               ),
           ],
@@ -197,18 +193,20 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
             return Stack(
               children: [
                 ListView(
-                  padding: const EdgeInsets.fromLTRB(16, 6, 16, 84),
+                  padding: const EdgeInsets.fromLTRB(16, 6, 16, 80),
                   children: [
                     RatingSubjectHeader(
                       title: teacher.name,
                       subtitle: teacher.course,
                       initial: teacher.name,
+                      accentOverride: accent,
                     ),
                     const SizedBox(height: 8),
                     RatingScorePanel(
                       averageStar: provider.averageStar,
                       ratingCount: provider.ratingCount,
                       starCounts: provider.starCounts,
+                      accentOverride: accent,
                     ),
                     const SizedBox(height: 10),
                     if (provider.myRating != null) ...[
@@ -216,20 +214,26 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
                         currentStar: provider.myRating!.star,
                         currentComment: provider.myRating!.comment,
                         isDeleting: _isDeletingRating,
+                        accentOverride: accent,
                         onEdit: () {
                           showRatingInputSheet(
                             context: context,
                             initialStar: provider.myRating!.star,
-                            initialComment: provider.myRating!.comment ?? '',
+                            initialComment: provider.myRating!.comment,
                             title: '修改评价',
                             maxCommentLength: 200,
+                            accentOverride: accent,
                             onSubmit: (star, comment) async {
-                              final ok = await provider.rateTeacher(widget.teacherId, star, comment);
+                              final ok = await provider.rateTeacher(
+                                  widget.teacherId, star, comment);
                               if (ok) {
                                 _didChange = true;
                                 if (mounted) {
                                   ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(content: Text('评价修改成功'), backgroundColor: Colors.green),
+                                    const SnackBar(
+                                      content: Text('评价修改成功'),
+                                      backgroundColor: Colors.green,
+                                    ),
                                   );
                                 }
                               }
@@ -237,12 +241,12 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
                             },
                           );
                         },
-                        onDelete: () => _confirmDeleteRating(provider.myRating!),
+                        onDelete: () =>
+                            _confirmDeleteRating(provider.myRating!),
                       ),
                       const SizedBox(height: 10),
                     ],
-                    _buildRatingSection(provider, isDark),
-                    const SizedBox(height: 80),
+                    _buildRatingSection(provider, isDark, accent),
                   ],
                 ),
                 Positioned(
@@ -262,15 +266,21 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
                         context: context,
                         initialStar: provider.myRating?.star ?? 0,
                         initialComment: provider.myRating?.comment ?? '',
-                        title: provider.myRating == null ? '写评价' : '修改评价',
+                        title:
+                            provider.myRating == null ? '写评价' : '修改评价',
                         maxCommentLength: 200,
+                        accentOverride: accent,
                         onSubmit: (star, comment) async {
-                          final ok = await provider.rateTeacher(widget.teacherId, star, comment);
+                          final ok = await provider.rateTeacher(
+                              widget.teacherId, star, comment);
                           if (ok) {
                             _didChange = true;
                             if (mounted) {
                               ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('评价成功'), backgroundColor: Colors.green),
+                                const SnackBar(
+                                  content: Text('评价成功'),
+                                  backgroundColor: Colors.green,
+                                ),
                               );
                             }
                           }
@@ -288,7 +298,11 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
     );
   }
 
-  Widget _buildRatingSection(TeacherProvider provider, bool isDark) {
+  Widget _buildRatingSection(
+    TeacherProvider provider,
+    bool isDark,
+    Color accent,
+  ) {
     return Padding(
       padding: EdgeInsets.zero,
       child: Column(
@@ -301,63 +315,55 @@ class _TeacherDetailScreenState extends State<TeacherDetailScreen> {
                 style: TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.w800,
-                  color: isDark ? Colors.white : Colors.black87,
+                  color: RankingTokens.titleColor(isDark),
                 ),
               ),
               const Spacer(),
-              if (_isDeletingRating)
-                const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              else
-                Text(
-                  '最新',
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-            ],
-          ),
-          const SizedBox(height: 8),
-        const RatingPolicyTip(
-          type: RatingPolicyType.warning,
-          text: '请只评价课堂体验，避免人身攻击和隐私信息。',
-        ),
-        if (provider.ratings.isEmpty)
-          Padding(
-            padding: const EdgeInsets.only(top: 24, bottom: 24),
-            child: Center(
-              child: Text(
-                '还没有同学评价',
+              Text(
+                '最新',
                 style: TextStyle(
-                  fontSize: 14,
-                  color: isDark ? Colors.grey.shade300 : Colors.grey.shade600,
+                  fontSize: 13,
+                  color: RankingTokens.subColor(isDark),
+                  fontWeight: FontWeight.w600,
                 ),
               ),
-            ),
-          )
-        else
-          Container(
-            decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF1B1E28) : Colors.white,
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Column(
-              children: provider.ratings.map((r) => RatingItemCard(
-                userName: r.userName,
-                comment: r.comment,
-                star: r.star,
-                isOwn: _isOwnRating(r),
-                onLongPress: () => _confirmDeleteRating(r),
-              )).toList(),
-            ),
+            ],
           ),
-      ],
-    ),
+          const SizedBox(height: 6),
+          const RatingPolicyTip(
+            type: RatingPolicyType.warning,
+            text: '请只评价课堂体验，避免人身攻击和隐私信息。',
+          ),
+          if (provider.ratings.isEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 20, bottom: 20),
+              child: Center(
+                child: Text(
+                  '还没有同学评价',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: RankingTokens.subColor(isDark),
+                  ),
+                ),
+              ),
+            )
+          else
+            Container(
+              decoration: RankingTokens.cardDecoration(isDark),
+              child: Column(
+                children: provider.ratings
+                    .map((r) => RatingItemCard(
+                          userName: r.userName,
+                          comment: r.comment,
+                          star: r.star,
+                          isOwn: _isOwnRating(r),
+                          onLongPress: () => _confirmDeleteRating(r),
+                        ))
+                    .toList(),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }

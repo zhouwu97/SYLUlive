@@ -19,6 +19,21 @@ Map<String, dynamic> _postJson(int id) {
   };
 }
 
+Map<String, dynamic> _marketPostJson(
+  int id, {
+  List<String> marketTags = const [],
+}) {
+  return {
+    ..._postJson(id),
+    'title': '显示器',
+    'content': '成色很好',
+    'board_id': 2,
+    'post_type': 'sell',
+    'price': 99,
+    'market_tags': marketTags,
+  };
+}
+
 Response<dynamic> _response(RequestOptions options, int postId) {
   return Response(
     requestOptions: options,
@@ -117,6 +132,90 @@ void main() {
 
     expect(requestCount, 1);
     expect(provider.postsFor(1, sort: 'hot').single.id, 1);
+  });
+
+  test('section featured feeds use the post list endpoint', () async {
+    final dio = Dio();
+    final requests = <RequestOptions>[];
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          requests.add(options);
+          handler.resolve(_response(options, requests.length));
+        },
+      ),
+    );
+    final provider = PostProvider(dio, enableCache: false);
+
+    await provider.refresh(
+      boardId: 1,
+      sort: 'featured',
+      type: 'course_study',
+    );
+    await provider.refresh(boardId: 1, sort: 'featured');
+
+    expect(requests[0].path, '/posts');
+    expect(requests[0].queryParameters['type'], 'course_study');
+    expect(requests[1].path, '/posts/featured');
+    expect(requests[1].queryParameters['type'], isNull);
+  });
+
+  test('invalidateFollowingFeed clears every following feed state', () async {
+    final dio = Dio();
+    var requestCount = 0;
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          requestCount++;
+          handler.resolve(_response(options, requestCount));
+        },
+      ),
+    );
+    final provider = PostProvider(dio, enableCache: false);
+
+    await provider.refresh(boardId: 1, sort: 'following');
+    await provider.refresh(
+      boardId: 1,
+      sort: 'following',
+      type: 'course_study',
+    );
+    await provider.refresh(
+      boardId: 1,
+      sort: 'following',
+      type: 'campus_life',
+      tagId: 3,
+    );
+    await provider.refresh(boardId: 1, sort: 'all', type: 'course_study');
+
+    provider.invalidateFollowingFeed();
+
+    expect(provider.postsFor(1, sort: 'following'), isEmpty);
+    expect(
+      provider.postsFor(1, sort: 'following', type: 'course_study'),
+      isEmpty,
+    );
+    expect(
+      provider.postsFor(
+        1,
+        sort: 'following',
+        type: 'campus_life',
+        tagId: 3,
+      ),
+      isEmpty,
+    );
+    expect(provider.hasLoadedFor(1, sort: 'following'), isFalse);
+    expect(
+      provider.hasLoadedFor(1, sort: 'following', type: 'course_study'),
+      isFalse,
+    );
+    expect(
+      provider.postsFor(1, sort: 'all', type: 'course_study').single.id,
+      4,
+    );
+    expect(
+      provider.hasLoadedFor(1, sort: 'all', type: 'course_study'),
+      isTrue,
+    );
   });
 
   test('cached first load refreshes latest page without since anchor',
@@ -225,6 +324,92 @@ void main() {
     expect(expired.isActivePinned, isFalse);
   });
 
+  test('post parses market tags from list and comma-separated strings', () {
+    final fromList = Post.fromJson({
+      'id': 1,
+      'content': 'content',
+      'board_id': 2,
+      'author_id': 1,
+      'market_tags': ['自提', '可小刀'],
+      'created_at': '2026-06-14T08:00:00Z',
+    });
+    expect(fromList.marketTags, ['自提', '可小刀']);
+
+    final fromString = Post.fromJson({
+      'id': 2,
+      'content': 'content',
+      'board_id': 2,
+      'author_id': 1,
+      'market_tags': '自提,急出',
+      'created_at': '2026-06-14T08:00:00Z',
+    });
+    expect(fromString.marketTags, ['自提', '急出']);
+  });
+
+  test('createPost sends selected market tags as independent form data',
+      () async {
+    final dio = Dio();
+    String? sentTags;
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) async {
+          final formData = options.data as FormData;
+          sentTags = formData.fields
+              .firstWhere((field) => field.key == 'market_tags')
+              .value;
+          handler.resolve(
+            Response(
+              requestOptions: options,
+              statusCode: 201,
+              data: _postJson(1),
+            ),
+          );
+        },
+      ),
+    );
+    final provider = PostProvider(dio, enableCache: false);
+
+    final result = await provider.createPost(
+      boardId: 2,
+      content: '成色很好',
+      title: '显示器',
+      postType: 'sell',
+      marketTags: ['自提', '可小刀'],
+    );
+
+    expect(result.success, isTrue);
+    expect(sentTags, '自提,可小刀');
+  });
+
+  test('createPost exposes returned post with selected market tags', () async {
+    final dio = Dio();
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) async {
+          handler.resolve(
+            Response(
+              requestOptions: options,
+              statusCode: 201,
+              data: _marketPostJson(9, marketTags: ['自提']),
+            ),
+          );
+        },
+      ),
+    );
+    final provider = PostProvider(dio, enableCache: false);
+
+    final result = await provider.createPost(
+      boardId: 2,
+      content: '成色很好',
+      title: '显示器',
+      postType: 'sell',
+      marketTags: ['自提'],
+    );
+
+    expect(result.success, isTrue);
+    expect(result.post?.marketTags, ['自提']);
+  });
+
   test('post cache preserves pin and featured metadata', () async {
     final pinnedUntil = DateTime.utc(2026, 6, 17);
     await PostCacheService.savePosts(
@@ -262,6 +447,107 @@ void main() {
     expect(loaded.single.pinnedWeight, 70);
     expect(loaded.single.isFeatured, isTrue);
     expect(loaded.single.featuredBy, 2);
+  });
+
+  test('post cache isolates water section and tag feeds', () async {
+    await PostCacheService.savePosts(
+      77,
+      [
+        Post(
+          id: 1,
+          content: 'course',
+          boardId: 77,
+          authorId: 1,
+          postType: 'course_study',
+          createdAt: DateTime.utc(2026, 6, 14, 8),
+        ),
+      ],
+      sort: 'all',
+      type: 'course_study',
+    );
+    await PostCacheService.savePosts(
+      77,
+      [
+        Post(
+          id: 2,
+          content: 'campus',
+          boardId: 77,
+          authorId: 1,
+          postType: 'campus_life',
+          waterTagId: 3,
+          createdAt: DateTime.utc(2026, 6, 14, 9),
+        ),
+      ],
+      sort: 'all',
+      type: 'campus_life',
+      tagId: 3,
+    );
+
+    final course = await PostCacheService.loadPosts(
+      77,
+      sort: 'all',
+      type: 'course_study',
+    );
+    final campus = await PostCacheService.loadPosts(
+      77,
+      sort: 'all',
+      type: 'campus_life',
+      tagId: 3,
+    );
+    final unrelated = await PostCacheService.loadPosts(
+      77,
+      sort: 'all',
+      type: 'campus_life',
+    );
+
+    expect(course.single.id, 1);
+    expect(campus.single.id, 2);
+    expect(unrelated, isEmpty);
+  });
+
+  test('post cache preserves water section metadata', () async {
+    await PostCacheService.savePosts(
+      78,
+      [
+        Post(
+          id: 9,
+          content: 'water metadata',
+          boardId: 78,
+          authorId: 1,
+          postType: 'course_study',
+          waterSectionPinned: true,
+          waterSectionPinId: 100,
+          waterSectionFeatured: true,
+          waterSectionFeaturedId: 200,
+          waterSectionAuthorMeta: WaterSectionAuthorMeta(
+            sectionId: 5,
+            sectionSlug: 'course_study',
+            sectionTitle: '课程学习',
+            level: 3,
+            exp: 66,
+            title: '常驻同学',
+          ),
+          createdAt: DateTime.utc(2026, 6, 14, 8),
+        ),
+      ],
+      sort: 'all',
+      type: 'course_study',
+    );
+
+    final loaded = await PostCacheService.loadPosts(
+      78,
+      sort: 'all',
+      type: 'course_study',
+    );
+    final post = loaded.single;
+
+    expect(post.waterSectionPinned, isTrue);
+    expect(post.waterSectionPinId, 100);
+    expect(post.waterSectionFeatured, isTrue);
+    expect(post.waterSectionFeaturedId, 200);
+    expect(post.waterSectionAuthorMeta?.sectionSlug, 'course_study');
+    expect(post.waterSectionAuthorMeta?.level, 3);
+    expect(post.waterSectionAuthorMeta?.title, '常驻同学');
   });
 
   test('pin and unpin replace matching posts in local feeds', () async {
@@ -367,5 +653,65 @@ void main() {
 
     expect(seenSorts, containsAll(['all', 'time']));
     expect(seenSorts, isNot(contains('following')));
+  });
+
+  test('post section pin and featured state are parsed correctly', () {
+    final post = Post.fromJson({
+      'id': 1,
+      'content': 'content',
+      'board_id': 1,
+      'author_id': 1,
+      'is_pinned': false,
+      'water_section_pinned': true,
+      'water_section_pin_id': 100,
+      'is_featured': false,
+      'water_section_featured': true,
+      'water_section_featured_id': 200,
+      'created_at': '2026-06-14T08:00:00Z',
+    });
+
+    expect(post.isActivePinned,
+        isFalse); // Section pin does not make it globally active pinned
+    expect(post.waterSectionPinned, isTrue);
+    expect(post.waterSectionPinId, 100);
+    expect(post.isFeatured, isFalse);
+    expect(post.waterSectionFeatured, isTrue);
+    expect(post.waterSectionFeaturedId, 200);
+  });
+
+  test('post parses exp awards and home featured pending state', () {
+    final post = Post.fromJson({
+      'id': 1,
+      'content': 'content',
+      'board_id': 1,
+      'author_id': 1,
+      'home_featured_pending': true,
+      'exp_awards': [
+        {
+          'scope': 'global',
+          'exp': 10,
+          'action': 'post_daily',
+          'level_before': 2,
+          'level_after': 2,
+        },
+        {
+          'scope': 'water_section',
+          'exp': 10,
+          'action': 'post_daily',
+          'level_before': 2,
+          'level_after': 3,
+          'level_up': true,
+          'section_title': '校园生活',
+          'title_after': '常驻同学',
+        },
+      ],
+      'created_at': '2026-06-14T08:00:00Z',
+    });
+
+    expect(post.homeFeaturedPending, isTrue);
+    expect(post.expAwards, hasLength(2));
+    expect(post.expAwards.last.scope, 'water_section');
+    expect(post.expAwards.last.levelUp, isTrue);
+    expect(post.expAwards.last.titleAfter, '常驻同学');
   });
 }

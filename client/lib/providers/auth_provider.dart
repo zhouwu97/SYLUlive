@@ -16,6 +16,7 @@ import '../utils/app_feedback.dart';
 import '../utils/app_navigator.dart';
 import '../services/wallpaper_prefetch_service.dart';
 import '../services/keep_alive_service.dart';
+import '../services/grade_reminder_service.dart';
 import '../widgets/auth_expired_overlay.dart';
 
 /// 认证结果，包含成功状态和错误信息
@@ -139,6 +140,9 @@ class AuthProvider extends ChangeNotifier {
     }
     _initialized = true;
     await KeepAliveService.instance.syncAuthToken(_token);
+    await GradeReminderService.instance.syncRuntimeConfig(
+      userId: _user?.id.toString(),
+    );
     notifyListeners();
   }
 
@@ -161,6 +165,9 @@ class AuthProvider extends ChangeNotifier {
       }
     }
     await KeepAliveService.instance.syncAuthToken(_token);
+    await GradeReminderService.instance.syncRuntimeConfig(
+      userId: _user?.id.toString(),
+    );
   }
 
   Future<void> _saveEduPassword(String studentId, String password) async {
@@ -281,6 +288,10 @@ class AuthProvider extends ChangeNotifier {
   ///
   /// [clearPushAlias] 为 true 时同时清除极光 Alias（手动退出 / 401）。
   Future<void> _clearLocalSession({required bool clearPushAlias}) async {
+    final oldUserId = _user?.id.toString();
+    if (oldUserId != null) {
+      await GradeReminderService.instance.clearForUser(oldUserId);
+    }
     _token = null;
     _user = null;
     _applyAuthHeader();
@@ -315,6 +326,7 @@ class AuthProvider extends ChangeNotifier {
       await storage.delete(key: _userKey);
     }
     await KeepAliveService.instance.syncAuthToken(null);
+    await GradeReminderService.instance.syncRuntimeConfig(userId: null);
   }
 
   void _showAuthExpiredOverlay() {

@@ -25,7 +25,13 @@ class _BoardState {
 class CreatePostResult {
   final bool success;
   final String? errorMessage;
-  const CreatePostResult({required this.success, this.errorMessage});
+  final Post? post;
+
+  const CreatePostResult({
+    required this.success,
+    this.errorMessage,
+    this.post,
+  });
 }
 
 class DeletePostResult {
@@ -94,8 +100,9 @@ class PostProvider extends ChangeNotifier {
     return '$boardId|$sort|${type ?? ''}|${tagId ?? ''}';
   }
 
-  String _postsEndpoint(String sort) {
-    return sort == 'featured' ? '/posts/featured' : '/posts';
+  String _postsEndpoint(String sort, {String? type}) {
+    final hasSectionType = type != null && type.trim().isNotEmpty;
+    return sort == 'featured' && !hasSectionType ? '/posts/featured' : '/posts';
   }
 
   _BoardState _ensureBoard(int boardId,
@@ -150,28 +157,71 @@ class PostProvider extends ChangeNotifier {
 
   /// 清除关注信息流缓存，在登录/退出/切换账号/关注/取消关注后调用
   void invalidateFollowingFeed() {
-    final key = _stateKey(1, 'following', null);
-    final state = _boards[key];
+    final keys = _boards.keys.where((key) {
+      final parts = key.split('|');
+      return parts.length >= 2 && parts[1] == 'following';
+    }).toList();
 
-    // 让尚未结束的旧请求失效
-    if (state != null) {
-      state.requestVersion++;
+    for (final key in keys) {
+      _boards[key]?.requestVersion++;
+      _boards.remove(key);
     }
 
-    _boards.remove(key);
     notifyListeners();
   }
 
   Future<void> _savePostsToCache(
     int boardId,
     String sort,
-    List<Post> posts,
-  ) async {
+    List<Post> posts, {
+    String? type,
+    int? tagId,
+  }) async {
     if (!_enableCache || sort == 'following') return;
     try {
-      await PostCacheService.savePosts(boardId, posts, sort: sort);
+      await PostCacheService.savePosts(
+        boardId,
+        posts,
+        sort: sort,
+        type: type,
+        tagId: tagId,
+      );
     } catch (e) {
       debugPrint('保存帖子缓存失败(board=$boardId, sort=$sort): $e');
+    }
+  }
+
+  void _upsertPostInBoards(Post post) {
+    var touched = false;
+    for (final entry in _boards.entries) {
+      final keyParts = entry.key.split('|');
+      final boardId = int.tryParse(keyParts.first) ?? 0;
+      if (boardId != post.boardId) continue;
+
+      final sort = keyParts.length > 1 ? keyParts[1] : 'time';
+      final type =
+          keyParts.length > 2 && keyParts[2].isNotEmpty ? keyParts[2] : null;
+      final tagId = keyParts.length > 3 && keyParts[3].isNotEmpty
+          ? int.tryParse(keyParts[3])
+          : null;
+      if (type != null && type != post.postType) continue;
+      if (tagId != null && tagId != post.waterTagId) continue;
+
+      final board = entry.value;
+      final index = board.posts.indexWhere((p) => p.id == post.id);
+      if (index >= 0) {
+        board.posts[index] = post;
+      } else if (sort == 'time') {
+        board.posts = [post, ...board.posts];
+      } else {
+        continue;
+      }
+      board.revision++;
+      _savePostsToCache(boardId, sort, board.posts, type: type, tagId: tagId);
+      touched = true;
+    }
+    if (touched) {
+      notifyListeners();
     }
   }
 
@@ -198,7 +248,12 @@ class PostProvider extends ChangeNotifier {
     // 第一步：极速上屏 — 读本地缓存（关注信息流不使用缓存）
     if (_enableCache && sort != 'following') {
       try {
-        final cached = await PostCacheService.loadPosts(boardId, sort: sort);
+        final cached = await PostCacheService.loadPosts(
+          boardId,
+          sort: sort,
+          type: type,
+          tagId: tagId,
+        );
         if (requestVersion != board.requestVersion) return;
         if (cached.isNotEmpty) {
           board.posts = cached;
@@ -228,7 +283,7 @@ class PostProvider extends ChangeNotifier {
       }
 
       final response = await _dio.get(
-        _postsEndpoint(sort),
+        _postsEndpoint(sort, type: type),
         queryParameters: params,
       );
       if (requestVersion != board.requestVersion) return;
@@ -244,7 +299,13 @@ class PostProvider extends ChangeNotifier {
 
         if (sort != 'time') {
           board.posts = newPosts;
-          await _savePostsToCache(boardId, sort, board.posts);
+          await _savePostsToCache(
+            boardId,
+            sort,
+            board.posts,
+            type: type,
+            tagId: tagId,
+          );
         } else if (newPosts.isNotEmpty) {
           // 第四步：增量合并 — 更新已有帖子，插入新帖子
           bool changed = false;
@@ -270,7 +331,13 @@ class PostProvider extends ChangeNotifier {
 
           if (changed) {
             // 写回缓存
-            await _savePostsToCache(boardId, sort, board.posts);
+            await _savePostsToCache(
+              boardId,
+              sort,
+              board.posts,
+              type: type,
+              tagId: tagId,
+            );
           }
         }
 
@@ -304,7 +371,7 @@ class PostProvider extends ChangeNotifier {
   }) {
     final board = _ensureBoard(boardId, sort: sort, type: type, tagId: tagId);
     final page = board.currentPage;
-    final key = 'load_${boardId}_${sort}_${type}_${tagId}_${page}';
+    final key = 'load_${boardId}_${sort}_${type}_${tagId}_$page';
 
     if (_inflightRequests.containsKey(key)) return _inflightRequests[key]!;
 
@@ -358,7 +425,7 @@ class PostProvider extends ChangeNotifier {
       );
 
       final response = await _dio.get(
-        _postsEndpoint(sort),
+        _postsEndpoint(sort, type: type),
         queryParameters: params,
       );
       if (requestVersion != board.requestVersion) return;
@@ -414,7 +481,7 @@ class PostProvider extends ChangeNotifier {
     int? tagId,
     String sort = 'time',
   }) {
-    final key = 'refresh_${boardId}_${sort}_${type}_${tagId}';
+    final key = 'refresh_${boardId}_${sort}_${type}_$tagId';
 
     if (_inflightRequests.containsKey(key)) return _inflightRequests[key]!;
 
@@ -462,7 +529,7 @@ class PostProvider extends ChangeNotifier {
       }
 
       final response = await _dio.get(
-        _postsEndpoint(sort),
+        _postsEndpoint(sort, type: type),
         queryParameters: params,
       );
       if (requestVersion != board.requestVersion) return;
@@ -476,7 +543,13 @@ class PostProvider extends ChangeNotifier {
         // 我们必须完全覆写当前列表，绝不能执行在原地更新旧帖的合并逻辑，
         // 否则将导致已存在的帖子依然呆在旧的索引位置，造成视觉上排序无效。
         board.posts = newPosts;
-        await _savePostsToCache(boardId, sort, board.posts);
+        await _savePostsToCache(
+          boardId,
+          sort,
+          board.posts,
+          type: type,
+          tagId: tagId,
+        );
 
         final total = (response.data['total'] as num?)?.toInt();
         board.hasMore =
@@ -547,6 +620,7 @@ class PostProvider extends ChangeNotifier {
     double? price,
     String? contact,
     List<int>? fileIds,
+    List<String>? marketTags,
   }) async {
     try {
       final formData = FormData.fromMap({
@@ -559,11 +633,19 @@ class PostProvider extends ChangeNotifier {
         if (contact != null && contact.isNotEmpty) 'contact': contact,
         if (fileIds != null && fileIds.isNotEmpty)
           'file_ids': fileIds.join(','),
+        if (marketTags != null && marketTags.isNotEmpty)
+          'market_tags': marketTags.join(','),
       });
 
       final response = await _dio.post('/posts', data: formData);
       if (response.statusCode == 201) {
-        return const CreatePostResult(success: true);
+        final created = response.data is Map<String, dynamic>
+            ? Post.fromJson(response.data as Map<String, dynamic>)
+            : null;
+        if (created != null) {
+          _upsertPostInBoards(created);
+        }
+        return CreatePostResult(success: true, post: created);
       }
       return CreatePostResult(
         success: false,
@@ -587,6 +669,7 @@ class PostProvider extends ChangeNotifier {
     double? price,
     String? contact,
     List<int>? fileIds,
+    List<String>? marketTags,
   }) async {
     try {
       final formData = FormData.fromMap({
@@ -598,6 +681,7 @@ class PostProvider extends ChangeNotifier {
         'contact': contact ?? '',
         if (waterTagId != null && waterTagId > 0) 'water_tag_id': waterTagId,
         'file_ids': fileIds?.join(',') ?? '',
+        'market_tags': marketTags?.join(',') ?? '',
       });
 
       final response = await _dio.put('/posts/$postId', data: formData);
@@ -605,7 +689,7 @@ class PostProvider extends ChangeNotifier {
         final updated = Post.fromJson(response.data as Map<String, dynamic>);
         _replacePostInBoards(updated);
         notifyListeners();
-        return const CreatePostResult(success: true);
+        return CreatePostResult(success: true, post: updated);
       }
       return CreatePostResult(
         success: false,
@@ -837,13 +921,18 @@ class PostProvider extends ChangeNotifier {
       final keyParts = entry.key.split('|');
       final boardId = int.tryParse(keyParts.first) ?? 0;
       final sort = keyParts.length > 1 ? keyParts[1] : 'time';
+      final type =
+          keyParts.length > 2 && keyParts[2].isNotEmpty ? keyParts[2] : null;
+      final tagId = keyParts.length > 3 && keyParts[3].isNotEmpty
+          ? int.tryParse(keyParts[3])
+          : null;
       final board = entry.value;
       final index = board.posts.indexWhere((p) => p.id == updated.id);
       if (index >= 0) {
         board.posts[index] = updated;
         board.revision++;
         // 同步持久化到本地缓存，防止杀后台后数据(如浏览量)倒退
-        _savePostsToCache(boardId, sort, board.posts);
+        _savePostsToCache(boardId, sort, board.posts, type: type, tagId: tagId);
       }
     }
   }

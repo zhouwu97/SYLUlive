@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import '../models/conversation.dart';
+import '../models/message_send_state.dart';
 import '../utils/app_feedback.dart';
 
 class MessageProvider extends ChangeNotifier {
@@ -489,6 +490,25 @@ class MessageProvider extends ChangeNotifier {
       }
     } catch (e) {
       debugPrint('标记消息已读失败: $e');
+    }
+  }
+
+  /// 拉取陌生人私信发送状态。
+  /// 返回 null 表示查询失败，调用方按"允许发送"宽松处理避免阻塞 UI。
+  Future<MessageSendState?> getSendState(int targetUserId) async {
+    try {
+      final response = await _dio.get('/messages/$targetUserId/send-state');
+      final data = response.data;
+      if (data is Map<String, dynamic>) {
+        return MessageSendState.fromJson(data);
+      }
+      return null;
+    } on DioException catch (e) {
+      debugPrint('拉取私信发送状态失败: $e');
+      return null;
+    } catch (e) {
+      debugPrint('拉取私信发送状态失败: $e');
+      return null;
     }
   }
 

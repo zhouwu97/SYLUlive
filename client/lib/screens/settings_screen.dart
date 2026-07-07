@@ -486,34 +486,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
             },
           ),
         ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-          child: SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: () => UpdateChecker.check(context,
-                  showNoUpdateToast: true, manual: true),
-              icon: const Icon(Icons.system_update, size: 18),
-              label: const Text('检查更新'),
-              style: OutlinedButton.styleFrom(
-                backgroundColor: isDark
-                    ? Colors.green.withValues(alpha: 0.15)
-                    : Colors.green.shade50,
-                foregroundColor:
-                    isDark ? Colors.green.shade300 : Colors.green.shade700,
-                side: BorderSide(
-                  color: isDark
-                      ? Colors.green.withValues(alpha: 0.3)
-                      : Colors.green.shade200,
-                ),
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
-              ),
-            ),
-          ),
-        ),
 
         // 退出登录
         if (authProvider.isLoggedIn) ...[

@@ -19,6 +19,7 @@ class SectionHeroHeader extends StatelessWidget {
   final bool isLoggedIn;
   final WaterSectionMyLevel? myLevel;
   final double topContentInset;
+  final double bottomContentInset;
   final VoidCallback onToggleFollow;
 
   const SectionHeroHeader({
@@ -29,6 +30,7 @@ class SectionHeroHeader extends StatelessWidget {
     required this.isLoggedIn,
     this.myLevel,
     required this.topContentInset,
+    this.bottomContentInset = 120,
     required this.onToggleFollow,
   });
 
@@ -38,9 +40,8 @@ class SectionHeroHeader extends StatelessWidget {
     final hasCover = section.mobileCoverUrl.isNotEmpty;
     final backgroundColor =
         isDark ? const Color(0xFF0D1117) : const Color(0xFFF7F8FA);
-    // Hero 自身高度固定为屏幕高度的一部分，默认 sheet 展开时只露出顶部信息区。
-    // 顶部安全区由父页面统一传入，避免 SafeArea 和固定 padding 叠加。
-    final heroHeight = MediaQuery.sizeOf(context).height * 0.62;
+    // Hero 自身高度铺满全屏，下方内容由 bottomContentInset 提供可滚动空间，避免被 sheet 挡住
+    final heroHeight = MediaQuery.sizeOf(context).height;
 
     return SizedBox(
       height: heroHeight,
@@ -176,7 +177,7 @@ class SectionHeroHeader extends StatelessWidget {
         Expanded(
           child: SingleChildScrollView(
             physics: const BouncingScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(0, 0, 0, 12),
+            padding: EdgeInsets.fromLTRB(0, 0, 0, bottomContentInset),
             child: Column(
               children: [
                 _buildGrowthCard(isDark, hasCover, mutedColor),

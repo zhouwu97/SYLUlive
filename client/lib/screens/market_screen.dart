@@ -684,14 +684,7 @@ class _MarketScreenState extends State<MarketScreen> {
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(content: Text('请先登录')),
                             );
-                            Navigator.push(
-                              context,
-                              PageRouteBuilder(
-                                opaque: false,
-                                pageBuilder: (_, __, ___) =>
-                                    const LoginScreen(),
-                              ),
-                            );
+                            Navigator.pushNamed(context, '/login');
                             return;
                           }
                           await Navigator.push(
@@ -725,13 +718,7 @@ class _MarketScreenState extends State<MarketScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('请先登录')),
       );
-      Navigator.push(
-        context,
-        PageRouteBuilder(
-          opaque: false,
-          pageBuilder: (_, __, ___) => const LoginScreen(),
-        ),
-      );
+      Navigator.pushNamed(context, '/login');
       return;
     }
     await Navigator.push(
@@ -1171,13 +1158,7 @@ class _MarketScreenState extends State<MarketScreen> {
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(content: Text('请先登录')),
                         );
-                        Navigator.push(
-                          context,
-                          PageRouteBuilder(
-                            opaque: false,
-                            pageBuilder: (_, __, ___) => const LoginScreen(),
-                          ),
-                        );
+                        Navigator.pushNamed(context, '/login');
                         return;
                       }
                       await Navigator.push(

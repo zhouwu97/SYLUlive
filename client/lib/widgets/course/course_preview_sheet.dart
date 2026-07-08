@@ -154,7 +154,7 @@ class CoursePreviewSheet extends StatelessWidget {
             child: Padding(
               padding: const EdgeInsets.all(24),
               child: ElevatedButton(
-                onPressed: () {
+                onPressed: courses.isEmpty ? null : () {
                   Navigator.pop(context, true);
                 },
                 style: ElevatedButton.styleFrom(

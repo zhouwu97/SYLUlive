@@ -151,6 +151,14 @@ class CourseEmptyStateCard extends StatelessWidget {
               ],
             ),
           ),
+          const SizedBox(height: 20),
+          const Text(
+            '登录并绑定教务系统后即可解锁以上功能',
+            style: TextStyle(
+              fontSize: 11,
+              color: CampusTheme.subText,
+            ),
+          ),
         ],
         if (type == CourseEmptyStateType.noCache) ...[
           const SizedBox(height: 24),

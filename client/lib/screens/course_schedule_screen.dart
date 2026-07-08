@@ -22,6 +22,11 @@ import 'edu_screen.dart';
 import 'login_screen.dart';
 import '../services/home_widget_service.dart';
 import '../models/course_term.dart';
+import '../widgets/course/course_empty_state_card.dart';
+import '../widgets/course/course_action_menu.dart';
+import '../widgets/course/course_import_sheet.dart';
+import '../widgets/course/course_preview_sheet.dart';
+import '../widgets/campus/campus_theme.dart';
 
 /// 每节课槽的默认高度
 const double defaultSlotHeight = 75.0;
@@ -156,7 +161,8 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       final now = DateTime.now();
       final end = start.add(Duration(days: sc.currentTerm.maxWeek * 7));
       if (now.isBefore(start)) return start;
-      if (now.isAfter(end)) return start.add(Duration(days: (sc.currentTerm.maxWeek - 1) * 7));
+      if (now.isAfter(end))
+        return start.add(Duration(days: (sc.currentTerm.maxWeek - 1) * 7));
       return _mondayOf(now);
     }
     return _mondayOf(DateTime.now());
@@ -342,7 +348,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: overlayStyle,
       child: Scaffold(
-        backgroundColor: Colors.transparent,
+        backgroundColor: isDark ? CampusTheme.darkBg : CampusTheme.bg,
         body: SafeArea(
           bottom: false,
           child: Consumer<AuthProvider>(
@@ -355,7 +361,8 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                   _autoLoad(edu, sc);
 
                   // 当学期切换时重置视图
-                  if (sc.currentTerm.id != _lastTermId && sc.currentTerm.startDate != null) {
+                  if (sc.currentTerm.id != _lastTermId &&
+                      sc.currentTerm.startDate != null) {
                     _lastTermId = sc.currentTerm.id;
                     WidgetsBinding.instance.addPostFrameCallback((_) {
                       if (_weekPageController.hasClients) {
@@ -671,228 +678,85 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
     );
   }
 
-  void _showTermPicker(BuildContext context, CourseScheduleProvider sc) {
-    final now = DateTime.now();
-    int currentYear = now.year;
-    
-    // 生成从当前年份往前推 4 年，往后推 1 年的学期列表
-    final terms = <CourseTerm>[];
-    for (int y = currentYear - 4; y <= currentYear + 1; y++) {
-      terms.add(CourseTerm(
-        id: '${y}_3',
-        year: '$y',
-        semester: 3,
-        title: '$y-${y+1} 第一学期',
-      ));
-      terms.add(CourseTerm(
-        id: '${y}_12',
-        year: '$y',
-        semester: 12,
-        title: '$y-${y+1} 第二学期',
-      ));
-    }
-    
-    // 逆序排列，让最新的在上面
-    terms.sort((a, b) {
-      if (a.year != b.year) return b.year.compareTo(a.year);
-      return b.semester.compareTo(a.semester);
-    });
-
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (context) {
-        return Container(
-          decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                margin: const EdgeInsets.symmetric(vertical: 12),
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: isDark ? Colors.white24 : Colors.black12,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-                child: Row(
-                  children: [
-                    Text(
-                      '选择学期',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: isDark ? Colors.white : Colors.black87,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Expanded(
-                child: ListView.builder(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  itemCount: terms.length,
-                  itemBuilder: (context, index) {
-                    final term = terms[index];
-                    final isSelected = sc.currentTerm.id == term.id;
-                    return ListTile(
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 24),
-                      title: Text(
-                        term.title,
-                        style: TextStyle(
-                          color: isSelected 
-                              ? Theme.of(context).primaryColor
-                              : (isDark ? Colors.white70 : Colors.black87),
-                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                        ),
-                      ),
-                      trailing: isSelected 
-                          ? Icon(Icons.check, color: Theme.of(context).primaryColor)
-                          : null,
-                      onTap: () {
-                        Navigator.pop(context);
-                        if (!isSelected) {
-                          sc.selectTerm(term.year, term.semester);
-                        }
-                      },
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
   // ====== 顶部表头 ======
   Widget _buildDateHeader(CourseScheduleProvider sc) {
     final today = DateTime.now();
     final todayDate = DateTime(today.year, today.month, today.day);
     final academicWeek = sc.getAcademicWeek(_weekStart);
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final cleanLightMode =
-        context.watch<ThemeProvider>().isCleanBackgroundMode && !isDark;
-    final primaryColor = Theme.of(context).primaryColor;
-    final titleColor = cleanLightMode ? const Color(0xFF1F2937) : Colors.white;
-    final secondaryColor =
-        cleanLightMode ? const Color(0xFF8A8F99) : Colors.white70;
-    final disabledIconColor =
-        cleanLightMode ? const Color(0xFF9CA3AF) : Colors.white54;
+    final primaryColor = CampusTheme.primary;
+    final titleColor = isDark ? Colors.white : CampusTheme.text;
+    final secondaryColor = CampusTheme.subText;
 
     return Container(
       color: Colors.transparent,
       child: Column(
         children: [
-          // 标题栏：大字号周次 + 日期 + 右侧图标
-          Padding(
-            padding: const EdgeInsets.fromLTRB(24, 8, 16, 4),
+          // 标题栏卡片
+          Container(
+            margin: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+            padding: const EdgeInsets.all(16),
+            decoration: CampusTheme.cardDecoration(isDark),
             child: Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      GestureDetector(
-                        onTap: () => _pickSemesterStart(context),
-                        child: Text(
-                          academicWeek != null ? '第 $academicWeek 周' : '设置周数',
-                          style: TextStyle(
-                            color: titleColor,
-                            fontSize: 26,
-                            fontWeight: FontWeight.w900,
-                            height: 1.1,
-                          ),
+                      Text(
+                        academicWeek != null ? '第 $academicWeek 周' : '未设置开学周',
+                        style: TextStyle(
+                          color: titleColor,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w900,
                         ),
                       ),
-                      const SizedBox(height: 2),
-                      GestureDetector(
-                        onTap: () => _showTermPicker(context, sc),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              sc.currentTerm.title,
-                              style: TextStyle(
-                                color: secondaryColor,
-                                fontSize: 13,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            Icon(
-                              Icons.arrow_drop_down,
-                              size: 16,
-                              color: secondaryColor,
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              '${_weekStart.month}/${_weekStart.day}',
-                              style: TextStyle(
-                                color: secondaryColor.withOpacity(0.7),
-                                fontSize: 13,
-                              ),
-                            ),
-                          ],
+                      const SizedBox(height: 4),
+                      Text(
+                        '${sc.currentTerm.title}  ${_weekStart.month}/${_weekStart.day} - ${_weekStart.add(const Duration(days: 6)).month}/${_weekStart.add(const Duration(days: 6)).day}',
+                        style: TextStyle(
+                          color: secondaryColor,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
                         ),
                       ),
                     ],
                   ),
                 ),
-                Row(
-                  children: [
-                    IconButton(
-                      icon: _isFetchingCourses
-                          ? SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: titleColor,
-                              ),
-                            )
-                          : const Icon(
-                              Icons.collections_bookmark_outlined,
-                              size: 22,
-                            ),
-                      color: titleColor,
-                      disabledColor: disabledIconColor,
-                      onPressed: _isFetchingCourses
-                          ? null
-                          : () => _showArchiveSheet(context, sc),
-                      tooltip: '课表存档',
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.share_outlined, size: 22),
-                      color: titleColor,
-                      onPressed: () => _shareSchedule(sc),
-                      tooltip: '分享',
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.settings_outlined, size: 22),
-                      color: titleColor,
-                      onPressed: () => _openCourseSettings(context, sc),
-                      tooltip: '设置',
-                    ),
-                  ],
+                CourseActionMenu(
+                  isDark: isDark,
+                  onSelected: (action) {
+                    switch (action) {
+                      case CourseMenuAction.syncFromEdu:
+                        _fetchCourses(context);
+                        break;
+                      case CourseMenuAction.switchTerm:
+                        _openCourseImportSheet(context);
+                        break;
+                      case CourseMenuAction.setStartWeek:
+                        _pickSemesterStart(context);
+                        break;
+                      case CourseMenuAction.archives:
+                        _showArchiveSheet(context, sc);
+                        break;
+                      case CourseMenuAction.share:
+                        _shareSchedule(sc);
+                        break;
+                      case CourseMenuAction.settings:
+                        _openCourseSettings(context, sc);
+                        break;
+                    }
+                  },
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 8),
           // 星期表头
           Row(
             children: [
-              SizedBox(width: timeColumnWidth),
+              const SizedBox(width: timeColumnWidth),
               ...List.generate(7, (i) {
                 final d = _weekStart.add(Duration(days: i));
                 final isToday = d == todayDate;
@@ -902,20 +766,16 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
                       Text(
                         _wd[i],
                         style: TextStyle(
-                          color: isToday && cleanLightMode
-                              ? primaryColor
-                              : titleColor,
-                          fontSize: 16,
+                          color: isToday ? primaryColor : titleColor,
+                          fontSize: 15,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
-                      const SizedBox(height: 1),
+                      const SizedBox(height: 2),
                       Text(
                         _md(d),
                         style: TextStyle(
-                          color: isToday && cleanLightMode
-                              ? primaryColor
-                              : secondaryColor,
+                          color: isToday ? primaryColor : secondaryColor,
                           fontSize: 12,
                           fontWeight:
                               isToday ? FontWeight.w600 : FontWeight.w400,
@@ -934,110 +794,24 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
   // ====== 未登录引导 ======
   Widget _buildLoginPrompt(BuildContext context, bool isDark) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: GlassContainer(
-          padding: const EdgeInsets.all(32),
-          borderRadius: 20,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.account_circle,
-                size: 72,
-                color: Theme.of(context).primaryColor.withValues(alpha: 0.7),
-              ),
-              const SizedBox(height: 20),
-              const Text(
-                '请先登录',
-                style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                '登录后可绑定教务系统，导入课表',
-                style: TextStyle(
-                  fontSize: 15,
-                  color: isDark ? Colors.grey[400] : Colors.grey[600],
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 28),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: () => Navigator.pushNamed(context, '/login'),
-                  icon: const Icon(Icons.login),
-                  label: const Text('去登录', style: TextStyle(fontSize: 16)),
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+    return CourseEmptyStateCard(
+      type: CourseEmptyStateType.unlogged,
+      isDark: isDark,
+      onMainAction: () => Navigator.pushNamed(context, '/login'),
     );
   }
 
-  // ====== 绑定视图 ======
   Widget _buildBindView(
     BuildContext context,
     EduProvider edu,
     CourseScheduleProvider sc,
     bool isDark,
   ) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: GlassContainer(
-          padding: const EdgeInsets.all(32),
-          borderRadius: 20,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.school,
-                size: 72,
-                color: Theme.of(context).primaryColor.withValues(alpha: 0.7),
-              ),
-              const SizedBox(height: 20),
-              const Text(
-                '绑定教务账号',
-                style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                '绑定后可查看课表、成绩等信息',
-                style: TextStyle(
-                  fontSize: 15,
-                  color: isDark ? Colors.grey[400] : Colors.grey[600],
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 28),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: () => _showBindDialog(context, edu, sc),
-                  icon: const Icon(Icons.link),
-                  label: const Text('立即绑定', style: TextStyle(fontSize: 16)),
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+    return CourseEmptyStateCard(
+      type: CourseEmptyStateType.unbound,
+      isDark: isDark,
+      onMainAction: () => _showBindDialog(context, edu, sc),
+      onSecondaryAction: () => _openEduManage(context),
     );
   }
 
@@ -1140,52 +914,28 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
   // ====== 空状态视图 ======
   Widget _buildEmptyView(BuildContext context, bool isDark) {
-    debugPrint(
-      'Schedule UI: Building _buildEmptyView (暂无课表数据) at ${DateTime.now()}',
-    );
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: GlassContainer(
-          padding: const EdgeInsets.all(32),
-          borderRadius: 20,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.event_busy,
-                size: 64,
-                color: isDark ? Colors.grey[600] : Colors.grey[400],
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                '暂无课表数据',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                '请先到教务管理获取课表',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: isDark ? Colors.grey[400] : Colors.grey[600],
-                ),
-              ),
-              const SizedBox(height: 24),
-              ElevatedButton.icon(
-                onPressed: () => _openEduManage(context),
-                icon: const Icon(Icons.download),
-                label: const Text('获取课表'),
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 24,
-                    vertical: 12,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+    final sc = context.read<CourseScheduleProvider>();
+    final isCurrentTerm = sc.currentTerm.isCurrent;
+
+    return CourseEmptyStateCard(
+      type: isCurrentTerm
+          ? CourseEmptyStateType.noCache
+          : CourseEmptyStateType.currentTermNoCache,
+      isDark: isDark,
+      recommendedTerm:
+          isCurrentTerm ? sc.currentTerm : CourseTerm.inferCurrentTerm(),
+      onMainAction: () {
+        _openCourseImportSheet(context);
+      },
+      onSecondaryAction: () {
+        if (isCurrentTerm) {
+          _openCourseImportSheet(context);
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('自定义课程功能开发中...')),
+          );
+        }
+      },
     );
   }
 
@@ -1212,74 +962,7 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
 
   /// 无缓存时显示引导（用户刚注册或首次使用）
   Widget _buildNoCacheView(BuildContext context, bool isDark) {
-    debugPrint(
-      'Schedule UI: Building _buildNoCacheView (首次使用) at ${DateTime.now()}',
-    );
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: GlassContainer(
-          padding: const EdgeInsets.all(32),
-          borderRadius: 20,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.school_outlined,
-                size: 64,
-                color: isDark ? Colors.grey[600] : Colors.grey[400],
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                '首次使用',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                '检测到您还没有课表，请前往教务导入课表',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: isDark ? Colors.grey[400] : Colors.grey[600],
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 24),
-              ElevatedButton.icon(
-                onPressed: () async {
-                  await Navigator.of(
-                    context,
-                  ).push(MaterialPageRoute(builder: (_) => const EduScreen()));
-                  // 返回后强制刷新课表
-                  if (mounted) {
-                    final sc = context.read<CourseScheduleProvider>();
-                    if (mounted)
-                      setState(() {
-                        _didLoad = true;
-                        _initializing = sc.courses.isEmpty;
-                      });
-                    await sc.loadCachedCoursesIfAvailable();
-                    await _syncCourseReminders(sc);
-                    if (mounted)
-                      setState(() {
-                        _hasCache = sc.courses.isNotEmpty;
-                        _initializing = false;
-                      });
-                  }
-                },
-                icon: const Icon(Icons.school),
-                label: const Text('去教务导入课表'),
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 24,
-                    vertical: 12,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+    return _buildEmptyView(context, isDark);
   }
 
   /// 从教务系统重新获取课表。
@@ -1293,6 +976,29 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
       messenger.showSnackBar(const SnackBar(content: Text('请先绑定教务账号')));
       return;
     }
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('从教务刷新'),
+        content: const Text('将从教务系统重新拉取当前学期课表，并覆盖当前教务课表数据。自定义课程会保留。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child:
+                const Text('取消', style: TextStyle(color: CampusTheme.subText)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+                backgroundColor: CampusTheme.primary,
+                foregroundColor: Colors.white),
+            child: const Text('刷新'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
 
     if (mounted)
       setState(() {
@@ -1551,6 +1257,43 @@ class _CourseScheduleScreenState extends State<CourseScheduleScreen> {
           _hasCache = sc.courses.isNotEmpty;
         });
       }
+    }
+  }
+
+  Future<void> _openCourseImportSheet(BuildContext context) async {
+    final edu = context.read<EduProvider>();
+    final sc = context.read<CourseScheduleProvider>();
+
+    final result = await CourseImportSheet.show(
+      context,
+      eduProvider: edu,
+      initialYear: sc.selectedYear,
+      initialSemester: sc.selectedSemester,
+    );
+
+    if (result == null || !mounted) return;
+
+    final confirm = await CoursePreviewSheet.show(
+      context,
+      courses: result.courses,
+      year: result.year,
+      semester: result.semester,
+      eduProvider: edu,
+    );
+
+    if (confirm != true || !mounted) return;
+
+    await sc.selectTerm(result.year, result.semester, clearCurrent: true);
+    await sc.applyFetchedCourses(result.courses);
+    unawaited(edu.syncCourses(result.year, result.semester, result.courses));
+    await _syncCourseReminders(sc);
+
+    if (mounted) {
+      setState(() {
+        _hasCache = sc.courses.isNotEmpty;
+        _initializing = false;
+        _didLoad = true;
+      });
     }
   }
 

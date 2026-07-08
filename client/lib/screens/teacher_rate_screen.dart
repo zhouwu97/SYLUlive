@@ -195,7 +195,7 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
 
   String get _fabLabel => switch (_tabCtrl.index) {
         0 => '添加食堂',
-        1 => '添加教师',
+        1 => '添加授课教师',
         _ => '添加专业',
       };
 
@@ -1041,93 +1041,889 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
   Future<void> _showAddDialog() async {
     if (_tabCtrl.index == 0) {
       await _showAddCanteenSheet();
-      return;
+    } else if (_tabCtrl.index == 1) {
+      await _showAddTeacherSheet();
+    } else {
+      await _showAddMajorSheet();
     }
+  }
 
-    final nameCtrl = TextEditingController();
-    final courseCtrl = TextEditingController();
-    final levelCtrl = TextEditingController(text: '本科');
-    final isTeacher = _tabCtrl.index == 1;
-    final isMajor = _tabCtrl.index == 2;
+  // ── Add-teacher / Add-major bottom sheets ──────────────────────────
 
-    await showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(isTeacher ? '添加教师' : (isMajor ? '添加专业' : '添加食堂')),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: nameCtrl,
-              decoration: InputDecoration(
-                labelText:
-                    isTeacher ? '教师姓名' : (isMajor ? '专业名' : '食堂/店铺名'),
+  Widget _sheetDragHandle(bool isDark) => Center(
+        child: Container(
+          width: 42,
+          height: 4,
+          decoration: BoxDecoration(
+            color: RankingTokens.borderColor(isDark),
+            borderRadius: BorderRadius.circular(99),
+          ),
+        ),
+      );
+
+  Widget _addSheetHeader({
+    required bool isDark,
+    required Color accent,
+    required Color accentSoft,
+    required IconData icon,
+    required String title,
+    required String subtitle,
+  }) {
+    return Row(
+      children: [
+        Container(
+          width: 44,
+          height: 44,
+          decoration: BoxDecoration(
+            color: accentSoft,
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Icon(icon, color: accent),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                  color: RankingTokens.titleColor(isDark),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                subtitle,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: RankingTokens.subColor(isDark),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  InputDecoration _addSheetFieldDecoration({
+    required bool isDark,
+    required Color accent,
+    required String hint,
+    required IconData icon,
+  }) {
+    return InputDecoration(
+      hintText: hint,
+      hintStyle: TextStyle(color: RankingTokens.subColor(isDark)),
+      prefixIcon: Icon(icon),
+      filled: true,
+      fillColor: RankingTokens.pageBg(isDark),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide(color: RankingTokens.borderColor(isDark)),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide(color: RankingTokens.borderColor(isDark)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide(color: accent, width: 1.4),
+      ),
+    );
+  }
+
+  Widget _addSheetStatusChip(
+      bool isDark, Color? color, String text, IconData icon) {
+    final c =
+        color ?? (isDark ? Colors.grey.shade400 : const Color(0xFF7A8087));
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 2),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Icon(icon, size: 16, color: c),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: c,
               ),
             ),
-            const SizedBox(height: 8),
-            if (isTeacher)
-              TextField(
-                controller: courseCtrl,
-                decoration: const InputDecoration(
-                  labelText: '课程名称',
-                  helperText: '请填写完整课程名称，学科榜会按这里的文字聚合',
-                ),
-              )
-            else if (isMajor)
-              DropdownButtonFormField(
-                initialValue: '本科',
-                items: const [
-                  DropdownMenuItem(value: '本科', child: Text('本科')),
-                  DropdownMenuItem(value: '研究生', child: Text('研究生')),
-                ],
-                onChanged: (v) => levelCtrl.text = v!,
-              ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('取消'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              final name = nameCtrl.text.trim();
-              final course = courseCtrl.text.trim();
-              if (name.isEmpty) return;
-
-              if (isTeacher && course.length < 2) {
-                ScaffoldMessenger.of(
-                  context,
-                ).showSnackBar(const SnackBar(content: Text('请填写完整课程名称')));
-                return;
-              }
-
-              Navigator.pop(ctx);
-
-              if (isTeacher) {
-                await context.read<TeacherProvider>().addTeacher(name, course);
-                if (!mounted) return;
-                await context.read<TeacherProvider>().loadTeachers(
-                      query: _currentQuery,
-                    );
-              } else if (isMajor) {
-                await context.read<MajorProvider>().addMajor(
-                      name,
-                      levelCtrl.text,
-                    );
-                if (!mounted) return;
-                await context.read<MajorProvider>().loadMajors();
-              }
-            },
-            child: const Text('提交'),
           ),
         ],
       ),
     );
+  }
+
+  Widget _addSheetButtons({
+    required bool isDark,
+    required Color accent,
+    required bool submitting,
+    required bool canSubmit,
+    required VoidCallback onCancel,
+    required Future<void> Function() onSubmit,
+  }) {
+    return Row(
+      children: [
+        Expanded(
+          child: OutlinedButton(
+            onPressed: submitting ? null : onCancel,
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size.fromHeight(48),
+              side: BorderSide(color: RankingTokens.borderColor(isDark)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+            ),
+            child: const Text('取消'),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: FilledButton(
+            onPressed: (submitting || !canSubmit)
+                ? null
+                : () async {
+                    await onSubmit();
+                  },
+            style: FilledButton.styleFrom(
+              backgroundColor: accent,
+              foregroundColor: Colors.white,
+              minimumSize: const Size.fromHeight(48),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+            ),
+            child: submitting
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Text('提交'),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _showAddTeacherSheet() async {
+    final nameCtrl = TextEditingController();
+    final courseCtrl = TextEditingController();
+    var submitting = false;
+    String? selectedCourse;
+    bool createNew = false;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final accent = RankingTokens.teacherAccent(isDark);
+    final accentSoft = RankingTokens.teacherAccentSoft(isDark);
+    final warningColor =
+        isDark ? const Color(0xFFF4B860) : const Color(0xFFC47C14);
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (sheetContext, setModalState) {
+            final bottomInset = MediaQuery.of(sheetContext).viewInsets.bottom;
+            final teachers = context.read<TeacherProvider>().teachers;
+            final suggestions =
+                _buildCourseSuggestions(courseCtrl.text, teachers);
+            final trimmed = courseCtrl.text.trim();
+            final hasSimilar = suggestions.isNotEmpty;
+            final courseReady =
+                selectedCourse != null || (createNew && trimmed.isNotEmpty);
+            final nameInput = nameCtrl.text.trim();
+            final determinedCourse =
+                selectedCourse ?? (createNew ? trimmed : '');
+            final duplicate = nameInput.isNotEmpty &&
+                determinedCourse.isNotEmpty &&
+                teachers.any((t) =>
+                    t.course.trim() == determinedCourse &&
+                    t.name.trim() == nameInput);
+
+            return Padding(
+              padding: EdgeInsets.only(bottom: bottomInset),
+              child: Container(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.sizeOf(sheetContext).height * 0.85,
+                ),
+                decoration: BoxDecoration(
+                  color: RankingTokens.cardBg(isDark),
+                  borderRadius:
+                      const BorderRadius.vertical(top: Radius.circular(28)),
+                ),
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+                child: SafeArea(
+                  top: false,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _sheetDragHandle(isDark),
+                      const SizedBox(height: 16),
+                      _addSheetHeader(
+                        isDark: isDark,
+                        accent: accent,
+                        accentSoft: accentSoft,
+                        icon: Icons.school_rounded,
+                        title: '添加授课教师',
+                        subtitle: '同名同课程不可重复；不同课程可分别添加',
+                      ),
+                      const SizedBox(height: 18),
+                      TextField(
+                        controller: nameCtrl,
+                        textInputAction: TextInputAction.next,
+                        onChanged: (_) => setModalState(() {}),
+                        decoration: _addSheetFieldDecoration(
+                          isDark: isDark,
+                          accent: accent,
+                          hint: '教师姓名',
+                          icon: Icons.person_rounded,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: courseCtrl,
+                        textInputAction: TextInputAction.search,
+                        onChanged: (_) {
+                          selectedCourse = null;
+                          createNew = false;
+                          setModalState(() {});
+                        },
+                        decoration: _addSheetFieldDecoration(
+                          isDark: isDark,
+                          accent: accent,
+                          hint: '搜索课程，例如 高等数学A2',
+                          icon: Icons.book_rounded,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      if (duplicate)
+                        Container(
+                          padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+                          decoration: BoxDecoration(
+                            color: warningColor.withValues(
+                                alpha: isDark ? 0.14 : 0.10),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: warningColor.withValues(
+                                  alpha: isDark ? 0.30 : 0.22),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(Icons.error_outline_rounded,
+                                  size: 18, color: warningColor),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  '「$nameInput · $determinedCourse」已存在，不能再重复添加',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: warningColor,
+                                  ),
+                                ),
+                              ),
+                              TextButton(
+                                onPressed: () {
+                                  final courseTeachers = teachers
+                                      .where((t) =>
+                                          t.course.trim() ==
+                                          determinedCourse)
+                                      .toList();
+                                  Navigator.pop(sheetContext);
+                                  if (mounted) {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) =>
+                                            SubjectRankingDetailScreen(
+                                          subjectName: determinedCourse,
+                                          teachers: courseTeachers,
+                                        ),
+                                      ),
+                                    );
+                                  }
+                                },
+                                style: TextButton.styleFrom(
+                                  minimumSize: const Size(58, 34),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 10),
+                                  foregroundColor: warningColor,
+                                  textStyle: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                                child: const Text('查看评价'),
+                              ),
+                            ],
+                          ),
+                        )
+                      else if (selectedCourse != null)
+                        _addSheetStatusChip(
+                          isDark,
+                          accent,
+                          '将添加到「$selectedCourse」',
+                          Icons.check_circle_rounded,
+                        )
+                      else if (hasSimilar && !createNew)
+                        _addSheetStatusChip(
+                          isDark,
+                          warningColor,
+                          '请选择已有课程，避免重复创建',
+                          Icons.warning_amber_rounded,
+                        )
+                      else if (trimmed.isEmpty)
+                        _addSheetStatusChip(
+                          isDark,
+                          null,
+                          '输入课程名以搜索已有学科',
+                          Icons.info_outline_rounded,
+                        )
+                      else if (!hasSimilar && !createNew)
+                        _addSheetStatusChip(
+                          isDark,
+                          null,
+                          '没有匹配，可点下方创建新课程',
+                          Icons.info_outline_rounded,
+                        )
+                      else if (createNew)
+                        _addSheetStatusChip(
+                          isDark,
+                          accent,
+                          '将创建新课程「$trimmed」',
+                          Icons.check_circle_rounded,
+                        ),
+                      Flexible(
+                        child: SingleChildScrollView(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              for (final s in suggestions)
+                                InkWell(
+                                  onTap: () {
+                                    selectedCourse = s.name;
+                                    createNew = false;
+                                    courseCtrl.text = s.name;
+                                    courseCtrl.selection =
+                                        TextSelection.collapsed(
+                                      offset: s.name.length,
+                                    );
+                                    setModalState(() {});
+                                  },
+                                  borderRadius: BorderRadius.circular(14),
+                                  child: Container(
+                                    height: 52,
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                    ),
+                                    margin: const EdgeInsets.only(bottom: 6),
+                                    decoration: BoxDecoration(
+                                      color: selectedCourse == s.name
+                                          ? accentSoft
+                                          : RankingTokens.pageBg(isDark),
+                                      borderRadius:
+                                          BorderRadius.circular(14),
+                                      border: Border.all(
+                                        color: selectedCourse == s.name
+                                            ? accent
+                                            : RankingTokens.borderColor(
+                                                isDark),
+                                      ),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Container(
+                                          width: 32,
+                                          height: 32,
+                                          decoration: BoxDecoration(
+                                            color: accentSoft,
+                                            borderRadius:
+                                                BorderRadius.circular(10),
+                                          ),
+                                          child: Icon(Icons.book_rounded,
+                                              size: 18, color: accent),
+                                        ),
+                                        const SizedBox(width: 10),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.center,
+                                            children: [
+                                              Text(
+                                                s.name,
+                                                maxLines: 1,
+                                                overflow:
+                                                    TextOverflow.ellipsis,
+                                                style: TextStyle(
+                                                  fontSize: 14,
+                                                  fontWeight:
+                                                      FontWeight.w600,
+                                                  color: RankingTokens
+                                                      .titleColor(isDark),
+                                                ),
+                                              ),
+                                              const SizedBox(height: 2),
+                                              Text(
+                                                '${s.teacherCount} 位教师 · ${s.ratingCount} 条评价',
+                                                style: TextStyle(
+                                                  fontSize: 11,
+                                                  color: RankingTokens
+                                                      .subColor(isDark),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        if (selectedCourse == s.name)
+                                          Icon(Icons.check_circle_rounded,
+                                              size: 20, color: accent),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              if (suggestions.isEmpty &&
+                                  trimmed.isNotEmpty &&
+                                  !createNew)
+                                InkWell(
+                                  onTap: () {
+                                    createNew = true;
+                                    selectedCourse = null;
+                                    setModalState(() {});
+                                  },
+                                  borderRadius: BorderRadius.circular(14),
+                                  child: Container(
+                                    height: 52,
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      borderRadius:
+                                          BorderRadius.circular(14),
+                                      border: Border.all(
+                                        color:
+                                            accent.withValues(alpha: 0.5),
+                                      ),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.add_circle_outline_rounded,
+                                            size: 20, color: accent),
+                                        const SizedBox(width: 10),
+                                        Expanded(
+                                          child: Text(
+                                            '创建新课程：$trimmed',
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.w600,
+                                              color: accent,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      _addSheetButtons(
+                        isDark: isDark,
+                        accent: accent,
+                        submitting: submitting,
+                        canSubmit: nameInput.isNotEmpty &&
+                            courseReady &&
+                            !duplicate,
+                        onCancel: () => Navigator.pop(sheetContext),
+                        onSubmit: () async {
+                          final name = nameCtrl.text.trim();
+                          final course = selectedCourse ??
+                              (createNew ? courseCtrl.text.trim() : '');
+                          if (name.isEmpty || course.isEmpty) return;
+                          setModalState(() => submitting = true);
+                          final ok = await context
+                              .read<TeacherProvider>()
+                              .addTeacher(name, course);
+                          if (!mounted || !sheetContext.mounted) return;
+                          setModalState(() => submitting = false);
+                          if (ok) {
+                            Navigator.pop(sheetContext);
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('添加成功')),
+                              );
+                              await context
+                                  .read<TeacherProvider>()
+                                  .loadTeachers(query: _currentQuery);
+                            }
+                          } else {
+                            ScaffoldMessenger.of(sheetContext).showSnackBar(
+                              const SnackBar(
+                                content: Text('添加失败，请稍后重试'),
+                              ),
+                            );
+                          }
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
 
     nameCtrl.dispose();
     courseCtrl.dispose();
-    levelCtrl.dispose();
+  }
+
+  Future<void> _showAddMajorSheet() async {
+    final nameCtrl = TextEditingController();
+    var level = '本科';
+    var submitting = false;
+    String? selectedMajor;
+    bool createNew = false;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final accent = RankingTokens.majorAccent(isDark);
+    final accentSoft = RankingTokens.majorAccentSoft(isDark);
+    final warningColor =
+        isDark ? const Color(0xFFF4B860) : const Color(0xFFC47C14);
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (sheetContext, setModalState) {
+            final bottomInset = MediaQuery.of(sheetContext).viewInsets.bottom;
+            final majors = context.read<MajorProvider>().majors;
+            final suggestions = _buildMajorSuggestions(nameCtrl.text, majors);
+            final trimmed = nameCtrl.text.trim();
+            final hasSimilar = suggestions.isNotEmpty;
+            final nameReady =
+                selectedMajor != null || (createNew && trimmed.isNotEmpty);
+
+            return Padding(
+              padding: EdgeInsets.only(bottom: bottomInset),
+              child: Container(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.sizeOf(sheetContext).height * 0.85,
+                ),
+                decoration: BoxDecoration(
+                  color: RankingTokens.cardBg(isDark),
+                  borderRadius:
+                      const BorderRadius.vertical(top: Radius.circular(28)),
+                ),
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+                child: SafeArea(
+                  top: false,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _sheetDragHandle(isDark),
+                      const SizedBox(height: 16),
+                      _addSheetHeader(
+                        isDark: isDark,
+                        accent: accent,
+                        accentSoft: accentSoft,
+                        icon: Icons.workspace_premium_rounded,
+                        title: '添加专业',
+                        subtitle: '搜索已有专业并选择标准名，避免重复',
+                      ),
+                      const SizedBox(height: 18),
+                      TextField(
+                        controller: nameCtrl,
+                        textInputAction: TextInputAction.search,
+                        onChanged: (_) {
+                          selectedMajor = null;
+                          createNew = false;
+                          setModalState(() {});
+                        },
+                        decoration: _addSheetFieldDecoration(
+                          isDark: isDark,
+                          accent: accent,
+                          hint: '搜索专业，例如 机械',
+                          icon: Icons.school_rounded,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Container(
+                        padding:
+                            const EdgeInsets.symmetric(horizontal: 12),
+                        decoration: BoxDecoration(
+                          color: RankingTokens.pageBg(isDark),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: RankingTokens.borderColor(isDark),
+                          ),
+                        ),
+                        child: DropdownButtonHideUnderline(
+                          child: DropdownButton<String>(
+                            value: level,
+                            isExpanded: true,
+                            items: const [
+                              DropdownMenuItem(
+                                  value: '本科', child: Text('本科')),
+                              DropdownMenuItem(
+                                  value: '研究生', child: Text('研究生')),
+                            ],
+                            onChanged: (v) {
+                              if (v != null) {
+                                level = v;
+                                setModalState(() {});
+                              }
+                            },
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      if (selectedMajor != null)
+                        _addSheetStatusChip(
+                          isDark,
+                          accent,
+                          '将添加到「$selectedMajor」',
+                          Icons.check_circle_rounded,
+                        )
+                      else if (hasSimilar && !createNew)
+                        _addSheetStatusChip(
+                          isDark,
+                          warningColor,
+                          '请选择已有专业，避免重复创建',
+                          Icons.warning_amber_rounded,
+                        )
+                      else if (trimmed.isEmpty)
+                        _addSheetStatusChip(
+                          isDark,
+                          null,
+                          '输入专业名以搜索',
+                          Icons.info_outline_rounded,
+                        )
+                      else if (!hasSimilar && !createNew)
+                        _addSheetStatusChip(
+                          isDark,
+                          null,
+                          '没有匹配，可点下方创建新专业',
+                          Icons.info_outline_rounded,
+                        )
+                      else if (createNew)
+                        _addSheetStatusChip(
+                          isDark,
+                          accent,
+                          '将创建新专业「$trimmed」',
+                          Icons.check_circle_rounded,
+                        ),
+                      Flexible(
+                        child: SingleChildScrollView(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              for (final s in suggestions)
+                                InkWell(
+                                  onTap: () {
+                                    selectedMajor = s.name;
+                                    createNew = false;
+                                    nameCtrl.text = s.name;
+                                    nameCtrl.selection =
+                                        TextSelection.collapsed(
+                                      offset: s.name.length,
+                                    );
+                                    setModalState(() {});
+                                  },
+                                  borderRadius: BorderRadius.circular(14),
+                                  child: Container(
+                                    height: 52,
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                    ),
+                                    margin: const EdgeInsets.only(bottom: 6),
+                                    decoration: BoxDecoration(
+                                      color: selectedMajor == s.name
+                                          ? accentSoft
+                                          : RankingTokens.pageBg(isDark),
+                                      borderRadius:
+                                          BorderRadius.circular(14),
+                                      border: Border.all(
+                                        color: selectedMajor == s.name
+                                            ? accent
+                                            : RankingTokens.borderColor(
+                                                isDark),
+                                      ),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Container(
+                                          width: 32,
+                                          height: 32,
+                                          decoration: BoxDecoration(
+                                            color: accentSoft,
+                                            borderRadius:
+                                                BorderRadius.circular(10),
+                                          ),
+                                          child: Icon(
+                                              Icons
+                                                  .workspace_premium_rounded,
+                                              size: 18,
+                                              color: accent),
+                                        ),
+                                        const SizedBox(width: 10),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.center,
+                                            children: [
+                                              Text(
+                                                s.name,
+                                                maxLines: 1,
+                                                overflow:
+                                                    TextOverflow.ellipsis,
+                                                style: TextStyle(
+                                                  fontSize: 14,
+                                                  fontWeight:
+                                                      FontWeight.w600,
+                                                  color: RankingTokens
+                                                      .titleColor(isDark),
+                                                ),
+                                              ),
+                                              const SizedBox(height: 2),
+                                              Text(
+                                                '${s.level} · ${s.ratingCount} 条评价',
+                                                style: TextStyle(
+                                                  fontSize: 11,
+                                                  color: RankingTokens
+                                                      .subColor(isDark),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        if (selectedMajor == s.name)
+                                          Icon(Icons.check_circle_rounded,
+                                              size: 20, color: accent),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              if (suggestions.isEmpty &&
+                                  trimmed.isNotEmpty &&
+                                  !createNew)
+                                InkWell(
+                                  onTap: () {
+                                    createNew = true;
+                                    selectedMajor = null;
+                                    setModalState(() {});
+                                  },
+                                  borderRadius: BorderRadius.circular(14),
+                                  child: Container(
+                                    height: 52,
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      borderRadius:
+                                          BorderRadius.circular(14),
+                                      border: Border.all(
+                                        color:
+                                            accent.withValues(alpha: 0.5),
+                                      ),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.add_circle_outline_rounded,
+                                            size: 20, color: accent),
+                                        const SizedBox(width: 10),
+                                        Expanded(
+                                          child: Text(
+                                            '创建新专业：$trimmed',
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.w600,
+                                              color: accent,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      _addSheetButtons(
+                        isDark: isDark,
+                        accent: accent,
+                        submitting: submitting,
+                        canSubmit: nameReady,
+                        onCancel: () => Navigator.pop(sheetContext),
+                        onSubmit: () async {
+                          final name = selectedMajor ??
+                              (createNew ? nameCtrl.text.trim() : '');
+                          if (name.isEmpty) return;
+                          setModalState(() => submitting = true);
+                          final ok = await context
+                              .read<MajorProvider>()
+                              .addMajor(name, level);
+                          if (!mounted || !sheetContext.mounted) return;
+                          setModalState(() => submitting = false);
+                          if (ok) {
+                            Navigator.pop(sheetContext);
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('添加成功')),
+                              );
+                              await context.read<MajorProvider>().loadMajors();
+                            }
+                          } else {
+                            ScaffoldMessenger.of(sheetContext).showSnackBar(
+                              const SnackBar(
+                                content: Text('添加失败，请稍后重试'),
+                              ),
+                            );
+                          }
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    nameCtrl.dispose();
   }
 
   Color _rankColor(int index) {
@@ -1162,4 +1958,116 @@ class _SubjectGroup {
     );
     return total / ratingCount;
   }
+}
+
+// ── Course / major name normalization & suggestion builders ─────────
+
+const Map<String, String> _courseAliases = {
+  '高数': '高等数学',
+  '大英': '大学英语',
+  '毛概': '毛泽东思想和中国特色社会主义理论体系概论',
+  '马原': '马克思主义基本原理',
+  '近代史': '中国近现代史纲要',
+};
+
+String _normalizeName(String input, [Map<String, String>? aliases]) {
+  var r = input.trim();
+  if (aliases != null) {
+    for (final e in aliases.entries) {
+      r = r.replaceAll(e.key, e.value);
+    }
+  }
+  return r.toLowerCase().replaceAll(RegExp(r'\s+'), '');
+}
+
+class _CourseSuggestion {
+  final String name;
+  final int teacherCount;
+  final int ratingCount;
+  final int matchRank;
+  const _CourseSuggestion(
+      this.name, this.teacherCount, this.ratingCount, this.matchRank);
+}
+
+List<_CourseSuggestion> _buildCourseSuggestions(
+    String query, List<Teacher> teachers) {
+  final q = query.trim();
+  if (q.isEmpty) return const [];
+  final nq = _normalizeName(q, _courseAliases);
+  if (nq.isEmpty) return const [];
+  final stats = <String, _CourseSuggestion>{};
+  for (final t in teachers) {
+    final key = t.course.trim();
+    if (key.isEmpty) continue;
+    final nc = _normalizeName(key, _courseAliases);
+    int rank;
+    if (nc == nq) {
+      rank = 0;
+    } else if (nc.contains(nq)) {
+      rank = 1;
+    } else if (nq.contains(nc) && nc.length >= 2) {
+      rank = 2;
+    } else {
+      continue;
+    }
+    final existing = stats[key];
+    if (existing == null) {
+      stats[key] = _CourseSuggestion(key, 1, t.ratingCount, rank);
+    } else {
+      final newRank = existing.matchRank < rank ? existing.matchRank : rank;
+      stats[key] = _CourseSuggestion(
+        key,
+        existing.teacherCount + 1,
+        existing.ratingCount + t.ratingCount,
+        newRank,
+      );
+    }
+  }
+  final list = stats.values.toList();
+  list.sort((a, b) {
+    final r = a.matchRank.compareTo(b.matchRank);
+    if (r != 0) return r;
+    return b.teacherCount.compareTo(a.teacherCount);
+  });
+  return list.take(8).toList();
+}
+
+class _MajorSuggestion {
+  final String name;
+  final String level;
+  final int ratingCount;
+  final int matchRank;
+  const _MajorSuggestion(
+      this.name, this.level, this.ratingCount, this.matchRank);
+}
+
+List<_MajorSuggestion> _buildMajorSuggestions(
+    String query, List<MajorItem> majors) {
+  final q = query.trim();
+  if (q.isEmpty) return const [];
+  final nq = _normalizeName(q);
+  if (nq.isEmpty) return const [];
+  final result = <_MajorSuggestion>[];
+  for (final m in majors) {
+    final key = m.name.trim();
+    if (key.isEmpty) continue;
+    final nc = _normalizeName(key);
+    int rank;
+    if (nc == nq) {
+      rank = 0;
+    } else if (nc.contains(nq)) {
+      rank = 1;
+    } else if (nq.contains(nc) && nc.length >= 2) {
+      rank = 2;
+    } else {
+      continue;
+    }
+    result.add(_MajorSuggestion(key, m.level, m.ratingCount, rank));
+  }
+  result.sort((a, b) {
+    final r = a.matchRank.compareTo(b.matchRank);
+    if (r != 0) return r;
+    return b.ratingCount.compareTo(a.ratingCount);
+  });
+  return result.take(8).toList();
 }

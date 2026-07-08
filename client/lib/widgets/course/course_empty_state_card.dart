@@ -226,9 +226,9 @@ class CourseEmptyStateCard extends StatelessWidget {
       case CourseEmptyStateType.unbound:
         return '绑定后可从教务系统导入课表';
       case CourseEmptyStateType.noCache:
-        return '该学期暂无本地课表，可以从教务系统导入或切换学期';
+        return '还没有任何课表数据，可以从教务系统一键导入';
       case CourseEmptyStateType.currentTermNoCache:
-        return '选择学期后先预览课程，确认后导入';
+        return '该学期暂无本地课表数据，你可以尝试从教务系统拉取';
     }
   }
 
@@ -251,7 +251,7 @@ class CourseEmptyStateCard extends StatelessWidget {
       case CourseEmptyStateType.unbound:
         return '也可以手动添加课程';
       case CourseEmptyStateType.noCache:
-        return '切换学期';
+        return '切换历史学期';
       case CourseEmptyStateType.currentTermNoCache:
         return '也可以手动添加课程';
     }

@@ -1549,13 +1549,7 @@ class _HomeScreenState extends State<HomeScreen>
     final auth = context.read<AuthProvider>();
     final postProvider = context.read<PostProvider>();
     if (!auth.isLoggedIn) {
-      Navigator.push(
-        context,
-        PageRouteBuilder(
-          opaque: false,
-          pageBuilder: (_, __, ___) => const LoginScreen(),
-        ),
-      );
+      Navigator.pushNamed(context, '/login');
       return;
     }
     Navigator.push(

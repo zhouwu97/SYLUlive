@@ -100,3 +100,42 @@ class CourseTerm {
     );
   }
 }
+
+class CourseTermCatalog {
+  static String titleFor(String year, int semester) {
+    final y = int.tryParse(year) ?? DateTime.now().year;
+    return '$y-${y + 1} ${semester == 3 ? "第一学期" : "第二学期"}';
+  }
+
+  static List<CourseTerm> generate({
+    required int enrollmentYear,
+    int? untilYear,
+  }) {
+    final now = DateTime.now();
+    final endYear = untilYear ?? now.year + 1;
+    final terms = <CourseTerm>[];
+
+    for (int y = enrollmentYear; y <= endYear; y++) {
+      terms.add(CourseTerm(
+        id: '${y}_3',
+        year: '$y',
+        semester: 3,
+        title: titleFor('$y', 3),
+      ));
+      terms.add(CourseTerm(
+        id: '${y}_12',
+        year: '$y',
+        semester: 12,
+        title: titleFor('$y', 12),
+      ));
+    }
+
+    terms.sort((a, b) {
+      final yearCompare = b.year.compareTo(a.year);
+      if (yearCompare != 0) return yearCompare;
+      return b.semester.compareTo(a.semester);
+    });
+
+    return terms;
+  }
+}

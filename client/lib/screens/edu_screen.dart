@@ -9,6 +9,8 @@ import '../utils/app_navigator.dart' show appNavigatorKey;
 import '../features/campus_data/evaluation/evaluation_screen.dart';
 import 'edu_grade_screen.dart';
 import '../widgets/campus/campus_theme.dart';
+import '../widgets/course/course_import_sheet.dart';
+import '../widgets/course/course_preview_sheet.dart';
 
 class EduScreen extends StatefulWidget {
   const EduScreen({super.key});
@@ -520,264 +522,37 @@ class _EduScreenState extends State<EduScreen> {
     );
   }
 
-  void _showCourseDialog(BuildContext context, EduProvider eduProvider) {
-    final now = DateTime.now();
-    int currentYear = now.year;
-    String selectedYear;
-    int selectedSemester;
-    bool isFetching = false;
+  Future<void> _showCourseDialog(
+      BuildContext context, EduProvider eduProvider) async {
+    final result = await CourseImportSheet.show(
+      context,
+      eduProvider: eduProvider,
+    );
+    if (result == null || !context.mounted) return;
 
-    if (now.month >= 2 && now.month <= 7) {
-      selectedYear = (currentYear - 1).toString();
-      selectedSemester = 12; // 春季（第二学期）
-    } else if (now.month == 1) {
-      selectedYear = (currentYear - 1).toString();
-      selectedSemester = 3; // 秋季（第一学期）
-    } else {
-      selectedYear = currentYear.toString();
-      selectedSemester = 3; // 秋季（第一学期）
+    final confirm = await CoursePreviewSheet.show(
+      context,
+      courses: result.courses,
+      year: result.year,
+      semester: result.semester,
+      eduProvider: eduProvider,
+    );
+
+    if (confirm != true || !context.mounted) return;
+
+    final sc = context.read<CourseScheduleProvider>();
+    await sc.selectTerm(result.year, result.semester, clearCurrent: true);
+    await sc.applyFetchedCourses(result.courses);
+    unawaited(
+        eduProvider.syncCourses(result.year, result.semester, result.courses));
+
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('课表已导入。首次导入请到课表页点击“设置周数”'),
+          backgroundColor: CampusTheme.primary,
+        ),
+      );
     }
-
-    showDialog(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('选择学期'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              DropdownButtonFormField<String>(
-                value: selectedYear,
-                decoration: const InputDecoration(labelText: '学年'),
-                items: () {
-                  int startYear = eduProvider.enrollmentYear;
-                  int currentYear = DateTime.now().year;
-                  int count = (currentYear - startYear) + 2;
-                  if (count < 1) count = 1;
-
-                  return List.generate(count, (i) {
-                    int year = startYear + i;
-                    return DropdownMenuItem(
-                      value: year.toString(),
-                      child: Text('$year-${year + 1}'),
-                    );
-                  }).reversed.toList();
-                }(),
-                onChanged: (value) {
-                  selectedYear = value ?? selectedYear;
-                },
-              ),
-              const SizedBox(height: 16),
-              DropdownButtonFormField<int>(
-                value: selectedSemester,
-                decoration: const InputDecoration(labelText: '学期'),
-                items: const [
-                  DropdownMenuItem(value: 3, child: Text('第一学期')),
-                  DropdownMenuItem(value: 12, child: Text('第二学期')),
-                ],
-                onChanged: (value) {
-                  selectedSemester = value ?? selectedSemester;
-                },
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: isFetching ? null : () => Navigator.pop(context),
-              child: const Text('取消'),
-            ),
-            ElevatedButton(
-              onPressed: isFetching
-                  ? null
-                  : () async {
-                      setDialogState(() => isFetching = true);
-                      final scaffoldMessenger = ScaffoldMessenger.of(context);
-                      try {
-                        final result = await eduProvider
-                            .getCourses(selectedYear, selectedSemester)
-                            .timeout(_courseFetchTimeout);
-                        if (context.mounted) {
-                          Navigator.pop(context); // 请求结束后关闭对话框
-                          if (result != null &&
-                              result.success &&
-                              result.data != null) {
-                            _showCoursesResult(
-                              context,
-                              result.data!,
-                              selectedYear,
-                              selectedSemester,
-                              eduProvider,
-                            );
-                          } else {
-                            scaffoldMessenger.showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  result?.errorMessage ??
-                                      '获取课表失败，请稍后重试或重新绑定教务账号',
-                                ),
-                                backgroundColor: Colors.red,
-                              ),
-                            );
-                          }
-                        }
-                      } on TimeoutException {
-                        if (context.mounted) {
-                          Navigator.pop(context);
-                          scaffoldMessenger.showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                '获取课表超过 ${_courseFetchTimeout.inSeconds} 秒，请稍后重试',
-                              ),
-                              backgroundColor: Colors.red,
-                            ),
-                          );
-                        }
-                      } catch (e) {
-                        if (context.mounted) {
-                          Navigator.pop(context);
-                          scaffoldMessenger.showSnackBar(
-                            SnackBar(
-                              content: Text('获取课表异常：$e'),
-                              backgroundColor: Colors.red,
-                            ),
-                          );
-                        }
-                      }
-                    },
-              child: isFetching
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    )
-                  : const Text('查询'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showCoursesResult(
-    BuildContext context,
-    List<Map<String, dynamic>> courses,
-    String year,
-    int semester,
-    EduProvider eduProvider,
-  ) {
-    showModalBottomSheet(
-      context: appNavigatorKey.currentContext!,
-      isScrollControlled: true,
-      builder: (ctx) => DraggableScrollableSheet(
-        initialChildSize: 0.7,
-        minChildSize: 0.5,
-        maxChildSize: 0.95,
-        expand: false,
-        builder: (ctx, scrollController) => Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Text(
-                '${year}-${(int.parse(year) + 1).toString()} ${semester == 3 ? "第一学期" : "第二学期"} 课表',
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-            Expanded(
-              child: courses.isEmpty
-                  ? const Center(child: Text('暂无课表'))
-                  : ListView.builder(
-                      controller: scrollController,
-                      itemCount: courses.length,
-                      itemBuilder: (ctx, index) {
-                        final course = courses[index];
-                        return Card(
-                          margin: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 4,
-                          ),
-                          child: ListTile(
-                            title: Text(course['name'] ?? ''),
-                            subtitle: Text(
-                              '教师: ${course['teacher'] ?? '-'} | '
-                              '地点: ${course['location'] ?? '-'} | '
-                              '时间: 第${course['time'] ?? 0}节 | '
-                              '星期: ${course['week_day'] ?? 0}',
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-            ),
-            // 导入到课表按钮
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: () async {
-                    // 先拿到全局 ScaffoldMessenger（此时 context 还活着）
-                    final navContext = appNavigatorKey.currentContext;
-                    if (navContext == null) return;
-                    final messenger = ScaffoldMessenger.of(navContext);
-                    Navigator.pop(ctx); // 关闭底部弹窗
-                    try {
-                      final sc = Provider.of<CourseScheduleProvider>(
-                        navContext,
-                        listen: false,
-                      );
-                      await sc.selectTerm(year, semester);
-                      await sc.applyFetchedCourses(courses);
-                      unawaited(
-                        eduProvider.syncCourses(year, semester, courses).then((
-                          success,
-                        ) {
-                          if (!success) {
-                            debugPrint('课表已本地导入，后台同步到服务器失败，等待下次刷新重试');
-                          }
-                        }).catchError((Object error, StackTrace stackTrace) {
-                          debugPrint('课表后台同步异常: $error\n$stackTrace');
-                          return null;
-                        }),
-                      );
-                      messenger.showSnackBar(
-                        const SnackBar(
-                          content: Text(
-                            '导入课表成功。首次导入请到课表页点击“设置周数”，选择开学第一天。',
-                          ),
-                          backgroundColor: Colors.green,
-                          duration: Duration(seconds: 4),
-                        ),
-                      );
-                      Navigator.of(navContext).maybePop();
-                    } catch (e) {
-                      messenger.showSnackBar(
-                        SnackBar(
-                          content: Text('导入出错: $e'),
-                          backgroundColor: Colors.red,
-                        ),
-                      );
-                    }
-                  },
-                  icon: const Icon(Icons.download),
-                  label: const Text('导入到课表', style: TextStyle(fontSize: 16)),
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 }

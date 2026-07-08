@@ -246,7 +246,7 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
             const SizedBox(width: 8),
             Expanded(
               child: Text(
-                '教师榜已按学科聚合。添加教师时请填写完整课程名称，例如"数据结构""高等数学A1"，避免同一学科被拆散。',
+                '学科榜按课程聚合。添加授课教师时请选择标准课程名，例如"数据结构""高等数学A1"，避免同一课程被拆散。',
                 style: TextStyle(
                   fontSize: 12,
                   color: RankingTokens.subColor(isDark),
@@ -1229,6 +1229,9 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
     final warningColor =
         isDark ? const Color(0xFFF4B860) : const Color(0xFFC47C14);
 
+    await context.read<TeacherProvider>().loadAllTeachersForSuggestions();
+    if (!mounted) return;
+
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -1237,7 +1240,7 @@ class _TeacherRateScreenState extends State<TeacherRateScreen>
         return StatefulBuilder(
           builder: (sheetContext, setModalState) {
             final bottomInset = MediaQuery.of(sheetContext).viewInsets.bottom;
-            final teachers = context.read<TeacherProvider>().teachers;
+            final teachers = context.read<TeacherProvider>().allTeachers;
             final suggestions =
                 _buildCourseSuggestions(courseCtrl.text, teachers);
             final trimmed = courseCtrl.text.trim();

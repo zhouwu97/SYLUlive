@@ -128,7 +128,6 @@ class _ShuitieScreenState extends State<ShuitieScreen>
   bool _checkInLoading = false;
   Post? _selectedPost;
   int? _selectedUserId;
-  bool _messagesLoadRequested = false;
 
   static const _autoRefreshInterval = Duration(seconds: 60);
   static const _feedSwitchDuration = Duration(milliseconds: 480);
@@ -187,7 +186,6 @@ class _ShuitieScreenState extends State<ShuitieScreen>
       Future.delayed(const Duration(seconds: 3), () {
         if (mounted) {
           _loadAnnouncements();
-          _ensureMessagesLoaded();
         }
       });
     });
@@ -239,14 +237,6 @@ class _ShuitieScreenState extends State<ShuitieScreen>
     super.dispose();
   }
 
-  /// 确保 MessageProvider 的会话列表已被加载（用于首页红点）
-  void _ensureMessagesLoaded() {
-    if (_messagesLoadRequested) return;
-    final auth = context.read<AuthProvider>();
-    if (!auth.isLoggedIn) return;
-    _messagesLoadRequested = true;
-    context.read<MessageProvider>().loadConversations(silent: true);
-  }
 
   Future<void> _loadAnnouncements() async {
     final authProvider = context.read<AuthProvider>();
@@ -879,7 +869,6 @@ class _ShuitieScreenState extends State<ShuitieScreen>
         _streakDays = 0;
       }
       _wasLoggedIn = authProvider.isLoggedIn;
-      _messagesLoadRequested = false;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         // 登录/退出时清除关注信息流，避免跨账号数据残留
@@ -888,7 +877,6 @@ class _ShuitieScreenState extends State<ShuitieScreen>
             _canLoadFeedMode(_feedMode)) {
           _refresh();
         }
-        _ensureMessagesLoaded();
         _ensureCheckinStatusLoaded();
       });
     }

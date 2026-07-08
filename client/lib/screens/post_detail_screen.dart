@@ -677,37 +677,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     String hint = '请输入原因',
     String confirmText = '确认',
   }) async {
-    final controller = TextEditingController();
     final result = await showDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(title),
-        content: TextField(
-          controller: controller,
-          decoration: InputDecoration(
-            hintText: hint,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(10),
-            ),
-          ),
-          maxLines: 2,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('取消'),
-          ),
-          TextButton(
-            onPressed: () {
-              final text = controller.text.trim();
-              Navigator.pop(ctx, text);
-            },
-            child: Text(confirmText),
-          ),
-        ],
+      builder: (ctx) => _PremiumInputDialog(
+        title: title,
+        hint: hint,
+        confirmText: confirmText,
       ),
     );
-    controller.dispose();
     if (result == null || result.isEmpty) return null;
     return result;
   }
@@ -722,14 +699,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
     final daysResult = await showDialog<int>(
       context: context,
-      builder: (ctx) => SimpleDialog(
-        title: const Text('版块置顶时长'),
-        children: [1, 3, 7].map((d) {
-          return SimpleDialogOption(
-            onPressed: () => Navigator.pop(ctx, d),
-            child: Text('$d 天'),
-          );
-        }).toList(),
+      builder: (ctx) => _PremiumOptionsDialog<int>(
+        title: '版块置顶时长',
+        options: const [1, 3, 7],
+        labelBuilder: (d) => '$d 天',
       ),
     );
     if (daysResult == null) return;
@@ -946,14 +919,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
     final daysResult = await showDialog<int>(
       context: context,
-      builder: (ctx) => SimpleDialog(
-        title: const Text('禁言时长'),
-        children: [1, 3, 7].map((d) {
-          return SimpleDialogOption(
-            onPressed: () => Navigator.pop(ctx, d),
-            child: Text('$d 天'),
-          );
-        }).toList(),
+      builder: (ctx) => _PremiumOptionsDialog<int>(
+        title: '禁言时长',
+        options: const [1, 3, 7],
+        labelBuilder: (d) => '$d 天',
       ),
     );
     if (daysResult == null) return;
@@ -4529,4 +4498,151 @@ class _ReplyThread {
   final Reply parent;
   final List<Reply> children; // 直接子回复列表，不再递归
   _ReplyThread({required this.parent, required this.children});
+}
+
+class _PremiumInputDialog extends StatefulWidget {
+  final String title;
+  final String hint;
+  final String confirmText;
+
+  const _PremiumInputDialog({
+    required this.title,
+    required this.hint,
+    required this.confirmText,
+  });
+
+  @override
+  State<_PremiumInputDialog> createState() => _PremiumInputDialogState();
+}
+
+class _PremiumInputDialogState extends State<_PremiumInputDialog> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final dialogBackground = isDark ? const Color(0xFF1E1E2E) : Colors.white;
+    final titleColor = isDark ? Colors.white : const Color(0xFF2D3142);
+    final accent = isDark ? const Color(0xFF7ED6C5) : const Color(0xFF147C72);
+
+    return AlertDialog(
+      backgroundColor: dialogBackground,
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: Text(widget.title,
+          style: TextStyle(
+              color: titleColor, fontSize: 18, fontWeight: FontWeight.bold)),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        decoration: InputDecoration(
+          hintText: widget.hint,
+          hintStyle: TextStyle(color: isDark ? Colors.white38 : Colors.black38),
+          filled: true,
+          fillColor: isDark ? const Color(0x0AFFFFFF) : const Color(0x08000000),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: BorderSide.none,
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: BorderSide(color: accent, width: 1.5),
+          ),
+        ),
+        maxLines: 3,
+        minLines: 1,
+      ),
+      actions: [
+        TextButton(
+          style: TextButton.styleFrom(
+              foregroundColor: isDark ? Colors.white54 : Colors.black54),
+          onPressed: () => Navigator.pop(context),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          style: FilledButton.styleFrom(
+            backgroundColor: accent,
+            foregroundColor: Colors.white,
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+          onPressed: () => Navigator.pop(context, _controller.text.trim()),
+          child: Text(widget.confirmText),
+        ),
+      ],
+    );
+  }
+}
+
+class _PremiumOptionsDialog<T> extends StatelessWidget {
+  final String title;
+  final List<T> options;
+  final String Function(T) labelBuilder;
+
+  const _PremiumOptionsDialog({
+    required this.title,
+    required this.options,
+    required this.labelBuilder,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final dialogBackground = isDark ? const Color(0xFF1E1E2E) : Colors.white;
+    final titleColor = isDark ? Colors.white : const Color(0xFF2D3142);
+    final tileColor =
+        isDark ? const Color(0x0AFFFFFF) : const Color(0x08000000);
+
+    return AlertDialog(
+      backgroundColor: dialogBackground,
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: Text(title,
+          style: TextStyle(
+              color: titleColor, fontSize: 18, fontWeight: FontWeight.bold)),
+      contentPadding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: options.map((opt) {
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 8.0),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(14),
+              onTap: () => Navigator.pop(context, opt),
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+                decoration: BoxDecoration(
+                  color: tileColor,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Text(
+                  labelBuilder(opt),
+                  style: TextStyle(
+                    color: titleColor,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
 }

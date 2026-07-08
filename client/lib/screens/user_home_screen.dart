@@ -93,6 +93,49 @@ class _UserHomeScreenState extends State<UserHomeScreen>
         post.marketTags.isNotEmpty;
   }
 
+  /// 当前主页用户的 id，作为详情页作者跳转的来源锚点。
+  int? get _profileUserId {
+    return _user?.id ?? widget.userId ?? context.read<AuthProvider>().user?.id;
+  }
+
+  /// 从个人主页统一打开帖子/商品详情。
+  ///
+  /// 进入详情后点头像的行为由来源决定：
+  /// - 点到当前主页用户自己：maybePop 返回来源主页，避免 UserHome(A)->Detail(A)->UserHome(A) 套娃。
+  /// - 点到其他用户：pushReplacement 进入对方主页，栈深度不增长，返回时回到来源主页。
+  Future<void> _openProfilePostDetail(
+    Post post, {
+    bool isMarket = false,
+  }) async {
+    final originUserId = _profileUserId;
+
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (detailContext) => PostDetailScreen(
+          postId: post.id,
+          isMarket: isMarket,
+          initialPost: post,
+          onAuthorTap: (authorId) {
+            if (originUserId != null && authorId == originUserId) {
+              Navigator.of(detailContext).maybePop();
+              return;
+            }
+            Navigator.of(detailContext).pushReplacement(
+              MaterialPageRoute(
+                builder: (_) => UserHomeScreen(userId: authorId),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+
+    if (mounted) {
+      await _loadData();
+    }
+  }
+
   String get _marketTabText {
     if (_currentTabIndex == 1) {
       return '售出 $_marketSoldCount单';
@@ -280,6 +323,9 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                                       return PostCard(
                                         post: _posts[index],
                                         disableAuthorNavigation: true,
+                                        onTap: () => _openProfilePostDetail(
+                                          _posts[index],
+                                        ),
                                       );
                                     },
                                   ),
@@ -451,6 +497,9 @@ class _UserHomeScreenState extends State<UserHomeScreen>
                             return PostCard(
                               post: _posts[index],
                               disableAuthorNavigation: true,
+                              onTap: () => _openProfilePostDetail(
+                                _posts[index],
+                              ),
                             );
                           },
                         ),
@@ -482,21 +531,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
           post: post,
           compact: false,
           onAuthorTap: (_) {},
-          onTap: () async {
-            await Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => PostDetailScreen(
-                  postId: post.id,
-                  isMarket: true,
-                  initialPost: post,
-                ),
-              ),
-            );
-            if (mounted) {
-              await _loadData();
-            }
-          },
+          onTap: () => _openProfilePostDetail(post, isMarket: true),
         );
       },
     );
@@ -847,7 +882,7 @@ class _UserHomeScreenState extends State<UserHomeScreen>
       context: context,
       builder: (context) => Dialog(
         backgroundColor: Colors.transparent,
-        insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+        insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
         child: _EditProfileSheet(user: user, onSaved: _loadData),
       ),
     );
@@ -1030,141 +1065,149 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return Container(
-      padding: EdgeInsets.only(
-        left: 20,
-        right: 20,
-        top: 12,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+    return ConstrainedBox(
+      constraints: BoxConstraints(
+        maxWidth: 420,
+        maxHeight: MediaQuery.sizeOf(context).height * 0.82,
       ),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 20,
-            spreadRadius: 5,
-          ),
-        ],
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // 拖动条
-          Container(
-            width: 40,
-            height: 4,
-            decoration: BoxDecoration(
-              color: Colors.grey.withOpacity(0.3),
-              borderRadius: BorderRadius.circular(2),
+      child: Container(
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.1),
+              blurRadius: 20,
+              spreadRadius: 5,
             ),
+          ],
+        ),
+        child: SingleChildScrollView(
+          padding: EdgeInsets.only(
+            left: 20,
+            right: 20,
+            top: 12,
+            bottom: MediaQuery.of(context).viewInsets.bottom + 20,
           ),
-          const SizedBox(height: 20),
-          Text(
-            '编辑资料',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: isDark ? Colors.white : Colors.black87,
-            ),
-          ),
-          const SizedBox(height: 24),
-
-          // 更改背景
-          InkWell(
-            onTap: _isSaving ? null : _pickAndUploadBackground,
-            borderRadius: BorderRadius.circular(12),
-            child: Container(
-              padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
-              decoration: BoxDecoration(
-                color: isDark ? Colors.grey[800] : Colors.grey[100],
-                borderRadius: BorderRadius.circular(12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // 拖动条
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey.withOpacity(0.3),
+                  borderRadius: BorderRadius.circular(2),
+                ),
               ),
-              child: Row(
+              const SizedBox(height: 20),
+              Text(
+                '编辑资料',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: isDark ? Colors.white : Colors.black87,
+                ),
+              ),
+              const SizedBox(height: 24),
+
+              // 更改背景
+              InkWell(
+                onTap: _isSaving ? null : _pickAndUploadBackground,
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+                  decoration: BoxDecoration(
+                    color: isDark ? Colors.grey[800] : Colors.grey[100],
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.image, color: Colors.blue),
+                      const SizedBox(width: 12),
+                      const Expanded(child: Text('更改主页背景图')),
+                      Icon(Icons.chevron_right, color: Colors.grey[500]),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // 昵称
+              TextField(
+                controller: _nicknameController,
+                decoration: InputDecoration(
+                  labelText: '昵称',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  prefixIcon: const Icon(Icons.person_outline),
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // 性别：上下布局，三段按钮独占整行，避免系统显示缩放时被挤换行。
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Icon(Icons.image, color: Colors.blue),
-                  const SizedBox(width: 12),
-                  const Expanded(child: Text('更改主页背景图')),
-                  Icon(Icons.chevron_right, color: Colors.grey[500]),
+                  const Text(
+                    '性别',
+                    style:
+                        TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: SegmentedButton<String>(
+                      showSelectedIcon: false,
+                      segments: const [
+                        ButtonSegment(value: 'male', label: Text('男生')),
+                        ButtonSegment(value: 'female', label: Text('女生')),
+                        ButtonSegment(value: '', label: Text('保密')),
+                      ],
+                      selected: {_selectedGender},
+                      onSelectionChanged: (Set<String> newSelection) {
+                        setState(() {
+                          _selectedGender = newSelection.first;
+                        });
+                      },
+                    ),
+                  ),
                 ],
               ),
-            ),
-          ),
-          const SizedBox(height: 16),
+              const SizedBox(height: 24),
 
-          // 昵称
-          TextField(
-            controller: _nicknameController,
-            decoration: InputDecoration(
-              labelText: '昵称',
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              prefixIcon: const Icon(Icons.person_outline),
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          // 性别
-          Row(
-            children: [
-              const Text('性别: ', style: TextStyle(fontSize: 16)),
-              const SizedBox(width: 16),
-              Expanded(
-                child: SegmentedButton<String>(
-                  segments: const [
-                    ButtonSegment(
-                      value: 'male',
-                      label: Text('男生'),
-                      icon: Icon(Icons.male),
+              // 保存按钮
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: _isSaving ? null : _saveProfile,
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
                     ),
-                    ButtonSegment(
-                      value: 'female',
-                      label: Text('女生'),
-                      icon: Icon(Icons.female),
-                    ),
-                    ButtonSegment(value: '', label: Text('保密')),
-                  ],
-                  selected: {_selectedGender},
-                  onSelectionChanged: (Set<String> newSelection) {
-                    setState(() {
-                      _selectedGender = newSelection.first;
-                    });
-                  },
+                  ),
+                  child: _isSaving
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text(
+                          '保存',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 24),
-
-          // 保存按钮
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: _isSaving ? null : _saveProfile,
-              style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-              child: _isSaving
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Text(
-                      '保存',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }

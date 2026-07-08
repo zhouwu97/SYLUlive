@@ -4,7 +4,6 @@ import '../campus/campus_theme.dart';
 enum CourseMenuAction {
   syncFromEdu,
   switchTerm,
-  setStartWeek,
   archives,
   share,
   settings,
@@ -36,8 +35,6 @@ class CourseActionMenu extends StatelessWidget {
             context, CourseMenuAction.syncFromEdu, Icons.sync_rounded, '从教务刷新'),
         _buildItem(context, CourseMenuAction.switchTerm,
             Icons.swap_horiz_rounded, '切换学期'),
-        _buildItem(context, CourseMenuAction.setStartWeek,
-            Icons.date_range_rounded, '设置开学周'),
         const PopupMenuDivider(),
         _buildItem(
             context, CourseMenuAction.archives, Icons.archive_rounded, '课表存档'),

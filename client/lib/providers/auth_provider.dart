@@ -70,10 +70,15 @@ class AuthProvider extends ChangeNotifier {
         },
         onError: (error, handler) {
           final status = error.response?.statusCode;
-          final path = error.requestOptions.path;
+          final rawPath = error.requestOptions.path;
+          final uriPath = error.requestOptions.uri.path;
+
+          final isEduApi = rawPath.startsWith('/edu/') ||
+              uriPath.startsWith('/edu/') ||
+              uriPath.startsWith('/api/edu/');
 
           if (status == 401 && _token != null) {
-            if (path.startsWith('/edu/')) {
+            if (isEduApi) {
               // 教务登录态失效，不代表 App 登录失效
               handler.next(error);
               return;

@@ -616,10 +616,14 @@ class _PostCardState extends State<PostCard>
               width: double.infinity,
               fit: widget.showPrice ? BoxFit.contain : BoxFit.cover,
               placeholder: (_, __) => Container(color: Colors.grey[300]),
-              errorWidget: (_, __, ___) => Container(
-                color: Colors.grey[300],
-                child: const Icon(Icons.image),
-              ),
+              errorWidget: (context, url, error) {
+                Future.microtask(() => PostImageCache.manager.removeFile(url));
+                return Container(
+                  color: Colors.grey[300],
+                  child: const Icon(Icons.broken_image,
+                      color: Colors.grey, size: 32),
+                );
+              },
             ),
           ),
         ),
@@ -651,8 +655,10 @@ class _PostCardState extends State<PostCard>
                     imageUrl: imageUrls[index],
                     fit: BoxFit.cover,
                     placeholder: (_, __) => Container(color: Colors.grey[300]),
-                    errorWidget: (_, __, ___) =>
-                        Container(color: Colors.grey[300]),
+                    errorWidget: (context, url, error) {
+                      Future.microtask(() => PostImageCache.manager.removeFile(url));
+                      return Container(color: Colors.grey[300]);
+                    },
                   ),
                   Container(
                     color: Colors.black54,
@@ -677,10 +683,13 @@ class _PostCardState extends State<PostCard>
               imageUrl: imageUrls[index],
               fit: BoxFit.cover,
               placeholder: (_, __) => Container(color: Colors.grey[300]),
-              errorWidget: (_, __, ___) => Container(
-                color: Colors.grey[300],
-                child: const Icon(Icons.image),
-              ),
+              errorWidget: (context, url, error) {
+                Future.microtask(() => PostImageCache.manager.removeFile(url));
+                return Container(
+                  color: Colors.grey[300],
+                  child: const Icon(Icons.broken_image),
+                );
+              },
             ),
           );
         },

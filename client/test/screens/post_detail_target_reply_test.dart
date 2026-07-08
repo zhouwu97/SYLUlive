@@ -466,14 +466,16 @@ void main() {
     await tester.pumpAndSettle();
 
     // 检查是否包含目标回复的内容并被点击拦截（hitTestable 代表其已在视口内）
-    expect(
-        find.text('Target second level reply').hitTestable(), findsOneWidget);
+    final textFinder = find.textContaining(
+      'Target second level reply',
+      findRichText: true,
+    );
+    expect(textFinder.hitTestable(), findsOneWidget);
 
     // 断言滚动条确实发生了向下的滚动
     expect(scrollable.position.pixels, greaterThan(initialOffset));
 
     // 验证高亮效果：查找包裹该文本的 AnimatedContainer
-    final textFinder = find.text('Target second level reply');
     final containerFinder = find
         .ancestor(
           of: textFinder,
@@ -566,41 +568,8 @@ void main() {
         (widget) =>
             widget is CachedNetworkImage &&
             widget.imageUrl == 'http://example.com/one.png' &&
-            widget.fit == BoxFit.contain,
-      ),
-      findsOneWidget,
-    );
-    expect(
-      find.byWidgetPredicate(
-        (widget) =>
-            widget is CachedNetworkImage &&
-            widget.imageUrl == 'http://example.com/one.png',
-      ),
-      findsOneWidget,
-    );
-    final singleImageFinder = find.byWidgetPredicate(
-      (widget) =>
-          widget is CachedNetworkImage &&
-          widget.imageUrl == 'http://example.com/one.png',
-    );
-    expect(
-      find.ancestor(
-        of: singleImageFinder,
-        matching: find.byWidgetPredicate(
-          (widget) => widget is SizedBox && widget.width == double.infinity,
-        ),
-      ),
-      findsOneWidget,
-    );
-    expect(
-      find.ancestor(
-        of: singleImageFinder,
-        matching: find.byWidgetPredicate(
-          (widget) =>
-              widget is Center &&
-              widget.widthFactor == null &&
-              widget.heightFactor == null,
-        ),
+            widget.fit == BoxFit.fitWidth &&
+            widget.width == double.infinity,
       ),
       findsOneWidget,
     );

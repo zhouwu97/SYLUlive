@@ -25,23 +25,6 @@ class CourseEmptyStateCard extends StatelessWidget {
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        Text(
-          '课表',
-          style: TextStyle(
-            fontSize: 24,
-            fontWeight: FontWeight.w900,
-            color: isDark ? Colors.white : CampusTheme.text,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          _getSubtitle(),
-          style: const TextStyle(
-            fontSize: 14,
-            color: CampusTheme.subText,
-          ),
-        ),
-        const SizedBox(height: 32),
         Container(
           margin: const EdgeInsets.symmetric(horizontal: 24),
           decoration: CampusTheme.cardDecoration(isDark),
@@ -189,17 +172,6 @@ class CourseEmptyStateCard extends StatelessWidget {
         ),
       ],
     );
-  }
-
-  String _getSubtitle() {
-    switch (type) {
-      case CourseEmptyStateType.unlogged:
-        return '同步教务课表、课程提醒、桌面小组件';
-      case CourseEmptyStateType.unbound:
-      case CourseEmptyStateType.noCache:
-      case CourseEmptyStateType.currentTermNoCache:
-        return '你的专属课程表';
-    }
   }
 
   IconData _getIcon() {

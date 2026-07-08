@@ -259,6 +259,8 @@ class CourseScheduleProvider extends ChangeNotifier {
   ) async {
     if (_userId == null) return;
 
+    await _loadHiddenCourses();
+
     final customCourses = _courses.where((c) => c.id < 0).toList();
     final parsedCourses = <CourseBlock>[...customCourses];
 

@@ -549,7 +549,7 @@ class _EduScreenState extends State<EduScreen> {
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('课表已导入。首次导入请到课表页点击“设置周数”'),
+          content: Text('已导入，可到课表页查看'),
           backgroundColor: CampusTheme.primary,
         ),
       );

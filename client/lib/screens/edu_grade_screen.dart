@@ -118,6 +118,9 @@ class _EduGradeScreenState extends State<EduGradeScreen>
             userId: currentUserId,
           ),
         );
+        unawaited(
+          GradeReminderService.instance.ensureScheduledIfEnabled(),
+        );
         _initSemesterAndLoad(capturedUserId);
       } else {
         unawaited(
@@ -270,7 +273,6 @@ class _EduGradeScreenState extends State<EduGradeScreen>
         _isRefreshing = false;
         _errorMessage = null;
       });
-      await _syncGradeReminderBaseline(result.data!);
     } else {
       final errorMsg = result.errorMessage ?? '成绩加载失败';
       if (_grades.isNotEmpty) {
@@ -317,7 +319,6 @@ class _EduGradeScreenState extends State<EduGradeScreen>
             : GradePageState.content;
         _isRefreshing = false;
       });
-      await _syncGradeReminderBaseline(result.data!);
       if (mounted && !silent) _showSnackBar('成绩已更新');
       return result.data;
     }
@@ -367,7 +368,6 @@ class _EduGradeScreenState extends State<EduGradeScreen>
       });
 
       _saveSelectedSemester(year, semester);
-      await _syncGradeReminderBaseline(cache.grades);
 
       // Background refresh
       _refreshSelectedSemesterInBackground(year, semester, generation);
@@ -392,7 +392,6 @@ class _EduGradeScreenState extends State<EduGradeScreen>
     });
 
     _saveSelectedSemester(year, semester);
-    await _syncGradeReminderBaseline(result.data!);
     return true;
   }
 
@@ -413,6 +412,9 @@ class _EduGradeScreenState extends State<EduGradeScreen>
         semester: semester,
       ),
     );
+    unawaited(
+      GradeReminderService.instance.ensureScheduledIfEnabled(),
+    );
   }
 
   Future<void> _refreshSelectedSemesterInBackground(
@@ -432,19 +434,7 @@ class _EduGradeScreenState extends State<EduGradeScreen>
         _pageState =
             _grades.isEmpty ? GradePageState.empty : GradePageState.content;
       });
-      await _syncGradeReminderBaseline(result.data!);
     }
-  }
-
-  Future<void> _syncGradeReminderBaseline(List<EduGrade> grades) async {
-    final userId = _lastUserId;
-    if (userId == null) return;
-    await GradeReminderService.instance.syncBaselineIfEnabled(
-      userId: userId,
-      year: _selectedYear,
-      semester: _selectedSemester,
-      grades: grades,
-    );
   }
 
   void _showSnackBar(String message) {

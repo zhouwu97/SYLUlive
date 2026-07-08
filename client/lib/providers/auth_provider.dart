@@ -143,6 +143,7 @@ class AuthProvider extends ChangeNotifier {
     await GradeReminderService.instance.syncRuntimeConfig(
       userId: _user?.id.toString(),
     );
+    await GradeReminderService.instance.ensureScheduledIfEnabled();
     notifyListeners();
   }
 
@@ -168,6 +169,7 @@ class AuthProvider extends ChangeNotifier {
     await GradeReminderService.instance.syncRuntimeConfig(
       userId: _user?.id.toString(),
     );
+    await GradeReminderService.instance.ensureScheduledIfEnabled();
   }
 
   Future<void> _saveEduPassword(String studentId, String password) async {
